@@ -20,10 +20,13 @@ struct CloudSettingsView: View {
     private var cloud: CloudAccountController { environment.cloud }
 
     /// Polls run ONLY while this section can actually be seen (see the
-    /// matching pattern in MachinesSettingsView): the Machines tab — which
-    /// hosts it — is selected and the Settings window is key/active.
+    /// matching pattern in MachinesSettingsView): the Machines section —
+    /// which hosts it — is selected with no machine page pushed over it, and
+    /// the Settings window is key/active.
     private var isPollingActive: Bool {
-        controlActiveState != .inactive && SettingsRouter.shared.selectedTab == .machines
+        controlActiveState != .inactive
+            && SettingsRouter.shared.selectedTab == .machines
+            && SettingsRouter.shared.machinesPath.isEmpty
     }
 
     var body: some View {

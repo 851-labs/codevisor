@@ -660,7 +660,7 @@ struct ChatScreen: View {
                 message,
                 actionTitle: "Open Harness Settings",
                 action: {
-                    SettingsRouter.shared.selectedTab = .harnesses
+                    SettingsRouter.shared.showHarnesses()
                     openSettings()
                 }
             )

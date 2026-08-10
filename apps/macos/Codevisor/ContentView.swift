@@ -74,6 +74,11 @@ struct CodevisorApp: App {
         AnalyticsClient.shared.captureAppOpenedOnce()
         DiagnosticsClient.shared.configureFromMainBundle(enabled: environment.settings.shareCrashReports)
         ChatNotificationManager.shared.configure(settings: environment.settings)
+        // Deep links that open machine-scoped Settings pages ("Manage
+        // Harnesses…") resolve the selected machine through this.
+        SettingsRouter.shared.selectedMachineIdProvider = { [weak environment] in
+            environment?.machines.selectedMachineId
+        }
         return (environment, sparkleUpdater)
     }
 
@@ -597,7 +602,7 @@ private struct CloudAuthDeeplinkHandling: ViewModifier {
             .onOpenURL { url in
                 guard let deeplink = CloudAuthDeeplink.parse(url) else { return }
                 Task { await environment.cloud.completeSignIn(ott: deeplink.ott) }
-                SettingsRouter.shared.selectedTab = .machines
+                SettingsRouter.shared.showMachines()
                 openSettings()
             }
     }
@@ -672,7 +677,7 @@ private struct MachineDeeplinkHandling: ViewModifier {
                 name: deeplink.name,
                 token: deeplink.token
             )
-            SettingsRouter.shared.selectedTab = .machines
+            SettingsRouter.shared.showMachines()
             openSettings()
         } catch {
             deeplinkError = String(describing: error)

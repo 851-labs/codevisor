@@ -5,6 +5,19 @@ import CodevisorUI
 
 struct HarnessAuthenticationView: View {
     @Environment(AppEnvironment.self) private var environment
+    @Environment(\.settingsMachineId) private var settingsMachineId
+
+    /// The machine this view operates on — pinned by the machine-scoped
+    /// Settings page that presented it, else the app's selected machine
+    /// (onboarding, previews).
+    private var scopedServerId: String {
+        settingsMachineId ?? environment.machines.selectedMachineId
+    }
+
+    private var client: any CodevisorServerClienting {
+        environment.machines.client(for: scopedServerId)
+    }
+
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
 
@@ -131,7 +144,7 @@ struct HarnessAuthenticationView: View {
         .task { await load() }
         .onDisappear {
             guard let flow else { return }
-            Task { try? await environment.serverClient.cancelHarnessLogin(
+            Task { try? await client.cancelHarnessLogin(
                 harnessId: harness.id,
                 accountId: flow.accountId,
                 flowId: flow.id
@@ -251,30 +264,30 @@ struct HarnessAuthenticationView: View {
     private func load() async {
         methods = harness.auth?.loginMethods ?? []
         do {
-            accounts = try await environment.serverClient.listHarnessAccounts(harnessId: harness.id)
+            accounts = try await client.listHarnessAccounts(harnessId: harness.id)
             errorMessage = nil
         } catch { errorMessage = serverErrorMessage(error) }
     }
 
     private func addAccount() async {
         await perform {
-            _ = try await environment.serverClient.createHarnessAccount(harnessId: harness.id, label: nil)
+            _ = try await client.createHarnessAccount(harnessId: harness.id, label: nil)
             await load()
         }
     }
 
     private func activate(_ account: ServerHarnessAccount) async {
-        await perform { accounts = try await environment.serverClient.activateHarnessAccount(harnessId: harness.id, accountId: account.id) }
+        await perform { accounts = try await client.activateHarnessAccount(harnessId: harness.id, accountId: account.id) }
         await refreshHarness()
     }
 
     private func logout(_ account: ServerHarnessAccount) async {
-        await perform { _ = try await environment.serverClient.logoutHarnessAccount(harnessId: harness.id, accountId: account.id); await load() }
+        await perform { _ = try await client.logoutHarnessAccount(harnessId: harness.id, accountId: account.id); await load() }
         await refreshHarness()
     }
 
     private func remove(_ account: ServerHarnessAccount) async {
-        await perform { try await environment.serverClient.removeHarnessAccount(harnessId: harness.id, accountId: account.id); await load() }
+        await perform { try await client.removeHarnessAccount(harnessId: harness.id, accountId: account.id); await load() }
         await refreshHarness()
     }
 
@@ -302,7 +315,7 @@ struct HarnessAuthenticationView: View {
 
     private func login(_ account: ServerHarnessAccount, methodId: String?, apiKey: String? = nil) async {
         await perform {
-            let next = try await environment.serverClient.loginHarnessAccount(
+            let next = try await client.loginHarnessAccount(
                 harnessId: harness.id,
                 accountId: account.id,
                 methodId: methodId,
@@ -320,7 +333,7 @@ struct HarnessAuthenticationView: View {
     private func poll(accountId: String) async {
         for _ in 0..<300 where !Task.isCancelled && flow != nil {
             try? await Task.sleep(for: .seconds(2))
-            guard let account = try? await environment.serverClient.probeHarnessAccount(harnessId: harness.id, accountId: accountId) else { continue }
+            guard let account = try? await client.probeHarnessAccount(harnessId: harness.id, accountId: accountId) else { continue }
             if account.authState == "authenticated" || account.authState == "notRequired" {
                 flow = nil
                 await finishAuthentication(accountId: accountId)
@@ -339,7 +352,7 @@ struct HarnessAuthenticationView: View {
     }
 
     private func finishAuthentication(accountId: String) async {
-        if let activated = try? await environment.serverClient.activateHarnessAccount(
+        if let activated = try? await client.activateHarnessAccount(
             harnessId: harness.id,
             accountId: accountId
         ) {
@@ -357,7 +370,7 @@ struct HarnessAuthenticationView: View {
         // callback race SwiftUI dismantling the same surface.
         authTerminalLifecycle.terminate()
         flow = nil
-        try? await environment.serverClient.cancelHarnessLogin(
+        try? await client.cancelHarnessLogin(
             harnessId: harness.id,
             accountId: current.accountId,
             flowId: current.id
@@ -365,7 +378,7 @@ struct HarnessAuthenticationView: View {
     }
 
     private func refreshHarness() async {
-        if let updated = try? await environment.refreshHarnessAuthentication(harnessId: harness.id) {
+        if let updated = try? await environment.refreshHarnessAuthentication(harnessId: harness.id, onServer: scopedServerId) {
             methods = updated.auth?.loginMethods ?? methods
             onChange(updated)
         }

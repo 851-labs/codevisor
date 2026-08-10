@@ -9,6 +9,7 @@ import CodevisorUI
 struct SkillsSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
+    @Environment(\.settingsMachineId) private var settingsMachineId
     @State private var scan: ServerSkillsScan?
     @State private var isLoading = true
     @State private var errorMessage: String?
@@ -20,22 +21,27 @@ struct SkillsSettingsView: View {
     @State private var skillPendingRemoval: ServerGlobalSkill?
     @State private var isMutating = false
 
+    /// The machine whose skills this pane manages.
+    private var serverId: String {
+        settingsMachineId ?? environment.machines.selectedMachineId
+    }
+
+    private var client: any CodevisorServerClienting {
+        environment.machines.client(for: serverId)
+    }
+
     var body: some View {
         content
             .background {
                 if !theme.isSystem { theme.windowBackground }
             }
-            .task { await reload() }
-            .onChange(of: SettingsRouter.shared.selectedTab) { _, tab in
-                // Skills are plain files that change behind our back (npx
-                // skills add, manual edits) — rescan whenever the tab opens.
-                guard tab == .skills else { return }
-                Task { await reload() }
-            }
+            // Skills are plain files that change behind our back (npx skills
+            // add, manual edits) — the page rescans every time it's pushed.
+            .task(id: serverId) { await reload() }
             .sheet(isPresented: $showingCreate) {
                 SkillCreateSheet { name, description, pasted in
                     try await mutate {
-                        try await environment.serverClient.createSkill(
+                        try await client.createSkill(
                             name: name,
                             description: description,
                             content: pasted
@@ -46,11 +52,11 @@ struct SkillsSettingsView: View {
             .sheet(isPresented: $showingRemoteImport) {
                 SkillRemoteImportSheet(
                     discover: { source in
-                        try await environment.serverClient.discoverRemoteSkills(source: source)
+                        try await client.discoverRemoteSkills(source: source)
                     },
                     onImport: { source, skillNames in
                         try await mutate {
-                            try await environment.serverClient.importRemoteSkill(
+                            try await client.importRemoteSkill(
                                 source: source,
                                 skillNames: skillNames
                             )
@@ -70,7 +76,7 @@ struct SkillsSettingsView: View {
                     guard let skill = skillPendingRemoval else { return }
                     Task {
                         try? await mutate {
-                            try await environment.serverClient.removeSkill(
+                            try await client.removeSkill(
                                 directoryName: skill.directoryName
                             )
                         }
@@ -183,8 +189,7 @@ struct SkillsSettingsView: View {
                         .accessibilityLabel("Remove all broken skill links")
                     }
                 }
-                .listRowBackground(theme.isSystem ? nil : theme.cardQuietBackground)
-            }
+                }
 
             if anyOutOfSync {
                 Section {
@@ -197,7 +202,7 @@ struct SkillsSettingsView: View {
                         Button(isMutating ? "Syncing\u{2026}" : "Sync") {
                             Task {
                                 try? await mutate {
-                                    try await environment.serverClient.syncSkills(directoryNames: nil)
+                                    try await client.syncSkills(directoryNames: nil)
                                 }
                             }
                         }
@@ -205,8 +210,7 @@ struct SkillsSettingsView: View {
                         .disabled(isMutating)
                     }
                 }
-                .listRowBackground(theme.isSystem ? nil : theme.cardQuietBackground)
-            }
+                }
 
             Section {
                 if let actionError {
@@ -217,24 +221,19 @@ struct SkillsSettingsView: View {
                 ForEach(globalSkills) { skill in
                     globalSkillRow(skill)
                 }
-            } header: {
-                HStack {
-                    Text("Global Skills")
-                    Spacer()
-                    Menu {
-                        Button("New Skill…") { showingCreate = true }
-                        Button("Import Skills…") { showingRemoteImport = true }
+                HStack(spacing: 10) {
+                    Button {
+                        showingCreate = true
                     } label: {
-                        Label("Add Skill", systemImage: "plus")
+                        Label("New Skill…", systemImage: "plus")
                     }
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
                     .settingsActionTint(theme)
-                    .menuIndicator(.hidden)
-                    .help("New or imported skill")
+                    Button("Import Skills…") { showingRemoteImport = true }
+                        .settingsActionTint(theme)
                 }
+            } header: {
+                Text("Global Skills")
             }
-            .listRowBackground(theme.isSystem ? nil : theme.cardQuietBackground)
 
             if !harnessGroups.isEmpty {
                 Section {
@@ -249,8 +248,7 @@ struct SkillsSettingsView: View {
                         }
                     }
                 }
-                .listRowBackground(theme.isSystem ? nil : theme.cardQuietBackground)
-            }
+                }
         }
         .settingsPaneFormStyle(theme)
         .disabled(isMutating)
@@ -289,7 +287,7 @@ struct SkillsSettingsView: View {
                 Button("Sync") {
                     Task {
                         try? await mutate {
-                            try await environment.serverClient.syncSkills(
+                            try await client.syncSkills(
                                 directoryNames: [skill.directoryName]
                             )
                         }
@@ -395,7 +393,7 @@ struct SkillsSettingsView: View {
                 Button("Make Global") {
                     Task {
                         try? await mutate {
-                            try await environment.serverClient.makeSkillGlobal(
+                            try await client.makeSkillGlobal(
                                 harnessId: skill.harnessId,
                                 directoryName: skill.directoryName
                             )
@@ -411,7 +409,7 @@ struct SkillsSettingsView: View {
                     Button("Remove Broken Link", role: .destructive) {
                         Task {
                             try? await mutate {
-                                try await environment.serverClient.setSkillInstalled(
+                                try await client.setSkillInstalled(
                                     directoryName: skill.directoryName,
                                     harnessId: skill.harnessId,
                                     installed: false
@@ -462,7 +460,7 @@ struct SkillsSettingsView: View {
         isLoading = true
         defer { isLoading = false }
         do {
-            scan = try await environment.serverClient.listSkills()
+            scan = try await client.listSkills()
             errorMessage = nil
         } catch {
             errorMessage = ErrorReporter.userFacingMessage(for: error)
@@ -489,13 +487,13 @@ struct SkillsSettingsView: View {
         guard let first = links.first else { return }
         do {
             try await mutate {
-                var refreshed = try await environment.serverClient.setSkillInstalled(
+                var refreshed = try await client.setSkillInstalled(
                     directoryName: first.directoryName,
                     harnessId: first.harnessId,
                     installed: false
                 )
                 for link in links.dropFirst() {
-                    refreshed = try await environment.serverClient.setSkillInstalled(
+                    refreshed = try await client.setSkillInstalled(
                         directoryName: link.directoryName,
                         harnessId: link.harnessId,
                         installed: false

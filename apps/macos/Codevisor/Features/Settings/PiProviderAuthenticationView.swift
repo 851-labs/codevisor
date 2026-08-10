@@ -5,6 +5,19 @@ import CodevisorUI
 
 struct PiProviderAuthenticationView: View {
     @Environment(AppEnvironment.self) private var environment
+    @Environment(\.settingsMachineId) private var settingsMachineId
+
+    /// The machine this view operates on — pinned by the machine-scoped
+    /// Settings page that presented it, else the app's selected machine
+    /// (onboarding, previews).
+    private var scopedServerId: String {
+        settingsMachineId ?? environment.machines.selectedMachineId
+    }
+
+    private var client: any CodevisorServerClienting {
+        environment.machines.client(for: scopedServerId)
+    }
+
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
 
@@ -101,7 +114,7 @@ struct PiProviderAuthenticationView: View {
         .task { await load() }
         .onDisappear {
             guard let flow, flow.state != "complete", flow.state != "error" else { return }
-            Task { try? await environment.serverClient.cancelPiAuthFlow(id: flow.id) }
+            Task { try? await client.cancelPiAuthFlow(id: flow.id) }
         }
     }
 
@@ -244,7 +257,7 @@ struct PiProviderAuthenticationView: View {
 
     private func load() async {
         await perform {
-            providers = try await environment.serverClient.listPiAuthProviders()
+            providers = try await client.listPiAuthProviders()
             if !providers.contains(where: { $0.id == selectedProviderId }) {
                 selectedProviderId = providers.first(where: { $0.credentialType == nil })?.id
                     ?? providers.first?.id
@@ -257,7 +270,7 @@ struct PiProviderAuthenticationView: View {
     private func beginLogin() async {
         guard let provider = selectedProvider else { return }
         await perform {
-            let next = try await environment.serverClient.startPiAuth(
+            let next = try await client.startPiAuth(
                 providerId: provider.id,
                 method: selectedMethod
             )
@@ -270,7 +283,7 @@ struct PiProviderAuthenticationView: View {
         guard !value.isEmpty else { return }
         Task {
             await perform {
-                let next = try await environment.serverClient.answerPiAuthFlow(id: flow.id, value: value)
+                let next = try await client.answerPiAuthFlow(id: flow.id, value: value)
                 response = ""
                 selectedOption = ""
                 await apply(next)
@@ -312,7 +325,7 @@ struct PiProviderAuthenticationView: View {
         Task {
             while !Task.isCancelled, pollingFlowId == id {
                 try? await Task.sleep(for: .seconds(1))
-                guard let next = try? await environment.serverClient.piAuthFlow(id: id) else { continue }
+                guard let next = try? await client.piAuthFlow(id: id) else { continue }
                 let isPending = next.state == "running" || next.state == "waiting"
                 if !isPending { pollingFlowId = nil }
                 await apply(next)
@@ -322,7 +335,7 @@ struct PiProviderAuthenticationView: View {
     }
 
     private func cancel(_ flow: ServerPiAuthFlow) async {
-        try? await environment.serverClient.cancelPiAuthFlow(id: flow.id)
+        try? await client.cancelPiAuthFlow(id: flow.id)
         self.flow = nil
         pollingFlowId = nil
         response = ""
@@ -331,14 +344,14 @@ struct PiProviderAuthenticationView: View {
 
     private func remove(_ provider: ServerPiAuthProvider) async {
         await perform {
-            try await environment.serverClient.removePiAuthProvider(id: provider.id)
+            try await client.removePiAuthProvider(id: provider.id)
             await load()
             await refreshHarness()
         }
     }
 
     private func refreshHarness() async {
-        if let updated = try? await environment.refreshHarnessAuthentication(harnessId: harness.id) {
+        if let updated = try? await environment.refreshHarnessAuthentication(harnessId: harness.id, onServer: scopedServerId) {
             onChange(updated)
         }
     }

@@ -20,12 +20,36 @@ GHOSTTY_REPOSITORY="${GHOSTTY_REPOSITORY:-https://github.com/ghostty-org/ghostty
 GHOSTTY_REF="${GHOSTTY_REF:-b5d14da0977ff19ef639629304328d8062f7bf04}"
 FETCH_ONLY=0
 
+# -Dsentry=false: libghostty's sentry-native init races ghostty_init's
+# ensureLocale — the sentry-init thread iterates `environ` (environMap) while
+# the main thread mutates it with setenv/unsetenv, segfaulting the app at
+# launch (EXC_BAD_ACCESS on thread "sentry-init", wild addresses). Codevisor
+# never collects ghostty's local crash dumps (the app has its own crash
+# reporting), so dropping the thread costs nothing and removes the race.
+BUILD_FLAGS=(
+  -Demit-xcframework=true
+  -Dxcframework-target=universal
+  -Demit-macos-app=false
+  -Dsentry=false
+  -Doptimize=ReleaseFast
+)
+
+# Identifies a built framework: pinned ref + build flags. Written into the
+# xcframework on install; `dev.mjs` refuses to reuse or copy a framework
+# whose stamp doesn't match, so a build-script change (new ref, new flags)
+# invalidates every prebuilt copy instead of silently shipping stale ones.
+STAMP="${GHOSTTY_REF}-$(printf '%s\n' "${BUILD_FLAGS[@]}" | /usr/bin/shasum -a 256 | cut -c1-16)"
+
+if [[ "${1:-}" == "--print-stamp" ]]; then
+  echo "$STAMP"
+  exit 0
+fi
 if [[ "${1:-}" == "--fetch-only" ]]; then
   FETCH_ONLY=1
   shift
 fi
 if [[ $# -gt 0 ]]; then
-  echo "usage: $0 [--fetch-only]" >&2
+  echo "usage: $0 [--fetch-only|--print-stamp]" >&2
   exit 2
 fi
 
@@ -56,18 +80,7 @@ echo "Building GhosttyKit.xcframework (this takes a while)…"
 cd "$GHOSTTY_DIR"
 rm -rf "$GHOSTTY_DIR/macos/GhosttyKit.xcframework" "$GHOSTTY_DIR/zig-out"
 set +e
-# -Dsentry=false: libghostty's sentry-native init races ghostty_init's
-# ensureLocale — the sentry-init thread iterates `environ` (environMap) while
-# the main thread mutates it with setenv/unsetenv, segfaulting the app at
-# launch (EXC_BAD_ACCESS on thread "sentry-init", wild addresses). Codevisor
-# never collects ghostty's local crash dumps (the app has its own crash
-# reporting), so dropping the thread costs nothing and removes the race.
-zig build \
-  -Demit-xcframework=true \
-  -Dxcframework-target=universal \
-  -Demit-macos-app=false \
-  -Dsentry=false \
-  -Doptimize=ReleaseFast
+zig build "${BUILD_FLAGS[@]}"
 BUILD_STATUS=$?
 set -e
 
@@ -106,8 +119,16 @@ if [[ "$BUILD_STATUS" -ne 0 ]]; then
   echo "warning: Ghostty's aggregate build exited $BUILD_STATUS after producing a valid GhosttyKit.xcframework." >&2
 fi
 
+# -Dsentry=false must actually hold in the produced binary: a framework with
+# sentry-native compiled in reintroduces the launch crash the flag removes.
+if strings "$MACOS_LIBRARY" | grep -q "sentry-init"; then
+  echo "error: generated GhosttyKit still contains sentry-native (sentry-init). Check -Dsentry=false." >&2
+  exit 1
+fi
+
 mkdir -p "$DEST_DIR"
 rm -rf "$DEST_DIR/GhosttyKit.xcframework"
 cp -R "$SRC" "$DEST_DIR/"
-echo "Copied GhosttyKit.xcframework to $DEST_DIR"
+printf '%s\n' "$STAMP" > "$DEST_DIR/GhosttyKit.xcframework/.codevisor-stamp"
+echo "Copied GhosttyKit.xcframework to $DEST_DIR (stamp $STAMP)"
 echo "Next: verify the Codevisor app target build settings still point at this framework."

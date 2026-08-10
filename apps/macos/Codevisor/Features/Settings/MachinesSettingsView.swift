@@ -12,9 +12,10 @@ private struct MachineActionError: Identifiable {
     let message: String
 }
 
-/// Machines settings — every Codevisor server this app knows about: connect to
-/// one, customize its identity, add remotes, rename them, or remove ones you
-/// no longer use.
+/// Settings ▸ Machines: every Codevisor server this app knows about. Each
+/// row pushes the machine's own page (server status, harnesses, MCP servers,
+/// skills); the cloud account, network discovery, and the dev remote live
+/// here as list sections.
 struct MachinesSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
@@ -33,15 +34,17 @@ struct MachinesSettingsView: View {
 
     private var machines: MachineController { environment.machines }
 
-    /// The polls below run ONLY while this pane can actually be seen: the
-    /// Machines tab is selected and the Settings window is key/active. The
-    /// Settings scene retains rendered tabs, so an unguarded `.task` here
-    /// kept a `tailscale status` subprocess (30s) and a serial per-machine
-    /// HTTP probe (10s) running for the rest of the app's lifetime — even
-    /// with the window closed. `.task(id:)` restarts the loops (with an
-    /// immediate refresh) the moment the pane becomes visible again.
+    /// The polls below run ONLY while this list can actually be seen: the
+    /// Machines section is selected, no machine page is pushed over it, and
+    /// the Settings window is key/active. An unguarded `.task` here kept a
+    /// `tailscale status` subprocess (30s) and a serial per-machine HTTP
+    /// probe (10s) running for the rest of the app's lifetime — even with
+    /// the window closed. `.task(id:)` restarts the loops (with an immediate
+    /// refresh) the moment the list becomes visible again.
     private var isPollingActive: Bool {
-        controlActiveState != .inactive && SettingsRouter.shared.selectedTab == .machines
+        controlActiveState != .inactive
+            && SettingsRouter.shared.selectedTab == .machines
+            && SettingsRouter.shared.machinesPath.isEmpty
     }
 
     var body: some View {
@@ -51,11 +54,13 @@ struct MachinesSettingsView: View {
                 // (local + remote) machines plus cloud-relay machines the
                 // account knows about, deduplicated in the controller.
                 ForEach(machines.allMachines) { machine in
-                    if machine.isCloud,
-                       let presence = machines.cloudMachine(forMachineId: machine.id) {
-                        cloudMachineRow(machine, presence: presence)
-                    } else {
-                        machineRow(machine)
+                    NavigationLink(value: MachineSettingsRoute.machine(machine.id)) {
+                        if machine.isCloud,
+                           let presence = machines.cloudMachine(forMachineId: machine.id) {
+                            cloudMachineRow(machine, presence: presence)
+                        } else {
+                            machineRow(machine)
+                        }
                     }
                 }
                 Button {
@@ -67,8 +72,8 @@ struct MachinesSettingsView: View {
             } header: {
                 Text("Machines")
             }
-            // The cloud account (sign-in, cloud machine list, self-hosted
-            // server) lives here as its own "Cloud" section.
+            // The cloud account (sign-in, self-hosted server) as its own
+            // "Cloud" section.
             CloudSettingsView()
             if discovery.isAvailable && !discovery.discovered.isEmpty {
                 Section {
@@ -86,8 +91,8 @@ struct MachinesSettingsView: View {
         .settingsPaneFormStyle(theme)
         // Discover only while this pane is visible; no background polling.
         // Keying on `isPollingActive` both stops the loop when the pane can't
-        // be seen and restarts it (immediate refresh included) when the tab
-        // is re-selected or the window comes back.
+        // be seen and restarts it (immediate refresh included) when the
+        // section is re-selected or the window comes back.
         .task(id: isPollingActive) {
             guard isPollingActive else { return }
             while !Task.isCancelled {
@@ -515,6 +520,7 @@ struct MachinesSettingsView: View {
     }
 
     private func refreshStatuses() async {
+        await environment.cloud.refreshMachines()
         for machine in machines.machines {
             await machines.refreshStatus(for: machine.id)
         }
@@ -522,7 +528,9 @@ struct MachinesSettingsView: View {
 }
 
 #Preview("Machines") {
-    MachinesSettingsView()
-        .environment(AppEnvironment.preview())
-        .frame(width: 520, height: 420)
+    NavigationStack {
+        MachinesSettingsView()
+    }
+    .environment(AppEnvironment.preview())
+    .frame(width: 580, height: 560)
 }

@@ -7,6 +7,7 @@ import CodevisorUI
 struct McpSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
+    @Environment(\.settingsMachineId) private var settingsMachineId
     @State private var servers: [ServerMcpServer] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
@@ -38,15 +39,24 @@ struct McpSettingsView: View {
         probes: AppPreview.isRunning ? .granted : .live
     )
 
+    /// The machine whose MCP servers this pane manages.
+    private var serverId: String {
+        settingsMachineId ?? environment.machines.selectedMachineId
+    }
+
+    private var client: any CodevisorServerClienting {
+        environment.machines.client(for: serverId)
+    }
+
     var body: some View {
         content
             .background {
                 if !theme.isSystem { theme.windowBackground }
             }
-            .task { await reload() }
+            .task(id: serverId) { await reload() }
             .sheet(isPresented: $showingAdd) {
                 McpServerEditorSheet(initialServer: nil) { values in
-                    let created = try await environment.serverClient.createMcpServer(values.createBody)
+                    let created = try await client.createMcpServer(values.createBody)
                     servers.append(created)
                     servers.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
                     if created.authType == "oauth" {
@@ -59,7 +69,7 @@ struct McpSettingsView: View {
             }
             .sheet(item: $editingServer) { server in
                 McpServerEditorSheet(initialServer: server) { values in
-                    let updated = try await environment.serverClient.updateMcpServer(
+                    let updated = try await client.updateMcpServer(
                         id: server.id,
                         request: values.updateBody
                     )
@@ -166,55 +176,64 @@ struct McpSettingsView: View {
         .padding(.bottom, 24)
     }
 
+    /// Codevisor's built-in tools (Browser Use, Computer Use) — machine
+    /// capabilities, kept apart from user-added MCP servers.
+    private var builtInServers: [ServerMcpServer] {
+        servers.filter { $0.kind == "browserUse" || $0.kind == "computerUse" }
+    }
+
+    private var managedServers: [ServerMcpServer] {
+        servers.filter { $0.kind != "browserUse" && $0.kind != "computerUse" }
+    }
+
     private var serverList: some View {
         Form {
+            if !builtInServers.isEmpty {
+                Section {
+                    ForEach(builtInServers) { server in
+                        serverRow(server)
+                    }
+                } header: {
+                    Text("Built-in Tools")
+                }
+            }
+
             Section {
                 if let errorMessage, servers.isEmpty {
                     Label(errorMessage, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.secondary)
-                } else if servers.isEmpty {
-                    Text("No MCP servers managed by Codevisor yet.")
+                } else if managedServers.isEmpty {
+                    Text("No MCP servers added yet.")
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(servers) { server in
+                    ForEach(managedServers) { server in
                         serverRow(server)
                     }
                 }
-            } header: {
-                HStack {
-                    Text("MCP Servers")
-                    Spacer()
-                    Button {
-                        showingAdd = true
-                    } label: {
-                        Label("Add MCP Server", systemImage: "plus")
-                    }
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
-                    .settingsActionTint(theme)
-                    .help("Add MCP Server")
+                Button {
+                    showingAdd = true
+                } label: {
+                    Label("Add MCP Server…", systemImage: "plus")
                 }
+                .settingsActionTint(theme)
+            } header: {
+                Text("MCP Servers")
             }
-            .listRowBackground(theme.isSystem ? nil : theme.cardQuietBackground)
 
             if !importCandidates.isEmpty || importFeedback != nil {
                 Section {
                     ForEach(importCandidates) { candidate in
                         importCandidateRow(candidate)
                     }
-                } header: {
-                    HStack {
-                        Text("Found in Your Harnesses")
-                        Spacer()
-                        if importCandidates.count > 1 {
-                            Button("Import All") {
-                                Task { await importIdentities(importCandidates.map(\.identity)) }
-                            }
-                            .buttonStyle(.borderless)
-                            .settingsActionTint(theme)
-                            .disabled(!importingIdentities.isEmpty)
+                    if importCandidates.count > 1 {
+                        Button("Import All") {
+                            Task { await importIdentities(importCandidates.map(\.identity)) }
                         }
+                        .settingsActionTint(theme)
+                        .disabled(!importingIdentities.isEmpty)
                     }
+                } header: {
+                    Text("Found in Your Harnesses")
                 } footer: {
                     if let importFeedback {
                         Text(importFeedback)
@@ -222,7 +241,6 @@ struct McpSettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                .listRowBackground(theme.isSystem ? nil : theme.cardQuietBackground)
             }
 
             if hasNativeContent || lastNativeRemoval != nil {
@@ -256,7 +274,6 @@ struct McpSettingsView: View {
                         }
                     }
                 }
-                .listRowBackground(theme.isSystem ? nil : theme.cardQuietBackground)
             }
         }
         .settingsPaneFormStyle(theme)
@@ -299,7 +316,7 @@ struct McpSettingsView: View {
 
     private func removeNativeServer(_ server: ServerNativeMcpServer) async {
         do {
-            let result = try await environment.serverClient.removeNativeMcp(
+            let result = try await client.removeNativeMcp(
                 harnessId: server.harnessId,
                 serverName: server.serverName
             )
@@ -313,7 +330,7 @@ struct McpSettingsView: View {
 
     private func undoNativeRemoval(_ removal: ServerNativeMcpRemoval) async {
         do {
-            nativeScan = try await environment.serverClient.restoreNativeMcpRemoval(id: removal.id)
+            nativeScan = try await client.restoreNativeMcpRemoval(id: removal.id)
             lastNativeRemoval = nil
             nativeActionError = nil
         } catch {
@@ -323,7 +340,7 @@ struct McpSettingsView: View {
 
     private func setNativeEnabled(_ server: ServerNativeMcpServer, enabled: Bool) async {
         do {
-            nativeScan = try await environment.serverClient.setNativeMcpEnabled(
+            nativeScan = try await client.setNativeMcpEnabled(
                 harnessId: server.harnessId,
                 serverName: server.serverName,
                 enabled: enabled
@@ -338,12 +355,12 @@ struct McpSettingsView: View {
         importingIdentities.formUnion(identities)
         defer { importingIdentities.subtract(identities) }
         do {
-            let result = try await environment.serverClient.importNativeMcps(identities: identities)
+            let result = try await client.importNativeMcps(identities: identities)
             nativeScan = result.scan
             importFeedback = feedback(for: result.outcomes)
             // The managed list changed too — refresh it (not the native scan,
             // which the result already replaced).
-            servers = try await environment.serverClient.listMcpServers()
+            servers = try await client.listMcpServers()
         } catch {
             importFeedback = ErrorReporter.userFacingMessage(for: error)
         }
@@ -527,12 +544,9 @@ struct McpSettingsView: View {
                 .frame(width: 20)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(server.name).foregroundStyle(.primary)
-                    if server.kind == "browserUse" || server.kind == "computerUse" {
-                        nativeBadge("Built-in")
-                    }
-                }
+                // No "Built-in" badge here: built-ins live in their own
+                // labeled section.
+                Text(server.name).foregroundStyle(.primary)
                 Text(statusText(server))
                     .font(.callout)
                     .foregroundStyle(.secondary)
@@ -676,8 +690,8 @@ struct McpSettingsView: View {
         isLoading = true
         defer { isLoading = false }
         do {
-            servers = try await environment.serverClient.listMcpServers()
-            browserConfiguration = try? await environment.serverClient.browserUseConfiguration()
+            servers = try await client.listMcpServers()
+            browserConfiguration = try? await client.browserUseConfiguration()
             errorMessage = nil
         } catch {
             errorMessage = ErrorReporter.userFacingMessage(for: error)
@@ -687,7 +701,7 @@ struct McpSettingsView: View {
         computerPermissions.refresh()
         // Native discovery is best-effort: older servers (404/501) or scan
         // failures simply hide the sections instead of surfacing an error.
-        nativeScan = try? await environment.serverClient.listNativeMcps()
+        nativeScan = try? await client.listNativeMcps()
     }
 
     private func preferredBrowserLabel(_ configuration: ServerBrowserUseConfiguration) -> String {
@@ -703,7 +717,7 @@ struct McpSettingsView: View {
 
     private func setPreferredBrowser(_ preference: String) async {
         do {
-            browserConfiguration = try await environment.serverClient.setPreferredBrowser(preference)
+            browserConfiguration = try await client.setPreferredBrowser(preference)
             errorMessage = nil
         } catch {
             errorMessage = ErrorReporter.userFacingMessage(for: error)
@@ -712,10 +726,10 @@ struct McpSettingsView: View {
 
     private func installBrowserExtension() async {
         do {
-            browserConfiguration = try await environment.serverClient.installDevelopmentBrowserExtension()
+            browserConfiguration = try await client.installDevelopmentBrowserExtension()
             for _ in 0..<120 {
                 try? await Task.sleep(for: .seconds(1))
-                let refreshed = try await environment.serverClient.browserUseConfiguration()
+                let refreshed = try await client.browserUseConfiguration()
                 browserConfiguration = refreshed
                 if refreshed.chromeConnected { break }
             }
@@ -735,12 +749,12 @@ struct McpSettingsView: View {
         }
         replace(server, with: serverWithEnabled(server, enabled))
         do {
-            let updated = try await environment.serverClient.setMcpServerEnabled(id: server.id, enabled: enabled)
+            let updated = try await client.setMcpServerEnabled(id: server.id, enabled: enabled)
             replace(server, with: updated)
             if enabled, updated.connectionState == "needsSetup" {
                 for _ in 0..<90 {
                     try? await Task.sleep(for: .seconds(2))
-                    let refreshed = try await environment.serverClient.listMcpServers()
+                    let refreshed = try await client.listMcpServers()
                     guard let current = refreshed.first(where: { $0.id == server.id }) else { break }
                     replace(updated, with: current)
                     if current.connectionState != "needsSetup" { break }
@@ -754,7 +768,7 @@ struct McpSettingsView: View {
 
     private func remove(_ server: ServerMcpServer) async {
         do {
-            try await environment.serverClient.removeMcpServer(id: server.id)
+            try await client.removeMcpServer(id: server.id)
             servers.removeAll { $0.id == server.id }
             serverPendingRemoval = nil
         } catch {
@@ -775,7 +789,7 @@ struct McpSettingsView: View {
     }
 
     private func beginOAuth(_ server: ServerMcpServer) async throws {
-        let flow = try await environment.serverClient.startMcpOAuth(id: server.id)
+        let flow = try await client.startMcpOAuth(id: server.id)
         guard let url = URL(string: flow.authorizationUrl) else { return }
         NSWorkspace.shared.open(url)
         for _ in 0..<60 {
@@ -1094,6 +1108,7 @@ private struct McpServerEditorSheet: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
+    @Environment(\.settingsMachineId) private var settingsMachineId
     let initialServer: ServerMcpServer?
     let save: (McpFormValues) async throws -> Void
     @State private var name: String
@@ -1274,6 +1289,10 @@ private struct McpServerEditorSheet: View {
         .task(id: location) { await detectAuthorization() }
     }
 
+    private var client: any CodevisorServerClienting {
+        environment.machines.client(for: settingsMachineId ?? environment.machines.selectedMachineId)
+    }
+
     private var effectiveAuthType: String {
         guard transport == "http" else { return "none" }
         return authSelection == "auto" ? (detectedAuthType ?? "none") : authSelection
@@ -1383,7 +1402,7 @@ private struct McpServerEditorSheet: View {
             guard !Task.isCancelled else { return }
             isDetecting = true
             defer { isDetecting = false }
-            let detection = try await environment.serverClient.detectMcpAuth(url: location)
+            let detection = try await client.detectMcpAuth(url: location)
             guard !Task.isCancelled else { return }
             detectedAuthType = detection.authType
             if !nameWasEdited, let suggestedName = detection.suggestedName {
@@ -1626,6 +1645,7 @@ private struct McpServerDetailSheet: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
+    @Environment(\.settingsMachineId) private var settingsMachineId
     let server: ServerMcpServer
     let didChange: () async -> Void
     @State private var tools: [ServerMcpTool] = []
@@ -1749,6 +1769,10 @@ private struct McpServerDetailSheet: View {
         }
     }
 
+    private var client: any CodevisorServerClienting {
+        environment.machines.client(for: settingsMachineId ?? environment.machines.selectedMachineId)
+    }
+
     private var connectionStateLabel: String {
         switch server.connectionState {
         case "connected": return "Connected · \(server.toolCount) tool\(server.toolCount == 1 ? "" : "s")"
@@ -1777,13 +1801,13 @@ private struct McpServerDetailSheet: View {
     private func loadTools() async {
         isLoadingTools = true
         defer { isLoadingTools = false }
-        do { tools = try await environment.serverClient.listMcpTools(id: server.id) }
+        do { tools = try await client.listMcpTools(id: server.id) }
         catch { errorMessage = ErrorReporter.userFacingMessage(for: error) }
     }
 
     private func remove() async {
         do {
-            try await environment.serverClient.removeMcpServer(id: server.id)
+            try await client.removeMcpServer(id: server.id)
             await didChange()
             dismiss()
         } catch { errorMessage = ErrorReporter.userFacingMessage(for: error) }
@@ -1791,7 +1815,7 @@ private struct McpServerDetailSheet: View {
 
     private func disconnect() async {
         do {
-            _ = try await environment.serverClient.disconnectMcpOAuth(id: server.id)
+            _ = try await client.disconnectMcpOAuth(id: server.id)
             await didChange()
             dismiss()
         } catch { errorMessage = ErrorReporter.userFacingMessage(for: error) }

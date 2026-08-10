@@ -264,9 +264,14 @@ final class CodevisorGhosttyApp {
         systemIsDark: Bool?
     ) -> String? {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("codevisor-ghostty.conf")
+        // crash-report = false: libghostty bundles its own sentry-native
+        // crash reporter and starts it on a background "sentry-init" thread,
+        // which intermittently segfaults at launch on macOS 26/27 betas.
+        // Codevisor has its own crash reporting; Ghostty's stays off.
         var contents = """
         font-family = Menlo
         font-size = \(terminalFontSize)
+        crash-report = false
 
         """
         if let theme {

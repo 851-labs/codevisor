@@ -6,66 +6,307 @@ import UniformTypeIdentifiers
 import UserNotifications
 import CodevisorUI
 
-enum SettingsTab: String {
+enum SettingsTab: String, CaseIterable, Identifiable {
     case general
     case appearance
     case notifications
     case shortcuts
     case machines
-    case harnesses
-    case mcps
-    case skills
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .general: "General"
+        case .appearance: "Appearance"
+        case .notifications: "Notifications"
+        case .shortcuts: "Shortcuts"
+        case .machines: "Machines"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .general: "gearshape"
+        case .appearance: "paintpalette"
+        case .notifications: "bell"
+        case .shortcuts: "keyboard"
+        case .machines: "desktopcomputer"
+        }
+    }
+}
+
+/// A page pushed inside the Machines section's detail column. Every case
+/// carries the machine it is scoped to, so a page keeps addressing its
+/// machine even if the app's selected machine changes underneath the open
+/// Settings window.
+enum MachineSettingsRoute: Hashable {
+    case machine(String)
+    case harnesses(String)
+    case mcps(String)
+    case skills(String)
+}
+
+/// A place in Settings: the sidebar section plus any machine pages pushed
+/// over it. The unit of the router's back/forward history.
+struct SettingsLocation: Equatable {
+    var tab: SettingsTab
+    var machinesPath: [MachineSettingsRoute]
 }
 
 /// Routes programmatic Settings navigation (e.g. the sidebar's
-/// "Manage machines…" opens Settings on the Machines tab).
+/// "Manage machines…" opens Settings on the Machines section) and keeps the
+/// Xcode-style back/forward history over every visited page.
 @MainActor
 @Observable
 final class SettingsRouter {
     static let shared = SettingsRouter()
     var selectedTab: SettingsTab = .general
+    /// The Machines section's navigation stack (machine detail and its pages).
+    var machinesPath: [MachineSettingsRoute] = []
+    /// Pages behind and ahead of the current one. Every navigation — sidebar
+    /// selection, push, deep link — lands the previous page in `backHistory`;
+    /// going back moves the current page to `forwardHistory` (cleared again
+    /// by the next normal navigation, like a browser).
+    private(set) var backHistory: [SettingsLocation] = []
+    private(set) var forwardHistory: [SettingsLocation] = []
+    /// One-shot: set while back/forward applies a location so the change
+    /// observer doesn't record time travel as a new navigation.
+    @ObservationIgnored var suppressHistoryRecording = false
+    /// Resolves the app's selected machine for deep links that don't carry
+    /// one ("Manage Harnesses…" from a chat). Injected at app startup.
+    @ObservationIgnored var selectedMachineIdProvider: () -> String? = { nil }
+
+    var currentLocation: SettingsLocation {
+        SettingsLocation(tab: selectedTab, machinesPath: machinesPath)
+    }
+
+    var canGoBack: Bool { !backHistory.isEmpty }
+    var canGoForward: Bool { !forwardHistory.isEmpty }
+
+    /// Files the page just left into the back history. Called by the view's
+    /// change observer for every user navigation.
+    func recordNavigation(from previous: SettingsLocation) {
+        backHistory.append(previous)
+        if backHistory.count > 50 { backHistory.removeFirst() }
+        forwardHistory.removeAll()
+    }
+
+    func goBack() {
+        guard let target = backHistory.popLast() else { return }
+        forwardHistory.append(currentLocation)
+        apply(target)
+    }
+
+    func goForward() {
+        guard let target = forwardHistory.popLast() else { return }
+        backHistory.append(currentLocation)
+        apply(target)
+    }
+
+    private func apply(_ location: SettingsLocation) {
+        suppressHistoryRecording = true
+        selectedTab = location.tab
+        machinesPath = location.machinesPath
+    }
+
+    func showMachines() {
+        machinesPath = []
+        selectedTab = .machines
+    }
+
+    /// Opens the harnesses page of the given machine, defaulting to the
+    /// app's selected machine.
+    func showHarnesses(machineId: String? = nil) {
+        selectedTab = .machines
+        guard let id = machineId ?? selectedMachineIdProvider() else {
+            machinesPath = []
+            return
+        }
+        machinesPath = [.machine(id), .harnesses(id)]
+    }
 }
 
-/// The app's Settings window (⌘, / Codevisor ▸ Settings…), with General,
-/// Appearance, Machines, and Harnesses tabs in the standard macOS
-/// preferences style.
+/// The native back/forward control (System Settings, Xcode): a `ControlGroup`
+/// in the navigation control-group style. AppKit draws the grouped capsule,
+/// divider, sizing, and disabled dimming.
+private struct SettingsBackForwardControl: View {
+    @Bindable private var router = SettingsRouter.shared
+
+    var body: some View {
+        ControlGroup {
+            Button {
+                router.goBack()
+            } label: {
+                Label("Back", systemImage: "chevron.left")
+            }
+            .disabled(!router.canGoBack)
+            .help("Back")
+            .keyboardShortcut("[", modifiers: .command)
+
+            Button {
+                router.goForward()
+            } label: {
+                Label("Forward", systemImage: "chevron.right")
+            }
+            .disabled(!router.canGoForward)
+            .help("Forward")
+            .keyboardShortcut("]", modifiers: .command)
+        }
+        .controlGroupStyle(.navigation)
+    }
+}
+
+/// Puts the back/forward control in the window toolbar. Applied to every
+/// page in the detail column — the root panes and each pushed machine page —
+/// so the control is always present.
+private struct SettingsNavigationToolbar: ViewModifier {
+    func body(content: Content) -> some View {
+        content.toolbar {
+            ToolbarItem(placement: .navigation) {
+                SettingsBackForwardControl()
+            }
+        }
+    }
+}
+
+extension View {
+    func settingsNavigationToolbar() -> some View {
+        modifier(SettingsNavigationToolbar())
+    }
+}
+
+/// The machine a Settings subtree is scoped to. Set at the root of a pushed
+/// machine page; panes and their sheets resolve the server they talk to from
+/// this, falling back to the app's selected machine (onboarding, previews).
+private struct SettingsMachineIdKey: EnvironmentKey {
+    static let defaultValue: String? = nil
+}
+
+extension EnvironmentValues {
+    var settingsMachineId: String? {
+        get { self[SettingsMachineIdKey.self] }
+        set { self[SettingsMachineIdKey.self] = newValue }
+    }
+}
+
+/// The app's Settings window (⌘, / Codevisor ▸ Settings…) in the modern
+/// sidebar style (System Settings, Xcode 26): sections on the left, the
+/// selected section's content on the right with push navigation for
+/// per-item pages. Client-scoped sections (General, Appearance,
+/// Notifications, Shortcuts) sit alongside Machines, which owns everything
+/// scoped to a specific machine: its server, harnesses, MCP servers, and
+/// skills.
 struct SettingsView: View {
     @Bindable private var router = SettingsRouter.shared
     @Environment(\.theme) private var theme
 
     var body: some View {
-        TabView(selection: $router.selectedTab) {
-            GeneralSettingsView()
-                .tabItem { Label("General", systemImage: "gearshape") }
-                .tag(SettingsTab.general)
-            AppearanceSettingsView()
-                .tabItem { Label("Appearance", systemImage: "paintpalette") }
-                .tag(SettingsTab.appearance)
-            NotificationsSettingsView()
-                .tabItem { Label("Notifications", systemImage: "bell") }
-                .tag(SettingsTab.notifications)
-            ShortcutsSettingsView()
-                .tabItem { Label("Shortcuts", systemImage: "keyboard") }
-                .tag(SettingsTab.shortcuts)
-            MachinesSettingsView()
-                .tabItem { Label("Machines", systemImage: "desktopcomputer") }
-                .tag(SettingsTab.machines)
-            HarnessesSettingsView()
-                .tabItem { Label("Harnesses", systemImage: "cpu") }
-                .tag(SettingsTab.harnesses)
-            McpSettingsView()
-                .tabItem { Label("MCPs", systemImage: "puzzlepiece.extension") }
-                .tag(SettingsTab.mcps)
-            SkillsSettingsView()
-                .tabItem { Label("Skills", systemImage: "book.closed") }
-                .tag(SettingsTab.skills)
+        NavigationSplitView {
+            List(selection: sidebarSelection) {
+                ForEach(SettingsTab.allCases) { tab in
+                    Label(tab.title, systemImage: tab.systemImage)
+                        .tag(tab)
+                }
+            }
+            .listStyle(.sidebar)
+            .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
+            .navigationSplitViewColumnWidth(min: 185, ideal: 205, max: 240)
+            // System Settings keeps its sidebar fixed; a collapse control
+            // would just leave an empty content window here.
+            .toolbar(removing: .sidebarToggle)
+        } detail: {
+            NavigationStack(path: $router.machinesPath) {
+                detailRoot
+                    .settingsNavigationToolbar()
+                    .navigationDestination(for: MachineSettingsRoute.self) { route in
+                        destination(for: route)
+                    }
+            }
         }
-        .frame(width: 580, height: 500)
+        // Every navigation (sidebar selection, push, pop, deep link) files
+        // the previous page into the history — except when back/forward is
+        // the thing navigating.
+        .onChange(of: router.currentLocation) { previous, _ in
+            if router.suppressHistoryRecording {
+                router.suppressHistoryRecording = false
+                return
+            }
+            router.recordNavigation(from: previous)
+        }
+        .frame(minWidth: 780, idealWidth: 780, minHeight: 560, idealHeight: 560)
+        // One-row toolbar with the back button and title inline (the Settings
+        // scene ignores the windowToolbarStyle scene modifier).
+        .settingsWindowToolbarStyle()
         // When themed, drop the grouped forms' own backdrop so the theme
-        // surface (painted by ThemedRoot) shows through, and paint the tab
-        // strip opaquely on-theme; system themes keep the native look.
+        // surface (painted by ThemedRoot) shows through; system themes keep
+        // the native look.
         .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
         .themedToolbarBackground(theme, role: .content)
+    }
+
+    /// Selecting a sidebar section resets any machine pages pushed over the
+    /// previous section's content.
+    private var sidebarSelection: Binding<SettingsTab?> {
+        Binding(
+            get: { router.selectedTab },
+            set: { tab in
+                guard let tab else { return }
+                if tab != router.selectedTab { router.machinesPath = [] }
+                router.selectedTab = tab
+            }
+        )
+    }
+
+    @ViewBuilder
+    private var detailRoot: some View {
+        switch router.selectedTab {
+        case .general:
+            GeneralSettingsView()
+                .navigationTitle("General")
+        case .appearance:
+            AppearanceSettingsView()
+                .navigationTitle("Appearance")
+        case .notifications:
+            NotificationsSettingsView()
+                .navigationTitle("Notifications")
+        case .shortcuts:
+            ShortcutsSettingsView()
+                .navigationTitle("Shortcuts")
+        case .machines:
+            MachinesSettingsView()
+                .navigationTitle("Machines")
+        }
+    }
+
+    /// The pushed machine pages. Each subtree is pinned to its machine via
+    /// `settingsMachineId`, so the panes and every sheet they present keep
+    /// talking to that machine regardless of the app's selected machine.
+    /// The system back button is hidden everywhere — the persistent
+    /// back/forward pair in the toolbar is the one navigation control.
+    @ViewBuilder
+    private func destination(for route: MachineSettingsRoute) -> some View {
+        Group {
+            switch route {
+            case let .machine(id):
+                MachineSettingsDetailView(machineId: id)
+                    .environment(\.settingsMachineId, id)
+            case let .harnesses(id):
+                HarnessesSettingsView()
+                    .navigationTitle("Harnesses")
+                    .environment(\.settingsMachineId, id)
+            case let .mcps(id):
+                McpSettingsView()
+                    .navigationTitle("MCP Servers")
+                    .environment(\.settingsMachineId, id)
+            case let .skills(id):
+                SkillsSettingsView()
+                    .navigationTitle("Skills")
+                    .environment(\.settingsMachineId, id)
+            }
+        }
+        .navigationBarBackButtonHidden(true)
+        .settingsNavigationToolbar()
     }
 }
 
@@ -502,80 +743,20 @@ extension View {
     }
 }
 
-/// General server, remote-access, privacy, and local-data settings.
+/// General app settings: updates, privacy, and local data. Everything scoped
+/// to a machine (server status, remote access) lives in Settings ▸ Machines.
 struct GeneralSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
     @State private var showingConfirmation = false
-    @State private var serverStatus: ServerStatusModel?
-    @State private var tokenCopied = false
-    @State private var tokenError: String?
 
     var body: some View {
         Form {
             Section {
-                serverStatusContent
-            } header: {
-                Text("Server")
-            }
-
-            Section {
-                HStack(alignment: .center) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Connection token")
-                        Text(tokenError ?? "Lets another device running Codevisor connect to this Mac.")
-                            .font(.callout)
-                            .foregroundStyle(tokenError == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(theme.statusWarn))
-                    }
-                    Spacer()
-                    Button {
-                        copyConnectionToken()
-                    } label: {
-                        if tokenCopied {
-                            Label("Copied", systemImage: "checkmark")
-                        } else {
-                            Label("Copy", systemImage: "doc.on.doc")
-                        }
-                    }
-                    .settingsActionTint(theme)
-                }
-            } header: {
-                Text("Remote Access")
-            }
-
-            Section {
-                Toggle(isOn: shareAnalytics) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Share usage analytics")
-                        Text("Share anonymous feature, model, and coding-agent usage to help improve Codevisor.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .toggleStyle(.switch)
-
-                Toggle(isOn: shareCrashReports) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Send crash and error reports")
-                        Text("Share privacy-filtered stack traces, the Codevisor version, and basic Mac system information when something goes wrong.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .toggleStyle(.switch)
-            } header: {
-                Text("Privacy")
-            } footer: {
-                Text("Prompts, responses, code, file paths, project names, browser content, and terminal commands are never included.")
-            }
-
-            Section {
                 Toggle(isOn: alphaUpdatesEnabled) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Alpha updates")
-                        Text("Receive Alpha builds in addition to stable Codevisor updates.")
+                        Text("Receive Alpha builds before stable releases.")
                             .font(.callout)
                             .foregroundStyle(.secondary)
                     }
@@ -585,11 +766,22 @@ struct GeneralSettingsView: View {
                 Text("Updates")
             }
 
+            Section {
+                Toggle("Share usage analytics", isOn: shareAnalytics)
+                    .toggleStyle(.switch)
+                Toggle("Send crash and error reports", isOn: shareCrashReports)
+                    .toggleStyle(.switch)
+            } header: {
+                Text("Privacy")
+            } footer: {
+                Text("Anonymous. Prompts, responses, code, file paths, browser content, and terminal commands are never included.")
+            }
+
             Section("Data") {
                 HStack(alignment: .center, spacing: 16) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Delete all data")
-                        Text("Removes projects, sessions, cached settings, and onboarding state, then restarts setup. Agent sessions are unaffected.")
+                        Text("Removes all projects, chats, and settings, then restarts setup.")
                             .font(.callout)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -618,10 +810,6 @@ struct GeneralSettingsView: View {
         } message: {
             Text("This can't be undone. You'll be taken back through setup.")
         }
-        .task(id: environment.machines.selectedMachineId) {
-            serverStatus = ServerStatusModel(client: environment.serverClient)
-            await refreshServerStatus()
-        }
     }
 
     private var shareAnalytics: Binding<Bool> {
@@ -648,457 +836,9 @@ struct GeneralSettingsView: View {
         )
     }
 
-    @ViewBuilder
-    private var serverStatusContent: some View {
-        if let serverStatus {
-            if let errorMessage = serverStatus.errorMessage {
-                Label(errorMessage, systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.secondary)
-            }
-            settingsRow("Name", value: serverStatus.info?.name ?? "Local Codevisor")
-            settingsRow("Version", value: serverStatus.info?.version ?? serverStatus.health?.version ?? "Checking…")
-            settingsRow("Database", value: serverStatus.health?.database.capitalized ?? "Checking…")
-            if let info = serverStatus.info {
-                settingsRow("Endpoint", value: "\(info.bindHost) (\(info.kind))")
-            }
-            updateRow(serverStatus.update)
-
-            Button {
-                Task { await refreshServerStatus() }
-            } label: {
-                if serverStatus.isRefreshing {
-                    HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Refreshing…") }
-                } else {
-                    Label("Refresh", systemImage: "arrow.clockwise")
-                }
-            }
-            .settingsActionTint(theme)
-            .disabled(serverStatus.isRefreshing)
-        } else {
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("Checking server…")
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private func settingsRow(_ title: String, value: String) -> some View {
-        HStack {
-            Text(title)
-            Spacer()
-            Text(value)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    @ViewBuilder
-    private func updateRow(_ update: ServerUpdateInfo?) -> some View {
-        if let update {
-            HStack {
-                Label(
-                    update.updateAvailable ? "Update available" : "Up to date",
-                    systemImage: update.updateAvailable ? "arrow.down.circle" : "checkmark.circle"
-                )
-                Spacer()
-                Text(update.updateAvailable
-                    ? "\(update.currentVersion) → \(update.latestVersion)"
-                    : update.currentVersion)
-                    .foregroundStyle(.secondary)
-            }
-            if update.migrationState != "idle" {
-                settingsRow("Migration", value: update.migrationState.capitalized)
-            }
-        } else {
-            settingsRow("Update", value: "Checking…")
-        }
-    }
-
-    private func refreshServerStatus() async {
-        if serverStatus == nil {
-            serverStatus = ServerStatusModel(client: environment.serverClient)
-        }
-        await serverStatus?.refresh()
-    }
-
-    /// Issues a fresh token from this Mac's server and puts it on the
-    /// clipboard, for pasting into another device's Add Remote Machine form.
-    private func copyConnectionToken() {
-        Task {
-            do {
-                let token = try await environment.machines.issueLocalConnectionToken()
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(token, forType: .string)
-                tokenError = nil
-                tokenCopied = true
-                try? await Task.sleep(for: .seconds(2))
-                tokenCopied = false
-            } catch {
-                tokenError = "Couldn't issue a token: this Mac's server isn't running."
-            }
-        }
-    }
-}
-
-/// Harnesses settings — toggle the installed ACP harnesses you want to use,
-/// rescan for newly installed ones, and see which known harnesses aren't
-/// installed yet.
-struct HarnessesSettingsView: View {
-    /// A failed enable/disable toggle, pending display in an alert.
-    private struct ToggleError: Identifiable {
-        let id = UUID()
-        let title: String
-        let message: String
-    }
-
-    @Environment(AppEnvironment.self) private var environment
-    @Environment(\.theme) private var theme
-
-    @State private var serverHarnesses: [ServerHarness] = []
-    @State private var isScanning = true
-    @State private var scanError: String?
-    @State private var toggleError: ToggleError?
-    @State private var showsNotInstalled = false
-    @State private var authenticationHarness: ServerHarness?
-    @State private var detailHarness: ServerHarness?
-    @State private var showsCustomEditor = false
-    @State private var editingCustomHarnessId: String?
-    /// Bridges the button click to the server's returned lifecycle snapshot;
-    /// otherwise the row can briefly fall back to Update after the 202 ack.
-    @State private var startingHarnessIds: Set<String> = []
-
-    private var serverInstalled: [ServerHarness] { serverHarnesses.filter(\.isReady) }
-    private var serverNotInstalled: [ServerHarness] { serverHarnesses.filter { !$0.isReady } }
-
-    var body: some View {
-        Form {
-            Section {
-                if isScanning {
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
-                        Text("Scanning for harnesses…").foregroundStyle(.secondary)
-                    }
-                } else if scanError != nil {
-                    // Unreachable is not "nothing installed" — say so.
-                    Text("Couldn't reach this machine's server. Check Settings → General, then refresh.")
-                        .foregroundStyle(.secondary)
-                } else if serverInstalled.isEmpty {
-                    Text("No harnesses installed. Install Claude Code, Codex, or another ACP agent, then rescan.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(serverInstalled, id: \.id) { harness in
-                        serverInstalledRow(harness)
-                    }
-                }
-                HStack(spacing: 10) {
-                    Button {
-                        Task { await scan() }
-                    } label: {
-                        Label("Refresh", systemImage: "arrow.clockwise")
-                    }
-                    .settingsActionTint(theme)
-                    .disabled(isScanning)
-                    Button("Add Custom Harness…") {
-                        editingCustomHarnessId = nil
-                        showsCustomEditor = true
-                    }
-                    .settingsActionTint(theme)
-                }
-            } header: {
-                Text("Installed")
-            }
-
-            if !serverNotInstalled.isEmpty {
-                Section {
-                    SettingsDisclosureRow(
-                        "Not installed (\(serverNotInstalled.count))",
-                        isExpanded: $showsNotInstalled
-                    ) {
-                        ForEach(serverNotInstalled, id: \.id) { harness in
-                            serverNotInstalledRow(harness)
-                                .padding(.top, 6)
-                        }
-                    }
-                }
-            }
-        }
-        .settingsPaneFormStyle(theme)
-        .task { await scan() }
-        .onChange(of: environment.harnessCatalogRevision(for: environment.machines.selectedMachineId)) { _, _ in
-            // A lifecycle event (update detected, install finished) or another
-            // pane changed the catalog — refetch the light list, no PATH scan.
-            Task { await refreshList() }
-        }
-        .onChange(of: serverHarnesses) { previous, current in
-            // Continue the user's intent: an install they just started that
-            // finished and needs sign-in opens the auth sheet directly.
-            guard authenticationHarness == nil else { return }
-            for harness in current where harness.isReady {
-                let before = previous.first { $0.id == harness.id }
-                guard before?.lifecycle?.phase == "installing", before?.isReady != true,
-                      harness.auth != nil, !canUse(harness)
-                else { continue }
-                authenticationHarness = harness
-                break
-            }
-        }
-        .sheet(item: $authenticationHarness) { harness in
-            HarnessAuthenticationView(harness: harness) { replaceServerHarness($0) }
-        }
-        .sheet(item: $detailHarness) { harness in
-            HarnessDetailSheet(harness: harness)
-        }
-        .sheet(isPresented: $showsCustomEditor) {
-            CustomHarnessEditorSheet(editingId: editingCustomHarnessId) { harnesses in
-                serverHarnesses = harnesses
-                environment.harnessCatalogDidChange(onServer: environment.machines.selectedMachineId)
-            }
-        }
-        .alert(
-            toggleError?.title ?? "",
-            isPresented: Binding(
-                get: { toggleError != nil },
-                set: { if !$0 { toggleError = nil } }
-            ),
-            presenting: toggleError
-        ) { _ in
-            Button("OK") {}
-                .settingsActionTint(theme)
-        } message: { error in
-            Text(error.message)
-        }
-    }
-
-    private func serverInstalledRow(_ harness: ServerHarness) -> some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 10) {
-                HarnessIcon(harnessId: harness.id, fallbackSymbolName: harness.symbolName, size: 15)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 20)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(harness.name)
-                    Text(rowSubtitle(harness))
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .truncationMode(.tail)
-                        .help(rowSubtitle(harness))
-                }
-            }
-            Spacer()
-            if harness.auth != nil && !canUse(harness) {
-                // Sign-in is the row's one call to action — the update offer
-                // waits until the harness is usable.
-                Button("Sign In…") { authenticationHarness = harness }
-                    .settingsActionTint(theme)
-            } else {
-                if startingHarnessIds.contains(harness.id) || harness.lifecycle?.phase == "updating" {
-                    ProgressView()
-                        .controlSize(.small)
-                        .help("Updating \(harness.name)…")
-                } else if harness.lifecycle?.phase == "pendingUpdate" {
-                    Text("Queued")
-                        .foregroundStyle(.secondary)
-                        .help("Updates when active \(harness.name) chats finish")
-                } else if harness.updateInfo?.updateAvailable == true {
-                    Button(harness.lifecycle?.phase == "failed" ? "Try Again" : "Update") {
-                        Task { await updateHarness(harness) }
-                    }
-                    .settingsActionTint(theme)
-                    .help(updateHelp(harness))
-                }
-                Toggle("Enable \(harness.name)", isOn: Binding(
-                    get: { harness.enabled },
-                    set: { enabled in Task { await setServerHarness(harness.id, enabled: enabled) } }
-                ))
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
-            }
-            rowMenu(harness)
-        }
-        .frame(maxWidth: .infinity, alignment: .trailing)
-    }
-
-    /// The row's secondary actions, collapsed behind one quiet control so
-    /// rows stay scannable: Get Info, Manage Accounts, Edit (custom).
-    private func rowMenu(_ harness: ServerHarness) -> some View {
-        Menu {
-            if harness.source == "custom" {
-                Button("Edit…") {
-                    editingCustomHarnessId = harness.id
-                    showsCustomEditor = true
-                }
-            } else {
-                Button("Get Info…") { detailHarness = harness }
-            }
-            if harness.auth != nil {
-                Button("Manage Accounts…") { authenticationHarness = harness }
-            }
-        } label: {
-            Image(systemName: "ellipsis.circle")
-                .foregroundStyle(.secondary)
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("\(harness.name) options")
-        .accessibilityLabel("\(harness.name) options")
-    }
-
-    private func canUse(_ harness: ServerHarness) -> Bool {
-        harness.auth?.state == "authenticated" || harness.auth?.state == "notRequired"
-    }
-
-    /// Auth status, replaced by live update progress/failure when relevant.
-    /// A plain "update available" never rides here — the Update button IS
-    /// that signal.
-    private func rowSubtitle(_ harness: ServerHarness) -> String {
-        if harness.lifecycle?.phase == "updating" {
-            let target = harness.lifecycle?.targetVersion
-            return target.map { "Updating to \($0)…" } ?? "Updating…"
-        }
-        if harness.lifecycle?.phase == "failed" {
-            let reason = harness.lifecycle?.error?
-                .split(whereSeparator: \.isNewline).first.map(String.init)
-            return reason.map { "Update failed: \($0)" } ?? "Update failed"
-        }
-        return authStatus(harness)
-    }
-
-    private func updateHelp(_ harness: ServerHarness) -> String {
-        guard let update = harness.updateInfo, let latest = update.latestVersion else {
-            return "Update \(harness.name)"
-        }
-        let installed = update.installedVersion.map { "\($0) → " } ?? ""
-        return "Update \(harness.name) (\(installed)\(latest))"
-    }
-
-    private func updateHarness(_ harness: ServerHarness) async {
-        startingHarnessIds.insert(harness.id)
-        defer { startingHarnessIds.remove(harness.id) }
-        let serverId = environment.machines.selectedMachineId
-        do {
-            let started = try await environment.machines.client(for: serverId)
-                .updateHarness(id: harness.id)
-            if let lifecycle = started.lifecycle,
-               let index = serverHarnesses.firstIndex(where: { $0.id == harness.id }) {
-                serverHarnesses[index].lifecycle = lifecycle
-                environment.setHarnessLifecycle(
-                    lifecycle,
-                    harnessId: harness.id,
-                    onServer: serverId
-                )
-            } else {
-                // Older servers do not return the lifecycle in the 202 body.
-                // Keep the local spinner visible through the fallback fetch.
-                await refreshList()
-            }
-            environment.harnessCatalogDidChange(onServer: serverId)
-        } catch {
-            toggleError = ToggleError(
-                title: "Couldn't update \(harness.name)",
-                message: error.localizedDescription
-            )
-        }
-    }
-
-    private func authStatus(_ harness: ServerHarness) -> String {
-        guard let auth = harness.auth else { return "Sign-in status unavailable" }
-        let account = auth.accounts.first(where: { $0.id == auth.activeAccountId }) ?? auth.accounts.first
-        switch auth.state {
-        case "authenticated": return account?.email.map { "Signed in as \($0)" } ?? "Signed in"
-        case "notRequired": return "No sign-in required"
-        case "checking": return "Checking sign-in…"
-        case "expired": return "Sign-in expired"
-        // Plain language, never the probe's `detail` — that carries a crashed
-        // CLI's stderr. The cause is summarized and persisted server-side.
-        case "error": return "Something went wrong starting the CLI"
-        default: return "Not signed in"
-        }
-    }
-
-    @ViewBuilder
-    private func serverNotInstalledRow(_ harness: ServerHarness) -> some View {
-        if harness.source == "custom" {
-            // A custom entry whose command wasn't found — keep it editable so
-            // a typo'd path is fixable right here.
-            HStack(spacing: 10) {
-                HarnessInstallHintRow(harness: harness)
-                Button("Edit…") {
-                    editingCustomHarnessId = harness.id
-                    showsCustomEditor = true
-                }
-                .settingsActionTint(theme)
-            }
-        } else {
-            HarnessInstallHintRow(harness: harness)
-        }
-    }
-
-    /// Light refetch of the current list (no PATH re-resolve) — used when a
-    /// server event invalidated the catalog. Errors keep the current list.
-    private func refreshList() async {
-        let serverId = environment.machines.selectedMachineId
-        guard let refreshed = try? await environment.harnessService(for: serverId).allHarnesses()
-        else { return }
-        serverHarnesses = refreshed
-        scanError = nil
-    }
-
-    /// Refresh = rescan: the server re-resolves its PATH first, so a CLI
-    /// installed after server start is picked up without restarting anything.
-    private func scan() async {
-        isScanning = true
-        defer { isScanning = false }
-        let serverId = environment.machines.selectedMachineId
-        do {
-            serverHarnesses = try await environment.harnessService(for: serverId).rescanHarnesses()
-            environment.harnessCatalogDidChange(onServer: serverId)
-            scanError = nil
-        } catch {
-            serverHarnesses = []
-            scanError = String(describing: error)
-        }
-    }
-
-    private func setServerHarness(_ id: String, enabled: Bool) async {
-        updateServerHarness(id, enabled: enabled)
-        let serverId = environment.machines.selectedMachineId
-        do {
-            let updated = try await environment.machines.client(for: serverId)
-                .setHarnessEnabled(id: id, enabled: enabled)
-            replaceServerHarness(updated)
-            environment.harnessCatalogDidChange(onServer: serverId)
-        } catch {
-            updateServerHarness(id, enabled: !enabled)
-            Log.server.error("Setting harness \(id, privacy: .public) enabled=\(enabled, privacy: .public) failed: \(String(describing: error), privacy: .public)")
-            let name = serverHarnesses.first(where: { $0.id == id })?.name ?? id
-            toggleError = ToggleError(
-                title: enabled ? "Couldn't turn on \(name)" : "Couldn't turn off \(name)",
-                message: ErrorReporter.userFacingMessage(for: error)
-            )
-        }
-    }
-
-    private func updateServerHarness(_ id: String, enabled: Bool) {
-        guard let index = serverHarnesses.firstIndex(where: { $0.id == id }) else { return }
-        serverHarnesses[index].enabled = enabled
-    }
-
-    private func replaceServerHarness(_ harness: ServerHarness) {
-        guard let index = serverHarnesses.firstIndex(where: { $0.id == harness.id }) else { return }
-        serverHarnesses[index] = harness
-    }
 }
 
 #Preview("Settings") {
     SettingsView()
         .environment(AppEnvironment.preview())
-}
-
-#Preview("Harnesses") {
-    HarnessesSettingsView()
-        .environment(AppEnvironment.preview())
-        .frame(width: 520, height: 420)
 }

@@ -613,7 +613,24 @@ function run(command, arguments_, cwd = repoRoot) {
 async function ensureGhosttyFramework() {
   const relativeFramework = join("apps", "macos", "Frameworks", "GhosttyKit.xcframework")
   const destination = join(repoRoot, relativeFramework)
-  if (await pathExists(destination)) return
+  const buildScript = join(repoRoot, "apps/macos/scripts/build-ghostty.sh")
+
+  // The stamp identifies the pinned Ghostty ref + build flags the framework
+  // was produced from. A framework without a matching stamp predates a
+  // build-script change (new ref, new flags such as -Dsentry=false) and must
+  // not be reused — silently copying stale prebuilts between worktrees is
+  // how an already-fixed build script kept shipping a crashing binary.
+  const expectedStamp = (await capture(buildScript, ["--print-stamp"])).trim()
+  const stampOf = async (frameworkPath) => {
+    try {
+      return (await readFile(join(frameworkPath, ".codevisor-stamp"), "utf8")).trim()
+    } catch {
+      return null
+    }
+  }
+
+  const destinationExists = await pathExists(destination)
+  if (destinationExists && (await stampOf(destination)) === expectedStamp) return
 
   const worktreeList = await capture("git", ["worktree", "list", "--porcelain"])
   const otherWorktrees = worktreeList
@@ -622,20 +639,46 @@ async function ensureGhosttyFramework() {
     .map((line) => line.slice("worktree ".length))
     .filter((path) => path !== repoRoot)
 
+  let unstampedFallback = null
   for (const worktree of otherWorktrees) {
     const source = join(worktree, relativeFramework)
     if (!(await pathExists(source))) continue
-    console.log(`\nCopying GhosttyKit.xcframework from ${worktree}`)
-    await mkdir(join(repoRoot, "apps", "macos", "Frameworks"), { recursive: true })
-    await cp(source, destination, { recursive: true })
-    return
+    if ((await stampOf(source)) === expectedStamp) {
+      console.log(`\nCopying GhosttyKit.xcframework from ${worktree}`)
+      await rm(destination, { recursive: true, force: true })
+      await mkdir(join(repoRoot, "apps", "macos", "Frameworks"), { recursive: true })
+      await cp(source, destination, { recursive: true })
+      return
+    }
+    if (!unstampedFallback) unstampedFallback = source
   }
 
   console.log(
-    "\nNo existing worktree has GhosttyKit.xcframework; building it from the pinned submodule."
+    destinationExists
+      ? "\nGhosttyKit.xcframework is stale for the current pinned ref/build flags; rebuilding."
+      : "\nNo worktree has a current GhosttyKit.xcframework; building it from the pinned submodule."
   )
-  await run("git", ["submodule", "update", "--init", ".repos/ghostty"])
-  await run(join(repoRoot, "apps/macos/scripts/build-ghostty.sh"), [])
+  try {
+    await run("git", ["submodule", "update", "--init", ".repos/ghostty"])
+    await run(buildScript, [])
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    // A stale framework beats no framework: keep developing, loudly.
+    if (destinationExists) {
+      console.error(`Ghostty rebuild failed (${reason}); continuing with the STALE framework.`)
+      return
+    }
+    if (unstampedFallback) {
+      console.error(
+        `Ghostty rebuild failed (${reason}); copying an UNSTAMPED framework from ${unstampedFallback}. ` +
+          "It may predate current build flags — rebuild with apps/macos/scripts/build-ghostty.sh when possible."
+      )
+      await mkdir(join(repoRoot, "apps", "macos", "Frameworks"), { recursive: true })
+      await cp(unstampedFallback, destination, { recursive: true })
+      return
+    }
+    throw error
+  }
 }
 
 function capture(command, arguments_) {

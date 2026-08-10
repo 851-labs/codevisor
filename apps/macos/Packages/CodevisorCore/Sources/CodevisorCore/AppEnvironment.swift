@@ -406,9 +406,14 @@ public final class AppEnvironment {
     }
 
     /// Re-probes only the harness whose authentication changed, then
-    /// invalidates mounted consumers of that machine's catalog.
-    public func refreshHarnessAuthentication(harnessId: String) async throws -> ServerHarness {
-        let serverId = machines.selectedMachineId
+    /// invalidates mounted consumers of that machine's catalog. Pass
+    /// `onServer` when the caller is pinned to a machine (machine-scoped
+    /// Settings pages); it defaults to the selected machine.
+    public func refreshHarnessAuthentication(
+        harnessId: String,
+        onServer serverId: String? = nil
+    ) async throws -> ServerHarness {
+        let serverId = serverId ?? machines.selectedMachineId
         let refreshed = try await machines.client(for: serverId).refreshHarnessAuth(harnessId: harnessId)
         harnessCatalogDidChange(onServer: serverId)
         return refreshed

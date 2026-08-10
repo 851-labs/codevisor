@@ -36,7 +36,7 @@ struct MachinePickerToolbarMenu: View {
             Divider()
 
             Button("Manage Machines…") {
-                SettingsRouter.shared.selectedTab = .machines
+                SettingsRouter.shared.showMachines()
                 openSettings()
             }
         } label: {

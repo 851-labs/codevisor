@@ -11,6 +11,15 @@ struct HarnessInstallHintRow: View {
     let harness: ServerHarness
 
     @Environment(AppEnvironment.self) private var environment
+    @Environment(\.settingsMachineId) private var settingsMachineId
+
+    /// The machine this view operates on — pinned by the machine-scoped
+    /// Settings page that presented it, else the app's selected machine
+    /// (onboarding, previews).
+    private var scopedServerId: String {
+        settingsMachineId ?? environment.machines.selectedMachineId
+    }
+
     @Environment(\.theme) private var theme
 
     @State private var showsConfirm = false
@@ -94,7 +103,7 @@ struct HarnessInstallHintRow: View {
         isStarting = true
         startError = nil
         defer { isStarting = false }
-        let serverId = environment.machines.selectedMachineId
+        let serverId = scopedServerId
         do {
             _ = try await environment.machines.client(for: serverId)
                 .installHarness(id: harness.id, methodId: methodId)

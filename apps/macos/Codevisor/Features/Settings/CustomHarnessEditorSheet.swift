@@ -14,6 +14,7 @@ struct CustomHarnessEditorSheet: View {
     let onSaved: ([ServerHarness]) -> Void
 
     @Environment(AppEnvironment.self) private var environment
+    @Environment(\.settingsMachineId) private var settingsMachineId
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
 
@@ -186,7 +187,7 @@ struct CustomHarnessEditorSheet: View {
     // MARK: - Server calls
 
     private var client: any CodevisorServerClienting {
-        environment.machines.client(for: environment.machines.selectedMachineId)
+        environment.machines.client(for: settingsMachineId ?? environment.machines.selectedMachineId)
     }
 
     private func loadIfEditing() async {

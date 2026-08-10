@@ -9,6 +9,15 @@ struct HarnessDetailSheet: View {
     let harness: ServerHarness
 
     @Environment(AppEnvironment.self) private var environment
+    @Environment(\.settingsMachineId) private var settingsMachineId
+
+    /// The machine this view operates on — pinned by the machine-scoped
+    /// Settings page that presented it, else the app's selected machine
+    /// (onboarding, previews).
+    private var scopedServerId: String {
+        settingsMachineId ?? environment.machines.selectedMachineId
+    }
+
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
 
@@ -144,7 +153,7 @@ struct HarnessDetailSheet: View {
     }
 
     private func loadBundledApp() async {
-        let serverId = environment.machines.selectedMachineId
+        let serverId = scopedServerId
         bundledApp = try? await environment.machines.client(for: serverId)
             .bundledAppInfo(harnessId: harness.id)
     }
@@ -153,7 +162,7 @@ struct HarnessDetailSheet: View {
         isUpdatingBundledApp = true
         bundledAppError = nil
         defer { isUpdatingBundledApp = false }
-        let serverId = environment.machines.selectedMachineId
+        let serverId = scopedServerId
         do {
             try await environment.machines.client(for: serverId).updateBundledApp(harnessId: harness.id)
             environment.harnessCatalogDidChange(onServer: serverId)

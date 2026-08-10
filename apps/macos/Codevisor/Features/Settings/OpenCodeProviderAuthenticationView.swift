@@ -5,6 +5,19 @@ import CodevisorUI
 
 struct OpenCodeProviderAuthenticationView: View {
     @Environment(AppEnvironment.self) private var environment
+    @Environment(\.settingsMachineId) private var settingsMachineId
+
+    /// The machine this view operates on — pinned by the machine-scoped
+    /// Settings page that presented it, else the app's selected machine
+    /// (onboarding, previews).
+    private var scopedServerId: String {
+        settingsMachineId ?? environment.machines.selectedMachineId
+    }
+
+    private var client: any CodevisorServerClienting {
+        environment.machines.client(for: scopedServerId)
+    }
+
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
 
@@ -489,7 +502,7 @@ struct OpenCodeProviderAuthenticationView: View {
 
     private func loadAccounts() async {
         await perform {
-            let loaded = try await environment.serverClient.listHarnessAccounts(harnessId: "opencode")
+            let loaded = try await client.listHarnessAccounts(harnessId: "opencode")
             accounts = loaded
             if !loaded.contains(where: { $0.id == selectedAccountId }) {
                 selectedAccountId = loaded.first(where: \.isActive)?.id ?? loaded.first?.id
@@ -500,7 +513,7 @@ struct OpenCodeProviderAuthenticationView: View {
     private func loadProviders(accountId: String) async {
         isLoadingProviders = true
         do {
-            let loaded = try await environment.serverClient.listOpenCodeAuthProviders(accountId: accountId)
+            let loaded = try await client.listOpenCodeAuthProviders(accountId: accountId)
             guard selectedAccountId == accountId else { return }
             providers = loaded
             providerAccountId = accountId
@@ -522,7 +535,7 @@ struct OpenCodeProviderAuthenticationView: View {
         let label = newProfileName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !label.isEmpty else { return }
         await perform {
-            let account = try await environment.serverClient.createHarnessAccount(harnessId: "opencode", label: label)
+            let account = try await client.createHarnessAccount(harnessId: "opencode", label: label)
             accounts.append(account)
             selectedAccountId = account.id
         }
@@ -530,7 +543,7 @@ struct OpenCodeProviderAuthenticationView: View {
 
     private func activate(_ account: ServerHarnessAccount) async {
         await perform {
-            accounts = try await environment.serverClient.activateHarnessAccount(harnessId: "opencode", accountId: account.id)
+            accounts = try await client.activateHarnessAccount(harnessId: "opencode", accountId: account.id)
         }
         await refreshHarness()
     }
@@ -552,7 +565,7 @@ struct OpenCodeProviderAuthenticationView: View {
         let label = profileNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !label.isEmpty else { return }
         await perform {
-            let renamed = try await environment.serverClient.renameHarnessAccount(
+            let renamed = try await client.renameHarnessAccount(
                 harnessId: "opencode",
                 accountId: account.id,
                 label: label
@@ -566,8 +579,8 @@ struct OpenCodeProviderAuthenticationView: View {
 
     private func removeProfile(_ account: ServerHarnessAccount) async {
         await perform {
-            try await environment.serverClient.removeHarnessAccount(harnessId: "opencode", accountId: account.id)
-            accounts = try await environment.serverClient.listHarnessAccounts(harnessId: "opencode")
+            try await client.removeHarnessAccount(harnessId: "opencode", accountId: account.id)
+            accounts = try await client.listHarnessAccounts(harnessId: "opencode")
             selectedAccountId = accounts.first(where: \.isActive)?.id ?? accounts.first?.id
         }
         await refreshHarness()
@@ -590,7 +603,7 @@ struct OpenCodeProviderAuthenticationView: View {
     private func beginLogin() async {
         guard let account = selectedAccount, let provider = selectedProvider, let method = selectedMethod else { return }
         await perform {
-            let next = try await environment.serverClient.startOpenCodeAuth(
+            let next = try await client.startOpenCodeAuth(
                 accountId: account.id,
                 providerId: provider.id,
                 methodId: method.id,
@@ -606,7 +619,7 @@ struct OpenCodeProviderAuthenticationView: View {
         guard !code.isEmpty else { return }
         Task {
             await perform {
-                let next = try await environment.serverClient.answerOpenCodeAuthFlow(id: flow.id, code: code)
+                let next = try await client.answerOpenCodeAuthFlow(id: flow.id, code: code)
                 authorizationCode = ""
                 await apply(next)
             }
@@ -641,7 +654,7 @@ struct OpenCodeProviderAuthenticationView: View {
         Task {
             while !Task.isCancelled, pollingFlowId == id {
                 try? await Task.sleep(for: .seconds(1))
-                guard let next = try? await environment.serverClient.openCodeAuthFlow(id: id) else { continue }
+                guard let next = try? await client.openCodeAuthFlow(id: id) else { continue }
                 let pending = next.state == "running" || next.state == "waiting"
                 if !pending { pollingFlowId = nil }
                 await apply(next)
@@ -660,20 +673,20 @@ struct OpenCodeProviderAuthenticationView: View {
         guard let flow, flow.state == "running" || flow.state == "waiting" else { return }
         self.flow = nil
         pollingFlowId = nil
-        Task { try? await environment.serverClient.cancelOpenCodeAuthFlow(id: flow.id) }
+        Task { try? await client.cancelOpenCodeAuthFlow(id: flow.id) }
     }
 
     private func remove(_ provider: ServerOpenCodeAuthProvider) async {
         guard let account = selectedAccount else { return }
         await perform {
-            try await environment.serverClient.removeOpenCodeAuthProvider(accountId: account.id, providerId: provider.id)
+            try await client.removeOpenCodeAuthProvider(accountId: account.id, providerId: provider.id)
             await loadProviders(accountId: account.id)
             await refreshHarness()
         }
     }
 
     private func refreshHarness() async {
-        if let updated = try? await environment.refreshHarnessAuthentication(harnessId: "opencode") {
+        if let updated = try? await environment.refreshHarnessAuthentication(harnessId: "opencode", onServer: scopedServerId) {
             accounts = updated.auth?.accounts ?? accounts
             onChange(updated)
         }

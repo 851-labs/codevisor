@@ -1197,7 +1197,7 @@ struct HarnessPickerMenu: View {
                     }
 
                     Button("Manage Harnesses…") {
-                        SettingsRouter.shared.selectedTab = .harnesses
+                        SettingsRouter.shared.showHarnesses()
                         openSettings()
                     }
                 } label: {
