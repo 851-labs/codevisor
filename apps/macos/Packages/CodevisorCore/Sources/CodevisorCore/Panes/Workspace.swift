@@ -83,10 +83,16 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     /// workspace intact. Decoded leniently: payloads written before this
     /// field existed load as not archived.
     public var isArchived: Bool
+    /// True once this workspace identity has appeared in an authoritative
+    /// server snapshot. This lets a later snapshot remove a remotely deleted
+    /// workspace without mistaking an older, client-only workspace for a
+    /// deletion. Decoded leniently for existing local data.
+    public var isServerSynced: Bool
 
     private enum CodingKeys: String, CodingKey {
         case id, name, hasCustomName, rootDirectory, worktreeName, symbolName, serverId
         case projectId, centerTabs, selectedCenterTabId, bottomGroup, createdAt, isArchived
+        case isServerSynced
         /// Version-1 workspaces stored one tree whose leaves were tab groups.
         case centerTree
     }
@@ -125,6 +131,7 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
         bottomGroup = try container.decode(PaneGroupState.self, forKey: .bottomGroup)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
+        isServerSynced = try container.decodeIfPresent(Bool.self, forKey: .isServerSynced) ?? false
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -142,6 +149,7 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
         try container.encode(bottomGroup, forKey: .bottomGroup)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(isArchived, forKey: .isArchived)
+        try container.encode(isServerSynced, forKey: .isServerSynced)
     }
 
     public init(
@@ -156,7 +164,8 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
         centerTree: SplitNode,
         bottomGroup: PaneGroupState,
         createdAt: Date = Date(),
-        isArchived: Bool = false
+        isArchived: Bool = false,
+        isServerSynced: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -172,6 +181,7 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
         self.bottomGroup = bottomGroup
         self.createdAt = createdAt
         self.isArchived = isArchived
+        self.isServerSynced = isServerSynced
     }
 
     public init(
@@ -187,7 +197,8 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
         selectedCenterTabId: UUID? = nil,
         bottomGroup: PaneGroupState,
         createdAt: Date = Date(),
-        isArchived: Bool = false
+        isArchived: Bool = false,
+        isServerSynced: Bool = false
     ) {
         precondition(!centerTabs.isEmpty, "A workspace must contain at least one center tab")
         self.id = id
@@ -205,6 +216,7 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
         self.bottomGroup = bottomGroup
         self.createdAt = createdAt
         self.isArchived = isArchived
+        self.isServerSynced = isServerSynced
     }
 
     /// Transitional convenience for layout code: reads/writes the selected

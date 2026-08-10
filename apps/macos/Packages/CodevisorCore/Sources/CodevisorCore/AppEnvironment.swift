@@ -29,6 +29,9 @@ public final class AppEnvironment {
     /// app restarts.
     public let paneGroups: any PaneGroupRepository
     public let workspaces: any WorkspaceRepository
+    /// Shared server-metadata reconciliation and navigation invalidation for
+    /// both native platforms. Pane layout itself remains in `workspaces`.
+    public let workspaceSync: WorkspaceSyncModel
     /// Overrides server-backed harness discovery (previews/tests only).
     private let harnessServiceOverride: (any HarnessServicing)?
     /// Monotonic, per-machine invalidation tokens for consumers that keep a
@@ -95,6 +98,10 @@ public final class AppEnvironment {
             sessionRepository: sessionRepository,
             legacyMigrationStore: legacyCacheMigrationStore
         )
+        self.workspaceSync = WorkspaceSyncModel(
+            repository: workspaces,
+            projectList: projectList
+        )
         self.configCache = configCache
         self.composerDefaults = composerDefaults ?? ComposerDefaultsStore(store: InMemoryStore())
         self.composerDrafts = composerDrafts ?? ComposerDraftStore(store: InMemoryStore())
@@ -104,6 +111,7 @@ public final class AppEnvironment {
         self.machines = MachineController(
             store: machineStore,
             projectList: projectList,
+            workspaceSync: workspaceSync,
             credentialStore: machineCredentialStore,
             localServer: localServer,
             clientFactory: machineClientFactory
@@ -303,6 +311,7 @@ public final class AppEnvironment {
         var updated = workspace
         updated.isArchived = isArchived
         workspaces.save(updated)
+        workspaceSync.noteLocalMutation()
 
         guard workspace.serverId == machines.selectedMachineId else { return }
         let client = serverClient

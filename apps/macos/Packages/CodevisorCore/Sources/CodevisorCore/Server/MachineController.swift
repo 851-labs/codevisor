@@ -247,6 +247,7 @@ public final class MachineController {
     /// credential store.
     private let credentialStore: (any MachineCredentialStore)?
     private let projectList: ProjectListModel
+    private let workspaceSync: WorkspaceSyncModel?
     private let localServer: (any LocalServerControlling)?
     private let clientFactory: ClientFactory
     private let requestGate: ServerRequestGate
@@ -269,6 +270,7 @@ public final class MachineController {
     public init(
         store: any PersistenceStore,
         projectList: ProjectListModel,
+        workspaceSync: WorkspaceSyncModel? = nil,
         credentialStore: (any MachineCredentialStore)? = nil,
         localServer: (any LocalServerControlling)? = nil,
         clientFactory: ClientFactory? = nil,
@@ -279,6 +281,7 @@ public final class MachineController {
         self.store = store
         self.credentialStore = credentialStore
         self.projectList = projectList
+        self.workspaceSync = workspaceSync
         self.localServer = localServer
         self.requestGate = requestGate
         self.clientFactory = clientFactory ?? {
@@ -804,7 +807,7 @@ public final class MachineController {
         markReady(for: machineId)
         await refreshStatus(for: machineId)
         guard machineId == selectedMachineId else { return }
-        await projectList.refreshFromServer()
+        await refreshNavigationState(serverId: machineId, client: client)
         guard machineId == selectedMachineId else { return }
         startEventSync()
     }
@@ -825,7 +828,8 @@ public final class MachineController {
         "project.created", "project.updated", "project.deleted",
         "worktree.created",
         "session.created", "session.updated", "session.deleted",
-        "session.attention.updated", "session.archived",
+        "session.attention.updated", "session.archived", "session.unarchived",
+        "workspace.updated", "workspace.deleted",
         "harness.lifecycle.updated",
     ]
 
@@ -853,7 +857,7 @@ public final class MachineController {
                     // Reconcile durable metadata, then subscribe live-only
                     // again. This skips a malformed event instead of retrying
                     // forever from the same global cursor.
-                    await self.projectList.refreshFromServer()
+                    await self.refreshNavigationState(serverId: serverId, client: client)
                 }
             }
         }
@@ -873,14 +877,21 @@ public final class MachineController {
             if let id = UUID(uuidString: event.subjectId) {
                 projectList.removeProjectLocally(id: id, serverId: serverId)
             }
+            scheduleNavigationRefresh()
         case "session.deleted":
             if let id = UUID(uuidString: event.subjectId) {
                 projectList.removeSessionLocally(id: id, serverId: serverId)
             }
+            scheduleNavigationRefresh()
+        case "workspace.deleted":
+            if let id = UUID(uuidString: event.subjectId) {
+                workspaceSync?.removeWorkspace(id: id, serverId: serverId)
+            }
+            scheduleNavigationRefresh()
         case "project.created", "project.updated", "worktree.created",
              "session.created", "session.updated", "session.attention.updated",
-             "session.archived":
-            scheduleProjectRefresh()
+             "session.archived", "session.unarchived", "workspace.updated":
+            scheduleNavigationRefresh()
         case "harness.lifecycle.updated":
             // Update detection / install progress changed a harness — bump
             // the catalog revision so mounted pickers and settings refetch.
@@ -893,14 +904,33 @@ public final class MachineController {
 
     /// Coalesces bursts of events (including the initial replay) into a single
     /// refresh from the server.
-    private func scheduleProjectRefresh() {
+    private func scheduleNavigationRefresh() {
         guard pendingRefreshTask == nil else { return }
         pendingRefreshTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(300))
             guard let self, !Task.isCancelled else { return }
             self.pendingRefreshTask = nil
-            await self.projectList.refreshFromServer()
+            let serverId = self.selectedMachine.id
+            let client = self.selectedClient
+            await self.refreshNavigationState(serverId: serverId, client: client)
         }
+    }
+
+    /// One shared authoritative navigation refresh. Workspace reconciliation
+    /// follows the session snapshot because membership is carried by sessions.
+    public func refreshSelectedNavigationState() async {
+        let serverId = selectedMachine.id
+        await refreshNavigationState(serverId: serverId, client: selectedClient)
+    }
+
+    private func refreshNavigationState(
+        serverId: String,
+        client: any CodevisorServerClienting
+    ) async {
+        guard serverId == selectedMachine.id else { return }
+        await projectList.refreshFromServer()
+        guard serverId == selectedMachine.id else { return }
+        await workspaceSync?.refreshFromServer(serverId: serverId, client: client)
     }
 
     public func refreshStatus(for id: String) async {

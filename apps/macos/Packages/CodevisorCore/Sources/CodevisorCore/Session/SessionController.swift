@@ -2239,9 +2239,14 @@ final public class SessionController {
         // for an instant paint. Older servers lack the endpoint (nil) and
         // keep the discrete path; loadHistory then fetches the page itself.
         var preloadedTranscript: ServerTranscriptPage?
+        let workspaceId: UUID? = switch resolvedComposerDefaultsScope {
+        case let .workspace(id, _): id
+        case .newWorkspace: nil
+        }
         if let opened = try await serverClient.openSession(
             session,
             project: project,
+            workspaceId: workspaceId,
             transcriptLimit: SessionModel.initialTranscriptPageSize
         ) {
             session = try opened.session.chatSession()
@@ -2251,7 +2256,10 @@ final public class SessionController {
             if !remoteProjects.contains(where: { UUID(uuidString: $0.id) == project.id }) {
                 _ = try await serverClient.upsertProject(project)
             }
-            let remoteSession = try await serverClient.upsertSession(session)
+            let remoteSession = try await serverClient.upsertSession(
+                session,
+                workspaceId: workspaceId
+            )
             session = try remoteSession.chatSession()
         }
         self.serverSession = session

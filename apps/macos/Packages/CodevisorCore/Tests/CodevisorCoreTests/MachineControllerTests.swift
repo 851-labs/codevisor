@@ -307,8 +307,179 @@ struct MachineControllerTests {
         fake.emit(kind: "session.deleted", subjectId: sessionId.uuidString)
         try await waitForSync { !projectList.sessions.contains { $0.id == sessionId } }
 
+        fake.setProjects([])
         fake.emit(kind: "project.deleted", subjectId: projectId.uuidString)
         try await waitForSync { !projectList.projects.contains { $0.id == projectId } }
+
+        controller.stopEventSync()
+    }
+
+    @Test("Workspace and unarchive events drive shared navigation state")
+    func workspaceEventSync() async throws {
+        let projectId = UUID()
+        let sessionId = UUID()
+        let siblingSessionId = UUID()
+        let workspaceId = UUID()
+        let project = ServerProject(
+            id: projectId.uuidString,
+            name: "Shared",
+            isArchived: false,
+            symbolName: "folder",
+            origin: .codevisor,
+            createdAt: "2026-06-30T00:00:00.000Z",
+            locations: [
+                ServerProjectLocation(
+                    id: UUID().uuidString,
+                    projectId: projectId.uuidString,
+                    serverId: "local",
+                    folderPath: "/tmp/shared",
+                    createdAt: "2026-06-30T00:00:00.000Z",
+                    isGitRepository: nil
+                )
+            ]
+        )
+        func serverSession(id: UUID, isArchived: Bool, workspaceId: UUID?) -> ServerSession {
+            ServerSession(
+                id: id.uuidString,
+                projectId: projectId.uuidString,
+                serverId: "local",
+                harnessId: "codex",
+                agentSessionId: nil,
+                title: "Shared chat",
+                origin: .codevisor,
+                isArchived: isArchived,
+                worktreeName: nil,
+                workspaceId: workspaceId?.uuidString,
+                cwd: "/tmp/shared",
+                createdAt: "2026-06-30T00:00:01.000Z",
+                updatedAt: nil,
+                usage: nil
+            )
+        }
+        func serverWorkspace(isArchived: Bool) -> ServerWorkspace {
+            ServerWorkspace(
+                id: workspaceId.uuidString,
+                serverId: "local",
+                projectId: projectId.uuidString,
+                name: "Shared workspace",
+                hasCustomName: true,
+                symbolName: "hammer",
+                rootDirectory: "/tmp/shared",
+                isArchived: isArchived,
+                archivedAt: isArchived ? "2026-06-30T00:00:02.000Z" : nil,
+                createdAt: "2026-06-30T00:00:00.000Z",
+                updatedAt: nil
+            )
+        }
+
+        let fake = SyncFakeServerClient(
+            projects: [project],
+            sessions: [
+                serverSession(id: sessionId, isArchived: false, workspaceId: workspaceId),
+                serverSession(id: siblingSessionId, isArchived: false, workspaceId: workspaceId)
+            ],
+            workspaces: [serverWorkspace(isArchived: false)]
+        )
+        let projectList = ProjectListModel(
+            projectRepository: DefaultProjectRepository(store: InMemoryStore()),
+            sessionRepository: DefaultSessionRepository(store: InMemoryStore())
+        )
+        let workspaceRepository = DefaultWorkspaceRepository(store: InMemoryStore())
+        let workspaceSync = WorkspaceSyncModel(
+            repository: workspaceRepository,
+            projectList: projectList
+        )
+        let controller = MachineController(
+            store: InMemoryStore(),
+            projectList: projectList,
+            workspaceSync: workspaceSync,
+            clientFactory: { _ in fake }
+        )
+
+        controller.startEventSync()
+        fake.emit(kind: "workspace.updated", subjectId: workspaceId.uuidString)
+        try await waitForSync {
+            workspaceRepository.workspace(id: workspaceId)?.isServerSynced == true
+        }
+        #expect(workspaceRepository.workspace(id: workspaceId)?.name == "Shared workspace")
+        #expect(
+            workspaceSync.routeDisposition(
+                workspaceId: workspaceId,
+                anchorSessionId: sessionId,
+                serverId: "local"
+            ) == .keep
+        )
+
+        // Archiving one chat selects a surviving sibling on both platforms.
+        fake.setSessions([
+            serverSession(id: sessionId, isArchived: true, workspaceId: workspaceId),
+            serverSession(id: siblingSessionId, isArchived: false, workspaceId: workspaceId)
+        ])
+        fake.emit(kind: "session.archived", subjectId: sessionId.uuidString)
+        try await waitForSync {
+            projectList.sessions.first(where: { $0.id == sessionId })?.isArchived == true
+        }
+        #expect(
+            workspaceSync.routeDisposition(
+                workspaceId: workspaceId,
+                anchorSessionId: sessionId,
+                serverId: "local"
+            ) == .selectSession(siblingSessionId)
+        )
+        #expect(
+            workspaceSync.routeDisposition(sessionId: sessionId, serverId: "local")
+                == .selectSession(siblingSessionId)
+        )
+
+        // The previously missing unarchive event restores the original route.
+        fake.setSessions([
+            serverSession(id: sessionId, isArchived: false, workspaceId: workspaceId),
+            serverSession(id: siblingSessionId, isArchived: false, workspaceId: workspaceId)
+        ])
+        fake.emit(kind: "session.unarchived", subjectId: sessionId.uuidString)
+        try await waitForSync {
+            projectList.sessions.first(where: { $0.id == sessionId })?.isArchived == false
+        }
+        #expect(workspaceSync.routeDisposition(sessionId: sessionId, serverId: "local") == .keep)
+
+        fake.setSessions([
+            serverSession(id: sessionId, isArchived: true, workspaceId: workspaceId),
+            serverSession(id: siblingSessionId, isArchived: true, workspaceId: workspaceId)
+        ])
+        fake.setWorkspaces([serverWorkspace(isArchived: true)])
+        fake.emit(kind: "workspace.updated", subjectId: workspaceId.uuidString)
+        try await waitForSync {
+            workspaceRepository.workspace(id: workspaceId)?.isArchived == true
+                && projectList.sessions.first(where: { $0.id == sessionId })?.isArchived == true
+        }
+        #expect(
+            workspaceSync.routeDisposition(
+                workspaceId: workspaceId,
+                anchorSessionId: sessionId,
+                serverId: "local"
+            ) == .dismiss
+        )
+
+        fake.setSessions([
+            serverSession(id: sessionId, isArchived: false, workspaceId: workspaceId),
+            serverSession(id: siblingSessionId, isArchived: false, workspaceId: workspaceId)
+        ])
+        fake.setWorkspaces([serverWorkspace(isArchived: false)])
+        fake.emit(kind: "session.unarchived", subjectId: sessionId.uuidString)
+        try await waitForSync {
+            workspaceRepository.workspace(id: workspaceId)?.isArchived == false
+                && projectList.sessions.first(where: { $0.id == sessionId })?.isArchived == false
+        }
+        #expect(workspaceSync.routeDisposition(sessionId: sessionId, serverId: "local") == .keep)
+
+        fake.setSessions([
+            serverSession(id: sessionId, isArchived: false, workspaceId: nil),
+            serverSession(id: siblingSessionId, isArchived: false, workspaceId: nil)
+        ])
+        fake.setWorkspaces([])
+        fake.emit(kind: "workspace.deleted", subjectId: workspaceId.uuidString)
+        try await waitForSync { workspaceRepository.workspace(id: workspaceId) == nil }
+        #expect(workspaceSync.routeDisposition(sessionId: sessionId, serverId: "local") == .dismiss)
 
         controller.stopEventSync()
     }
@@ -585,17 +756,31 @@ private final class SyncFakeServerClient: CodevisorServerClienting, @unchecked S
     private let lock = NSLock()
     private var _projects: [ServerProject]
     private var _sessions: [ServerSession]
+    private var _workspaces: [ServerWorkspace]
     private var continuations: [AsyncThrowingStream<ServerEventEnvelope, any Error>.Continuation] = []
     private var emittedEvents: [ServerEventEnvelope] = []
     private var nextEventId = 1
 
-    init(projects: [ServerProject], sessions: [ServerSession]) {
+    init(
+        projects: [ServerProject],
+        sessions: [ServerSession],
+        workspaces: [ServerWorkspace] = []
+    ) {
         _projects = projects
         _sessions = sessions
+        _workspaces = workspaces
     }
 
     func setSessions(_ sessions: [ServerSession]) {
         lock.withLock { _sessions = sessions }
+    }
+
+    func setProjects(_ projects: [ServerProject]) {
+        lock.withLock { _projects = projects }
+    }
+
+    func setWorkspaces(_ workspaces: [ServerWorkspace]) {
+        lock.withLock { _workspaces = workspaces }
     }
 
     func emit(kind: String, subjectId: String) {
@@ -633,6 +818,7 @@ private final class SyncFakeServerClient: CodevisorServerClienting, @unchecked S
 
     func listProjects() async throws -> [ServerProject] { lock.withLock { _projects } }
     func listSessions() async throws -> [ServerSession] { lock.withLock { _sessions } }
+    func listWorkspaces() async throws -> [ServerWorkspace]? { lock.withLock { _workspaces } }
 
     // MARK: - Simulated server versioning / self-update
 

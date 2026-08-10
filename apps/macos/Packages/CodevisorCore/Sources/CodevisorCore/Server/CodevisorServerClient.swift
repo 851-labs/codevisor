@@ -249,6 +249,9 @@ public protocol CodevisorServerClienting: Sendable {
     /// the server re-derives the session cwd from the new project.
     func moveSession(id: UUID, projectId: UUID, worktreeName: String?) async throws -> ServerSession
     func listWorktrees(projectId: UUID) async throws -> [ServerWorktree]
+    /// Server-owned workspace metadata. Nil means the connected server
+    /// predates workspace snapshots; callers must preserve their local data.
+    func listWorkspaces() async throws -> [ServerWorkspace]?
     /// Mirrors a workspace's archived flag so other devices — and the
     /// server's own cascade to the workspace's chats — see it.
     func setWorkspaceArchived(id: UUID, isArchived: Bool) async throws
@@ -403,6 +406,25 @@ public extension CodevisorServerClienting {
         project: Project?,
         transcriptLimit: Int
     ) async throws -> ServerSessionOpenResponse? { nil }
+
+    /// Workspace-aware form used by native session controllers. Older/fake
+    /// transports fall back to the pre-workspace request.
+    func openSession(
+        _ session: ChatSession,
+        project: Project?,
+        workspaceId: UUID?,
+        transcriptLimit: Int
+    ) async throws -> ServerSessionOpenResponse? {
+        try await openSession(session, project: project, transcriptLimit: transcriptLimit)
+    }
+
+    /// Workspace-aware session upsert. Compatibility transports safely drop
+    /// the association; current HTTP servers persist it.
+    func upsertSession(_ session: ChatSession, workspaceId: UUID?) async throws -> ServerSession {
+        try await upsertSession(session)
+    }
+
+    func listWorkspaces() async throws -> [ServerWorkspace]? { nil }
 
     func shellEventStream() -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
         // Test doubles and old transports preserve their existing behavior.
@@ -2105,6 +2127,22 @@ public struct ServerProject: Decodable, Equatable, Sendable {
     }
 }
 
+/// Server-owned workspace identity and navigation metadata. Pane trees remain
+/// device-local and are merged by `WorkspaceSyncModel`.
+public struct ServerWorkspace: Decodable, Equatable, Sendable {
+    public var id: String
+    public var serverId: String
+    public var projectId: String
+    public var name: String
+    public var hasCustomName: Bool
+    public var symbolName: String?
+    public var rootDirectory: String?
+    public var isArchived: Bool
+    public var archivedAt: String?
+    public var createdAt: String
+    public var updatedAt: String?
+}
+
 public struct ServerWorktree: Decodable, Equatable, Sendable {
     public var id: String
     public var projectId: String
@@ -2187,6 +2225,7 @@ public struct ServerSession: Decodable, Equatable, Sendable {
     /// Optional so a server predating archive timestamps still decodes.
     public var archivedAt: String? = nil
     public var worktreeName: String?
+    public var workspaceId: String? = nil
     public var cwd: String?
     public var configSelections: [String: String]? = nil
     public var createdAt: String
@@ -3161,6 +3200,16 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
         try await get("/v1/projects/\(projectId.uuidString)/worktrees")
     }
 
+    public func listWorkspaces() async throws -> [ServerWorkspace]? {
+        do {
+            return try await get("/v1/workspaces")
+        } catch CodevisorServerClientError.httpStatus(404, _) {
+            return nil
+        } catch CodevisorServerClientError.httpStatus(405, _) {
+            return nil
+        }
+    }
+
     public func createWorktree(projectId: UUID, name: String?) async throws -> ServerWorktree {
         try await createWorktree(projectId: projectId, id: nil, name: name)
     }
@@ -3235,6 +3284,20 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
         project: Project?,
         transcriptLimit: Int
     ) async throws -> ServerSessionOpenResponse? {
+        try await openSession(
+            session,
+            project: project,
+            workspaceId: nil,
+            transcriptLimit: transcriptLimit
+        )
+    }
+
+    public func openSession(
+        _ session: ChatSession,
+        project: Project?,
+        workspaceId: UUID?,
+        transcriptLimit: Int
+    ) async throws -> ServerSessionOpenResponse? {
         do {
             return try await send(
                 "/v1/sessions/\(session.id.uuidString)/open",
@@ -3242,6 +3305,7 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
                 body: OpenSessionBody(
                     session: session,
                     project: project,
+                    workspaceId: workspaceId,
                     transcriptLimit: transcriptLimit
                 )
             )
@@ -3277,19 +3341,27 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
     }
 
     public func upsertSession(_ session: ChatSession) async throws -> ServerSession {
+        try await upsertSession(session, workspaceId: nil)
+    }
+
+    public func upsertSession(_ session: ChatSession, workspaceId: UUID?) async throws -> ServerSession {
         let remoteSessions = try await listSessions()
         // UUID comparison for the same case-mismatch reason as upsertProject.
         if remoteSessions.contains(where: { UUID(uuidString: $0.id) == session.id }) {
-            return try await updateSession(session)
+            return try await updateSession(session, workspaceId: workspaceId)
         }
-        return try await createSession(session)
+        return try await createSession(session, workspaceId: workspaceId)
     }
 
     public func updateSession(_ session: ChatSession) async throws -> ServerSession {
+        try await updateSession(session, workspaceId: nil)
+    }
+
+    private func updateSession(_ session: ChatSession, workspaceId: UUID?) async throws -> ServerSession {
         try await send(
             "/v1/sessions/\(session.id.uuidString)",
             method: "PATCH",
-            body: UpdateSessionBody(session: session)
+            body: UpdateSessionBody(session: session, workspaceId: workspaceId)
         )
     }
 
@@ -3587,11 +3659,11 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
         )
     }
 
-    private func createSession(_ session: ChatSession) async throws -> ServerSession {
+    private func createSession(_ session: ChatSession, workspaceId: UUID? = nil) async throws -> ServerSession {
         try await send(
             "/v1/sessions",
             method: "POST",
-            body: CreateSessionBody(session: session)
+            body: CreateSessionBody(session: session, workspaceId: workspaceId)
         )
     }
 
@@ -3881,6 +3953,7 @@ private struct CreateSessionBody: Encodable {
     var origin: SessionOrigin
     var isArchived: Bool
     var worktreeName: String?
+    var workspaceId: String?
     var createdAt: String
     var updatedAt: String?
     /// True for sessions that don't have an agent yet: without it the server
@@ -3890,7 +3963,7 @@ private struct CreateSessionBody: Encodable {
     /// created lazily on the first prompt, from the CURRENT worktree name.
     var deferAgentSession: Bool?
 
-    init(session: ChatSession) {
+    init(session: ChatSession, workspaceId: UUID? = nil) {
         id = session.id.uuidString
         projectId = session.projectId.uuidString
         harnessId = session.harnessId
@@ -3900,6 +3973,7 @@ private struct CreateSessionBody: Encodable {
         origin = session.origin
         isArchived = session.isArchived
         worktreeName = session.worktreeName
+        self.workspaceId = workspaceId?.uuidString
         createdAt = ServerDateCoding.string(from: session.createdAt)
         updatedAt = session.updatedAt.map(ServerDateCoding.string)
         deferAgentSession = session.agentSessionId == nil ? true : nil
@@ -3940,6 +4014,7 @@ private struct UpdateSessionBody: Encodable {
     /// /v1/sessions is create-or-return, so a later create can't. The
     /// server keeps its current value when nil (no clobbering).
     var worktreeName: String?
+    var workspaceId: String?
     /// Same eager-session gap for the harness: the record is created with
     /// harnessId "" before the composer's choice, and the deferred agent
     /// must start under the harness/account picked at first send. Empty
@@ -3947,11 +4022,12 @@ private struct UpdateSessionBody: Encodable {
     var harnessId: String?
     var harnessAccountId: String?
 
-    init(session: ChatSession) {
+    init(session: ChatSession, workspaceId: UUID? = nil) {
         agentSessionId = session.agentSessionId
         isArchived = session.isArchived
         title = session.title
         worktreeName = session.worktreeName
+        self.workspaceId = workspaceId?.uuidString
         harnessId = session.harnessId.isEmpty ? nil : session.harnessId
         harnessAccountId = session.harnessAccountId
     }
@@ -3984,10 +4060,10 @@ private struct OpenSessionBody: Encodable {
     var update: UpdateSessionBody
     var transcriptLimit: Int
 
-    init(session: ChatSession, project: Project?, transcriptLimit: Int) {
+    init(session: ChatSession, project: Project?, workspaceId: UUID?, transcriptLimit: Int) {
         self.project = project.map(CreateProjectBody.init(project:))
-        self.session = CreateSessionBody(session: session)
-        self.update = UpdateSessionBody(session: session)
+        self.session = CreateSessionBody(session: session, workspaceId: workspaceId)
+        self.update = UpdateSessionBody(session: session, workspaceId: workspaceId)
         self.transcriptLimit = transcriptLimit
     }
 }

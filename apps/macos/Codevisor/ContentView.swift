@@ -259,16 +259,11 @@ struct RootView: View {
                 store.clearOpenSession()
             }
         }
-        // A server refresh can archive the route from another device. The
-        // archived record remains in the local model for the archive section,
-        // so destination resolution alone would otherwise keep its workspace
-        // mounted indefinitely. Local sidebar archives move `selection`
-        // synchronously first, so this guard affects only a route that is
-        // still pointing at an archived chat.
-        .onChange(of: selectedSessionIsArchived, initial: true) { _, isArchived in
-            guard isArchived else { return }
-            preferredProjectId = nil
-            selection = .newChat(nil)
+        // A server refresh can invalidate the route from another device.
+        // Apply the shared sibling-or-dismiss policy even though the archived
+        // session remains in the local model for the archive section.
+        .onChange(of: selectedSessionDisposition, initial: true) { _, disposition in
+            applySelectedSessionDisposition(disposition)
         }
         .onChange(of: controlActiveState, initial: true) { _, state in
             store?.setWindowFocused(state == .key)
@@ -416,13 +411,29 @@ struct RootView: View {
         selection = .session(serverId: serverId, id: sessionId)
     }
 
-    /// Whether the route currently shown in the detail column has become
-    /// archived in the authoritative session snapshot.
-    private var selectedSessionIsArchived: Bool {
-        guard case let .session(serverId, sessionId) = selection else { return false }
-        return environment.projectList.sessions.first {
-            $0.serverId == serverId && $0.id == sessionId
-        }?.isArchived == true
+    /// Shared Core policy keeps both native navigation surfaces aligned when
+    /// an event archives, unarchives, moves, or removes the current chat.
+    private var selectedSessionDisposition: WorkspaceRouteDisposition {
+        guard case let .session(serverId, sessionId) = selection else { return .keep }
+        _ = environment.workspaceSync.revision
+        return environment.workspaceSync.routeDisposition(
+            sessionId: sessionId,
+            serverId: serverId
+        )
+    }
+
+    private func applySelectedSessionDisposition(_ disposition: WorkspaceRouteDisposition) {
+        guard case let .session(serverId, sessionId) = selection else { return }
+        switch disposition {
+        case .keep:
+            break
+        case let .selectSession(replacementId):
+            guard replacementId != sessionId else { return }
+            selection = .session(serverId: serverId, id: replacementId)
+        case .dismiss:
+            preferredProjectId = nil
+            selection = .newChat(nil)
+        }
     }
 
     /// The top-level split: the NATIVE NavigationSplitView + NSToolbar pair

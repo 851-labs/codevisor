@@ -24,6 +24,13 @@ public final class ProjectListModel {
     private let legacyMigrationStore: (any PersistenceStore)?
     private var legacyMigrationTasks: [String: Task<Void, Error>] = [:]
     private var serverClient: (any CodevisorServerClienting)?
+    /// Server-owned session → workspace membership, scoped by the client-side
+    /// machine id. Pane layout stays in `WorkspaceRepository`; this mapping is
+    /// refreshed with the same authoritative session snapshot as the sidebar.
+    @ObservationIgnored private var workspaceAssignmentsByServer: [String: [UUID: UUID]] = [:]
+    /// Prevents an older overlapping network response from overwriting a newer
+    /// event-triggered navigation snapshot.
+    @ObservationIgnored private var refreshGeneration: UInt64 = 0
     /// Sessions created locally while a server client is active, but not yet
     /// observed in an authoritative server snapshot. A metadata refresh can
     /// race the slow first agent startup; preserving these rows prevents the
@@ -753,6 +760,8 @@ public final class ProjectListModel {
         // actually came from — reading the live `selectedServerId` after the
         // awaits would tag one machine's projects with another machine's id.
         let serverId = selectedServerId
+        refreshGeneration &+= 1
+        let generation = refreshGeneration
         do {
             try await migrateLegacyCacheIfNeeded(serverId: serverId, client: serverClient)
             let remoteProjects = try await serverClient.listProjects()
@@ -767,7 +776,8 @@ public final class ProjectListModel {
                         return nil
                     }
                 }
-            let remoteSessions = try await serverClient.listSessions()
+            let remoteSessionRecords = try await serverClient.listSessions()
+            let remoteSessions = remoteSessionRecords
                 .compactMap { record -> ChatSession? in
                     do {
                         return try record.chatSession(serverId: serverId)
@@ -783,6 +793,16 @@ public final class ProjectListModel {
             // refresh, and this one would merge (and persist) another
             // machine's projects into the wrong sidebar.
             guard serverId == selectedServerId else { return }
+            guard generation == refreshGeneration else { return }
+            workspaceAssignmentsByServer[serverId] = Dictionary(
+                uniqueKeysWithValues: remoteSessionRecords.compactMap { record in
+                    guard let sessionId = UUID(uuidString: record.id),
+                          let rawWorkspaceId = record.workspaceId,
+                          let workspaceId = UUID(uuidString: rawWorkspaceId)
+                    else { return nil }
+                    return (sessionId, workspaceId)
+                }
+            )
             projects = mergeProjects(local: projects, remote: remoteProjects, serverId: serverId)
             sessions = mergeSessions(local: sessions, remote: remoteSessions, serverId: serverId)
             persistProjects()
@@ -793,6 +813,12 @@ public final class ProjectListModel {
                 "Failed to refresh projects/sessions from server: \(String(describing: error), privacy: .public)"
             )
         }
+    }
+
+    /// The latest authoritative workspace assignment for every session on a
+    /// machine. Empty is valid for both older servers and unassigned sessions.
+    public func workspaceAssignments(for serverId: String) -> [UUID: UUID] {
+        workspaceAssignmentsByServer[serverId] ?? [:]
     }
 
     /// The only upward reconciliation in the new architecture. Existing

@@ -2604,6 +2604,14 @@ const createServerSession = async (
     throw new HttpFailure(409, "Select a signed-in harness account before creating a session")
   }
   const harnessAccountId = payload.harnessAccountId ?? accountContext?.id
+  await ensureSessionWorkspace(
+    services,
+    fanout,
+    payload.workspaceId,
+    project,
+    payload.worktreeName ?? project.name,
+    cwd
+  )
   // The session id is generated up front so the standing event sink can bind
   // to it before the agent session exists.
   const sessionId = payload.id ?? randomUUID()
@@ -2688,7 +2696,22 @@ const applySessionUpdate = async (
 ): Promise<SessionSummary> => {
   const before = await findSession(services.db, sessionId)
   const wasArchived = before?.isArchived === true
+  if (payload.workspaceId !== undefined && before !== undefined) {
+    const project = await getProjectOrFail(services.db, payload.projectId ?? before.projectId)
+    await ensureSessionWorkspace(
+      services,
+      fanout,
+      payload.workspaceId,
+      project,
+      payload.worktreeName ?? before.worktreeName ?? project.name,
+      before.cwd
+    )
+  }
   let session = await run(services.db.updateSession(sessionId, payload))
+  if (payload.workspaceId !== undefined) {
+    await run(services.db.setSessionWorkspace(sessionId, payload.workspaceId))
+    session = await run(services.db.getSessionSummary(sessionId))
+  }
 
   if (session.isArchived && !wasArchived) {
     await archiveSessionRuntime(services, session)
@@ -2725,6 +2748,47 @@ const applySessionUpdate = async (
     session
   )
   return session
+}
+
+/// Native clients persist pane layout locally, but workspace identity and
+/// membership are server-owned. A chat may reach the server before its local
+/// workspace has ever been uploaded, so assigning the chat lazily creates the
+/// metadata row first. The event lets every other client materialize its own
+/// local layout for the shared workspace.
+const ensureSessionWorkspace = async (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  workspaceId: string | undefined,
+  project: Project,
+  workspaceName: string,
+  rootDirectory: string | undefined
+): Promise<void> => {
+  if (workspaceId === undefined) return
+  const canonical = workspaceId.toLowerCase()
+  const existing = (await run(services.db.listWorkspaces)).find(
+    (workspace) => workspace.id.toLowerCase() === canonical
+  )
+  if (existing !== undefined) {
+    if (existing.projectId.toLowerCase() !== project.id.toLowerCase()) {
+      throw new HttpFailure(
+        409,
+        `Workspace ${workspaceId} belongs to project ${existing.projectId}, not ${project.id}`
+      )
+    }
+    return
+  }
+  const workspace = await run(
+    services.db.upsertWorkspace({
+      id: canonical,
+      projectId: project.id,
+      name: workspaceName,
+      hasCustomName: false,
+      symbolName: project.symbolName,
+      /* v8 ignore next -- server-created sessions always resolve a cwd; omission protects legacy rows without a local project location. */
+      ...(rootDirectory === undefined ? {} : { rootDirectory })
+    })
+  )
+  await appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, workspace)
 }
 
 /// The standing per-session sink: every runtime event — in-turn or

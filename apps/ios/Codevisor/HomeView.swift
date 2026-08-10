@@ -195,6 +195,7 @@ struct HomeView: View {
     /// current navigation order.
     private var workspaceItems: [HomeWorkspaceListItem] {
         _ = workspaceRevision
+        _ = environment.workspaceSync.revision
         let serverId = machines.selectedMachineId
         let sessionRank = Dictionary(
             visibleSessions.enumerated().map { ($0.element.id, $0.offset) },
@@ -304,13 +305,8 @@ struct HomeView: View {
             .onChange(of: organizationRaw, initial: true) { _, _ in
                 backfillWorkspacesIfNeeded()
             }
-            .onChange(of: presentedSessionIsArchived, initial: true) { _, isArchived in
-                guard isArchived else { return }
-                // WorkspaceScreen may currently have a pane cover above it;
-                // clearing the owning stack closes the whole workspace and
-                // returns to the navigation list in one state transition.
-                newChatFlow = nil
-                path.removeAll()
+            .onChange(of: presentedWorkspaceDisposition, initial: true) { _, disposition in
+                applyPresentedWorkspaceDisposition(disposition)
             }
             .onDisappear {
                 releaseDeferredOrder(animated: false)
@@ -342,7 +338,7 @@ struct HomeView: View {
                 }
             }
             .refreshable {
-                await projectList.refreshFromServer()
+                await machines.refreshSelectedNavigationState()
             }
             .sheet(isPresented: $isShowingSettings) {
                 SettingsSheet()
@@ -739,12 +735,39 @@ struct HomeView: View {
         }
     }
 
-    /// Whether the workspace at the top of Home's stack has been archived by
-    /// the latest authoritative server snapshot. Workspace archives cascade
-    /// to their chats, so this covers both chat and workspace archive events.
-    private var presentedSessionIsArchived: Bool {
-        guard case let .workspace(workspaceId, _, _)? = path.last else { return false }
-        return environment.workspaces.workspace(id: workspaceId)?.isArchived == true
+    /// Shared Core policy decides whether the current route remains valid,
+    /// moves to a surviving sibling chat, or leaves the workspace entirely.
+    private var presentedWorkspaceDisposition: WorkspaceRouteDisposition {
+        _ = environment.workspaceSync.revision
+        guard case let .workspace(workspaceId, anchorSessionId, _)? = path.last else {
+            return .keep
+        }
+        return environment.workspaceSync.routeDisposition(
+            workspaceId: workspaceId,
+            anchorSessionId: anchorSessionId,
+            serverId: machines.selectedMachineId
+        )
+    }
+
+    private func applyPresentedWorkspaceDisposition(_ disposition: WorkspaceRouteDisposition) {
+        guard case let .workspace(workspaceId, anchorSessionId, _)? = path.last else { return }
+        switch disposition {
+        case .keep:
+            break
+        case let .selectSession(sessionId):
+            guard sessionId != anchorSessionId else { return }
+            path[path.count - 1] = .workspace(
+                workspaceId: workspaceId,
+                anchorSessionId: sessionId,
+                preferredChatSessionId: sessionId
+            )
+        case .dismiss:
+            // WorkspaceScreen may currently have a pane cover above it;
+            // clearing the owning stack closes the whole workspace and
+            // returns to the navigation list in one state transition.
+            newChatFlow = nil
+            path.removeAll()
+        }
     }
 
     private func setAutomaticOrderDeferred(_ isDeferred: Bool) {

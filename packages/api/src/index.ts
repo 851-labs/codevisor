@@ -1321,6 +1321,10 @@ export const UpdateSessionRequest = Schema.Struct({
   /// scratch workspace locks in its real project on the first send; the server
   /// rejects the move once an agent session exists (the cwd is already bound).
   projectId: Schema.optional(Schema.String),
+  /// Assign an existing session to its server-owned pane workspace. Native
+  /// clients create chats before their first connection, so this must be
+  /// accepted on update as well as create.
+  workspaceId: Schema.optional(Schema.String),
   /// Sessions created EAGERLY (before the composer chose a harness) carry
   /// harnessId "" — the first send patches the real choice here so the
   /// deferred agent starts under the right harness/account.

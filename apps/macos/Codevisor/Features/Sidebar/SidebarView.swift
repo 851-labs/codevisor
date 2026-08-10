@@ -260,6 +260,7 @@ struct SidebarView: View {
     /// session-less workspaces last by creation date.
     private var workspaceItems: [SidebarWorkspaceListItem] {
         _ = workspaceRevision
+        _ = environment.workspaceSync.revision
         let serverId = environment.machines.selectedMachineId
         let sessionItems = chronologicalSessions
         let sessionRank = Dictionary(
@@ -275,8 +276,14 @@ struct SidebarView: View {
         }
         return workspaces
             .map { workspace -> (item: SidebarWorkspaceListItem, rank: Int, created: Date) in
-                let workspaceSessions = workspace.chatSessionIds.compactMap { sessionsById[$0]?.session }
-                let primary = workspace.chatSessionIds.lazy.compactMap { sessionsById[$0] }.first
+                let workspaceSessionItems = workspace.chatSessionIds.compactMap { id -> SidebarSessionListItem? in
+                    guard environment.workspaces.workspaceId(forSession: id) == workspace.id else {
+                        return nil
+                    }
+                    return sessionsById[id]
+                }
+                let workspaceSessions = workspaceSessionItems.map(\.session)
+                let primary = workspaceSessionItems.first
                 // A legacy or draft CHAT-LESS workspace stays openable
                 // through any session still routed to it by the grow-only
                 // session index — archived ones included.
