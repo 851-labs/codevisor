@@ -93,7 +93,12 @@ public final class TerminalTransport {
         }
         let created = try JSONDecoder().decode(TerminalCreated.self, from: data)
         websocketPath = created.websocketPath
-        lastOutputSeq = max(0, created.nextOutputSeq - 1)
+        // Attach from seq 0 so the server replays the terminal's buffered
+        // scrollback into this fresh renderer (reusing a session's live PTY
+        // returns the existing terminal — seeding the cursor at the current
+        // head here would skip all history). In-process reconnects advance
+        // lastOutputSeq from received frames, so nothing replays twice.
+        lastOutputSeq = 0
         connect()
     }
 

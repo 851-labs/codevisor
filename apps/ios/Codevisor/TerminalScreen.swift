@@ -15,23 +15,48 @@ struct TerminalPaneView: View {
     let config: CodevisorServerConfig
 
     @State private var status: String?
+    @StateObject private var keyController = TerminalKeyController()
 
     var body: some View {
-        TerminalHostView(terminalKey: terminalKey, cwd: cwd, config: config) { status in
-            self.status = status
-        }
-        .ignoresSafeArea(.container, edges: .bottom)
-        .overlay(alignment: .bottom) {
+        ZStack(alignment: .bottom) {
+            TerminalHostView(
+                terminalKey: terminalKey, cwd: cwd, config: config, keyController: keyController
+            ) { status in
+                self.status = status
+            }
+            .ignoresSafeArea(.container, edges: .bottom)
+
             if let status {
                 Text(status)
                     .font(.footnote)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(.ultraThinMaterial, in: Capsule())
-                    .padding(.bottom, 8)
+                    .padding(.bottom, 60)
+            }
+
+            if keyController.keyboardVisible {
+                TerminalKeyBar(controller: keyController)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 4)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else {
+                HStack {
+                    Spacer()
+                    ShowKeyboardButton { keyController.showKeyboard() }
+                }
+                .padding(.trailing, 16)
+                .padding(.bottom, 8)
+                .transition(.opacity)
             }
         }
-        .background(Color.black)
+        .animation(.snappy(duration: 0.25), value: keyController.keyboardVisible)
+        // Extend the black surface under the keyboard too — otherwise the
+        // keyboard's rounded corners reveal the (light) window background.
+        .background(Color.black.ignoresSafeArea(.all, edges: .all))
+        // The terminal surface is always black; render the glass bar, keyboard
+        // button, and status capsule in dark appearance to match.
+        .environment(\.colorScheme, .dark)
     }
 }
 
@@ -39,6 +64,7 @@ private struct TerminalHostView: UIViewRepresentable {
     let terminalKey: String
     let cwd: String
     let config: CodevisorServerConfig
+    let keyController: TerminalKeyController
     let onStatus: (String?) -> Void
 
     func makeUIView(context: Context) -> SwiftTerm.TerminalView {
@@ -47,6 +73,16 @@ private struct TerminalHostView: UIViewRepresentable {
         view.backgroundColor = .black
         view.nativeForegroundColor = .white
         view.nativeBackgroundColor = .black
+        // The terminal is always black; keep the system keyboard dark to match
+        // instead of following the device's light/dark appearance.
+        view.keyboardAppearance = .dark
+        // Drop SwiftTerm's built-in TerminalAccessory: the key bar is a SwiftUI
+        // Liquid Glass overlay (TerminalKeyBar) floating over the content, so the
+        // keyboard gets no accessory strip (and no system backdrop behind one).
+        view.inputAccessoryView = nil
+        // Swipe down over the terminal to dismiss the keyboard.
+        view.keyboardDismissMode = .interactive
+        keyController.attach(view)
         context.coordinator.attach(view: view)
         return view
     }

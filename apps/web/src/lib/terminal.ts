@@ -48,7 +48,10 @@ export class TerminalTransport {
   }): Promise<void> {
     const created = await this.client.createTerminal(request)
     this.websocketPath = created.websocketPath
-    this.lastOutputSeq = Math.max(0, created.nextOutputSeq - 1)
+    // Attach from seq 0 so the server replays buffered scrollback into this
+    // fresh renderer (reattaching to a live session PTY would otherwise skip
+    // all history). Reconnects advance lastOutputSeq from received frames.
+    this.lastOutputSeq = 0
     this.connect()
   }
 
