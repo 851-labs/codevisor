@@ -3,9 +3,7 @@ import CodevisorUI
 import SwiftUI
 
 /// How the workspace list groups chats — the same organization options as the
-/// macOS sidebar. Workspaces on this client are 1:1 with chats today, so the
-/// workspace grouping renders the same rows as Agents until multi-chat
-/// workspaces sync.
+/// macOS sidebar.
 private enum HomeOrganization: String, CaseIterable {
     case compact
     case byWorkspace
@@ -24,7 +22,19 @@ private enum HomeOrganization: String, CaseIterable {
 /// deliberately absent: it is a real modal sheet until its first send creates
 /// a workspace, at which point that workspace is mounted here.
 private enum HomeRoute: Hashable {
-    case workspace(UUID)
+    /// A workspace-row tap leaves `preferredChatSessionId` nil and restores
+    /// the workspace's selected tab. An agent-row tap supplies the chat id so
+    /// that chat always wins over a previously selected terminal.
+    case workspace(workspaceId: UUID, anchorSessionId: UUID, preferredChatSessionId: UUID?)
+}
+
+private struct HomeWorkspaceListItem: Identifiable {
+    let workspace: Workspace
+    let sessions: [ChatSession]
+    let primarySession: ChatSession?
+    let project: Project?
+
+    var id: UUID { workspace.id }
 }
 
 /// State shared across the native New Chat sheet and the workspace mounted
@@ -81,6 +91,10 @@ struct HomeView: View {
     private var orderRaw
     @ClientPreference("sidebar.manualSessionOrder", default: "")
     private var manualSessionOrder
+    @ClientPreference("sidebar.expandedProjects", default: "")
+    private var expandedProjectsRaw
+    @ClientPreference("sidebar.expandedWorkspaces", default: "")
+    private var expandedWorkspacesRaw
     @ClientPreference("ios.onboarding.dismissed", default: false)
     private var onboardingDismissed
     @State private var onboardingStart = OnboardingView.Step.welcome
@@ -100,6 +114,9 @@ struct HomeView: View {
     @State private var isPointerInsideSidebar = false
     @GestureState private var isTouchingSidebar = false
     @State private var deferredSessionOrder = InteractionDeferredOrder<UUID>()
+    /// The repository is deliberately non-observable. Bump this after a
+    /// workspace backfill or local layout mutation so the hierarchy re-reads.
+    @State private var workspaceRevision = 0
     @Namespace private var newChatTransition
 
     private var organization: HomeOrganization {
@@ -162,6 +179,67 @@ struct HomeView: View {
         return deferredSessionOrder.applying(to: desired, id: \.id)
     }
 
+    /// Same workspace projection as the macOS sidebar: sessions follow their
+    /// workspace pane order, and workspaces follow their primary session's
+    /// current navigation order.
+    private var workspaceItems: [HomeWorkspaceListItem] {
+        _ = workspaceRevision
+        let serverId = machines.selectedMachineId
+        let sessionRank = Dictionary(
+            visibleSessions.enumerated().map { ($0.element.id, $0.offset) },
+            uniquingKeysWith: min
+        )
+        let sessionsById = Dictionary(
+            visibleSessions.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        return environment.workspaces.loadAll()
+            .filter { $0.serverId == serverId && !$0.isArchived }
+            .map { workspace -> (HomeWorkspaceListItem, Int, Date) in
+                // Honor the repository's grow-only routing index when healing
+                // layouts from older iOS builds. A superseded automatic
+                // one-chat workspace can remain on disk, but must not produce
+                // a duplicate navigation row after its chat moves home.
+                let sessions = workspace.chatSessionIds.compactMap { id -> ChatSession? in
+                    guard environment.workspaces.workspaceId(forSession: id) == workspace.id else {
+                        return nil
+                    }
+                    return sessionsById[id]
+                }
+                let primary = sessions.first
+                let routingSession = primary ?? visibleSessions.first {
+                    environment.workspaces.workspaceId(forSession: $0.id) == workspace.id
+                }
+                let project = projectList.projects.first {
+                    $0.serverId == serverId && $0.id == workspace.projectId
+                }
+                return (
+                    HomeWorkspaceListItem(
+                        workspace: workspace,
+                        sessions: sessions,
+                        primarySession: routingSession,
+                        project: project
+                    ),
+                    primary.flatMap { sessionRank[$0.id] } ?? Int.max,
+                    workspace.createdAt
+                )
+            }
+            .sorted {
+                if $0.1 != $1.1 { return $0.1 < $1.1 }
+                return $0.2 > $1.2
+            }
+            .filter { !$0.0.sessions.isEmpty || $0.0.primarySession != nil }
+            .map(\.0)
+    }
+
+    private var expandedProjects: Set<UUID> {
+        persistedIDs(from: expandedProjectsRaw)
+    }
+
+    private var expandedWorkspaces: Set<UUID> {
+        persistedIDs(from: expandedWorkspacesRaw)
+    }
+
     /// Sort tier for a chat row. Every state checked here is visible on the
     /// row as `SessionRow.statusIndicator` in the same precedence (error →
     /// attention → in progress → unread, matching the macOS sidebar); keep
@@ -204,6 +282,10 @@ struct HomeView: View {
             }
             .onChange(of: visibleSessions.map(\.id)) { _, newIDs in
                 deferredSessionOrder.incorporate(newIDs)
+                backfillWorkspacesIfNeeded()
+            }
+            .onChange(of: organizationRaw, initial: true) { _, _ in
+                backfillWorkspacesIfNeeded()
             }
             .onChange(of: presentedSessionIsArchived, initial: true) { _, isArchived in
                 guard isArchived else { return }
@@ -234,8 +316,12 @@ struct HomeView: View {
             }
             .navigationDestination(for: HomeRoute.self) { route in
                 switch route {
-                case let .workspace(sessionId):
-                    workspaceDestination(sessionId: sessionId)
+                case let .workspace(workspaceId, anchorSessionId, preferredChatSessionId):
+                    workspaceDestination(
+                        workspaceId: workspaceId,
+                        anchorSessionId: anchorSessionId,
+                        preferredChatSessionId: preferredChatSessionId
+                    )
                 }
             }
             .refreshable {
@@ -334,98 +420,42 @@ struct HomeView: View {
     private var sessionList: some View {
         List {
             switch organization {
-            case .compact, .byWorkspace:
+            case .compact:
                 Section {
                     ForEach(visibleSessions) { session in
-                        Button {
-                            openWorkspace(session)
-                        } label: {
-                            SessionRow(
-                                session: session,
-                                projectName: projectName(for: session),
-                                harnessSymbol: harnessSymbol(for: session)
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .modifier(
-                            FullWidthTopSeparatorModifier(
-                                isVisible: session.id == visibleSessions.first?.id
-                            )
+                        chatRow(
+                            session,
+                            projectName: projectName(for: session),
+                            showsFullWidthTopSeparator: session.id == visibleSessions.first?.id
                         )
-                        .swipeActions(edge: .trailing) {
-                            Button {
-                                _ = environment.archiveSessionAndWorkspaceIfEmpty(session)
-                            } label: {
-                                Label("Archive", systemImage: "archivebox")
-                            }
-                            .tint(.orange)
-                        }
                     }
                     .onMove { source, destination in
-                        // Drag-to-reorder only means something in manual
-                        // order; other orders recompute on the next change.
                         guard order == .none else { return }
                         moveSessions(from: source, to: destination)
                     }
                 }
+            case .byWorkspace:
+                Section {
+                    ForEach(workspaceItems) { item in
+                        workspaceFolder(item, hierarchyDepth: 0)
+                    }
+                }
             case .byProject:
                 ForEach(projectList.activeProjects.filter { !$0.isScratch }) { project in
-                    let sessions = visibleSessions.filter { $0.projectId == project.id }
-                    if !sessions.isEmpty {
+                    let items = workspaceItems.filter { $0.workspace.projectId == project.id }
+                    if !items.isEmpty {
                         Section {
-                            ForEach(sessions) { session in
-                                Button {
-                                    openWorkspace(session)
-                                } label: {
-                                    SessionRow(
-                                        session: session,
-                                        projectName: nil,
-                                        harnessSymbol: harnessSymbol(for: session)
-                                    )
-                                }
-                                .buttonStyle(.plain)
-                                .swipeActions(edge: .trailing) {
-                                    Button {
-                                        _ = environment.archiveSessionAndWorkspaceIfEmpty(session)
-                                    } label: {
-                                        Label("Archive", systemImage: "archivebox")
-                                    }
-                                    .tint(.orange)
-                                }
-                            }
-                        } header: {
-                            Label(project.name, systemImage: project.symbolName)
+                            projectFolder(project, items: items)
                         }
                     }
                 }
-                // Chats without a real project (scratch-backed) are not a
-                // project: they sit in one headerless section at the root.
-                let looseSessions = visibleSessions.filter { session in
-                    projectList.activeProjects.first {
-                        $0.id == session.projectId
-                    }?.isScratch != false
-                }
-                if !looseSessions.isEmpty {
+                // Scratch-backed workspaces are not projects; match macOS by
+                // keeping them at the root.
+                let looseItems = workspaceItems.filter { $0.project?.isScratch != false }
+                if !looseItems.isEmpty {
                     Section {
-                        ForEach(looseSessions) { session in
-                            Button {
-                                openWorkspace(session)
-                            } label: {
-                                SessionRow(
-                                    session: session,
-                                    projectName: nil,
-                                    harnessSymbol: harnessSymbol(for: session)
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            .swipeActions(edge: .trailing) {
-                                Button {
-                                    _ = environment.archiveSessionAndWorkspaceIfEmpty(session)
-                                } label: {
-                                    Label("Archive", systemImage: "archivebox")
-                                }
-                                .tint(.orange)
-                            }
+                        ForEach(looseItems) { item in
+                            workspaceFolder(item, hierarchyDepth: 0)
                         }
                     }
                 }
@@ -434,9 +464,128 @@ struct HomeView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(Color(.systemBackground))
-        // Room for the floating call to action so the last row can scroll
-        // clear of it.
         .contentMargins(.bottom, 64, for: .scrollContent)
+    }
+
+    @ViewBuilder
+    private func projectFolder(_ project: Project, items: [HomeWorkspaceListItem]) -> some View {
+        Button {
+            toggleProject(project.id)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: project.symbolName)
+                    .frame(width: 24)
+                    .foregroundStyle(.secondary)
+                Text(project.name)
+                    .font(.body.weight(.semibold))
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .rotationEffect(.degrees(expandedProjects.contains(project.id) ? 90 : 0))
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+
+        if expandedProjects.contains(project.id) {
+            ForEach(items) { item in
+                workspaceFolder(item, hierarchyDepth: 1)
+            }
+        }
+    }
+
+    /// The macOS hierarchy collapses a one-chat workspace directly to its
+    /// agent row. Multi-chat workspaces expose the workspace itself plus its
+    /// indented agents.
+    @ViewBuilder
+    private func workspaceFolder(
+        _ item: HomeWorkspaceListItem,
+        hierarchyDepth: Int
+    ) -> some View {
+        if item.sessions.count == 1, let session = item.sessions.first {
+            chatRow(session, projectName: hierarchyDepth == 0 ? projectName(for: session) : nil)
+                .padding(.leading, CGFloat(hierarchyDepth) * 18)
+        } else {
+            HStack(spacing: 0) {
+                Button {
+                    openWorkspace(item)
+                } label: {
+                    WorkspaceRow(
+                        workspace: item.workspace,
+                        projectName: hierarchyDepth == 0 ? item.project?.name : nil
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    toggleWorkspace(item.id)
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .frame(width: 36, height: 36)
+                        .rotationEffect(.degrees(expandedWorkspaces.contains(item.id) ? 90 : 0))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(
+                    expandedWorkspaces.contains(item.id)
+                        ? "Collapse \(item.workspace.name)"
+                        : "Expand \(item.workspace.name)"
+                )
+            }
+            .padding(.leading, CGFloat(hierarchyDepth) * 18)
+            .swipeActions(edge: .trailing) {
+                Button {
+                    environment.archiveWorkspace(item.workspace)
+                    workspaceRevision += 1
+                } label: {
+                    Label("Archive", systemImage: "archivebox")
+                }
+                .tint(.orange)
+            }
+
+            if expandedWorkspaces.contains(item.id) {
+                ForEach(item.sessions) { session in
+                    chatRow(session, projectName: nil)
+                        .padding(.leading, CGFloat(hierarchyDepth + 1) * 18)
+                }
+                if item.sessions.isEmpty {
+                    Text("No tabs yet")
+                        .font(.subheadline)
+                        .foregroundStyle(.tertiary)
+                        .padding(.leading, CGFloat(hierarchyDepth + 1) * 18 + 48)
+                }
+            }
+        }
+    }
+
+    private func chatRow(
+        _ session: ChatSession,
+        projectName: String?,
+        showsFullWidthTopSeparator: Bool = false
+    ) -> some View {
+        Button {
+            openChat(session)
+        } label: {
+            SessionRow(
+                session: session,
+                projectName: projectName,
+                harnessSymbol: harnessSymbol(for: session)
+            )
+        }
+        .buttonStyle(.plain)
+        .modifier(FullWidthTopSeparatorModifier(isVisible: showsFullWidthTopSeparator))
+        .swipeActions(edge: .trailing) {
+            Button {
+                _ = environment.archiveSessionAndWorkspaceIfEmpty(session)
+                workspaceRevision += 1
+            } label: {
+                Label("Archive", systemImage: "archivebox")
+            }
+            .tint(.orange)
+        }
     }
 
     private func moveSessions(from source: IndexSet, to destination: Int) {
@@ -445,29 +594,140 @@ struct HomeView: View {
         manualSessionOrder = ids.map(\.uuidString).joined(separator: "\n")
     }
 
-    /// Prepare the workspace from the user's tap, before pushing its route.
-    /// Controller creation mutates the shared cache, so it must happen from
-    /// this event handler rather than while SwiftUI evaluates a destination.
-    private func openWorkspace(_ session: ChatSession) {
-        if let project = projectList.projects.first(where: { $0.id == session.projectId }) {
-            _ = ChatControllerCache.shared.controller(
-                for: session,
-                project: project,
-                workspaceId: session.id,
-                environment: environment
+    /// Entering a workspace restores its persisted selection, including a
+    /// terminal. This is intentionally different from tapping one of its chat
+    /// rows, which explicitly selects that chat before navigation.
+    private func openWorkspace(_ item: HomeWorkspaceListItem) {
+        guard let anchor = item.primarySession else { return }
+        prepareController(for: anchor, workspaceId: item.id)
+        path.append(
+            .workspace(
+                workspaceId: item.id,
+                anchorSessionId: anchor.id,
+                preferredChatSessionId: nil
             )
+        )
+    }
+
+    /// Agent rows always open the agent itself, never the terminal or sibling
+    /// chat that happened to be selected when the workspace was last left.
+    private func openChat(_ session: ChatSession) {
+        let workspace = ensureWorkspace(for: session)
+        WorkspacePaneStore.shared.selectChat(
+            session.id,
+            in: workspace.id,
+            legacySessionIds: [session.id] + workspace.chatSessionIds.filter { $0 != session.id }
+        )
+        prepareController(for: session, workspaceId: workspace.id)
+        path.append(
+            .workspace(
+                workspaceId: workspace.id,
+                anchorSessionId: session.id,
+                preferredChatSessionId: session.id
+            )
+        )
+    }
+
+    private func prepareController(for session: ChatSession, workspaceId: UUID) {
+        guard let project = projectList.projects.first(where: { $0.id == session.projectId }) else {
+            return
         }
-        path.append(HomeRoute.workspace(session.id))
+        _ = ChatControllerCache.shared.controller(
+            for: session,
+            project: project,
+            workspaceId: workspaceId,
+            environment: environment
+        )
+    }
+
+    private func ensureWorkspace(for session: ChatSession) -> Workspace {
+        let project = projectList.projects.first { $0.id == session.projectId }
+        return environment.workspaces.ensureWorkspace(
+            for: WorkspaceSessionSeed(
+                sessionId: session.id,
+                initialName: session.worktreeName ?? project?.name ?? "Workspace",
+                serverId: session.serverId,
+                projectId: session.projectId,
+                rootDirectory: session.cwd ?? project?.folderURL.path,
+                worktreeName: session.worktreeName
+            ),
+            legacyGroups: environment.paneGroups
+        )
+    }
+
+    private func backfillWorkspacesIfNeeded() {
+        guard organization != .compact else { return }
+
+        let sessionsById = Dictionary(
+            visibleSessions.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        // Before workspaces were represented in the iOS navigator, sibling
+        // chats lived only in the original chat's local pane payload. Process
+        // the broadest layouts first so their shared workspace claims every
+        // child before ordinary one-chat backfill runs.
+        let legacyLayouts = visibleSessions.compactMap { session -> (ChatSession, [UUID])? in
+            guard let state = WorkspacePaneStore.shared.existingState(for: session.id) else {
+                return nil
+            }
+            var seen: Set<UUID> = []
+            let chatIds = state.panes.compactMap { pane -> UUID? in
+                guard pane.kind == .chat,
+                      let id = pane.chatSessionId,
+                      sessionsById[id] != nil,
+                      seen.insert(id).inserted
+                else { return nil }
+                return id
+            }
+            guard chatIds.count > 1, chatIds.contains(session.id) else { return nil }
+            return (session, chatIds)
+        }
+        .sorted { $0.1.count > $1.1.count }
+
+        for (anchor, chatIds) in legacyLayouts {
+            var workspace = ensureWorkspace(for: anchor)
+            var changed = false
+            for chatId in chatIds where workspace.tabId(containingChat: chatId) == nil {
+                workspace.centerTabs.append(
+                    WorkspaceTab(root: .leaf(.centerInitial(sessionId: chatId)))
+                )
+                changed = true
+            }
+            if changed { environment.workspaces.save(workspace) }
+        }
+
+        for session in visibleSessions {
+            _ = ensureWorkspace(for: session)
+        }
+        workspaceRevision += 1
+    }
+
+    private func persistedIDs(from rawValue: String) -> Set<UUID> {
+        Set(rawValue.split(separator: "\n").compactMap { UUID(uuidString: String($0)) })
+    }
+
+    private func toggleProject(_ id: UUID) {
+        var ids = expandedProjects
+        if ids.contains(id) { ids.remove(id) } else { ids.insert(id) }
+        withAnimation(.snappy(duration: 0.28)) {
+            expandedProjectsRaw = ids.map(\.uuidString).sorted().joined(separator: "\n")
+        }
+    }
+
+    private func toggleWorkspace(_ id: UUID) {
+        var ids = expandedWorkspaces
+        if ids.contains(id) { ids.remove(id) } else { ids.insert(id) }
+        withAnimation(.snappy(duration: 0.28)) {
+            expandedWorkspacesRaw = ids.map(\.uuidString).sorted().joined(separator: "\n")
+        }
     }
 
     /// Whether the workspace at the top of Home's stack has been archived by
     /// the latest authoritative server snapshot. Workspace archives cascade
     /// to their chats, so this covers both chat and workspace archive events.
     private var presentedSessionIsArchived: Bool {
-        guard case let .workspace(sessionId)? = path.last else { return false }
-        return projectList.sessions.first {
-            $0.serverId == machines.selectedMachineId && $0.id == sessionId
-        }?.isArchived == true
+        guard case let .workspace(workspaceId, _, _)? = path.last else { return false }
+        return environment.workspaces.workspace(id: workspaceId)?.isArchived == true
     }
 
     private func setAutomaticOrderDeferred(_ isDeferred: Bool) {
@@ -636,7 +896,9 @@ struct HomeView: View {
 
     private func beginNewChatPromotion(_ sessionId: UUID, flow: NewChatFlow) {
         guard newChatFlow === flow, flow.sessionId == nil else { return }
+        guard let session = projectList.sessions.first(where: { $0.id == sessionId }) else { return }
         flow.sessionId = sessionId
+        let workspace = ensureWorkspace(for: session)
 
         // The real workspace is pushed underneath the opaque sheet. Its
         // normal route never receives the compose button's zoom transition,
@@ -644,7 +906,13 @@ struct HomeView: View {
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
-            path.append(HomeRoute.workspace(sessionId))
+            path.append(
+                .workspace(
+                    workspaceId: workspace.id,
+                    anchorSessionId: sessionId,
+                    preferredChatSessionId: sessionId
+                )
+            )
         }
 
         guard newChatDetent != .large else {
@@ -670,15 +938,21 @@ struct HomeView: View {
     /// Destination construction is deliberately read-only. Normal row taps
     /// populate the cache before pushing, while promoted drafts are registered
     /// there before this route appears.
-    private func workspaceDestination(sessionId: UUID) -> some View {
-        let controller = projectList.sessions.first(where: { $0.id == sessionId }).flatMap {
+    private func workspaceDestination(
+        workspaceId: UUID,
+        anchorSessionId: UUID,
+        preferredChatSessionId: UUID?
+    ) -> some View {
+        let controller = projectList.sessions.first(where: { $0.id == anchorSessionId }).flatMap {
             ChatControllerCache.shared.existingController(
-                sessionId: sessionId,
+                sessionId: anchorSessionId,
                 serverId: $0.serverId
             )
         }
         return WorkspaceScreen(
-            sessionId: sessionId,
+            sessionId: anchorSessionId,
+            workspaceId: workspaceId,
+            preferredChatSessionId: preferredChatSessionId,
             initialController: controller,
             onWorkspaceReady: markPromotedWorkspaceReady
         )
@@ -756,6 +1030,40 @@ private struct FullWidthTopSeparatorModifier: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+/// Workspace rows are containers, matching the macOS sidebar hierarchy. A
+/// tap opens the workspace's last-selected tab; the separate chevron expands
+/// its chat children.
+private struct WorkspaceRow: View {
+    let workspace: Workspace
+    let projectName: String?
+
+    var body: some View {
+        HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 9)
+                .fill(Color(.tertiarySystemFill))
+                .frame(width: 38, height: 38)
+                .overlay {
+                    Image(systemName: workspace.symbolName ?? "square.grid.2x2")
+                        .font(.system(size: 18))
+                        .foregroundStyle(.secondary)
+                }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(workspace.name.isEmpty ? "Workspace" : workspace.name)
+                    .lineLimit(1)
+                if let projectName {
+                    Text(projectName)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 4)
+        }
+        .padding(.vertical, 3)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

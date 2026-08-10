@@ -16,29 +16,77 @@ final class WorkspacePaneStore {
 
     private var cache: [UUID: PaneGroupState] = [:]
 
-    private func key(for sessionId: UUID) -> String {
-        "ios.workspace.panes.\(sessionId.uuidString)"
+    private func key(for id: UUID) -> String {
+        "ios.workspace.panes.\(id.uuidString)"
     }
 
-    func state(for sessionId: UUID) -> PaneGroupState {
-        if let cached = cache[sessionId] { return cached }
+    /// Pane state belongs to the workspace, not whichever chat happened to
+    /// route into it. `legacySessionIds` migrates layouts written before iOS
+    /// learned about multi-chat workspaces, when the storage key was the
+    /// routed session id.
+    func state(for workspaceId: UUID, legacySessionIds: [UUID] = []) -> PaneGroupState {
+        if let cached = cache[workspaceId] { return cached }
         if let data: Data = ClientPreferences.shared.valueIfPresent(
-            forKey: key(for: sessionId)
+            forKey: key(for: workspaceId)
         ),
            let decoded = try? JSONDecoder().decode(PaneGroupState.self, from: data) {
-            cache[sessionId] = decoded
+            cache[workspaceId] = decoded
             return decoded
         }
-        let initial = PaneGroupState.centerInitial(sessionId: sessionId)
-        cache[sessionId] = initial
+
+        // A later chat-row tap in an old build may have created a second,
+        // one-chat legacy state. Prefer the richest candidate so the original
+        // workspace (with its terminals and sibling chats) wins migration.
+        let legacy = legacySessionIds
+            .filter { $0 != workspaceId }
+            .compactMap { existingState(for: $0) }
+            .max { $0.panes.count < $1.panes.count }
+        if let decoded = legacy {
+            save(decoded, for: workspaceId)
+            return decoded
+        }
+
+        let initialSessionId = legacySessionIds.first ?? workspaceId
+        let initial = PaneGroupState.centerInitial(sessionId: initialSessionId)
+        cache[workspaceId] = initial
         return initial
     }
 
-    func save(_ state: PaneGroupState, for sessionId: UUID) {
-        cache[sessionId] = state
+    /// Existing state only—used to discover relationships written by older
+    /// iOS versions without manufacturing new pane groups during a backfill.
+    func existingState(for id: UUID) -> PaneGroupState? {
+        if let cached = cache[id] { return cached }
+        guard let data: Data = ClientPreferences.shared.valueIfPresent(forKey: key(for: id)),
+              let decoded = try? JSONDecoder().decode(PaneGroupState.self, from: data)
+        else { return nil }
+        cache[id] = decoded
+        return decoded
+    }
+
+    func save(_ state: PaneGroupState, for workspaceId: UUID) {
+        cache[workspaceId] = state
         if let data = try? JSONEncoder().encode(state) {
-            ClientPreferences.shared.set(data, forKey: key(for: sessionId))
+            ClientPreferences.shared.set(data, forKey: key(for: workspaceId))
         }
+    }
+
+    /// A chat-row tap is an explicit request for that chat, so select its pane
+    /// before Home pushes the workspace. If the shared workspace knows about a
+    /// chat that this device has never rendered, add its iOS tab on demand.
+    func selectChat(
+        _ sessionId: UUID,
+        in workspaceId: UUID,
+        legacySessionIds: [UUID]
+    ) {
+        var state = state(for: workspaceId, legacySessionIds: legacySessionIds)
+        if let pane = state.panes.first(where: {
+            $0.kind == .chat && $0.chatSessionId == sessionId
+        }) {
+            state.selectPane(id: pane.id)
+        } else {
+            _ = state.addChatPane(sessionId: sessionId)
+        }
+        save(state, for: workspaceId)
     }
 }
 
@@ -102,6 +150,10 @@ struct WorkspaceScreen: View {
     /// mounts an ordinary workspace route backed by the same cached controller
     /// before removing the opaque sheet.
     let sessionId: UUID?
+    /// Stable workspace identity for normal routes. Agent rows also supply a
+    /// preferred chat; workspace rows leave it nil so the last-open tab wins.
+    var workspaceId: UUID? = nil
+    var preferredChatSessionId: UUID? = nil
     /// Existing workspaces receive their cached-or-new controller from Home
     /// during destination construction, so the transcript shell is available
     /// on the first frame instead of waiting for this view's async task.
@@ -144,15 +196,10 @@ struct WorkspaceScreen: View {
     /// Stands in for the session id a draft doesn't have yet, so its pane
     /// group can exist (and keep a STABLE pane id) from the first frame.
     @State private var draftPlaceholderId = UUID()
-    /// The active pane presents over the grid; the system zoom transition
-    /// grows it out of its card (and shrinks it back), exactly like Photos
-    /// and the App Store — no hand-rolled motion.
-    @State private var showsPane = false
-    /// Entering from the workspaces list is plain navigation: the pane
-    /// renders inline so the push is the standard slide. The grid becomes
-    /// the base (and the pane a zoom cover) only once tabs are opened.
-    @State private var baseShowsGrid = false
-    @Namespace private var paneZoom
+    /// The tab grid is workspace-local state, not another navigation
+    /// destination. Keeping the active pane in Home's NavigationStack means
+    /// the system back button and edge swipe always pop straight to Home.
+    @State private var showsGrid = false
 
     private let columns = [
         GridItem(.flexible(), spacing: 14),
@@ -165,9 +212,34 @@ struct WorkspaceScreen: View {
 
     private var isDraft: Bool { activeSessionId == nil }
 
+    private var resolvedWorkspace: Workspace? {
+        if let workspaceId, let workspace = environment.workspaces.workspace(id: workspaceId) {
+            return workspace
+        }
+        guard let activeSessionId,
+              let id = environment.workspaces.workspaceId(forSession: activeSessionId)
+        else { return nil }
+        return environment.workspaces.workspace(id: id)
+    }
+
+    private var paneStorageId: UUID? {
+        resolvedWorkspace?.id ?? activeSessionId
+    }
+
+    private var legacyPaneSessionIds: [UUID] {
+        let workspaceIds = resolvedWorkspace?.chatSessionIds ?? []
+        guard let activeSessionId else { return workspaceIds }
+        return [activeSessionId] + workspaceIds.filter { $0 != activeSessionId }
+    }
+
     private var panes: PaneGroupState {
         if let paneState { return paneState }
-        if let activeSessionId { return WorkspacePaneStore.shared.state(for: activeSessionId) }
+        if let paneStorageId {
+            return WorkspacePaneStore.shared.state(
+                for: paneStorageId,
+                legacySessionIds: legacyPaneSessionIds
+            )
+        }
         // A draft's pane exists before its session does, keyed by a
         // placeholder so its id — and therefore the chat view's identity —
         // survives the session being adopted.
@@ -281,10 +353,9 @@ struct WorkspaceScreen: View {
                 }
             } else if resolvedProject == nil {
                 ProgressView()
-            } else if baseShowsGrid {
+            } else if showsGrid {
                 grid
             } else if let pane = activePane {
-                // Entry mode: the pane inline, riding the normal push slide.
                 paneContent(pane)
                     .id(pane.id)
             }
@@ -292,11 +363,21 @@ struct WorkspaceScreen: View {
         // Native navigation back to the workspaces list: the system back
         // button and the edge swipe-to-go-back gesture. Hiding the back
         // button for a custom sidebar button disabled the interactive pop.
+        // The exception is the tab grid: its back affordance returns to the
+        // last-open tab, because the grid is workspace-local navigation.
+        .navigationBarBackButtonHidden(showsGrid)
         .navigationTitle(baseTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                if isNewChatPresentation, hasStarted {
+                if showsGrid, !isNewChatPresentation {
+                    Button {
+                        reopenSelectedPane()
+                    } label: {
+                        Image(systemName: "chevron.left")
+                    }
+                    .accessibilityLabel("Back to selected tab")
+                } else if isNewChatPresentation, hasStarted {
                     Button {
                         dismiss()
                     } label: {
@@ -315,7 +396,7 @@ struct WorkspaceScreen: View {
                     .accessibilityLabel("Cancel")
                 // Tabs belong to a workspace; an unsent draft has none yet.
                 } else if !blocksServerContent, !isDraft {
-                    if baseShowsGrid {
+                    if showsGrid {
                         Button {
                             addTab()
                         } label: {
@@ -324,7 +405,7 @@ struct WorkspaceScreen: View {
                         .accessibilityLabel("New tab")
                     } else {
                         Button {
-                            if let pane = activePane { showGridFromInline(pane) }
+                            if let pane = activePane { showGrid(from: pane) }
                         } label: {
                             Image(systemName: "square.on.square")
                         }
@@ -332,9 +413,6 @@ struct WorkspaceScreen: View {
                     }
                 }
             }
-        }
-        .fullScreenCover(isPresented: $showsPane) {
-            paneCover
         }
         .navigationDestination(for: RemoteDirectory.self) { directory in
             RemoteDirectoryScreen(directory: directory) { path in
@@ -347,9 +425,7 @@ struct WorkspaceScreen: View {
         }
         .onChange(of: environment.machines.selectedServerAvailability) { _, availability in
             if case .ready = availability { return }
-            // A full-screen pane otherwise sits above this navigation
-            // boundary and would hide the unified server-waiting surface.
-            showsPane = false
+            showsGrid = false
         }
         .onChange(of: environment.projectList.activeProjects.map(\.id)) { _, _ in
             setUpDraftIfNeeded()
@@ -377,7 +453,7 @@ struct WorkspaceScreen: View {
         // title clears like any other chat pane, so the nav bar doesn't change
         // shape under the send.
         if isDraft { return hasStarted ? "" : "New Chat" }
-        if baseShowsGrid {
+        if showsGrid {
             return "\(panes.panes.count) Tab\(panes.panes.count == 1 ? "" : "s")"
         }
         guard let pane = activePane else { return "" }
@@ -388,8 +464,7 @@ struct WorkspaceScreen: View {
     // MARK: - Tab grid (the workspace's base)
 
     /// The Safari-style tab switcher: a two-column grid of pane previews with
-    /// close buttons. Each card is the zoom transition's source, so opening a
-    /// tab grows it out of its card.
+    /// close buttons.
     private var grid: some View {
         ScrollView {
             LazyVGrid(columns: columns, spacing: 18) {
@@ -401,46 +476,11 @@ struct WorkspaceScreen: View {
                         onSelect: { select(pane) },
                         onClose: { close(pane) }
                     )
-                    .matchedTransitionSource(id: pane.id, in: paneZoom)
                 }
             }
             .padding(16)
         }
         .background(Color(.systemGroupedBackground))
-    }
-
-    /// The presented pane: its own navigation bar (sidebar back, title,
-    /// tab-grid button), zooming from the selected card. Chat panes hide the
-    /// title so the transcript scrolls clear off the top.
-    @ViewBuilder
-    private var paneCover: some View {
-        if let pane = activePane {
-            NavigationStack {
-                paneContent(pane)
-                    .id(pane.id)
-                    .navigationTitle(pane.kind == .chat ? "" : title(for: pane))
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .topBarLeading) {
-                            Button {
-                                leaveWorkspace()
-                            } label: {
-                                Image(systemName: "sidebar.left")
-                            }
-                            .accessibilityLabel("Workspaces")
-                        }
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button {
-                                showGrid(from: pane)
-                            } label: {
-                                Image(systemName: "square.on.square")
-                            }
-                            .accessibilityLabel("Show tabs")
-                        }
-                    }
-            }
-            .navigationTransition(.zoom(sourceID: pane.id, in: paneZoom))
-        }
     }
 
     private var paneBinding: Binding<PaneGroupState> {
@@ -454,8 +494,8 @@ struct WorkspaceScreen: View {
                     state.addNewTabPane()
                 }
                 paneState = state
-                if let activeSessionId {
-                    WorkspacePaneStore.shared.save(state, for: activeSessionId)
+                if let paneStorageId {
+                    WorkspacePaneStore.shared.save(state, for: paneStorageId)
                 }
             }
         )
@@ -538,7 +578,7 @@ struct WorkspaceScreen: View {
         var state = panes
         state.selectedPaneId = pane.id
         paneBinding.wrappedValue = state
-        showsPane = true
+        showsGrid = false
     }
 
     /// Any tab can close — chats included, as on macOS. The binding's setter
@@ -554,8 +594,7 @@ struct WorkspaceScreen: View {
     }
 
     /// Instant new tab, macOS-style: the page itself offers what the tab
-    /// becomes. Presented on the next tick so its card exists as the zoom
-    /// source.
+    /// becomes, and the newly selected page opens immediately.
     private func addTab() {
         if let sourcePane = activePane ?? panes.panes.first {
             chatController(for: sourcePane)?.rememberCurrentComposerConfiguration()
@@ -563,50 +602,22 @@ struct WorkspaceScreen: View {
         var state = panes
         state.addNewTabPane()
         paneBinding.wrappedValue = state
-        Task { @MainActor in
-            showsPane = true
-        }
+        showsGrid = false
     }
 
-    /// Snapshot the pane for its card, then let the system zoom shrink the
-    /// pane back into the grid.
+    /// The grid's back button returns to the workspace's last-open tab.
+    private func reopenSelectedPane() {
+        guard activePane != nil else { return }
+        showsGrid = false
+    }
+
+    /// Snapshot the pane for its card, then reveal the workspace-local grid.
     private func showGrid(from pane: PaneDescriptorState) {
         PaneSnapshotCache.shared.captureKeyWindow(
             for: pane.id,
             bottomChrome: pane.kind == .chat ? PaneSnapshotCache.shared.activeBottomChrome : 0
         )
-        showsPane = false
-    }
-
-    /// First grid opening from the inline (entry) pane: swap the grid in
-    /// underneath and re-host the pane as the zoom cover in one un-animated
-    /// step — the screen doesn't change — then dismiss the cover so the
-    /// system zoom shrinks the pane into its card.
-    private func showGridFromInline(_ pane: PaneDescriptorState) {
-        PaneSnapshotCache.shared.captureKeyWindow(
-            for: pane.id,
-            bottomChrome: pane.kind == .chat ? PaneSnapshotCache.shared.activeBottomChrome : 0
-        )
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            baseShowsGrid = true
-            showsPane = true
-        }
-        Task { @MainActor in
-            // Let the cover attach before asking it to animate away.
-            try? await Task.sleep(for: .milliseconds(80))
-            showsPane = false
-        }
-    }
-
-    /// Back to the workspaces list: drop the pane cover without animation so
-    /// the pop reads as one motion.
-    private func leaveWorkspace() {
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) { showsPane = false }
-        dismiss()
+        showsGrid = true
     }
 
     /// The macOS new-tab conversion: the placeholder becomes a real pane in
@@ -628,6 +639,7 @@ struct WorkspaceScreen: View {
             id: pane.id, to: .chat, sessionId: workspaceSessionId, chatSessionId: chat.id
         )
         paneBinding.wrappedValue = state
+        registerChatInWorkspace(chat)
     }
 
     private func convertToTerminal(_ pane: PaneDescriptorState) {
@@ -635,6 +647,19 @@ struct WorkspaceScreen: View {
         var state = panes
         state.convertNewTabPane(id: pane.id, to: .terminal, sessionId: workspaceSessionId)
         paneBinding.wrappedValue = state
+    }
+
+    /// Keep the shared workspace's chat index in lockstep with iOS's compact
+    /// tab state. Home reads this index to build the same workspace → chats
+    /// hierarchy as macOS.
+    private func registerChatInWorkspace(_ chat: ChatSession) {
+        guard var workspace = resolvedWorkspace else { return }
+        if workspace.tabId(containingChat: chat.id) == nil {
+            let tab = WorkspaceTab(root: .leaf(.centerInitial(sessionId: chat.id)))
+            workspace.centerTabs.append(tab)
+            workspace.selectedCenterTabId = tab.id
+        }
+        environment.workspaces.save(workspace)
     }
 
     // MARK: - Connection
@@ -649,8 +674,22 @@ struct WorkspaceScreen: View {
             setUpDraftIfNeeded()
             return
         }
-        if paneState == nil {
-            paneState = WorkspacePaneStore.shared.state(for: sessionId)
+        if paneState == nil, let paneStorageId {
+            var state = WorkspacePaneStore.shared.state(
+                for: paneStorageId,
+                legacySessionIds: legacyPaneSessionIds
+            )
+            if let preferredChatSessionId {
+                if let pane = state.panes.first(where: {
+                    $0.kind == .chat && $0.chatSessionId == preferredChatSessionId
+                }) {
+                    state.selectPane(id: pane.id)
+                } else {
+                    _ = state.addChatPane(sessionId: preferredChatSessionId)
+                }
+                WorkspacePaneStore.shared.save(state, for: paneStorageId)
+            }
+            paneState = state
         }
         if controllers[sessionId] == nil {
             guard let session = rootSession,
@@ -744,8 +783,19 @@ struct WorkspaceScreen: View {
             for: session,
             environment: environment
         )
+        let workspace = environment.workspaces.ensureWorkspace(
+            for: WorkspaceSessionSeed(
+                sessionId: session.id,
+                initialName: session.worktreeName ?? project.name,
+                serverId: session.serverId,
+                projectId: project.id,
+                rootDirectory: session.cwd ?? project.folderURL.path,
+                worktreeName: session.worktreeName
+            ),
+            legacyGroups: environment.paneGroups
+        )
         controller.moveComposerDefaults(
-            to: .workspace(id: session.id, serverId: session.serverId)
+            to: .workspace(id: workspace.id, serverId: session.serverId)
         )
         // Save the draft pane under the real session before Home mounts the
         // normal workspace route. Both containers resolve the same cached
@@ -758,7 +808,7 @@ struct WorkspaceScreen: View {
         self.project = project
         startedSessionId = session.id
         paneState = state
-        WorkspacePaneStore.shared.save(state, for: session.id)
+        WorkspacePaneStore.shared.save(state, for: workspace.id)
         hasStarted = true
         Task { @MainActor in
             // `SessionController.send()` clears its composer synchronously
@@ -789,7 +839,7 @@ struct WorkspaceScreen: View {
         let controller = ChatControllerCache.shared.controller(
             for: session,
             project: project,
-            workspaceId: activeSessionId ?? chatId,
+            workspaceId: resolvedWorkspace?.id ?? activeSessionId ?? chatId,
             environment: environment
         )
         controllers[chatId] = controller
