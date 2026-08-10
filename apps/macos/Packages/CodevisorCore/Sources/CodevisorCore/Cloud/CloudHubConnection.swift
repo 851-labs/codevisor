@@ -118,6 +118,8 @@ public enum CloudHubConnectionError: Error, Equatable, Sendable, LocalizedError 
     /// unsupported protocol) — reconnecting cannot help.
     case rejected(closeCode: Int)
     case notSignedIn
+    case credentialsUnavailable
+    case machineUnavailable
     case disconnected
     case timedOut
     case channelClosed
@@ -128,6 +130,10 @@ public enum CloudHubConnectionError: Error, Equatable, Sendable, LocalizedError 
             "Codevisor Cloud rejected the connection (code \(code)). Sign in again."
         case .notSignedIn:
             "Not signed in to Codevisor Cloud."
+        case .credentialsUnavailable:
+            "Codevisor couldn't load its cloud credentials."
+        case .machineUnavailable:
+            "The cloud machine is offline."
         case .disconnected:
             "The Codevisor Cloud connection is offline."
         case .timedOut:
@@ -170,7 +176,14 @@ public actor CloudHubConnection {
     private var fatalFailure: CloudHubConnectionError?
     private var waiterSeq = 0
     private var readyWaiters: [Int: CheckedContinuation<Void, any Error>] = [:]
+    private var machineWaiterSeq = 0
+    private var machineOnlineWaiters: [Int: (machineId: String, continuation: CheckedContinuation<Void, any Error>)] = [:]
     private var channels: [String: ChannelState] = [:]
+    /// Keychain-backed values are immutable for this hub's lifetime. The
+    /// account controller destroys the hub on sign-out/server switch, so no
+    /// channel or reconnect should ever return to the credential store.
+    private var cachedSessionToken: Result<String, CloudHubConnectionError>?
+    private var cachedIdentity: Result<CloudAppDeviceIdentity, CloudHubConnectionError>?
     /// Serializes outbound socket writes so relay frames hit the wire in seq
     /// order even when several tasks send concurrently.
     private var sendChain: Task<Void, Never> = Task {}
@@ -255,6 +268,7 @@ public actor CloudHubConnection {
         isWelcomed = false
         failAllChannels()
         failWaiters(with: CloudHubConnectionError.disconnected)
+        failMachineWaiters(with: CloudHubConnectionError.disconnected)
     }
 
     /// Waits until the hub has welcomed this connection (bounded by the ready
@@ -285,10 +299,8 @@ public actor CloudHubConnection {
         var failures = 0
         while !Task.isCancelled, fatalFailure == nil {
             do {
-                guard let token = try credentialStore.token() else {
-                    throw CloudHubConnectionError.notSignedIn
-                }
-                let identity = try credentialStore.ensureAppDeviceIdentity()
+                let token = try sessionToken()
+                let identity = try appDeviceIdentity()
                 var request = URLRequest(url: try connectURL(token: token))
                 // The query token is the sole credential. Never let a stale
                 // session cookie from the shared jar ride along — if the hub
@@ -321,8 +333,10 @@ public actor CloudHubConnection {
                     await handle(message)
                     if isWelcomed { failures = 0 }
                 }
-            } catch let error as CloudHubConnectionError where error == .notSignedIn {
-                // No token means this instance outlived its sign-in; stop.
+            } catch let error as CloudHubConnectionError
+                where error == .notSignedIn || error == .credentialsUnavailable {
+                // Credential failures cannot be repaired by reconnecting this
+                // hub. A sign-in/retry creates a fresh instance.
                 becomeFatal(error)
             } catch {
                 if !Task.isCancelled {
@@ -350,6 +364,7 @@ public actor CloudHubConnection {
         Log.cloud.error("Cloud hub connection is fatal: \(String(describing: failure), privacy: .public)")
         fatalFailure = failure
         failWaiters(with: failure)
+        failMachineWaiters(with: failure)
     }
 
     private func failWaiters(with error: any Error) {
@@ -357,6 +372,84 @@ public actor CloudHubConnection {
         readyWaiters.removeAll()
         for waiter in waiters {
             waiter.resume(throwing: error)
+        }
+    }
+
+    private func failMachineWaiters(with error: any Error) {
+        let waiters = machineOnlineWaiters.values
+        machineOnlineWaiters.removeAll()
+        for waiter in waiters {
+            waiter.continuation.resume(throwing: error)
+        }
+    }
+
+    private func sessionToken() throws -> String {
+        if let cachedSessionToken { return try cachedSessionToken.get() }
+        let result: Result<String, CloudHubConnectionError>
+        do {
+            if let token = try credentialStore.token(), !token.isEmpty {
+                result = .success(token)
+            } else {
+                result = .failure(.notSignedIn)
+            }
+        } catch {
+            Log.cloud.error("Cloud session credential load failed: \(String(describing: error), privacy: .public)")
+            result = .failure(.credentialsUnavailable)
+        }
+        cachedSessionToken = result
+        return try result.get()
+    }
+
+    private func appDeviceIdentity() throws -> CloudAppDeviceIdentity {
+        if let cachedIdentity { return try cachedIdentity.get() }
+        let result: Result<CloudAppDeviceIdentity, CloudHubConnectionError>
+        do {
+            result = .success(try credentialStore.ensureAppDeviceIdentity())
+        } catch {
+            Log.cloud.error("Cloud device credential load failed: \(String(describing: error), privacy: .public)")
+            result = .failure(.credentialsUnavailable)
+        }
+        cachedIdentity = result
+        return try result.get()
+    }
+
+    /// An offline machine is a state transition, not a timer-based connection
+    /// failure. Park channel openers until presence says it is back instead of
+    /// letting every event stream and terminal create an independent retry
+    /// loop. Cancellation removes the parked request promptly.
+    private func waitUntilMachineOnline(_ machineId: String) async throws {
+        guard let machine = machines.first(where: { $0.deviceId == machineId }) else {
+            throw CloudHubConnectionError.machineUnavailable
+        }
+        if machine.online { return }
+        if Task.isCancelled { throw CancellationError() }
+
+        let id = machineWaiterSeq
+        machineWaiterSeq += 1
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation {
+                (continuation: CheckedContinuation<Void, any Error>) in
+                let cancelled = withUnsafeCurrentTask { $0?.isCancelled ?? false }
+                guard !cancelled else {
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
+                machineOnlineWaiters[id] = (machineId, continuation)
+            }
+        } onCancel: {
+            Task { await self.cancelMachineWaiter(id) }
+        }
+    }
+
+    private func cancelMachineWaiter(_ id: Int) {
+        machineOnlineWaiters.removeValue(forKey: id)?.continuation.resume(throwing: CancellationError())
+    }
+
+    private func resumeMachineWaiters(for machineId: String) {
+        let ready = machineOnlineWaiters.filter { $0.value.machineId == machineId }
+        for (id, waiter) in ready {
+            machineOnlineWaiters.removeValue(forKey: id)
+            waiter.continuation.resume()
         }
     }
 
@@ -480,7 +573,8 @@ public actor CloudHubConnection {
         onClosed: @escaping @Sendable (CloudChannelCloseReason?) -> Void
     ) async throws -> CloudRelayChannel {
         try await waitUntilReady()
-        let identity = try credentialStore.ensureAppDeviceIdentity()
+        try await waitUntilMachineOnline(machineDeviceId)
+        let identity = try appDeviceIdentity()
         let opened = try CloudChannelCrypto.openChannel(
             openerSecretKey: identity.secretKey,
             responderPublicKey: machinePublicKey
@@ -605,6 +699,9 @@ public actor CloudHubConnection {
             guard let welcome = try? decoder.decode(WelcomeMessage.self, from: data) else { return }
             Log.cloud.info("Cloud hub welcomed this device (\(welcome.machines.count) machines)")
             machines = welcome.machines
+            for machine in welcome.machines where machine.online {
+                resumeMachineWaiters(for: machine.deviceId)
+            }
             isWelcomed = true
             let waiters = readyWaiters.values
             readyWaiters.removeAll()
@@ -617,6 +714,9 @@ public actor CloudHubConnection {
                 machines[index] = presence.machine
             } else {
                 machines.append(presence.machine)
+            }
+            if presence.machine.online {
+                resumeMachineWaiters(for: presence.machine.deviceId)
             }
         case "relay":
             guard let relay = try? decoder.decode(InboundRelayMessage.self, from: data) else { return }

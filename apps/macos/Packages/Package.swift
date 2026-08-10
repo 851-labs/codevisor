@@ -93,6 +93,7 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v6)],
             linkerSettings: [
                 .linkedLibrary("sqlite3"),
+                .linkedFramework("LocalAuthentication"),
                 .linkedFramework("Security")
             ]
         ),

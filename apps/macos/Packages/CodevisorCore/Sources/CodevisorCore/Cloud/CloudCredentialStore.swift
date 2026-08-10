@@ -80,10 +80,14 @@ public final class KeychainCloudCredentialStore: CloudCredentialStore, @unchecke
     private static let appDeviceIdAccount = "app-device-id"
     private static let appSecretKeyAccount = "app-device-secret-key"
 
-    private let service: String
+    private let values: DataProtectionKeychainValueStore
 
     public init(service: String = "com.851labs.Codevisor.cloud-session") {
-        self.service = service
+        values = DataProtectionKeychainValueStore(service: service)
+    }
+
+    init(service: String, operations: KeychainOperations) {
+        values = DataProtectionKeychainValueStore(service: service, operations: operations)
     }
 
     public func token() throws -> String? {
@@ -128,52 +132,23 @@ public final class KeychainCloudCredentialStore: CloudCredentialStore, @unchecke
     }
 
     private func read(account: String) throws -> String? {
-        var query = baseQuery(account: account)
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        if status == errSecItemNotFound { return nil }
-        guard status == errSecSuccess,
-              let data = result as? Data
-        else {
-            throw CloudCredentialError(operation: "read", status: status)
-        }
-        return String(data: data, encoding: .utf8)
+        try mapFailure { try values.value(forAccount: account) }
     }
 
     private func write(_ value: String, account: String) throws {
-        let data = Data(value.utf8)
-        let query = baseQuery(account: account)
-        let update = [kSecValueData as String: data]
-        let updateStatus = SecItemUpdate(query as CFDictionary, update as CFDictionary)
-        if updateStatus == errSecSuccess { return }
-        guard updateStatus == errSecItemNotFound else {
-            throw CloudCredentialError(operation: "update", status: updateStatus)
-        }
-
-        var insert = query
-        insert[kSecValueData as String] = data
-        insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        let insertStatus = SecItemAdd(insert as CFDictionary, nil)
-        guard insertStatus == errSecSuccess else {
-            throw CloudCredentialError(operation: "insert", status: insertStatus)
-        }
+        try mapFailure { try values.saveValue(value, forAccount: account) }
     }
 
     private func remove(account: String) throws {
-        let status = SecItemDelete(baseQuery(account: account) as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw CloudCredentialError(operation: "delete", status: status)
-        }
+        try mapFailure { try values.removeValue(forAccount: account) }
     }
 
-    private func baseQuery(account: String) -> [String: Any] {
-        [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
-        ]
+    private func mapFailure<T>(_ operation: () throws -> T) throws -> T {
+        do {
+            return try operation()
+        } catch let failure as KeychainStorageFailure {
+            throw CloudCredentialError(operation: failure.operation, status: failure.status)
+        }
     }
 }
 

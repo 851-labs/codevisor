@@ -21,59 +21,34 @@ public struct MachineCredentialError: Error, LocalizedError, Sendable {
 public final class KeychainMachineCredentialStore: MachineCredentialStore, @unchecked Sendable {
     public static let shared = KeychainMachineCredentialStore()
 
-    private let service: String
+    private let values: DataProtectionKeychainValueStore
 
     public init(service: String = "com.851labs.Codevisor.machine-token") {
-        self.service = service
+        values = DataProtectionKeychainValueStore(service: service)
+    }
+
+    init(service: String, operations: KeychainOperations) {
+        values = DataProtectionKeychainValueStore(service: service, operations: operations)
     }
 
     public func token(forMachineID id: String) throws -> String? {
-        var query = baseQuery(id: id)
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        if status == errSecItemNotFound { return nil }
-        guard status == errSecSuccess,
-              let data = result as? Data
-        else {
-            throw MachineCredentialError(operation: "read", status: status)
-        }
-        return String(data: data, encoding: .utf8)
+        try mapFailure { try values.value(forAccount: id) }
     }
 
     public func saveToken(_ token: String, forMachineID id: String) throws {
-        let data = Data(token.utf8)
-        let query = baseQuery(id: id)
-        let update = [kSecValueData as String: data]
-        let updateStatus = SecItemUpdate(query as CFDictionary, update as CFDictionary)
-        if updateStatus == errSecSuccess { return }
-        guard updateStatus == errSecItemNotFound else {
-            throw MachineCredentialError(operation: "update", status: updateStatus)
-        }
-
-        var insert = query
-        insert[kSecValueData as String] = data
-        insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        let insertStatus = SecItemAdd(insert as CFDictionary, nil)
-        guard insertStatus == errSecSuccess else {
-            throw MachineCredentialError(operation: "insert", status: insertStatus)
-        }
+        try mapFailure { try values.saveValue(token, forAccount: id) }
     }
 
     public func removeToken(forMachineID id: String) throws {
-        let status = SecItemDelete(baseQuery(id: id) as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw MachineCredentialError(operation: "delete", status: status)
-        }
+        try mapFailure { try values.removeValue(forAccount: id) }
     }
 
-    private func baseQuery(id: String) -> [String: Any] {
-        [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: id
-        ]
+    private func mapFailure<T>(_ operation: () throws -> T) throws -> T {
+        do {
+            return try operation()
+        } catch let failure as KeychainStorageFailure {
+            throw MachineCredentialError(operation: failure.operation, status: failure.status)
+        }
     }
 }
 

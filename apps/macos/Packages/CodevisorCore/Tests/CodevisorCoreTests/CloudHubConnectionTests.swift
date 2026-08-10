@@ -27,6 +27,62 @@ struct CloudHubConnectionTests {
         }
     }
 
+    private final class CountingCredentialStore: CloudCredentialStore, @unchecked Sendable {
+        private let base: InMemoryCloudCredentialStore
+        private let lock = NSLock()
+        private var tokenReadCount = 0
+        private var deviceIdReadCount = 0
+        private var secretKeyReadCount = 0
+
+        init(base: InMemoryCloudCredentialStore) {
+            self.base = base
+        }
+
+        var readCounts: (token: Int, deviceId: Int, secretKey: Int) {
+            lock.withLock { (tokenReadCount, deviceIdReadCount, secretKeyReadCount) }
+        }
+
+        func token() throws -> String? {
+            lock.withLock { tokenReadCount += 1 }
+            return try base.token()
+        }
+
+        func saveToken(_ token: String) throws { try base.saveToken(token) }
+        func removeToken() throws { try base.removeToken() }
+        func serverURL() throws -> URL? { try base.serverURL() }
+        func saveServerURL(_ url: URL?) throws { try base.saveServerURL(url) }
+
+        func appDeviceId() throws -> String? {
+            lock.withLock { deviceIdReadCount += 1 }
+            return try base.appDeviceId()
+        }
+
+        func saveAppDeviceId(_ id: String) throws { try base.saveAppDeviceId(id) }
+
+        func appSecretKey() throws -> Data? {
+            lock.withLock { secretKeyReadCount += 1 }
+            return try base.appSecretKey()
+        }
+
+        func saveAppSecretKey(_ key: Data) throws { try base.saveAppSecretKey(key) }
+    }
+
+    private final class SocketQueue: @unchecked Sendable {
+        private let lock = NSLock()
+        private var sockets: [any ServerWebSocketConnecting]
+
+        init(_ sockets: [any ServerWebSocketConnecting]) {
+            self.sockets = sockets
+        }
+
+        func next() -> any ServerWebSocketConnecting {
+            lock.withLock {
+                if sockets.count > 1 { return sockets.removeFirst() }
+                return sockets[0]
+            }
+        }
+    }
+
     private func makeHub(
         _ scripted: ScriptedCloudHub
     ) -> (hub: CloudHubConnection, store: InMemoryCloudCredentialStore) {
@@ -53,6 +109,104 @@ struct CloudHubConnectionTests {
         #expect(scripted.appPublicKey?.isEmpty == false)
         let machines = await hub.machines
         #expect(machines.map(\.deviceId) == [machine.deviceId])
+        await hub.shutdown()
+    }
+
+    @Test("A hub snapshots credentials instead of rereading them per channel")
+    func credentialsAreReadOnce() async throws {
+        let machine = ScriptedRelayMachine()
+        let scripted = ScriptedCloudHub(machines: [machine.presence])
+        let memory = InMemoryCloudCredentialStore(token: "session-token")
+        try memory.saveAppDeviceId("app-device")
+        try memory.saveAppSecretKey(Data(repeating: 7, count: 32))
+        let store = CountingCredentialStore(base: memory)
+        let hub = CloudHubConnection(
+            serverURL: URL(string: "https://cloud.example.com")!,
+            credentialStore: store,
+            deviceName: "Test App",
+            deviceOS: "macOS",
+            webSocketTransport: FakeWebSocketTransport { _ in scripted.socket },
+            readyTimeout: .seconds(2)
+        )
+
+        try await hub.waitUntilReady()
+        for _ in 0..<4 {
+            _ = try await hub.openChannel(
+                machineDeviceId: machine.deviceId,
+                machinePublicKey: machine.publicKey,
+                channelType: "test",
+                params: nil,
+                onMessage: { _ in },
+                onClosed: { _ in }
+            )
+        }
+
+        let counts = store.readCounts
+        #expect(counts.token == 1)
+        #expect(counts.deviceId == 1)
+        #expect(counts.secretKey == 1)
+        await hub.shutdown()
+    }
+
+    @Test("Hub reconnects reuse the credential snapshot")
+    func reconnectUsesCredentialSnapshot() async throws {
+        let first = ScriptedCloudHub()
+        let second = ScriptedCloudHub()
+        let sockets = SocketQueue([first.socket, second.socket])
+        let transport = FakeWebSocketTransport { _ in sockets.next() }
+        let memory = InMemoryCloudCredentialStore(token: "session-token")
+        try memory.saveAppDeviceId("app-device")
+        try memory.saveAppSecretKey(Data(repeating: 7, count: 32))
+        let store = CountingCredentialStore(base: memory)
+        let hub = CloudHubConnection(
+            serverURL: URL(string: "https://cloud.example.com")!,
+            credentialStore: store,
+            deviceName: "Test App",
+            deviceOS: "macOS",
+            webSocketTransport: transport,
+            readyTimeout: .seconds(3)
+        )
+
+        try await hub.waitUntilReady()
+        first.socket.disconnect()
+        #expect(await waitUntil(timeout: .seconds(3)) { transport.requests.count == 2 })
+        try await hub.waitUntilReady()
+
+        let counts = store.readCounts
+        #expect(counts.token == 1)
+        #expect(counts.deviceId == 1)
+        #expect(counts.secretKey == 1)
+        await hub.shutdown()
+    }
+
+    @Test("Channel opens park while a known machine is offline")
+    func offlineMachineParksChannelOpen() async throws {
+        let machine = ScriptedRelayMachine()
+        var offlinePresence = machine.presence
+        offlinePresence.online = false
+        let scripted = ScriptedCloudHub(machines: [offlinePresence])
+        let (hub, _) = makeHub(scripted)
+
+        try await hub.waitUntilReady()
+        let openTask = Task {
+            try await hub.openChannel(
+                machineDeviceId: machine.deviceId,
+                machinePublicKey: machine.publicKey,
+                channelType: "test",
+                params: nil,
+                onMessage: { _ in },
+                onClosed: { _ in }
+            )
+        }
+
+        try await Task.sleep(for: .milliseconds(25))
+        #expect(scripted.relayEnvelopes.isEmpty)
+
+        var onlinePresence = offlinePresence
+        onlinePresence.online = true
+        scripted.presenceToApp(onlinePresence)
+        _ = try await openTask.value
+        #expect(await waitUntil { scripted.relayEnvelopes.count == 1 })
         await hub.shutdown()
     }
 

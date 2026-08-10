@@ -130,6 +130,15 @@ final class ScriptedCloudHub: @unchecked Sendable {
         socket.push(.string(String(decoding: data, as: UTF8.self)))
     }
 
+    func presenceToApp(_ machine: CloudMachine) {
+        struct Envelope: Encodable {
+            var t = "presence"
+            var machine: CloudMachine
+        }
+        let data = try! JSONEncoder().encode(Envelope(machine: machine))
+        socket.push(.string(String(decoding: data, as: UTF8.self)))
+    }
+
     private func handle(_ message: ServerWebSocketMessage) {
         guard case let .string(text) = message else { return }
         let data = Data(text.utf8)

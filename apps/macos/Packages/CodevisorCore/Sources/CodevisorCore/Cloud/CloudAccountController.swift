@@ -184,6 +184,7 @@ public final class CloudAccountController {
                 lastError = "The development account is not available right now."
                 return
             }
+            await discardHubForCredentialChange()
             try credentialStore.saveToken(devToken)
             state = .signedIn(userEmail: user.email)
             await refreshMachines()
@@ -201,6 +202,7 @@ public final class CloudAccountController {
         let client = client
         do {
             let token = try await client.verifyOneTimeToken(ott)
+            await discardHubForCredentialChange()
             try credentialStore.saveToken(token)
             let user = (try? await client.session(token: token)) ?? nil
             state = .signedIn(userEmail: user?.email)
@@ -256,6 +258,16 @@ public final class CloudAccountController {
             }
         }
         onSignedOut?()
+    }
+
+    /// A hub owns an immutable snapshot of the account credentials. Replacing
+    /// a token therefore replaces the hub too; otherwise a reconnect could
+    /// keep authenticating with the previous account's cached session.
+    private func discardHubForCredentialChange() async {
+        stopAllLoopbackBridges()
+        guard let hub else { return }
+        self.hub = nil
+        await hub.shutdown()
     }
 
     public func refreshMachines() async {

@@ -26,6 +26,8 @@ on:
         required: true
       APPLE_CODESIGN_IDENTITY:
         required: true
+      APPLE_PROVISIONING_PROFILE_BASE64:
+        required: true
       APPLE_ID:
         required: false
       APPLE_APP_SPECIFIC_PASSWORD:
@@ -276,13 +278,14 @@ jobs:
           APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_CODESIGN_IDENTITY: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+          APPLE_PROVISIONING_PROFILE_BASE64: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
         run: |
-          if [[ -z "$APPLE_CERTIFICATE_BASE64" || -z "$APPLE_CERTIFICATE_PASSWORD" || -z "$APPLE_CODESIGN_IDENTITY" ]]; then
-            echo "Developer ID signing credentials are required." >&2
+          if [[ -z "$APPLE_CERTIFICATE_BASE64" || -z "$APPLE_CERTIFICATE_PASSWORD" || -z "$APPLE_CODESIGN_IDENTITY" || -z "$APPLE_PROVISIONING_PROFILE_BASE64" ]]; then
+            echo "Developer ID signing credentials and provisioning profile are required." >&2
             exit 1
           fi
           if [[ -z "$APP_STORE_CONNECT_API_KEY_BASE64" && ( -z "$APPLE_ID" || -z "$APPLE_APP_SPECIFIC_PASSWORD" || -z "$APPLE_TEAM_ID" ) ]]; then
@@ -306,6 +309,15 @@ jobs:
           security import "$certificate_path" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$keychain_path"
           security list-keychains -d user -s "$keychain_path" $(security list-keychains -d user | tr -d '"')
+      - name: Install Developer ID provisioning profile
+        shell: bash
+        env:
+          APPLE_PROVISIONING_PROFILE_BASE64: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          profile_path="$RUNNER_TEMP/Codevisor.provisionprofile"
+          printf '%s' "$APPLE_PROVISIONING_PROFILE_BASE64" | base64 --decode > "$profile_path"
+          security cms -D -i "$profile_path" >/dev/null
+          echo "APPLE_PROVISIONING_PROFILE_PATH=$profile_path" >> "$GITHUB_ENV"
       - name: Prepare App Store Connect API key
         shell: bash
         env:
