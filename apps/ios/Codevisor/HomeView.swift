@@ -114,6 +114,10 @@ struct HomeView: View {
     @State private var isPointerInsideSidebar = false
     @GestureState private var isTouchingSidebar = false
     @State private var deferredSessionOrder = InteractionDeferredOrder<UUID>()
+    /// Non-nil while a burst of automatic reorders is settling (the deferred
+    /// order is locked without the user touching or hovering the list).
+    @State private var reorderSettleHoldStart: Date?
+    @State private var reorderSettleTask: Task<Void, Never>?
     /// The repository is deliberately non-observable. Bump this after a
     /// workspace backfill or local layout mutation so the hierarchy re-reads.
     @State private var workspaceRevision = 0
@@ -145,36 +149,43 @@ struct HomeView: View {
         )
     }
 
-    /// Active chats on the selected machine, in the chosen order.
-    private var visibleSessions: [ChatSession] {
+    /// Active chats on the selected machine in the order the sort wants
+    /// right now, before the interaction/settle holds are applied. Watched
+    /// separately from `visibleSessions` to coalesce bursts of automatic
+    /// reorders (the held, displayed order does not change while locked).
+    private var desiredVisibleSessions: [ChatSession] {
         let sessions = projectList.sessions
             .filter { $0.serverId == machines.selectedMachineId && !$0.isArchived }
-        let desired: [ChatSession]
         switch order {
         case .updated:
             // Priority first (errors, waiting, unread), then recency — the
             // macOS sidebar's default.
-            desired = sessions.sorted { lhs, rhs in
+            return sessions.sorted { lhs, rhs in
                 let lp = priority(for: lhs)
                 let rp = priority(for: rhs)
                 if lp != rp { return lp < rp }
                 return lhs.sidebarStateChangedAt > rhs.sidebarStateChangedAt
             }
         case .created:
-            desired = sessions.sorted { $0.createdAt > $1.createdAt }
+            return sessions.sorted { $0.createdAt > $1.createdAt }
         case .none:
             let ordered = manualSessionOrder
                 .split(separator: "\n")
                 .compactMap { UUID(uuidString: String($0)) }
             var index: [UUID: Int] = [:]
             for (position, id) in ordered.enumerated() { index[id] = position }
-            desired = sessions.sorted { lhs, rhs in
+            return sessions.sorted { lhs, rhs in
                 let li = index[lhs.id] ?? Int.max
                 let ri = index[rhs.id] ?? Int.max
                 if li != ri { return li < ri }
                 return lhs.sidebarStateChangedAt > rhs.sidebarStateChangedAt
             }
         }
+    }
+
+    /// Active chats on the selected machine, in the chosen order.
+    private var visibleSessions: [ChatSession] {
+        let desired = desiredVisibleSessions
         guard order != .none else { return desired }
         return deferredSessionOrder.applying(to: desired, id: \.id)
     }
@@ -283,6 +294,12 @@ struct HomeView: View {
             .onChange(of: visibleSessions.map(\.id)) { _, newIDs in
                 deferredSessionOrder.incorporate(newIDs)
                 backfillWorkspacesIfNeeded()
+            }
+            // Bursty automatic reorders (several agents changing state at
+            // once) are jarring. Watching the unheld sort lets a burst land
+            // as one animated reflow after it settles.
+            .onChange(of: desiredVisibleSessions.map(\.id)) { _, _ in
+                scheduleReorderSettleHold()
             }
             .onChange(of: organizationRaw, initial: true) { _, _ in
                 backfillWorkspacesIfNeeded()
@@ -732,13 +749,48 @@ struct HomeView: View {
 
     private func setAutomaticOrderDeferred(_ isDeferred: Bool) {
         if isDeferred {
+            // The touch/hover hold takes over any in-flight settle hold (the
+            // lock is first-snapshot-wins, so the frozen order is preserved)
+            // and owns it until the interaction ends.
+            cancelReorderSettleHold()
             deferredSessionOrder.lock(to: visibleSessions.map(\.id))
         } else {
             releaseDeferredOrder(animated: true)
         }
     }
 
+    /// Coalesces bursts of automatic reorders. The first change of a burst
+    /// commits immediately — it has already rendered by the time this runs —
+    /// then the order freezes until the sort has been quiet for
+    /// `ReorderSettle.quietDelay`, capped at `ReorderSettle.maxHold` under
+    /// sustained churn. While the user is touching or hovering the list the
+    /// interaction hold owns the lock instead, and its end releases
+    /// immediately as before.
+    private func scheduleReorderSettleHold() {
+        guard order != .none, !isPointerInsideSidebar, !isTouchingSidebar else { return }
+        if !deferredSessionOrder.isLocked {
+            deferredSessionOrder.lock(to: visibleSessions.map(\.id))
+            reorderSettleHoldStart = Date()
+        }
+        let holdStart = reorderSettleHoldStart ?? Date()
+        reorderSettleTask?.cancel()
+        reorderSettleTask = Task {
+            try? await Task.sleep(for: .seconds(ReorderSettle.delay(holdStart: holdStart)))
+            guard !Task.isCancelled else { return }
+            reorderSettleTask = nil
+            reorderSettleHoldStart = nil
+            releaseDeferredOrder(animated: true)
+        }
+    }
+
+    private func cancelReorderSettleHold() {
+        reorderSettleTask?.cancel()
+        reorderSettleTask = nil
+        reorderSettleHoldStart = nil
+    }
+
     private func releaseDeferredOrder(animated: Bool) {
+        cancelReorderSettleHold()
         guard deferredSessionOrder.isLocked else { return }
         if animated {
             withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) {

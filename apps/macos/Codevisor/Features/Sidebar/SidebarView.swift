@@ -144,6 +144,10 @@ struct SidebarView: View {
     @State private var isPointerInsideSidebar = false
     @State private var deferredProjectOrder = InteractionDeferredOrder<UUID>()
     @State private var deferredSessionOrder = InteractionDeferredOrder<UUID>()
+    /// Non-nil while a burst of automatic reorders is settling (the deferred
+    /// orders are locked without the pointer being inside the sidebar).
+    @State private var reorderSettleHoldStart: Date?
+    @State private var reorderSettleTask: Task<Void, Never>?
     @ClientPreference("sidebar.organization", default: SidebarOrganization.compact.rawValue)
     private var organizationRaw
     @ClientPreference("sidebar.order", default: SidebarOrder.updated.rawValue)
@@ -236,6 +240,19 @@ struct SidebarView: View {
             return deferredSessionOrder.applying(to: sorted, id: \.id)
         }
         return manuallyOrderedSessions(sessions, session: \.session)
+    }
+
+    /// The identity order the automatic sort wants right now, ignoring the
+    /// hover and settle holds. Watched to coalesce bursts of reorders into a
+    /// single reflow; empty under manual ordering, which never auto-reorders.
+    private var desiredAutomaticOrderIDs: [UUID] {
+        guard order != .none else { return [] }
+        let projectIDs = sortedProjects(list.activeProjects).map(\.id)
+        let sessionIDs = list.activeProjects
+            .flatMap { list.sessions(in: $0) }
+            .sorted(by: compareSessions)
+            .map(\.id)
+        return projectIDs + sessionIDs
     }
 
     /// "By workspace": every workspace on the selected machine, ordered like
@@ -388,25 +405,35 @@ struct SidebarView: View {
                 // A plain VStack: lazy row materialization re-measures the
                 // content mid-bounce, which reads as random overscroll snaps.
                 VStack(alignment: .leading, spacing: 1) {
+                    // `.geometryGroup()` makes each row translate as one
+                    // rigid unit during reflows. Without it a row whose
+                    // content changes in the same transaction as its move
+                    // (the state change that reorders a chat also restyles
+                    // its leading icon) animates each subview's position
+                    // independently, which reads as shearing/jitter.
                     if organization == .byProject {
                         ForEach(projectSectionProjects) { project in
                             projectFolder(project)
+                                .geometryGroup()
                         }
                         // Chats without a real project (scratch-backed
                         // workspaces) sit at the root as plain chat rows —
                         // a single-use folder is not a project.
                         ForEach(looseWorkspaceItems) { item in
                             workspaceFolder(item, hierarchyDepth: 0)
+                                .geometryGroup()
                                 .transition(.identity)
                         }
                     } else if organization == .byWorkspace {
                         ForEach(workspaceItems) { item in
                             workspaceFolder(item, hierarchyDepth: 0)
+                                .geometryGroup()
                                 .transition(.identity)
                         }
                     } else {
                         ForEach(chronologicalSessions) { item in
                             reorderableChronologicalSessionRow(item.session, project: item.project)
+                                .geometryGroup()
                                 .transition(.identity)
                         }
                     }
@@ -574,6 +601,13 @@ struct SidebarView: View {
         }
         .onChange(of: visibleProjects.map(\.id)) { _, newIDs in
             deferredProjectOrder.incorporate(newIDs)
+        }
+        // Bursty automatic reorders (several agents changing state at once)
+        // are jarring, and each interrupts the previous reflow animation
+        // mid-flight, which reads as jitter. Watching the unheld sort lets a
+        // burst land as one clean reflow after it settles.
+        .onChange(of: desiredAutomaticOrderIDs) { _, _ in
+            scheduleReorderSettleHold()
         }
     }
 
@@ -1635,6 +1669,10 @@ struct SidebarView: View {
     /// pointer leaves. Manual drag order bypasses these snapshots entirely.
     private func setAutomaticOrderDeferred(_ isDeferred: Bool) {
         if isDeferred {
+            // The hover hold takes over any in-flight settle hold (the lock
+            // is first-snapshot-wins, so the frozen order is preserved) and
+            // owns it until the pointer leaves.
+            cancelReorderSettleHold()
             deferredProjectOrder.lock(to: visibleProjects.map(\.id))
             deferredSessionOrder.lock(to: chronologicalSessions.map(\.id))
         } else {
@@ -1642,7 +1680,38 @@ struct SidebarView: View {
         }
     }
 
+    /// Coalesces bursts of automatic reorders. The first change of a burst
+    /// commits immediately — it has already rendered by the time this runs —
+    /// then the order freezes until the sort has been quiet for
+    /// `ReorderSettle.quietDelay`, capped at `ReorderSettle.maxHold` under
+    /// sustained churn. While the pointer is inside the sidebar the hover
+    /// hold owns the lock instead, and pointer exit releases immediately.
+    private func scheduleReorderSettleHold() {
+        guard order != .none, !isPointerInsideSidebar else { return }
+        if !deferredProjectOrder.isLocked, !deferredSessionOrder.isLocked {
+            deferredProjectOrder.lock(to: visibleProjects.map(\.id))
+            deferredSessionOrder.lock(to: chronologicalSessions.map(\.id))
+            reorderSettleHoldStart = Date()
+        }
+        let holdStart = reorderSettleHoldStart ?? Date()
+        reorderSettleTask?.cancel()
+        reorderSettleTask = Task {
+            try? await Task.sleep(for: .seconds(ReorderSettle.delay(holdStart: holdStart)))
+            guard !Task.isCancelled else { return }
+            reorderSettleTask = nil
+            reorderSettleHoldStart = nil
+            releaseDeferredOrder(animated: true)
+        }
+    }
+
+    private func cancelReorderSettleHold() {
+        reorderSettleTask?.cancel()
+        reorderSettleTask = nil
+        reorderSettleHoldStart = nil
+    }
+
     private func releaseDeferredOrder(animated: Bool) {
+        cancelReorderSettleHold()
         guard deferredProjectOrder.isLocked || deferredSessionOrder.isLocked else { return }
         if animated {
             withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) {
