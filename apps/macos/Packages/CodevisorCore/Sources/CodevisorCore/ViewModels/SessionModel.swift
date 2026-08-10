@@ -97,6 +97,10 @@ public final class SessionModel {
     public private(set) var isTakingLongerThanExpected = false
     public private(set) var providerActivityPhase: SessionProviderActivityPhase?
     public private(set) var queuedPrompts: [ServerPromptQueueItem] = []
+    /// A deferred initial queue fetch must not overwrite a newer queue event
+    /// that arrived after the transcript stream started.
+    @ObservationIgnored private var promptQueueRevision: UInt64 = 0
+    @ObservationIgnored private var promptQueueLoadTask: Task<Void, Never>?
     /// Set while the server holds this session's prompts during a harness
     /// update ("Waiting for Codex to finish updating…"); nil once released.
     public private(set) var updateGateHarnessName: String?
@@ -452,6 +456,8 @@ public final class SessionModel {
     public func shutdown() {
         consumerTask?.cancel()
         consumerTask = nil
+        promptQueueLoadTask?.cancel()
+        promptQueueLoadTask = nil
         pendingEvents.removeAll()
     }
 
@@ -794,6 +800,22 @@ public final class SessionModel {
     /// resumes from the page's own event cursor, so nothing between the
     /// page's snapshot and "now" is skipped.
     public func loadHistory(preloaded: TranscriptHistoryPage? = nil) async {
+        await loadHistory(preloaded: preloaded, defersPromptQueue: false)
+    }
+
+    /// Initial navigation only needs the transcript page to paint. Queue state
+    /// is auxiliary composer chrome, so fetch it after streaming has started
+    /// without extending selection-to-transcript latency.
+    func loadHistoryForInitialDisplay(preloaded: TranscriptHistoryPage? = nil) async {
+        await loadHistory(preloaded: preloaded, defersPromptQueue: true)
+    }
+
+    private func loadHistory(
+        preloaded: TranscriptHistoryPage?,
+        defersPromptQueue: Bool
+    ) async {
+        promptQueueLoadTask?.cancel()
+        promptQueueLoadTask = nil
         do {
             let page: TranscriptHistoryPage
             if let preloaded {
@@ -819,16 +841,13 @@ public final class SessionModel {
             if isSending { noteProviderActivity(.modelStream) }
             transcriptStreamBytes = Self.transcriptByteEstimate(of: conversation)
             serverEventCursor = page.eventCursor
-            do {
-                queuedPrompts = try await transport.promptQueue()
-            } catch {
-                // Best-effort: history still renders without the queue.
-                Log.session.error(
-                    "Failed to load prompt queue: \(String(describing: error), privacy: .public)"
-                )
-                queuedPrompts = []
+            if defersPromptQueue {
+                await startConsumer()
+                schedulePromptQueueLoad()
+            } else {
+                await loadPromptQueue(ifUnchangedSince: promptQueueRevision)
+                await startConsumer()
             }
-            await startConsumer()
             return
         } catch let CodevisorServerClientError.httpStatus(status, _) where status == 404 {
             // Additive protocol compatibility: older remote servers keep using
@@ -845,6 +864,36 @@ public final class SessionModel {
         }
 
         await loadLegacyHistory()
+    }
+
+    private func schedulePromptQueueLoad() {
+        let revision = promptQueueRevision
+        promptQueueLoadTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.loadPromptQueue(ifUnchangedSince: revision)
+            if !Task.isCancelled {
+                self.promptQueueLoadTask = nil
+            }
+        }
+    }
+
+    private func loadPromptQueue(ifUnchangedSince revision: UInt64) async {
+        do {
+            let queue = try await transport.promptQueue()
+            guard !Task.isCancelled, revision == promptQueueRevision else { return }
+            queuedPrompts = queue
+            promptQueueRevision &+= 1
+        } catch {
+            guard !isTaskCancellation(error) else { return }
+            // Best-effort: history still renders without the queue. Only clear
+            // the snapshot when no newer stream event has already replaced it.
+            Log.session.error(
+                "Failed to load prompt queue: \(String(describing: error), privacy: .public)"
+            )
+            guard revision == promptQueueRevision else { return }
+            queuedPrompts = []
+            promptQueueRevision &+= 1
+        }
     }
 
     /* Usage-limit loading only feeds the temporarily disabled usage popover.
@@ -865,6 +914,7 @@ public final class SessionModel {
         do {
             let snapshot = try await transport.snapshot()
             queuedPrompts = snapshot.promptQueue
+            promptQueueRevision &+= 1
 
             // Replay the persisted event history through the live pipeline —
             // the text-only conversation snapshot loses tool calls and diffs.
@@ -1283,6 +1333,7 @@ public final class SessionModel {
         case let .queueUpdated(queue):
             rememberRemovedQueueItems(in: queue)
             queuedPrompts = queue
+            promptQueueRevision &+= 1
             onQueuedPromptsChanged?()
         case let .updateGate(waiting, harnessName):
             updateGateHarnessName = waiting ? harnessName : nil

@@ -2328,7 +2328,9 @@ final public class SessionController {
         // stream, which means the answer is persisted but its chunks and
         // terminal event never reach the live UI. Older servers still fall
         // back inside loadHistory() when the transcript endpoint returns 404.
-        await model.loadHistory(preloaded: preloadedTranscript.map(transport.historyPage(from:)))
+        await model.loadHistoryForInitialDisplay(
+            preloaded: preloadedTranscript.map(transport.historyPage(from:))
+        )
         pendingPlanApproval = model.pendingPlanApproval
         if loadsExistingHistory {
             finishInitialHistoryLoading(sessionId: session.id, outcome: "ready")

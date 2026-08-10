@@ -2,13 +2,15 @@ import SwiftUI
 import CodevisorCore
 import CodevisorUI
 
-/// Hosts a session: resolves its cached `SessionController` from the store
-/// and shows the session screen below the native toolbar (which carries the
-/// editable workspace name).
+/// Hosts an already-resolved session controller below the native toolbar
+/// (which carries the editable workspace name).
 struct SessionContainerView: View {
     let session: ChatSession
     let project: Project
     let store: SessionStore
+    /// Resolved synchronously with the navigation selection so the destination
+    /// shell never waits for this view's asynchronous setup task to run.
+    let controller: SessionController
     /// Fired when the user's focus lands in a DIFFERENT chat of this
     /// workspace (composer/transcript click, chat tab) — the sidebar
     /// selection follows, keeping the by-chat list in sync with focus.
@@ -16,7 +18,6 @@ struct SessionContainerView: View {
     var onFocusedChatChanged: ((UUID) -> Void)? = nil
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
-    @State private var controller: SessionController?
     /// Global geometry + pointer state for rearranging split leaves inside
     /// the selected top tab by dragging their headers.
     @State private var splitDragCoordinator = WorkspaceSplitDragCoordinator()
@@ -166,8 +167,6 @@ struct SessionContainerView: View {
                 }
             }
             store.markOpened(session.id, serverId: session.serverId)
-            let controller = store.controller(for: session, project: project)
-            self.controller = controller
             controller.rememberCurrentComposerConfiguration()
             // UNSTARTED chats (eagerly created records with no first message
             // yet) must not connect here: connecting launches an agent with
@@ -198,51 +197,43 @@ struct SessionContainerView: View {
     /// few shades — the terminal's opaque surface can't follow that, so
     /// both sides paint the same resolved color instead.
     private var contentColumn: some View {
-        Group {
-            if let controller {
-                let _ = workspaceRevision
-                let workspace = store.workspace(for: session, project: project)
-                VStack(spacing: 0) {
-                    if workspace.centerTabs.count > 1 {
-                        WorkspaceTabBar(
-                            tabs: workspace.centerTabs,
-                            selectedTabId: workspace.selectedCenterTabId,
-                            title: workspaceTabTitle,
-                            descriptor: workspaceTabDescriptor,
-                            onSelect: selectCenterTab,
-                            onClose: closeCenterTab,
-                            onMove: moveCenterTab,
-                            onRename: renameCenterTab,
-                            onNew: addCenterTab
-                        )
-                    }
-                    SessionScreen(
-                        controller: controller,
-                        paneGroup: store.paneGroup(for: session, project: project),
-                        centerGroup: activeCenterModel(in: workspace),
-                        focus: sessionFocus,
-                        centerTree: liveCenterTree ?? workspace.centerTree,
-                        primaryLeafId: workspace.centerTree.groupId(containingChat: session.id),
-                        activeLeafId: activeLeafId ?? workspace.selectedCenterTab?.activeLeafId,
-                        centerLeafModel: { leafId in configuredCenterModel(leafId: leafId) },
-                        centerPaneTitle: paneTitle,
-                        sessionStore: store,
-                        splitDragCoordinator: splitDragCoordinator,
-                        onSplitLeaf: splitLeaf,
-                        onRenameLeaf: renameLeaf,
-                        onCloseLeaf: closeLeaf,
-                        onCenterTreeChanged: { tree in
-                            liveCenterTree = tree
-                            saveSelectedTree(tree, workspaceId: workspace.id)
-                        },
-                        onCenterTreeLiveChanged: { tree in liveCenterTree = tree }
-                    )
-                }
-            } else {
-                ProgressView()
-                    .controlSize(.small)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+        let _ = workspaceRevision
+        let workspace = store.workspace(for: session, project: project)
+        return VStack(spacing: 0) {
+            if workspace.centerTabs.count > 1 {
+                WorkspaceTabBar(
+                    tabs: workspace.centerTabs,
+                    selectedTabId: workspace.selectedCenterTabId,
+                    title: workspaceTabTitle,
+                    descriptor: workspaceTabDescriptor,
+                    onSelect: selectCenterTab,
+                    onClose: closeCenterTab,
+                    onMove: moveCenterTab,
+                    onRename: renameCenterTab,
+                    onNew: addCenterTab
+                )
             }
+            SessionScreen(
+                controller: controller,
+                paneGroup: store.paneGroup(for: session, project: project),
+                centerGroup: activeCenterModel(in: workspace),
+                focus: sessionFocus,
+                centerTree: liveCenterTree ?? workspace.centerTree,
+                primaryLeafId: workspace.centerTree.groupId(containingChat: session.id),
+                activeLeafId: activeLeafId ?? workspace.selectedCenterTab?.activeLeafId,
+                centerLeafModel: { leafId in configuredCenterModel(leafId: leafId) },
+                centerPaneTitle: paneTitle,
+                sessionStore: store,
+                splitDragCoordinator: splitDragCoordinator,
+                onSplitLeaf: splitLeaf,
+                onRenameLeaf: renameLeaf,
+                onCloseLeaf: closeLeaf,
+                onCenterTreeChanged: { tree in
+                    liveCenterTree = tree
+                    saveSelectedTree(tree, workspaceId: workspace.id)
+                },
+                onCenterTreeLiveChanged: { tree in liveCenterTree = tree }
+            )
         }
         // System theme: NO fill — the window's live tinted backdrop is the
         // one surface behind chat, tab band, and (transparent) terminal

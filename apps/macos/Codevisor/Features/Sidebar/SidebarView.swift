@@ -1147,7 +1147,8 @@ struct SidebarView: View {
         _ session: ChatSession,
         isDragPreview: Bool = false,
         hierarchyDepth: Int = 0,
-        isArchivedEntry: Bool = false
+        isArchivedEntry: Bool = false,
+        activatesOnMouseDown: Bool = true
     ) -> some View {
         let isSelected = !isDragPreview
             && !isArchivedEntry
@@ -1186,14 +1187,14 @@ struct SidebarView: View {
             // button) retain gesture precedence over this row gesture.
             .gesture(
                 sessionActivationGesture(session),
-                including: isArchivedEntry || order == .none ? .none : .all
+                including: isArchivedEntry || isDragPreview || !activatesOnMouseDown ? .none : .all
             )
             .onTapGesture {
                 if isArchivedEntry {
                     restoreRequest = ArchivedRestoreRequest(target: .session(session))
                     return
                 }
-                guard order == .none else { return }
+                guard !activatesOnMouseDown else { return }
                 activateSession(session)
             }
             .foregroundStyle(isSelected ? Color.primary : .secondary)
@@ -1329,6 +1330,10 @@ struct SidebarView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .foregroundStyle(isSelected ? Color.primary : .secondary)
+            .gesture(
+                workspaceActivationGesture(item),
+                including: onToggle == nil ? .all : .none
+            )
             .onTapGesture {
                 guard onToggle == nil else { return }
                 guard let session = item.primarySession else { return }
@@ -1530,6 +1535,17 @@ struct SidebarView: View {
             }
     }
 
+    /// Top-level workspace rows route through their primary chat. Match chat
+    /// rows by doing that work on pointer-down; nested workspace rows remain
+    /// disclosure-only and disable this gesture at the call site.
+    private func workspaceActivationGesture(_ item: SidebarWorkspaceListItem) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { _ in
+                guard let session = item.primarySession else { return }
+                activateSession(session)
+            }
+    }
+
     private func activateSession(_ session: ChatSession) {
         // Restoring/opening a chat whose workspace was archived revives the
         // workspace — layout intact. Routed through the environment so the
@@ -1549,7 +1565,7 @@ struct SidebarView: View {
     @ViewBuilder
     private func reorderableSessionRow(_ session: ChatSession) -> some View {
         if order == .none {
-            sessionRow(session)
+            sessionRow(session, activatesOnMouseDown: false)
                 .onDrag(
                     { sessionDragItemProvider(for: session) },
                     preview: {
@@ -1557,6 +1573,7 @@ struct SidebarView: View {
                             .frame(width: 260)
                     }
                 )
+                .simultaneousGesture(sessionActivationGesture(session))
                 .opacity(draggingSessionID == session.id ? 0 : 1)
                 .onDrop(
                     of: [.text],

@@ -30,6 +30,7 @@ struct ChatScreen: View {
     @State private var scrollCommand = TranscriptScrollCommand()
     @State private var historyLoadTask: Task<Void, Never>?
     @State private var composerMaskSize: CGSize = .zero
+    @State private var showsInitialLoadingSpinner = false
     @Namespace private var composerGlassNamespace
 
     var body: some View {
@@ -97,6 +98,7 @@ struct ChatScreen: View {
                 bottomInset: Self.composerBottomMargin
             )
         }
+        .overlay { initialLoadingOverlay }
         .overlay(alignment: .bottom) { bottomChromeOverlay }
         .animation(Motion.quick(reduceMotion: reduceMotion), value: isAtBottom)
         .onAppear {
@@ -131,6 +133,30 @@ struct ChatScreen: View {
                     await controller.connectIfNeeded()
                 }
             }
+        }
+        .task(id: isLoadingEmptyConversation) {
+            showsInitialLoadingSpinner = false
+            guard isLoadingEmptyConversation else { return }
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled, isLoadingEmptyConversation else { return }
+            showsInitialLoadingSpinner = true
+        }
+    }
+
+    private var isLoadingEmptyConversation: Bool {
+        controller.isLoadingInitialHistory
+            && controller.settledConversation.isEmpty
+            && !controller.hasActiveItem
+    }
+
+    @ViewBuilder
+    private var initialLoadingOverlay: some View {
+        if showsInitialLoadingSpinner, isLoadingEmptyConversation {
+            ProgressView()
+                .controlSize(.small)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                .allowsHitTesting(false)
+                .accessibilityLabel("Loading conversation")
         }
     }
 
@@ -198,13 +224,6 @@ struct ChatScreen: View {
         }()
 
         if settled.isEmpty, !controller.hasActiveItem {
-            if controller.isLoadingInitialHistory {
-                result.append(.init(
-                    id: .initialLoading,
-                    content: .initialLoading,
-                    estimatedHeight: 40
-                ))
-            }
             if let message = pendingMessage {
                 let showsStartingAgent = controller.setupPhases.isEmpty
                 result.append(.init(
@@ -473,8 +492,6 @@ struct ChatScreen: View {
                     ShimmeringText.startingAgent
                 }
             }
-        case .initialLoading:
-            ChatActivityRow("Loading conversation…")
         case let .backgroundTask(description):
             ChatActivityRow(
                 "Waiting on \(description)...",

@@ -102,6 +102,10 @@ struct WorkspaceScreen: View {
     /// mounts an ordinary workspace route backed by the same cached controller
     /// before removing the opaque sheet.
     let sessionId: UUID?
+    /// Existing workspaces receive their cached-or-new controller from Home
+    /// during destination construction, so the transcript shell is available
+    /// on the first frame instead of waiting for this view's async task.
+    var initialController: SessionController? = nil
     /// New Chat is hosted by a real system sheet. This flag changes only the
     /// navigation controls; presentation chrome remains system-owned.
     var isNewChatPresentation = false
@@ -211,7 +215,9 @@ struct WorkspaceScreen: View {
     private func chatController(for pane: PaneDescriptorState) -> SessionController? {
         guard let chatId = pane.chatSessionId ?? activeSessionId else { return draftController }
         if chatId == draftPlaceholderId { return draftController }
-        return controllers[chatId] ?? cachedController(for: chatId)
+        if let controller = controllers[chatId] { return controller }
+        if chatId == sessionId, let initialController { return initialController }
+        return cachedController(for: chatId)
     }
 
     private func title(for pane: PaneDescriptorState) -> String {

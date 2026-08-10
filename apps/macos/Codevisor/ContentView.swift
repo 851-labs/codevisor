@@ -487,6 +487,7 @@ struct RootView: View {
                    let project = environment.projectList.projects.first(where: {
                        $0.serverId == serverId && $0.id == session.projectId
                    }) {
+                    let controller = store.controller(for: session, project: project)
                     // Identity is the WORKSPACE, not the chat: clicking a
                     // sibling chat swaps only the routed session (the container
                     // selects + focuses it) instead of tearing down and
@@ -498,6 +499,7 @@ struct RootView: View {
                         session: session,
                         project: project,
                         store: store,
+                        controller: controller,
                         // Focus moved to a sibling chat: the sidebar selection
                         // follows (same workspace identity — no remount, the
                         // container just re-routes).

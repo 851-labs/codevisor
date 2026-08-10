@@ -850,6 +850,109 @@ struct SessionModelTests {
         #expect(assistant.turn.finalText == .text(id: "acp:assistant-1", markdown: "Server-backed history."))
     }
 
+    @Test("Initial display paints transcript before prompt queue returns")
+    func initialDisplayDoesNotWaitForPromptQueue() async {
+        let sessionId = UUID()
+        let itemId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.initialTranscriptPage = ServerTranscriptPage(
+            items: [ServerTranscriptItem(
+                id: itemId.uuidString,
+                sessionId: sessionId.uuidString,
+                sequence: 1,
+                role: .user,
+                text: "paint me first",
+                createdAt: "2026-08-09T00:00:00.000Z",
+                updatedAt: "2026-08-09T00:00:00.000Z",
+                isGenerating: false,
+                hasDetails: false,
+                revision: 1
+            )],
+            hasMore: false,
+            eventCursor: 1
+        )
+        let queueItem = ServerPromptQueueItem(
+            id: UUID().uuidString,
+            sessionId: sessionId.uuidString,
+            text: "queued",
+            createdAt: "2026-08-09T00:00:01.000Z",
+            updatedAt: "2026-08-09T00:00:01.000Z"
+        )
+        client.setPromptQueueResponse([queueItem])
+        let (gate, releaseQueue) = AsyncStream.makeStream(of: Void.self)
+        client.holdPromptQueue(until: gate)
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+
+        await model.loadHistoryForInitialDisplay()
+        await settleUntil { client.promptQueueRequestCount == 1 }
+
+        #expect(model.conversation.map(\.id) == [itemId])
+        #expect(model.queuedPrompts.isEmpty)
+
+        releaseQueue.yield()
+        releaseQueue.finish()
+        await settleUntil { model.queuedPrompts == [queueItem] }
+    }
+
+    @Test("Deferred prompt queue cannot overwrite a newer stream event")
+    func deferredPromptQueuePreservesNewerStreamState() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.initialTranscriptPage = ServerTranscriptPage(
+            items: [],
+            hasMore: false,
+            eventCursor: 0
+        )
+        let staleItem = ServerPromptQueueItem(
+            id: UUID().uuidString,
+            sessionId: sessionId.uuidString,
+            text: "stale",
+            createdAt: "2026-08-09T00:00:00.000Z",
+            updatedAt: "2026-08-09T00:00:00.000Z"
+        )
+        let freshItem = ServerPromptQueueItem(
+            id: UUID().uuidString,
+            sessionId: sessionId.uuidString,
+            text: "fresh",
+            createdAt: "2026-08-09T00:00:01.000Z",
+            updatedAt: "2026-08-09T00:00:01.000Z"
+        )
+        client.setPromptQueueResponse([staleItem])
+        let (gate, releaseQueue) = AsyncStream.makeStream(of: Void.self)
+        client.holdPromptQueue(until: gate)
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+
+        await model.loadHistoryForInitialDisplay()
+        await settleUntil { client.promptQueueRequestCount == 1 }
+        client.emit(ServerEventEnvelope(
+            id: 1,
+            serverId: "local",
+            kind: "session.queue.updated",
+            subjectId: sessionId.uuidString,
+            createdAt: "2026-08-09T00:00:01.000Z",
+            payload: .object(["queue": .array([.object([
+                "id": .string(freshItem.id),
+                "sessionId": .string(freshItem.sessionId),
+                "text": .string(freshItem.text),
+                "createdAt": .string(freshItem.createdAt),
+                "updatedAt": .string(freshItem.updatedAt)
+            ])])])
+        ))
+        await settleUntil { model.queuedPrompts == [freshItem] }
+
+        releaseQueue.yield()
+        releaseQueue.finish()
+        for _ in 0..<20 { await Task.yield() }
+
+        #expect(model.queuedPrompts == [freshItem])
+    }
+
     @Test("Attachments allow empty text and ride the prompt to the server")
     func attachmentsRidePrompt() async {
         let sessionId = UUID()
@@ -2596,6 +2699,9 @@ private final class FakeSessionServerClient: CodevisorServerClienting, @unchecke
     private var _eventSinceValues: [Int] = []
     private var _sessionEventSinceValues: [Int] = []
     private var _transcriptPageRequests: [(before: String?, limit: Int)] = []
+    private var _promptQueueResponse: [ServerPromptQueueItem] = []
+    private var _promptQueueGate: AsyncStream<Void>?
+    private var _promptQueueRequestCount = 0
     private var _goalUpdates: [(String?, GoalStatus?, TokenBudgetUpdate)] = []
     private var _goalClearCount = 0
     private var _lastBudget: Int?
@@ -2659,6 +2765,18 @@ private final class FakeSessionServerClient: CodevisorServerClienting, @unchecke
 
     var transcriptPageRequests: [(before: String?, limit: Int)] {
         lock.withLock { _transcriptPageRequests }
+    }
+
+    var promptQueueRequestCount: Int {
+        lock.withLock { _promptQueueRequestCount }
+    }
+
+    func setPromptQueueResponse(_ queue: [ServerPromptQueueItem]) {
+        lock.withLock { _promptQueueResponse = queue }
+    }
+
+    func holdPromptQueue(until gate: AsyncStream<Void>) {
+        lock.withLock { _promptQueueGate = gate }
     }
 
     var goalUpdates: [(String?, GoalStatus?, TokenBudgetUpdate)] {
@@ -2732,6 +2850,17 @@ private final class FakeSessionServerClient: CodevisorServerClienting, @unchecke
             throw CodevisorServerClientError.httpStatus(404, "")
         }
         return details
+    }
+
+    func promptQueue(id: UUID) async throws -> [ServerPromptQueueItem] {
+        let (gate, response) = lock.withLock {
+            _promptQueueRequestCount += 1
+            return (_promptQueueGate, _promptQueueResponse)
+        }
+        if let gate {
+            for await _ in gate { break }
+        }
+        return response
     }
 
     func upsertSession(_ session: ChatSession) async throws -> ServerSession { fatalError("unused") }

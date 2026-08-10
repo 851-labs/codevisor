@@ -23,6 +23,10 @@ final class ChatControllerCache {
     /// state survives leaving the page and relaunches; the first send
     /// promotes the controller to a real session and clears the draft.
     private var draftsByServer: [String: SessionController] = [:]
+    /// Viewport snapshots outlive the heavier controller LRU. This mirrors
+    /// macOS's SessionStore: opening enough chats may discard a transcript
+    /// model, but it must not forget where the user was reading.
+    @ObservationIgnored private var scrollStates: [Key: SessionScrollState] = [:]
     /// The chat currently on screen; its finished turns re-mark as read the
     /// moment they land (the server writes the attention event before the
     /// client sees the turn end — same dance as the macOS store).
@@ -78,6 +82,7 @@ final class ChatControllerCache {
         }
         controller.onTurnEnded = markReadIfOpen
         controller.onActionRequired = markReadIfOpen
+        bindScrollState(controller, to: key)
         controllers[key] = controller
         evictIfNeeded()
         return controller
@@ -156,6 +161,7 @@ final class ChatControllerCache {
         }
         controller.onTurnEnded = markReadIfOpen
         controller.onActionRequired = markReadIfOpen
+        bindScrollState(controller, to: key)
         if draftsByServer[session.serverId] === controller {
             draftsByServer[session.serverId] = nil
         }
@@ -203,6 +209,13 @@ final class ChatControllerCache {
     private func noteAccess(_ key: Key) {
         accessOrder.removeAll { $0 == key }
         accessOrder.append(key)
+    }
+
+    private func bindScrollState(_ controller: SessionController, to key: Key) {
+        controller.scrollState = scrollStates[key]
+        controller.onScrollStateChange = { [weak self] state in
+            self?.scrollStates[key] = state
+        }
     }
 
     /// Drops the least-recently-used idle controllers; anything mid-send or

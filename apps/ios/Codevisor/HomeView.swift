@@ -225,10 +225,7 @@ struct HomeView: View {
             .navigationDestination(for: HomeRoute.self) { route in
                 switch route {
                 case let .workspace(sessionId):
-                    WorkspaceScreen(
-                        sessionId: sessionId,
-                        onWorkspaceReady: markPromotedWorkspaceReady
-                    )
+                    workspaceDestination(sessionId: sessionId)
                 }
             }
             .refreshable {
@@ -330,13 +327,16 @@ struct HomeView: View {
             case .compact, .byWorkspace:
                 Section {
                     ForEach(visibleSessions) { session in
-                        NavigationLink(value: HomeRoute.workspace(session.id)) {
+                        Button {
+                            openWorkspace(session)
+                        } label: {
                             SessionRow(
                                 session: session,
                                 projectName: projectName(for: session),
                                 harnessSymbol: harnessSymbol(for: session)
                             )
                         }
+                        .buttonStyle(.plain)
                         .modifier(
                             FullWidthTopSeparatorModifier(
                                 isVisible: session.id == visibleSessions.first?.id
@@ -364,13 +364,16 @@ struct HomeView: View {
                     if !sessions.isEmpty {
                         Section {
                             ForEach(sessions) { session in
-                                NavigationLink(value: HomeRoute.workspace(session.id)) {
+                                Button {
+                                    openWorkspace(session)
+                                } label: {
                                     SessionRow(
                                         session: session,
                                         projectName: nil,
                                         harnessSymbol: harnessSymbol(for: session)
                                     )
                                 }
+                                .buttonStyle(.plain)
                                 .swipeActions(edge: .trailing) {
                                     Button {
                                         _ = environment.archiveSessionAndWorkspaceIfEmpty(session)
@@ -395,13 +398,16 @@ struct HomeView: View {
                 if !looseSessions.isEmpty {
                     Section {
                         ForEach(looseSessions) { session in
-                            NavigationLink(value: HomeRoute.workspace(session.id)) {
+                            Button {
+                                openWorkspace(session)
+                            } label: {
                                 SessionRow(
                                     session: session,
                                     projectName: nil,
                                     harnessSymbol: harnessSymbol(for: session)
                                 )
                             }
+                            .buttonStyle(.plain)
                             .swipeActions(edge: .trailing) {
                                 Button {
                                     _ = environment.archiveSessionAndWorkspaceIfEmpty(session)
@@ -427,6 +433,21 @@ struct HomeView: View {
         var ids = visibleSessions.map(\.id)
         ids.move(fromOffsets: source, toOffset: destination)
         manualSessionOrder = ids.map(\.uuidString).joined(separator: "\n")
+    }
+
+    /// Prepare the workspace from the user's tap, before pushing its route.
+    /// Controller creation mutates the shared cache, so it must happen from
+    /// this event handler rather than while SwiftUI evaluates a destination.
+    private func openWorkspace(_ session: ChatSession) {
+        if let project = projectList.projects.first(where: { $0.id == session.projectId }) {
+            _ = ChatControllerCache.shared.controller(
+                for: session,
+                project: project,
+                workspaceId: session.id,
+                environment: environment
+            )
+        }
+        path.append(HomeRoute.workspace(session.id))
     }
 
     private func setAutomaticOrderDeferred(_ isDeferred: Bool) {
@@ -624,6 +645,23 @@ struct HomeView: View {
         guard let flow = newChatFlow, flow.sessionId == sessionId else { return }
         flow.isWorkspaceReady = true
         finishNewChatPromotionIfReady(flow)
+    }
+
+    /// Destination construction is deliberately read-only. Normal row taps
+    /// populate the cache before pushing, while promoted drafts are registered
+    /// there before this route appears.
+    private func workspaceDestination(sessionId: UUID) -> some View {
+        let controller = projectList.sessions.first(where: { $0.id == sessionId }).flatMap {
+            ChatControllerCache.shared.existingController(
+                sessionId: sessionId,
+                serverId: $0.serverId
+            )
+        }
+        return WorkspaceScreen(
+            sessionId: sessionId,
+            initialController: controller,
+            onWorkspaceReady: markPromotedWorkspaceReady
+        )
     }
 
     private func finishNewChatPromotionIfReady(_ flow: NewChatFlow) {

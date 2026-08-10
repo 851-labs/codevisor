@@ -76,8 +76,6 @@ private struct UserSendLiftModifier: ViewModifier {
 /// fork: the send animation, the setup row's placement, and the loading/error
 /// rows all existed in two or three copies that drifted apart.
 private enum TranscriptRow: Identifiable {
-    /// Sentinel that pages in older history as it scrolls into view.
-    case olderHistory
     /// Worktree creation / agent startup for this chat's one launch.
     case setup
     /// A settled, streaming, or optimistic conversation item. A first prompt
@@ -108,7 +106,6 @@ private enum TranscriptRow: Identifiable {
 
     var id: String {
         switch self {
-        case .olderHistory: "older-history"
         case .setup: "setup"
         case let .item(item, isActive): "item-\(isActive ? "active-" : "")\(item.id)"
         case let .activity(kind): "activity-\(kind.id)"
@@ -118,12 +115,80 @@ private enum TranscriptRow: Identifiable {
     }
 }
 
+/// The platform-neutral part of SwiftUI's scroll geometry. Persisting
+/// `ScrollPosition` itself does not work for direct manipulation because it
+/// intentionally stops exposing a concrete target once the user scrolls.
+private struct TranscriptViewportGeometry: Equatable {
+    let contentOffsetY: CGFloat
+    let contentHeight: CGFloat
+    let contentInsetTop: CGFloat
+    let viewportHeight: CGFloat
+
+    init(_ geometry: ScrollGeometry) {
+        contentOffsetY = geometry.contentOffset.y
+        contentHeight = geometry.contentSize.height
+        contentInsetTop = geometry.contentInsets.top
+        viewportHeight = geometry.containerSize.height
+    }
+
+    var minimumOffsetY: CGFloat { -contentInsetTop }
+
+    var maximumOffsetY: CGFloat {
+        max(
+            minimumOffsetY,
+            minimumOffsetY + max(0, contentHeight - viewportHeight)
+        )
+    }
+
+    var boundedOffsetY: CGFloat {
+        min(max(minimumOffsetY, contentOffsetY), maximumOffsetY)
+    }
+
+    var distanceFromBottom: CGFloat {
+        max(0, maximumOffsetY - boundedOffsetY)
+    }
+
+    var distanceFromTop: CGFloat {
+        max(0, boundedOffsetY - minimumOffsetY)
+    }
+}
+
+private struct HistoryPrependAnchor {
+    let rowID: UUID
+    var viewportMinY: CGFloat
+    var lastViewportOffsetY: CGFloat
+    var isApplyingCompensation = false
+}
+
+/// High-frequency scroll bookkeeping that must not invalidate the transcript
+/// on every pixel. SwiftUI-observed state remains limited to the two booleans
+/// that actually change visible chrome.
+@MainActor
+private final class TranscriptScrollCoordinator {
+    var hasConfiguredInitialPosition = false
+    var hasAppliedInitialPosition = false
+    var hasSettledInitialPosition = false
+    var initialPositionSettlementTask: Task<Void, Never>?
+    var latestGeometry: TranscriptViewportGeometry?
+    var lockedRestoreDistance: CGFloat?
+    var userScrollIsActive = false
+    var programmaticScrollIsAnimating = false
+    var restoreHistoryRequestContentHeight: CGFloat?
+    var restoreHistoryTask: Task<Void, Never>?
+    var historyLoadTask: Task<Void, Never>?
+    var historyAnchorSettlementTask: Task<Void, Never>?
+    var lastPrefetchOldestID: UUID?
+    var measuredHistoryRowMinY: [UUID: CGFloat] = [:]
+    var pendingPrependAnchor: HistoryPrependAnchor?
+}
+
 /// The chat pane body: connects an existing session through the shared
 /// SessionController/SessionModel engine and renders the transcript with the
 /// shared row views. Hosted by WorkspaceScreen, which owns the navigation
 /// chrome; the VirtualTranscriptLayout-backed virtualizer replaces the scroll
 /// host as Phase 4 completes.
 struct SessionTranscriptView: View {
+    private static let transcriptCoordinateSpace = "session-transcript"
     @Bindable var controller: SessionController
     /// The new-chat page shows project/run-location chips above the composer;
     /// the first chat inside a workspace doesn't (its directory is fixed).
@@ -144,8 +209,6 @@ struct SessionTranscriptView: View {
     /// transcript's follow mode.
     @State private var followsLatest = true
     @State private var isAtBottom = true
-    /// Bumped to ask the scroll view to return to the newest content.
-    @State private var scrollRequest = 0
     /// Height available to the chat area, used to cap composer expansion.
     @State private var availableHeight: CGFloat = 600
     /// True while the composer is dragged to full height; the accessories
@@ -158,10 +221,11 @@ struct SessionTranscriptView: View {
     /// Fetches and caches transcript attachment previews via the controller's
     /// authenticated client.
     @State private var attachmentImages: AttachmentImageStore?
-    /// Edge-based scrolling for follow mode: unlike ScrollViewReader's
-    /// id-targeted scrollTo, scrolling to an edge works even when the bottom
-    /// rows haven't been laid out by the lazy stack yet.
+    /// Point-based positioning drives both saved arbitrary distances and the
+    /// explicit zero-distance jump. Keeping one position owner avoids an old
+    /// ScrollViewReader command fighting this binding for the viewport.
     @State private var scrollPosition = ScrollPosition()
+    @State private var scrollCoordinator = TranscriptScrollCoordinator()
     /// Where the transcript's content currently ends, and where the composer
     /// begins — both in global space. Their gap IS the send lift: the distance
     /// a just-sent message must travel from the composer to where it lands.
@@ -235,10 +299,6 @@ struct SessionTranscriptView: View {
             }) ? nil : pending
         }
         let pendingIsOpeningRow = settled.isEmpty && active == nil
-
-        if model?.hasOlderHistory == true {
-            rows.append(.olderHistory)
-        }
 
         // The opening block: the conversation hasn't landed yet. Covers the
         // first send (with or without a model) and an empty connected chat.
@@ -402,7 +462,7 @@ struct SessionTranscriptView: View {
     private var scrollToBottomButton: some View {
         Button {
             followsLatest = true
-            scrollRequest &+= 1
+            scrollToBottom(animated: true)
         } label: {
             Image(systemName: "arrow.down")
                 .font(.system(size: 13, weight: .semibold))
@@ -453,93 +513,88 @@ struct SessionTranscriptView: View {
         // Built once per render: the body re-evaluates on every streaming
         // token, and this walks the whole conversation.
         let rows = rows
-        return ScrollViewReader { scroller in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 20) {
-                    ForEach(rows) { row in
-                        transcriptRow(row, scroller: scroller)
-                    }
-
-                    // Breathing room past the composer so the newest content
-                    // can clear it, and the measurement point for where the
-                    // content currently ends.
-                    Color.clear
-                        .frame(height: composerHeight + 24)
-                        .id(Self.bottomAnchor)
-                        .onScrollVisibilityChange(threshold: 0.05) { visible in
-                            isAtBottom = visible
-                            followsLatest = visible
-                        }
-                        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { tail in
-                            contentTailY = tail
-                            hasMeasuredContentTail = true
-                        }
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                ForEach(rows) { row in
+                    transcriptRow(row)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .frame(minHeight: viewportHeight, alignment: .top)
+
+                // Breathing room past the composer so the newest content
+                // can clear it, and the measurement point for where the
+                // content currently ends.
+                Color.clear
+                    .frame(height: composerHeight + 24)
+                    .id(Self.bottomAnchor)
+                    .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { tail in
+                        contentTailY = tail
+                        hasMeasuredContentTail = true
+                    }
             }
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-                viewportHeight = height
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .frame(minHeight: viewportHeight, alignment: .top)
+        }
+        .coordinateSpace(name: Self.transcriptCoordinateSpace)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+            viewportHeight = height
+        }
+        .scrollPosition($scrollPosition)
+        .onScrollGeometryChange(for: TranscriptViewportGeometry.self) {
+            TranscriptViewportGeometry($0)
+        } action: { _, geometry in
+            handleViewportGeometry(geometry)
+        }
+        .onScrollPhaseChange { _, phase in
+            handleScrollPhase(phase)
+        }
+        // Keep the transcript chrome quiet; the native virtualizer can
+        // provide a stable overlay indicator when the iOS port lands.
+        .scrollIndicators(.hidden)
+        .defaultScrollAnchor(.bottom)
+        .scrollDismissesKeyboard(.interactively)
+        .environment(\.transcriptDisclosure, disclosure)
+        .environment(\.transcriptController, controller)
+        .environment(\.runningSubagentToolCallIds, controller.runningSubagentToolCallIds)
+        // Too-wide tables bleed their horizontal scroller through the
+        // transcript's 16pt text gutter to the screen edges (text keeps the
+        // gutter; a resting table stays aligned with it).
+        .environment(\.markdownTableBleed, 16)
+        // Streaming tokens and settled turns re-pin while following.
+        .onChange(of: model?.activeItemRevision) { _, _ in
+            scrollToBottomIfFollowing()
+        }
+        .onChange(of: model?.settledConversation.count) { _, _ in
+            scrollToBottomIfFollowing()
+        }
+        // Sending re-arms follow and returns to the newest content —
+        // exactly what the macOS transcript does (`autoFollow = true` plus
+        // a scroll command), so the response streams in at the bottom with
+        // the view following it.
+        .onChange(of: controller.userSendSignal) { _, _ in
+            followsLatest = true
+            // Establish the final viewport before the bubble moves. An
+            // animated scroll composed with the row lift reads as a second
+            // send animation.
+            scrollToBottom(animated: false)
+        }
+        .onAppear { configureInitialScroll() }
+        .onDisappear {
+            if scrollCoordinator.lockedRestoreDistance == nil,
+               let geometry = scrollCoordinator.latestGeometry {
+                publishScrollState(geometry)
             }
-            .scrollPosition($scrollPosition)
-            // The lazy stack's estimated row heights make the indicator grow
-            // and shrink as content materializes; hide it until the virtualizer
-            // provides stable content sizing.
-            .scrollIndicators(.hidden)
-            .defaultScrollAnchor(.bottom)
-            .scrollDismissesKeyboard(.interactively)
-            .environment(\.transcriptDisclosure, disclosure)
-            .environment(\.transcriptController, controller)
-            .environment(\.runningSubagentToolCallIds, controller.runningSubagentToolCallIds)
-            // Too-wide tables bleed their horizontal scroller through the
-            // transcript's 16pt text gutter to the screen edges (text keeps the
-            // gutter; a resting table stays aligned with it).
-            .environment(\.markdownTableBleed, 16)
-            // Streaming tokens and settled turns re-pin while following.
-            .onChange(of: model?.activeItemRevision) { _, _ in
-                scrollToBottomIfFollowing(scroller)
-            }
-            .onChange(of: model?.settledConversation.count) { _, _ in
-                scrollToBottomIfFollowing(scroller)
-            }
-            // Sending re-arms follow and returns to the newest content —
-            // exactly what the macOS transcript does (`autoFollow = true` plus
-            // a scroll command), so the response streams in at the bottom with
-            // the view following it.
-            .onChange(of: controller.userSendSignal) { _, _ in
-                followsLatest = true
-                // Establish the final viewport before the bubble moves. An
-                // animated scroll composed with the row lift reads as a second
-                // send animation.
-                scrollToBottom(scroller, animated: false)
-            }
-            .onChange(of: scrollRequest) { _, _ in
-                scrollToBottom(scroller, animated: true)
-            }
-            .onAppear { scrollToBottom(scroller, animated: false) }
+            cancelHistoryWork()
         }
     }
 
     @ViewBuilder
-    private func transcriptRow(_ row: TranscriptRow, scroller: ScrollViewProxy) -> some View {
+    private func transcriptRow(_ row: TranscriptRow) -> some View {
         switch row {
-        case .olderHistory:
-            // Older pages load themselves as the top scrolls into view,
-            // matching the macOS transcript's near-top trigger.
-            HStack {
-                Spacer()
-                ProgressView()
-                Spacer()
-            }
-            .frame(height: 36)
-            .onScrollVisibilityChange(threshold: 0.1) { visible in
-                guard visible else { return }
-                loadOlderHistory(scroller)
-            }
         case .setup:
             SessionSetupView(phases: controller.setupPhases)
         case let .item(item, isActive):
+            let tracksHistoryPosition = item.id == model?.settledConversation.first?.id
+                || item.id == scrollCoordinator.pendingPrependAnchor?.rowID
             ConversationItemRow(item: item, isActive: isActive)
                 .modifier(UserSendLiftModifier(
                     messageID: isUser(item) ? item.id : nil,
@@ -549,6 +604,13 @@ struct SessionTranscriptView: View {
                     reduceMotion: reduceMotion,
                     geometryReady: hasMeasuredContentTail && hasMeasuredComposerTop,
                 ))
+                .onGeometryChange(for: CGFloat?.self) { geometry in
+                    guard tracksHistoryPosition else { return nil }
+                    return geometry.frame(in: .named(Self.transcriptCoordinateSpace)).minY
+                } action: { minY in
+                    guard let minY else { return }
+                    handleHistoryRowPosition(item.id, minY: minY)
+                }
         case let .activity(kind):
             switch kind {
             case .loadingHistory:
@@ -597,22 +659,405 @@ struct SessionTranscriptView: View {
         }
     }
 
-    /// Fetches the next page of history and re-anchors the previously-topmost
-    /// item to the top of the viewport, so the prepended rows land above the
-    /// fold instead of shoving the visible content down (and so the sentinel
-    /// scrolls out of view rather than chain-loading every page).
-    private func loadOlderHistory(_ scroller: ScrollViewProxy) {
-        guard let model, model.hasOlderHistory, !model.isLoadingOlderHistory else { return }
-        let anchorId = model.settledConversation.first?.id
-        Task {
+    /// Matches macOS's generous near-top prefetch window. The oldest loaded
+    /// row is the request token: a geometry storm cannot fetch the same page
+    /// twice, while a successful prepend supplies a new token for the next
+    /// page if the reader is still within the window.
+    private func checkForHistoryPrefetch(
+        _ geometry: TranscriptViewportGeometry,
+        force: Bool = false
+    ) {
+        // SwiftUI reports the scroll view at its provisional top before the
+        // initial saved-position/bottom command has landed. AppKit avoids
+        // treating that frame as a near-top visit by waiting for its initial
+        // position transaction; keep the same boundary here.
+        guard force || (
+            scrollCoordinator.hasAppliedInitialPosition
+                && scrollCoordinator.hasSettledInitialPosition
+        ) else { return }
+        guard scrollCoordinator.pendingPrependAnchor == nil,
+              scrollCoordinator.historyLoadTask == nil,
+              scrollCoordinator.restoreHistoryTask == nil,
+              let model,
+              model.hasOlderHistory,
+              !model.isLoadingOlderHistory,
+              let oldestID = model.settledConversation.first?.id
+        else {
+            if model?.hasOlderHistory != true {
+                scrollCoordinator.lastPrefetchOldestID = nil
+            }
+            return
+        }
+
+        let threshold = max(600, geometry.viewportHeight * 1.5)
+        if !force, geometry.distanceFromTop > threshold {
+            if geometry.distanceFromTop > threshold * 1.25 {
+                scrollCoordinator.lastPrefetchOldestID = nil
+            }
+            return
+        }
+
+        guard force || oldestID != scrollCoordinator.lastPrefetchOldestID else { return }
+        scrollCoordinator.lastPrefetchOldestID = oldestID
+        requestOlderHistoryLoad(anchorID: oldestID)
+    }
+
+    private func requestOlderHistoryLoad(anchorID: UUID) {
+        guard scrollCoordinator.historyLoadTask == nil,
+              scrollCoordinator.restoreHistoryTask == nil,
+              let model,
+              model.hasOlderHistory,
+              !model.isLoadingOlderHistory
+        else { return }
+
+        scrollCoordinator.historyLoadTask = Task { @MainActor in
             await model.loadOlderHistory()
-            if let anchorId {
-                scroller.scrollTo(anchorId, anchor: .top)
+            guard !Task.isCancelled else {
+                scrollCoordinator.historyLoadTask = nil
+                return
+            }
+
+            scrollCoordinator.historyLoadTask = nil
+            guard model.settledConversation.first?.id != anchorID else { return }
+
+            // The model mutation has completed, but SwiftUI has not committed
+            // the prepended rows yet. Capture the old first row exactly where
+            // the reader currently sees it; subsequent geometry callbacks
+            // keep that measured point fixed while the new Markdown settles.
+            if !followsLatest,
+               scrollCoordinator.lockedRestoreDistance == nil,
+               let viewportMinY = scrollCoordinator.measuredHistoryRowMinY[anchorID],
+               let geometry = scrollCoordinator.latestGeometry {
+                scrollCoordinator.pendingPrependAnchor = HistoryPrependAnchor(
+                    rowID: anchorID,
+                    viewportMinY: viewportMinY,
+                    lastViewportOffsetY: geometry.boundedOffsetY
+                )
+                scheduleHistoryAnchorSettlement(for: anchorID)
+                return
+            }
+
+            // Following mode is already bottom-anchored. If the first page is
+            // shorter than the macOS prefetch window, allow another bounded
+            // page after this update has reached the scroll geometry.
+            DispatchQueue.main.async {
+                if let geometry = scrollCoordinator.latestGeometry {
+                    checkForHistoryPrefetch(geometry)
+                }
             }
         }
     }
 
-    private func scrollToBottomIfFollowing(_ scroller: ScrollViewProxy) {
+    private func handleHistoryRowPosition(_ rowID: UUID, minY: CGFloat) {
+        scrollCoordinator.measuredHistoryRowMinY[rowID] = minY
+        guard var anchor = scrollCoordinator.pendingPrependAnchor,
+              anchor.rowID == rowID
+        else { return }
+
+        let delta = minY - anchor.viewportMinY
+        if abs(delta) > 0.5, let geometry = scrollCoordinator.latestGeometry {
+            let requestedOffsetY = min(
+                max(geometry.minimumOffsetY, geometry.boundedOffsetY + delta),
+                geometry.maximumOffsetY
+            )
+            anchor.isApplyingCompensation = true
+            anchor.lastViewportOffsetY = requestedOffsetY
+            scrollCoordinator.pendingPrependAnchor = anchor
+            scrollPosition.scrollTo(y: requestedOffsetY - geometry.minimumOffsetY)
+        } else if let geometry = scrollCoordinator.latestGeometry {
+            anchor.isApplyingCompensation = false
+            anchor.lastViewportOffsetY = geometry.boundedOffsetY
+            scrollCoordinator.pendingPrependAnchor = anchor
+        }
+        scheduleHistoryAnchorSettlement(for: rowID)
+    }
+
+    /// A user can keep dragging while the network page arrives. Move the
+    /// anchor's desired screen point by exactly that gesture delta so prepend
+    /// compensation never reverses the reader's own motion.
+    private func trackHistoryAnchorUserMovement(_ geometry: TranscriptViewportGeometry) {
+        guard var anchor = scrollCoordinator.pendingPrependAnchor else { return }
+        if scrollCoordinator.userScrollIsActive, !anchor.isApplyingCompensation {
+            anchor.viewportMinY -= geometry.boundedOffsetY - anchor.lastViewportOffsetY
+        }
+        anchor.lastViewportOffsetY = geometry.boundedOffsetY
+        scrollCoordinator.pendingPrependAnchor = anchor
+    }
+
+    private func scheduleHistoryAnchorSettlement(for rowID: UUID) {
+        scrollCoordinator.historyAnchorSettlementTask?.cancel()
+        scrollCoordinator.historyAnchorSettlementTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled,
+                  scrollCoordinator.pendingPrependAnchor?.rowID == rowID
+            else { return }
+
+            scrollCoordinator.pendingPrependAnchor = nil
+            scrollCoordinator.historyAnchorSettlementTask = nil
+            let newestOldestID = model?.settledConversation.first?.id
+            scrollCoordinator.measuredHistoryRowMinY = scrollCoordinator
+                .measuredHistoryRowMinY
+                .filter { id, _ in id == newestOldestID }
+
+            if let geometry = scrollCoordinator.latestGeometry {
+                publishScrollState(geometry)
+                checkForHistoryPrefetch(geometry)
+            }
+        }
+    }
+
+    private func cancelHistoryAnchorCompensation() {
+        scrollCoordinator.historyAnchorSettlementTask?.cancel()
+        scrollCoordinator.historyAnchorSettlementTask = nil
+        scrollCoordinator.pendingPrependAnchor = nil
+    }
+
+    private func cancelHistoryWork() {
+        scrollCoordinator.historyLoadTask?.cancel()
+        scrollCoordinator.historyLoadTask = nil
+        scrollCoordinator.restoreHistoryTask?.cancel()
+        scrollCoordinator.restoreHistoryTask = nil
+        scrollCoordinator.initialPositionSettlementTask?.cancel()
+        scrollCoordinator.initialPositionSettlementTask = nil
+        cancelHistoryAnchorCompensation()
+    }
+
+    private func configureInitialScroll() {
+        guard !scrollCoordinator.hasConfiguredInitialPosition else { return }
+        scrollCoordinator.hasConfiguredInitialPosition = true
+
+        if let state = controller.scrollState {
+            followsLatest = state.followMode.followsLatest
+            if !state.followMode.followsLatest {
+                isAtBottom = state.isAtBottom
+                // Keep the saved coordinate authoritative while initial rows,
+                // older pages, and asynchronous Markdown heights settle. It
+                // is released only by direct user scrolling or an explicit
+                // jump to the latest content, matching the macOS transcript.
+                scrollCoordinator.lockedRestoreDistance = state.distanceFromBottom
+                if let geometry = scrollCoordinator.latestGeometry {
+                    applyLockedScrollRestore(geometry)
+                    checkForHistoryPrefetch(geometry)
+                }
+                return
+            }
+
+            // Follow intent is authoritative over a transient geometry
+            // snapshot. Navigation can resize the disappearing scroll view
+            // and leave a nonzero measured distance even though the user was
+            // at the bottom; restoring that distance turns follow mode into a
+            // static near-bottom position.
+            isAtBottom = true
+        }
+
+        scrollToBottom(animated: false)
+        if let geometry = scrollCoordinator.latestGeometry {
+            if geometry.distanceFromBottom <= 2 {
+                scrollCoordinator.hasAppliedInitialPosition = true
+                scheduleInitialPositionSettlementIfNeeded()
+            }
+            checkForHistoryPrefetch(geometry)
+        }
+    }
+
+    private func handleViewportGeometry(_ geometry: TranscriptViewportGeometry) {
+        scrollCoordinator.latestGeometry = geometry
+        guard scrollCoordinator.hasConfiguredInitialPosition else { return }
+
+        trackHistoryAnchorUserMovement(geometry)
+        scheduleInitialPositionSettlementIfNeeded()
+
+        checkForHistoryPrefetch(geometry)
+
+        if scrollCoordinator.lockedRestoreDistance != nil {
+            applyLockedScrollRestore(geometry)
+            return
+        }
+
+        // A prepended page is committed before SwiftUI can compensate its
+        // content height. Do not publish that transient position; the measured
+        // row anchor below moves the viewport in the same layout cycle.
+        if scrollCoordinator.pendingPrependAnchor != nil {
+            setBottomState(false)
+            return
+        }
+
+        // Match macOS's position transaction: while follow mode owns the
+        // viewport, a streaming height change cannot publish its transient
+        // pre-compensation gap as an off-bottom state. Keep the chrome latched
+        // at the bottom, persist zero, and correct the edge once a running
+        // programmatic animation is out of the way. Only direct user scrolling
+        // below is allowed to release follow mode and reveal the button.
+        if followsLatest, !scrollCoordinator.userScrollIsActive {
+            if geometry.distanceFromBottom <= 2,
+               !scrollCoordinator.hasAppliedInitialPosition {
+                scrollCoordinator.hasAppliedInitialPosition = true
+                scheduleInitialPositionSettlementIfNeeded()
+            }
+            setBottomState(true)
+            publishScrollState(geometry)
+            if !scrollCoordinator.programmaticScrollIsAnimating,
+               geometry.distanceFromBottom > 2 {
+                scrollPosition.scrollTo(edge: .bottom)
+            }
+            return
+        }
+
+        let atBottom = geometry.distanceFromBottom <= 2
+        setBottomState(atBottom)
+        if scrollCoordinator.userScrollIsActive {
+            setFollowState(atBottom)
+        }
+        publishScrollState(geometry)
+    }
+
+    private func handleScrollPhase(_ phase: ScrollPhase) {
+        switch phase {
+        case .tracking, .interacting, .decelerating:
+            scrollCoordinator.programmaticScrollIsAnimating = false
+            scrollCoordinator.userScrollIsActive = true
+            // Direct manipulation supersedes any pending opening position,
+            // just as macOS ends its initial-position transaction when the
+            // reader takes control.
+            scrollCoordinator.hasAppliedInitialPosition = true
+            scrollCoordinator.hasSettledInitialPosition = true
+            scrollCoordinator.initialPositionSettlementTask?.cancel()
+            scrollCoordinator.initialPositionSettlementTask = nil
+            scrollCoordinator.lockedRestoreDistance = nil
+            scrollCoordinator.restoreHistoryTask?.cancel()
+            scrollCoordinator.restoreHistoryTask = nil
+        case .idle:
+            scrollCoordinator.programmaticScrollIsAnimating = false
+            if scrollCoordinator.userScrollIsActive {
+                scrollCoordinator.userScrollIsActive = false
+                if let geometry = scrollCoordinator.latestGeometry {
+                    let atBottom = geometry.distanceFromBottom <= 2
+                    setBottomState(atBottom)
+                    setFollowState(atBottom)
+                    publishScrollState(geometry)
+                }
+            } else if followsLatest,
+                      scrollCoordinator.lockedRestoreDistance == nil,
+                      let geometry = scrollCoordinator.latestGeometry,
+                      geometry.distanceFromBottom > 2 {
+                scrollPosition.scrollTo(edge: .bottom)
+            }
+        case .animating:
+            scrollCoordinator.programmaticScrollIsAnimating = true
+        }
+    }
+
+    private func applyLockedScrollRestore(_ geometry: TranscriptViewportGeometry) {
+        guard let distance = scrollCoordinator.lockedRestoreDistance else { return }
+        setBottomState(false)
+
+        // A controller can be evicted while its lightweight viewport snapshot
+        // remains. Fetch older pages until the restored distance exists in the
+        // newly-created model, just as the macOS virtual transcript does.
+        let maximumDistance = max(
+            0,
+            geometry.maximumOffsetY - geometry.minimumOffsetY
+        )
+        if distance > maximumDistance + 0.5,
+           model?.hasOlderHistory == true {
+            requestOlderHistoryForRestore(contentHeight: geometry.contentHeight)
+            return
+        }
+
+        // This is the same coordinate used by macOS: document bottom minus
+        // viewport height minus the saved distance. ScrollGeometry reports
+        // the host offset from its negative top-inset origin, while
+        // ScrollPosition accepts a zero-based content point, so convert only
+        // at the API boundary.
+        let targetOffsetY = max(
+            geometry.minimumOffsetY,
+            geometry.maximumOffsetY - max(0, distance)
+        )
+        guard abs(geometry.boundedOffsetY - targetOffsetY) > 0.5 else {
+            scrollCoordinator.hasAppliedInitialPosition = true
+            scheduleInitialPositionSettlementIfNeeded()
+            return
+        }
+        scrollPosition.scrollTo(y: targetOffsetY - geometry.minimumOffsetY)
+    }
+
+    /// SwiftUI can report the requested edge before asynchronously-sized
+    /// Markdown rows have reached their final heights. Debouncing geometry is
+    /// the iOS counterpart of AppKit completing its initial layout/position
+    /// transaction before `checkForHistoryPrefetch` observes the viewport.
+    private func scheduleInitialPositionSettlementIfNeeded() {
+        guard scrollCoordinator.hasAppliedInitialPosition,
+              !scrollCoordinator.hasSettledInitialPosition,
+              !scrollCoordinator.userScrollIsActive
+        else { return }
+
+        scrollCoordinator.initialPositionSettlementTask?.cancel()
+        scrollCoordinator.initialPositionSettlementTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else { return }
+            scrollCoordinator.hasSettledInitialPosition = true
+            scrollCoordinator.initialPositionSettlementTask = nil
+            if let geometry = scrollCoordinator.latestGeometry {
+                checkForHistoryPrefetch(geometry)
+            }
+        }
+    }
+
+    private func requestOlderHistoryForRestore(contentHeight: CGFloat) {
+        guard scrollCoordinator.restoreHistoryTask == nil,
+              scrollCoordinator.historyLoadTask == nil,
+              scrollCoordinator.restoreHistoryRequestContentHeight != contentHeight,
+              let model,
+              model.hasOlderHistory,
+              !model.isLoadingOlderHistory
+        else { return }
+
+        scrollCoordinator.restoreHistoryRequestContentHeight = contentHeight
+        scrollCoordinator.restoreHistoryTask = Task { @MainActor in
+            await model.loadOlderHistory()
+            guard !Task.isCancelled else { return }
+            scrollCoordinator.restoreHistoryTask = nil
+            if let geometry = scrollCoordinator.latestGeometry {
+                applyLockedScrollRestore(geometry)
+            }
+        }
+    }
+
+    private func publishScrollState(_ geometry: TranscriptViewportGeometry) {
+        // Follow intent wins over transitional geometry. In particular, the
+        // disappearing navigation view may briefly report a nonzero distance;
+        // persisting that number used to reopen a bottom-following chat just
+        // shy of the bottom.
+        let distance = followsLatest ? 0 : geometry.distanceFromBottom
+        let followMode: SessionTranscriptFollowMode = followsLatest
+            ? .followingLatest
+            : .staticPosition
+        if let current = controller.scrollState,
+           abs(current.distanceFromBottom - distance) <= 0.25,
+           current.followMode == followMode {
+            return
+        }
+
+        var state = controller.scrollState ?? SessionScrollState(
+            distanceFromBottom: distance,
+            measurementCaches: [:],
+            measurementCacheLRU: [],
+            followMode: followMode
+        )
+        state.distanceFromBottom = distance
+        state.followMode = followMode
+        controller.scrollState = state
+    }
+
+    private func setBottomState(_ value: Bool) {
+        if isAtBottom != value { isAtBottom = value }
+    }
+
+    private func setFollowState(_ value: Bool) {
+        if followsLatest != value { followsLatest = value }
+    }
+
+    private func scrollToBottomIfFollowing() {
         guard followsLatest else { return }
         // Opening a chat JUMPS to the newest content; only changes that happen
         // while you're watching scroll there. History arriving on open used to
@@ -623,16 +1068,32 @@ struct SessionTranscriptView: View {
         // follow-scroll of this view's life is the opening one, full stop.
         let isOpening = !hasOpened
         if isOpening { hasOpened = true }
-        scrollToBottom(scroller, animated: !isOpening)
+        scrollToBottom(animated: !isOpening)
     }
 
-    private func scrollToBottom(_ scroller: ScrollViewProxy, animated: Bool) {
+    private func scrollToBottom(animated: Bool) {
+        cancelHistoryAnchorCompensation()
+        scrollCoordinator.lockedRestoreDistance = nil
+        scrollCoordinator.restoreHistoryTask?.cancel()
+        scrollCoordinator.restoreHistoryTask = nil
+
+        // Drive explicit jumps through the same position binding used by
+        // saved-distance restoration. Sending a ScrollViewReader command
+        // while `.scrollPosition` owns the viewport gives SwiftUI two targets;
+        // the binding can immediately restore the old one. Use the actual edge
+        // rather than deriving a point from ScrollGeometry: the latter omits
+        // SwiftUI's effective bottom inset and can resolve to the position we
+        // are already at. This is the iOS equivalent of macOS applying a zero
+        // distance from the bottom.
+        let apply = {
+            scrollPosition.scrollTo(edge: .bottom)
+        }
         if animated {
             withAnimation(.snappy(duration: 0.25)) {
-                scrollPosition.scrollTo(edge: .bottom)
+                apply()
             }
         } else {
-            scrollPosition.scrollTo(edge: .bottom)
+            apply()
         }
     }
 }
