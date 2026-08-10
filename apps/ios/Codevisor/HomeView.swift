@@ -218,9 +218,7 @@ struct HomeView: View {
                 ToolbarItem(placement: .topBarTrailing) { organizeMenu }
             }
             .safeAreaInset(edge: .bottom, alignment: .trailing, spacing: 0) {
-                // The empty states carry their own single call to action; a
-                // second floating button would just compete with it.
-                if hasRemoteMachines && !visibleSessions.isEmpty {
+                if hasRemoteMachines {
                     newChatButton
                 }
             }
@@ -493,37 +491,16 @@ struct HomeView: View {
         }
     }
 
-    /// A machine is paired but has no active workspaces yet.
+    /// Mail-style empty state: the navigation title already supplies the
+    /// context, so the body needs only a quiet confirmation that it is empty.
     private var emptyState: some View {
-        ContentUnavailableView {
-            Label {
-                Text("No Workspaces")
-            } icon: {
-                Image("hunk")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 52, height: 52)
-                    .foregroundStyle(.tertiary)
-            }
-        } description: {
-            Text("Workspaces are where agents work on \(machines.selectedMachine.name). Start your first one.")
-        } actions: {
-            Button {
-                presentNewChat()
-            } label: {
-                Label("New Chat", systemImage: "plus")
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 4)
-            }
-            .buttonStyle(.borderedProminent)
-            .buttonBorderShape(.capsule)
-            .matchedTransitionSource(
-                id: Self.newChatTransitionID,
-                in: newChatTransition
-            )
+        VStack {
+            Text("No \(organization.title)")
+                .font(.title3.weight(.bold))
+                .padding(.top, 80)
+            Spacer()
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Toolbar
