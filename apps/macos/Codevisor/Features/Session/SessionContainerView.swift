@@ -142,15 +142,6 @@ struct SessionContainerView: View {
                 _ = configuredCenterModel(leafId: firstLeaf)
                 activateLeaf(firstLeaf)
             }
-            store.paneGroup(for: session, project: project).workspaceCommandHandler = { command in
-                switch command {
-                case .newTab, .previousTab, .nextTab, .selectTab, .split, .focusSplit,
-                     .previousSplit, .nextSplit:
-                    return handleWorkspaceCommand(command)
-                case .closeTab, .togglePanel:
-                    return false
-                }
-            }
             // Upward focus feedback: clicking into any chat's composer
             // makes its group the active one (terminals do the same through
             // their surface responder callbacks) — and the sidebar's chat

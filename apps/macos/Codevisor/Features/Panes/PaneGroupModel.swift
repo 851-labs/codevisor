@@ -59,8 +59,8 @@ final class PaneGroupModel: Identifiable {
     /// group with it, which is where keyboard tab commands route.
     @ObservationIgnored var onActivated: (() -> Void)?
     /// Center leaves hand workspace-level tab/split commands to their
-    /// container. Returning true means the command was consumed. Bottom
-    /// panel models leave this nil and retain their local tab behavior.
+    /// container. Returning true means the command was consumed. This is
+    /// ignored for bottom-panel models so their shortcuts always remain local.
     @ObservationIgnored var workspaceCommandHandler: ((PaneGroupCommand) -> Bool)?
     /// Debounces height persistence during drags (state itself updates live).
     @ObservationIgnored private var pendingHeightSave: Task<Void, Never>?
@@ -171,7 +171,7 @@ final class PaneGroupModel: Identifiable {
     /// offer them to the workspace container; bottom-panel groups retain
     /// local tab selection and terminal creation behavior.
     func handleCommand(_ command: PaneGroupCommand) {
-        if workspaceCommandHandler?(command) == true { return }
+        if placement == .center, workspaceCommandHandler?(command) == true { return }
         switch command {
         case .newTab:
             // ⌘T opens the "New tab" page (Chrome semantics — pick what the
