@@ -508,7 +508,7 @@ final class CollectionTranscriptView: UICollectionView,
         alwaysBounceVertical = true
         keyboardDismissMode = .interactive
         contentInsetAdjustmentBehavior = .never
-        scrollsToTop = true
+        scrollsToTop = false
     }
 
     override func safeAreaInsetsDidChange() {
