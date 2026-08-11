@@ -117,6 +117,65 @@ struct VirtualTranscriptLayoutTests {
         #expect(restoredTop == 490)
     }
 
+    @Test func uncachedOpeningStaysAtBottomAcrossHydrationAndMeasurement() {
+        let placeholder = VirtualTranscriptLayout(
+            items: [.init(key: "bottom-spacer", estimatedHeight: 120)],
+            measuredHeights: ["bottom-spacer": 120],
+            spacing: 20
+        )
+        #expect(placeholder.distanceFromBottom(
+            viewportTop: placeholder.viewportTop(distanceFromBottom: 0, viewportHeight: 600),
+            viewportHeight: 600
+        ) == 0)
+
+        let hydratedItems = (0..<12).map {
+            VirtualTranscriptLayout.Item(key: "message:\($0)", estimatedHeight: 180)
+        } + [.init(key: "bottom-spacer", estimatedHeight: 120)]
+        let hydrated = VirtualTranscriptLayout(
+            items: hydratedItems,
+            measuredHeights: ["bottom-spacer": 120],
+            spacing: 20
+        )
+        let measured = VirtualTranscriptLayout(
+            items: hydratedItems,
+            measuredHeights: [
+                "message:9": 420,
+                "message:10": 260,
+                "bottom-spacer": 120,
+            ],
+            spacing: 20
+        )
+
+        for layout in [hydrated, measured] {
+            let top = layout.viewportTop(distanceFromBottom: 0, viewportHeight: 600)
+            #expect(layout.distanceFromBottom(
+                viewportTop: top,
+                viewportHeight: 600
+            ) == 0)
+        }
+    }
+
+    @Test func bottomVirtualWindowDoesNotMountTheWholeTranscript() {
+        let longItems = (0..<100).map {
+            VirtualTranscriptLayout.Item(key: "message:\($0)", estimatedHeight: 100)
+        }
+        let layout = VirtualTranscriptLayout(
+            items: longItems,
+            measuredHeights: [:],
+            spacing: 20
+        )
+
+        let range = layout.visibleRange(
+            distanceFromBottom: 0,
+            viewportHeight: 600,
+            overscanCount: 2
+        )
+
+        #expect(range.upperBound == longItems.count)
+        #expect(range.lowerBound > 90)
+        #expect(range.count < 10)
+    }
+
     @Test func anchorCompensationIgnoresChangesAboveTheViewport() {
         let initial = VirtualTranscriptLayout(items: items, measuredHeights: [:], spacing: 10)
         let measured = VirtualTranscriptLayout(

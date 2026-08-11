@@ -283,20 +283,22 @@ public struct ToolCallContentCard: View {
         case let .content(block):
             switch block {
             case let .text(text, _):
-                #if canImport(AppKit)
+                #if canImport(AppKit) || canImport(UIKit)
                 SelectableTextView(
-                    text,
-                    font: .monospacedSystemFont(
-                        ofSize: NSFont.preferredFont(forTextStyle: .caption1).pointSize,
-                        weight: .regular
+                    attributedText: NSAttributedString(
+                        string: text,
+                        attributes: [
+                            .font: OSFont.monospacedSystemFont(
+                                ofSize: OSFont.preferredFont(forTextStyle: .caption1).pointSize,
+                                weight: .regular
+                            ),
+                            .foregroundColor: OSColor(theme.textPrimary),
+                        ]
                     ),
-                    foregroundColor: NSColor(theme.textPrimary),
                     fillsWidth: true
                 )
                 .frame(maxWidth: .infinity, alignment: .leading)
                 #else
-                // Interim pure-SwiftUI output text (no selection) until the
-                // UIKit TextKit counterpart lands with the iOS transcript.
                 Text(text)
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(theme.textPrimary)

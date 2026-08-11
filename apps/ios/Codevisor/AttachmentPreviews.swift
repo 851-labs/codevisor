@@ -162,7 +162,7 @@ struct AttachmentThumbnailView: View {
 
     private var imageThumb: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: 8)
                 .fill(theme.bubbleBackground)
             if let image {
                 Image(uiImage: image)
@@ -173,13 +173,13 @@ struct AttachmentThumbnailView: View {
                     .foregroundStyle(.tertiary)
             }
         }
-        .frame(width: 96, height: 96)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .frame(width: 56, height: 56)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: 8)
                 .strokeBorder(.separator, lineWidth: 1)
         )
-        .contentShape(RoundedRectangle(cornerRadius: 12))
+        .contentShape(RoundedRectangle(cornerRadius: 8))
         .onTapGesture { preview() }
         .accessibilityLabel("Attachment \(attachment.name)")
         .accessibilityAddTraits(.isButton)
@@ -191,17 +191,21 @@ struct AttachmentThumbnailView: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "doc")
-                    .font(.caption)
                     .foregroundStyle(.secondary)
                 Text(attachment.name)
-                    .font(.caption)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .frame(maxWidth: 160, alignment: .leading)
+                    .foregroundStyle(.primary)
             }
+            .font(.callout)
             .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .frame(height: 56)
+            .frame(maxWidth: 200)
             .background(theme.bubbleBackground, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(.separator, lineWidth: 1)
+            )
         }
         .buttonStyle(.plain)
         .accessibilityLabel(attachment.name)

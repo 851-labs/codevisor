@@ -159,14 +159,12 @@ public struct DiffView: View {
                 .foregroundStyle(tint(for: row.kind))
             // Removed lines keep full syntax colors (pierre does not dim or
             // strike them); the row tint alone marks the deletion.
-            #if canImport(AppKit)
+            #if canImport(AppKit) || canImport(UIKit)
             SelectableTextView(
                 attributedText: rowText(row, highlights: highlights),
                 fillsWidth: false
             )
             #else
-            // Interim pure-SwiftUI diff row (no cross-row selection) until
-            // the UIKit TextKit counterpart lands with the iOS transcript.
             Text(portableRowText(row, highlights: highlights))
                 .font(.system(.caption, design: .monospaced))
                 .lineLimit(nil)
@@ -189,7 +187,7 @@ public struct DiffView: View {
         }
     }
 
-    #if !canImport(AppKit)
+    #if !canImport(AppKit) && !canImport(UIKit)
     /// AttributedString flavor of `rowText` for the SwiftUI fallback path.
     private func portableRowText(
         _ row: LineDiff.Row,
@@ -212,15 +210,15 @@ public struct DiffView: View {
     }
     #endif
 
-    #if canImport(AppKit)
+    #if canImport(AppKit) || canImport(UIKit)
     /// Row text: Shiki-highlighted when the path's language and the theme
     /// allow it, plain otherwise. Blank lines render a space to keep height.
     private func rowText(
         _ row: LineDiff.Row,
         highlights: [Int: AttributedString]
     ) -> NSAttributedString {
-        let font = NSFont.monospacedSystemFont(
-            ofSize: NSFont.preferredFont(forTextStyle: .caption1).pointSize,
+        let font = OSFont.monospacedSystemFont(
+            ofSize: OSFont.preferredFont(forTextStyle: .caption1).pointSize,
             weight: .regular
         )
         guard let highlighted = highlights[row.id], !row.text.isEmpty else {
@@ -228,7 +226,7 @@ public struct DiffView: View {
                 string: row.text.isEmpty ? " " : row.text,
                 attributes: [
                     .font: font,
-                    .foregroundColor: NSColor(theme.textPrimary),
+                    .foregroundColor: OSColor(theme.textPrimary),
                 ]
             )
         }
@@ -239,8 +237,8 @@ public struct DiffView: View {
                     string: String(highlighted[run.range].characters),
                     attributes: [
                         .font: font,
-                        .foregroundColor: run.foregroundColor.map { NSColor($0) }
-                            ?? NSColor(theme.textPrimary),
+                        .foregroundColor: run.foregroundColor.map { OSColor($0) }
+                            ?? OSColor(theme.textPrimary),
                     ]
                 )
             )

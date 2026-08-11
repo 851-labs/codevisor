@@ -3,192 +3,17 @@ import CodevisorCore
 import CodevisorUI
 import StreamMarkdown
 import SwiftUI
+import UIKit
 
 extension Notification.Name {
     static let codevisorOpenSettings = Notification.Name("codevisor.open-settings")
 }
 
-/// Animates one stable user row for one targeted send request. This does not
-/// depend on whether SwiftUI observes the request before or after the row is
-/// inserted, and the row keeps this state when optimistic content settles.
-private struct UserSendLiftModifier: ViewModifier {
-    private static let animation: Animation = .snappy(duration: 0.38)
-
-    let messageID: UUID?
-    let distance: CGFloat
-    let request: UserSendAnimationRequest?
-    let controller: SessionController
-    let reduceMotion: Bool
-    let geometryReady: Bool
-    @State private var offset: CGFloat = 0
-    @State private var runningToken: UInt64?
-
-    func body(content: Content) -> some View {
-        content
-            .offset(y: offset)
-            .onAppear { animateIfNeeded() }
-            .onChange(of: request?.token) { _, _ in animateIfNeeded() }
-            .onChange(of: geometryReady) { _, _ in animateIfNeeded() }
-    }
-
-    private func animateIfNeeded() {
-        guard let request,
-              messageID == request.messageID
-        else { return }
-        // A newly promoted chat renders its optimistic row before SwiftUI has
-        // reported the transcript tail and composer positions. Do not spend
-        // the exactly-once token on the minimum-distance placeholder; the
-        // geometry change above retries as soon as both anchors are real.
-        guard reduceMotion || geometryReady else { return }
-        guard controller.claimUserSendAnimation(request) else { return }
-        guard !reduceMotion else {
-            offset = 0
-            return
-        }
-
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            offset = distance
-        }
-        runningToken = request.token
-        // A separate main-run-loop turn commits the source offset before the
-        // destination transaction begins. `Task.yield()` may resume within the
-        // same SwiftUI update and collapse both states into no animation.
-        DispatchQueue.main.async {
-            guard runningToken == request.token else { return }
-            withAnimation(Self.animation) {
-                offset = 0
-            }
-        }
-    }
-}
-
-/// One row of the transcript, whatever the chat's connection state. The whole
-/// chat — an optimistic first message, worktree setup, settled turns, the
-/// streaming turn, loading and error status — is ONE ordered list of these,
-/// exactly like the macOS `ChatScreen`'s row builder.
-///
-/// This replaced three parallel scroll views (a connected transcript, a
-/// model-less "pending setup" column, and a model-less status column) that each
-/// re-implemented the same rows. Every visual inconsistency between "the first
-/// message in a new chat" and "a message in an existing chat" came from that
-/// fork: the send animation, the setup row's placement, and the loading/error
-/// rows all existed in two or three copies that drifted apart.
-private enum TranscriptRow: Identifiable {
-    /// Worktree creation / agent startup for this chat's one launch.
-    case setup
-    /// A settled, streaming, or optimistic conversation item. A first prompt
-    /// is created before its model and retains this row identity when it
-    /// settles, so SwiftUI never removes and reinserts the sent bubble.
-    case item(ConversationItem, isActive: Bool)
-    case activity(ActivityKind)
-    /// A session failure, which may offer harness authentication.
-    case sessionError(String)
-    /// A connection failure, which offers a plain retry.
-    case statusError(String)
-
-    enum ActivityKind: Equatable {
-        case loadingHistory
-        case startingAgent
-        case connecting(String)
-        case serverWait(String)
-
-        var id: String {
-            switch self {
-            case .loadingHistory: "loading-history"
-            case .startingAgent: "starting-agent"
-            case .connecting: "connecting"
-            case .serverWait: "server-wait"
-            }
-        }
-    }
-
-    var id: String {
-        switch self {
-        case .setup: "setup"
-        case let .item(item, isActive): "item-\(isActive ? "active-" : "")\(item.id)"
-        case let .activity(kind): "activity-\(kind.id)"
-        case .sessionError: "session-error"
-        case .statusError: "status-error"
-        }
-    }
-}
-
-/// The platform-neutral part of SwiftUI's scroll geometry. Persisting
-/// `ScrollPosition` itself does not work for direct manipulation because it
-/// intentionally stops exposing a concrete target once the user scrolls.
-private struct TranscriptViewportGeometry: Equatable {
-    let contentOffsetY: CGFloat
-    let contentHeight: CGFloat
-    let contentInsetTop: CGFloat
-    let viewportHeight: CGFloat
-
-    init(_ geometry: ScrollGeometry) {
-        contentOffsetY = geometry.contentOffset.y
-        contentHeight = geometry.contentSize.height
-        contentInsetTop = geometry.contentInsets.top
-        viewportHeight = geometry.containerSize.height
-    }
-
-    var minimumOffsetY: CGFloat { -contentInsetTop }
-
-    var maximumOffsetY: CGFloat {
-        max(
-            minimumOffsetY,
-            minimumOffsetY + max(0, contentHeight - viewportHeight)
-        )
-    }
-
-    var boundedOffsetY: CGFloat {
-        min(max(minimumOffsetY, contentOffsetY), maximumOffsetY)
-    }
-
-    var distanceFromBottom: CGFloat {
-        max(0, maximumOffsetY - boundedOffsetY)
-    }
-
-    var distanceFromTop: CGFloat {
-        max(0, boundedOffsetY - minimumOffsetY)
-    }
-}
-
-private struct HistoryPrependAnchor {
-    let rowID: UUID
-    var viewportMinY: CGFloat
-    var lastViewportOffsetY: CGFloat
-    var isApplyingCompensation = false
-}
-
-/// High-frequency scroll bookkeeping that must not invalidate the transcript
-/// on every pixel. SwiftUI-observed state remains limited to the two booleans
-/// that actually change visible chrome.
-@MainActor
-private final class TranscriptScrollCoordinator {
-    var hasConfiguredInitialPosition = false
-    var hasAppliedInitialPosition = false
-    var hasSettledInitialPosition = false
-    var initialPositionSettlementTask: Task<Void, Never>?
-    var latestGeometry: TranscriptViewportGeometry?
-    var lockedRestoreDistance: CGFloat?
-    var userScrollIsActive = false
-    var programmaticScrollIsAnimating = false
-    var restoreHistoryRequestContentHeight: CGFloat?
-    var restoreHistoryTask: Task<Void, Never>?
-    var historyLoadTask: Task<Void, Never>?
-    var historyAnchorSettlementTask: Task<Void, Never>?
-    var lastPrefetchOldestID: UUID?
-    var measuredHistoryRowMinY: [UUID: CGFloat] = [:]
-    var pendingPrependAnchor: HistoryPrependAnchor?
-}
-
 /// The chat pane body: connects an existing session through the shared
 /// SessionController/SessionModel engine and renders the transcript with the
-/// shared row views. Hosted by WorkspaceScreen, which owns the navigation
-/// chrome; the VirtualTranscriptLayout-backed virtualizer replaces the scroll
-/// host as Phase 4 completes.
+/// shared row views. UIKit owns the virtual window and viewport coordinate so
+/// opening, measurement, pagination, and streaming are one position system.
 struct SessionTranscriptView: View {
-    private static let transcriptCoordinateSpace = "session-transcript"
     @Bindable var controller: SessionController
     /// The new-chat page shows project/run-location chips above the composer;
     /// the first chat inside a workspace doesn't (its directory is fixed).
@@ -200,6 +25,8 @@ struct SessionTranscriptView: View {
     var initialComposerFocusRequest: UUID? = nil
     var onInitialComposerFocusRequestFulfilled: ((UUID) -> Void)? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.theme) private var theme
     @State private var disclosure = TranscriptDisclosureStore()
     /// The composer's resting height, used to size the transcript's bottom
     /// spacer and the mask that sits under the card.
@@ -214,49 +41,48 @@ struct SessionTranscriptView: View {
     /// True while the composer is dragged to full height; the accessories
     /// around it (scroll-to-bottom, notice rails) hide until it collapses.
     @State private var composerExpanded = false
-    /// The scroll view's own height: the transcript fills at least this much
-    /// so a short conversation starts at the top instead of floating at the
-    /// bottom of the viewport.
-    @State private var viewportHeight: CGFloat = 0
     /// Fetches and caches transcript attachment previews via the controller's
     /// authenticated client.
     @State private var attachmentImages: AttachmentImageStore?
-    /// Point-based positioning drives both saved arbitrary distances and the
-    /// explicit zero-distance jump. Keeping one position owner avoids an old
-    /// ScrollViewReader command fighting this binding for the viewport.
-    @State private var scrollPosition = ScrollPosition()
-    @State private var scrollCoordinator = TranscriptScrollCoordinator()
-    /// Where the transcript's content currently ends, and where the composer
-    /// begins — both in global space. Their gap IS the send lift: the distance
-    /// a just-sent message must travel from the composer to where it lands.
-    /// Measuring beats assuming, because the landing spot moves: a short
-    /// conversation is top-aligned with slack beneath it (long ride), while a
-    /// full one sits against the composer (short hop).
-    @State private var contentTailY: CGFloat = 0
-    @State private var composerTopY: CGFloat = 0
-    /// First-send promotion mounts a brand-new transcript whose global
-    /// coordinates arrive asynchronously. The send token remains unclaimed
-    /// until both anchors have reported at least once.
-    @State private var hasMeasuredContentTail = false
-    @State private var hasMeasuredComposerTop = false
-    /// The transcript's first content is a screen opening, not a change to
-    /// follow: jump to the bottom, don't animate the scroll there.
-    @State private var hasOpened = false
+    @State private var scrollCommand = TranscriptScrollCommand()
+    @State private var historyLoadTask: Task<Void, Never>?
+    @State private var showsInitialLoadingSpinner = false
 
     var body: some View {
         chat
-        .onAppear { [controller] in
-            if attachmentImages == nil {
-                attachmentImages = AttachmentImageStore { [weak controller] fileId in
-                    guard let controller else { throw SessionControllerError.serverUnavailable }
-                    return try await controller.fileData(id: fileId)
+            .onAppear { [controller] in
+                followsLatest = controller.scrollState?.followMode.followsLatest ?? true
+                isAtBottom = controller.scrollState?.isAtBottom ?? true
+                if attachmentImages == nil {
+                    attachmentImages = AttachmentImageStore { [weak controller] fileId in
+                        guard let controller else {
+                            throw SessionControllerError.serverUnavailable
+                        }
+                        return try await controller.fileData(id: fileId)
+                    }
                 }
+                controller.transcriptViewDidAppear()
             }
-        }
-        .environment(\.attachmentImages, attachmentImages)
+            .onDisappear { [controller] in
+                historyLoadTask?.cancel()
+                historyLoadTask = nil
+                controller.transcriptViewDidDisappear()
+            }
+            .environment(\.attachmentImages, attachmentImages)
+            .task(id: isLoadingEmptyConversation) {
+                showsInitialLoadingSpinner = false
+                guard isLoadingEmptyConversation else { return }
+                try? await Task.sleep(for: .milliseconds(500))
+                guard !Task.isCancelled, isLoadingEmptyConversation else { return }
+                showsInitialLoadingSpinner = true
+            }
     }
 
-    private var model: SessionModel? { controller.model }
+    private var isLoadingEmptyConversation: Bool {
+        controller.isLoadingInitialHistory
+            && controller.settledConversation.isEmpty
+            && !controller.hasActiveItem
+    }
 
     /// The watermark shows while the transcript has nothing to say at all — a
     /// model-less draft (new-worktree chats deliberately don't connect until
@@ -271,26 +97,22 @@ struct SessionTranscriptView: View {
         case .connecting, .failed: return false
         case .idle: break
         }
-        guard let model else { return true }
-        return model.settledConversation.isEmpty && model.activeItem == nil
+        return controller.settledConversation.isEmpty && !controller.hasActiveItem
     }
 
     /// The scroll-to-bottom button only means something once there's a
     /// conversation to scroll through.
     private var hasScrollableContent: Bool {
-        guard let model else { return false }
-        return !model.settledConversation.isEmpty || model.activeItem != nil
+        !controller.settledConversation.isEmpty || controller.hasActiveItem
     }
 
     // MARK: - The row list
 
-    /// The whole chat as one ordered list, in macOS's order. Every state — no
-    /// model yet, connecting, streaming, failed — is expressed here rather than
-    /// by swapping in a different scroll view.
-    private var rows: [TranscriptRow] {
-        var rows: [TranscriptRow] = []
-        let settled = model?.settledConversation ?? []
-        let active = model?.activeItem
+    /// The whole chat as stable virtual rows. Plans are independent rows so a
+    /// giant document is a virtualization boundary, matching macOS.
+    private var transcriptRows: [TranscriptVirtualRow] {
+        var rows: [TranscriptVirtualRow] = []
+        let settled = controller.settledConversation
         let hasSetup = !controller.setupPhases.isEmpty
         let pendingMessage = controller.pendingUserMessage.flatMap { pending in
             settled.contains(where: { item in
@@ -298,25 +120,55 @@ struct SessionTranscriptView: View {
                 return false
             }) ? nil : pending
         }
-        let pendingIsOpeningRow = settled.isEmpty && active == nil
+        let pendingIsOpeningRow = settled.isEmpty && !controller.hasActiveItem
+        let waitingDescription = controller.waitingBackgroundTaskDescription
+        let waitingAssistantID: UUID? = {
+            guard !controller.hasActiveItem,
+                  waitingDescription != nil,
+                  case let .assistant(message)? = settled.last,
+                  message.turn.finalText != nil else { return nil }
+            return message.id
+        }()
 
         // The opening block: the conversation hasn't landed yet. Covers the
         // first send (with or without a model) and an empty connected chat.
-        if settled.isEmpty, active == nil {
+        if settled.isEmpty, !controller.hasActiveItem {
             if let message = pendingMessage {
-                rows.append(.item(.user(message), isActive: false))
-                // Until the first phase arrives there's nothing to show but
-                // that something is happening.
-                if !hasSetup { rows.append(.activity(.startingAgent)) }
+                let showsStartingAgent = !hasSetup
+                rows.append(.init(
+                    id: .message(message.id),
+                    content: .optimistic(
+                        message,
+                        showsStartingAgent: showsStartingAgent
+                    ),
+                    estimatedHeight: 90,
+                    measurementRevision: Self.optimisticMeasurementRevision(
+                        for: message,
+                        showsStartingAgent: showsStartingAgent
+                    )
+                ))
             }
-            if hasSetup { rows.append(.setup) }
-            if controller.isLoadingInitialHistory {
-                rows.append(.activity(.loadingHistory))
-            } else if pendingMessage == nil {
+            if hasSetup {
+                rows.append(.init(
+                    id: .setup,
+                    content: .setup(controller.setupPhases),
+                    estimatedHeight: 80
+                ))
+            }
+            // Initial history loading is an overlay, never transcript geometry.
+            if !controller.isLoadingInitialHistory, pendingMessage == nil {
                 if let message = controller.serverWaitMessage {
-                    rows.append(.activity(.serverWait(message)))
+                    rows.append(.init(
+                        id: .serverWait,
+                        content: .serverWait(message),
+                        estimatedHeight: 32
+                    ))
                 } else if case let .connecting(message) = controller.status {
-                    rows.append(.activity(.connecting(message)))
+                    rows.append(.init(
+                        id: .connecting,
+                        content: .connecting(message),
+                        estimatedHeight: 32
+                    ))
                 }
             }
         }
@@ -325,33 +177,150 @@ struct SessionTranscriptView: View {
         // ran: ahead of a leading assistant turn, or right after the first user
         // message, whose send triggered it.
         for (index, item) in settled.enumerated() {
-            if index == 0, hasSetup, isAssistant(item) { rows.append(.setup) }
-            rows.append(.item(item, isActive: false))
-            if index == 0, hasSetup, isUser(item) { rows.append(.setup) }
-        }
-
-        if settled.isEmpty, active != nil, hasSetup { rows.append(.setup) }
-        if let active { rows.append(.item(active, isActive: true)) }
-        if !pendingIsOpeningRow, let message = pendingMessage {
-            rows.append(.item(.user(message), isActive: false))
-        }
-
-        if !settled.isEmpty || active != nil {
-            if controller.isLoadingInitialHistory {
-                rows.append(.activity(.loadingHistory))
+            if index == 0, hasSetup, isAssistant(item) {
+                rows.append(.init(
+                    id: .setup,
+                    content: .setup(controller.setupPhases),
+                    estimatedHeight: 80
+                ))
             }
+            appendSettled(
+                item,
+                waitingOnBackgroundTask: item.id == waitingAssistantID
+                    ? waitingDescription
+                    : nil,
+                to: &rows
+            )
+            if index == 0, hasSetup, isUser(item) {
+                rows.append(.init(
+                    id: .setup,
+                    content: .setup(controller.setupPhases),
+                    estimatedHeight: 80
+                ))
+            }
+        }
+
+        if settled.isEmpty, controller.hasActiveItem, hasSetup {
+            rows.append(.init(
+                id: .setup,
+                content: .setup(controller.setupPhases),
+                estimatedHeight: 80
+            ))
+        }
+        if controller.hasActiveItem {
+            rows.append(.init(id: .active, content: .active, estimatedHeight: 320))
+        }
+        if !pendingIsOpeningRow, let message = pendingMessage {
+            rows.append(.init(
+                id: .message(message.id),
+                content: .optimistic(message, showsStartingAgent: false),
+                estimatedHeight: 90,
+                measurementRevision: Self.optimisticMeasurementRevision(
+                    for: message,
+                    showsStartingAgent: false
+                )
+            ))
+        }
+
+        if let waitingDescription, waitingAssistantID == nil, !controller.hasActiveItem {
+            rows.append(.init(
+                id: .backgroundTask,
+                content: .backgroundTask(waitingDescription),
+                estimatedHeight: 32
+            ))
+        }
+        if let updatingHarnessName = controller.waitingHarnessUpdateName {
+            rows.append(.init(
+                id: .updateGate,
+                content: .updateGate(updatingHarnessName),
+                estimatedHeight: 32
+            ))
+        }
+
+        if !settled.isEmpty || controller.hasActiveItem {
             if let message = controller.serverWaitMessage {
-                rows.append(.activity(.serverWait(message)))
+                rows.append(.init(
+                    id: .serverWait,
+                    content: .serverWait(message),
+                    estimatedHeight: 32
+                ))
             }
         }
 
         if let message = controller.sessionErrorMessage {
-            rows.append(.sessionError(message))
+            rows.append(.init(id: .error, content: .error(message), estimatedHeight: 56))
         }
         if case let .failed(message) = controller.status, message != controller.sessionErrorMessage {
-            rows.append(.statusError(message))
+            rows.append(.init(
+                id: .statusError,
+                content: .error(message),
+                estimatedHeight: 56
+            ))
         }
+        rows.append(.init(
+            id: .bottomSpacer,
+            content: .bottomSpacer(max(1, composerHeight + 24)),
+            estimatedHeight: max(1, composerHeight + 24)
+        ))
         return rows
+    }
+
+    private func appendSettled(
+        _ item: ConversationItem,
+        waitingOnBackgroundTask: String?,
+        to rows: inout [TranscriptVirtualRow]
+    ) {
+        guard case let .assistant(message) = item,
+              let planDocument = message.turn.planDocument,
+              !planDocument.isEmpty else {
+            rows.append(.init(
+                id: .message(item.id),
+                content: .message(
+                    item,
+                    waitingOnBackgroundTask: waitingOnBackgroundTask
+                ),
+                estimatedHeight: Self.estimatedHeight(for: item),
+                measurementRevision: Self.measurementRevision(
+                    for: item,
+                    waitingOnBackgroundTask: waitingOnBackgroundTask
+                )
+            ))
+            return
+        }
+
+        let revision = Self.measurementRevision(
+            for: item,
+            waitingOnBackgroundTask: waitingOnBackgroundTask
+        )
+        if message.turn.hasDeferredWorkedDetails
+            || !message.turn.workedItemsBeforePlan.isEmpty {
+            rows.append(.init(
+                id: .assistantPlanning(message.id),
+                content: .assistantPlanning(message),
+                estimatedHeight: 44,
+                measurementRevision: revision
+            ))
+        }
+        rows.append(.init(
+            id: .plan(message.id),
+            content: .planDocument(planDocument),
+            estimatedHeight: Self.estimatedPlanHeight(planDocument),
+            measurementRevision: Self.planMeasurementRevision(planDocument)
+        ))
+        if !message.turn.workedItemsAfterPlan.isEmpty
+            || message.turn.finalText != nil
+            || message.turn.stopDetail != nil
+            || message.turn.isGenerating {
+            rows.append(.init(
+                id: .assistantResult(message.id),
+                content: .assistantResult(
+                    message,
+                    waitingOnBackgroundTask: waitingOnBackgroundTask
+                ),
+                estimatedHeight: 240,
+                measurementRevision: revision
+            ))
+        }
     }
 
     /// One chat surface for every connection state. The composer is mounted
@@ -379,12 +348,17 @@ struct SessionTranscriptView: View {
                     .allowsHitTesting(false)
                     .transition(.opacity)
             }
-            // ONE transcript for every connection state, always mounted — so a
-            // row's transition actually runs (SwiftUI skips a child's
-            // transition when the parent itself is what got inserted, which is
-            // why the old model-less column needed a hand-rolled offset) and so
-            // rows can never disagree between states.
+            // One always-mounted native transcript for every connection state.
             transcript
+
+            if showsInitialLoadingSpinner, isLoadingEmptyConversation {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                    .padding(.bottom, composerHeight)
+                    .allowsHitTesting(false)
+                    .accessibilityLabel("Loading conversation")
+            }
 
             VStack(spacing: 8) {
                 // A fully-expanded composer is a focused writing surface: the
@@ -415,14 +389,6 @@ struct SessionTranscriptView: View {
                     onInitialFocusRequestFulfilled:
                         onInitialComposerFocusRequestFulfilled
                 )
-                // Where a sent message starts its ride. Measured rather than
-                // assumed: the row has to travel from HERE to wherever it
-                // lands, and those two points are far apart in a short
-                // conversation and adjacent in a long one.
-                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { top in
-                    composerTopY = top
-                    hasMeasuredComposerTop = true
-                }
             }
             .padding(.horizontal, 10)
             .padding(.bottom, 6)
@@ -462,7 +428,7 @@ struct SessionTranscriptView: View {
     private var scrollToBottomButton: some View {
         Button {
             followsLatest = true
-            scrollToBottom(animated: true)
+            scrollCommand.token &+= 1
         } label: {
             Image(systemName: "arrow.down")
                 .font(.system(size: 13, weight: .semibold))
@@ -475,8 +441,6 @@ struct SessionTranscriptView: View {
         .accessibilityLabel("Scroll to bottom")
     }
 
-    private static let bottomAnchor = "transcript-bottom"
-
     private func isUser(_ item: ConversationItem) -> Bool {
         if case .user = item { return true }
         return false
@@ -487,156 +451,128 @@ struct SessionTranscriptView: View {
         return false
     }
 
-    // MARK: - The send lift
+    // MARK: - Native transcript
 
-    /// Even when the content already ends at the composer, start a hair behind
-    /// the card so the row emerges from under it rather than appearing on its
-    /// edge.
-    private static let minimumSendLift: CGFloat = 18
-
-    /// One rule for every sent message, in every chat state: start at the
-    /// composer and travel to wherever the row lands. The distance is the
-    /// measured gap between the content's tail and the composer's top — a long
-    /// ride in an empty or short conversation, a short hop in a full one.
-    ///
-    /// Measured, not assumed. A constant here (the earlier bug) is only correct
-    /// when the conversation is long enough to sit against the composer; in a
-    /// short one the row lands high on the screen, and a constant made it pop
-    /// in just below its destination instead of rising out of the composer.
-    private var sendLift: CGFloat {
-        max(Self.minimumSendLift, composerTopY - contentTailY)
-    }
-
-    /// The one transcript. Always mounted, whatever the chat's state; its
-    /// content is `rows`.
     private var transcript: some View {
-        // Built once per render: the body re-evaluates on every streaming
-        // token, and this walks the whole conversation.
-        let rows = rows
-        return ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                ForEach(rows) { row in
-                    transcriptRow(row)
+        let rows = transcriptRows
+        return NativeTranscriptView(
+            rows: rows,
+            initialState: controller.scrollState,
+            followsLatest: followsLatest,
+            hasOlderHistory: controller.hasOlderHistory,
+            layoutFingerprint: transcriptLayoutFingerprint,
+            scrollCommand: scrollCommand,
+            sendAnimationRequest: controller.userSendAnimationRequest,
+            reduceMotion: reduceMotion,
+            claimSendAnimation: { request in
+                controller.claimUserSendAnimation(request)
+            },
+            rowContent: { row in
+                AnyView(
+                    virtualRowContent(row)
+                        .environment(\.theme, theme)
+                        .environment(\.attachmentImages, attachmentImages)
+                        .environment(\.transcriptDisclosure, disclosure)
+                        .environment(\.transcriptController, controller)
+                        .environment(
+                            \.runningSubagentToolCallIds,
+                            controller.runningSubagentToolCallIds
+                        )
+                        .environment(\.markdownTableBleed, 16)
+                )
+            },
+            onViewportChange: { state in
+                controller.scrollState = state
+            },
+            onBottomStateChange: { atBottom in
+                DispatchQueue.main.async {
+                    if isAtBottom != atBottom { isAtBottom = atBottom }
                 }
-
-                // Breathing room past the composer so the newest content
-                // can clear it, and the measurement point for where the
-                // content currently ends.
-                Color.clear
-                    .frame(height: composerHeight + 24)
-                    .id(Self.bottomAnchor)
-                    .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { tail in
-                        contentTailY = tail
-                        hasMeasuredContentTail = true
-                    }
+            },
+            onFollowStateChange: { follows in
+                DispatchQueue.main.async {
+                    if followsLatest != follows { followsLatest = follows }
+                }
+            },
+            onNearTop: {
+                Task { @MainActor in requestOlderHistoryLoad() }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .frame(minHeight: viewportHeight, alignment: .top)
-        }
-        .coordinateSpace(name: Self.transcriptCoordinateSpace)
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-            viewportHeight = height
-        }
-        .scrollPosition($scrollPosition)
-        .onScrollGeometryChange(for: TranscriptViewportGeometry.self) {
-            TranscriptViewportGeometry($0)
-        } action: { _, geometry in
-            handleViewportGeometry(geometry)
-        }
-        .onScrollPhaseChange { _, phase in
-            handleScrollPhase(phase)
-        }
-        // Keep the transcript chrome quiet; the native virtualizer can
-        // provide a stable overlay indicator when the iOS port lands.
-        .scrollIndicators(.hidden)
-        .defaultScrollAnchor(.bottom)
-        .scrollDismissesKeyboard(.interactively)
-        .environment(\.transcriptDisclosure, disclosure)
-        .environment(\.transcriptController, controller)
-        .environment(\.runningSubagentToolCallIds, controller.runningSubagentToolCallIds)
-        // Too-wide tables bleed their horizontal scroller through the
-        // transcript's 16pt text gutter to the screen edges (text keeps the
-        // gutter; a resting table stays aligned with it).
-        .environment(\.markdownTableBleed, 16)
-        // Streaming tokens and settled turns re-pin while following.
-        .onChange(of: model?.activeItemRevision) { _, _ in
-            scrollToBottomIfFollowing()
-        }
-        .onChange(of: model?.settledConversation.count) { _, _ in
-            scrollToBottomIfFollowing()
-        }
-        // Sending re-arms follow and returns to the newest content —
-        // exactly what the macOS transcript does (`autoFollow = true` plus
-        // a scroll command), so the response streams in at the bottom with
-        // the view following it.
+        )
         .onChange(of: controller.userSendSignal) { _, _ in
             followsLatest = true
-            // Establish the final viewport before the bubble moves. An
-            // animated scroll composed with the row lift reads as a second
-            // send animation.
-            scrollToBottom(animated: false)
-        }
-        .onAppear { configureInitialScroll() }
-        .onDisappear {
-            if scrollCoordinator.lockedRestoreDistance == nil,
-               let geometry = scrollCoordinator.latestGeometry {
-                publishScrollState(geometry)
-            }
-            cancelHistoryWork()
+            scrollCommand.token &+= 1
         }
     }
 
     @ViewBuilder
-    private func transcriptRow(_ row: TranscriptRow) -> some View {
-        switch row {
-        case .setup:
-            SessionSetupView(phases: controller.setupPhases)
-        case let .item(item, isActive):
-            let tracksHistoryPosition = item.id == model?.settledConversation.first?.id
-                || item.id == scrollCoordinator.pendingPrependAnchor?.rowID
-            ConversationItemRow(item: item, isActive: isActive)
-                .modifier(UserSendLiftModifier(
-                    messageID: isUser(item) ? item.id : nil,
-                    distance: sendLift,
-                    request: controller.userSendAnimationRequest,
-                    controller: controller,
-                    reduceMotion: reduceMotion,
-                    geometryReady: hasMeasuredContentTail && hasMeasuredComposerTop,
-                ))
-                .onGeometryChange(for: CGFloat?.self) { geometry in
-                    guard tracksHistoryPosition else { return nil }
-                    return geometry.frame(in: .named(Self.transcriptCoordinateSpace)).minY
-                } action: { minY in
-                    guard let minY else { return }
-                    handleHistoryRowPosition(item.id, minY: minY)
-                }
-        case let .activity(kind):
-            switch kind {
-            case .loadingHistory:
-                ChatActivityRow("Loading conversation…")
-            case .startingAgent:
-                Text("Starting agent…")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .shimmering()
-            case let .connecting(message):
-                ChatActivityRow(message)
-            case let .serverWait(message):
-                ChatActivityRow(
-                    message,
-                    systemImage: "arrow.triangle.2.circlepath",
-                    shimmers: true
-                )
-            }
-        case let .sessionError(message):
-            sessionErrorRow(message)
-        case let .statusError(message):
-            ChatErrorRow(
-                message,
-                actionTitle: "Retry",
-                action: { Task { await controller.retry() } }
+    private func virtualRowContent(_ row: TranscriptVirtualRow) -> some View {
+        switch row.content {
+        case let .message(item, waitingOnBackgroundTask):
+            ConversationItemRow(
+                item: item,
+                isWaitingOnUser: controller.pendingQuestion != nil,
+                waitingOnBackgroundTask: waitingOnBackgroundTask
             )
+        case let .assistantPlanning(message):
+            AssistantTurnBody(
+                turn: message.turn,
+                turnId: message.id,
+                isWaitingOnUser: controller.pendingQuestion != nil,
+                presentation: .planning
+            )
+        case let .planDocument(markdown):
+            PlanDocumentView(markdown: markdown)
+        case let .assistantResult(message, waitingOnBackgroundTask):
+            AssistantTurnBody(
+                turn: message.turn,
+                turnId: message.id,
+                isWaitingOnUser: controller.pendingQuestion != nil,
+                waitingOnBackgroundTask: waitingOnBackgroundTask,
+                presentation: .result
+            )
+        case .active:
+            TranscriptActiveItemView(controller: controller)
+        case let .setup(phases):
+            SessionSetupView(phases: phases)
+        case let .optimistic(message, showsStartingAgent):
+            if !message.text.isEmpty || !message.attachments.isEmpty {
+                UserBubbleRow(text: message.text, attachments: message.attachments)
+                if showsStartingAgent {
+                    ShimmeringText.startingAgent
+                }
+            }
+        case let .backgroundTask(description):
+            ChatActivityRow(
+                "Waiting on \(description)...",
+                systemImage: "clock.arrow.circlepath",
+                shimmers: true
+            )
+        case let .updateGate(harnessName):
+            ChatActivityRow(
+                "Waiting for \(harnessName) to finish updating...",
+                systemImage: "arrow.down.circle",
+                shimmers: true
+            )
+        case let .connecting(message):
+            ChatActivityRow(message)
+        case let .serverWait(message):
+            ChatActivityRow(
+                message,
+                systemImage: "arrow.triangle.2.circlepath",
+                shimmers: true
+            )
+        case let .error(message):
+            if row.id == .statusError {
+                ChatErrorRow(
+                    message,
+                    actionTitle: "Retry",
+                    action: { Task { await controller.retry() } }
+                )
+            } else {
+                sessionErrorRow(message)
+            }
+        case let .bottomSpacer(height):
+            Color.clear.frame(height: height)
         }
     }
 
@@ -659,458 +595,142 @@ struct SessionTranscriptView: View {
         }
     }
 
-    /// Matches macOS's generous near-top prefetch window. The oldest loaded
-    /// row is the request token: a geometry storm cannot fetch the same page
-    /// twice, while a successful prepend supplies a new token for the next
-    /// page if the reader is still within the window.
-    private func checkForHistoryPrefetch(
-        _ geometry: TranscriptViewportGeometry,
-        force: Bool = false
-    ) {
-        // SwiftUI reports the scroll view at its provisional top before the
-        // initial saved-position/bottom command has landed. AppKit avoids
-        // treating that frame as a near-top visit by waiting for its initial
-        // position transaction; keep the same boundary here.
-        guard force || (
-            scrollCoordinator.hasAppliedInitialPosition
-                && scrollCoordinator.hasSettledInitialPosition
-        ) else { return }
-        guard scrollCoordinator.pendingPrependAnchor == nil,
-              scrollCoordinator.historyLoadTask == nil,
-              scrollCoordinator.restoreHistoryTask == nil,
-              let model,
-              model.hasOlderHistory,
-              !model.isLoadingOlderHistory,
-              let oldestID = model.settledConversation.first?.id
-        else {
-            if model?.hasOlderHistory != true {
-                scrollCoordinator.lastPrefetchOldestID = nil
-            }
-            return
-        }
-
-        let threshold = max(600, geometry.viewportHeight * 1.5)
-        if !force, geometry.distanceFromTop > threshold {
-            if geometry.distanceFromTop > threshold * 1.25 {
-                scrollCoordinator.lastPrefetchOldestID = nil
-            }
-            return
-        }
-
-        guard force || oldestID != scrollCoordinator.lastPrefetchOldestID else { return }
-        scrollCoordinator.lastPrefetchOldestID = oldestID
-        requestOlderHistoryLoad(anchorID: oldestID)
-    }
-
-    private func requestOlderHistoryLoad(anchorID: UUID) {
-        guard scrollCoordinator.historyLoadTask == nil,
-              scrollCoordinator.restoreHistoryTask == nil,
-              let model,
-              model.hasOlderHistory,
-              !model.isLoadingOlderHistory
-        else { return }
-
-        scrollCoordinator.historyLoadTask = Task { @MainActor in
-            await model.loadOlderHistory()
-            guard !Task.isCancelled else {
-                scrollCoordinator.historyLoadTask = nil
-                return
-            }
-
-            scrollCoordinator.historyLoadTask = nil
-            guard model.settledConversation.first?.id != anchorID else { return }
-
-            // The model mutation has completed, but SwiftUI has not committed
-            // the prepended rows yet. Capture the old first row exactly where
-            // the reader currently sees it; subsequent geometry callbacks
-            // keep that measured point fixed while the new Markdown settles.
-            if !followsLatest,
-               scrollCoordinator.lockedRestoreDistance == nil,
-               let viewportMinY = scrollCoordinator.measuredHistoryRowMinY[anchorID],
-               let geometry = scrollCoordinator.latestGeometry {
-                scrollCoordinator.pendingPrependAnchor = HistoryPrependAnchor(
-                    rowID: anchorID,
-                    viewportMinY: viewportMinY,
-                    lastViewportOffsetY: geometry.boundedOffsetY
-                )
-                scheduleHistoryAnchorSettlement(for: anchorID)
-                return
-            }
-
-            // Following mode is already bottom-anchored. If the first page is
-            // shorter than the macOS prefetch window, allow another bounded
-            // page after this update has reached the scroll geometry.
-            DispatchQueue.main.async {
-                if let geometry = scrollCoordinator.latestGeometry {
-                    checkForHistoryPrefetch(geometry)
-                }
-            }
+    private func requestOlderHistoryLoad() {
+        guard historyLoadTask == nil, controller.hasOlderHistory,
+              !controller.isLoadingOlderHistory else { return }
+        historyLoadTask = Task { @MainActor in
+            defer { historyLoadTask = nil }
+            await controller.loadOlderHistory()
         }
     }
 
-    private func handleHistoryRowPosition(_ rowID: UUID, minY: CGFloat) {
-        scrollCoordinator.measuredHistoryRowMinY[rowID] = minY
-        guard var anchor = scrollCoordinator.pendingPrependAnchor,
-              anchor.rowID == rowID
-        else { return }
+    private var transcriptLayoutFingerprint: Int {
+        dynamicTypeSize.hashValue
+    }
 
-        let delta = minY - anchor.viewportMinY
-        if abs(delta) > 0.5, let geometry = scrollCoordinator.latestGeometry {
-            let requestedOffsetY = min(
-                max(geometry.minimumOffsetY, geometry.boundedOffsetY + delta),
-                geometry.maximumOffsetY
+    private static func estimatedHeight(for item: ConversationItem) -> CGFloat {
+        switch item {
+        case let .user(message):
+            max(52, min(240, 48 + CGFloat(message.text.count / 72) * 18))
+        case .assistant:
+            320
+        }
+    }
+
+    private static func estimatedPlanHeight(_ markdown: String) -> CGFloat {
+        max(120, min(640, 72 + CGFloat(markdown.utf8.count / 72) * 18))
+    }
+
+    private static func planMeasurementRevision(_ markdown: String) -> Int {
+        var hasher = Hasher()
+        hasher.combine(markdown.utf8.count)
+        return hasher.finalize()
+    }
+
+    private static func optimisticMeasurementRevision(
+        for message: UserMessage,
+        showsStartingAgent: Bool
+    ) -> Int {
+        var hasher = Hasher()
+        hasher.combine(2)
+        hasher.combine(message.text.utf8.count)
+        hasher.combine(message.attachments.count)
+        for attachment in message.attachments {
+            hasher.combine(attachment.id)
+            hasher.combine(attachment.sizeBytes)
+        }
+        hasher.combine(showsStartingAgent)
+        return hasher.finalize()
+    }
+
+    private static func measurementRevision(
+        for item: ConversationItem,
+        waitingOnBackgroundTask: String?
+    ) -> Int {
+        var hasher = Hasher()
+        switch item {
+        case let .user(message):
+            hasher.combine(0)
+            hasher.combine(message.text.utf8.count)
+            hasher.combine(message.attachments.count)
+            for attachment in message.attachments {
+                hasher.combine(attachment.id)
+                hasher.combine(attachment.sizeBytes)
+            }
+        case let .assistant(message):
+            let turn = message.turn
+            hasher.combine(1)
+            hasher.combine(turn.entries.count)
+            hasher.combine(turn.isGenerating)
+            hasher.combine(turn.detailRevision)
+            hasher.combine(turn.hasDeferredWorkedDetails)
+            hasher.combine(turn.contextCompactionStatus?.rawValue)
+            hasher.combine(turn.planDocument?.utf8.count ?? 0)
+            hasher.combine(turn.stopDetail?.utf8.count ?? 0)
+            hasher.combine(turn.subagentActivityFingerprint)
+        }
+        hasher.combine(waitingOnBackgroundTask)
+        return hasher.finalize()
+    }
+}
+
+/// The only transcript subtree that observes token-level active-item changes.
+/// Its host asks the native virtualizer to remeasure without rebuilding the
+/// settled row list.
+private struct TranscriptActiveItemView: View {
+    let controller: SessionController
+    @Environment(\.transcriptInvalidateRowMeasurement) private var invalidateRowMeasurement
+
+    var body: some View {
+        let revision = controller.activeItemRevision
+        let waitingOnBackgroundTask = controller.waitingBackgroundTaskDescription
+        let goal = controller.model?.goal
+        let goalActivity = goal?.status == .active ? goal?.activity : nil
+        if let item = controller.activeItem {
+            ConversationItemRow(
+                item: item,
+                isWaitingOnUser: controller.pendingQuestion != nil,
+                waitingOnBackgroundTask: waitingOnBackgroundTask,
+                goalActivity: goalActivity
             )
-            anchor.isApplyingCompensation = true
-            anchor.lastViewportOffsetY = requestedOffsetY
-            scrollCoordinator.pendingPrependAnchor = anchor
-            scrollPosition.scrollTo(y: requestedOffsetY - geometry.minimumOffsetY)
-        } else if let geometry = scrollCoordinator.latestGeometry {
-            anchor.isApplyingCompensation = false
-            anchor.lastViewportOffsetY = geometry.boundedOffsetY
-            scrollCoordinator.pendingPrependAnchor = anchor
-        }
-        scheduleHistoryAnchorSettlement(for: rowID)
-    }
-
-    /// A user can keep dragging while the network page arrives. Move the
-    /// anchor's desired screen point by exactly that gesture delta so prepend
-    /// compensation never reverses the reader's own motion.
-    private func trackHistoryAnchorUserMovement(_ geometry: TranscriptViewportGeometry) {
-        guard var anchor = scrollCoordinator.pendingPrependAnchor else { return }
-        if scrollCoordinator.userScrollIsActive, !anchor.isApplyingCompensation {
-            anchor.viewportMinY -= geometry.boundedOffsetY - anchor.lastViewportOffsetY
-        }
-        anchor.lastViewportOffsetY = geometry.boundedOffsetY
-        scrollCoordinator.pendingPrependAnchor = anchor
-    }
-
-    private func scheduleHistoryAnchorSettlement(for rowID: UUID) {
-        scrollCoordinator.historyAnchorSettlementTask?.cancel()
-        scrollCoordinator.historyAnchorSettlementTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(350))
-            guard !Task.isCancelled,
-                  scrollCoordinator.pendingPrependAnchor?.rowID == rowID
-            else { return }
-
-            scrollCoordinator.pendingPrependAnchor = nil
-            scrollCoordinator.historyAnchorSettlementTask = nil
-            let newestOldestID = model?.settledConversation.first?.id
-            scrollCoordinator.measuredHistoryRowMinY = scrollCoordinator
-                .measuredHistoryRowMinY
-                .filter { id, _ in id == newestOldestID }
-
-            if let geometry = scrollCoordinator.latestGeometry {
-                publishScrollState(geometry)
-                checkForHistoryPrefetch(geometry)
-            }
-        }
-    }
-
-    private func cancelHistoryAnchorCompensation() {
-        scrollCoordinator.historyAnchorSettlementTask?.cancel()
-        scrollCoordinator.historyAnchorSettlementTask = nil
-        scrollCoordinator.pendingPrependAnchor = nil
-    }
-
-    private func cancelHistoryWork() {
-        scrollCoordinator.historyLoadTask?.cancel()
-        scrollCoordinator.historyLoadTask = nil
-        scrollCoordinator.restoreHistoryTask?.cancel()
-        scrollCoordinator.restoreHistoryTask = nil
-        scrollCoordinator.initialPositionSettlementTask?.cancel()
-        scrollCoordinator.initialPositionSettlementTask = nil
-        cancelHistoryAnchorCompensation()
-    }
-
-    private func configureInitialScroll() {
-        guard !scrollCoordinator.hasConfiguredInitialPosition else { return }
-        scrollCoordinator.hasConfiguredInitialPosition = true
-
-        if let state = controller.scrollState {
-            followsLatest = state.followMode.followsLatest
-            if !state.followMode.followsLatest {
-                isAtBottom = state.isAtBottom
-                // Keep the saved coordinate authoritative while initial rows,
-                // older pages, and asynchronous Markdown heights settle. It
-                // is released only by direct user scrolling or an explicit
-                // jump to the latest content, matching the macOS transcript.
-                scrollCoordinator.lockedRestoreDistance = state.distanceFromBottom
-                if let geometry = scrollCoordinator.latestGeometry {
-                    applyLockedScrollRestore(geometry)
-                    checkForHistoryPrefetch(geometry)
+                .environment(
+                    \.runningSubagentToolCallIds,
+                    controller.runningSubagentToolCallIds
+                )
+                .id(item.id)
+                .onChange(of: revision, initial: true) { _, _ in
+                    invalidateRowMeasurement?()
                 }
-                return
-            }
-
-            // Follow intent is authoritative over a transient geometry
-            // snapshot. Navigation can resize the disappearing scroll view
-            // and leave a nonzero measured distance even though the user was
-            // at the bottom; restoring that distance turns follow mode into a
-            // static near-bottom position.
-            isAtBottom = true
-        }
-
-        scrollToBottom(animated: false)
-        if let geometry = scrollCoordinator.latestGeometry {
-            if geometry.distanceFromBottom <= 2 {
-                scrollCoordinator.hasAppliedInitialPosition = true
-                scheduleInitialPositionSettlementIfNeeded()
-            }
-            checkForHistoryPrefetch(geometry)
-        }
-    }
-
-    private func handleViewportGeometry(_ geometry: TranscriptViewportGeometry) {
-        scrollCoordinator.latestGeometry = geometry
-        guard scrollCoordinator.hasConfiguredInitialPosition else { return }
-
-        trackHistoryAnchorUserMovement(geometry)
-        scheduleInitialPositionSettlementIfNeeded()
-
-        checkForHistoryPrefetch(geometry)
-
-        if scrollCoordinator.lockedRestoreDistance != nil {
-            applyLockedScrollRestore(geometry)
-            return
-        }
-
-        // A prepended page is committed before SwiftUI can compensate its
-        // content height. Do not publish that transient position; the measured
-        // row anchor below moves the viewport in the same layout cycle.
-        if scrollCoordinator.pendingPrependAnchor != nil {
-            setBottomState(false)
-            return
-        }
-
-        // Match macOS's position transaction: while follow mode owns the
-        // viewport, a streaming height change cannot publish its transient
-        // pre-compensation gap as an off-bottom state. Keep the chrome latched
-        // at the bottom, persist zero, and correct the edge once a running
-        // programmatic animation is out of the way. Only direct user scrolling
-        // below is allowed to release follow mode and reveal the button.
-        if followsLatest, !scrollCoordinator.userScrollIsActive {
-            if geometry.distanceFromBottom <= 2,
-               !scrollCoordinator.hasAppliedInitialPosition {
-                scrollCoordinator.hasAppliedInitialPosition = true
-                scheduleInitialPositionSettlementIfNeeded()
-            }
-            setBottomState(true)
-            publishScrollState(geometry)
-            if !scrollCoordinator.programmaticScrollIsAnimating,
-               geometry.distanceFromBottom > 2 {
-                scrollPosition.scrollTo(edge: .bottom)
-            }
-            return
-        }
-
-        let atBottom = geometry.distanceFromBottom <= 2
-        setBottomState(atBottom)
-        if scrollCoordinator.userScrollIsActive {
-            setFollowState(atBottom)
-        }
-        publishScrollState(geometry)
-    }
-
-    private func handleScrollPhase(_ phase: ScrollPhase) {
-        switch phase {
-        case .tracking, .interacting, .decelerating:
-            scrollCoordinator.programmaticScrollIsAnimating = false
-            scrollCoordinator.userScrollIsActive = true
-            // Direct manipulation supersedes any pending opening position,
-            // just as macOS ends its initial-position transaction when the
-            // reader takes control.
-            scrollCoordinator.hasAppliedInitialPosition = true
-            scrollCoordinator.hasSettledInitialPosition = true
-            scrollCoordinator.initialPositionSettlementTask?.cancel()
-            scrollCoordinator.initialPositionSettlementTask = nil
-            scrollCoordinator.lockedRestoreDistance = nil
-            scrollCoordinator.restoreHistoryTask?.cancel()
-            scrollCoordinator.restoreHistoryTask = nil
-        case .idle:
-            scrollCoordinator.programmaticScrollIsAnimating = false
-            if scrollCoordinator.userScrollIsActive {
-                scrollCoordinator.userScrollIsActive = false
-                if let geometry = scrollCoordinator.latestGeometry {
-                    let atBottom = geometry.distanceFromBottom <= 2
-                    setBottomState(atBottom)
-                    setFollowState(atBottom)
-                    publishScrollState(geometry)
+                .onChange(of: waitingOnBackgroundTask) { _, _ in
+                    invalidateRowMeasurement?()
                 }
-            } else if followsLatest,
-                      scrollCoordinator.lockedRestoreDistance == nil,
-                      let geometry = scrollCoordinator.latestGeometry,
-                      geometry.distanceFromBottom > 2 {
-                scrollPosition.scrollTo(edge: .bottom)
-            }
-        case .animating:
-            scrollCoordinator.programmaticScrollIsAnimating = true
-        }
-    }
-
-    private func applyLockedScrollRestore(_ geometry: TranscriptViewportGeometry) {
-        guard let distance = scrollCoordinator.lockedRestoreDistance else { return }
-        setBottomState(false)
-
-        // A controller can be evicted while its lightweight viewport snapshot
-        // remains. Fetch older pages until the restored distance exists in the
-        // newly-created model, just as the macOS virtual transcript does.
-        let maximumDistance = max(
-            0,
-            geometry.maximumOffsetY - geometry.minimumOffsetY
-        )
-        if distance > maximumDistance + 0.5,
-           model?.hasOlderHistory == true {
-            requestOlderHistoryForRestore(contentHeight: geometry.contentHeight)
-            return
-        }
-
-        // This is the same coordinate used by macOS: document bottom minus
-        // viewport height minus the saved distance. ScrollGeometry reports
-        // the host offset from its negative top-inset origin, while
-        // ScrollPosition accepts a zero-based content point, so convert only
-        // at the API boundary.
-        let targetOffsetY = max(
-            geometry.minimumOffsetY,
-            geometry.maximumOffsetY - max(0, distance)
-        )
-        guard abs(geometry.boundedOffsetY - targetOffsetY) > 0.5 else {
-            scrollCoordinator.hasAppliedInitialPosition = true
-            scheduleInitialPositionSettlementIfNeeded()
-            return
-        }
-        scrollPosition.scrollTo(y: targetOffsetY - geometry.minimumOffsetY)
-    }
-
-    /// SwiftUI can report the requested edge before asynchronously-sized
-    /// Markdown rows have reached their final heights. Debouncing geometry is
-    /// the iOS counterpart of AppKit completing its initial layout/position
-    /// transaction before `checkForHistoryPrefetch` observes the viewport.
-    private func scheduleInitialPositionSettlementIfNeeded() {
-        guard scrollCoordinator.hasAppliedInitialPosition,
-              !scrollCoordinator.hasSettledInitialPosition,
-              !scrollCoordinator.userScrollIsActive
-        else { return }
-
-        scrollCoordinator.initialPositionSettlementTask?.cancel()
-        scrollCoordinator.initialPositionSettlementTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(350))
-            guard !Task.isCancelled else { return }
-            scrollCoordinator.hasSettledInitialPosition = true
-            scrollCoordinator.initialPositionSettlementTask = nil
-            if let geometry = scrollCoordinator.latestGeometry {
-                checkForHistoryPrefetch(geometry)
-            }
-        }
-    }
-
-    private func requestOlderHistoryForRestore(contentHeight: CGFloat) {
-        guard scrollCoordinator.restoreHistoryTask == nil,
-              scrollCoordinator.historyLoadTask == nil,
-              scrollCoordinator.restoreHistoryRequestContentHeight != contentHeight,
-              let model,
-              model.hasOlderHistory,
-              !model.isLoadingOlderHistory
-        else { return }
-
-        scrollCoordinator.restoreHistoryRequestContentHeight = contentHeight
-        scrollCoordinator.restoreHistoryTask = Task { @MainActor in
-            await model.loadOlderHistory()
-            guard !Task.isCancelled else { return }
-            scrollCoordinator.restoreHistoryTask = nil
-            if let geometry = scrollCoordinator.latestGeometry {
-                applyLockedScrollRestore(geometry)
-            }
-        }
-    }
-
-    private func publishScrollState(_ geometry: TranscriptViewportGeometry) {
-        // Follow intent wins over transitional geometry. In particular, the
-        // disappearing navigation view may briefly report a nonzero distance;
-        // persisting that number used to reopen a bottom-following chat just
-        // shy of the bottom.
-        let distance = followsLatest ? 0 : geometry.distanceFromBottom
-        let followMode: SessionTranscriptFollowMode = followsLatest
-            ? .followingLatest
-            : .staticPosition
-        if let current = controller.scrollState,
-           abs(current.distanceFromBottom - distance) <= 0.25,
-           current.followMode == followMode {
-            return
-        }
-
-        var state = controller.scrollState ?? SessionScrollState(
-            distanceFromBottom: distance,
-            measurementCaches: [:],
-            measurementCacheLRU: [],
-            followMode: followMode
-        )
-        state.distanceFromBottom = distance
-        state.followMode = followMode
-        controller.scrollState = state
-    }
-
-    private func setBottomState(_ value: Bool) {
-        if isAtBottom != value { isAtBottom = value }
-    }
-
-    private func setFollowState(_ value: Bool) {
-        if followsLatest != value { followsLatest = value }
-    }
-
-    private func scrollToBottomIfFollowing() {
-        guard followsLatest else { return }
-        // Opening a chat JUMPS to the newest content; only changes that happen
-        // while you're watching scroll there. History arriving on open used to
-        // animate the scroll, so a chat visibly scrolled itself on entry.
-        //
-        // Decided here rather than from an `onChange` so it can't depend on the
-        // order SwiftUI happens to invoke sibling change handlers in: the first
-        // follow-scroll of this view's life is the opening one, full stop.
-        let isOpening = !hasOpened
-        if isOpening { hasOpened = true }
-        scrollToBottom(animated: !isOpening)
-    }
-
-    private func scrollToBottom(animated: Bool) {
-        cancelHistoryAnchorCompensation()
-        scrollCoordinator.lockedRestoreDistance = nil
-        scrollCoordinator.restoreHistoryTask?.cancel()
-        scrollCoordinator.restoreHistoryTask = nil
-
-        // Drive explicit jumps through the same position binding used by
-        // saved-distance restoration. Sending a ScrollViewReader command
-        // while `.scrollPosition` owns the viewport gives SwiftUI two targets;
-        // the binding can immediately restore the old one. Use the actual edge
-        // rather than deriving a point from ScrollGeometry: the latter omits
-        // SwiftUI's effective bottom inset and can resolve to the position we
-        // are already at. This is the iOS equivalent of macOS applying a zero
-        // distance from the bottom.
-        let apply = {
-            scrollPosition.scrollTo(edge: .bottom)
-        }
-        if animated {
-            withAnimation(.snappy(duration: 0.25)) {
-                apply()
-            }
-        } else {
-            apply()
+                .onChange(of: goalActivity) { _, _ in
+                    invalidateRowMeasurement?()
+                }
         }
     }
 }
 
-/// One conversation item: a trailing user bubble or a linear assistant turn.
-/// The linear rendering (text and tools in stream order) is the interim shape;
-/// worked-section collapsing arrives with the full transcript port.
+/// One conversation item: a trailing user bubble or a complete assistant turn.
 private struct ConversationItemRow: View {
     let item: ConversationItem
-    let isActive: Bool
+    var isWaitingOnUser = false
+    var waitingOnBackgroundTask: String? = nil
+    var goalActivity: GoalActivity? = nil
 
     var body: some View {
         switch item {
         case let .user(message):
             UserBubbleRow(text: message.text, attachments: message.attachments)
         case let .assistant(message):
-            AssistantTurnBody(turn: message.turn, turnId: message.id)
+            AssistantTurnBody(
+                turn: message.turn,
+                turnId: message.id,
+                isWaitingOnUser: isWaitingOnUser,
+                waitingOnBackgroundTask: waitingOnBackgroundTask,
+                goalActivity: goalActivity,
+                presentation: .complete
+            )
         }
     }
 }
@@ -1128,17 +748,34 @@ private struct UserBubbleRow: View {
             Spacer(minLength: 40)
             VStack(alignment: .trailing, spacing: 8) {
                 if !attachments.isEmpty {
-                    HStack(spacing: 8) {
-                        ForEach(attachments) { attachment in
-                            AttachmentThumbnailView(attachment: attachment)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(attachments) { attachment in
+                                AttachmentThumbnailView(attachment: attachment)
+                            }
                         }
                     }
+                    .defaultScrollAnchor(.trailing)
+                    .scrollBounceBehavior(.basedOnSize)
                 }
                 if !text.isEmpty {
-                    Text(text)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 9)
-                        .background(theme.bubbleBackground, in: RoundedRectangle(cornerRadius: 18))
+                    SelectableTextView(
+                        attributedText: NSAttributedString(
+                            string: text,
+                            attributes: [
+                                .font: UIFont.preferredFont(forTextStyle: .body),
+                                .foregroundColor: UIColor(theme.textPrimary),
+                            ]
+                        ),
+                        fillsWidth: false
+                    )
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(
+                        theme.bubbleBackground,
+                        in: RoundedRectangle(cornerRadius: 14)
+                    )
+                    MessageCopyButton(text: text, help: "Copy message")
                 }
             }
         }
@@ -1151,22 +788,65 @@ private struct UserBubbleRow: View {
 /// and implementation sections, recursive subagent sections, and the final
 /// answer streaming below. Driven entirely by the turn's own state, so a
 /// mid-stream turn loaded from history renders live too.
+private enum AssistantTurnPresentation {
+    case complete
+    case planning
+    case result
+
+    var showsPlanning: Bool { self != .result }
+    var showsPlanDocument: Bool { self == .complete }
+    var showsResult: Bool { self != .planning }
+}
+
 private struct AssistantTurnBody: View {
     @Environment(\.transcriptDisclosure) private var disclosureStore
     @Environment(\.transcriptController) private var transcriptController
     @Environment(\.runningSubagentToolCallIds) private var runningSubagents
+    @Environment(\.transcriptPerformAnchoredDisclosureChange)
+    private var performAnchoredDisclosureChange
+    @Environment(\.transcriptInvalidateRowMeasurement)
+    private var invalidateRowMeasurement
     @State private var textAnimationPresentation = StreamingTextAnimationPresentation()
+    @State private var hasAutoCollapsed: Bool
     let turn: AssistantTurn
     /// Stable identity for the turn's disclosure keys (the message id).
     let turnId: UUID
+    let isWaitingOnUser: Bool
+    let waitingOnBackgroundTask: String?
+    let goalActivity: GoalActivity?
+    let presentation: AssistantTurnPresentation
 
-    init(turn: AssistantTurn, turnId: UUID) {
+    init(
+        turn: AssistantTurn,
+        turnId: UUID,
+        isWaitingOnUser: Bool = false,
+        waitingOnBackgroundTask: String? = nil,
+        goalActivity: GoalActivity? = nil,
+        presentation: AssistantTurnPresentation = .complete
+    ) {
         self.turn = turn
         self.turnId = turnId
+        self.isWaitingOnUser = isWaitingOnUser
+        self.waitingOnBackgroundTask = waitingOnBackgroundTask
+        self.goalActivity = goalActivity
+        self.presentation = presentation
+        _hasAutoCollapsed = State(initialValue: turn.isGenerating && turn.finalTextIsAsserted)
     }
 
     private var store: TranscriptDisclosureStore { disclosureStore ?? .previews }
     private var isGenerating: Bool { turn.isGenerating }
+
+    private var sectionKeys: [TranscriptDisclosureStore.Key] {
+        switch presentation {
+        case .complete: [.turn(turnId), .turnImplementation(turnId)]
+        case .planning: [.turn(turnId)]
+        case .result: [.turnImplementation(turnId)]
+        }
+    }
+
+    private func isExpanded(_ key: TranscriptDisclosureStore.Key) -> Bool {
+        store.isExpanded(key, default: !settled)
+    }
 
     /// A subagent that outlives its turn keeps the worked section open and
     /// its shimmer running, exactly like macOS.
@@ -1174,7 +854,9 @@ private struct AssistantTurnBody: View {
         !runningSubagents.isDisjoint(with: turn.subagents.keys)
     }
 
-    private var settled: Bool { !isGenerating && !hasRunningSubagent }
+    private var settled: Bool {
+        (!isGenerating || turn.finalTextIsAsserted) && !hasRunningSubagent
+    }
     @State private var hasActiveTextEntranceAnimation = false
 
     var body: some View {
@@ -1182,66 +864,99 @@ private struct AssistantTurnBody: View {
             settling: turn,
             turnID: turnId
         )
-        VStack(alignment: .leading, spacing: 12) {
-            workedSection(
-                items: turn.workedItemsBeforePlan,
-                key: .turn(turnId),
-                showsTimer: turn.planBoundary == nil,
-                allowsDeferred: true
-            )
-            if let planDocument = turn.planDocument {
-                PlanDocumentView(markdown: planDocument)
-            }
-            // Deferred detail hydrates through the first section only; this
-            // one appears once real post-plan items exist.
-            workedSection(
-                items: turn.workedItemsAfterPlan,
-                key: .turnImplementation(turnId),
-                showsTimer: true,
-                allowsDeferred: false
-            )
-            if isGenerating, let retry = turn.retryStatus {
-                ChatActivityRow(retryLabel(retry))
-            } else if isGenerating, turn.showsActivityIndicator {
-                if transcriptController?.isTakingLongerThanExpected == true {
-                    ChatActivityRow(
-                        transcriptController?.providerActivityPhase?.prolongedStatusMessage
-                            ?? "Still waiting for the agent",
-                        systemImage: "clock.badge.exclamationmark"
-                    )
-                } else if turn.isThinking {
-                    ShimmeringText.thinking
-                } else if !hasActiveTextEntranceAnimation {
-                    // Commentary is not `finalText`, but its glyph fade is
-                    // still visible activity and wins over this idle fallback.
-                    ShimmeringText(text: "Waiting on harness...")
-                }
-            }
-            if case let .text(entryID, markdown) = turn.finalText {
-                StreamingMarkdownView(
-                    markdown,
-                    isComplete: !isGenerating,
-                    streamID: TranscriptStreamingTextIdentity.main(
-                        turnID: turnId,
-                        entryID: entryID
-                    ),
-                    animationPresentation: textAnimationPresentation
+        let finalText = turn.finalText
+        let postResponseGoalActivity = finalText == nil ? nil : goalActivity
+        VStack(alignment: .leading, spacing: 14) {
+            if presentation.showsPlanning {
+                workedSection(
+                    items: turn.workedItemsBeforePlan,
+                    key: .turn(turnId),
+                    showsTimer: turn.planBoundary == nil,
+                    allowsDeferred: true
                 )
             }
-            if let stopDetail = turn.stopDetail {
-                turnErrorRow(stopDetail)
+            if presentation.showsPlanDocument, let planDocument = turn.planDocument {
+                PlanDocumentView(markdown: planDocument)
+            }
+            if presentation.showsResult {
+                // Deferred detail hydrates through the first section only;
+                // this row begins with post-plan implementation work.
+                workedSection(
+                    items: turn.workedItemsAfterPlan,
+                    key: .turnImplementation(turnId),
+                    showsTimer: true,
+                    allowsDeferred: false
+                )
+                if !isWaitingOnUser, isGenerating, let retry = turn.retryStatus {
+                    ChatActivityRow(retryLabel(retry))
+                } else if postResponseGoalActivity == nil,
+                          !isWaitingOnUser,
+                          turn.showsActivityIndicator,
+                          turn.contextCompactionStatus != .started {
+                    if transcriptController?.isTakingLongerThanExpected == true {
+                        ChatActivityRow(
+                            transcriptController?.providerActivityPhase?.prolongedStatusMessage
+                                ?? "Still waiting for the agent",
+                            systemImage: "clock.badge.exclamationmark"
+                        )
+                    } else if turn.isThinking {
+                        ShimmeringText.thinking
+                    } else if !hasActiveTextEntranceAnimation {
+                        // Commentary is not `finalText`, but its glyph fade is
+                        // still visible activity and wins over this fallback.
+                        ShimmeringText(text: "Waiting on harness...")
+                    }
+                }
+                if case let .text(entryID, markdown) = finalText {
+                    StreamingMarkdownView(
+                        markdown,
+                        isComplete: !isGenerating,
+                        streamID: TranscriptStreamingTextIdentity.main(
+                            turnID: turnId,
+                            entryID: entryID
+                        ),
+                        animationPresentation: textAnimationPresentation
+                    )
+                    if let waitingOnBackgroundTask {
+                        HStack(spacing: 8) {
+                            Image(systemName: "clock.arrow.circlepath")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                            ShimmeringText.waitingOnBackgroundTask(waitingOnBackgroundTask)
+                            Spacer(minLength: 0)
+                        }
+                    }
+                    if !isGenerating {
+                        MessageCopyButton(text: markdown, help: "Copy response")
+                    }
+                }
+                if !isWaitingOnUser, let postResponseGoalActivity {
+                    ShimmeringText(text: goalActivityLabel(postResponseGoalActivity))
+                }
+                if !isGenerating, let stopDetail = turn.stopDetail {
+                    turnErrorRow(stopDetail)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .onPreferenceChange(StreamingMarkdownEntranceAnimationPreferenceKey.self) { active in
             hasActiveTextEntranceAnimation = active
         }
-        // The macOS auto-collapse: sections fold into their summary line the
-        // moment the turn (and its last background subagent) finishes.
-        .onChange(of: settled) { _, isSettled in
-            guard isSettled else { return }
-            store.setExpanded(.turn(turnId), false)
-            store.setExpanded(.turnImplementation(turnId), false)
+        .onChange(of: isGenerating) { _, generating in
+            if generating {
+                if !hasAutoCollapsed {
+                    for key in sectionKeys { store.setExpanded(key, true) }
+                    invalidateRowMeasurement?()
+                }
+                return
+            }
+            autoCollapse()
+        }
+        .onChange(of: turn.finalTextIsAsserted) { _, asserted in
+            if asserted, isGenerating { autoCollapse() }
+        }
+        .onChange(of: hasRunningSubagent) { _, running in
+            if !running, !isGenerating { autoCollapse() }
         }
     }
 
@@ -1274,6 +989,20 @@ private struct AssistantTurnBody: View {
         return "\(retry.message) \(attempt)/\(of)"
     }
 
+    private func goalActivityLabel(_ activity: GoalActivity) -> String {
+        switch activity {
+        case .planning: "Planning…"
+        case .verifying: "Verifying…"
+        }
+    }
+
+    private func autoCollapse() {
+        guard !hasAutoCollapsed, !hasRunningSubagent else { return }
+        hasAutoCollapsed = true
+        for key in sectionKeys { store.setExpanded(key, false) }
+        invalidateRowMeasurement?()
+    }
+
     /// One worked section: open with a live timer while streaming (not
     /// user-collapsible, as on macOS), a tappable "Worked for Ns" summary
     /// once settled.
@@ -1285,60 +1014,81 @@ private struct AssistantTurnBody: View {
         allowsDeferred: Bool
     ) -> some View {
         if !items.isEmpty || (allowsDeferred && turn.hasDeferredWorkedDetails) {
-            let isExpanded = store.isExpanded(key, default: !settled)
-            // Spacing 0, on purpose: the reveal stays mounted at zero height
-            // through the collapse animation, and a spaced VStack would keep
-            // one spacing slot for it below the divider until the delayed
-            // unmount — a visible jump after the animation settles (the same
-            // bug the macOS disclosures once had). The gap above the revealed
-            // content lives INSIDE the reveal instead, so it shrinks away
-            // with the height.
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 6) {
-                    sectionLabel(showsTimer: showsTimer)
-                        // One chrome size everywhere: the worked label, tool
-                        // group headers, and subagent headers all sit at
-                        // .callout, a notch under the body prose — the same
-                        // relationship the macOS transcript has.
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                    if settled {
-                        TranscriptDisclosureChevron(expanded: isExpanded)
+            let isExpanded = isExpanded(key)
+            VStack(alignment: .leading, spacing: 12) {
+                if isGenerating, !hasAutoCollapsed {
+                    workedHeader(
+                        label: sectionLabel(showsTimer: showsTimer),
+                        showsChevron: false,
+                        expanded: isExpanded
+                    )
+                } else {
+                    Button {
+                        let change = {
+                            if isExpanded {
+                                store.setExpanded(key, false)
+                            } else {
+                                store.requestReveal(key)
+                                store.setExpanded(key, true)
+                            }
+                            invalidateRowMeasurement?()
+                        }
+                        performAnchoredDisclosureChange?(change) ?? change()
+                    } label: {
+                        workedHeader(
+                            label: sectionLabel(showsTimer: showsTimer),
+                            showsChevron: true,
+                            expanded: isExpanded
+                        )
+                        .contentShape(Rectangle())
                     }
-                    Spacer(minLength: 0)
+                    .buttonStyle(.plain)
                 }
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    guard settled else { return }
-                    store.toggle(key, default: !settled)
-                }
-                .padding(.bottom, 8)
 
                 // As on macOS: the divider belongs to the disclosure header,
                 // not its revealed contents, so a rendered Worked section
                 // keeps the line collapsed and expanded alike.
                 Divider()
 
-                TranscriptDisclosureContentReveal(isExpanded: isExpanded) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        if allowsDeferred, turn.hasDeferredWorkedDetails,
-                           let itemId = turn.deferredDetailItemId,
-                           let transcriptController {
-                            DeferredWorkedDetails(controller: transcriptController, itemId: itemId)
-                        } else {
-                            TurnItemsView(
-                                items: items,
-                                turn: turn,
-                                turnId: turnId,
-                                depth: 0,
-                                isTurnActive: isGenerating,
-                                animationPresentation: textAnimationPresentation
-                            )
+                if isExpanded {
+                    WorkedContentReveal(key: key, store: store) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            if allowsDeferred, turn.hasDeferredWorkedDetails,
+                               let itemId = turn.deferredDetailItemId,
+                               let transcriptController {
+                                DeferredWorkedDetails(
+                                    controller: transcriptController,
+                                    itemId: itemId
+                                )
+                            } else {
+                                TurnItemsView(
+                                    items: items,
+                                    turn: turn,
+                                    turnId: turnId,
+                                    depth: 0,
+                                    isTurnActive: isGenerating,
+                                    animationPresentation: textAnimationPresentation
+                                )
+                            }
                         }
                     }
-                    .padding(.top, 10)
                 }
             }
+        }
+    }
+
+    private func workedHeader(label: some View, showsChevron: Bool, expanded: Bool) -> some View {
+        HStack(spacing: 6) {
+            label
+            if showsChevron {
+                TranscriptDisclosureChevron(expanded: expanded)
+            }
+            Spacer(minLength: 0)
+        }
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .transaction { transaction in
+            transaction.animation = nil
         }
     }
 
@@ -1372,9 +1122,50 @@ private struct AssistantTurnBody: View {
     }
 }
 
+private struct WorkedContentReveal<Content: View>: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let key: TranscriptDisclosureStore.Key
+    let store: TranscriptDisclosureStore
+    let revealGeneration: Int
+    @State private var isVisible: Bool
+    private let content: Content
+
+    init(
+        key: TranscriptDisclosureStore.Key,
+        store: TranscriptDisclosureStore,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.key = key
+        self.store = store
+        let generation = store.revealGeneration(for: key)
+        revealGeneration = generation
+        _isVisible = State(
+            initialValue: !store.hasUnclaimedReveal(key, generation: generation)
+        )
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .opacity(isVisible ? 1 : 0)
+            .offset(y: isVisible || reduceMotion ? 0 : -8)
+            .onAppear {
+                let shouldAnimate = store.claimReveal(key, generation: revealGeneration)
+                guard shouldAnimate, !reduceMotion else {
+                    isVisible = true
+                    return
+                }
+                withAnimation(Motion.entrance()) {
+                    isVisible = true
+                }
+            }
+    }
+}
+
 /// The macOS TranscriptItemsView: worked items in stream order, recursing
 /// into subagent sections.
 private struct TurnItemsView: View {
+    @Environment(\.theme) private var theme
     let items: [WorkedItem]
     let turn: AssistantTurn
     let turnId: UUID
@@ -1386,55 +1177,48 @@ private struct TurnItemsView: View {
     private static let maxNestingDepth = 3
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ForEach(items) { item in
-                switch item {
-                case let .text(entryID, markdown):
-                    StreamingMarkdownView(
-                        markdown,
-                        isComplete: !isTurnActive,
-                        streamID: streamID(for: entryID),
+        let trailingToolCallIds = depth == 0 && isTurnActive ? turn.trailingToolCallIds : []
+        ForEach(items) { item in
+            switch item {
+            case let .text(entryID, markdown):
+                StreamingMarkdownView(
+                    markdown,
+                    isComplete: !isTurnActive,
+                    foregroundColor: theme.textSecondary,
+                    streamID: streamID(for: entryID),
+                    animationPresentation: animationPresentation
+                )
+            case let .toolGroup(_, calls):
+                ToolGroupView(
+                    calls: calls,
+                    isTurnActive: isTurnActive,
+                    autoExpanded: depth == 0 && isTurnActive
+                        && (calls.last.map { trailingToolCallIds.contains($0.toolCallId) } ?? false)
+                )
+            case let .subagent(_, call):
+                if depth + 1 < Self.maxNestingDepth {
+                    SubagentSection(
+                        call: call,
+                        turn: turn,
+                        turnId: turnId,
+                        depth: depth,
+                        isTurnActive: isTurnActive,
                         animationPresentation: animationPresentation
                     )
-                        .opacity(0.85)
-                case let .toolGroup(_, calls):
-                    ToolGroupView(
-                        calls: calls,
-                        isTurnActive: isTurnActive,
-                        // Follow the work: the trailing group on the main
-                        // thread opens itself while streaming.
-                        autoExpanded: depth == 0 && isTurnActive
-                            && (calls.last.map { turn.isTrailingToolGroup(lastToolCallId: $0.toolCallId) } ?? false)
-                    )
-                case let .subagent(_, call):
-                    if depth + 1 < Self.maxNestingDepth {
-                        SubagentSection(
-                            call: call,
-                            turn: turn,
-                            turnId: turnId,
-                            depth: depth,
-                            isTurnActive: isTurnActive,
-                            animationPresentation: animationPresentation
-                        )
-                    } else {
-                        ToolCallRow(call: call, isTurnActive: isTurnActive)
-                    }
-                case let .contextCompaction(_, status):
-                    switch status {
-                    case .started:
-                        ShimmeringText.compactingContext
-                    case .completed:
-                        AgentStatusText.contextCompacted
-                    case .failed:
-                        EmptyView()
-                    }
+                } else {
+                    ToolCallRow(call: call, isTurnActive: isTurnActive)
+                }
+            case let .contextCompaction(_, status):
+                switch status {
+                case .started:
+                    ShimmeringText.compactingContext
+                case .completed:
+                    AgentStatusText.contextCompacted
+                case .failed:
+                    EmptyView()
                 }
             }
         }
-        // Ambient size for worked-section chrome that doesn't set its own
-        // font (tool group headers, tool row titles): .callout, matching the
-        // worked and subagent labels. Markdown commentary is unaffected — it
-        // takes its sizes from the markdown theme.
         .font(.callout)
     }
 
@@ -1453,8 +1237,12 @@ private struct TurnItemsView: View {
 /// The macOS SubagentSectionView: a wand header shimmering while the
 /// subagent runs, its transcript recursing beneath.
 private struct SubagentSection: View {
+    @Environment(\.theme) private var theme
     @Environment(\.transcriptDisclosure) private var disclosureStore
     @Environment(\.runningSubagentToolCallIds) private var runningSubagents
+    @Environment(\.transcriptPerformAnchoredDisclosureChange)
+    private var performAnchoredDisclosureChange
+    @State private var hasAutoCollapsed = false
     let call: ToolCall
     let turn: AssistantTurn
     let turnId: UUID
@@ -1470,6 +1258,7 @@ private struct SubagentSection: View {
     }
 
     private var items: [WorkedItem] { turn.subagentItems(call.toolCallId) }
+    private var transcript: SubagentTranscript? { turn.subagents[call.toolCallId] }
 
     var body: some View {
         let isExpanded = store.isExpanded(key, default: isRunning)
@@ -1481,26 +1270,24 @@ private struct SubagentSection: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .frame(width: 16)
-                Text(call.displayTitle(diffTotals: nil))
+                Text(call.displayTitle)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .truncationMode(.tail)
                     .shimmering(isRunning)
-                if call.status == .failed {
-                    Image(systemName: "xmark.circle")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                statusGlyph
                 TranscriptDisclosureChevron(expanded: isExpanded)
                 Spacer(minLength: 0)
             }
             .font(.callout)
             .contentShape(Rectangle())
             .onTapGesture {
-                store.toggle(key, default: isRunning)
+                let change = { store.toggle(key, default: isRunning) }
+                performAnchoredDisclosureChange?(change) ?? change()
             }
 
             TranscriptDisclosureContentReveal(isExpanded: isExpanded) {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 12) {
                     TurnItemsView(
                         items: items,
                         turn: turn,
@@ -1510,7 +1297,9 @@ private struct SubagentSection: View {
                         animationPresentation: animationPresentation,
                         parentToolCallID: call.toolCallId
                     )
-                    if isRunning, items.isEmpty {
+                    if isRunning, transcript?.isThinking == true {
+                        ShimmeringText.thinking
+                    } else if isRunning, items.isEmpty {
                         ShimmeringText.startingAgent
                     }
                 }
@@ -1519,9 +1308,26 @@ private struct SubagentSection: View {
             }
         }
         .onChange(of: isRunning) { _, running in
-            if !running {
+            if !running, !hasAutoCollapsed {
+                hasAutoCollapsed = true
                 store.setExpanded(key, false)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var statusGlyph: some View {
+        switch call.status {
+        case .failed:
+            Image(systemName: "xmark.circle")
+                .font(.caption)
+                .foregroundStyle(theme.statusError)
+        case .cancelled:
+            Image(systemName: "slash.circle")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        default:
+            EmptyView()
         }
     }
 }
@@ -1537,14 +1343,12 @@ private struct DeferredWorkedDetails: View {
         Group {
             if failed {
                 Button("Retry loading worked details") { failed = false }
-                    .font(.footnote)
             } else {
                 HStack(spacing: 8) {
-                    ProgressView()
+                    ProgressView().controlSize(.small)
                     Text("Loading worked details…")
                         .foregroundStyle(.secondary)
                 }
-                .font(.footnote)
                 .task {
                     if await !controller.loadTranscriptDetails(itemId) {
                         failed = true
@@ -1552,5 +1356,6 @@ private struct DeferredWorkedDetails: View {
                 }
             }
         }
+        .font(.callout)
     }
 }

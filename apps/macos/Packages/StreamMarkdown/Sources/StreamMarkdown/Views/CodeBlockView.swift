@@ -1,6 +1,8 @@
 import SwiftUI
 #if canImport(AppKit)
 import AppKit
+#elseif canImport(UIKit)
+import UIKit
 #endif
 
 /// Renders a fenced code block with a language label and a copy button.
@@ -60,10 +62,17 @@ struct CodeBlockView: View {
                 text: highlighted ?? settledCacheProbe ?? plainMemo.attributed(for: code),
                 foreground: theme.codeForeground
             )
+            #elseif canImport(UIKit)
+            ScrollView(.horizontal, showsIndicators: false) {
+                SelectableTextView(
+                    attributedText: nativeCodeText(
+                        highlighted ?? settledCacheProbe ?? plainMemo.attributed(for: code)
+                    ),
+                    fillsWidth: false
+                )
+                .padding(10)
+            }
             #else
-            // Interim pure-SwiftUI code surface for platforms without the
-            // AppKit TextKit layer (no selection); replaced by the UIKit
-            // counterpart with the iOS transcript work.
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(highlighted ?? settledCacheProbe ?? plainMemo.attributed(for: code))
                     .font(.system(.caption, design: .monospaced))
@@ -117,6 +126,8 @@ struct CodeBlockView: View {
         #if canImport(AppKit)
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(code, forType: .string)
+        #elseif canImport(UIKit)
+        UIPasteboard.general.string = code
         #endif
         didCopy = true
         // Flash the confirmation, then settle back to "Copy" (matching the
@@ -128,6 +139,29 @@ struct CodeBlockView: View {
             didCopy = false
         }
     }
+
+    #if canImport(UIKit)
+    private func nativeCodeText(_ text: AttributedString) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        let font = UIFont.monospacedSystemFont(
+            ofSize: UIFont.preferredFont(forTextStyle: .callout).pointSize,
+            weight: .regular
+        )
+        for run in text.runs {
+            result.append(
+                NSAttributedString(
+                    string: String(text[run.range].characters),
+                    attributes: [
+                        .font: font,
+                        .foregroundColor: run.foregroundColor.map { UIColor($0) }
+                            ?? UIColor(theme.codeForeground),
+                    ]
+                )
+            )
+        }
+        return result
+    }
+    #endif
 }
 
 #if canImport(AppKit)
