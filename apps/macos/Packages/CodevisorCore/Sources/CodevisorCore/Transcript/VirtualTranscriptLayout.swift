@@ -239,3 +239,55 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
         return low
     }
 }
+
+/// Insets-aware scroll coordinates for the native transcript adapters.
+///
+/// UIKit represents the fully scrolled-to-top position as a negative content
+/// offset when content is inset below navigation chrome. Keeping that range in
+/// one platform-neutral value prevents the iOS virtualizer from accidentally
+/// clamping the scroll view back to zero (which both loses the navigation-bar
+/// underlap and corrupts bottom-relative restoration).
+public struct VirtualTranscriptViewport: Sendable, Equatable {
+    public let contentHeight: CGFloat
+    public let viewportHeight: CGFloat
+    public let topInset: CGFloat
+    public let bottomInset: CGFloat
+
+    public init(
+        contentHeight: CGFloat,
+        viewportHeight: CGFloat,
+        topInset: CGFloat = 0,
+        bottomInset: CGFloat = 0
+    ) {
+        self.contentHeight = max(0, contentHeight)
+        self.viewportHeight = max(0, viewportHeight)
+        self.topInset = max(0, topInset)
+        self.bottomInset = max(0, bottomInset)
+    }
+
+    public var minimumOffsetY: CGFloat { -topInset }
+
+    public var maximumOffsetY: CGFloat {
+        max(minimumOffsetY, contentHeight - viewportHeight + bottomInset)
+    }
+
+    public var maximumDistanceFromBottom: CGFloat {
+        max(0, maximumOffsetY - minimumOffsetY)
+    }
+
+    public func boundedOffsetY(_ offsetY: CGFloat) -> CGFloat {
+        min(max(minimumOffsetY, offsetY), maximumOffsetY)
+    }
+
+    public func distanceFromTop(offsetY: CGFloat) -> CGFloat {
+        max(0, boundedOffsetY(offsetY) - minimumOffsetY)
+    }
+
+    public func distanceFromBottom(offsetY: CGFloat) -> CGFloat {
+        max(0, maximumOffsetY - boundedOffsetY(offsetY))
+    }
+
+    public func offsetY(distanceFromBottom: CGFloat) -> CGFloat {
+        boundedOffsetY(maximumOffsetY - max(0, distanceFromBottom))
+    }
+}

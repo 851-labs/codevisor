@@ -14,6 +14,11 @@ extension Notification.Name {
 /// shared row views. UIKit owns the virtual window and viewport coordinate so
 /// opening, measurement, pagination, and streaming are one position system.
 struct SessionTranscriptView: View {
+    /// Increment whenever the iOS row-measurement environment changes. Scroll
+    /// state can outlive a mounted transcript, so heights produced under an
+    /// older hosting contract must not be restored as exact geometry.
+    private static let transcriptMeasurementSchemaVersion = 1
+
     @Bindable var controller: SessionController
     /// The new-chat page shows project/run-location chips above the composer;
     /// the first chat inside a workspace doesn't (its directory is fixed).
@@ -498,6 +503,10 @@ struct SessionTranscriptView: View {
                 Task { @MainActor in requestOlderHistoryLoad() }
             }
         )
+        // Match SwiftUI.ScrollView's navigation behavior: the scroll surface
+        // reaches beneath the translucent top bar, while its UIKit content
+        // inset keeps the first resting row below that chrome.
+        .ignoresSafeArea(.container, edges: .top)
         .onChange(of: controller.userSendSignal) { _, _ in
             followsLatest = true
             scrollCommand.token &+= 1
@@ -605,7 +614,10 @@ struct SessionTranscriptView: View {
     }
 
     private var transcriptLayoutFingerprint: Int {
-        dynamicTypeSize.hashValue
+        var hasher = Hasher()
+        hasher.combine(dynamicTypeSize)
+        hasher.combine(Self.transcriptMeasurementSchemaVersion)
+        return hasher.finalize()
     }
 
     private static func estimatedHeight(for item: ConversationItem) -> CGFloat {

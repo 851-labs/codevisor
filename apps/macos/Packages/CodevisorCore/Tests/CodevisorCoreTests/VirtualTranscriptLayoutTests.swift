@@ -211,4 +211,35 @@ struct VirtualTranscriptLayoutTests {
         #expect(initial.viewportTop(distanceFromBottom: 120, viewportHeight: 250)
             == measured.viewportTop(distanceFromBottom: distance ?? 0, viewportHeight: 250))
     }
+
+    @Test func insetViewportPreservesUIKitTopAndBottomCoordinates() {
+        let viewport = VirtualTranscriptViewport(
+            contentHeight: 2_000,
+            viewportHeight: 800,
+            topInset: 100
+        )
+
+        #expect(viewport.minimumOffsetY == -100)
+        #expect(viewport.maximumOffsetY == 1_200)
+        #expect(viewport.maximumDistanceFromBottom == 1_300)
+        #expect(viewport.distanceFromTop(offsetY: -100) == 0)
+        #expect(viewport.distanceFromBottom(offsetY: -100) == 1_300)
+        #expect(viewport.offsetY(distanceFromBottom: 1_300) == -100)
+        #expect(viewport.offsetY(distanceFromBottom: 0) == 1_200)
+    }
+
+    @Test func insetViewportClampsShortDocumentsToOneStableCoordinate() {
+        let viewport = VirtualTranscriptViewport(
+            contentHeight: 300,
+            viewportHeight: 800,
+            topInset: 96
+        )
+
+        #expect(viewport.minimumOffsetY == -96)
+        #expect(viewport.maximumOffsetY == -96)
+        #expect(viewport.maximumDistanceFromBottom == 0)
+        #expect(viewport.boundedOffsetY(500) == -96)
+        #expect(viewport.distanceFromBottom(offsetY: 500) == 0)
+    }
+
 }
