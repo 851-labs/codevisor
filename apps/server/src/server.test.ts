@@ -301,8 +301,9 @@ const makeAgents = (): AgentRuntimeService & {
       }),
     prompt: (sessionId, input) =>
       Effect.promise(async () => {
-        prompts.push([sessionId, input])
-        const text = typeof input === "string" ? input : input.text
+        const providerText = typeof input === "string" ? input : input.text
+        const text = providerText.split("\n\n[Codevisor artifact delivery]\n", 1)[0] ?? providerText
+        prompts.push([sessionId, typeof input === "string" ? text : { ...input, text }])
         if (text === "slow prompt") {
           await new Promise((resolve) => setTimeout(resolve, 250))
         }
@@ -3398,6 +3399,9 @@ describe("@codevisor/server", () => {
       await jsonRequest(server, `/v1/sessions/${session.id}/transcript/missing/details`)
     ).toMatchObject({ status: 404 })
     const promptCountBeforeReturnedEvents = agents.prompts.length
+    const queueEventsBeforeReturnedEvents = (
+      await run(services.db.listSubjectEvents(session.id))
+    ).filter((event) => event.kind === "session.queue.updated").length
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
@@ -3410,6 +3414,13 @@ describe("@codevisor/server", () => {
     expect(
       (await run(services.db.getSessionDetail(session.id))).conversation.map((item) => item.text)
     ).toEqual(expect.arrayContaining(["returned events", "Raw answer without id"]))
+    await waitFor(async () => {
+      const processing = await run(services.db.listProcessingPromptQueue(session.id))
+      const queueEventCount = (await run(services.db.listSubjectEvents(session.id))).filter(
+        (event) => event.kind === "session.queue.updated"
+      ).length
+      return processing.length === 0 && queueEventCount >= queueEventsBeforeReturnedEvents + 2
+    })
 
     const promptCountBeforeSlow = agents.prompts.length
     const queueEventsBeforeSlow = (await run(services.db.listSubjectEvents(session.id))).filter(
@@ -5606,6 +5617,59 @@ describe("@codevisor/server", () => {
     expect(download.headers.get("content-type")).toBe("image/png")
     expect(download.headers.get("cache-control")).toContain("immutable")
     expect(Buffer.from(await download.arrayBuffer()).equals(pngBytes)).toBe(true)
+    const head = await fetch(`${server.url}/v1/files/${String(png.body.id)}`, { method: "HEAD" })
+    expect(head.status).toBe(200)
+    expect(head.headers.get("accept-ranges")).toBe("bytes")
+    expect(head.headers.get("content-length")).toBe(String(pngBytes.byteLength))
+    expect((await head.arrayBuffer()).byteLength).toBe(0)
+    const partial = await fetch(`${server.url}/v1/files/${String(png.body.id)}`, {
+      headers: { Range: "bytes=4-7" }
+    })
+    expect(partial.status).toBe(206)
+    expect(partial.headers.get("content-range")).toBe(`bytes 4-7/${pngBytes.byteLength}`)
+    expect(Buffer.from(await partial.arrayBuffer()).equals(pngBytes.subarray(4, 8))).toBe(true)
+    const suffix = await fetch(`${server.url}/v1/files/${String(png.body.id)}`, {
+      headers: { Range: "bytes=-4" }
+    })
+    expect(suffix.status).toBe(206)
+    expect(Buffer.from(await suffix.arrayBuffer()).equals(pngBytes.subarray(-4))).toBe(true)
+    const openEnded = await fetch(`${server.url}/v1/files/${String(png.body.id)}`, {
+      headers: { Range: "bytes=4-" }
+    })
+    expect(openEnded.status).toBe(206)
+    expect(Buffer.from(await openEnded.arrayBuffer()).equals(pngBytes.subarray(4))).toBe(true)
+    const capped = await fetch(`${server.url}/v1/files/${String(png.body.id)}`, {
+      headers: { Range: "bytes=4-999" }
+    })
+    expect(capped.status).toBe(206)
+    expect(Buffer.from(await capped.arrayBuffer()).equals(pngBytes.subarray(4))).toBe(true)
+    const invalidRange = await fetch(`${server.url}/v1/files/${String(png.body.id)}`, {
+      headers: { Range: "bytes=999-1000" }
+    })
+    expect(invalidRange.status).toBe(416)
+    for (const range of [
+      "items=0-1",
+      "bytes=-0",
+      "bytes=7-4",
+      "bytes=999999999999999999999-",
+      "bytes=0-999999999999999999999"
+    ]) {
+      expect(
+        (
+          await fetch(`${server.url}/v1/files/${String(png.body.id)}`, {
+            headers: { Range: range }
+          })
+        ).status
+      ).toBe(416)
+    }
+    const empty = await upload(Buffer.alloc(0), { name: "empty.txt" })
+    expect(
+      (
+        await fetch(`${server.url}/v1/files/${String(empty.body.id)}`, {
+          headers: { Range: "bytes=0-0" }
+        })
+      ).status
+    ).toBe(416)
     expect((await fetch(`${server.url}/v1/files/missing-file`)).status).toBe(404)
 
     // The former 25 MB cap is gone; large uploads stream to the object store.
@@ -5787,6 +5851,79 @@ describe("@codevisor/server", () => {
           String(event.payload.message).includes("missing or corrupt")
       )
     })
+    rmSync(services.attachments.objectPath(String(png.body.sha256)), { force: true })
+    expect((await fetch(`${server.url}/v1/files/${String(png.body.id)}`)).status).toBe(500)
+  })
+
+  it("automatically promotes assistant Markdown files before turn completion", async () => {
+    const { agents, server, services } = await start()
+    const projectFolder = mkdtempSync(join(tmpdir(), "codevisor-assistant-delivery-"))
+    tempDirs.push(projectFolder)
+    writeFileSync(join(projectFolder, "fixed.mov"), "screen recording bytes")
+    const project = await jsonRequest(server, "/v1/projects", {
+      body: JSON.stringify({ folderPath: projectFolder, id: "assistant-delivery-project" }),
+      method: "POST"
+    })
+    const sessionResponse = await jsonRequest(server, "/v1/sessions", {
+      body: JSON.stringify({
+        projectId: (project.body as { readonly id: string }).id,
+        harnessId: "codex"
+      }),
+      method: "POST"
+    })
+    const session = sessionResponse.body as { readonly id: string; readonly agentSessionId: string }
+
+    await agents.emit(session.agentSessionId, {
+      kind: "session.updated",
+      subjectId: session.id,
+      payload: { turnId: "artifact-turn", turnState: "started", initiatedBy: "user" }
+    })
+    await agents.emit(session.agentSessionId, {
+      kind: "session.output",
+      subjectId: session.id,
+      payload: {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "answer-1",
+        content: { type: "text", text: "Done. [Recording](fixed.mov)" }
+      }
+    })
+    await agents.emit(session.agentSessionId, {
+      kind: "session.updated",
+      subjectId: session.id,
+      payload: {
+        turnId: "artifact-turn",
+        turnState: "ended",
+        initiatedBy: "user",
+        stopReason: "end_turn"
+      }
+    })
+
+    const transcript = await jsonRequest(server, `/v1/sessions/${session.id}/transcript?limit=8`)
+    const item = (transcript.body as { readonly items: Array<Record<string, unknown>> }).items[0]
+    expect(item?.text).toMatch(
+      /^Done\. \[Recording\]\(https:\/\/attachments\.codevisor\.invalid\/[a-f0-9-]+\)$/
+    )
+    expect(item?.attachments).toMatchObject([
+      { name: "fixed.mov", mimeType: "video/quicktime", kind: "file" }
+    ])
+    const rawAttachments = item?.attachments
+    const attachment = Array.isArray(rawAttachments)
+      ? (rawAttachments[0] as { readonly fileId: string } | undefined)
+      : undefined
+    const download = await fetch(`${server.url}/v1/files/${attachment?.fileId}`)
+    expect(await download.text()).toBe("screen recording bytes")
+
+    const events = await run(services.db.listSubjectEvents(session.id))
+    const finalization = events.findIndex(
+      (event) =>
+        (event.payload as { readonly sessionUpdate?: string }).sessionUpdate ===
+        "assistant_message_finalized"
+    )
+    const completion = events.findIndex(
+      (event) => (event.payload as { readonly turnState?: string }).turnState === "ended"
+    )
+    expect(finalization).toBeGreaterThan(-1)
+    expect(completion).toBeGreaterThan(finalization)
   })
 
   it("recovers legacy attachment rows and rejects corrupt SQLite bytes", async () => {

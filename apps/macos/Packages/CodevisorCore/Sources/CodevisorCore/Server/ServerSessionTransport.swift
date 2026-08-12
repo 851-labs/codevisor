@@ -39,6 +39,8 @@ public enum ServerSessionStreamEvent: Equatable, Sendable {
     /// A persisted user message. Carried outside `SessionUpdate` because the
     /// ACP update type cannot carry attachments.
     case userMessage(id: String?, text: String, attachments: [Attachment])
+    /// Server-finalized assistant Markdown plus immutable promoted artifacts.
+    case assistantFinalized(markdown: String, messageId: String?, attachments: [Attachment])
     case queueUpdated([ServerPromptQueueItem])
     /// A turn ended. `stopDetail` is a short human-readable reason present only
     /// when the ending was abnormal (error / limit / refusal / gave-up
@@ -392,6 +394,9 @@ public struct ServerSessionTransport: Sendable {
                     to: &assistant.turn
                 )
                 assistant.turn.isGenerating = item.isGenerating
+                if let attachments = item.attachments {
+                    assistant.turn.attachments = attachments.map(\.attachment)
+                }
                 pendingAssistant = assistant
             case .system:
                 flushAssistant()
@@ -421,6 +426,7 @@ public struct ServerSessionTransport: Sendable {
             let entries: [TranscriptEntry] = item.text.isEmpty ? [] : [.text(id: textId, markdown: item.text)]
             let turn = AssistantTurn(
                 entries: entries,
+                attachments: (item.attachments ?? []).map(\.attachment),
                 isGenerating: item.isGenerating,
                 isThinking: item.isGenerating && item.text.isEmpty,
                 stopReason: item.stopReason.flatMap(StopReason.init(rawValue:)),
@@ -447,6 +453,14 @@ public struct ServerSessionTransport: Sendable {
     }
 
     private static func sessionStreamEvents(from event: ServerEventEnvelope) -> [ServerSessionStreamEvent] {
+        if event.payload["sessionUpdate"]?.stringValue == "assistant_message_finalized",
+           let markdown = event.payload["markdown"]?.stringValue {
+            return [.assistantFinalized(
+                markdown: markdown,
+                messageId: event.payload["messageId"]?.stringValue,
+                attachments: attachments(from: event.payload)
+            )]
+        }
         if let rawUpdate = decodeRawSessionUpdate(event.payload) {
             return [.update(rawUpdate)]
         }

@@ -655,6 +655,33 @@ describe("sessionStreamEvents", () => {
     ])
   })
 
+  it("maps durable assistant finalization with promoted attachments", () => {
+    const attachment = {
+      fileId: "file-1",
+      name: "fixed.mp4",
+      mimeType: "video/mp4",
+      sizeBytes: 42,
+      kind: "file"
+    }
+    expect(
+      sessionStreamEvents(
+        envelope("session.output", {
+          sessionUpdate: "assistant_message_finalized",
+          markdown: "[Recording](https://attachments.codevisor.invalid/file-1)",
+          messageId: "answer-1",
+          attachments: [attachment]
+        })
+      )
+    ).toEqual([
+      {
+        type: "assistantFinalized",
+        markdown: "[Recording](https://attachments.codevisor.invalid/file-1)",
+        messageId: "answer-1",
+        attachments: [attachment]
+      }
+    ])
+  })
+
   it("ignores unrelated kinds", () => {
     expect(sessionStreamEvents(envelope("terminal.output", { data: "x" }))).toEqual([])
     expect(sessionStreamEvents(envelope("update.changed", {}))).toEqual([])

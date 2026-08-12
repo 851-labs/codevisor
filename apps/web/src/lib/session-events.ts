@@ -142,6 +142,12 @@ export type SessionStreamEvent =
       phase?: MessagePhase
       attachments?: readonly AttachmentRefInfo[]
     }
+  | {
+      type: "assistantFinalized"
+      markdown: string
+      messageId?: string
+      attachments: readonly AttachmentRefInfo[]
+    }
   | { type: "thoughtChunk"; text: string; parentToolCallId?: string }
   | { type: "toolCall"; call: ToolCallInfo }
   | { type: "toolCallUpdate"; call: ToolCallInfo }
@@ -491,6 +497,18 @@ function rawUpdateEvents(payload: Record<string, unknown>): SessionStreamEvent[]
   const parentToolCallId = stringOrUndefined(payload.parentToolCallId)
   const phase = phaseOrUndefined(payload.phase)
   switch (payload.sessionUpdate) {
+    case "assistant_message_finalized": {
+      const markdown = stringOrUndefined(payload.markdown)
+      if (markdown == null) return []
+      return [
+        {
+          type: "assistantFinalized",
+          markdown,
+          messageId,
+          attachments: attachmentsFrom(payload.attachments) ?? []
+        }
+      ]
+    }
     case "agent_message_chunk": {
       const text = textFromContent(payload.content) ?? ""
       return text !== "" || phase != null

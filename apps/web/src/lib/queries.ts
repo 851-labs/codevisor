@@ -833,6 +833,60 @@ function finishGenerating(
   }
 }
 
+function applyAssistantFinalization(
+  detail: SessionDetailCache,
+  event: Extract<SessionStreamEvent, { type: "assistantFinalized" }>
+): SessionDetailCache {
+  let itemIndex = -1
+  for (let index = detail.conversation.length - 1; index >= 0; index -= 1) {
+    const item = detail.conversation[index]
+    if (item?.role === "assistant" && item.isGenerating) {
+      itemIndex = index
+      break
+    }
+  }
+  if (itemIndex === -1) return detail
+  const item = detail.conversation[itemIndex]
+  if (item == null) return detail
+  const conversation = [...detail.conversation]
+  conversation[itemIndex] = {
+    ...item,
+    text: event.markdown,
+    ...(event.messageId == null ? {} : { messageId: event.messageId }),
+    ...(event.attachments.length === 0 ? {} : { attachments: [...event.attachments] })
+  }
+  let next: SessionDetailCache = { ...detail, conversation }
+  const meta = detail.turnMeta?.[item.id]
+  if (meta == null) return next
+
+  let entryIndex =
+    event.messageId == null ? -1 : textEntryIndex(`acp:${event.messageId}`, meta.entries)
+  if (entryIndex === -1) {
+    for (let index = meta.entries.length - 1; index >= 0; index -= 1) {
+      const entry = meta.entries[index]
+      if (entry?.type === "text" && meta.textPhases[entry.id] !== "commentary") {
+        entryIndex = index
+        break
+      }
+    }
+  }
+  const entries = [...meta.entries]
+  if (entryIndex === -1) {
+    const id = event.messageId == null ? `t${meta.nextTextId}` : `acp:${event.messageId}`
+    entries.push({ type: "text", id, markdown: event.markdown })
+    next = updateTurnMetaById(next, item.id, (value) => ({
+      ...value,
+      entries,
+      nextTextId: event.messageId == null ? value.nextTextId + 1 : value.nextTextId
+    }))
+  } else {
+    const entry = entries[entryIndex]
+    if (entry?.type === "text") entries[entryIndex] = { ...entry, markdown: event.markdown }
+    next = updateTurnMetaById(next, item.id, (value) => ({ ...value, entries }))
+  }
+  return next
+}
+
 function applySessionEvent(
   detail: SessionDetailCache,
   event: SessionStreamEvent,
@@ -841,6 +895,8 @@ function applySessionEvent(
   switch (event.type) {
     case "textChunk":
       return appendTextChunk(detail, event, createdAt)
+    case "assistantFinalized":
+      return applyAssistantFinalization(detail, event)
     case "thoughtChunk":
       if (event.parentToolCallId != null) {
         return updateOwnedOrActiveTurnMeta(

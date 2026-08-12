@@ -1175,8 +1175,8 @@ export type ConversationRole = typeof ConversationRole.Type
 export const AttachmentKind = Schema.Literals(["image", "file"])
 export type AttachmentKind = typeof AttachmentKind.Type
 
-/// A reference to an uploaded file (`POST /v1/files`) carried on a prompt and
-/// persisted with the user message; bytes are fetched via `GET /v1/files/:id`.
+/// A reference to an immutable file (`POST /v1/files`) carried by either side
+/// of the conversation; bytes are fetched via `GET /v1/files/:id`.
 export const AttachmentRef = Schema.Struct({
   fileId: Schema.String,
   name: Schema.String,
@@ -1185,6 +1185,18 @@ export const AttachmentRef = Schema.Struct({
   kind: AttachmentKind
 })
 export type AttachmentRef = typeof AttachmentRef.Type
+
+/** Durable semantic replacement for the assistant's terminal Markdown. The
+ * server emits it immediately before turn completion after promoting local
+ * artifact links into immutable files. Clients that do not know this update
+ * safely ignore it and still receive the ordinary assistant stream. */
+export const AssistantMessageFinalizedPayload = Schema.Struct({
+  sessionUpdate: Schema.Literal("assistant_message_finalized"),
+  markdown: Schema.String,
+  messageId: Schema.optional(Schema.String),
+  attachments: Schema.Array(AttachmentRef)
+})
+export type AssistantMessageFinalizedPayload = typeof AssistantMessageFinalizedPayload.Type
 
 export const FileMetadata = Schema.Struct({
   id: Schema.String,

@@ -680,6 +680,11 @@ struct SessionTranscriptView: View {
             hasher.combine(turn.planDocument?.utf8.count ?? 0)
             hasher.combine(turn.stopDetail?.utf8.count ?? 0)
             hasher.combine(turn.subagentActivityFingerprint)
+            hasher.combine(turn.attachments.count)
+            for attachment in turn.attachments {
+                hasher.combine(attachment.id)
+                hasher.combine(attachment.sizeBytes)
+            }
         }
         hasher.combine(waitingOnBackgroundTask)
         return hasher.finalize()
@@ -920,15 +925,7 @@ private struct AssistantTurnBody: View {
                     }
                 }
                 if case let .text(entryID, markdown) = finalText {
-                    StreamingMarkdownView(
-                        markdown,
-                        isComplete: !isGenerating,
-                        streamID: TranscriptStreamingTextIdentity.main(
-                            turnID: turnId,
-                            entryID: entryID
-                        ),
-                        animationPresentation: textAnimationPresentation
-                    )
+                    assistantResponse(entryID: entryID, markdown: markdown)
                     if let waitingOnBackgroundTask {
                         HStack(spacing: 8) {
                             Image(systemName: "clock.arrow.circlepath")
@@ -941,6 +938,9 @@ private struct AssistantTurnBody: View {
                     if !isGenerating {
                         MessageCopyButton(text: markdown, help: "Copy response")
                     }
+                }
+                if finalText == nil, !turn.attachments.isEmpty {
+                    assistantResponse(entryID: "attachments", markdown: "")
                 }
                 if !isWaitingOnUser, let postResponseGoalActivity {
                     ShimmeringText(text: goalActivityLabel(postResponseGoalActivity))
@@ -969,6 +969,36 @@ private struct AssistantTurnBody: View {
         }
         .onChange(of: hasRunningSubagent) { _, running in
             if !running, !isGenerating { autoCollapse() }
+        }
+    }
+
+    @ViewBuilder
+    private func assistantResponse(entryID: String, markdown: String) -> some View {
+        let segments = assistantMarkdownSegments(markdown, attachments: turn.attachments)
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(segments.enumerated()), id: \.offset) { index, segment in
+                switch segment {
+                case let .markdown(value):
+                    if !value.isEmpty {
+                        StreamingMarkdownView(
+                            value,
+                            isComplete: !isGenerating,
+                            streamID: TranscriptStreamingTextIdentity.main(
+                                turnID: turnId,
+                                entryID: "\(entryID):\(index)"
+                            ),
+                            animationPresentation: textAnimationPresentation
+                        )
+                    }
+                case let .attachment(attachment, label):
+                    VStack(alignment: .leading, spacing: 4) {
+                        AttachmentThumbnailView(attachment: attachment, inline: true)
+                        Text(label)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
         }
     }
 

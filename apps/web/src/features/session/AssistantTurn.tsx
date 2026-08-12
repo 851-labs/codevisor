@@ -1,4 +1,4 @@
-import type { ConversationItem, SessionGoal } from "@codevisor/api"
+import type { AttachmentRef, ConversationItem, SessionGoal } from "@codevisor/api"
 import {
   ChevronRightIcon,
   CircleSlashIcon,
@@ -12,6 +12,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 
 import { ShimmerText } from "../../components/ShimmerText"
 import { StreamingMarkdown } from "../../components/markdown/StreamingMarkdown"
+import { RemoteAttachmentThumb } from "../attachments/AttachmentPreview"
 import { cn } from "../../lib/cn"
 import type { TranscriptEntryInfo, TurnMeta } from "../../lib/queries"
 import type { ToolCallInfo } from "../../lib/session-events"
@@ -150,6 +151,70 @@ function finalMarkdown(item: ConversationItem, meta: TurnMeta | undefined): stri
   const index = finalTextIndex(meta)
   const entry = index == null ? undefined : meta?.entries[index]
   return entry?.type === "text" ? entry.markdown : item.text
+}
+
+export type AssistantResponseSegment =
+  | { type: "markdown"; markdown: string }
+  | { type: "attachment"; attachment: AttachmentRef; label: string }
+
+const assistantAttachmentPattern =
+  /!?\[([^\]]*)\]\(\s*<?https:\/\/attachments\.codevisor\.invalid\/([a-z0-9-]+)>?(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)/gi
+
+export function assistantResponseSegments(
+  markdown: string,
+  attachments: readonly AttachmentRef[]
+): AssistantResponseSegment[] {
+  const byId = new Map(attachments.map((attachment) => [attachment.fileId, attachment]))
+  const referenced = new Set<string>()
+  const segments: AssistantResponseSegment[] = []
+  let offset = 0
+  for (const match of markdown.matchAll(assistantAttachmentPattern)) {
+    const index = match.index
+    const fileId = match[2]
+    if (index == null || fileId == null) continue
+    const attachment = byId.get(fileId)
+    if (attachment == null) continue
+    if (index > offset) segments.push({ type: "markdown", markdown: markdown.slice(offset, index) })
+    segments.push({ type: "attachment", attachment, label: match[1] || attachment.name })
+    referenced.add(fileId)
+    offset = index + match[0].length
+  }
+  if (offset < markdown.length)
+    segments.push({ type: "markdown", markdown: markdown.slice(offset) })
+  for (const attachment of attachments) {
+    if (!referenced.has(attachment.fileId)) {
+      segments.push({ type: "attachment", attachment, label: attachment.name })
+    }
+  }
+  return segments
+}
+
+function AssistantResponse({
+  markdown,
+  attachments
+}: {
+  markdown: string
+  attachments: readonly AttachmentRef[]
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      {assistantResponseSegments(markdown, attachments).map((segment, index) =>
+        segment.type === "markdown" ? (
+          segment.markdown === "" ? null : (
+            <StreamingMarkdown key={`markdown:${index}`} markdown={segment.markdown} />
+          )
+        ) : (
+          <div
+            key={`attachment:${segment.attachment.fileId}:${index}`}
+            className="flex flex-col gap-1"
+          >
+            <RemoteAttachmentThumb attachment={segment.attachment} display="inline" />
+            <span className="text-muted-foreground text-xs">{segment.label}</span>
+          </div>
+        )
+      )}
+    </div>
+  )
 }
 
 function finalTextIsAsserted(meta: TurnMeta | undefined): boolean {
@@ -422,10 +487,10 @@ export function AssistantTurn({
         showsActivityIndicator && <ShimmerText>Thinking…</ShimmerText>
       )}
 
-      {responseText !== "" && (
+      {(responseText !== "" || (item.attachments?.length ?? 0) > 0) && (
         <>
-          <StreamingMarkdown markdown={responseText} />
-          {!isGenerating && (
+          <AssistantResponse markdown={responseText} attachments={item.attachments ?? []} />
+          {!isGenerating && responseText !== "" && (
             <div
               className={cn("transition-opacity", isHovered ? "opacity-100" : "opacity-0")}
               aria-hidden={!isHovered}

@@ -124,6 +124,7 @@ struct AttachmentThumbnailView: View {
     @Environment(\.theme) private var theme
     @Environment(\.attachmentImages) private var attachmentImages
     let attachment: Attachment
+    var inline = false
 
     @State private var image: UIImage?
     @State private var quickLookURL: QuickLookURL?
@@ -161,19 +162,20 @@ struct AttachmentThumbnailView: View {
     }
 
     private var imageThumb: some View {
-        ZStack {
+        let size = thumbnailSize
+        return ZStack {
             RoundedRectangle(cornerRadius: 8)
                 .fill(theme.bubbleBackground)
             if let image {
                 Image(uiImage: image)
                     .resizable()
-                    .aspectRatio(contentMode: .fill)
+                    .aspectRatio(contentMode: .fit)
             } else {
                 Image(systemName: attachment.isVideo ? "video" : "photo")
                     .foregroundStyle(.tertiary)
             }
         }
-        .frame(width: 56, height: 56)
+        .frame(width: size.width, height: size.height)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(
             RoundedRectangle(cornerRadius: 8)
@@ -183,6 +185,22 @@ struct AttachmentThumbnailView: View {
         .onTapGesture { preview() }
         .accessibilityLabel("Attachment \(attachment.name)")
         .accessibilityAddTraits(.isButton)
+    }
+
+    private var thumbnailSize: CGSize {
+        guard inline else { return CGSize(width: 56, height: 56) }
+        return boundedAttachmentPreviewSize(
+            aspectRatio: image.flatMap { previewAspectRatio(for: $0.size) },
+            maximumSize: CGSize(width: 280, height: 280),
+            fallbackAspectRatio: attachment.isPDF ? 8.5 / 11.0 : 16.0 / 9.0
+        )
+    }
+
+    private func previewAspectRatio(for size: CGSize) -> CGFloat? {
+        guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else {
+            return nil
+        }
+        return size.width / size.height
     }
 
     private var fileChip: some View {

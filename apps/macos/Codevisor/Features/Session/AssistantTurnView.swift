@@ -184,15 +184,7 @@ struct AssistantTurnView: View {
                 // text-run merging, so a flush costs O(growing block) instead
                 // of O(whole answer). The finalize flip merges runs back into
                 // one selectable TextKit storage.
-                StreamingMarkdownView(
-                    markdown,
-                    isComplete: !turn.isGenerating,
-                    streamID: TranscriptStreamingTextIdentity.main(
-                        turnID: turnID,
-                        entryID: entryID
-                    ),
-                    animationPresentation: textAnimationPresentation
-                )
+                assistantResponse(entryID: entryID, markdown: markdown)
                 if let waitingOnBackgroundTask {
                     HStack(spacing: 8) {
                         Image(systemName: "clock.arrow.circlepath")
@@ -208,6 +200,10 @@ struct AssistantTurnView: View {
                     MessageCopyButton(text: markdown, help: "Copy response", isRevealed: isHovered)
                         .opacity(isHovered ? 1 : 0)
                 }
+            }
+
+            if presentation.showsResult, finalText == nil, !turn.attachments.isEmpty {
+                assistantResponse(entryID: "attachments", markdown: "")
             }
 
             if presentation.showsResult, !isWaitingOnUser, let postResponseGoalActivity {
@@ -252,6 +248,36 @@ struct AssistantTurnView: View {
         // the collapse deferred at turn end fires once the last one finishes.
         .onChange(of: turnHasRunningSubagent) { _, running in
             if !running, !turn.isGenerating { autoCollapse() }
+        }
+    }
+
+    @ViewBuilder
+    private func assistantResponse(entryID: String, markdown: String) -> some View {
+        let segments = assistantMarkdownSegments(markdown, attachments: turn.attachments)
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(segments.enumerated()), id: \.offset) { index, segment in
+                switch segment {
+                case let .markdown(value):
+                    if !value.isEmpty {
+                        StreamingMarkdownView(
+                            value,
+                            isComplete: !turn.isGenerating,
+                            streamID: TranscriptStreamingTextIdentity.main(
+                                turnID: turnID,
+                                entryID: "\(entryID):\(index)"
+                            ),
+                            animationPresentation: textAnimationPresentation
+                        )
+                    }
+                case let .attachment(attachment, label):
+                    VStack(alignment: .leading, spacing: 4) {
+                        AttachmentThumbnailView(attachment: attachment, inline: true)
+                        Text(label)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
         }
     }
 

@@ -91,6 +91,34 @@ public enum TranscriptReducer {
         }
     }
 
+    /// Replaces the streamed final span with the server's durable artifact-aware
+    /// Markdown and associates the promoted files with the turn. This is a
+    /// replacement, not another chunk, so reconnect and live delivery converge.
+    public static func finalizeAssistant(
+        markdown: String,
+        messageId: String?,
+        attachments: [Attachment],
+        to turn: inout AssistantTurn
+    ) {
+        turn.isThinking = false
+        turn.attachments = attachments
+        let identified = messageId.flatMap { textIndex("acp:\($0)", in: turn.entries) }
+        if let index = identified ?? turn.finalTextIndex,
+           case let .text(id, _) = turn.entries[index] {
+            turn.entries[index] = .text(id: id, markdown: markdown)
+            return
+        }
+        guard !markdown.isEmpty else { return }
+        let id: String
+        if let messageId {
+            id = "acp:\(messageId)"
+        } else {
+            id = "t\(turn.nextTextId)"
+            turn.nextTextId += 1
+        }
+        turn.entries.append(.text(id: id, markdown: markdown))
+    }
+
     // MARK: - Helpers
 
     private static func text(from block: ContentBlock) -> String {

@@ -16,6 +16,7 @@ const rawPublicKey = keyPair.publicKey
 
 const zipData = Buffer.from("fake zip bytes for the swap test")
 const goodSignature = cryptoSign(null, zipData, keyPair.privateKey).toString("base64")
+const tamperedSignature = `${goodSignature.startsWith("A") ? "B" : "A"}${goodSignature.slice(1)}`
 
 const appcast = (signature: string, length = zipData.length): string => `<rss><channel><item>
   <sparkle:version>5591</sparkle:version>
@@ -116,7 +117,7 @@ describe("applyAppBundleSwap", () => {
   })
 
   it.each([
-    ["tampered signature", { appcastXml: appcast(goodSignature.replace(/^./, "X")) }, {}],
+    ["tampered signature", { appcastXml: appcast(tamperedSignature) }, {}],
     ["missing public key", { appcastXml: appcast(goodSignature) }, { publicKey: undefined }],
     ["codesign failure", { appcastXml: appcast(goodSignature) }, { codesignVerifyFails: true }],
     ["team mismatch", { appcastXml: appcast(goodSignature) }, { newTeam: "EVIL9999X" }],

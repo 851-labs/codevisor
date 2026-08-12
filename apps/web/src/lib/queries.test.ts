@@ -29,6 +29,38 @@ function detail(): SessionDetail {
 }
 
 describe("replaySessionEvents", () => {
+  it("replaces the live assistant answer with its finalized attachment projection", () => {
+    const attachment = {
+      fileId: "file-1",
+      name: "fixed.mov",
+      mimeType: "video/quicktime",
+      sizeBytes: 42,
+      kind: "file" as const
+    }
+    const replayed = replaySessionEvents(detail(), [
+      event(1, {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "answer-1",
+        content: { type: "text", text: "[Recording](./fixed.mov)" }
+      }),
+      event(2, {
+        sessionUpdate: "assistant_message_finalized",
+        messageId: "answer-1",
+        markdown: "[Recording](https://attachments.codevisor.invalid/file-1)",
+        attachments: [attachment]
+      }),
+      event(3, { stopReason: "end_turn" }, "session.updated")
+    ])
+    expect(replayed.conversation).toMatchObject([
+      {
+        role: "assistant",
+        text: "[Recording](https://attachments.codevisor.invalid/file-1)",
+        isGenerating: false,
+        attachments: [attachment]
+      }
+    ])
+  })
+
   it("allows optimistic prompts between turns while background work remains", () => {
     const settled = replaySessionEvents(detail(), [
       event(1, {

@@ -1918,6 +1918,89 @@ describe("@codevisor/db", () => {
     expect(await run(db.getTranscriptItemDetails(session.id, "missing"))).toBeUndefined()
   })
 
+  it("persists finalized assistant markdown and attachments across turn completion", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/assistant-attachments" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+    const attachment = {
+      fileId: "recording-1",
+      name: "fixed.mov",
+      mimeType: "video/quicktime",
+      sizeBytes: 123,
+      kind: "file" as const
+    }
+
+    await run(db.appendEvent("session.updated", session.id, { turnState: "started" }))
+    await run(
+      db.appendEvent("session.output", session.id, {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "answer-1",
+        content: { type: "text", text: "[Recording](./fixed.mov)" }
+      })
+    )
+    await run(
+      db.appendEvent("session.output", session.id, {
+        sessionUpdate: "assistant_message_finalized",
+        messageId: "answer-1",
+        markdown: "[Recording](https://attachments.codevisor.invalid/recording-1)",
+        attachments: [attachment]
+      })
+    )
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        turnState: "ended",
+        stopReason: "end_turn"
+      })
+    )
+
+    const page = await run(db.getTranscriptPage(session.id, undefined, 8))
+    expect(page.items).toMatchObject([
+      {
+        role: "assistant",
+        text: "[Recording](https://attachments.codevisor.invalid/recording-1)",
+        isGenerating: false,
+        attachments: [attachment]
+      }
+    ])
+
+    const fallbackSession = await run(
+      db.createSession({ projectId: project.id, harnessId: "codex" })
+    )
+    await run(db.appendEvent("session.updated", fallbackSession.id, { turnState: "started" }))
+    await run(
+      db.appendEvent("session.output", fallbackSession.id, {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "answer-2",
+        content: { type: "text", text: "Draft answer" }
+      })
+    )
+    // Older or partially upgraded producers may omit optional finalization
+    // fields. The projection still replaces the Markdown and treats
+    // attachments as empty.
+    await run(
+      db.appendEvent("session.output", fallbackSession.id, {
+        sessionUpdate: "assistant_message_finalized",
+        markdown: "Final answer"
+      })
+    )
+    await run(
+      db.appendEvent("session.updated", fallbackSession.id, {
+        turnState: "ended",
+        stopReason: "end_turn"
+      })
+    )
+
+    const fallbackPage = await run(db.getTranscriptPage(fallbackSession.id, undefined, 8))
+    expect(fallbackPage.items).toMatchObject([
+      {
+        role: "assistant",
+        text: "Final answer",
+        isGenerating: false
+      }
+    ])
+    expect(fallbackPage.items[0]?.attachments).toBeUndefined()
+  })
+
   it("reuses the original user transcript row when a response retry echoes its message id", async () => {
     const filename = tempDatabase()
     const db = await run(makeDatabase({ filename, serverId: "local" }))

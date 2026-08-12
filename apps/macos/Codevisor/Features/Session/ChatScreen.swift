@@ -450,6 +450,11 @@ struct ChatScreen: View {
             hasher.combine(turn.planDocument?.utf8.count ?? 0)
             hasher.combine(turn.stopDetail?.utf8.count ?? 0)
             hasher.combine(turn.subagentActivityFingerprint)
+            hasher.combine(turn.attachments.count)
+            for attachment in turn.attachments {
+                hasher.combine(attachment.id)
+                hasher.combine(attachment.sizeBytes)
+            }
         }
         hasher.combine(waitingOnBackgroundTask)
         return hasher.finalize()

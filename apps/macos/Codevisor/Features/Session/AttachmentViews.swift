@@ -166,6 +166,7 @@ struct AttachmentThumbnailView: View {
     @Environment(\.quickLook) private var quickLook
     @Environment(\.attachmentImages) private var attachmentImages
     let attachment: Attachment
+    var inline = false
 
     @State private var image: NSImage?
     @State private var didLoad = false
@@ -198,21 +199,22 @@ struct AttachmentThumbnailView: View {
     }
 
     private var imageThumb: some View {
+        let size = thumbnailSize
         // A tap gesture rather than a Button: buttons add their own
         // hover/press highlight over the artwork.
-        ZStack {
+        return ZStack {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(theme.bubbleBackground)
             if let image {
                 Image(nsImage: image)
                     .resizable()
-                    .aspectRatio(contentMode: .fill)
+                    .aspectRatio(contentMode: .fit)
             } else {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(theme.bubbleBackground)
                 Image(systemName: attachment.isVideo ? "video" : "photo")
                     .foregroundStyle(.tertiary)
             }
         }
-        .frame(width: 56, height: 56)
+        .frame(width: size.width, height: size.height)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(
             RoundedRectangle(cornerRadius: 8)
@@ -225,6 +227,22 @@ struct AttachmentThumbnailView: View {
         .help(attachment.name)
         .accessibilityLabel("Attachment \(attachment.name)")
         .accessibilityAddTraits(.isButton)
+    }
+
+    private var thumbnailSize: CGSize {
+        guard inline else { return CGSize(width: 56, height: 56) }
+        return boundedAttachmentPreviewSize(
+            aspectRatio: image.flatMap { previewAspectRatio(for: $0.size) },
+            maximumSize: CGSize(width: 320, height: 280),
+            fallbackAspectRatio: attachment.isPDF ? 8.5 / 11.0 : 16.0 / 9.0
+        )
+    }
+
+    private func previewAspectRatio(for size: CGSize) -> CGFloat? {
+        guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else {
+            return nil
+        }
+        return size.width / size.height
     }
 
     private func preview() {

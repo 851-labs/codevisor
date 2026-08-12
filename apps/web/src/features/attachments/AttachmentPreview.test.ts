@@ -1,10 +1,30 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  boundedAttachmentPreviewSize,
   hasVisualAttachmentPreview,
   isVideoAttachment,
   lightboxCanvasSize
 } from "./AttachmentPreview"
+
+describe("attachment preview sizing", () => {
+  it("preserves landscape media ratios within the width bound", () => {
+    expect(boundedAttachmentPreviewSize(16 / 9)).toEqual({ width: 320, height: 180 })
+  })
+
+  it("preserves portrait and square ratios within the height bound", () => {
+    expect(boundedAttachmentPreviewSize(9 / 16)).toEqual({ width: 157.5, height: 280 })
+    expect(boundedAttachmentPreviewSize(1)).toEqual({ width: 280, height: 280 })
+  })
+
+  it("uses a safe fallback for missing or invalid dimensions", () => {
+    expect(boundedAttachmentPreviewSize(undefined)).toEqual({ width: 320, height: 180 })
+    expect(boundedAttachmentPreviewSize(Number.POSITIVE_INFINITY, 320, 280, 1)).toEqual({
+      width: 280,
+      height: 280
+    })
+  })
+})
 
 describe("attachment lightbox canvas", () => {
   it("grows with zoom so enlarged previews remain scrollable", () => {

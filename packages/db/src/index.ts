@@ -1752,12 +1752,23 @@ const chatAssistantSummary = (
   const indexById = new Map<string, number>()
   let anonymous = 0
   let planDocument: string | undefined
+  let finalized: { readonly markdown: string; readonly messageId?: string } | undefined
   for (const row of rows) {
     const payload = jsonRecord(JSON.parse(row.payload))
     /* v8 ignore next -- session events are encoded from object payloads; this only guards manually corrupted rows. */
     if (payload === undefined) continue
     if (payload.sessionUpdate === "plan_document" && typeof payload.markdown === "string") {
       planDocument = payload.markdown
+      continue
+    }
+    if (
+      payload.sessionUpdate === "assistant_message_finalized" &&
+      typeof payload.markdown === "string"
+    ) {
+      finalized = {
+        markdown: payload.markdown,
+        ...(typeof payload.messageId === "string" ? { messageId: payload.messageId } : {})
+      }
       continue
     }
     const direct = payload.role === "assistant" && typeof payload.text === "string"
@@ -1788,10 +1799,11 @@ const chatAssistantSummary = (
     if (typeof payload.phase === "string") span.phase = payload.phase
   }
   const final = [...spans].reverse().find((span) => span.phase !== "commentary")
+  const messageId = finalized?.messageId ?? final?.messageId
   return {
-    text: final?.chunks.join("") ?? "",
+    text: finalized?.markdown ?? final?.chunks.join("") ?? "",
     ...(planDocument === undefined ? {} : { planDocument }),
-    ...(final?.messageId === undefined ? {} : { messageId: final.messageId })
+    ...(messageId === undefined ? {} : { messageId })
   }
 }
 
@@ -1871,75 +1883,94 @@ const projectChatEvent = (sqlite: Database.Database, event: SessionEventRow): vo
       )
       .run(event.created_at, event.created_at, itemId)
   } else if (event.kind === "session.output") {
-    const conversation = conversationEventPayload(payload)
-    if (conversation?.role === "user" || conversation?.role === "system") {
-      // A response retry reuses the original user message id. The provider
-      // still receives a continuation prompt, but the semantic transcript
-      // keeps the user's instruction exactly once.
-      const existingUser =
-        conversation.role === "user" && conversation.messageId !== undefined
-          ? (sqlite
-              .prepare(
-                "select id from chat_items where session_id = ? and role = 'user' and message_id = ? limit 1"
-              )
-              .get(sessionId, conversation.messageId) as { readonly id: string } | undefined)
-          : undefined
-      itemId =
-        existingUser?.id ??
-        createChatItem(sqlite, sessionId, conversation.role, event.created_at, {
-          text: conversation.text,
-          ...(conversation.messageId === undefined ? {} : { messageId: conversation.messageId }),
-          status: "complete",
-          ...(conversation.attachments === undefined
-            ? {}
-            : { attachments: conversation.attachments })
-        })
-    } else if (conversation?.role === "assistant") {
+    const update = typeof payload.sessionUpdate === "string" ? payload.sessionUpdate : undefined
+    if (update === "assistant_message_finalized" && typeof payload.markdown === "string") {
       itemId = ensureAssistantChatItem(sqlite, sessionId, event.created_at)
+      upsertChatPart(sqlite, itemId, "text", payload.markdown)
+      const attachments = Array.isArray(payload.attachments)
+        ? (payload.attachments as ReadonlyArray<AttachmentRef>)
+        : undefined
       sqlite
         .prepare(
-          `insert into chat_parts (id, item_id, position, kind, text, data_json, revision)
+          `update chat_items set attachments = ?, message_id = coalesce(?, message_id),
+           updated_at = ?, revision = revision + 1 where id = ?`
+        )
+        .run(
+          serializeAttachments(attachments),
+          typeof payload.messageId === "string" ? payload.messageId : null,
+          event.created_at,
+          itemId
+        )
+    } else {
+      const conversation = conversationEventPayload(payload)
+      if (conversation?.role === "user" || conversation?.role === "system") {
+        // A response retry reuses the original user message id. The provider
+        // still receives a continuation prompt, but the semantic transcript
+        // keeps the user's instruction exactly once.
+        const existingUser =
+          conversation.role === "user" && conversation.messageId !== undefined
+            ? (sqlite
+                .prepare(
+                  "select id from chat_items where session_id = ? and role = 'user' and message_id = ? limit 1"
+                )
+                .get(sessionId, conversation.messageId) as { readonly id: string } | undefined)
+            : undefined
+        itemId =
+          existingUser?.id ??
+          createChatItem(sqlite, sessionId, conversation.role, event.created_at, {
+            text: conversation.text,
+            ...(conversation.messageId === undefined ? {} : { messageId: conversation.messageId }),
+            status: "complete",
+            ...(conversation.attachments === undefined
+              ? {}
+              : { attachments: conversation.attachments })
+          })
+      } else if (conversation?.role === "assistant") {
+        itemId = ensureAssistantChatItem(sqlite, sessionId, event.created_at)
+        sqlite
+          .prepare(
+            `insert into chat_parts (id, item_id, position, kind, text, data_json, revision)
            values (?, ?, 0, 'text', ?, null, 1)
            on conflict(item_id, position) do update set
              text = coalesce(chat_parts.text, '') || excluded.text,
              revision = chat_parts.revision + 1`
-        )
-        .run(`${itemId}:text`, itemId, conversation.text)
-      sqlite
-        .prepare(
-          `update chat_items set message_id = coalesce(message_id, ?), updated_at = ?,
-           revision = revision + 1 where id = ?`
-        )
-        .run(conversation.messageId ?? null, event.created_at, itemId)
-    } else {
-      const update = typeof payload.sessionUpdate === "string" ? payload.sessionUpdate : undefined
-      // ACP agents can publish session-scoped metadata (available commands,
-      // mode/config changes, usage) as `session.output` before the first
-      // prompt. Those events remain in the session event log, but they must
-      // not materialize an empty streaming assistant item ahead of the user's
-      // first message. Only updates that can render inside an assistant turn
-      // belong to the canonical chat projection.
-      const rendersInAssistantTurn =
-        hasRenderableWorkedDetail(payload) ||
-        (update === "plan_document" && typeof payload.markdown === "string")
-      if (update !== undefined && rendersInAssistantTurn) {
-        const parent =
-          typeof payload.parentToolCallId === "string" ? payload.parentToolCallId : undefined
-        const toolId = typeof payload.toolCallId === "string" ? payload.toolCallId : undefined
-        itemId =
-          (parent === undefined ? undefined : chatRoute(sqlite, sessionId, `tool:${parent}`)) ??
-          (toolId === undefined ? undefined : chatRoute(sqlite, sessionId, `tool:${toolId}`)) ??
-          ensureAssistantChatItem(sqlite, sessionId, event.created_at)
+          )
+          .run(`${itemId}:text`, itemId, conversation.text)
         sqlite
           .prepare(
-            `update chat_items set has_details = max(has_details, ?), updated_at = ?,
-             revision = revision + 1 where id = ?`
+            `update chat_items set message_id = coalesce(message_id, ?), updated_at = ?,
+           revision = revision + 1 where id = ?`
           )
-          .run(hasRenderableWorkedDetail(payload) ? 1 : 0, event.created_at, itemId)
-        if (update === "plan_document" && typeof payload.markdown === "string") {
-          upsertChatPart(sqlite, itemId, "plan", payload.markdown)
+          .run(conversation.messageId ?? null, event.created_at, itemId)
+      } else {
+        // ACP agents can publish session-scoped metadata (available commands,
+        // mode/config changes, usage) as `session.output` before the first
+        // prompt. Those events remain in the session event log, but they must
+        // not materialize an empty streaming assistant item ahead of the user's
+        // first message. Only updates that can render inside an assistant turn
+        // belong to the canonical chat projection.
+        const rendersInAssistantTurn =
+          hasRenderableWorkedDetail(payload) ||
+          (update === "plan_document" && typeof payload.markdown === "string")
+        if (update !== undefined && rendersInAssistantTurn) {
+          const parent =
+            typeof payload.parentToolCallId === "string" ? payload.parentToolCallId : undefined
+          const toolId = typeof payload.toolCallId === "string" ? payload.toolCallId : undefined
+          itemId =
+            (parent === undefined ? undefined : chatRoute(sqlite, sessionId, `tool:${parent}`)) ??
+            (toolId === undefined ? undefined : chatRoute(sqlite, sessionId, `tool:${toolId}`)) ??
+            ensureAssistantChatItem(sqlite, sessionId, event.created_at)
+          sqlite
+            .prepare(
+              `update chat_items set has_details = max(has_details, ?), updated_at = ?,
+             revision = revision + 1 where id = ?`
+            )
+            .run(hasRenderableWorkedDetail(payload) ? 1 : 0, event.created_at, itemId)
+          if (update === "plan_document" && typeof payload.markdown === "string") {
+            upsertChatPart(sqlite, itemId, "plan", payload.markdown)
+          }
+          if (toolId !== undefined) setChatRoute(sqlite, sessionId, `tool:${toolId}`, itemId)
         }
-        if (toolId !== undefined) setChatRoute(sqlite, sessionId, `tool:${toolId}`, itemId)
       }
     }
   } else if (

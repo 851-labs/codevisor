@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  assistantResponseSegments,
   assistantTurnShowsActivityIndicator,
   assistantTurnSectionIsLockedOpen,
   assistantTurnDisclosureTransition,
@@ -12,6 +13,34 @@ import {
   turnDisclosureKey,
   turnImplementationDisclosureKey
 } from "./AssistantTurn"
+
+describe("assistant attachments", () => {
+  it("replaces canonical Markdown links and appends unreferenced artifacts", () => {
+    const linked = {
+      fileId: "file-1",
+      name: "fixed.mp4",
+      mimeType: "video/mp4",
+      sizeBytes: 42,
+      kind: "file" as const
+    }
+    const unlinked = {
+      ...linked,
+      fileId: "file-2",
+      name: "report.pdf",
+      mimeType: "application/pdf"
+    }
+    expect(
+      assistantResponseSegments(
+        "Done. [Screen recording](https://attachments.codevisor.invalid/file-1)",
+        [linked, unlinked]
+      )
+    ).toEqual([
+      { type: "markdown", markdown: "Done. " },
+      { type: "attachment", attachment: linked, label: "Screen recording" },
+      { type: "attachment", attachment: unlinked, label: "report.pdf" }
+    ])
+  })
+})
 
 describe("goal activity", () => {
   it("uses the same concise ephemeral language as Thinking", () => {

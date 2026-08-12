@@ -213,7 +213,35 @@ export function lightboxCanvasSize(zoom: number) {
   }
 }
 
-export function RemoteAttachmentThumb({ attachment }: { attachment: AttachmentRef }) {
+export function boundedAttachmentPreviewSize(
+  aspectRatio: number | undefined,
+  maximumWidth = 320,
+  maximumHeight = 280,
+  fallbackAspectRatio = 16 / 9
+) {
+  const fallback =
+    Number.isFinite(fallbackAspectRatio) && fallbackAspectRatio > 0 ? fallbackAspectRatio : 16 / 9
+  const ratio =
+    aspectRatio != null && Number.isFinite(aspectRatio) && aspectRatio > 0 ? aspectRatio : fallback
+  const maxWidth = Math.max(0, maximumWidth)
+  const maxHeight = Math.max(0, maximumHeight)
+
+  if (maxWidth === 0 || maxHeight === 0) return { width: 0, height: 0 }
+
+  const widthAtMaximumHeight = maxHeight * ratio
+  if (widthAtMaximumHeight <= maxWidth) {
+    return { width: widthAtMaximumHeight, height: maxHeight }
+  }
+  return { width: maxWidth, height: maxWidth / ratio }
+}
+
+export function RemoteAttachmentThumb({
+  attachment,
+  display = "compact"
+}: {
+  attachment: AttachmentRef
+  display?: "compact" | "inline"
+}) {
   const { client } = useApi()
   const [objectUrl, setObjectUrl] = useState<string>()
   const [lightboxItem, setLightboxItem] = useState<LightboxItem>()
@@ -264,6 +292,7 @@ export function RemoteAttachmentThumb({ attachment }: { attachment: AttachmentRe
           isVideo={isVideoAttachment(attachment)}
           imageUrl={objectUrl}
           onClick={open}
+          display={display}
         />
       ) : (
         <FileChip name={attachment.name} onClick={open} />
@@ -282,6 +311,7 @@ export function VisualThumb({
   imageUrl,
   onClick,
   overlay,
+  display = "compact",
   className
 }: {
   name: string
@@ -290,6 +320,7 @@ export function VisualThumb({
   imageUrl?: string
   onClick?: () => void
   overlay?: ReactNode
+  display?: "compact" | "inline"
   className?: string
 }) {
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -298,8 +329,23 @@ export function VisualThumb({
     onClick?.()
   }
   const [videoFailed, setVideoFailed] = useState(false)
+  const [mediaAspectRatio, setMediaAspectRatio] = useState<number>()
 
-  useEffect(() => setVideoFailed(false), [imageUrl])
+  useEffect(() => {
+    setVideoFailed(false)
+    setMediaAspectRatio(undefined)
+  }, [imageUrl, isPdf, isVideo])
+
+  const fallbackAspectRatio = isPdf ? 8.5 / 11 : 16 / 9
+  const inlineSize = boundedAttachmentPreviewSize(mediaAspectRatio, 320, 280, fallbackAspectRatio)
+  const inlineStyle =
+    display === "inline"
+      ? {
+          width: inlineSize.width,
+          maxWidth: "100%",
+          aspectRatio: `${inlineSize.width} / ${inlineSize.height}`
+        }
+      : undefined
 
   return (
     <div
@@ -309,8 +355,10 @@ export function VisualThumb({
       title={name}
       onClick={onClick}
       onKeyDown={handleKeyDown}
+      style={inlineStyle}
       className={cn(
-        "relative size-14 shrink-0 cursor-default overflow-hidden rounded-lg border border-[var(--codevisor-separator)] bg-bubble outline-none",
+        "relative shrink-0 cursor-default overflow-hidden rounded-lg border border-[var(--codevisor-separator)] bg-bubble outline-none",
+        display === "inline" ? "max-w-full" : "size-14",
         className
       )}
     >
@@ -319,12 +367,16 @@ export function VisualThumb({
           <video
             src={imageUrl}
             aria-hidden="true"
-            className="pointer-events-none size-full object-cover"
+            className="pointer-events-none size-full object-contain"
             preload="auto"
             muted
             playsInline
             onError={() => setVideoFailed(true)}
             onLoadedMetadata={(event) => {
+              const { videoWidth, videoHeight } = event.currentTarget
+              if (videoWidth > 0 && videoHeight > 0) {
+                setMediaAspectRatio(videoWidth / videoHeight)
+              }
               const duration = event.currentTarget.duration
               event.currentTarget.currentTime = Number.isFinite(duration)
                 ? Math.min(0.1, duration / 2)
@@ -340,14 +392,25 @@ export function VisualThumb({
             data={imageUrl}
             type="application/pdf"
             aria-label=""
-            className="pointer-events-none size-full object-cover"
+            className="pointer-events-none size-full object-contain"
           >
             <div className="flex size-full items-center justify-center">
               <ImageIcon className="text-muted-foreground size-5" />
             </div>
           </object>
         ) : (
-          <img src={imageUrl} alt="" className="size-full object-cover" draggable={false} />
+          <img
+            src={imageUrl}
+            alt=""
+            className="size-full object-contain"
+            draggable={false}
+            onLoad={(event) => {
+              const { naturalWidth, naturalHeight } = event.currentTarget
+              if (naturalWidth > 0 && naturalHeight > 0) {
+                setMediaAspectRatio(naturalWidth / naturalHeight)
+              }
+            }}
+          />
         )
       ) : (
         <div className="flex size-full items-center justify-center">

@@ -91,6 +91,7 @@ import { archiveWorktreeFiles, deleteSnapshot, restoreWorktree } from "./worktre
 import type { TerminalManagerService } from "@codevisor/terminal"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import {
+  createReadStream,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -131,6 +132,11 @@ import { NativeMcpError, type NativeMcpManager } from "./native-mcp-manager.js"
 import { SkillsError, type SkillsManager } from "./skills-manager.js"
 import { availableDevelopmentWorktreeName } from "./food-worktree-names.js"
 import { availableProductionWorktreeName } from "./worktree-names.js"
+import {
+  assistantArtifactDirectory,
+  assistantArtifactGuidance,
+  finalizeAssistantArtifacts
+} from "./assistant-artifacts.js"
 
 export class ServerError extends Schema.TaggedErrorClass<ServerError>()("ServerError", {
   operation: Schema.String,
@@ -354,6 +360,66 @@ const readAttachment = async (
   await store.put(record.data, record.metadata.sha256)
   await run(services.db.markFileStorageDual(fileId))
   return { data: record.data, metadata: record.metadata }
+}
+
+const attachmentDiskFile = async (
+  services: CodevisorServerServices,
+  fileId: string
+): Promise<{ readonly path: string; readonly metadata: FileMetadata }> => {
+  const record = await run(services.db.getFileStorage(fileId))
+  if (record === undefined) throw new HttpFailure(404, `File not found: ${fileId}`)
+  const path = services.attachments.objectPath(record.metadata.sha256)
+  if (record.storageState !== "sqlite") {
+    try {
+      const info = statSync(path)
+      if (
+        info.isFile() &&
+        info.size === record.metadata.sizeBytes &&
+        (record.storageState === "disk" || (await services.attachments.verify(record.metadata)))
+      ) {
+        return { path, metadata: record.metadata }
+      }
+    } catch {
+      // A dual row can be reconstructed from its legacy bytes below.
+    }
+    if (record.storageState === "disk") {
+      throw new AttachmentStoreError(`Attachment object is missing: ${fileId}`)
+    }
+  }
+  await readAttachment(services, fileId)
+  return { path, metadata: record.metadata }
+}
+
+type ByteRange = { readonly start: number; readonly end: number }
+
+const requestedByteRange = (
+  header: string | undefined,
+  size: number
+): ByteRange | "invalid" | undefined => {
+  if (header === undefined) return undefined
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim())
+  if (match === null || size <= 0) return "invalid"
+  /* v8 ignore next -- both capture groups are guaranteed by the matched expression. */
+  const startText = match[1] ?? ""
+  /* v8 ignore next -- both capture groups are guaranteed by the matched expression. */
+  const endText = match[2] ?? ""
+  if (startText.length === 0) {
+    const suffix = Number(endText)
+    if (!Number.isSafeInteger(suffix) || suffix <= 0) return "invalid"
+    return { start: Math.max(0, size - suffix), end: size - 1 }
+  }
+  const start = Number(startText)
+  const requestedEnd = endText.length === 0 ? size - 1 : Number(endText)
+  if (
+    !Number.isSafeInteger(start) ||
+    !Number.isSafeInteger(requestedEnd) ||
+    start < 0 ||
+    start >= size ||
+    requestedEnd < start
+  ) {
+    return "invalid"
+  }
+  return { start, end: Math.min(requestedEnd, size - 1) }
 }
 
 /// Materializes attachment bytes as temp files so path-based provider inputs
@@ -2820,8 +2886,55 @@ const sessionEventSink =
         await materializeRuntimeEvent(services.db, fanout, serverId, event, sessionId)
       })()
     }
+    const payload = objectPayload(event.payload)
+    if (
+      event.kind === "session.error" ||
+      (event.kind === "session.updated" &&
+        (payload.turnState === "ended" || typeof payload.stopReason === "string"))
+    ) {
+      return (async () => {
+        await finalizeAssistantTurn(services, fanout, serverId, sessionId)
+        await materializeRuntimeEvent(services.db, fanout, serverId, event, sessionId)
+      })()
+    }
     return materializeRuntimeEvent(services.db, fanout, serverId, event, sessionId)
   }
+
+const finalizeAssistantTurn = async (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  serverId: string,
+  sessionId: string
+): Promise<void> => {
+  try {
+    const page = await run(services.db.getTranscriptPage(sessionId, undefined, 1))
+    const item = page.items.at(-1)
+    if (item?.role !== "assistant" || !item.isGenerating) return
+    const session = await run(services.db.getSessionSummary(sessionId))
+    const cwd = session.cwd
+    /* v8 ignore next -- runnable local sessions always persist their resolved working directory. */
+    if (cwd === undefined) return
+    const finalized = await finalizeAssistantArtifacts(services, {
+      cwd,
+      sessionId,
+      markdown: item.text,
+      startedAt: item.startedAt,
+      existingAttachments: item.attachments
+    })
+    if (!finalized.changed) return
+    await appendAndPublish(services.db, fanout, "session.output", sessionId, {
+      sessionUpdate: "assistant_message_finalized",
+      markdown: finalized.markdown,
+      /* v8 ignore next -- provider-backed assistant messages normally carry a stable message id. */
+      ...(item.messageId === undefined ? {} : { messageId: item.messageId }),
+      attachments: finalized.attachments,
+      serverId
+    })
+  } catch {
+    // Artifact promotion must never swallow the provider's terminal event.
+    // An unsafe, missing, or concurrently-written link remains plain Markdown.
+  }
+}
 
 /// Derives the directory a session runs in: the project's folder on this
 /// server, or its worktree at ~/codevisor/{projectId}/{worktreeName}. The result
@@ -3615,12 +3728,22 @@ const runPromptInBackground = async (
       sessionId
     )
     const agentSession = await ensureAgentSessionFor(services, fanout, serverId, sessionId)
+    const session = await run(services.db.getSessionSummary(sessionId))
+    /* v8 ignore next -- agent-backed local sessions always have a resolved cwd; the fallback preserves imported records. */
+    const artifactDirectory =
+      session.cwd === undefined ? undefined : assistantArtifactDirectory(session.cwd, sessionId)
+    if (artifactDirectory !== undefined) mkdirSync(artifactDirectory, { recursive: true })
+    /* v8 ignore next -- see the imported-record fallback above. */
+    const providerText =
+      artifactDirectory === undefined
+        ? text
+        : `${text}\n\n${assistantArtifactGuidance(artifactDirectory)}`
     // Session output, turn lifecycle, and the final stopReason all flow
     // through the standing sink registered at session create/load time.
     const input =
       refs.length === 0
-        ? text
-        : { attachments: await resolvePromptAttachments(services, refs), text }
+        ? providerText
+        : { attachments: await resolvePromptAttachments(services, refs), text: providerText }
     await run(services.agents.prompt(agentSession.sessionId, input))
   } catch (cause) {
     if (isAuthenticationFailure(cause)) {
@@ -3634,6 +3757,7 @@ const runPromptInBackground = async (
         serverId
       })
     }
+    await finalizeAssistantTurn(services, fanout, serverId, sessionId)
     await appendAndPublish(services.db, fanout, "session.error", sessionId, {
       message: failureMessage(cause),
       serverId
@@ -3692,17 +3816,39 @@ const routeFiles = async (
   }
 
   const fileId = matchRoute(url.pathname, "/v1/files/:id")
-  if (fileId !== undefined && request.method === "GET") {
-    const file = await readAttachment(services, fileId)
-    response.writeHead(200, {
+  if (fileId !== undefined && (request.method === "GET" || request.method === "HEAD")) {
+    const file = await attachmentDiskFile(services, fileId)
+    const range = requestedByteRange(request.headers.range, file.metadata.sizeBytes)
+    if (range === "invalid") {
+      response.writeHead(416, {
+        "Accept-Ranges": "bytes",
+        "Content-Range": `bytes */${file.metadata.sizeBytes}`
+      })
+      response.end()
+      return true
+    }
+    const contentLength =
+      range === undefined ? file.metadata.sizeBytes : range.end - range.start + 1
+    response.writeHead(range === undefined ? 200 : 206, {
       // Files are immutable (content is stored once at upload), so clients
       // may cache aggressively.
+      "Accept-Ranges": "bytes",
       "Cache-Control": "private, max-age=31536000, immutable",
       "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(file.metadata.name)}`,
-      "Content-Length": file.data.byteLength,
+      "Content-Length": contentLength,
+      ...(range === undefined
+        ? {}
+        : { "Content-Range": `bytes ${range.start}-${range.end}/${file.metadata.sizeBytes}` }),
       "Content-Type": file.metadata.mimeType
     })
-    response.end(file.data)
+    if (request.method === "HEAD") {
+      response.end()
+      return true
+    }
+    const stream = createReadStream(file.path, range === undefined ? {} : range)
+    /* v8 ignore next -- requires the immutable object to disappear after validation but before the stream opens. */
+    stream.once("error", (cause) => response.destroy(cause))
+    stream.pipe(response)
     return true
   }
 

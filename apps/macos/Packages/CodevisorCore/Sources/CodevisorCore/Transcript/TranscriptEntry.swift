@@ -55,6 +55,8 @@ public struct RetryStatus: Sendable, Equatable {
 /// The streaming state of one assistant response.
 public struct AssistantTurn: Sendable, Equatable {
     public var entries: [TranscriptEntry]
+    /// Immutable files delivered with the assistant's terminal response.
+    public var attachments: [Attachment]
     public var isGenerating: Bool
     public var isThinking: Bool
     public var stopReason: StopReason?
@@ -101,6 +103,7 @@ public struct AssistantTurn: Sendable, Equatable {
 
     public init(
         entries: [TranscriptEntry] = [],
+        attachments: [Attachment] = [],
         isGenerating: Bool = false,
         isThinking: Bool = false,
         stopReason: StopReason? = nil,
@@ -120,6 +123,7 @@ public struct AssistantTurn: Sendable, Equatable {
         nextTextId: Int = 0
     ) {
         self.entries = entries
+        self.attachments = attachments
         self.isGenerating = isGenerating
         self.isThinking = isThinking
         self.stopReason = stopReason
@@ -262,7 +266,7 @@ public extension AssistantTurn {
     }
 }
 
-/// A file attached to a user message, referencing bytes stored server-side
+/// A file attached to a conversation message, referencing bytes stored server-side
 /// (`GET /v1/files/:id`).
 public struct Attachment: Identifiable, Sendable, Equatable {
     public enum Kind: String, Sendable, Equatable {

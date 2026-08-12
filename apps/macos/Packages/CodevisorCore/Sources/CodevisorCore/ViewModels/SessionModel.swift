@@ -1057,6 +1057,13 @@ public final class SessionModel {
                 switch event {
                 case let .update(update):
                     TranscriptReducer.apply(update, to: &turn)
+                case let .assistantFinalized(markdown, messageId, attachments):
+                    TranscriptReducer.finalizeAssistant(
+                        markdown: markdown,
+                        messageId: messageId,
+                        attachments: attachments,
+                        to: &turn
+                    )
                 case let .finished(reason, detail, retryable, _):
                     turn.stopReason = reason
                     turn.stopDetail = detail
@@ -1080,6 +1087,7 @@ public final class SessionModel {
             turn.startedAt = originalMessage.turn.startedAt
             turn.endedAt = originalMessage.turn.endedAt
             turn.planDocument = turn.planDocument ?? originalMessage.turn.planDocument
+            if turn.attachments.isEmpty { turn.attachments = originalMessage.turn.attachments }
             turn.deferredDetailItemId = nil
             turn.hasDeferredWorkedDetails = false
             turn.detailRevision = originalMessage.turn.detailRevision
@@ -1285,6 +1293,17 @@ public final class SessionModel {
         switch event {
         case let .update(update):
             apply(update)
+        case let .assistantFinalized(markdown, messageId, attachments):
+            ensureAssistantTurn()
+            guard case .assistant(var message) = activeItem else { return }
+            TranscriptReducer.finalizeAssistant(
+                markdown: markdown,
+                messageId: messageId,
+                attachments: attachments,
+                to: &message.turn
+            )
+            activeItem = .assistant(message)
+            appliedUpdateCount += 1
         case let .userMessage(id, text, attachments):
             appliedUpdateCount += 1
             let promotedFromQueue = consumeQueuePromotion(id: id)
@@ -1453,6 +1472,8 @@ public final class SessionModel {
         case .retrying:
             return .retryBackoff
         case .userMessage:
+            return .modelStream
+        case .assistantFinalized:
             return .modelStream
         case .finished, .failed, .authenticationRequired, .queueUpdated, .updateGate,
              .backgroundTasks, .runtimeState, .planApprovalRequired, .modelFallback:
