@@ -238,8 +238,11 @@ private final class TranscriptCollectionCell: UICollectionViewCell {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        contentView.layoutIfNeeded()
-        let width = max(1, contentHost?.bounds.width ?? contentView.bounds.width)
+        // The host is pinned to contentView's edges, so its width is knowable
+        // without forcing a synchronous Auto Layout + SwiftUI solve here.
+        // Forcing one ran the full solve inside the scroll gesture's frame
+        // budget for every cell entering the viewport.
+        let width = max(1, contentView.bounds.width)
         if abs(lastContentWidth - width) > 0.5 {
             lastContentWidth = width
             contentController?.invalidateContentSize(forceReport: true)
@@ -251,6 +254,7 @@ private final class TranscriptCollectionCell: UICollectionViewCell {
         key: String,
         revision: Int,
         rootView: AnyView,
+        adoptedController: TranscriptContentHostingController?,
         expectedHeight: CGFloat,
         hasAuthoritativeExpectedHeight: Bool,
         parent: UIViewController?
@@ -269,14 +273,26 @@ private final class TranscriptCollectionCell: UICollectionViewCell {
         // to poison a different virtual row with a perfectly plausible but
         // wrong height. Recreate only the small visible/overscan host subtree;
         // UICollectionView still owns and reuses the outer cells.
+        //
+        // Measure-once, display-the-same-host: when the settled measurer has
+        // already built this exact (key, revision, width, generation) tree
+        // off-screen, adopt it instead of rebuilding the SwiftUI subtree —
+        // the dominant first-scroll cost. Adoption is immune to the stale-size
+        // reuse bug above because an adopted controller's rootView is never
+        // replaced.
         removeContentController()
-        let controller = TranscriptContentHostingController(rootView: rootView)
+        let controller = adoptedController
+            ?? TranscriptContentHostingController(rootView: rootView)
         contentController = controller
         controller.sizingOptions = [.intrinsicContentSize]
         let host = controller.view!
         host.backgroundColor = .clear
         host.clipsToBounds = false
         host.isHidden = true
+        // Reset the off-screen measurement presentation on adopted hosts.
+        host.alpha = 1
+        host.isUserInteractionEnabled = true
+        host.accessibilityElementsHidden = false
         host.translatesAutoresizingMaskIntoConstraints = false
         host.setContentHuggingPriority(.required, for: .vertical)
         host.setContentCompressionResistancePriority(.required, for: .vertical)
@@ -300,9 +316,13 @@ private final class TranscriptCollectionCell: UICollectionViewCell {
         // estimate can report itself back as an exact 320pt measurement. Once
         // off-cell measurement establishes authority, the exact height
         // constraint is installed by updateAuthoritativeContentHeightConstraint.
-        contentView.setNeedsLayout()
-        contentView.layoutIfNeeded()
-        lastContentWidth = host.bounds.width
+        //
+        // Layout is deliberately not forced here: a synchronous layoutIfNeeded
+        // ran a full Auto Layout + SwiftUI solve during cellForItemAt — inside
+        // the scroll gesture's frame budget — at a width the incoming cell
+        // frame then invalidated anyway. layoutSubviews records the real width
+        // and re-invalidates once the native layout slot has been applied.
+        lastContentWidth = 0
         controller.invalidateContentSize(forceReport: true)
         setNeedsLayout()
     }
@@ -407,6 +427,9 @@ final class CollectionTranscriptView: UICollectionView,
     private static let atBottomThreshold: CGFloat = 2
     private static let maxMeasurementCacheCount = 3
     private static let sendAnimationDuration: CFTimeInterval = 0.46
+    /// Main-thread time one pipeline turn may spend measuring rows before it
+    /// sleeps for a frame to let touch delivery and rendering run.
+    private static let settledMeasurementTurnBudget: CFAbsoluteTime = 0.004
 
     private let transcriptLayout: TranscriptCollectionLayout
     private var rows: [TranscriptVirtualRow] = []
@@ -433,6 +456,14 @@ final class CollectionTranscriptView: UICollectionView,
     private var deferredRowsDuringScroll: [TranscriptVirtualRow]?
     private var settledMeasurementGenerations: [String: UInt64] = [:]
     private var measurementCommitGate = TranscriptMeasurementCommitGate()
+
+    /// Fully-built hosts parked by the settled measurer, keyed by the same
+    /// signature that validates their measurements. Display cells adopt these
+    /// so each row's SwiftUI tree is built exactly once.
+    private var pooledMeasuredHosts:
+        [TranscriptMeasurementSignature: TranscriptContentHostingController] = [:]
+    private var pooledMeasuredHostLRU: [TranscriptMeasurementSignature] = []
+    private static let maxPooledMeasuredHosts = 24
 
     private struct DisclosureViewportAnchor {
         let id: UUID
@@ -653,6 +684,7 @@ final class CollectionTranscriptView: UICollectionView,
         measurementCommitTask = nil
         settledMeasurementTask?.cancel()
         cancelSettledMeasurementPipeline()
+        clearPooledMeasuredHosts()
         for case let cell as TranscriptCollectionCell in visibleCells {
             cell.detachHostingController()
         }
@@ -827,6 +859,7 @@ final class CollectionTranscriptView: UICollectionView,
             )
             rows = newRows
             rowByKey = Dictionary(uniqueKeysWithValues: newRows.map { ($0.layoutKey, $0) })
+            evictPooledHosts(previousRowsByKey: previousRowsByKey)
             _ = activateMeasurementCacheIfNeeded()
             installExactSpacerMeasurements()
             applyGeometry(
@@ -845,6 +878,7 @@ final class CollectionTranscriptView: UICollectionView,
         } else {
             rows = newRows
             rowByKey = Dictionary(uniqueKeysWithValues: newRows.map { ($0.layoutKey, $0) })
+            evictPooledHosts(previousRowsByKey: previousRowsByKey)
             refreshChangedVisibleRootViews(previousRowsByKey: previousRowsByKey)
         }
     }
@@ -1084,6 +1118,7 @@ final class CollectionTranscriptView: UICollectionView,
         guard key != activeMeasurementCacheKey else { return false }
 
         cancelSettledMeasurementPipeline()
+        clearPooledMeasuredHosts()
         measurementCommitTask?.cancel()
         measurementCommitTask = nil
         pendingMeasurements.removeAll(keepingCapacity: true)
@@ -1124,12 +1159,26 @@ final class CollectionTranscriptView: UICollectionView,
         if let restore = pendingInitialState?.virtualTranscript,
            restore.measurementCacheKey == key {
             for (rowKey, height) in restore.rowHeightsByKey where height > 0 {
-                guard let row = rowByKey[rowKey] else { continue }
+                guard let row = rowByKey[rowKey],
+                      !hasAuthoritativeHeight(for: rowKey) else { continue }
                 if row.id.isCacheableSettledRow {
-                    guard restore.settledRowsByKey[rowKey]?.revision
-                        == row.measurementRevision else { continue }
+                    guard let settled = restore.settledRowsByKey[rowKey],
+                          settled.revision == row.measurementRevision else { continue }
+                    // Matching cache key proves the width and layout
+                    // fingerprint; matching revision proves the content. That
+                    // is the same validity proof the width-keyed cache uses,
+                    // so the restored height is exact — re-measuring it on
+                    // every reopen was pure first-scroll debt.
+                    measurements.setExact(height, for: rowKey)
+                    let measured = SessionMeasuredRow(
+                        height: height,
+                        revision: settled.revision
+                    )
+                    settledRowHeightSnapshot[rowKey] = measured
+                    measurementCaches[key, default: [:]][rowKey] = measured
+                } else {
+                    measurements.setProvisional(height, for: rowKey)
                 }
-                measurements.setProvisional(height, for: rowKey)
             }
         }
         return true
@@ -1210,6 +1259,7 @@ final class CollectionTranscriptView: UICollectionView,
             key: key,
             revision: row.measurementRevision,
             rootView: measuredRootView(for: row),
+            adoptedController: takePooledMeasuredHost(for: row),
             expectedHeight: expectedHeight,
             hasAuthoritativeExpectedHeight: hasAuthoritativeHeight(for: key),
             parent: owningViewController
@@ -1342,12 +1392,7 @@ final class CollectionTranscriptView: UICollectionView,
     ) {
         guard row.id.isCacheableSettledRow, bounds.width > 0,
               !hasAuthoritativeHeight(for: row.layoutKey) else { return }
-        let signature = TranscriptMeasurementSignature(
-            key: row.layoutKey,
-            revision: row.measurementRevision,
-            rowWidthHalfPoints: Int((effectiveRowWidth * 2).rounded()),
-            contentGeneration: settledMeasurementGenerations[row.layoutKey, default: 0]
-        )
+        let signature = measurementSignature(for: row)
         if let pending = pendingMeasurements[row.layoutKey],
            pending.revision == signature.revision,
            pending.rowWidthHalfPoints == signature.rowWidthHalfPoints {
@@ -1372,7 +1417,22 @@ final class CollectionTranscriptView: UICollectionView,
               !settledMeasurementQueue.isEmpty else { return }
         settledMeasurementTask = Task { @MainActor [weak self] in
             guard let self else { return }
+            var turnStart = CFAbsoluteTimeGetCurrent()
             while !Task.isCancelled, !self.settledMeasurementQueue.isEmpty {
+                // Warm-up work never competes with a live finger.
+                if self.isTracking || self.isNativeScrollInteractionActive { break }
+                // Frame budget: back-to-back row measurements starve event
+                // delivery even with yields between rows, because yielded
+                // continuations re-enqueue immediately. Once a turn has spent
+                // its budget, sleep for roughly a frame so touches and
+                // rendering interleave with the remaining warm-up work.
+                if CFAbsoluteTimeGetCurrent() - turnStart
+                    > Self.settledMeasurementTurnBudget {
+                    try? await Task.sleep(for: .milliseconds(8))
+                    guard !Task.isCancelled else { break }
+                    turnStart = CFAbsoluteTimeGetCurrent()
+                    continue
+                }
                 let request = self.settledMeasurementQueue.removeFirst()
                 guard self.accepts(request.signature) else {
                     self.queuedSettledMeasurementSignatures.remove(request.signature)
@@ -1430,7 +1490,7 @@ final class CollectionTranscriptView: UICollectionView,
         )
         parent.view.addSubview(host)
         controller.didMove(toParent: parent)
-        defer {
+        func tearDown() {
             controller.willMove(toParent: nil)
             host.removeFromSuperview()
             controller.removeFromParent()
@@ -1438,16 +1498,30 @@ final class CollectionTranscriptView: UICollectionView,
 
         var previousHeight: CGFloat?
         for _ in 0..<4 {
-            guard !Task.isCancelled else { return nil }
+            // A touch may land while a giant row is mid-measure. Checking the
+            // live tracking state between passes bounds how long one row can
+            // hold the main thread once a finger is down; the abandoned row is
+            // rescheduled by the next viewport sweep.
+            guard !Task.isCancelled, !isTracking,
+                  !isNativeScrollInteractionActive else {
+                tearDown()
+                return nil
+            }
             host.invalidateIntrinsicContentSize()
             host.setNeedsLayout()
             host.layoutIfNeeded()
             let measured = controller.sizeThatFits(
                 in: CGSize(width: width, height: .greatestFiniteMagnitude)
             ).height
-            guard measured.isFinite, measured > 0 else { return nil }
+            guard measured.isFinite, measured > 0 else {
+                tearDown()
+                return nil
+            }
             let height = measured.rounded(.up)
             if let previousHeight, abs(previousHeight - height) <= 0.5 {
+                // The converged host is parked, not destroyed: the display
+                // path adopts it so the row's SwiftUI tree is built once.
+                parkMeasuredHost(controller, for: request.signature)
                 return height
             }
             previousHeight = height
@@ -1456,17 +1530,95 @@ final class CollectionTranscriptView: UICollectionView,
             host.layoutIfNeeded()
             await Task.yield()
         }
+        tearDown()
         return nil
     }
 
-    private func accepts(_ signature: TranscriptMeasurementSignature) -> Bool {
+    private func measurementSignature(
+        for row: TranscriptVirtualRow
+    ) -> TranscriptMeasurementSignature {
+        TranscriptMeasurementSignature(
+            key: row.layoutKey,
+            revision: row.measurementRevision,
+            rowWidthHalfPoints: Int((effectiveRowWidth * 2).rounded()),
+            contentGeneration: settledMeasurementGenerations[row.layoutKey, default: 0]
+        )
+    }
+
+    private func signatureMatchesCurrentContent(
+        _ signature: TranscriptMeasurementSignature
+    ) -> Bool {
         guard let row = rowByKey[signature.key], row.id.isCacheableSettledRow,
               row.measurementRevision == signature.revision,
               settledMeasurementGenerations[signature.key, default: 0]
                 == signature.contentGeneration,
               signature.rowWidthHalfPoints
                 == Int((effectiveRowWidth * 2).rounded()) else { return false }
-        return !hasAuthoritativeHeight(for: signature.key)
+        return true
+    }
+
+    private func accepts(_ signature: TranscriptMeasurementSignature) -> Bool {
+        signatureMatchesCurrentContent(signature)
+            && !hasAuthoritativeHeight(for: signature.key)
+    }
+
+    // MARK: Measured host pool
+
+    /// Detaches a measurement host from its off-screen slot and parks it for
+    /// the display path. The signature makes stale adoption impossible: any
+    /// content, revision, width, or generation change produces a different key
+    /// and the entry simply ages out of the LRU.
+    private func parkMeasuredHost(
+        _ controller: TranscriptContentHostingController,
+        for signature: TranscriptMeasurementSignature
+    ) {
+        controller.willMove(toParent: nil)
+        controller.view.removeFromSuperview()
+        controller.removeFromParent()
+        if pooledMeasuredHosts[signature] == nil {
+            pooledMeasuredHostLRU.append(signature)
+        }
+        pooledMeasuredHosts[signature] = controller
+        while pooledMeasuredHostLRU.count > Self.maxPooledMeasuredHosts {
+            let evicted = pooledMeasuredHostLRU.removeFirst()
+            pooledMeasuredHosts.removeValue(forKey: evicted)
+        }
+    }
+
+    private func takePooledMeasuredHost(
+        for row: TranscriptVirtualRow
+    ) -> TranscriptContentHostingController? {
+        let signature = measurementSignature(for: row)
+        guard let controller = pooledMeasuredHosts.removeValue(forKey: signature) else {
+            return nil
+        }
+        pooledMeasuredHostLRU.removeAll { $0 == signature }
+        guard signatureMatchesCurrentContent(signature) else { return nil }
+        return controller
+    }
+
+    private func clearPooledMeasuredHosts() {
+        pooledMeasuredHosts.removeAll(keepingCapacity: false)
+        pooledMeasuredHostLRU.removeAll(keepingCapacity: false)
+    }
+
+    /// Row content can change without a revision bump (auxiliary row state).
+    /// Any content transition evicts that row's parked host so adoption can
+    /// never present stale pixels.
+    private func evictPooledHosts(
+        previousRowsByKey: [String: TranscriptVirtualRow]
+    ) {
+        guard !pooledMeasuredHosts.isEmpty else { return }
+        let stale = Set(pooledMeasuredHostLRU.filter { signature in
+            guard let row = rowByKey[signature.key] else { return true }
+            guard let previous = previousRowsByKey[signature.key] else { return false }
+            return previous.content != row.content
+        })
+        guard !stale.isEmpty else { return }
+        for signature in stale {
+            pooledMeasuredHosts.removeValue(forKey: signature)
+        }
+        pooledMeasuredHostLRU.removeAll { stale.contains($0) }
     }
 
     private func cancelSettledMeasurementPipeline() {

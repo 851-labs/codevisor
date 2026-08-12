@@ -23,6 +23,13 @@ struct CodeBlockView: View {
     /// re-allocated attributed storage for the entire block on every body
     /// evaluation — for a streaming block, every ~16ms flush.
     @State private var plainMemo = PlainCodeMemo()
+    #if canImport(UIKit)
+    /// Memoizes the UIKit NSAttributedString conversion: the run-by-run
+    /// rebuild is O(tokens) on the main thread and `body` re-evaluates on
+    /// every layout/measurement pass, so the same settled block re-converted
+    /// repeatedly while scrolling.
+    @State private var nativeMemo = NativeCodeMemo()
+    #endif
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -65,8 +72,9 @@ struct CodeBlockView: View {
             #elseif canImport(UIKit)
             ScrollView(.horizontal, showsIndicators: false) {
                 SelectableTextView(
-                    attributedText: nativeCodeText(
-                        highlighted ?? settledCacheProbe ?? plainMemo.attributed(for: code)
+                    attributedText: nativeMemo.attributed(
+                        for: highlighted ?? settledCacheProbe ?? plainMemo.attributed(for: code),
+                        fallback: theme.codeForeground
                     ),
                     fillsWidth: false
                 )
@@ -140,13 +148,28 @@ struct CodeBlockView: View {
         }
     }
 
-    #if canImport(UIKit)
-    private func nativeCodeText(_ text: AttributedString) -> NSAttributedString {
+}
+
+#if canImport(UIKit)
+/// Last-value memo for the UIKit attributed-text conversion. Plain class in
+/// `@State`: non-observable, and the `AttributedString` comparison is cheap
+/// between evaluations that share storage — it does real work only when the
+/// highlighted text, Dynamic Type size, or theme foreground actually changes.
+@MainActor
+private final class NativeCodeMemo {
+    private var text: AttributedString?
+    private var fontSize: CGFloat?
+    private var fallback: Color?
+    private var cached: NSAttributedString?
+
+    func attributed(for text: AttributedString, fallback: Color) -> NSAttributedString {
+        let size = UIFont.preferredFont(forTextStyle: .callout).pointSize
+        if let cached, text == self.text, size == fontSize, fallback == self.fallback {
+            return cached
+        }
         let result = NSMutableAttributedString()
-        let font = UIFont.monospacedSystemFont(
-            ofSize: UIFont.preferredFont(forTextStyle: .callout).pointSize,
-            weight: .regular
-        )
+        let font = UIFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        let fallbackColor = UIColor(fallback)
         for run in text.runs {
             result.append(
                 NSAttributedString(
@@ -154,15 +177,19 @@ struct CodeBlockView: View {
                     attributes: [
                         .font: font,
                         .foregroundColor: run.foregroundColor.map { UIColor($0) }
-                            ?? UIColor(theme.codeForeground),
+                            ?? fallbackColor,
                     ]
                 )
             )
         }
+        self.text = text
+        fontSize = size
+        self.fallback = fallback
+        cached = result
         return result
     }
-    #endif
 }
+#endif
 
 #if canImport(AppKit)
 /// A horizontal-only code scroller that hands vertical trackpad gestures to
