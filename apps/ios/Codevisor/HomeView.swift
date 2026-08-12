@@ -1231,6 +1231,11 @@ private struct SessionRow: View {
             Spacer(minLength: 4)
         }
         .padding(.vertical, 3)
+        // Plain buttons only hit-test their label's rendered pixels by
+        // default. Fill and shape the label so the complete list-row surface
+        // opens the chat, including the spacer and other empty areas.
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
         // SwiftUI otherwise infers a full-width bottom separator whenever a
         // visible status dot is the row's first child. Pin every row divider
         // to the copy column; only the custom title divider stays full width.
