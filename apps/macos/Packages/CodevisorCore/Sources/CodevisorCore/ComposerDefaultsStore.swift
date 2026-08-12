@@ -24,7 +24,7 @@ public final class ComposerDefaultsStore {
         }
     }
 
-    private struct MachineDefaults: Codable {
+    private struct MachineDefaults: Codable, Sendable {
         var lastHarnessId: String?
         /// The project used by the last standalone New Chat page on this
         /// machine. UUIDs that no longer exist are ignored by callers.
@@ -38,7 +38,7 @@ public final class ComposerDefaultsStore {
         var configSelections: [String: [String: String]] = [:]
     }
 
-    private struct WorkspaceDefaults: Codable {
+    private struct WorkspaceDefaults: Codable, Sendable {
         /// Protects against a stale workspace id being interpreted under a
         /// different machine after an import.
         var serverId: String?
@@ -46,7 +46,7 @@ public final class ComposerDefaultsStore {
         var configSelections: [String: [String: String]] = [:]
     }
 
-    private struct Defaults: Codable {
+    private struct Defaults: Codable, Sendable {
         var version = ComposerDefaultsStore.schemaVersion
         var machines: [String: MachineDefaults] = [:]
         var workspaces: [String: WorkspaceDefaults] = [:]
@@ -100,9 +100,17 @@ public final class ComposerDefaultsStore {
     private let key: String
     private let migrationBackupKey: String
     private let legacyMigrationBackupKey: String
+    private let persistenceOwner = UUID()
     private var defaults: Defaults
+    private var persistenceBatchDepth = 0
+    private var batchNeedsPersistence = false
+    private var batchNeedsImmediatePersistence = false
 
     public init(store: any PersistenceStore, key: String = "composer-defaults") {
+        // A previous live instance may still have a coalesced snapshot on the
+        // shared encode queue (tests and in-process environment replacement do
+        // this routinely). Preserve the repository read-your-writes contract.
+        PersistenceEncoding.drain()
         self.store = store
         self.key = key
         migrationBackupKey = "\(key)-pre-v4-backup"
@@ -396,6 +404,28 @@ public final class ComposerDefaultsStore {
         persist()
     }
 
+    /// Groups a logical UI transaction into one encoded persistence snapshot.
+    /// First-send promotion updates both the machine defaults and the new
+    /// workspace profile; writing each intermediate shape wastes several
+    /// main-run-loop-adjacent SQLite transactions and has no durability value.
+    public func performPersistenceBatch(
+        flushImmediately: Bool = false,
+        _ updates: () -> Void
+    ) {
+        persistenceBatchDepth += 1
+        if flushImmediately { batchNeedsImmediatePersistence = true }
+        defer {
+            persistenceBatchDepth -= 1
+            if persistenceBatchDepth == 0, batchNeedsPersistence {
+                let immediately = batchNeedsImmediatePersistence
+                batchNeedsPersistence = false
+                batchNeedsImmediatePersistence = false
+                persist(immediately: immediately)
+            }
+        }
+        updates()
+    }
+
     /// Clears remembered selections and the migration safety copy (used by
     /// "Delete all data").
     public func clear() {
@@ -426,14 +456,36 @@ public final class ComposerDefaultsStore {
                 Log.persistence.error("Failed to back up \(self.key, privacy: .public) before migration: \(String(describing: error), privacy: .public)")
             }
         }
-        persist()
+        persist(immediately: true)
+        PersistenceEncoding.drain()
     }
 
-    private func persist() {
-        do {
-            try store.saveData(JSONEncoder().encode(defaults), forKey: key)
-        } catch {
-            Log.persistence.error("Failed to save \(self.key, privacy: .public): \(String(describing: error), privacy: .public)")
+    /// Forces the latest in-memory defaults through the background encoder.
+    /// Intended for tests and explicit lifecycle barriers, not hot UI paths.
+    public func flushPendingWrites() {
+        persist(immediately: true)
+        PersistenceEncoding.drain()
+    }
+
+    private func persist(immediately: Bool = false) {
+        if persistenceBatchDepth > 0 {
+            batchNeedsPersistence = true
+            batchNeedsImmediatePersistence = batchNeedsImmediatePersistence || immediately
+            return
+        }
+        let snapshot = defaults
+        let store = store
+        let key = key
+        PersistenceEncoding.enqueueLatest(
+            owner: persistenceOwner,
+            key: key,
+            delay: immediately ? 0 : 0.2
+        ) {
+            do {
+                try store.saveData(PersistenceEncoding.encoder.encode(snapshot), forKey: key)
+            } catch {
+                Log.persistence.error("Failed to save \(key, privacy: .public): \(String(describing: error), privacy: .public)")
+            }
         }
     }
 }

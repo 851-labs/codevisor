@@ -101,6 +101,91 @@ private struct SidebarWorkspaceListItem: Identifiable {
     var id: UUID { workspace.id }
 }
 
+/// Memoizes the expensive part of navigation ordering: priority/recency
+/// sorting. SwiftUI may reevaluate the sidebar while an unrelated composer
+/// property changes; rebuilding lightweight keys is cheap, while repeatedly
+/// sorting and querying project membership is not. Current value structs are
+/// remapped onto the cached ids so row content never goes stale.
+@MainActor
+private final class SidebarOrderingCache {
+    private struct SessionInput: Equatable {
+        let id: UUID
+        let priority: Int
+        let timestamp: Date
+        let title: String
+        let sourceIndex: Int
+    }
+
+    private struct ProjectInput: Equatable {
+        let id: UUID
+        let priority: Int
+        let timestamp: Date
+        let name: String
+        let sourceIndex: Int
+    }
+
+    private var sessionInputs: [SessionInput] = []
+    private var orderedSessionIDs: [UUID] = []
+    private var projectInputs: [ProjectInput] = []
+    private var orderedProjectIDs: [UUID] = []
+
+    func sessions(
+        _ values: [ChatSession],
+        priority: (ChatSession) -> SidebarSessionPriority,
+        timestamp: (ChatSession) -> Date
+    ) -> [ChatSession] {
+        let inputs = values.enumerated().map { index, session in
+            SessionInput(
+                id: session.id,
+                priority: priority(session).rawValue,
+                timestamp: timestamp(session),
+                title: session.title,
+                sourceIndex: index
+            )
+        }
+        if inputs != sessionInputs {
+            sessionInputs = inputs
+            orderedSessionIDs = inputs.sorted { left, right in
+                if left.priority != right.priority { return left.priority < right.priority }
+                if left.timestamp != right.timestamp { return left.timestamp > right.timestamp }
+                let titleOrder = left.title.localizedCaseInsensitiveCompare(right.title)
+                if titleOrder != .orderedSame { return titleOrder == .orderedAscending }
+                return left.sourceIndex < right.sourceIndex
+            }.map(\.id)
+        }
+        let byID = Dictionary(values.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return orderedSessionIDs.compactMap { byID[$0] }
+    }
+
+    func projects(
+        _ values: [Project],
+        orderingKey: (Project) -> (priority: SidebarSessionPriority, timestamp: Date)
+    ) -> [Project] {
+        let inputs = values.enumerated().map { index, project in
+            let key = orderingKey(project)
+            return ProjectInput(
+                id: project.id,
+                priority: key.priority.rawValue,
+                timestamp: key.timestamp,
+                name: project.name,
+                sourceIndex: index
+            )
+        }
+        if inputs != projectInputs {
+            projectInputs = inputs
+            orderedProjectIDs = inputs.sorted { left, right in
+                if left.priority != right.priority { return left.priority < right.priority }
+                if left.timestamp != right.timestamp { return left.timestamp > right.timestamp }
+                let nameOrder = left.name.localizedCaseInsensitiveCompare(right.name)
+                if nameOrder != .orderedSame { return nameOrder == .orderedAscending }
+                return left.sourceIndex < right.sourceIndex
+            }.map(\.id)
+        }
+        let byID = Dictionary(values.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return orderedProjectIDs.compactMap { byID[$0] }
+    }
+}
+
 /// Existing harness sessions found in a just-added project folder, pending
 /// the user's decision to import them.
 private struct PendingSessionImport: Identifiable {
@@ -144,6 +229,7 @@ struct SidebarView: View {
     @State private var isPointerInsideSidebar = false
     @State private var deferredProjectOrder = InteractionDeferredOrder<UUID>()
     @State private var deferredSessionOrder = InteractionDeferredOrder<UUID>()
+    @State private var orderingCache = SidebarOrderingCache()
     /// Non-nil while a burst of automatic reorders is settling (the deferred
     /// orders are locked without the pointer being inside the sidebar).
     @State private var reorderSettleHoldStart: Date?
@@ -212,7 +298,32 @@ struct SidebarView: View {
         if order == .none {
             return manuallyOrdered(active, ids: projectOrder, id: \.id)
         }
-        return deferredProjectOrder.applying(to: sortedProjects(active), id: \.id)
+        return deferredProjectOrder.applying(to: automaticallySortedProjects, id: \.id)
+    }
+
+    private var automaticallySortedProjects: [Project] {
+        orderingCache.projects(
+            list.activeProjects,
+            orderingKey: projectOrderingKey
+        )
+    }
+
+    private var automaticallySortedSessions: [ChatSession] {
+        let activeProjectIDs = Set(list.activeProjects.map(\.id))
+        // The cache applies the final global order, so sourcing sessions via
+        // `sessions(in:)` would first perform a throwaway per-project sort.
+        // Filter the model's value array once instead.
+        let sessions = list.sessions.filter { session in
+            session.serverId == list.selectedServerId
+                && activeProjectIDs.contains(session.projectId)
+                && !session.isArchived
+                && (session.origin == .codevisor || list.showsImportedSessions)
+        }
+        return orderingCache.sessions(
+            sessions,
+            priority: { order == .updated ? sessionPriority(for: $0) : .idle },
+            timestamp: timestamp
+        )
     }
 
     /// Projects shown as folders in "by project": scratch backing projects
@@ -229,15 +340,19 @@ struct SidebarView: View {
     }
 
     private var chronologicalSessions: [SidebarSessionListItem] {
-        let sessions = visibleProjects
-            .flatMap { project in
-                list.sessions(in: project).map { SidebarSessionListItem(session: $0, project: project) }
-            }
         if order != .none {
-            let sorted = sessions.sorted { left, right in
-                compareSessions(left.session, right.session)
+            let projectsByID = Dictionary(
+                visibleProjects.map { ($0.id, $0) },
+                uniquingKeysWith: { first, _ in first }
+            )
+            let sorted = automaticallySortedSessions.compactMap { session -> SidebarSessionListItem? in
+                guard let project = projectsByID[session.projectId] else { return nil }
+                return SidebarSessionListItem(session: session, project: project)
             }
             return deferredSessionOrder.applying(to: sorted, id: \.id)
+        }
+        let sessions = visibleProjects.flatMap { project in
+            list.sessions(in: project).map { SidebarSessionListItem(session: $0, project: project) }
         }
         return manuallyOrderedSessions(sessions, session: \.session)
     }
@@ -247,11 +362,8 @@ struct SidebarView: View {
     /// single reflow; empty under manual ordering, which never auto-reorders.
     private var desiredAutomaticOrderIDs: [UUID] {
         guard order != .none else { return [] }
-        let projectIDs = sortedProjects(list.activeProjects).map(\.id)
-        let sessionIDs = list.activeProjects
-            .flatMap { list.sessions(in: $0) }
-            .sorted(by: compareSessions)
-            .map(\.id)
+        let projectIDs = automaticallySortedProjects.map(\.id)
+        let sessionIDs = automaticallySortedSessions.map(\.id)
         return projectIDs + sessionIDs
     }
 
@@ -1664,7 +1776,7 @@ struct SidebarView: View {
         let sessions = list.sessions(in: project)
         guard order == .none else {
             return deferredSessionOrder.applying(
-                to: sessions.sorted(by: compareSessions),
+                to: automaticallySortedSessions.filter { $0.projectId == project.id },
                 id: \.id
             )
         }
@@ -1813,10 +1925,7 @@ struct SidebarView: View {
     }
 
     private func projectPriority(for project: Project) -> SidebarSessionPriority {
-        list.sessions(in: project)
-            .map(sessionPriority)
-            .min { $0.rawValue < $1.rawValue }
-            ?? .idle
+        projectOrderingKey(for: project).priority
     }
 
     /// Classifies a session into its sort tier. The checks MUST mirror
@@ -1862,16 +1971,39 @@ struct SidebarView: View {
         case .none, .created:
             return project.createdAt
         case .updated:
-            let sessions = list.sessions(in: project)
-            guard let leadingPriority = sessions
-                .map(sessionPriority)
-                .min(by: { $0.rawValue < $1.rawValue })
-            else { return project.createdAt }
-            return sessions
-                .filter { sessionPriority(for: $0) == leadingPriority }
-                .map(\.sidebarStateChangedAt)
-                .max() ?? project.createdAt
+            return projectOrderingKey(for: project).timestamp
         }
+    }
+
+    /// Computes the project tier and its recency in one pass. The old pair of
+    /// helpers each fetched and sorted the same project sessions, multiplying
+    /// work during every SwiftUI sidebar evaluation.
+    private func projectOrderingKey(
+        for project: Project
+    ) -> (priority: SidebarSessionPriority, timestamp: Date) {
+        guard order == .updated else { return (.idle, project.createdAt) }
+        var leadingPriority: SidebarSessionPriority?
+        var leadingTimestamp = project.createdAt
+        for session in list.sessions where
+            session.serverId == list.selectedServerId
+                && session.projectId == project.id
+                && !session.isArchived
+                && (session.origin == .codevisor || list.showsImportedSessions) {
+            let priority = sessionPriority(for: session)
+            guard let currentPriority = leadingPriority else {
+                leadingPriority = priority
+                leadingTimestamp = session.sidebarStateChangedAt
+                continue
+            }
+            if priority.rawValue < currentPriority.rawValue {
+                leadingPriority = priority
+                leadingTimestamp = session.sidebarStateChangedAt
+            } else if priority == currentPriority,
+                      session.sidebarStateChangedAt > leadingTimestamp {
+                leadingTimestamp = session.sidebarStateChangedAt
+            }
+        }
+        return (leadingPriority ?? .idle, leadingTimestamp)
     }
 
     private func setOrder(_ newOrder: SidebarOrder) {

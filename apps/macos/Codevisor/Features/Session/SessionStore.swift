@@ -527,7 +527,12 @@ final class SessionStore {
     }
 
     private static func isInProgress(_ controller: SessionController) -> Bool {
-        isActivelyWorking(controller) || controller.isWaitingOnBackgroundTasks
+        // A first-send optimistic row exists before the provider flips
+        // `model.isSending`. Keep it in its final visible tier from insertion
+        // onward instead of briefly adding it as idle and reordering it again.
+        controller.pendingUserMessage != nil
+            || isActivelyWorking(controller)
+            || controller.isWaitingOnBackgroundTasks
     }
 
     /// Whether the session is blocked waiting on the user — an agent question or

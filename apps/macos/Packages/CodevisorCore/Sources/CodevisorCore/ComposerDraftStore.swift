@@ -54,14 +54,14 @@ public final class ComposerDraftStore {
         }
     }
 
-    private struct PersistedAttachment: Codable {
+    private struct PersistedAttachment: Codable, Sendable {
         var id: UUID
         var name: String
         var mimeType: String
         var kind: String
     }
 
-    private struct PersistedDraft: Codable {
+    private struct PersistedDraft: Codable, Sendable {
         var projectId: UUID
         var composerText: String
         var attachments: [PersistedAttachment]
@@ -73,17 +73,18 @@ public final class ComposerDraftStore {
         var composerTextBeforeGoalEdit: String?
     }
 
-    private struct PersistedDrafts: Codable {
+    private struct PersistedDrafts: Codable, Sendable {
         var machines: [String: PersistedDraft]
     }
 
-    private struct PersistedPaneDrafts: Codable {
+    private struct PersistedPaneDrafts: Codable, Sendable {
         var panes: [String: PersistedDraft]
     }
 
     private let store: any PersistenceStore
     private let key: String
     private let paneKey: String
+    private let persistenceOwner = UUID()
     private var drafts: [String: Draft] = [:]
     /// In-workspace draft chat panes, keyed by pane id. Same schema as the
     /// per-machine draft — an unsent in-workspace composer must survive
@@ -95,6 +96,9 @@ public final class ComposerDraftStore {
         key: String = "composer-drafts",
         paneKey: String = "composer-pane-drafts"
     ) {
+        // Flush a previous instance's coalesced snapshot before replacing an
+        // environment or reopening the store in tests.
+        PersistenceEncoding.drain()
         self.store = store
         self.key = key
         self.paneKey = paneKey
@@ -167,30 +171,20 @@ public final class ComposerDraftStore {
     public func saveDraft(_ draft: Draft, forServer serverId: String) {
         let previousIds = Set(drafts[serverId]?.attachments.map(\.id) ?? [])
         let currentIds = Set(draft.attachments.map(\.id))
-        do {
-            for attachment in draft.attachments where !previousIds.contains(attachment.id) {
-                try store.saveData(attachment.localData, forKey: Self.attachmentKey(attachment.id))
-            }
-            for id in previousIds.subtracting(currentIds) {
-                try store.removeData(forKey: Self.attachmentKey(id))
-            }
-            drafts[serverId] = draft
-            try persistMetadata()
-        } catch {
-            Log.persistence.error("Failed to save composer draft: \(String(describing: error), privacy: .public)")
-        }
+        enqueueAttachmentChanges(
+            added: draft.attachments.filter { !previousIds.contains($0.id) },
+            removed: previousIds.subtracting(currentIds)
+        )
+        drafts[serverId] = draft
+        persistMetadata()
     }
 
     public func clearDraft(forServer serverId: String) {
         guard let draft = drafts.removeValue(forKey: serverId) else { return }
-        do {
-            for attachment in draft.attachments {
-                try store.removeData(forKey: Self.attachmentKey(attachment.id))
-            }
-            try persistMetadata()
-        } catch {
-            Log.persistence.error("Failed to clear composer draft: \(String(describing: error), privacy: .public)")
-        }
+        enqueueAttachmentChanges(added: [], removed: Set(draft.attachments.map(\.id)))
+        // Clearing on send supersedes any debounced keystroke snapshot. Queue
+        // the empty/newest metadata immediately, but still off the main actor.
+        persistMetadata(immediately: true)
     }
 
     // MARK: - Pane drafts
@@ -202,30 +196,18 @@ public final class ComposerDraftStore {
     public func savePaneDraft(_ draft: Draft, forPane paneId: UUID) {
         let previousIds = Set(paneDrafts[paneId]?.attachments.map(\.id) ?? [])
         let currentIds = Set(draft.attachments.map(\.id))
-        do {
-            for attachment in draft.attachments where !previousIds.contains(attachment.id) {
-                try store.saveData(attachment.localData, forKey: Self.attachmentKey(attachment.id))
-            }
-            for id in previousIds.subtracting(currentIds) {
-                try store.removeData(forKey: Self.attachmentKey(id))
-            }
-            paneDrafts[paneId] = draft
-            try persistPaneMetadata()
-        } catch {
-            Log.persistence.error("Failed to save pane composer draft: \(String(describing: error), privacy: .public)")
-        }
+        enqueueAttachmentChanges(
+            added: draft.attachments.filter { !previousIds.contains($0.id) },
+            removed: previousIds.subtracting(currentIds)
+        )
+        paneDrafts[paneId] = draft
+        persistPaneMetadata()
     }
 
     public func clearPaneDraft(forPane paneId: UUID) {
         guard let draft = paneDrafts.removeValue(forKey: paneId) else { return }
-        do {
-            for attachment in draft.attachments {
-                try store.removeData(forKey: Self.attachmentKey(attachment.id))
-            }
-            try persistPaneMetadata()
-        } catch {
-            Log.persistence.error("Failed to clear pane composer draft: \(String(describing: error), privacy: .public)")
-        }
+        enqueueAttachmentChanges(added: [], removed: Set(draft.attachments.map(\.id)))
+        persistPaneMetadata(immediately: true)
     }
 
     public func clear() {
@@ -235,17 +217,69 @@ public final class ComposerDraftStore {
         for paneId in paneIds { clearPaneDraft(forPane: paneId) }
     }
 
-    private func persistMetadata() throws {
-        let persisted = PersistedDrafts(machines: drafts.mapValues { Self.persisted(from: $0) })
-        try store.saveData(JSONEncoder().encode(persisted), forKey: key)
+    /// Synchronously drains the background persistence stage. Hot UI paths
+    /// should never call this; lifecycle stores drain the same shared stage
+    /// before termination/background suspension.
+    public func flushPendingWrites() {
+        persistMetadata(immediately: true)
+        persistPaneMetadata(immediately: true)
+        PersistenceEncoding.drain()
     }
 
-    private func persistPaneMetadata() throws {
+    private func enqueueAttachmentChanges(
+        added: [DraftAttachment],
+        removed: Set<UUID>
+    ) {
+        guard !added.isEmpty || !removed.isEmpty else { return }
+        let writes = added.map { (Self.attachmentKey($0.id), $0.localData) }
+        let removals = removed.map(Self.attachmentKey)
+        let store = store
+        PersistenceEncoding.queue.async {
+            do {
+                for (key, data) in writes { try store.saveData(data, forKey: key) }
+                for key in removals { try store.removeData(forKey: key) }
+            } catch {
+                Log.persistence.error("Failed to update composer draft attachments: \(String(describing: error), privacy: .public)")
+            }
+        }
+    }
+
+    private func persistMetadata(immediately: Bool = false) {
+        let persisted = PersistedDrafts(machines: drafts.mapValues { Self.persisted(from: $0) })
+        let store = store
+        let key = key
+        PersistenceEncoding.enqueueLatest(
+            owner: persistenceOwner,
+            key: key,
+            delay: immediately ? 0 : 0.2
+        ) {
+            do {
+                try store.saveData(PersistenceEncoding.encoder.encode(persisted), forKey: key)
+            } catch {
+                Log.persistence.error("Failed to save composer drafts: \(String(describing: error), privacy: .public)")
+            }
+        }
+    }
+
+    private func persistPaneMetadata(immediately: Bool = false) {
         var panes: [String: PersistedDraft] = [:]
         for (paneId, draft) in paneDrafts {
             panes[paneId.uuidString] = Self.persisted(from: draft)
         }
-        try store.saveData(JSONEncoder().encode(PersistedPaneDrafts(panes: panes)), forKey: paneKey)
+        let persisted = PersistedPaneDrafts(panes: panes)
+        let store = store
+        let paneKey = paneKey
+        PersistenceEncoding.enqueueLatest(
+            owner: persistenceOwner,
+            key: paneKey,
+            delay: immediately ? 0 : 0.2
+        ) {
+            do {
+                try store.saveData(PersistenceEncoding.encoder.encode(persisted), forKey: paneKey)
+            } catch {
+                Log.persistence.error("Failed to save pane composer drafts: \(String(describing: error), privacy: .public)")
+            }
+        }
     }
 
     private static func attachmentKey(_ id: UUID) -> String {

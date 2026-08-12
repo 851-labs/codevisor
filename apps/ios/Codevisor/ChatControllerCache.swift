@@ -196,7 +196,8 @@ final class ChatControllerCache {
         guard let controller = controllers[Key(serverId: session.serverId, id: session.id)] else {
             return session.sidebarState == .inProgress
         }
-        return controller.isSending
+        return controller.pendingUserMessage != nil
+            || controller.isSending
             || controller.setupPhases.contains(where: \.isRunning)
             || controller.isWaitingOnBackgroundTasks
     }

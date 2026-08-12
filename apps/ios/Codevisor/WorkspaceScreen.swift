@@ -752,15 +752,6 @@ struct WorkspaceScreen: View {
     /// the sent message rides its lift up into the history.
     private func adoptSession(for controller: SessionController) {
         guard let project = resolvedProject else { return }
-        environment.composerDefaults.rememberNewWorkspaceProject(
-            serverId: project.serverId,
-            projectId: project.id
-        )
-        environment.composerDefaults.rememberNewWorkspaceWorktreePreference(
-            serverId: project.serverId,
-            createsWorktree: controller.wantsNewWorktree
-        )
-        controller.rememberCurrentComposerConfiguration()
         let session = environment.projectList.newSession(
             in: project,
             title: Self.chatTitle(from: controller.composerText),
@@ -794,9 +785,20 @@ struct WorkspaceScreen: View {
             ),
             legacyGroups: environment.paneGroups
         )
-        controller.moveComposerDefaults(
-            to: .workspace(id: workspace.id, serverId: session.serverId)
-        )
+        environment.composerDefaults.performPersistenceBatch(flushImmediately: true) {
+            environment.composerDefaults.rememberNewWorkspaceProject(
+                serverId: project.serverId,
+                projectId: project.id
+            )
+            environment.composerDefaults.rememberNewWorkspaceWorktreePreference(
+                serverId: project.serverId,
+                createsWorktree: controller.wantsNewWorktree
+            )
+            controller.rememberCurrentComposerConfiguration()
+            controller.moveComposerDefaults(
+                to: .workspace(id: workspace.id, serverId: session.serverId)
+            )
+        }
         // Save the draft pane under the real session before Home mounts the
         // normal workspace route. Both containers resolve the same cached
         // controller and pane identity during the covered handoff.

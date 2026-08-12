@@ -488,19 +488,6 @@ struct NewChatView: View {
         controller.onFirstSend = { [weak controller] in
             guard let controller else { return }
             let project = controller.project
-            if paneDraftId == nil {
-                // The successful standalone creation is the durable boundary
-                // for the next New Chat page's project/run-location profile.
-                environment.composerDefaults.rememberNewWorkspaceProject(
-                    serverId: project.serverId,
-                    projectId: project.id
-                )
-                environment.composerDefaults.rememberNewWorkspaceWorktreePreference(
-                    serverId: project.serverId,
-                    createsWorktree: controller.wantsNewWorktree
-                )
-                controller.rememberCurrentComposerConfiguration()
-            }
             let title = Self.title(from: controller.composerText)
             let session: ChatSession
             if let preCreatedSession,
@@ -583,10 +570,34 @@ struct NewChatView: View {
                 // The workspace materializes AROUND the sent chat: rooted in
                 // the picked directory, fixed for every tab it ever hosts.
                 let workspace = store.createWorkspace(for: session, project: project)
-                controller.moveComposerDefaults(
-                    to: .workspace(id: workspace.id, serverId: session.serverId)
-                )
-                selection = .session(serverId: session.serverId, id: session.id)
+                // Persist the new-workspace choices and the concrete
+                // workspace inheritance profile as one latest-value snapshot.
+                // The encoder/SQLite work stays on the shared utility queue.
+                environment.composerDefaults.performPersistenceBatch(
+                    flushImmediately: true
+                ) {
+                    environment.composerDefaults.rememberNewWorkspaceProject(
+                        serverId: project.serverId,
+                        projectId: project.id
+                    )
+                    environment.composerDefaults.rememberNewWorkspaceWorktreePreference(
+                        serverId: project.serverId,
+                        createsWorktree: controller.wantsNewWorktree
+                    )
+                    controller.rememberCurrentComposerConfiguration()
+                    controller.moveComposerDefaults(
+                        to: .workspace(id: workspace.id, serverId: session.serverId)
+                    )
+                }
+                Task { @MainActor [weak controller] in
+                    // Give SwiftUI one commit with the new sidebar identity
+                    // before mounting the substantially heavier workspace
+                    // destination. This is one run-loop turn, not a guessed
+                    // animation delay.
+                    await Task.yield()
+                    guard controller?.serverSession?.id == session.id else { return }
+                    selection = .session(serverId: session.serverId, id: session.id)
+                }
             }
         }
         self.controller = controller

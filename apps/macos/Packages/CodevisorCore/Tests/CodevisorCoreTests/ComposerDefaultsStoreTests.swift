@@ -321,6 +321,7 @@ struct ComposerDefaultsStoreTests {
             harnessId: "claude-code",
             configValues: ["model": "opus", "effort": "high"]
         )
+        defaults.flushPendingWrites()
         let data = try #require(store.loadData(forKey: "composer-defaults"))
         let object = try JSONSerialization.jsonObject(with: data)
         let canonical = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])

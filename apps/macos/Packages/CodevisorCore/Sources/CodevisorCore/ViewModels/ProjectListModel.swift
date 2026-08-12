@@ -5,7 +5,7 @@ import Observation
 @MainActor
 @Observable
 public final class ProjectListModel {
-    private struct ScopedSessionID: Hashable, Codable {
+    private struct ScopedSessionID: Hashable, Codable, Sendable {
         let serverId: String
         let id: UUID
     }
@@ -18,6 +18,7 @@ public final class ProjectListModel {
 
     private let projectRepository: any ProjectRepository
     private let sessionRepository: any SessionRepository
+    private let markerPersistenceOwner = UUID()
     /// Present only in the live app. It records the one-time handoff from the
     /// old JSON authority to the server so legacy metadata is uploaded once,
     /// never reconciled bidirectionally on every refresh.
@@ -68,11 +69,19 @@ public final class ProjectListModel {
 
     private func persistPendingServerSessions() {
         guard let legacyMigrationStore else { return }
-        do {
-            let data = try JSONEncoder().encode(Array(pendingServerSessionIds))
-            try legacyMigrationStore.saveData(data, forKey: Self.pendingServerSessionsKey)
-        } catch {
-            Log.sync.error("Failed to persist pending session markers: \(String(describing: error), privacy: .public)")
+        let snapshot = Array(pendingServerSessionIds)
+        let storageKey = Self.pendingServerSessionsKey
+        PersistenceEncoding.enqueueLatest(
+            owner: markerPersistenceOwner,
+            key: storageKey,
+            delay: 0.05
+        ) {
+            do {
+                let data = try PersistenceEncoding.encoder.encode(snapshot)
+                try legacyMigrationStore.saveData(data, forKey: storageKey)
+            } catch {
+                Log.sync.error("Failed to persist pending session markers: \(String(describing: error), privacy: .public)")
+            }
         }
     }
 
@@ -85,11 +94,19 @@ public final class ProjectListModel {
 
     private func persistPendingArchivedSessions() {
         guard let legacyMigrationStore else { return }
-        do {
-            let data = try JSONEncoder().encode(Array(pendingArchivedSessionIds))
-            try legacyMigrationStore.saveData(data, forKey: Self.pendingArchivedSessionsKey)
-        } catch {
-            Log.sync.error("Failed to persist pending archived session markers: \(String(describing: error), privacy: .public)")
+        let snapshot = Array(pendingArchivedSessionIds)
+        let storageKey = Self.pendingArchivedSessionsKey
+        PersistenceEncoding.enqueueLatest(
+            owner: markerPersistenceOwner,
+            key: storageKey,
+            delay: 0.05
+        ) {
+            do {
+                let data = try PersistenceEncoding.encoder.encode(snapshot)
+                try legacyMigrationStore.saveData(data, forKey: storageKey)
+            } catch {
+                Log.sync.error("Failed to persist pending archived session markers: \(String(describing: error), privacy: .public)")
+            }
         }
     }
 

@@ -49,8 +49,10 @@ struct ComposerDraftStoreTests {
             forPane: paneId
         )
         let attachmentKey = "composer-draft-attachment-\(attachmentId.uuidString.lowercased())"
+        drafts.flushPendingWrites()
         #expect(store.loadData(forKey: attachmentKey) != nil)
         drafts.clearPaneDraft(forPane: paneId)
+        drafts.flushPendingWrites()
         #expect(store.loadData(forKey: attachmentKey) == nil)
         #expect(ComposerDraftStore(store: store).paneDraft(forPane: paneId) == nil)
     }
@@ -129,9 +131,11 @@ struct ComposerDraftStoreTests {
             .init(projectId: UUID(), attachments: [attachment]),
             forServer: "local"
         )
+        drafts.flushPendingWrites()
         #expect(store.loadData(forKey: "composer-draft-attachment-\(attachmentId.uuidString.lowercased())") != nil)
 
         drafts.saveDraft(.init(projectId: UUID()), forServer: "local")
+        drafts.flushPendingWrites()
         #expect(store.loadData(forKey: "composer-draft-attachment-\(attachmentId.uuidString.lowercased())") == nil)
 
         drafts.clearDraft(forServer: "local")
