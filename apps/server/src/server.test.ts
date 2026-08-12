@@ -1506,10 +1506,95 @@ describe("@codevisor/server", () => {
     })
     expect(searchedInCode.isError).not.toBe(true)
     expect(JSON.stringify(searchedInCode.content)).toContain('\\"total\\":0')
+    const codevisorSearch = await client.callTool({
+      name: "run_code",
+      arguments: { code: 'async () => await tools.search({ query: "Codevisor sessions" })' }
+    })
+    expect(codevisorSearch.isError).not.toBe(true)
+    expect(JSON.stringify(codevisorSearch.content)).toContain("codevisor.sessions.list")
+    const codevisorProjects = await client.callTool({
+      name: "run_code",
+      arguments: { code: 'async () => await tools["codevisor.projects.list"]({})' }
+    })
+    expect(codevisorProjects.isError).not.toBe(true)
+    expect(JSON.stringify(codevisorProjects.content)).toContain('\\"result\\":[]')
+    const controlledFolder = mkdtempSync(join(tmpdir(), "codevisor-mcp-control-"))
+    tempDirs.push(controlledFolder)
+    const controlled = await client.callTool({
+      name: "run_code",
+      arguments: {
+        code: `async () => {
+          const project = await tools["codevisor.projects.create"]({
+            id: "controlled-project",
+            folderPath: ${JSON.stringify(controlledFolder)},
+            name: "Controlled"
+          });
+          const workspace = await tools["codevisor.workspaces.upsert"]({
+            workspaceId: "controlled-workspace",
+            projectId: project.id,
+            name: "Controlled workspace",
+            hasCustomName: true
+          });
+          const session = await tools["codevisor.sessions.create"]({
+            id: "controlled-session",
+            projectId: project.id,
+            workspaceId: workspace.id,
+            harnessId: "codex",
+            deferAgentSession: true
+          });
+          return { projectId: project.id, workspaceId: workspace.id, sessionId: session.id };
+        }`
+      }
+    })
+    expect(controlled.isError).not.toBe(true)
+    expect(JSON.stringify(controlled.content)).toContain("controlled-session")
+    expect(await jsonRequest(server, "/v1/sessions/controlled-session")).toMatchObject({
+      status: 200,
+      body: {
+        session: {
+          projectId: "controlled-project",
+          workspaceId: "controlled-workspace"
+        }
+      }
+    })
+    const codevisorTools = await services.mcp.tools("codevisor")
+    expect(codevisorTools.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining([
+        "projects.create",
+        "workspaces.upsert",
+        "sessions.create",
+        "sessions.prompt",
+        "mcps.create",
+        "skills.create",
+        "harnesses.list",
+        "machines.cloud_status"
+      ])
+    )
     await client.close()
 
     const unauthorized = await fetch(`${server.url}/mcp/gateway`, { method: "POST" })
     expect(unauthorized.status).toBe(401)
+  })
+
+  it("authenticates Codevisor control tools against token-protected server routes", async () => {
+    const { services } = await start({
+      allowLocalhostWithoutAuth: false,
+      requireBearerToken: true
+    })
+    const gateway = await services.mcp.issueGateway("protected-session")
+    const client = new McpClient({ name: "protected-gateway-test", version: "1" })
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(gateway.url), {
+        requestInit: { headers: { Authorization: `Bearer ${gateway.bearerToken}` } }
+      }) as unknown as McpTransport
+    )
+    const result = await client.callTool({
+      name: "run_code",
+      arguments: { code: 'async () => await tools["codevisor.projects.list"]({})' }
+    })
+    expect(result.isError).not.toBe(true)
+    expect(JSON.stringify(result.content)).toContain('\\"result\\":[]')
+    await client.close()
   })
 
   it("detects MCP authorization challenges", async () => {

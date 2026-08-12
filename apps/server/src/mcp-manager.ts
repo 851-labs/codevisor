@@ -66,6 +66,7 @@ import {
   type BrowserUseProvider
 } from "./browser-use-provider.js"
 import { CodeExecutionToolError, makeCodeExecutor } from "./code-executor.js"
+import { makeCodevisorProvider } from "./codevisor-provider.js"
 import { computerUseTools, makeComputerUseProvider } from "./computer-use-provider.js"
 import type { ManagedSkillSpec } from "./skills-manager.js"
 import { requireServerResource, type ServerResourceOptions } from "./server-resources.js"
@@ -231,6 +232,11 @@ interface GatewayRuntime {
   /// Live connections keyed by MCP session id (assigned at initialize).
   readonly connections: Map<string, GatewayConnection>
   inventory: string
+}
+
+interface CatalogServer {
+  readonly id: string
+  readonly name: string
 }
 
 export interface ToolGatewayConfig {
@@ -709,9 +715,14 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
     config.makeComputerProvider ?? (() => makeComputerUseProvider(config.dataDir)),
     unavailableComputerProvider
   )
+  const codevisorProvider = makeCodevisorProvider(
+    () => gatewayBaseUrl,
+    () => run(config.db.getOrCreateConnectionToken)
+  )
   const automationProviders = new Map<string, AutomationToolProvider>([
     [browserProvider.id, browserProvider],
-    [computerProvider.id, computerProvider]
+    [computerProvider.id, computerProvider],
+    [codevisorProvider.id, codevisorProvider]
   ])
   const extensionFlowSupported = config.serverKind !== "remote"
   const browserSetupBroker = makeBrowserSetupBroker(config.db, browserProvider, {
@@ -1159,11 +1170,13 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
   }
 
   const integrationInventory = async (projectId?: string, sessionId?: string): Promise<string> => {
-    const names = (await run(config.db.resolveMcpServers(projectId, sessionId)))
-      .filter((server) => server.enabled)
-      .map((server) => server.name.trim())
-      .filter((name) => name.length > 0)
-      .sort((left, right) => left.localeCompare(right))
+    const names = [
+      "Codevisor",
+      ...(await run(config.db.resolveMcpServers(projectId, sessionId)))
+        .filter((server) => server.enabled)
+        .map((server) => server.name.trim())
+        .filter((name) => name.length > 0)
+    ].sort((left, right) => left.localeCompare(right))
     if (names.length === 0) return "Available integrations: none."
     return ["Available integrations through Codevisor:", ...names.map((name) => `- ${name}`)].join(
       "\n"
@@ -1303,7 +1316,7 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
   const allTools = async (
     projectId?: string,
     sessionId?: string
-  ): Promise<ReadonlyArray<{ server: McpServerRecord; tool: Tool }>> => {
+  ): Promise<ReadonlyArray<{ server: CatalogServer; tool: Tool }>> => {
     const enabled = (await run(config.db.resolveMcpServers(projectId, sessionId))).filter(
       (server) => server.enabled
     )
@@ -1315,12 +1328,28 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
           : { server, tools: provider.tools }
       })
     )
-    return results.flatMap((result) =>
-      result.status === "fulfilled"
-        ? result.value.tools.map((tool) => ({ server: result.value.server, tool }))
-        : []
-    )
+    return [
+      ...codevisorProvider.tools.map((tool) => ({
+        server: { id: "codevisor", name: "Codevisor" },
+        tool
+      })),
+      ...results.flatMap((result) =>
+        result.status === "fulfilled"
+          ? result.value.tools.map((tool) => ({ server: result.value.server, tool }))
+          : []
+      )
+    ]
   }
+
+  const gatewayServerAllowed = async (
+    serverId: string,
+    projectId?: string,
+    sessionId?: string
+  ): Promise<boolean> =>
+    serverId === "codevisor" ||
+    (await run(config.db.resolveMcpServers(projectId, sessionId))).some(
+      (candidate) => candidate.id === serverId && candidate.enabled
+    )
 
   const searchCatalog = async (
     projectId: string | undefined,
@@ -1372,9 +1401,7 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       throw new Error(`Invalid tool path: ${path}`)
     const serverId = path.slice(0, separator)
     const toolName = path.slice(separator + 1)
-    const allowed = (await run(config.db.resolveMcpServers(projectId, sessionId))).some(
-      (candidate) => candidate.id === serverId && candidate.enabled
-    )
+    const allowed = await gatewayServerAllowed(serverId, projectId, sessionId)
     if (!allowed) throw new Error("Tool server is disabled for this session")
     const provider = automationProviders.get(serverId)
     const definition = (provider?.tools ?? (await connectUpstream(serverId)).tools).find(
@@ -1390,7 +1417,7 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
     toolName: string,
     args: Readonly<Record<string, unknown>>
   ): Promise<CallToolResult> => {
-    if (provider.id !== "browser" && provider.id !== "computer") {
+    if (provider.id !== "browser" && provider.id !== "computer" && provider.id !== "codevisor") {
       throw new Error(`Unknown automation provider: ${provider.id}`)
     }
     const definition = provider.tools.find((candidate) => candidate.name === toolName)
@@ -1491,9 +1518,7 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
         inputSchema: { server: z.string(), tool: z.string() }
       },
       async ({ server, tool }) => {
-        const allowed = (await run(config.db.resolveMcpServers(projectId, sessionId))).some(
-          (candidate) => candidate.id === server && candidate.enabled
-        )
+        const allowed = await gatewayServerAllowed(server, projectId, sessionId)
         if (!allowed) {
           return {
             isError: true,
@@ -1521,14 +1546,12 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
         }
       },
       async ({ server, tool, arguments: args }): Promise<CallToolResult> => {
-        const installed = await record(server)
-        const allowed = (await run(config.db.resolveMcpServers(projectId, sessionId))).some(
-          (candidate) => candidate.id === server && candidate.enabled
-        )
-        if (!installed.enabled || !allowed) {
+        const installed = server === "codevisor" ? undefined : await record(server)
+        const allowed = await gatewayServerAllowed(server, projectId, sessionId)
+        if (installed?.enabled === false || !allowed) {
           return {
             isError: true,
-            content: [{ type: "text", text: `${installed.name} is disabled` }]
+            content: [{ type: "text", text: `${installed?.name ?? "Codevisor"} is disabled` }]
           }
         }
         const provider = automationProviders.get(server)
@@ -1587,12 +1610,10 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
                 }
                 const serverId = path.slice(0, separator)
                 const toolName = path.slice(separator + 1)
-                const installed = await record(serverId)
-                const allowed = (await run(config.db.resolveMcpServers(projectId, sessionId))).some(
-                  (candidate) => candidate.id === serverId && candidate.enabled
-                )
-                if (!installed.enabled || !allowed) {
-                  throw new Error(`${installed.name} is disabled for this session`)
+                const installed = serverId === "codevisor" ? undefined : await record(serverId)
+                const allowed = await gatewayServerAllowed(serverId, projectId, sessionId)
+                if (installed?.enabled === false || !allowed) {
+                  throw new Error(`${installed?.name ?? "Codevisor"} is disabled for this session`)
                 }
                 const toolArgs =
                   typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {}
@@ -1839,7 +1860,12 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       await refreshGatewayInventories()
     },
     tools: async (id) => {
-      const selected = id === undefined ? undefined : await record(id)
+      const selected: CatalogServer | undefined =
+        id === undefined
+          ? undefined
+          : id === "codevisor"
+            ? { id: "codevisor", name: "Codevisor" }
+            : await record(id)
       const pairs =
         id === undefined
           ? await allTools()

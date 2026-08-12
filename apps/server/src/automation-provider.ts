@@ -7,7 +7,7 @@ export interface AutomationProviderContext {
 }
 
 export interface AutomationToolProvider {
-  readonly id: "browser" | "computer"
+  readonly id: "browser" | "computer" | "codevisor"
   readonly tools: ReadonlyArray<Tool>
   readonly invoke: (
     context: AutomationProviderContext,
