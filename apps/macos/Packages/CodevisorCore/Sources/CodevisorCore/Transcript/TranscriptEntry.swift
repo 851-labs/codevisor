@@ -326,4 +326,25 @@ public enum ConversationItem: Identifiable, Sendable, Equatable {
         case let .assistant(message): return message.id
         }
     }
+
+    /// Whether this item has a presentation in the chat transcript.
+    ///
+    /// Canonical history may contain completed structural shells for turns
+    /// where the harness emitted no message or assistant output. Keeping those
+    /// shells in the display model creates empty virtual rows whose estimated
+    /// heights can never be replaced by a real measurement.
+    public var hasRenderableTranscriptContent: Bool {
+        switch self {
+        case let .user(message):
+            return !message.text.isEmpty || !message.attachments.isEmpty
+        case let .assistant(message):
+            let turn = message.turn
+            return turn.isGenerating
+                || !turn.entries.isEmpty
+                || !turn.attachments.isEmpty
+                || turn.hasDeferredWorkedDetails
+                || !(turn.planDocument?.isEmpty ?? true)
+                || !(turn.stopDetail?.isEmpty ?? true)
+        }
+    }
 }

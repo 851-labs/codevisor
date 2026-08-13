@@ -654,8 +654,24 @@ public actor CloudHubConnection {
         onMessage: @escaping @Sendable (Data) -> Void,
         onClosed: @escaping @Sendable (CloudChannelCloseReason?) -> Void
     ) async throws -> CloudRelayChannel {
+#if DEBUG || NAVIGATION_DIAGNOSTICS
+        let diagnosticMachine = machines.first(where: { $0.deviceId == machineDeviceId })
+        Log.cloud.notice(
+            "CLOUDRELAYDBG channel.open.begin type=\(channelType, privacy: .public) welcomed=\(self.isWelcomed) machineKnown=\(diagnosticMachine != nil) machineOnline=\(diagnosticMachine?.online ?? false)"
+        )
+#endif
         try await waitUntilReady()
+#if DEBUG || NAVIGATION_DIAGNOSTICS
+        Log.cloud.notice(
+            "CLOUDRELAYDBG channel.open.ready type=\(channelType, privacy: .public)"
+        )
+#endif
         try await waitUntilMachineOnline(machineDeviceId)
+#if DEBUG || NAVIGATION_DIAGNOSTICS
+        Log.cloud.notice(
+            "CLOUDRELAYDBG channel.open.machineReady type=\(channelType, privacy: .public)"
+        )
+#endif
         let identity = try appDeviceIdentity()
         let opened = try CloudChannelCrypto.openChannel(
             openerSecretKey: identity.secretKey,
@@ -681,6 +697,11 @@ public actor CloudHubConnection {
             onClosed: onClosed
         )
         channels[channelId] = state
+#if DEBUG || NAVIGATION_DIAGNOSTICS
+        Log.cloud.notice(
+            "CLOUDRELAYDBG channel.open type=\(channelType, privacy: .public) id=\(String(channelId.prefix(8)), privacy: .public) active=\(self.channels.count)"
+        )
+#endif
         do {
             try sendRelay(machineId: machineDeviceId, frame: .open(
                 channelId: channelId,
@@ -701,6 +722,11 @@ public actor CloudHubConnection {
         }
         let seq = state.nextOutboundSeq
         state.nextOutboundSeq += 1
+#if DEBUG || NAVIGATION_DIAGNOSTICS
+        Log.cloud.notice(
+            "CLOUDRELAYDBG channel.send id=\(String(channelId.prefix(8)), privacy: .public) seq=\(seq) bytes=\(plaintext.count)"
+        )
+#endif
         let sealed = try state.cipher.seal(
             plaintext,
             channelId: channelId,
@@ -720,6 +746,11 @@ public actor CloudHubConnection {
         guard let state = channels.removeValue(forKey: channelId) else { return }
         let seq = state.nextOutboundSeq
         state.nextOutboundSeq += 1
+#if DEBUG || NAVIGATION_DIAGNOSTICS
+        Log.cloud.notice(
+            "CLOUDRELAYDBG channel.close id=\(String(channelId.prefix(8)), privacy: .public) seq=\(seq) reason=\(reason.rawValue, privacy: .public) active=\(self.channels.count)"
+        )
+#endif
         try? sendRelay(machineId: state.machineDeviceId, frame: .close(
             channelId: channelId,
             seq: seq,
@@ -841,7 +872,25 @@ public actor CloudHubConnection {
     }
 
     private func handleRelay(_ frame: CloudRelayFrame) {
-        guard let state = channels[frame.channelId] else { return }
+        guard let state = channels[frame.channelId] else {
+#if DEBUG || NAVIGATION_DIAGNOSTICS
+            Log.cloud.notice(
+                "CLOUDRELAYDBG channel.inbound.unknown id=\(String(frame.channelId.prefix(8)), privacy: .public) seq=\(frame.seq)"
+            )
+#endif
+            return
+        }
+#if DEBUG || NAVIGATION_DIAGNOSTICS
+        let kind = switch frame {
+        case .open: "open"
+        case .data: "data"
+        case .credit: "credit"
+        case .close: "close"
+        }
+        Log.cloud.notice(
+            "CLOUDRELAYDBG channel.inbound kind=\(kind, privacy: .public) id=\(String(frame.channelId.prefix(8)), privacy: .public) seq=\(frame.seq) expected=\(state.nextInboundSeq)"
+        )
+#endif
         // Per-direction seqs are strictly monotonic from 0; a gap or repeat
         // is a protocol error and kills the channel.
         guard frame.seq == state.nextInboundSeq else {

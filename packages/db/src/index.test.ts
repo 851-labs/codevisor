@@ -2557,6 +2557,35 @@ describe("@codevisor/db", () => {
     await run(db.close)
   })
 
+  it("omits completed transcript shells without renderable content", async () => {
+    const filename = tempDatabase()
+    const db = await run(makeDatabase({ filename, serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/empty-transcript-shells" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "claude-code" }))
+
+    await run(db.appendEvent("session.output", session.id, { role: "user", text: "visible" }))
+
+    const sqlite = new Database(filename)
+    const insertShell = sqlite.prepare(
+      `insert into chat_items
+         (id, session_id, position, role, status, created_at, updated_at)
+       values (?, ?, ?, ?, ?, '2026-08-12T00:00:00.000Z', '2026-08-12T00:00:00.000Z')`
+    )
+    insertShell.run("empty-user", session.id, 1, "user", "complete")
+    insertShell.run("empty-assistant", session.id, 2, "assistant", "complete")
+    sqlite.close()
+
+    // Filtering happens before LIMIT, so ghost rows cannot consume a page or
+    // manufacture `hasMore`/bottom-space state in a virtualized client.
+    const page = await run(db.getTranscriptPage(session.id, undefined, 1))
+    expect(page.items).toMatchObject([{ role: "user", text: "visible" }])
+    expect(page.hasMore).toBe(false)
+
+    const detail = await run(db.getSessionDetail(session.id))
+    expect(detail.conversation).toMatchObject([{ role: "user", text: "visible" }])
+    await run(db.close)
+  })
+
   it("backfills complete legacy transcript rows and blocks a mismatched projection", async () => {
     const filename = tempDatabase()
     const initial = await run(makeDatabase({ filename, serverId: "local" }))
@@ -3359,6 +3388,13 @@ describe("native config safety", () => {
     insertChatItem.run("item-a", lowerA)
     insertChatItem.run("item-b-original", lowerB)
     insertChatItem.run("item-b-fork", upperB)
+    const insertChatText = sqlite.prepare(
+      `insert into chat_parts (id, item_id, position, kind, text, revision)
+       values (?, ?, 0, 'text', ?, 1)`
+    )
+    insertChatText.run("part-a", "item-a", "prompt A")
+    insertChatText.run("part-b-original", "item-b-original", "original prompt B")
+    insertChatText.run("part-b-fork", "item-b-fork", "fork prompt B")
     // Re-arm the canonicalization migration so reopening the database runs it
     // against the twin rows above.
     sqlite.prepare("delete from schema_migrations where id = 30").run()

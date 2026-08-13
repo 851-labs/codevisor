@@ -152,6 +152,24 @@ struct PaneGroupStateTests {
         #expect(state.panes.map(\.id) == [first.id, second.id, third.id])
     }
 
+    @Test("A reordered pane array and its selection survive persistence")
+    func reorderedPanePersistence() throws {
+        var state = PaneGroupState.initial(sessionId: sessionId)
+        let first = state.panes[0]
+        let second = state.addTerminalPane(sessionId: sessionId)
+        let third = state.addNewTabPane()
+        state.selectPane(id: second.id)
+
+        state.movePane(id: first.id, onto: third.id)
+        let decoded = try JSONDecoder().decode(
+            PaneGroupState.self,
+            from: JSONEncoder().encode(state)
+        )
+
+        #expect(decoded.panes.map(\.id) == [second.id, third.id, first.id])
+        #expect(decoded.selectedPaneId == second.id)
+    }
+
     @Test("Agent terminal panes are keyed, deduped, and never steal selection or open the group")
     func agentTerminalPanes() {
         var state = PaneGroupState.initial(sessionId: sessionId)

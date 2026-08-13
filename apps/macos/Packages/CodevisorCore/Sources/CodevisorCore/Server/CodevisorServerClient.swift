@@ -3757,7 +3757,17 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
     /// request waits before dispatch while startup/update downtime is known.
     private func waitForServerIfNeeded(path: String) async throws {
         guard !Self.isLifecyclePath(path), let requestGate, let machineId else { return }
+#if DEBUG || NAVIGATION_DIAGNOSTICS
+        Log.cloud.notice(
+            "CLOUDRELAYDBG request.gate.begin machine=\(machineId, privacy: .public) path=\(path, privacy: .public)"
+        )
+#endif
         try await requestGate.waitUntilReady(for: machineId)
+#if DEBUG || NAVIGATION_DIAGNOSTICS
+        Log.cloud.notice(
+            "CLOUDRELAYDBG request.gate.end machine=\(machineId, privacy: .public) path=\(path, privacy: .public)"
+        )
+#endif
     }
 
     private static func isLifecyclePath(_ path: String) -> Bool {

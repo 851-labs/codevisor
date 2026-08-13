@@ -1023,7 +1023,9 @@ public final class SessionModel {
                 limit: Self.olderTranscriptPageSize
             )
             let existing = Set(conversation.map(\.id))
-            let unique = page.conversation.filter { !existing.contains($0.id) }
+            let unique = page.conversation.filter {
+                $0.hasRenderableTranscriptContent && !existing.contains($0.id)
+            }
             settledConversation.insert(contentsOf: unique, at: 0)
             rebuildSettledIndex()
             transcriptStreamBytes = Self.transcriptByteEstimate(of: conversation)
@@ -1588,6 +1590,7 @@ public final class SessionModel {
     }
 
     private func appendSettled(_ item: ConversationItem) {
+        guard item.hasRenderableTranscriptContent else { return }
         settledIndexById[item.id] = settledConversation.count
         settledConversation.append(item)
     }
@@ -1617,6 +1620,7 @@ public final class SessionModel {
     /// trailing assistant bubble stays active so live streaming resumes into
     /// the same storage slot the transcript's active row renders.
     private func setConversation(_ items: [ConversationItem]) {
+        let items = items.filter(\.hasRenderableTranscriptContent)
         if case .assistant = items.last {
             settledConversation = Array(items.dropLast())
             activeItem = items.last

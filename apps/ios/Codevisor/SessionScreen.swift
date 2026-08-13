@@ -17,7 +17,7 @@ struct SessionTranscriptView: View {
     /// Increment whenever the iOS row-measurement environment changes. Scroll
     /// state can outlive a mounted transcript, so heights produced under an
     /// older hosting contract must not be restored as exact geometry.
-    private static let transcriptMeasurementSchemaVersion = 1
+    private static let transcriptMeasurementSchemaVersion = 3
 
     @Bindable var controller: SessionController
     /// The new-chat page shows project/run-location chips above the composer;
@@ -29,7 +29,24 @@ struct SessionTranscriptView: View {
     /// chats leave this nil and never steal keyboard focus when opened.
     var initialComposerFocusRequest: UUID? = nil
     var onInitialComposerFocusRequestFulfilled: ((UUID) -> Void)? = nil
+    /// During first-send promotion the destination beneath the sheet is laid
+    /// out ahead of time, but the sheet remains the sole owner of presentation
+    /// events and shared viewport state until the handoff commits.
+    var presentationRole: TranscriptPresentationRole = .foreground
+    var onSendAnimationCompleted: ((UserSendAnimationRequest) -> Void)? = nil
+    var onSendAnimationStarted: ((
+        UserSendAnimationRequest,
+        TranscriptSendAnimationTarget
+    ) -> Bool)? = nil
+    var onComposerWillSend: ((String, CGRect) -> Void)? = nil
+    /// A promoted New Chat keeps its UIKit editor first responder while its
+    /// real workspace route mounts underneath. Ordinary chats still dismiss
+    /// the keyboard on send.
+    var preservesComposerFocusOnSend = false
+    var composerTextEditorHandoffRole: ComposerTextEditorHandoffRole = .none
+    var composerTextEditorHandoffID: UUID? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.displayScale) private var displayScale
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.theme) private var theme
     @State private var disclosure = TranscriptDisclosureStore()
@@ -52,6 +69,11 @@ struct SessionTranscriptView: View {
     @State private var scrollCommand = TranscriptScrollCommand()
     @State private var historyLoadTask: Task<Void, Never>?
     @State private var showsInitialLoadingSpinner = false
+    @State private var ownsVisibleTranscriptLifecycle = false
+    /// Window-space bounds of the live editor. UIKit uses this as the actual
+    /// launch point for the optimistic user row instead of estimating from the
+    /// transcript's bottom inset.
+    @State private var sendAnimationSourceFrame: CGRect?
 
     var body: some View {
         chat
@@ -66,12 +88,18 @@ struct SessionTranscriptView: View {
                         return try await controller.fileData(id: fileId)
                     }
                 }
-                controller.transcriptViewDidAppear()
+                updateVisibleTranscriptLifecycle(for: presentationRole)
+            }
+            .onChange(of: presentationRole) { _, role in
+                updateVisibleTranscriptLifecycle(for: role)
             }
             .onDisappear { [controller] in
                 historyLoadTask?.cancel()
                 historyLoadTask = nil
-                controller.transcriptViewDidDisappear()
+                if ownsVisibleTranscriptLifecycle {
+                    ownsVisibleTranscriptLifecycle = false
+                    controller.transcriptViewDidDisappear()
+                }
             }
             .environment(\.attachmentImages, attachmentImages)
             .task(id: isLoadingEmptyConversation) {
@@ -87,6 +115,17 @@ struct SessionTranscriptView: View {
         controller.isLoadingInitialHistory
             && controller.settledConversation.isEmpty
             && !controller.hasActiveItem
+    }
+
+    private func updateVisibleTranscriptLifecycle(for role: TranscriptPresentationRole) {
+        let shouldOwnLifecycle = role == .foreground
+        guard shouldOwnLifecycle != ownsVisibleTranscriptLifecycle else { return }
+        ownsVisibleTranscriptLifecycle = shouldOwnLifecycle
+        if shouldOwnLifecycle {
+            controller.transcriptViewDidAppear()
+        } else {
+            controller.transcriptViewDidDisappear()
+        }
     }
 
     /// The watermark shows while the transcript has nothing to say at all — a
@@ -392,7 +431,16 @@ struct SessionTranscriptView: View {
                     showsRunPickers: showsRunPickers,
                     initialFocusRequest: initialComposerFocusRequest,
                     onInitialFocusRequestFulfilled:
-                        onInitialComposerFocusRequestFulfilled
+                        onInitialComposerFocusRequestFulfilled,
+                    preservesFocusAfterSend: preservesComposerFocusOnSend,
+                    textEditorHandoffRole: composerTextEditorHandoffRole,
+                    textEditorHandoffID: composerTextEditorHandoffID,
+                    onSendSourceFrameChange: { frame in
+                        sendAnimationSourceFrame = frame
+                    },
+                    onWillSend: { text in
+                        onComposerWillSend?(text, sendAnimationSourceFrame ?? .zero)
+                    }
                 )
             }
             .padding(.horizontal, 10)
@@ -468,9 +516,15 @@ struct SessionTranscriptView: View {
             layoutFingerprint: transcriptLayoutFingerprint,
             scrollCommand: scrollCommand,
             sendAnimationRequest: controller.userSendAnimationRequest,
+            sendAnimationSourceFrame: sendAnimationSourceFrame,
+            presentationRole: presentationRole,
             reduceMotion: reduceMotion,
             claimSendAnimation: { request in
                 controller.claimUserSendAnimation(request)
+            },
+            onSendAnimationStarted: onSendAnimationStarted,
+            onSendAnimationCompleted: { request in
+                onSendAnimationCompleted?(request)
             },
             rowContent: { row in
                 AnyView(
@@ -616,6 +670,7 @@ struct SessionTranscriptView: View {
     private var transcriptLayoutFingerprint: Int {
         var hasher = Hasher()
         hasher.combine(dynamicTypeSize)
+        hasher.combine(displayScale)
         hasher.combine(Self.transcriptMeasurementSchemaVersion)
         return hasher.finalize()
     }

@@ -1877,6 +1877,15 @@ final public class SessionController {
         let showsSetupPhases =
             (pendingNewChatAnalytics || (!hasSentFirst && onFirstSend != nil))
                 && resumeAgentSessionId == nil
+        // Clear the durable draft before mounting any first-send destination.
+        // The source UIKit editor keeps its already-rendered pixels until the
+        // transition surface covers it, while every newly mounted composer
+        // starts empty. Publishing this after `onFirstSend` let the promotion
+        // composer briefly rebuild with stale text, producing the visible
+        // empty -> sent text -> empty pop.
+        let staged = composerAttachments
+        composerText = ""
+        composerAttachments = []
         // Materialize the durable session before setup so the workspace and
         // pane keep a stable identity even if setup fails.
         if !hasSentFirst {
@@ -1888,13 +1897,6 @@ final public class SessionController {
             onFirstSend = nil
         }
         isSubmitting = false
-
-        // The session screen reuses this controller. Clear the centered
-        // composer before the transition and represent the send as an
-        // optimistic transcript row until the live model accepts it.
-        composerText = ""
-        let staged = composerAttachments
-        composerAttachments = []
 
         func restoreComposer() {
             composerText = text

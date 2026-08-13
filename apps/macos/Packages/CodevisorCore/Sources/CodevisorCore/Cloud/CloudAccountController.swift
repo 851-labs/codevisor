@@ -292,6 +292,14 @@ public final class CloudAccountController {
         guard state.isSignedIn, let token = storedToken else { return }
         do {
             machines = try await client.machines(token: token)
+#if DEBUG || NAVIGATION_DIAGNOSTICS
+            let machineSummary = machines.map { machine in
+                "\(machine.name){id=\(machine.deviceId),online=\(machine.online)}"
+            }.joined(separator: ",")
+            Log.cloud.notice(
+                "CLOUDDBG machines.refresh server=\(self.serverURL.absoluteString, privacy: .public) count=\(self.machines.count) machines=[\(machineSummary, privacy: .public)]"
+            )
+#endif
             pruneLoopbackBridges()
             lastError = nil
             onMachinesRefreshed?()

@@ -122,3 +122,6 @@
 [submodule ".repos/sentry-cocoa"]
 	path = .repos/sentry-cocoa
 	url = https://github.com/getsentry/sentry-cocoa.git
+[submodule ".repos/Portal"]
+	path = .repos/Portal
+	url = https://github.com/Aeastr/Portal.git

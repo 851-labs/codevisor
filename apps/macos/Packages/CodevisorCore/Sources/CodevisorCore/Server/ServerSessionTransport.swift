@@ -270,7 +270,12 @@ public struct ServerSessionTransport: Sendable {
     /// representation without another round-trip.
     public func historyPage(from page: ServerTranscriptPage) -> TranscriptHistoryPage {
         TranscriptHistoryPage(
-            conversation: page.items.map(Self.conversationItem(from:)),
+            // Older/cloud servers can still return completed structural item
+            // shells. Filter at the transport boundary so every caller gets a
+            // conversation made only of rows that can actually render.
+            conversation: page.items
+                .map(Self.conversationItem(from:))
+                .filter(\.hasRenderableTranscriptContent),
             nextBefore: page.nextBefore,
             hasMore: page.hasMore,
             eventCursor: page.eventCursor,
@@ -403,7 +408,7 @@ public struct ServerSessionTransport: Sendable {
             }
         }
         flushAssistant()
-        return conversation
+        return conversation.filter(\.hasRenderableTranscriptContent)
     }
 
     private static func conversationItem(from item: ServerTranscriptItem) -> ConversationItem {

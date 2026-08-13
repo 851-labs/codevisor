@@ -68,6 +68,25 @@ export class DatabaseError extends Schema.TaggedErrorClass<DatabaseError>()("Dat
   message: Schema.String
 }) {}
 
+// Turn-boundary events can legitimately leave behind completed item shells
+// when a harness emits no user payload or assistant output. They are useful to
+// the event projector, but they are not transcript rows: returning them makes
+// virtualized clients reserve estimated height for content that cannot render.
+// Keep streaming shells (the live "waiting for the agent" row) and every form
+// of semantic content supported by the transcript API.
+const renderableChatItemPredicate = `(
+  chat_items.status = 'streaming'
+  or chat_items.has_details = 1
+  or length(coalesce(chat_items.stop_reason, '')) > 0
+  or length(coalesce(chat_items.stop_detail, '')) > 0
+  or (chat_items.attachments is not null and chat_items.attachments != '[]')
+  or exists (
+    select 1 from chat_parts as renderable_part
+    where renderable_part.item_id = chat_items.id
+      and length(coalesce(renderable_part.text, '')) > 0
+  )
+)`
+
 export interface CodevisorDatabaseConfig {
   readonly filename: string
   readonly serverId: string
@@ -3817,7 +3836,9 @@ const createService = (
                    where item_id = chat_items.id and kind = 'text' order by position limit 1), '') as text,
                  chat_items.created_at, case when chat_items.status = 'streaming' then 1 else 0 end as is_generating,
                  chat_items.attachments
-               from chat_items where session_id = ? order by position asc`
+               from chat_items
+               where session_id = ? and ${renderableChatItemPredicate}
+               order by position asc`
             )
             .all(id)
             .map((row) => conversationFromRow(row as ConversationRow)),
@@ -3843,6 +3864,7 @@ const createService = (
                  where item_id = chat_items.id and kind = 'plan' order by position limit 1) as plan_document
              from chat_items
              where session_id = ? and role in ('user', 'assistant')
+               and ${renderableChatItemPredicate}
                and (? is null or position < ?)
              order by position desc limit ?`
           )

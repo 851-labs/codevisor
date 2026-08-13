@@ -134,4 +134,26 @@ struct ModelTests {
         #expect(turn.hasWorkedContent == false)
         #expect(turn.toolCalls.isEmpty)
     }
+
+    @Test("Only transcript items with a visible presentation are renderable")
+    func renderableConversationItems() {
+        #expect(!ConversationItem.user(UserMessage(text: "")).hasRenderableTranscriptContent)
+        #expect(ConversationItem.user(UserMessage(text: "hello")).hasRenderableTranscriptContent)
+
+        let empty = AssistantMessage(turn: AssistantTurn())
+        let generating = AssistantMessage(turn: AssistantTurn(isGenerating: true))
+        let answer = AssistantMessage(turn: AssistantTurn(
+            entries: [.text(id: "answer", markdown: "done")]
+        ))
+        let failure = AssistantMessage(turn: AssistantTurn(stopDetail: "provider failed"))
+        let deferred = AssistantMessage(turn: AssistantTurn(hasDeferredWorkedDetails: true))
+        let plan = AssistantMessage(turn: AssistantTurn(planDocument: "Ship it"))
+
+        #expect(!ConversationItem.assistant(empty).hasRenderableTranscriptContent)
+        #expect(ConversationItem.assistant(generating).hasRenderableTranscriptContent)
+        #expect(ConversationItem.assistant(answer).hasRenderableTranscriptContent)
+        #expect(ConversationItem.assistant(failure).hasRenderableTranscriptContent)
+        #expect(ConversationItem.assistant(deferred).hasRenderableTranscriptContent)
+        #expect(ConversationItem.assistant(plan).hasRenderableTranscriptContent)
+    }
 }

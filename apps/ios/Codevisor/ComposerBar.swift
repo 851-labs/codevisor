@@ -34,11 +34,33 @@ struct ComposerBar: View {
     /// again.
     var initialFocusRequest: UUID? = nil
     var onInitialFocusRequestFulfilled: ((UUID) -> Void)? = nil
+    /// First-send promotion transfers focus directly to the already-mounted
+    /// destination editor. Keeping this editor first responder until that
+    /// handoff prevents a keyboard dismissal/reappearance cycle.
+    var preservesFocusAfterSend = false
+    /// First-send promotion keeps one concrete UIKit editor alive while its
+    /// container moves from the native sheet into the real workspace route.
+    /// Focus state alone is not enough: dismissing a modal destroys the old
+    /// responder before SwiftUI can focus a newly-created replacement.
+    var textEditorHandoffRole: ComposerTextEditorHandoffRole = .none
+    /// Identity of this one sheet presentation. The retained draft controller
+    /// deliberately survives dismiss/reopen, so it must never identify a
+    /// concrete UIKit editor. Only the short-lived NewChatFlow may do that.
+    var textEditorHandoffID: UUID? = nil
+    /// Window-space editor bounds are the animation's real source geometry.
+    var onSendSourceFrameChange: ((CGRect) -> Void)? = nil
+    /// Captured before the controller clears its durable draft. New Chat uses
+    /// this to give the outgoing text one visual owner during sheet promotion.
+    var onWillSend: ((String) -> Void)? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var text = ""
+    /// The source New Chat editor keeps drawing the submitted glyphs until
+    /// the promotion layer has covered it. The durable controller draft is
+    /// already empty, so newly mounted destination composers remain empty.
+    @State private var retainsSubmittedTextForPromotion = false
     /// Measured height of the text itself, used for the collapsed size and as
     /// the starting point of a drag.
     @State private var measuredTextHeight: CGFloat = 0
@@ -148,7 +170,21 @@ struct ComposerBar: View {
             }
         }
         .onAppear { text = controller.composerText }
-        .onDisappear { controller.composerText = text }
+        // The UIKit editor deliberately owns keystrokes locally, but model-
+        // initiated changes (a successful send clearing the draft, or a
+        // failed send restoring it) still need to cross that boundary. On a
+        // first send this also prevents the newly mounted promotion composer
+        // from reconstructing itself with the just-sent text.
+        .onChange(of: controller.composerText) { _, newValue in
+            if retainsSubmittedTextForPromotion, newValue.isEmpty { return }
+            guard text != newValue else { return }
+            text = newValue
+        }
+        .onDisappear {
+            if !retainsSubmittedTextForPromotion {
+                controller.composerText = text
+            }
+        }
         // The editor's text lives in local state (see the type comment), so
         // backgrounding must flush it to the controller for the draft
         // persistence path — otherwise swiping the app away loses whatever
@@ -285,7 +321,17 @@ struct ComposerBar: View {
                 // scrolling is disabled inside a fixed frame.
                 ComposerTextView(
                     text: $text,
-                    isEditable: !(controller.isSubmitting || controller.isResolvingQuestion),
+                    handoffID: textEditorHandoffID,
+                    handoffRole: textEditorHandoffRole,
+                    // The controller is briefly `isSubmitting` while the
+                    // first-send destination mounts. Disabling either UIKit
+                    // editor in that interval automatically resigns the
+                    // source before focus can transfer and retracts the
+                    // keyboard. Promotion editors stay editable through the
+                    // atomic responder swap; normal composers keep the
+                    // existing submission lock.
+                    isEditable: textEditorHandoffRole != .none
+                        || !(controller.isSubmitting || controller.isResolvingQuestion),
                     focusRequest: initialFocusRequest,
                     onFocusRequestFulfilled: onInitialFocusRequestFulfilled,
                     onPasteAttachments: handlePastedAttachments,
@@ -310,6 +356,11 @@ struct ComposerBar: View {
                     }
                 )
                 .frame(height: editorHeight)
+                .onGeometryChange(for: CGRect.self) { proxy in
+                    proxy.frame(in: .global)
+                } action: { frame in
+                    onSendSourceFrameChange?(frame)
+                }
 
                 if text.isEmpty {
                     Text(placeholder)
@@ -592,11 +643,16 @@ struct ComposerBar: View {
     private var sendButton: some View {
         Button {
             let outgoing = text
-            text = ""
+            if preservesFocusAfterSend {
+                retainsSubmittedTextForPromotion = true
+            }
+            onWillSend?(outgoing)
             controller.composerText = outgoing
-            UIApplication.shared.sendAction(
-                #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil
-            )
+            if !preservesFocusAfterSend {
+                UIApplication.shared.sendAction(
+                    #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil
+                )
+            }
             setExpanded(false)
             Task { await controller.send() }
         } label: {
@@ -712,8 +768,16 @@ private struct ConfigChip: View {
 /// SwiftUI update — which runs per keystroke — resets the keyboard's
 /// autocorrect/prediction state, flickering the assistant bar above the
 /// keyboard and breaking the native text-interaction feel.
+enum ComposerTextEditorHandoffRole {
+    case none
+    case promotionSource
+    case promotionDestination
+}
+
 private struct ComposerTextView: UIViewRepresentable {
     @Binding var text: String
+    let handoffID: UUID?
+    let handoffRole: ComposerTextEditorHandoffRole
     var isEditable: Bool
     var focusRequest: UUID?
     var onFocusRequestFulfilled: ((UUID) -> Void)?
@@ -724,7 +788,76 @@ private struct ComposerTextView: UIViewRepresentable {
     var onResizePanEnded: (CGFloat, CGFloat) -> Void
     var onResizePanCancelled: () -> Void
 
-    func makeUIView(context: Context) -> HeightReportingTextView {
+    func makeUIView(context: Context) -> ComposerTextViewContainer {
+        let container = ComposerTextViewContainer()
+        installActivation(on: container, coordinator: context.coordinator)
+        container.activateIfPossible()
+        return container
+    }
+
+    func updateUIView(_ container: ComposerTextViewContainer, context: Context) {
+        installActivation(on: container, coordinator: context.coordinator)
+        container.activateIfPossible()
+    }
+
+    static func dismantleUIView(
+        _ container: ComposerTextViewContainer,
+        coordinator _: Coordinator
+    ) {
+        container.activation = nil
+        ComposerTextViewHandoffRegistry.release(container)
+    }
+
+    private func installActivation(
+        on container: ComposerTextViewContainer,
+        coordinator: Coordinator
+    ) {
+        container.activation = { [self, weak container, weak coordinator] in
+            guard let container, let coordinator else { return }
+            let view: HeightReportingTextView?
+            switch handoffRole {
+            case .none:
+                // The canonical route outlives NewChatFlow. If SwiftUI updates
+                // this representable before the coordinator's synchronous
+                // settle hook, adopt the existing editor instead of stacking
+                // a second local UITextView over it.
+                view = container.localEditor
+                    ?? ComposerTextViewHandoffRegistry.retirePromotionEditor(
+                        ownedBy: container
+                    )
+                    ?? makeEditor()
+                container.localEditor = view
+                if let view, view.superview !== container {
+                    container.addSubview(view)
+                }
+            case .promotionSource:
+                if let handoffID {
+                    view = ComposerTextViewHandoffRegistry.attachSource(
+                        id: handoffID,
+                        to: container,
+                        makeEditor: makeEditor
+                    )
+                } else {
+                    view = container.localEditor ?? makeEditor()
+                    container.localEditor = view
+                    if let view, view.superview !== container {
+                        container.addSubview(view)
+                    }
+                }
+            case .promotionDestination:
+                guard let handoffID else { return }
+                view = ComposerTextViewHandoffRegistry.attachDestination(
+                    id: handoffID,
+                    to: container
+                )
+            }
+            guard let view else { return }
+            configure(view, coordinator: coordinator)
+            container.setNeedsLayout()
+        }
+    }
+
+    private func makeEditor() -> HeightReportingTextView {
         let view = HeightReportingTextView()
         view.backgroundColor = .clear
         view.font = .preferredFont(forTextStyle: .body)
@@ -733,7 +866,6 @@ private struct ComposerTextView: UIViewRepresentable {
         view.textContainer.lineFragmentPadding = 0
         // Prompts are code-adjacent — no auto-capitalized first letters.
         view.autocapitalizationType = .none
-        view.delegate = context.coordinator
         // A plain UITextView implicitly accepts only strings. Declare the two
         // attachment representations as pasteable too, then let the paste
         // delegate consume them without inserting rich text into the prompt.
@@ -742,23 +874,24 @@ private struct ComposerTextView: UIViewRepresentable {
             UTType.fileURL.identifier,
             UTType.image.identifier
         ])
-        view.pasteDelegate = context.coordinator
         view.setContentHuggingPriority(.defaultLow, for: .horizontal)
         view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         // Height flows from the view's own layout, not from updateUIView: a
         // freshly (re)mounted composer has zero width until UIKit lays it
         // out, so measuring during the SwiftUI update reported nothing and a
         // restored draft sat at the minimum height until the next keystroke.
+        return view
+    }
+
+    private func configure(_ view: HeightReportingTextView, coordinator: Coordinator) {
+        view.delegate = coordinator
+        view.pasteDelegate = coordinator
         view.onContentHeightChange = { [binding = $contentHeight] height in
             // Defer: layout can run inside a view update.
             Task { @MainActor in
                 binding.wrappedValue = height
             }
         }
-        return view
-    }
-
-    func updateUIView(_ view: HeightReportingTextView, context: Context) {
         // Only push text the view doesn't already have (a restored draft, a
         // send clearing the field) — and never while the keyboard holds an
         // active composition, which a programmatic set would tear down.
@@ -772,7 +905,7 @@ private struct ComposerTextView: UIViewRepresentable {
             view.isEditable = isEditable
         }
         view.onFocusRequestFulfilled = onFocusRequestFulfilled
-        context.coordinator.onPasteAttachments = onPasteAttachments
+        coordinator.onPasteAttachments = onPasteAttachments
         view.requestInitialFocus(focusRequest)
         if view.isScrollEnabled != isScrollEnabled {
             view.isScrollEnabled = isScrollEnabled
@@ -840,6 +973,310 @@ private struct ComposerTextView: UIViewRepresentable {
     }
 }
 
+/// SwiftUI owns these stable containers and each promotion surface owns its
+/// own editor. Keeping the editor inside its controller hierarchy is required
+/// for UIKit to open the software keyboard from a programmatic focus request.
+final class ComposerTextViewContainer: UIView {
+    var activation: (() -> Void)?
+    var localEditor: HeightReportingTextView?
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        activateIfPossible()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        ComposerTextViewHandoffRegistry.layoutEditor(ownedBy: self)
+        subviews.forEach { $0.frame = bounds }
+    }
+
+    func activateIfPossible() {
+        activation?()
+    }
+}
+
+/// New Chat's ordinary composer owns an ordinary local UITextView. The
+/// registry remembers only weak source/destination ports until Send explicitly
+/// begins promotion; only then does one entry temporarily own the concrete
+/// first responder. This distinction is what makes dismiss/reopen safe: draft
+/// data survives in SessionController, while UIKit presentation state does not.
+@MainActor
+enum ComposerTextViewHandoffRegistry {
+    private final class Ports {
+        weak var source: ComposerTextViewContainer?
+        weak var destination: ComposerTextViewContainer?
+    }
+
+    private final class Entry {
+        let editor: HeightReportingTextView
+        weak var owner: ComposerTextViewContainer?
+        var ownerRole: ComposerTextEditorHandoffRole
+        weak var pendingDestination: ComposerTextViewContainer?
+        var parkedAlpha: CGFloat?
+        var isPortaled = false
+
+        init(
+            editor: HeightReportingTextView,
+            owner: ComposerTextViewContainer,
+            role: ComposerTextEditorHandoffRole
+        ) {
+            self.editor = editor
+            self.owner = owner
+            ownerRole = role
+        }
+    }
+
+    private static var ports: [UUID: Ports] = [:]
+    private static var entries: [UUID: Entry] = [:]
+
+    static func attachSource(
+        id: UUID,
+        to container: ComposerTextViewContainer,
+        makeEditor: () -> HeightReportingTextView
+    ) -> HeightReportingTextView? {
+        // Once Send has transferred this editor into window space, a source
+        // reconciliation must not create a replacement underneath the opaque
+        // transition surface or steal the responder back from its destination.
+        guard entries[id] == nil else { return nil }
+
+        let port = ports[id] ?? Ports()
+        port.source = container
+        ports[id] = port
+
+        let editor = container.localEditor ?? makeEditor()
+        container.localEditor = editor
+        if editor.superview !== container {
+            container.addSubview(editor)
+        }
+        editor.frame = container.bounds
+        return editor
+    }
+
+    static func attachDestination(
+        id: UUID,
+        to container: ComposerTextViewContainer
+    ) -> HeightReportingTextView? {
+        let port = ports[id] ?? Ports()
+        port.destination = container
+        ports[id] = port
+
+        guard let entry = entries[id] else { return nil }
+        if entry.ownerRole == .promotionSource {
+            entry.pendingDestination = container
+            return nil
+        }
+        entry.owner = container
+        place(entry, through: container)
+        return entry.editor
+    }
+
+    static func release(_ container: ComposerTextViewContainer) {
+        var emptyPortIDs: [UUID] = []
+        for (id, port) in ports {
+            if port.source === container { port.source = nil }
+            if port.destination === container { port.destination = nil }
+            if port.source == nil, port.destination == nil, entries[id] == nil {
+                emptyPortIDs.append(id)
+            }
+        }
+        for id in emptyPortIDs { ports.removeValue(forKey: id) }
+
+        guard let match = entries.first(where: { $0.value.owner === container }) else {
+            container.localEditor?.removeFromSuperview()
+            container.localEditor = nil
+            return
+        }
+        // Dismantling the modal's source port is the authoritative ownership
+        // boundary. The real workspace registered its destination port before
+        // dismissal, so transfer geometry/delegate ownership without ever
+        // removing the active editor from its stable UIWindow superview.
+        if let destination = match.value.pendingDestination,
+           destination.window != nil {
+            place(match.value, through: destination)
+            match.value.owner = destination
+            match.value.ownerRole = .promotionDestination
+            match.value.pendingDestination = nil
+            destination.activateIfPossible()
+            return
+        }
+        // A normal composer teardown has no successor and retires its editor.
+        match.value.editor.alpha = match.value.parkedAlpha ?? match.value.editor.alpha
+        match.value.editor.removeFromSuperview()
+        entries.removeValue(forKey: match.key)
+        ports.removeValue(forKey: match.key)
+        container.localEditor = nil
+    }
+
+    /// Explicit terminal cleanup for a native sheet that closed without
+    /// sending. Normally there is no active entry at all; this also makes a
+    /// cancelled/failed partial handoff idempotently safe.
+    static func cancel(_ id: UUID) {
+        if let entry = entries.removeValue(forKey: id) {
+            entry.editor.alpha = entry.parkedAlpha ?? entry.editor.alpha
+            entry.parkedAlpha = nil
+            entry.isPortaled = false
+            entry.editor.removeFromSuperview()
+        }
+        ports.removeValue(forKey: id)
+    }
+
+    /// Promotion state is transient; its destination view is not. Convert the
+    /// registry-owned editor into that same container's ordinary local editor
+    /// without changing object identity, focus, or responder chain.
+    static func retirePromotionEditor(
+        ownedBy container: ComposerTextViewContainer
+    ) -> HeightReportingTextView? {
+        guard let match = entries.first(where: { $0.value.owner === container }) else {
+            return nil
+        }
+        entries.removeValue(forKey: match.key)
+        ports.removeValue(forKey: match.key)
+        match.value.pendingDestination = nil
+        match.value.editor.alpha = match.value.parkedAlpha ?? match.value.editor.alpha
+        match.value.parkedAlpha = nil
+        match.value.isPortaled = false
+        return match.value.editor
+    }
+
+    /// Ends the window portal synchronously at the structural commit. Waiting
+    /// for SwiftUI's next representable update leaves a real, interactive text
+    /// view above the entire app for at least one reconciliation; a fast tab
+    /// change can then expose it over non-chat content. Reparenting the same
+    /// responder within the same UIWindow preserves identity while restoring
+    /// ordinary ancestor clipping and visibility immediately.
+    @discardableResult
+    static func settlePromotedEditor(id: UUID) -> Bool {
+        guard let entry = entries[id],
+              entry.ownerRole == .promotionDestination
+                || entry.pendingDestination?.window != nil
+        else { return false }
+
+        if entry.ownerRole == .promotionSource,
+           let destination = entry.pendingDestination {
+            entry.owner = destination
+            entry.ownerRole = .promotionDestination
+        }
+        guard let owner = entry.owner else { return false }
+
+        let editor = entry.editor
+        entries.removeValue(forKey: id)
+        ports.removeValue(forKey: id)
+        entry.pendingDestination = nil
+        editor.alpha = entry.parkedAlpha ?? editor.alpha
+        entry.parkedAlpha = nil
+        entry.isPortaled = false
+        owner.localEditor = editor
+        if editor.superview !== owner {
+            owner.addSubview(editor)
+        }
+        editor.frame = owner.bounds
+        owner.setNeedsLayout()
+        return editor.superview === owner
+    }
+
+    static func layoutEditor(ownedBy container: ComposerTextViewContainer) {
+        guard let entry = entries.values.first(where: {
+            $0.owner === container && $0.isPortaled
+        }) else { return }
+        portal(entry, through: container)
+    }
+
+    private static func place(
+        _ entry: Entry,
+        through container: ComposerTextViewContainer
+    ) {
+        if entry.isPortaled {
+            portal(entry, through: container)
+        } else {
+            contain(entry, in: container)
+        }
+    }
+
+    /// Ordinary composition stays inside the SwiftUI-owned container so every
+    /// native sheet transform, clip, and dismissal gesture applies to the
+    /// editor exactly as it does to the rest of the composer.
+    private static func contain(
+        _ entry: Entry,
+        in container: ComposerTextViewContainer
+    ) {
+        entry.isPortaled = false
+        if entry.editor.superview !== container {
+            container.addSubview(entry.editor)
+        }
+        entry.editor.frame = container.bounds
+    }
+
+    /// Promotion editors live directly in their one app window only for the
+    /// sheet-to-route morph. The settled canonical workspace changes to role
+    /// `.none`, and `retirePromotionEditor` immediately returns this exact view
+    /// to its composer container before any other pane can become visible.
+    private static func portal(_ entry: Entry, through container: ComposerTextViewContainer) {
+        guard let window = container.window else { return }
+        entry.isPortaled = true
+        if entry.editor.superview !== window {
+            window.addSubview(entry.editor)
+        } else {
+            window.bringSubviewToFront(entry.editor)
+        }
+        entry.editor.frame = container.convert(container.bounds, to: window)
+    }
+
+    /// The transition snapshot and message-flight view become the sole visual
+    /// owners of the draft while the real editor keeps the keyboard session
+    /// alive underneath them. Alpha does not alter responder ownership or the
+    /// editor's UIWindow ancestry.
+    static func beginStablePortalTransition(id: UUID) -> Bool {
+        guard entries[id] == nil,
+              let port = ports[id],
+              let owner = port.source,
+              let editor = owner.localEditor,
+              owner.window != nil
+        else { return false }
+        let entry = Entry(editor: editor, owner: owner, role: .promotionSource)
+        entry.pendingDestination = port.destination
+        entries[id] = entry
+        // Ownership changes only now. Before Send, the editor was an ordinary
+        // child of the ordinary sheet composer and could be freely destroyed.
+        owner.localEditor = nil
+        // Reparent the existing first responder within the same UIWindow at
+        // the last possible moment. Before this call it remains a normal sheet
+        // descendant; after it, its stable window ancestry survives the
+        // sheet-to-route structural swap without retracting the keyboard.
+        portal(entry, through: owner)
+        if entry.parkedAlpha == nil {
+            entry.parkedAlpha = entry.editor.alpha
+        }
+        entry.editor.alpha = 0.001
+        return entry.editor.isFirstResponder
+    }
+
+    static func promotedEditor(id: UUID) -> UIView? {
+        entries[id]?.ownerRole == .promotionDestination
+            ? entries[id]?.editor
+            : nil
+    }
+
+    /// Change only logical owner, bindings, and window-space frame. The
+    /// concrete UITextView stays in the same UIWindow and remains the same
+    /// first responder, so UIKit has no reason to end the keyboard session.
+    static func completeStablePortalHandoff(id: UUID) -> Bool {
+        guard let entry = entries[id],
+              entry.ownerRole == .promotionSource,
+              entry.pendingDestination?.window != nil,
+              let destination = entry.pendingDestination
+        else { return false }
+        entry.owner = destination
+        entry.ownerRole = .promotionDestination
+        entry.pendingDestination = nil
+        destination.activateIfPossible()
+        portal(entry, through: destination)
+        entry.editor.alpha = entry.parkedAlpha ?? 1
+        entry.parkedAlpha = nil
+        return entry.editor.isFirstResponder
+    }
+}
+
 /// A UITextView that reports its fitting content height whenever layout
 /// gives it a real width — including the first layout after being remounted
 /// with restored draft text, and any width change thereafter.
@@ -852,7 +1289,7 @@ private struct ComposerTextView: UIViewRepresentable {
 /// contract: begin only for a predominantly vertical pull, never while the
 /// text can scroll, and never for a touch sequence a text interaction
 /// already owns.
-private final class HeightReportingTextView: UITextView {
+final class HeightReportingTextView: UITextView {
     var onContentHeightChange: ((CGFloat) -> Void)?
     /// The composer's resize pan, reported in window coordinates so the
     /// view's own growth under the finger can't feed back into the

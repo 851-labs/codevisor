@@ -14,6 +14,65 @@ struct SessionModelTests {
         SessionModel.cancellationTerminalEventWaitDelay = .zero
     }
 
+    @Test("Paginated history drops empty completed item shells from older servers")
+    func paginatedHistoryDropsEmptyCompletedShells() throws {
+        let sessionId = UUID()
+        let visibleId = UUID()
+        let rawPage = try JSONDecoder().decode(
+            ServerTranscriptPage.self,
+            from: Data("""
+            {
+              "items": [
+                {
+                  "id": "\(visibleId.uuidString)",
+                  "sessionId": "\(sessionId.uuidString)",
+                  "sequence": 0,
+                  "role": "user",
+                  "text": "visible",
+                  "createdAt": "2026-08-12T00:00:00.000Z",
+                  "updatedAt": "2026-08-12T00:00:00.000Z",
+                  "isGenerating": false,
+                  "hasDetails": false,
+                  "revision": 1
+                },
+                {
+                  "id": "\(UUID().uuidString)",
+                  "sessionId": "\(sessionId.uuidString)",
+                  "sequence": 1,
+                  "role": "user",
+                  "text": "",
+                  "createdAt": "2026-08-12T00:00:01.000Z",
+                  "updatedAt": "2026-08-12T00:00:01.000Z",
+                  "isGenerating": false,
+                  "hasDetails": false,
+                  "revision": 1
+                },
+                {
+                  "id": "\(UUID().uuidString)",
+                  "sessionId": "\(sessionId.uuidString)",
+                  "sequence": 2,
+                  "role": "assistant",
+                  "text": "",
+                  "createdAt": "2026-08-12T00:00:02.000Z",
+                  "updatedAt": "2026-08-12T00:00:02.000Z",
+                  "isGenerating": false,
+                  "hasDetails": false,
+                  "revision": 1
+                }
+              ],
+              "hasMore": false,
+              "eventCursor": 3
+            }
+            """.utf8)
+        )
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        let transport = ServerSessionTransport(client: client, sessionId: sessionId)
+
+        let page = transport.historyPage(from: rawPage)
+
+        #expect(page.conversation.map(\.id) == [visibleId])
+    }
+
     @Test("A message created before model connection retains its identity")
     func precreatedMessageRetainsIdentity() async {
         let sessionId = UUID()
