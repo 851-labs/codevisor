@@ -273,6 +273,7 @@ final class TranscriptViewController: UIViewController {
         initialState: SessionScrollState?,
         followsLatest: Bool,
         hasOlderHistory: Bool,
+        isLoadingInitialHistory: Bool,
         layoutFingerprint: Int,
         scrollCommand: TranscriptScrollCommand,
         sendAnimationRequest: UserSendAnimationRequest?,
@@ -297,6 +298,7 @@ final class TranscriptViewController: UIViewController {
             initialState: initialState,
             followsLatest: followsLatest,
             hasOlderHistory: hasOlderHistory,
+            isLoadingInitialHistory: isLoadingInitialHistory,
             layoutFingerprint: layoutFingerprint,
             scrollCommand: scrollCommand,
             sendAnimationRequest: sendAnimationRequest,
@@ -363,6 +365,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     private var pendingMeasurements: [String: TranscriptRowMeasurement] = [:]
     private var measurementCommitTask: Task<Void, Never>?
     private var measurementCommitGate = TranscriptMeasurementCommitGate()
+    private var initialPresentationGate = TranscriptInitialPresentationGate()
     private var deferredRowsDuringScroll: [TranscriptVirtualRow]?
 
     private struct DisclosureViewportAnchor {
@@ -379,6 +382,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     private var initialPositionApplied = false
     private var followsLatest = true
     private var hasOlderHistory = false
+    private var isLoadingInitialHistory = false
     private var scrollCommand = TranscriptScrollCommand()
     private var receivedSendAnimationToken: UInt64?
     private var pendingSendAnimationRequest: UserSendAnimationRequest?
@@ -432,6 +436,11 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         keyboardDismissMode = .interactive
         contentInsetAdjustmentBehavior = .never
         scrollsToTop = false
+        // Keep estimated row frames out of the first visible paint. The
+        // hosted rows still mount and measure normally underneath this canvas.
+        canvasView.alpha = 0
+        canvasView.accessibilityElementsHidden = true
+        isScrollEnabled = false
     }
 
     convenience init() {
@@ -480,6 +489,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             updateMountedRows()
         }
         startPendingSendAnimationIfPossible()
+        updateInitialPresentationReadiness()
     }
 
     func configure(
@@ -487,6 +497,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         initialState: SessionScrollState?,
         followsLatest newFollowsLatest: Bool,
         hasOlderHistory newHasOlderHistory: Bool,
+        isLoadingInitialHistory newIsLoadingInitialHistory: Bool,
         layoutFingerprint newLayoutFingerprint: Int,
         scrollCommand newScrollCommand: TranscriptScrollCommand,
         sendAnimationRequest newSendAnimationRequest: UserSendAnimationRequest?,
@@ -513,6 +524,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         self.onFollowStateChange = onFollowStateChange
         self.onNearTop = onNearTop
         hasOlderHistory = newHasOlderHistory
+        isLoadingInitialHistory = newIsLoadingInitialHistory
         reduceMotion = newReduceMotion
         sendAnimationSourceFrame = newSendAnimationSourceFrame
         claimSendAnimation = newClaimSendAnimation
@@ -861,6 +873,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             lastDistanceFromBottom = currentDistanceFromBottom()
         }
         updateMountedRows(rangeOverride: initialRestoreRange)
+        updateInitialPresentationReadiness()
     }
 
     private func incrementallyUpdatedLayout(
@@ -1056,6 +1069,29 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
 
     // MARK: - Virtual row mounting
 
+    private func plannedMountedRange() -> Range<Int> {
+        let distance = currentDistanceFromBottom()
+        let visibleRange = virtualLayout.visibleRange(
+            distanceFromBottom: distance,
+            viewportHeight: viewportHeight,
+            overscanCount: 0,
+        )
+        let overscannedRange = virtualLayout.visibleRange(
+            distanceFromBottom: distance,
+            viewportHeight: viewportHeight,
+            overscanCount: Self.overscanCount,
+        )
+        let planIndices = overscannedRange.filter { index in
+            guard rows.indices.contains(index) else { return false }
+            return rows[index].id.isPlanDocument
+        }
+        return VirtualTranscriptLayout.overscanRange(
+            visibleRange: visibleRange,
+            overscannedRange: overscannedRange,
+            stoppingAt: planIndices,
+        )
+    }
+
     private func updateMountedRows(rangeOverride: Range<Int>? = nil) {
         guard initialPositionApplied || viewportHeight > 0,
               let hostingParent else { return }
@@ -1063,26 +1099,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         if let rangeOverride {
             targetRange = rangeOverride
         } else {
-            let distance = currentDistanceFromBottom()
-            let visibleRange = virtualLayout.visibleRange(
-                distanceFromBottom: distance,
-                viewportHeight: viewportHeight,
-                overscanCount: 0,
-            )
-            let overscannedRange = virtualLayout.visibleRange(
-                distanceFromBottom: distance,
-                viewportHeight: viewportHeight,
-                overscanCount: Self.overscanCount,
-            )
-            let planIndices = overscannedRange.filter { index in
-                guard rows.indices.contains(index) else { return false }
-                return rows[index].id.isPlanDocument
-            }
-            targetRange = VirtualTranscriptLayout.overscanRange(
-                visibleRange: visibleRange,
-                overscannedRange: overscannedRange,
-                stoppingAt: planIndices,
-            )
+            targetRange = plannedMountedRange()
         }
 
         let mountedIndices = mountedHosts.keys.compactMap { virtualLayout.indexByKey[$0] }
@@ -1288,7 +1305,41 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         if !committedHeights.isEmpty {
             rebuildDocumentGeometry(changedHeights: committedHeights)
         }
+        updateInitialPresentationReadiness()
         startPendingSendAnimationIfPossible()
+    }
+
+    private func updateInitialPresentationReadiness() {
+        guard !initialPresentationGate.isReady,
+              !isDetaching,
+              initialPositionApplied,
+              viewportHeight > 0 else { return }
+
+        let requiredKeys = Set(plannedMountedRange().compactMap { index in
+            virtualLayout.keys.indices.contains(index) ? virtualLayout.keys[index] : nil
+        })
+        let mountedKeys = Set(mountedHosts.keys)
+        guard requiredKeys.isSubset(of: mountedKeys) else {
+            // Resolving estimates can change which rows intersect the initial
+            // viewport. Mount that new window and wait for its measurements
+            // instead of revealing an intermediate geometry snapshot.
+            updateMountedRows()
+            return
+        }
+        let resolvedKeys = Set(requiredKeys.filter { key in
+            measurements[key] != nil && !measurements.isStale(key)
+        })
+        guard initialPresentationGate.resolve(
+            isHydrating: isLoadingInitialHistory,
+            requiredKeys: requiredKeys,
+            resolvedKeys: resolvedKeys,
+        ) else { return }
+
+        applyPositionTransaction {
+            canvasView.alpha = 1
+            canvasView.accessibilityElementsHidden = false
+        }
+        isScrollEnabled = true
     }
 
     private func accepts(_ measurement: TranscriptRowMeasurement) -> Bool {

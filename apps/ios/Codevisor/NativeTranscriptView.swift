@@ -193,6 +193,7 @@ struct NativeTranscriptView: UIViewControllerRepresentable {
     let initialState: SessionScrollState?
     let followsLatest: Bool
     let hasOlderHistory: Bool
+    let isLoadingInitialHistory: Bool
     let layoutFingerprint: Int
     let scrollCommand: TranscriptScrollCommand
     let sendAnimationRequest: UserSendAnimationRequest?
@@ -237,6 +238,7 @@ struct NativeTranscriptView: UIViewControllerRepresentable {
             initialState: initialState,
             followsLatest: followsLatest,
             hasOlderHistory: hasOlderHistory,
+            isLoadingInitialHistory: isLoadingInitialHistory,
             layoutFingerprint: layoutFingerprint,
             scrollCommand: scrollCommand,
             sendAnimationRequest: sendAnimationRequest,

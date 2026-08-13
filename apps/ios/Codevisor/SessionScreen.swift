@@ -513,6 +513,7 @@ struct SessionTranscriptView: View {
             initialState: controller.scrollState,
             followsLatest: followsLatest,
             hasOlderHistory: controller.hasOlderHistory,
+            isLoadingInitialHistory: controller.isLoadingInitialHistory,
             layoutFingerprint: transcriptLayoutFingerprint,
             scrollCommand: scrollCommand,
             sendAnimationRequest: controller.userSendAnimationRequest,
