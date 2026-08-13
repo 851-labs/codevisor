@@ -361,6 +361,8 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     private var parkedHostLRU: [String] = []
     private var rowContent: ((TranscriptVirtualRow) -> AnyView)?
     private var pendingMeasurements: [String: TranscriptRowMeasurement] = [:]
+    private var measurementCommitTask: Task<Void, Never>?
+    private var measurementCommitGate = TranscriptMeasurementCommitGate()
     private var deferredRowsDuringScroll: [TranscriptVirtualRow]?
 
     private struct DisclosureViewportAnchor {
@@ -442,6 +444,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     }
 
     deinit {
+        measurementCommitTask?.cancel()
         disclosureAnchorReleaseTask?.cancel()
     }
 
@@ -589,6 +592,8 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     func prepareForDismantle() {
         republishLastStableScrollState()
         isDetaching = true
+        measurementCommitTask?.cancel()
+        measurementCommitTask = nil
         pendingMeasurements.removeAll(keepingCapacity: false)
         deferredRowsDuringScroll = nil
         disclosureAnchorReleaseTask?.cancel()
@@ -722,6 +727,8 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         )
         guard key != activeMeasurementCacheKey else { return false }
 
+        measurementCommitTask?.cancel()
+        measurementCommitTask = nil
         pendingMeasurements.removeAll(keepingCapacity: true)
         activeMeasurementCacheKey = key
         measurementCacheLRU.removeAll { $0 == key }
@@ -972,9 +979,13 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     // MARK: - Native scrolling
 
     func scrollViewWillBeginDragging(_: UIScrollView) {
+        measurementCommitGate.draggingDidBegin()
         cancelDisclosureViewportAnchor()
         lockedRestoreDistance = nil
         isExplicitUserScroll = false
+        // Touching down interrupts UIKit's deceleration. Flush measurements
+        // retained from that momentum phase before the new drag advances.
+        commitPendingMeasurements()
     }
 
     func scrollViewShouldScrollToTop(_: UIScrollView) -> Bool {
@@ -1017,14 +1028,17 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         _: UIScrollView,
         willDecelerate decelerate: Bool,
     ) {
+        measurementCommitGate.draggingDidEnd(willDecelerate: decelerate)
         if !decelerate { finishNativeScrollInteraction() }
     }
 
     func scrollViewDidEndDecelerating(_: UIScrollView) {
+        measurementCommitGate.interactionDidEnd()
         finishNativeScrollInteraction()
     }
 
     func scrollViewDidEndScrollingAnimation(_: UIScrollView) {
+        measurementCommitGate.interactionDidEnd()
         finishNativeScrollInteraction()
     }
 
@@ -1236,14 +1250,31 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             return
         }
         pendingMeasurements[measurement.key] = measurement
-        // A mounted host must never adopt one geometry snapshot while the
-        // document keeps another. Commit every accepted measurement now,
-        // including during drag and deceleration; rebuildDocumentGeometry
-        // preserves the visible anchor in the same transaction.
-        commitPendingMeasurements()
+        // Active output needs its latest geometry without an extra frame.
+        // Ordinary mounted rows batch into one document snapshot, matching
+        // the macOS virtualizer and avoiding redundant anchor corrections.
+        guard measurementCommitGate.allowsGeometryCommit else { return }
+        if measurement.key == TranscriptVirtualRow.ID.active.layoutKey {
+            measurementCommitTask?.cancel()
+            measurementCommitTask = nil
+            commitPendingMeasurements()
+            return
+        }
+        guard measurementCommitTask == nil else { return }
+        measurementCommitTask = Task { @MainActor [weak self] in
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            self?.commitPendingMeasurements()
+        }
     }
 
     private func commitPendingMeasurements() {
+        measurementCommitTask?.cancel()
+        measurementCommitTask = nil
+        // Mounted hosts remain clipped to the currently committed ledger
+        // while UIKit owns post-lift momentum. This keeps rows non-overlapping
+        // without replacing the deceleration animation via contentOffset.
+        guard measurementCommitGate.allowsGeometryCommit else { return }
         let pending = pendingMeasurements
         pendingMeasurements.removeAll(keepingCapacity: true)
         var committedHeights: [String: CGFloat] = [:]
