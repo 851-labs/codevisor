@@ -705,8 +705,9 @@ final public class SessionController {
     }
     */
 
-    public func loadOlderHistory() async {
-        await model?.loadOlderHistory()
+    @discardableResult
+    public func loadOlderHistory() async -> Int {
+        await model?.loadOlderHistory() ?? 0
     }
 
     @discardableResult

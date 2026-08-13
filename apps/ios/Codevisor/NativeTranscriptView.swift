@@ -193,6 +193,8 @@ struct NativeTranscriptView: UIViewControllerRepresentable {
     let initialState: SessionScrollState?
     let followsLatest: Bool
     let hasOlderHistory: Bool
+    let showsOlderHistoryLoadingIndicator: Bool
+    let olderHistoryPresentationTarget: TranscriptPaginationPresentationTarget?
     let isLoadingInitialHistory: Bool
     let layoutFingerprint: Int
     let scrollCommand: TranscriptScrollCommand
@@ -212,6 +214,7 @@ struct NativeTranscriptView: UIViewControllerRepresentable {
     let onBottomStateChange: @MainActor (Bool) -> Void
     let onFollowStateChange: @MainActor (Bool) -> Void
     let onNearTop: @MainActor () -> Void
+    let onOlderHistoryPresented: @MainActor (UInt64) -> Void
 
     func makeUIViewController(context _: Context) -> TranscriptViewController {
         let controller = TranscriptViewController()
@@ -239,6 +242,8 @@ struct NativeTranscriptView: UIViewControllerRepresentable {
             initialState: initialState,
             followsLatest: followsLatest,
             hasOlderHistory: hasOlderHistory,
+            showsOlderHistoryLoadingIndicator: showsOlderHistoryLoadingIndicator,
+            olderHistoryPresentationTarget: olderHistoryPresentationTarget,
             isLoadingInitialHistory: isLoadingInitialHistory,
             layoutFingerprint: layoutFingerprint,
             scrollCommand: scrollCommand,
@@ -255,6 +260,7 @@ struct NativeTranscriptView: UIViewControllerRepresentable {
             onBottomStateChange: onBottomStateChange,
             onFollowStateChange: onFollowStateChange,
             onNearTop: onNearTop,
+            onOlderHistoryPresented: onOlderHistoryPresented,
         )
     }
 }

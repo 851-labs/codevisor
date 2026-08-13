@@ -1012,9 +1012,10 @@ public final class SessionModel {
 
     /// Prepends one bounded page of older semantic rows. Requests are
     /// deduplicated and stable ids prevent overlap if a retry races a prior load.
-    public func loadOlderHistory() async {
+    @discardableResult
+    public func loadOlderHistory() async -> Int {
         guard usesPaginatedHistory, hasOlderHistory, !isLoadingOlderHistory,
-              let cursor = olderHistoryCursor else { return }
+              let cursor = olderHistoryCursor else { return 0 }
         isLoadingOlderHistory = true
         defer { isLoadingOlderHistory = false }
         do {
@@ -1031,10 +1032,12 @@ public final class SessionModel {
             transcriptStreamBytes = Self.transcriptByteEstimate(of: conversation)
             olderHistoryCursor = page.nextBefore
             hasOlderHistory = page.hasMore
+            return unique.count
         } catch {
             if !isTaskCancellation(error) {
                 errorMessage = serverErrorMessage(error)
             }
+            return 0
         }
     }
 

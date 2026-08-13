@@ -273,6 +273,8 @@ final class TranscriptViewController: UIViewController {
         initialState: SessionScrollState?,
         followsLatest: Bool,
         hasOlderHistory: Bool,
+        showsOlderHistoryLoadingIndicator: Bool,
+        olderHistoryPresentationTarget: TranscriptPaginationPresentationTarget?,
         isLoadingInitialHistory: Bool,
         layoutFingerprint: Int,
         scrollCommand: TranscriptScrollCommand,
@@ -292,6 +294,7 @@ final class TranscriptViewController: UIViewController {
         onBottomStateChange: @escaping (Bool) -> Void,
         onFollowStateChange: @escaping (Bool) -> Void,
         onNearTop: @escaping () -> Void,
+        onOlderHistoryPresented: @escaping (UInt64) -> Void,
     ) {
         loadViewIfNeeded()
         transcriptScrollView.configure(
@@ -299,6 +302,8 @@ final class TranscriptViewController: UIViewController {
             initialState: initialState,
             followsLatest: followsLatest,
             hasOlderHistory: hasOlderHistory,
+            showsOlderHistoryLoadingIndicator: showsOlderHistoryLoadingIndicator,
+            olderHistoryPresentationTarget: olderHistoryPresentationTarget,
             isLoadingInitialHistory: isLoadingInitialHistory,
             layoutFingerprint: layoutFingerprint,
             scrollCommand: scrollCommand,
@@ -315,6 +320,7 @@ final class TranscriptViewController: UIViewController {
             onBottomStateChange: onBottomStateChange,
             onFollowStateChange: onFollowStateChange,
             onNearTop: onNearTop,
+            onOlderHistoryPresented: onOlderHistoryPresented,
         )
     }
 
@@ -347,6 +353,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     private static let maxMeasurementCacheCount = 3
     private static let maxParkedHostCount = 16
     private let canvasView = UIView()
+    private let paginationLoadingIndicator = UIActivityIndicatorView(style: .medium)
     weak var hostingParent: UIViewController?
 
     private var rows: [TranscriptVirtualRow] = []
@@ -390,6 +397,8 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     private var initialPositionApplied = false
     private var followsLatest = true
     private var hasOlderHistory = false
+    private var paginationHeaderLayout = TranscriptPaginationHeaderLayout()
+    private var olderHistoryPresentationTarget: TranscriptPaginationPresentationTarget?
     private var isLoadingInitialHistory = false
     private var scrollCommand = TranscriptScrollCommand()
     private var receivedSendAnimationToken: UInt64?
@@ -425,6 +434,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     private var onBottomStateChange: ((Bool) -> Void)?
     private var onFollowStateChange: ((Bool) -> Void)?
     private var onNearTop: (() -> Void)?
+    private var onOlderHistoryPresented: ((UInt64) -> Void)?
 
     private var isNativeScrollInteractionActive: Bool {
         isTracking || isDragging || isDecelerating || isExplicitUserScroll
@@ -436,6 +446,10 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         backgroundColor = .clear
         canvasView.backgroundColor = .clear
         addSubview(canvasView)
+        paginationLoadingIndicator.hidesWhenStopped = true
+        paginationLoadingIndicator.isAccessibilityElement = true
+        paginationLoadingIndicator.accessibilityLabel = "Loading older messages"
+        canvasView.addSubview(paginationLoadingIndicator)
         showsHorizontalScrollIndicator = false
         showsVerticalScrollIndicator = true
         indicatorStyle = .default
@@ -508,6 +522,8 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         initialState: SessionScrollState?,
         followsLatest newFollowsLatest: Bool,
         hasOlderHistory newHasOlderHistory: Bool,
+        showsOlderHistoryLoadingIndicator newShowsOlderHistoryLoadingIndicator: Bool,
+        olderHistoryPresentationTarget newOlderHistoryPresentationTarget: TranscriptPaginationPresentationTarget?,
         isLoadingInitialHistory newIsLoadingInitialHistory: Bool,
         layoutFingerprint newLayoutFingerprint: Int,
         scrollCommand newScrollCommand: TranscriptScrollCommand,
@@ -529,13 +545,23 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         onBottomStateChange: @escaping (Bool) -> Void,
         onFollowStateChange: @escaping (Bool) -> Void,
         onNearTop: @escaping () -> Void,
+        onOlderHistoryPresented: @escaping (UInt64) -> Void,
     ) {
         rowContent = newRowContent
         self.onViewportChange = onViewportChange
         self.onBottomStateChange = onBottomStateChange
         self.onFollowStateChange = onFollowStateChange
         self.onNearTop = onNearTop
+        self.onOlderHistoryPresented = onOlderHistoryPresented
         hasOlderHistory = newHasOlderHistory
+        let paginationHeaderReservationChanged = paginationHeaderLayout.reserveIfNeeded(
+            hasOlderHistory: newHasOlderHistory,
+            isPresented: newShowsOlderHistoryLoadingIndicator,
+        )
+        updatePaginationLoadingIndicator(
+            isPresented: newShowsOlderHistoryLoadingIndicator
+        )
+        olderHistoryPresentationTarget = newOlderHistoryPresentationTarget
         isLoadingInitialHistory = newIsLoadingInitialHistory
         reduceMotion = newReduceMotion
         updateBottomScrollIndicatorInsetIfNeeded(newScrollIndicatorBottomInset)
@@ -582,13 +608,21 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         }
 
         let prependedItemCount = reversePrependCount(from: rows, to: newRows)
+        let rebuiltRows: Bool
         if prependedItemCount != nil, isNativeScrollInteractionActive,
            !layoutFingerprintChanged
         {
             deferredRowsDuringScroll = newRows
+            rebuiltRows = false
         } else {
             deferredRowsDuringScroll = nil
-            applyRows(newRows, layoutFingerprintChanged: layoutFingerprintChanged)
+            rebuiltRows = applyRows(
+                newRows,
+                layoutFingerprintChanged: layoutFingerprintChanged
+            )
+        }
+        if paginationHeaderReservationChanged, !rebuiltRows {
+            rebuildDocumentGeometry()
         }
 
         if newScrollCommand != scrollCommand {
@@ -611,6 +645,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             emitViewportSnapshot()
         }
         checkForHistoryPrefetch()
+        acknowledgeOlderHistoryPresentationIfPossible()
         setNeedsLayout()
     }
 
@@ -622,6 +657,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         pendingMeasurements.removeAll(keepingCapacity: false)
         bottomJumpGate.cancel()
         deferredRowsDuringScroll = nil
+        olderHistoryPresentationTarget = nil
         disclosureAnchorReleaseTask?.cancel()
         sendAnimationCompletion = nil
         activeSendAnimationRequest = nil
@@ -643,10 +679,11 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
 
     // MARK: - Rows and geometry
 
+    @discardableResult
     private func applyRows(
         _ newRows: [TranscriptVirtualRow],
         layoutFingerprintChanged: Bool,
-    ) {
+    ) -> Bool {
         let geometryChanged = rows.count != newRows.count
             || zip(rows, newRows).contains { old, new in
                 old.id != new.id
@@ -672,11 +709,13 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             installExactSpacerMeasurements()
             refreshMountedRootViews()
             rebuildDocumentGeometry()
+            return true
         } else {
             rows = newRows
             rowByKey = Dictionary(uniqueKeysWithValues: newRows.map { ($0.layoutKey, $0) })
             evictChangedParkedHosts(previousRowsByKey: previousRowsByKey)
             refreshChangedMountedRootViews(previousRowsByKey: previousRowsByKey)
+            return false
         }
     }
 
@@ -867,10 +906,14 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
 
             let documentSize = CGSize(
                 width: max(1, bounds.width),
-                height: max(1, Self.topPadding + virtualLayout.totalHeight),
+                height: paginationHeaderLayout.documentHeight(
+                    topPadding: Self.topPadding,
+                    rowsHeight: virtualLayout.totalHeight
+                ),
             )
             contentSize = documentSize
             canvasView.frame = CGRect(origin: .zero, size: documentSize)
+            positionPaginationLoadingIndicator()
             positionMountedRows()
 
             if !initialPositionApplied {
@@ -921,7 +964,10 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
 
     private var viewportGeometry: VirtualTranscriptViewport {
         VirtualTranscriptViewport(
-            contentHeight: max(1, Self.topPadding + virtualLayout.totalHeight),
+            contentHeight: paginationHeaderLayout.documentHeight(
+                topPadding: Self.topPadding,
+                rowsHeight: virtualLayout.totalHeight
+            ),
             viewportHeight: viewportHeight,
             topInset: appliedTopContentInset,
         )
@@ -1105,6 +1151,19 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         startPendingSendAnimationIfPossible()
         emitViewportSnapshot()
         checkForHistoryPrefetch()
+        acknowledgeOlderHistoryPresentationIfPossible()
+    }
+
+    /// The model's response can arrive while UIKit is still dragging or
+    /// decelerating. In that case `configure` parks the prepend so native
+    /// momentum is uninterrupted. Acknowledge only after the matching oldest
+    /// row is part of the authoritative document geometry.
+    private func acknowledgeOlderHistoryPresentationIfPossible() {
+        guard deferredRowsDuringScroll == nil,
+              let target = olderHistoryPresentationTarget,
+              rows.first?.layoutKey == target.oldestRowKey else { return }
+        olderHistoryPresentationTarget = nil
+        onOlderHistoryPresented?(target.token)
     }
 
     // MARK: - Virtual row mounting
@@ -1278,7 +1337,10 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         let rowX = max(Self.horizontalPadding, (viewportWidth - rowWidth) / 2)
         let nextFrame = CGRect(
             x: rowX,
-            y: Self.topPadding + virtualLayout.topOffsets[index],
+            y: paginationHeaderLayout.rowOrigin(
+                topPadding: Self.topPadding,
+                rowOffset: virtualLayout.topOffsets[index]
+            ),
             width: rowWidth,
             height: virtualLayout.heights[index],
         )
@@ -1286,6 +1348,31 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             host.frame = nextFrame
         }
         host.syncContentWidth()
+    }
+
+    private func updatePaginationLoadingIndicator(isPresented: Bool) {
+        if isPresented {
+            paginationLoadingIndicator.startAnimating()
+        } else {
+            paginationLoadingIndicator.stopAnimating()
+        }
+        positionPaginationLoadingIndicator()
+    }
+
+    private func positionPaginationLoadingIndicator() {
+        guard paginationHeaderLayout.reservesSpace else {
+            paginationLoadingIndicator.frame = .zero
+            return
+        }
+        paginationLoadingIndicator.sizeToFit()
+        let size = paginationLoadingIndicator.bounds.size
+        paginationLoadingIndicator.frame = CGRect(
+            x: (max(1, bounds.width) - size.width) / 2,
+            y: Self.topPadding
+                + (paginationHeaderLayout.height - size.height) / 2,
+            width: size.width,
+            height: size.height
+        )
     }
 
     // MARK: - Measurement

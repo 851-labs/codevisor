@@ -119,6 +119,8 @@ struct NativeTranscriptView: NSViewRepresentable {
     let initialState: SessionScrollState?
     let followsLatest: Bool
     let hasOlderHistory: Bool
+    let showsOlderHistoryLoadingIndicator: Bool
+    let olderHistoryPresentationTarget: TranscriptPaginationPresentationTarget?
     let layoutFingerprint: Int
     let scrollCommand: TranscriptScrollCommand
     let sendAnimationRequest: UserSendAnimationRequest?
@@ -129,6 +131,7 @@ struct NativeTranscriptView: NSViewRepresentable {
     let onBottomStateChange: @MainActor (Bool) -> Void
     let onFollowStateChange: @MainActor (Bool) -> Void
     let onNearTop: @MainActor () -> Void
+    let onOlderHistoryPresented: @MainActor (UInt64) -> Void
     /// Called once with the underlying scroll view so the session's focus
     /// controller can park keyboard focus on the chat history when it is
     /// clicked (mirrors the composer's `onTextViewReady`).
@@ -142,6 +145,8 @@ struct NativeTranscriptView: NSViewRepresentable {
             initialState: initialState,
             followsLatest: followsLatest,
             hasOlderHistory: hasOlderHistory,
+            showsOlderHistoryLoadingIndicator: showsOlderHistoryLoadingIndicator,
+            olderHistoryPresentationTarget: olderHistoryPresentationTarget,
             layoutFingerprint: layoutFingerprint,
             scrollCommand: scrollCommand,
             sendAnimationRequest: sendAnimationRequest,
@@ -151,7 +156,8 @@ struct NativeTranscriptView: NSViewRepresentable {
             onViewportChange: onViewportChange,
             onBottomStateChange: onBottomStateChange,
             onFollowStateChange: onFollowStateChange,
-            onNearTop: onNearTop
+            onNearTop: onNearTop,
+            onOlderHistoryPresented: onOlderHistoryPresented
         )
         return view
     }
@@ -162,6 +168,8 @@ struct NativeTranscriptView: NSViewRepresentable {
             initialState: initialState,
             followsLatest: followsLatest,
             hasOlderHistory: hasOlderHistory,
+            showsOlderHistoryLoadingIndicator: showsOlderHistoryLoadingIndicator,
+            olderHistoryPresentationTarget: olderHistoryPresentationTarget,
             layoutFingerprint: layoutFingerprint,
             scrollCommand: scrollCommand,
             sendAnimationRequest: sendAnimationRequest,
@@ -171,7 +179,8 @@ struct NativeTranscriptView: NSViewRepresentable {
             onViewportChange: onViewportChange,
             onBottomStateChange: onBottomStateChange,
             onFollowStateChange: onFollowStateChange,
-            onNearTop: onNearTop
+            onNearTop: onNearTop,
+            onOlderHistoryPresented: onOlderHistoryPresented
         )
     }
 
@@ -361,6 +370,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private static let sendAnimationDuration: CFTimeInterval = 0.46
 
     private let transcriptDocumentView = FlippedTranscriptDocumentView()
+    private let paginationLoadingIndicator = NSProgressIndicator()
     private var rows: [TranscriptVirtualRow] = []
     private var rowByKey: [String: TranscriptVirtualRow] = [:]
     private var virtualLayout = VirtualTranscriptLayout(items: [], measuredHeights: [:], spacing: rowSpacing)
@@ -406,6 +416,8 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private var initialPositionApplied = false
     private var followsLatest = true
     private var hasOlderHistory = false
+    private var paginationHeaderLayout = TranscriptPaginationHeaderLayout()
+    private var olderHistoryPresentationTarget: TranscriptPaginationPresentationTarget?
     private var scrollCommand = TranscriptScrollCommand()
     private var receivedSendAnimationToken: UInt64?
     private var pendingSendAnimationRequest: UserSendAnimationRequest?
@@ -439,6 +451,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private var onBottomStateChange: ((Bool) -> Void)?
     private var onFollowStateChange: ((Bool) -> Void)?
     private var onNearTop: (() -> Void)?
+    private var onOlderHistoryPresented: ((UInt64) -> Void)?
 
     /// The chat history itself can hold keyboard focus: a click anywhere in
     /// it (routed here by TerminalFocusController's mouse monitor) blurs a
@@ -464,6 +477,12 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         automaticallyAdjustsContentInsets = false
         contentView.postsBoundsChangedNotifications = true
         documentView = transcriptDocumentView
+        paginationLoadingIndicator.style = .spinning
+        paginationLoadingIndicator.controlSize = .small
+        paginationLoadingIndicator.isIndeterminate = true
+        paginationLoadingIndicator.isDisplayedWhenStopped = false
+        paginationLoadingIndicator.setAccessibilityLabel("Loading older messages")
+        transcriptDocumentView.addSubview(paginationLoadingIndicator)
 
         boundsObserver = NotificationCenter.default.addObserver(
             forName: NSView.boundsDidChangeNotification,
@@ -581,6 +600,8 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         initialState: SessionScrollState?,
         followsLatest newFollowsLatest: Bool,
         hasOlderHistory newHasOlderHistory: Bool,
+        showsOlderHistoryLoadingIndicator newShowsOlderHistoryLoadingIndicator: Bool,
+        olderHistoryPresentationTarget newOlderHistoryPresentationTarget: TranscriptPaginationPresentationTarget?,
         layoutFingerprint newLayoutFingerprint: Int,
         scrollCommand newScrollCommand: TranscriptScrollCommand,
         sendAnimationRequest newSendAnimationRequest: UserSendAnimationRequest?,
@@ -590,14 +611,24 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         onViewportChange: @escaping (SessionScrollState) -> Void,
         onBottomStateChange: @escaping (Bool) -> Void,
         onFollowStateChange: @escaping (Bool) -> Void,
-        onNearTop: @escaping () -> Void
+        onNearTop: @escaping () -> Void,
+        onOlderHistoryPresented: @escaping (UInt64) -> Void
     ) {
         self.rowContent = newRowContent
         self.onViewportChange = onViewportChange
         self.onBottomStateChange = onBottomStateChange
         self.onFollowStateChange = onFollowStateChange
         self.onNearTop = onNearTop
+        self.onOlderHistoryPresented = onOlderHistoryPresented
         hasOlderHistory = newHasOlderHistory
+        let paginationHeaderReservationChanged = paginationHeaderLayout.reserveIfNeeded(
+            hasOlderHistory: newHasOlderHistory,
+            isPresented: newShowsOlderHistoryLoadingIndicator
+        )
+        updatePaginationLoadingIndicator(
+            isPresented: newShowsOlderHistoryLoadingIndicator
+        )
+        olderHistoryPresentationTarget = newOlderHistoryPresentationTarget
         reduceMotion = newReduceMotion
         claimSendAnimation = newClaimSendAnimation
 
@@ -666,6 +697,9 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             rows = newRows
             rowByKey = Dictionary(uniqueKeysWithValues: newRows.map { ($0.layoutKey, $0) })
             refreshChangedMountedRootViews(previousRowsByKey: previousRowsByKey)
+            if paginationHeaderReservationChanged {
+                rebuildDocumentGeometry()
+            }
         }
 
         if newScrollCommand != scrollCommand {
@@ -678,6 +712,17 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         applyPendingInitialPositionIfPossible()
         startPendingSendAnimationIfPossible()
         checkForHistoryPrefetch()
+        acknowledgeOlderHistoryPresentationIfPossible()
+    }
+
+    /// AppKit applies prepended rows synchronously, but the acknowledgement is
+    /// still explicit so the SwiftUI feedback lifetime ends at native document
+    /// commit rather than when the request happens to return.
+    private func acknowledgeOlderHistoryPresentationIfPossible() {
+        guard let target = olderHistoryPresentationTarget,
+              rows.first?.layoutKey == target.oldestRowKey else { return }
+        olderHistoryPresentationTarget = nil
+        onOlderHistoryPresented?(target.token)
     }
 
     /// Recreates the reference app's shared-element handoff without moving the
@@ -972,8 +1017,12 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                 x: 0,
                 y: 0,
                 width: width,
-                height: max(1, Self.topPadding + virtualLayout.totalHeight)
+                height: paginationHeaderLayout.documentHeight(
+                    topPadding: Self.topPadding,
+                    rowsHeight: virtualLayout.totalHeight
+                )
             )
+            positionPaginationLoadingIndicator()
             positionMountedRows()
 
             if !initialPositionApplied {
@@ -1412,13 +1461,41 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         let rowX = max(Self.horizontalPadding, (viewportWidth - rowWidth) / 2)
         let frame = CGRect(
             x: rowX,
-            y: Self.topPadding + virtualLayout.topOffsets[index],
+            y: paginationHeaderLayout.rowOrigin(
+                topPadding: Self.topPadding,
+                rowOffset: virtualLayout.topOffsets[index]
+            ),
             width: rowWidth,
             height: virtualLayout.heights[index]
         )
         if host.frame != frame {
             host.frame = frame
         }
+    }
+
+    private func updatePaginationLoadingIndicator(isPresented: Bool) {
+        if isPresented {
+            paginationLoadingIndicator.startAnimation(nil)
+        } else {
+            paginationLoadingIndicator.stopAnimation(nil)
+        }
+        positionPaginationLoadingIndicator()
+    }
+
+    private func positionPaginationLoadingIndicator() {
+        guard paginationHeaderLayout.reservesSpace else {
+            paginationLoadingIndicator.frame = .zero
+            return
+        }
+        paginationLoadingIndicator.sizeToFit()
+        let size = paginationLoadingIndicator.frame.size
+        paginationLoadingIndicator.frame = CGRect(
+            x: (max(1, contentView.bounds.width) - size.width) / 2,
+            y: Self.topPadding
+                + (paginationHeaderLayout.height - size.height) / 2,
+            width: size.width,
+            height: size.height
+        )
     }
 
     private func emitViewportSnapshot() {

@@ -29,6 +29,7 @@ struct ChatScreen: View {
     @State private var isQueueExpanded = true
     @State private var scrollCommand = TranscriptScrollCommand()
     @State private var historyLoadTask: Task<Void, Never>?
+    @State private var olderHistoryPresentation = TranscriptPaginationPresentationGate()
     @State private var composerMaskSize: CGSize = .zero
     @State private var showsInitialLoadingSpinner = false
     @Namespace private var composerGlassNamespace
@@ -39,6 +40,8 @@ struct ChatScreen: View {
             initialState: controller.scrollState,
             followsLatest: autoFollow,
             hasOlderHistory: controller.hasOlderHistory,
+            showsOlderHistoryLoadingIndicator: olderHistoryPresentation.isPresented,
+            olderHistoryPresentationTarget: olderHistoryPresentation.presentationTarget,
             layoutFingerprint: dynamicTypeSize.hashValue,
             scrollCommand: scrollCommand,
             sendAnimationRequest: controller.userSendAnimationRequest,
@@ -77,7 +80,12 @@ struct ChatScreen: View {
                 }
             },
             onNearTop: {
-                Task { @MainActor in requestOlderHistoryLoad() }
+                requestOlderHistoryLoad()
+            },
+            onOlderHistoryPresented: { token in
+                DispatchQueue.main.async {
+                    olderHistoryPresentation.didPresent(token: token)
+                }
             },
             onScrollViewReady: { scrollView in
                 focus.transcriptView = scrollView
@@ -109,6 +117,7 @@ struct ChatScreen: View {
         .onDisappear {
             historyLoadTask?.cancel()
             historyLoadTask = nil
+            olderHistoryPresentation.cancel()
             controller.transcriptViewDidDisappear()
         }
         // Every chat pane loads its own history: only the ROUTED session's
@@ -198,9 +207,23 @@ struct ChatScreen: View {
     private func requestOlderHistoryLoad() {
         guard historyLoadTask == nil, controller.hasOlderHistory,
               !controller.isLoadingOlderHistory else { return }
+        guard let token = olderHistoryPresentation.begin(
+            hasOlderHistory: controller.hasOlderHistory
+        ) else { return }
         historyLoadTask = Task { @MainActor in
             defer { historyLoadTask = nil }
-            await controller.loadOlderHistory()
+            let insertedItemCount = await controller.loadOlderHistory()
+            guard !Task.isCancelled else {
+                olderHistoryPresentation.cancel(token: token)
+                return
+            }
+            olderHistoryPresentation.requestDidFinish(
+                token: token,
+                insertedItemCount: insertedItemCount,
+                oldestRowKey: insertedItemCount > 0
+                    ? transcriptRows.first?.layoutKey
+                    : nil
+            )
         }
     }
 

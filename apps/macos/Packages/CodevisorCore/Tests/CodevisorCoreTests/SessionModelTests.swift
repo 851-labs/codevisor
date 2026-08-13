@@ -1208,12 +1208,13 @@ struct SessionModelTests {
         #expect(client.sessionEventSinceValues == [12])
         #expect(client.eventSinceValues.isEmpty)
 
-        await model.loadOlderHistory()
+        #expect(await model.loadOlderHistory() == 1)
         #expect(model.conversation.count == 2)
         #expect(model.conversation.first?.id == olderId)
         #expect(!model.hasOlderHistory)
         #expect(client.transcriptPageRequests.last?.before == "1")
         #expect(client.transcriptPageRequests.last?.limit == 16)
+        #expect(await model.loadOlderHistory() == 0)
 
         #expect(await model.loadTranscriptDetails(itemId: assistantId.uuidString))
         guard case let .assistant(message) = model.conversation.last else {

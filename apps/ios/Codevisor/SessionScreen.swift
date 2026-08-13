@@ -68,6 +68,7 @@ struct SessionTranscriptView: View {
     @State private var attachmentImages: AttachmentImageStore?
     @State private var scrollCommand = TranscriptScrollCommand()
     @State private var historyLoadTask: Task<Void, Never>?
+    @State private var olderHistoryPresentation = TranscriptPaginationPresentationGate()
     @State private var showsInitialLoadingSpinner = false
     @State private var ownsVisibleTranscriptLifecycle = false
     /// Window-space bounds of the live editor. UIKit uses this as the actual
@@ -96,6 +97,7 @@ struct SessionTranscriptView: View {
             .onDisappear { [controller] in
                 historyLoadTask?.cancel()
                 historyLoadTask = nil
+                olderHistoryPresentation.cancel()
                 if ownsVisibleTranscriptLifecycle {
                     ownsVisibleTranscriptLifecycle = false
                     controller.transcriptViewDidDisappear()
@@ -513,6 +515,9 @@ struct SessionTranscriptView: View {
             initialState: controller.scrollState,
             followsLatest: followsLatest,
             hasOlderHistory: controller.hasOlderHistory,
+            showsOlderHistoryLoadingIndicator: presentationRole == .foreground
+                && olderHistoryPresentation.isPresented,
+            olderHistoryPresentationTarget: olderHistoryPresentation.presentationTarget,
             isLoadingInitialHistory: controller.isLoadingInitialHistory,
             layoutFingerprint: transcriptLayoutFingerprint,
             scrollCommand: scrollCommand,
@@ -556,7 +561,15 @@ struct SessionTranscriptView: View {
                 }
             },
             onNearTop: {
-                Task { @MainActor in requestOlderHistoryLoad() }
+                requestOlderHistoryLoad()
+            },
+            onOlderHistoryPresented: { token in
+                // UIViewRepresentable updates are part of SwiftUI's render
+                // transaction. Publish the acknowledgement on the next turn
+                // instead of mutating view state from inside that update.
+                DispatchQueue.main.async {
+                    olderHistoryPresentation.didPresent(token: token)
+                }
             }
         )
         // Match SwiftUI.ScrollView's navigation behavior: the scroll surface
@@ -663,9 +676,23 @@ struct SessionTranscriptView: View {
     private func requestOlderHistoryLoad() {
         guard historyLoadTask == nil, controller.hasOlderHistory,
               !controller.isLoadingOlderHistory else { return }
+        guard let token = olderHistoryPresentation.begin(
+            hasOlderHistory: controller.hasOlderHistory
+        ) else { return }
         historyLoadTask = Task { @MainActor in
             defer { historyLoadTask = nil }
-            await controller.loadOlderHistory()
+            let insertedItemCount = await controller.loadOlderHistory()
+            guard !Task.isCancelled else {
+                olderHistoryPresentation.cancel(token: token)
+                return
+            }
+            olderHistoryPresentation.requestDidFinish(
+                token: token,
+                insertedItemCount: insertedItemCount,
+                oldestRowKey: insertedItemCount > 0
+                    ? transcriptRows.first?.layoutKey
+                    : nil
+            )
         }
     }
 
