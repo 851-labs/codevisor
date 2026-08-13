@@ -371,6 +371,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     private var measurementCommitTask: Task<Void, Never>?
     private var measurementCommitGate = TranscriptMeasurementCommitGate()
     private var initialPresentationGate = TranscriptInitialPresentationGate()
+    private var bottomJumpGate = TranscriptBottomJumpGate()
     private var deferredRowsDuringScroll: [TranscriptVirtualRow]?
 
     private struct DisclosureViewportAnchor {
@@ -495,6 +496,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         }
         startPendingSendAnimationIfPossible()
         updateInitialPresentationReadiness()
+        resolveBottomJumpIfPossible()
     }
 
     func configure(
@@ -612,6 +614,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         measurementCommitTask?.cancel()
         measurementCommitTask = nil
         pendingMeasurements.removeAll(keepingCapacity: false)
+        bottomJumpGate.cancel()
         deferredRowsDuringScroll = nil
         disclosureAnchorReleaseTask?.cancel()
         sendAnimationCompletion = nil
@@ -808,8 +811,13 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         let previousLayout = virtualLayout
         let previousDistance = initialPositionApplied ? currentDistanceFromBottom() : nil
         let followsStreamingLatest = followsLatest && rows.contains { $0.id == .active }
+        let pinsExplicitBottom = bottomJumpGate.isActive
         let visibleAnchorKey: String?
-        if !followsStreamingLatest, let previousDistance, !previousLayout.isEmpty {
+        if !pinsExplicitBottom,
+           !followsStreamingLatest,
+           let previousDistance,
+           !previousLayout.isEmpty
+        {
             let visibleRange = previousLayout.visibleRange(
                 distanceFromBottom: previousDistance,
                 viewportHeight: viewportHeight,
@@ -829,6 +837,8 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         }
         let distanceToPreserve: CGFloat? = if let lockedRestoreDistance {
             lockedRestoreDistance
+        } else if pinsExplicitBottom {
+            0
         } else if initialPositionApplied {
             followsStreamingLatest ? 0 : currentDistanceFromBottom()
         } else {
@@ -862,7 +872,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             } else if let anchor = disclosureViewportAnchor {
                 setViewportTop(anchor.viewportTop)
             } else if let distanceToPreserve {
-                let anchoredDistance = visibleAnchorKey.flatMap { key in
+                let anchoredDistance = pinsExplicitBottom ? nil : visibleAnchorKey.flatMap { key in
                     virtualLayout.distanceFromBottom(
                         preservingAnchor: key,
                         previousLayout: previousLayout,
@@ -988,10 +998,15 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     }
 
     private func scrollToBottom() {
+        cancelDisclosureViewportAnchor()
         lockedRestoreDistance = nil
+        measurementCommitGate.interactionDidEnd()
+        commitPendingMeasurements()
+        bottomJumpGate.begin()
         setDistanceFromBottom(0)
         updateMountedRows()
         emitViewportSnapshot()
+        resolveBottomJumpIfPossible()
     }
 
     // MARK: - Native scrolling
@@ -999,6 +1014,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     func scrollViewWillBeginDragging(_: UIScrollView) {
         measurementCommitGate.draggingDidBegin()
         cancelDisclosureViewportAnchor()
+        bottomJumpGate.cancel()
         lockedRestoreDistance = nil
         isExplicitUserScroll = false
         // Touching down interrupts UIKit's deceleration. Flush measurements
@@ -1008,6 +1024,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
 
     func scrollViewShouldScrollToTop(_: UIScrollView) -> Bool {
         cancelDisclosureViewportAnchor()
+        bottomJumpGate.cancel()
         lockedRestoreDistance = nil
         isExplicitUserScroll = true
         return false
@@ -1320,7 +1337,34 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             rebuildDocumentGeometry(changedHeights: committedHeights)
         }
         updateInitialPresentationReadiness()
+        resolveBottomJumpIfPossible()
         startPendingSendAnimationIfPossible()
+    }
+
+    /// An explicit bottom jump spans more than one layout transaction. Keep
+    /// pinning every height correction to distance zero until the complete
+    /// destination window is mounted and exact; only then return to ordinary
+    /// row anchoring.
+    private func resolveBottomJumpIfPossible() {
+        guard bottomJumpGate.isActive,
+              initialPositionApplied,
+              viewportHeight > 0 else { return }
+        let requiredKeys = Set(plannedMountedRange().compactMap { index in
+            virtualLayout.keys.indices.contains(index) ? virtualLayout.keys[index] : nil
+        })
+        let mountedKeys = Set(mountedHosts.keys)
+        guard requiredKeys.isSubset(of: mountedKeys) else {
+            updateMountedRows()
+            return
+        }
+        let resolvedKeys = Set(requiredKeys.filter { key in
+            measurements[key] != nil && !measurements.isStale(key)
+        })
+        _ = bottomJumpGate.resolve(
+            requiredKeys: requiredKeys,
+            resolvedKeys: resolvedKeys,
+            hasPendingMeasurements: !pendingMeasurements.isEmpty
+        )
     }
 
     private func updateInitialPresentationReadiness() {
@@ -1392,6 +1436,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             change()
             return
         }
+        bottomJumpGate.cancel()
         disclosureAnchorReleaseTask?.cancel()
         let anchor = DisclosureViewportAnchor(
             id: UUID(),
