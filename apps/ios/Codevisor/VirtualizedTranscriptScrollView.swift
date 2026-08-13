@@ -148,7 +148,11 @@ private final class TranscriptRowHost: UIView {
     init(parent: UIViewController) {
         super.init(frame: .zero)
         backgroundColor = .clear
-        clipsToBounds = false
+        // The virtualizer is the only owner of row geometry. Until a natural
+        // height has been committed, keep the hosted content inside the
+        // current ledger frame so an estimate can never paint over its
+        // neighbor.
+        clipsToBounds = true
 
         parent.addChild(contentController)
         let hostedView = contentController.view!
@@ -228,18 +232,9 @@ private final class TranscriptRowHost: UIView {
         let scale = TranscriptPixelGeometry.displayScale(for: contentHost)
         let height = max(1, TranscriptPixelGeometry.ceil(rawHeight, scale: scale))
 
-        // The hosting view owns its intrinsic height and is deliberately not
-        // constrained to the virtual row's previous height. During a
-        // disclosure change that lets SwiftUI reconcile directly at its new
-        // natural size instead of drawing one frame inside stale bounds. The
-        // outer wrapper still adopts the measured height immediately so its
-        // visible and hit-testing geometry agree while the document ledger
-        // moves subsequent rows in the next atomic commit.
-        if TranscriptPixelGeometry.differs(frame.height, height, scale: scale) {
-            var synchronizedFrame = frame
-            synchronizedFrame.size.height = height
-            frame = synchronizedFrame
-        }
+        // Do not resize this wrapper independently. The callback commits the
+        // height, following offsets, document size, and every mounted frame in
+        // one non-animated virtual-layout transaction before UIKit paints.
         isPresentationReady = true
         onMeasuredHeight?(.init(
             key: row.layoutKey,
@@ -366,8 +361,6 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     private var parkedHostLRU: [String] = []
     private var rowContent: ((TranscriptVirtualRow) -> AnyView)?
     private var pendingMeasurements: [String: TranscriptRowMeasurement] = [:]
-    private var measurementCommitTask: Task<Void, Never>?
-    private var measurementCommitGate = TranscriptMeasurementCommitGate()
     private var deferredRowsDuringScroll: [TranscriptVirtualRow]?
 
     private struct DisclosureViewportAnchor {
@@ -420,7 +413,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     private var onNearTop: (() -> Void)?
 
     private var isNativeScrollInteractionActive: Bool {
-        !measurementCommitGate.allowsGeometryCommit || isExplicitUserScroll
+        isTracking || isDragging || isDecelerating || isExplicitUserScroll
     }
 
     override init(frame: CGRect) {
@@ -449,7 +442,6 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     }
 
     deinit {
-        measurementCommitTask?.cancel()
         disclosureAnchorReleaseTask?.cancel()
     }
 
@@ -597,8 +589,6 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     func prepareForDismantle() {
         republishLastStableScrollState()
         isDetaching = true
-        measurementCommitTask?.cancel()
-        measurementCommitTask = nil
         pendingMeasurements.removeAll(keepingCapacity: false)
         deferredRowsDuringScroll = nil
         disclosureAnchorReleaseTask?.cancel()
@@ -732,8 +722,6 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         )
         guard key != activeMeasurementCacheKey else { return false }
 
-        measurementCommitTask?.cancel()
-        measurementCommitTask = nil
         pendingMeasurements.removeAll(keepingCapacity: true)
         activeMeasurementCacheKey = key
         measurementCacheLRU.removeAll { $0 == key }
@@ -984,12 +972,9 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     // MARK: - Native scrolling
 
     func scrollViewWillBeginDragging(_: UIScrollView) {
-        measurementCommitGate.draggingDidBegin()
         cancelDisclosureViewportAnchor()
         lockedRestoreDistance = nil
         isExplicitUserScroll = false
-        measurementCommitTask?.cancel()
-        measurementCommitTask = nil
     }
 
     func scrollViewShouldScrollToTop(_: UIScrollView) -> Bool {
@@ -1032,12 +1017,10 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         _: UIScrollView,
         willDecelerate decelerate: Bool,
     ) {
-        measurementCommitGate.draggingDidEnd(willDecelerate: decelerate)
         if !decelerate { finishNativeScrollInteraction() }
     }
 
     func scrollViewDidEndDecelerating(_: UIScrollView) {
-        measurementCommitGate.interactionDidEnd()
         finishNativeScrollInteraction()
     }
 
@@ -1046,7 +1029,6 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     }
 
     private func finishNativeScrollInteraction() {
-        measurementCommitGate.interactionDidEnd()
         if let deferredRowsDuringScroll {
             self.deferredRowsDuringScroll = nil
             applyRows(deferredRowsDuringScroll, layoutFingerprintChanged: false)
@@ -1254,25 +1236,14 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             return
         }
         pendingMeasurements[measurement.key] = measurement
-        if isNativeScrollInteractionActive { return }
-
-        if measurement.key == TranscriptVirtualRow.ID.active.layoutKey {
-            measurementCommitTask?.cancel()
-            measurementCommitTask = nil
-            commitPendingMeasurements()
-            return
-        }
-        guard measurementCommitTask == nil else { return }
-        measurementCommitTask = Task { @MainActor [weak self] in
-            await Task.yield()
-            guard !Task.isCancelled else { return }
-            self?.commitPendingMeasurements()
-        }
+        // A mounted host must never adopt one geometry snapshot while the
+        // document keeps another. Commit every accepted measurement now,
+        // including during drag and deceleration; rebuildDocumentGeometry
+        // preserves the visible anchor in the same transaction.
+        commitPendingMeasurements()
     }
 
     private func commitPendingMeasurements() {
-        measurementCommitTask = nil
-        guard !isNativeScrollInteractionActive else { return }
         let pending = pendingMeasurements
         pendingMeasurements.removeAll(keepingCapacity: true)
         var committedHeights: [String: CGFloat] = [:]

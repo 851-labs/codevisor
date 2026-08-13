@@ -117,6 +117,42 @@ struct VirtualTranscriptLayoutTests {
         #expect(restoredTop == 490)
     }
 
+    @Test func incrementalMeasurementProducesOneNonOverlappingGeometrySnapshot() throws {
+        let initial = VirtualTranscriptLayout(items: items, measuredHeights: [:], spacing: 10)
+        let measured = try #require(initial.updatingHeight(forKey: "b", to: 460))
+
+        #expect(measured.heights == [100, 460, 300, 400])
+        #expect(measured.topOffsets == [0, 110, 580, 890])
+        #expect(measured.totalHeight == 1_290)
+
+        for index in 0..<(measured.keys.count - 1) {
+            #expect(
+                measured.topOffsets[index] + measured.heights[index] + 10
+                    == measured.topOffsets[index + 1]
+            )
+        }
+
+        let viewportHeight: CGFloat = 250
+        let previousDistanceFromBottom: CGFloat = 120
+        let nextDistanceFromBottom = try #require(measured.distanceFromBottom(
+            preservingAnchor: "c",
+            previousLayout: initial,
+            previousDistanceFromBottom: previousDistanceFromBottom
+        ))
+        let previousAnchorY = initial.topOffsets[2]
+            - initial.viewportTop(
+                distanceFromBottom: previousDistanceFromBottom,
+                viewportHeight: viewportHeight
+            )
+        let nextAnchorY = measured.topOffsets[2]
+            - measured.viewportTop(
+                distanceFromBottom: nextDistanceFromBottom,
+                viewportHeight: viewportHeight
+            )
+
+        #expect(nextAnchorY == previousAnchorY)
+    }
+
     @Test func uncachedOpeningStaysAtBottomAcrossHydrationAndMeasurement() {
         let placeholder = VirtualTranscriptLayout(
             items: [.init(key: "bottom-spacer", estimatedHeight: 120)],
