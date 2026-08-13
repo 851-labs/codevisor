@@ -180,6 +180,31 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
         return start..<overscannedEnd
     }
 
+    /// Rows intersecting a viewport plus a geometry-based runway on either
+    /// side. Unlike row-count overscan, this guarantees roughly the same
+    /// amount of prepared scrolling across transcripts whose turns vary from
+    /// one line to several screens tall.
+    public func visibleRange(
+        distanceFromBottom: CGFloat,
+        viewportHeight: CGFloat,
+        runwayBefore: CGFloat,
+        runwayAfter: CGFloat
+    ) -> Range<Int> {
+        guard !keys.isEmpty else { return 0..<0 }
+        let viewportTop = viewportTop(
+            distanceFromBottom: distanceFromBottom,
+            viewportHeight: viewportHeight
+        )
+        let preparedTop = max(0, viewportTop - max(0, runwayBefore))
+        let preparedBottom = min(
+            totalHeight,
+            viewportTop + max(0, viewportHeight) + max(0, runwayAfter)
+        )
+        let first = firstIndexWhoseBottomExceeds(preparedTop)
+        let end = firstIndexWhoseTopReaches(preparedBottom)
+        return first..<min(keys.count, max(first + 1, end))
+    }
+
     /// Stops row-count overscan at a heavy-content boundary. The boundary is
     /// still preloaded while approaching it, but overscan never reaches
     /// through to content on its far side. If a boundary is already visible,

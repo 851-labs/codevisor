@@ -848,7 +848,11 @@ public final class MachineController {
                     // server's lifetime global log on every app launch.
                     for try await event in client.shellEventStream(handledKinds: Self.shellSyncEventKinds) {
                         guard let self, !Task.isCancelled else { return }
-                        self.handleSyncEvent(event, serverId: serverId)
+                        await self.handleSyncEvent(
+                            event,
+                            serverId: serverId,
+                            client: client
+                        )
                     }
                     return
                 } catch {
@@ -870,27 +874,52 @@ public final class MachineController {
         pendingRefreshTask = nil
     }
 
-    private func handleSyncEvent(_ event: ServerEventEnvelope, serverId: String) {
+    private func handleSyncEvent(
+        _ event: ServerEventEnvelope,
+        serverId: String,
+        client: any CodevisorServerClienting
+    ) async {
         guard serverId == selectedMachine.id else { return }
         switch event.kind {
         case "project.deleted":
             if let id = UUID(uuidString: event.subjectId) {
                 projectList.removeProjectLocally(id: id, serverId: serverId)
             }
-            scheduleNavigationRefresh()
         case "session.deleted":
             if let id = UUID(uuidString: event.subjectId) {
-                projectList.removeSessionLocally(id: id, serverId: serverId)
+                let membershipChanged = projectList.removeSessionLocally(
+                    id: id,
+                    serverId: serverId
+                )
+                if membershipChanged {
+                    await workspaceSync?.refreshFromServer(
+                        serverId: serverId,
+                        client: client
+                    )
+                }
             }
-            scheduleNavigationRefresh()
         case "workspace.deleted":
             if let id = UUID(uuidString: event.subjectId) {
                 workspaceSync?.removeWorkspace(id: id, serverId: serverId)
             }
-            scheduleNavigationRefresh()
-        case "project.created", "project.updated", "worktree.created",
-             "session.created", "session.updated", "session.attention.updated",
-             "session.archived", "session.unarchived", "workspace.updated":
+        case "session.created", "session.updated", "session.attention.updated",
+             "session.archived", "session.unarchived":
+            switch await projectList.applyServerSessionEvent(event, serverId: serverId) {
+            case let .applied(workspaceMembershipChanged):
+                if workspaceMembershipChanged {
+                    await workspaceSync?.refreshFromServer(
+                        serverId: serverId,
+                        client: client
+                    )
+                }
+            case .requiresFullRefresh:
+                // Older servers may emit only an event marker. Retain a
+                // compatibility path, but keep it off the ordinary hot path.
+                scheduleNavigationRefresh()
+            }
+        case "workspace.updated":
+            await workspaceSync?.refreshFromServer(serverId: serverId, client: client)
+        case "project.created", "project.updated", "worktree.created":
             scheduleNavigationRefresh()
         case "harness.lifecycle.updated":
             // Update detection / install progress changed a harness — bump

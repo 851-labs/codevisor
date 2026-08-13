@@ -2471,6 +2471,16 @@ public struct ServerEventEnvelope: Decodable, Equatable, Sendable {
     public var payload: JSONValue
 }
 
+extension ServerEventEnvelope {
+    /// Navigation events carry the authoritative session summary as their
+    /// payload. Decode that summary directly so a one-session change does not
+    /// require refetching and rebuilding the entire navigation snapshot.
+    func sessionRecord() throws -> ServerSession {
+        let data = try JSONEncoder().encode(payload)
+        return try JSONDecoder().decode(ServerSession.self, from: data)
+    }
+}
+
 public final class CodevisorServerClient: CodevisorServerClienting, @unchecked Sendable {
     /// Foundation defaults WebSocket messages to 1 MiB. Tool results can
     /// legitimately exceed that (for example a broad repository search), so
@@ -3810,27 +3820,45 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
     }
 }
 
-private enum ServerDateCoding {
+enum ServerDateCoding {
+    /// `ISO8601DateFormatter` performs expensive ICU initialization. Server
+    /// snapshots can contain thousands of timestamp fields, so constructing a
+    /// formatter for every field both wastes work and can freeze the main
+    /// actor. Keep one immutable pair behind a lock: mapping now runs off the
+    /// main actor and overlapping refreshes may parse concurrently.
+    private final class Formatters: @unchecked Sendable {
+        private let lock = NSLock()
+        private let fractional: ISO8601DateFormatter = {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            return formatter
+        }()
+        private let wholeSeconds: ISO8601DateFormatter = {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime]
+            return formatter
+        }()
+
+        func string(from date: Date) -> String {
+            lock.withLock { fractional.string(from: date) }
+        }
+
+        func date(from string: String) -> Date? {
+            lock.withLock {
+                fractional.date(from: string) ?? wholeSeconds.date(from: string)
+            }
+        }
+    }
+
+    private static let formatters = Formatters()
+
     static func string(from date: Date) -> String {
-        formatter(includeFractionalSeconds: true).string(from: date)
+        formatters.string(from: date)
     }
 
     static func date(from string: String) throws -> Date {
-        if let date = formatter(includeFractionalSeconds: true).date(from: string) {
-            return date
-        }
-        if let date = formatter(includeFractionalSeconds: false).date(from: string) {
-            return date
-        }
+        if let date = formatters.date(from: string) { return date }
         throw CodevisorServerClientError.invalidDate(string)
-    }
-
-    private static func formatter(includeFractionalSeconds: Bool) -> ISO8601DateFormatter {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = includeFractionalSeconds
-            ? [.withInternetDateTime, .withFractionalSeconds]
-            : [.withInternetDateTime]
-        return formatter
     }
 }
 

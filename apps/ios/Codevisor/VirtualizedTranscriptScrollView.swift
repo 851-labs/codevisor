@@ -336,6 +336,11 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     private static let horizontalPadding: CGFloat = 16
     private static let maxRowWidth: CGFloat = 832
     private static let overscanCount = 3
+    /// Initial presentation waits for exact geometry across this much content
+    /// on both sides of the viewport. The already-mounted runway makes the
+    /// first fast swipe consume prepared TextKit/SwiftUI rows rather than
+    /// synchronously constructing them under the user's finger.
+    private static let initialRunwayViewportCount: CGFloat = 1.5
     private static let atBottomThreshold: CGFloat = 2
     private static let maxMeasurementCacheCount = 3
     private static let maxParkedHostCount = 16
@@ -1071,6 +1076,15 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
 
     private func plannedMountedRange() -> Range<Int> {
         let distance = currentDistanceFromBottom()
+        if !initialPresentationGate.isReady {
+            let runway = viewportHeight * Self.initialRunwayViewportCount
+            return virtualLayout.visibleRange(
+                distanceFromBottom: distance,
+                viewportHeight: viewportHeight,
+                runwayBefore: runway,
+                runwayAfter: runway,
+            )
+        }
         let visibleRange = virtualLayout.visibleRange(
             distanceFromBottom: distance,
             viewportHeight: viewportHeight,

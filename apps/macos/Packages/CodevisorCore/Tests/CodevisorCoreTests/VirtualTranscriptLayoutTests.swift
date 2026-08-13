@@ -36,6 +36,43 @@ struct VirtualTranscriptLayoutTests {
         ) == 0..<4)
     }
 
+    @Test func geometryRunwayPreparesConsistentScrollDistance() {
+        let rows = (0..<20).map {
+            VirtualTranscriptLayout.Item(key: "message:\($0)", estimatedHeight: 100)
+        }
+        let layout = VirtualTranscriptLayout(items: rows, measuredHeights: [:], spacing: 0)
+        let viewportHeight: CGFloat = 400
+        let distance = layout.distanceFromBottom(
+            viewportTop: 800,
+            viewportHeight: viewportHeight
+        )
+
+        let range = layout.visibleRange(
+            distanceFromBottom: distance,
+            viewportHeight: viewportHeight,
+            runwayBefore: viewportHeight * 1.5,
+            runwayAfter: viewportHeight * 1.5
+        )
+
+        #expect(range == 2..<18)
+    }
+
+    @Test func bottomRunwayWarmsRowsAboveTheInitialViewport() {
+        let rows = (0..<30).map {
+            VirtualTranscriptLayout.Item(key: "message:\($0)", estimatedHeight: 100)
+        }
+        let layout = VirtualTranscriptLayout(items: rows, measuredHeights: [:], spacing: 0)
+
+        let range = layout.visibleRange(
+            distanceFromBottom: 0,
+            viewportHeight: 600,
+            runwayBefore: 900,
+            runwayAfter: 900
+        )
+
+        #expect(range == 15..<30)
+    }
+
     @Test func heavyBoundaryStopsOverscanFromMountingItsFarSide() {
         #expect(VirtualTranscriptLayout.overscanRange(
             visibleRange: 1..<2,

@@ -302,6 +302,34 @@ struct MachineControllerTests {
         try await waitForSync { projectList.sessions.contains { $0.id == sessionId } }
         #expect(projectList.projects.contains { $0.id == projectId })
 
+        // Ordinary session events carry their authoritative summary. Applying
+        // one must update only that cached row instead of listing and mapping
+        // every session again.
+        let fullRefreshCount = fake.listSessionCallCount
+        let updated = ServerSession(
+            id: sessionId.uuidString,
+            projectId: projectId.uuidString,
+            serverId: "local",
+            harnessId: "claude-code",
+            agentSessionId: nil,
+            title: "Updated incrementally",
+            origin: .codevisor,
+            isArchived: false,
+            createdAt: "2026-06-30T00:00:01.000Z",
+            updatedAt: "2026-06-30T00:00:02.000Z",
+            usage: nil
+        )
+        fake.emit(
+            kind: "session.updated",
+            subjectId: sessionId.uuidString,
+            payload: sessionPayload(updated)
+        )
+        try await waitForSync {
+            projectList.sessions.first(where: { $0.id == sessionId })?.title
+                == "Updated incrementally"
+        }
+        #expect(fake.listSessionCallCount == fullRefreshCount)
+
         // Another client deletes the session, then the project.
         fake.setSessions([])
         fake.emit(kind: "session.deleted", subjectId: sessionId.uuidString)
@@ -396,6 +424,9 @@ struct MachineControllerTests {
             clientFactory: { _ in fake }
         )
 
+        // Production establishes one authoritative snapshot before opening
+        // the live-only event stream.
+        await controller.refreshSelectedNavigationState()
         controller.startEventSync()
         fake.emit(kind: "workspace.updated", subjectId: workspaceId.uuidString)
         try await waitForSync {
@@ -411,11 +442,22 @@ struct MachineControllerTests {
         )
 
         // Archiving one chat selects a surviving sibling on both platforms.
-        fake.setSessions([
-            serverSession(id: sessionId, isArchived: true, workspaceId: workspaceId),
-            serverSession(id: siblingSessionId, isArchived: false, workspaceId: workspaceId)
-        ])
-        fake.emit(kind: "session.archived", subjectId: sessionId.uuidString)
+        let archivedSession = serverSession(
+            id: sessionId,
+            isArchived: true,
+            workspaceId: workspaceId
+        )
+        let activeSibling = serverSession(
+            id: siblingSessionId,
+            isArchived: false,
+            workspaceId: workspaceId
+        )
+        fake.setSessions([archivedSession, activeSibling])
+        fake.emit(
+            kind: "session.archived",
+            subjectId: sessionId.uuidString,
+            payload: sessionPayload(archivedSession)
+        )
         try await waitForSync {
             projectList.sessions.first(where: { $0.id == sessionId })?.isArchived == true
         }
@@ -432,22 +474,40 @@ struct MachineControllerTests {
         )
 
         // The previously missing unarchive event restores the original route.
-        fake.setSessions([
-            serverSession(id: sessionId, isArchived: false, workspaceId: workspaceId),
-            serverSession(id: siblingSessionId, isArchived: false, workspaceId: workspaceId)
-        ])
-        fake.emit(kind: "session.unarchived", subjectId: sessionId.uuidString)
+        let unarchivedSession = serverSession(
+            id: sessionId,
+            isArchived: false,
+            workspaceId: workspaceId
+        )
+        fake.setSessions([unarchivedSession, activeSibling])
+        fake.emit(
+            kind: "session.unarchived",
+            subjectId: sessionId.uuidString,
+            payload: sessionPayload(unarchivedSession)
+        )
         try await waitForSync {
             projectList.sessions.first(where: { $0.id == sessionId })?.isArchived == false
         }
         #expect(workspaceSync.routeDisposition(sessionId: sessionId, serverId: "local") == .keep)
 
-        fake.setSessions([
-            serverSession(id: sessionId, isArchived: true, workspaceId: workspaceId),
-            serverSession(id: siblingSessionId, isArchived: true, workspaceId: workspaceId)
-        ])
+        let archivedSibling = serverSession(
+            id: siblingSessionId,
+            isArchived: true,
+            workspaceId: workspaceId
+        )
+        fake.setSessions([archivedSession, archivedSibling])
         fake.setWorkspaces([serverWorkspace(isArchived: true)])
         fake.emit(kind: "workspace.updated", subjectId: workspaceId.uuidString)
+        fake.emit(
+            kind: "session.archived",
+            subjectId: sessionId.uuidString,
+            payload: sessionPayload(archivedSession)
+        )
+        fake.emit(
+            kind: "session.archived",
+            subjectId: siblingSessionId.uuidString,
+            payload: sessionPayload(archivedSibling)
+        )
         try await waitForSync {
             workspaceRepository.workspace(id: workspaceId)?.isArchived == true
                 && projectList.sessions.first(where: { $0.id == sessionId })?.isArchived == true
@@ -460,12 +520,24 @@ struct MachineControllerTests {
             ) == .dismiss
         )
 
-        fake.setSessions([
-            serverSession(id: sessionId, isArchived: false, workspaceId: workspaceId),
-            serverSession(id: siblingSessionId, isArchived: false, workspaceId: workspaceId)
-        ])
+        let unarchivedSibling = serverSession(
+            id: siblingSessionId,
+            isArchived: false,
+            workspaceId: workspaceId
+        )
+        fake.setSessions([unarchivedSession, unarchivedSibling])
         fake.setWorkspaces([serverWorkspace(isArchived: false)])
-        fake.emit(kind: "session.unarchived", subjectId: sessionId.uuidString)
+        fake.emit(kind: "workspace.updated", subjectId: workspaceId.uuidString)
+        fake.emit(
+            kind: "session.unarchived",
+            subjectId: sessionId.uuidString,
+            payload: sessionPayload(unarchivedSession)
+        )
+        fake.emit(
+            kind: "session.unarchived",
+            subjectId: siblingSessionId.uuidString,
+            payload: sessionPayload(unarchivedSibling)
+        )
         try await waitForSync {
             workspaceRepository.workspace(id: workspaceId)?.isArchived == false
                 && projectList.sessions.first(where: { $0.id == sessionId })?.isArchived == false
@@ -669,6 +741,41 @@ struct MachineControllerTests {
 
 }
 
+private func sessionPayload(_ session: ServerSession) -> JSONValue {
+    var payload: [String: JSONValue] = [
+        "id": .string(session.id),
+        "projectId": .string(session.projectId),
+        "serverId": .string(session.serverId),
+        "harnessId": .string(session.harnessId),
+        "title": .string(session.title),
+        "origin": .string(session.origin.rawValue),
+        "isArchived": .bool(session.isArchived),
+        "createdAt": .string(session.createdAt),
+    ]
+    if let agentSessionId = session.agentSessionId {
+        payload["agentSessionId"] = .string(agentSessionId)
+    }
+    if let workspaceId = session.workspaceId {
+        payload["workspaceId"] = .string(workspaceId)
+    }
+    if let worktreeName = session.worktreeName {
+        payload["worktreeName"] = .string(worktreeName)
+    }
+    if let cwd = session.cwd {
+        payload["cwd"] = .string(cwd)
+    }
+    if let updatedAt = session.updatedAt {
+        payload["updatedAt"] = .string(updatedAt)
+    }
+    if let sidebarState = session.sidebarState {
+        payload["sidebarState"] = .string(sidebarState.rawValue)
+    }
+    if let sidebarStateChangedAt = session.sidebarStateChangedAt {
+        payload["sidebarStateChangedAt"] = .string(sidebarStateChangedAt)
+    }
+    return .object(payload)
+}
+
 /// Counts rescan calls; healthy by default so `ensureRunning` sees a durable
 /// server, or unhealthy on the first probe to force a fresh launch.
 private final class RescanCountingClient: CodevisorServerClienting, @unchecked Sendable {
@@ -760,6 +867,7 @@ private final class SyncFakeServerClient: CodevisorServerClienting, @unchecked S
     private var continuations: [AsyncThrowingStream<ServerEventEnvelope, any Error>.Continuation] = []
     private var emittedEvents: [ServerEventEnvelope] = []
     private var nextEventId = 1
+    private var _listSessionCallCount = 0
 
     init(
         projects: [ServerProject],
@@ -783,7 +891,9 @@ private final class SyncFakeServerClient: CodevisorServerClienting, @unchecked S
         lock.withLock { _workspaces = workspaces }
     }
 
-    func emit(kind: String, subjectId: String) {
+    var listSessionCallCount: Int { lock.withLock { _listSessionCallCount } }
+
+    func emit(kind: String, subjectId: String, payload: JSONValue = .null) {
         let (event, targets): (ServerEventEnvelope, [AsyncThrowingStream<ServerEventEnvelope, any Error>.Continuation]) = lock.withLock {
             let event = ServerEventEnvelope(
                 id: nextEventId,
@@ -791,7 +901,7 @@ private final class SyncFakeServerClient: CodevisorServerClienting, @unchecked S
                 kind: kind,
                 subjectId: subjectId,
                 createdAt: "2026-06-30T00:00:02.000Z",
-                payload: .null
+                payload: payload
             )
             nextEventId += 1
             emittedEvents.append(event)
@@ -817,7 +927,12 @@ private final class SyncFakeServerClient: CodevisorServerClienting, @unchecked S
     }
 
     func listProjects() async throws -> [ServerProject] { lock.withLock { _projects } }
-    func listSessions() async throws -> [ServerSession] { lock.withLock { _sessions } }
+    func listSessions() async throws -> [ServerSession] {
+        lock.withLock {
+            _listSessionCallCount += 1
+            return _sessions
+        }
+    }
     func listWorkspaces() async throws -> [ServerWorkspace]? { lock.withLock { _workspaces } }
 
     // MARK: - Simulated server versioning / self-update

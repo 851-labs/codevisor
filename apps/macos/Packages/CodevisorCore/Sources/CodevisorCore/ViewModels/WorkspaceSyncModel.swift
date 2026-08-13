@@ -284,11 +284,6 @@ public final class WorkspaceSyncModel {
     }
 
     private static func date(from value: String) -> Date? {
-        let fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = fractional.date(from: value) { return date }
-        let whole = ISO8601DateFormatter()
-        whole.formatOptions = [.withInternetDateTime]
-        return whole.date(from: value)
+        try? ServerDateCoding.date(from: value)
     }
 }

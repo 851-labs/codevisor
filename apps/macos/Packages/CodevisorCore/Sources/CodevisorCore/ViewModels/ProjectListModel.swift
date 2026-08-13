@@ -1,6 +1,96 @@
 import Foundation
 import Observation
 
+private struct PreparedServerNavigationSnapshot: Sendable {
+    struct MappingFailure: Sendable {
+        let kind: String
+        let id: String
+        let description: String
+    }
+
+    let projects: [Project]
+    let sessions: [ChatSession]
+    let workspaceAssignments: [UUID: UUID]
+    let failures: [MappingFailure]
+}
+
+private struct PreparedServerSessionUpdate: Sendable {
+    let session: ChatSession
+    let workspaceId: UUID?
+}
+
+/// Pure server-record conversion belongs off the main actor. Only the final
+/// observable diff is committed by `ProjectListModel` on the UI actor.
+private enum ServerNavigationSnapshotBuilder {
+    static func build(
+        projects: [ServerProject],
+        sessions: [ServerSession],
+        serverId: String
+    ) async -> PreparedServerNavigationSnapshot {
+        await Task.detached(priority: .userInitiated) {
+            var failures: [PreparedServerNavigationSnapshot.MappingFailure] = []
+            let mappedProjects = projects.compactMap { record -> Project? in
+                do {
+                    return try record.project(serverId: serverId)
+                } catch {
+                    failures.append(.init(
+                        kind: "project",
+                        id: record.id,
+                        description: String(describing: error)
+                    ))
+                    return nil
+                }
+            }
+            let mappedSessions = sessions.compactMap { record -> ChatSession? in
+                do {
+                    return try record.chatSession(serverId: serverId)
+                } catch {
+                    failures.append(.init(
+                        kind: "session",
+                        id: record.id,
+                        description: String(describing: error)
+                    ))
+                    return nil
+                }
+            }
+            var assignments: [UUID: UUID] = [:]
+            for record in sessions {
+                guard let sessionId = UUID(uuidString: record.id),
+                      let rawWorkspaceId = record.workspaceId,
+                      let workspaceId = UUID(uuidString: rawWorkspaceId)
+                else { continue }
+                assignments[sessionId] = workspaceId
+            }
+            return PreparedServerNavigationSnapshot(
+                projects: mappedProjects,
+                sessions: mappedSessions,
+                workspaceAssignments: assignments,
+                failures: failures
+            )
+        }.value
+    }
+
+    static func sessionUpdate(
+        from event: ServerEventEnvelope,
+        serverId: String
+    ) async -> PreparedServerSessionUpdate? {
+        await Task.detached(priority: .userInitiated) {
+            guard let record = try? event.sessionRecord(),
+                  let session = try? record.chatSession(serverId: serverId)
+            else { return nil }
+            return PreparedServerSessionUpdate(
+                session: session,
+                workspaceId: record.workspaceId.flatMap(UUID.init(uuidString:))
+            )
+        }.value
+    }
+}
+
+enum ServerSessionEventApplication: Sendable, Equatable {
+    case applied(workspaceMembershipChanged: Bool)
+    case requiresFullRefresh
+}
+
 /// Manages the sidebar's projects and their sessions, including archiving.
 @MainActor
 @Observable
@@ -682,21 +772,33 @@ public final class ProjectListModel {
 
     /// Applies a deletion that already happened on the server (from another
     /// client's event); intentionally does not call back to the server.
-    public func removeSessionLocally(id: UUID, serverId: String) {
-        guard sessions.contains(where: { $0.serverId == serverId && $0.id == id }) else { return }
+    @discardableResult
+    public func removeSessionLocally(id: UUID, serverId: String) -> Bool {
+        // This event is newer than any full snapshot currently in flight.
+        refreshGeneration &+= 1
+        let previousWorkspace = workspaceAssignmentsByServer[serverId]?.removeValue(forKey: id)
+        guard sessions.contains(where: { $0.serverId == serverId && $0.id == id }) else {
+            return previousWorkspace != nil
+        }
         let scopedId = ScopedSessionID(serverId: serverId, id: id)
         pendingServerSessionIds.remove(scopedId)
         pendingArchivedSessionIds.remove(scopedId)
         sessions.removeAll { $0.serverId == serverId && $0.id == id }
         persistSessions()
+        return previousWorkspace != nil
     }
 
     /// Applies a project deletion that already happened on the server.
     public func removeProjectLocally(id: UUID, serverId: String) {
+        // This event is newer than any full snapshot currently in flight.
+        refreshGeneration &+= 1
         guard projects.contains(where: { $0.serverId == serverId && $0.id == id }) else { return }
         let removedSessionIds = sessions.lazy
             .filter { $0.serverId == serverId && $0.projectId == id }
             .map { ScopedSessionID(serverId: serverId, id: $0.id) }
+        for sessionId in removedSessionIds {
+            workspaceAssignmentsByServer[serverId]?.removeValue(forKey: sessionId.id)
+        }
         pendingServerSessionIds.subtract(removedSessionIds)
         pendingArchivedSessionIds.subtract(removedSessionIds)
         projects.removeAll { $0.serverId == serverId && $0.id == id }
@@ -781,55 +883,134 @@ public final class ProjectListModel {
         let generation = refreshGeneration
         do {
             try await migrateLegacyCacheIfNeeded(serverId: serverId, client: serverClient)
-            let remoteProjects = try await serverClient.listProjects()
-                .compactMap { record -> Project? in
-                    do {
-                        return try record.project(serverId: serverId)
-                    } catch {
-                        // Drop the unmappable row rather than failing the list.
-                        Log.sync.error(
-                            "Dropping server project \(record.id, privacy: .public) that failed to map: \(String(describing: error), privacy: .public)"
-                        )
-                        return nil
-                    }
-                }
-            let remoteSessionRecords = try await serverClient.listSessions()
-            let remoteSessions = remoteSessionRecords
-                .compactMap { record -> ChatSession? in
-                    do {
-                        return try record.chatSession(serverId: serverId)
-                    } catch {
-                        Log.sync.error(
-                            "Dropping server session \(record.id, privacy: .public) that failed to map: \(String(describing: error), privacy: .public)"
-                        )
-                        return nil
-                    }
-                }
+            async let projectRecords = serverClient.listProjects()
+            async let sessionRecords = serverClient.listSessions()
+            let (remoteProjectRecords, remoteSessionRecords) = try await (
+                projectRecords,
+                sessionRecords
+            )
+            let prepared = await ServerNavigationSnapshotBuilder.build(
+                projects: remoteProjectRecords,
+                sessions: remoteSessionRecords,
+                serverId: serverId
+            )
             // The user switched machines while the fetch was in flight: drop
             // the stale response. The newly selected machine triggers its own
             // refresh, and this one would merge (and persist) another
             // machine's projects into the wrong sidebar.
             guard serverId == selectedServerId else { return }
             guard generation == refreshGeneration else { return }
-            workspaceAssignmentsByServer[serverId] = Dictionary(
-                uniqueKeysWithValues: remoteSessionRecords.compactMap { record in
-                    guard let sessionId = UUID(uuidString: record.id),
-                          let rawWorkspaceId = record.workspaceId,
-                          let workspaceId = UUID(uuidString: rawWorkspaceId)
-                    else { return nil }
-                    return (sessionId, workspaceId)
-                }
+            for failure in prepared.failures {
+                Log.sync.error(
+                    "Dropping server \(failure.kind, privacy: .public) \(failure.id, privacy: .public) that failed to map: \(failure.description, privacy: .public)"
+                )
+            }
+            workspaceAssignmentsByServer[serverId] = prepared.workspaceAssignments
+            let nextProjects = mergeProjects(
+                local: projects,
+                remote: prepared.projects,
+                serverId: serverId
             )
-            projects = mergeProjects(local: projects, remote: remoteProjects, serverId: serverId)
-            sessions = mergeSessions(local: sessions, remote: remoteSessions, serverId: serverId)
-            persistProjects()
-            persistSessions()
+            let nextSessions = mergeSessions(
+                local: sessions,
+                remote: prepared.sessions,
+                serverId: serverId
+            )
+            if nextProjects != projects {
+                projects = nextProjects
+                persistProjects()
+            }
+            if nextSessions != sessions {
+                sessions = nextSessions
+                persistSessions()
+            }
         } catch {
             // Keep the last successful snapshot while the server is unreachable.
             Log.sync.error(
                 "Failed to refresh projects/sessions from server: \(String(describing: error), privacy: .public)"
             )
         }
+    }
+
+    /// Applies the authoritative summary embedded in one live server event.
+    /// Returns whether workspace membership changed so the caller can refresh
+    /// only workspace metadata, not the full project/session snapshot.
+    func applyServerSessionEvent(
+        _ event: ServerEventEnvelope,
+        serverId: String
+    ) async -> ServerSessionEventApplication {
+        guard serverId == selectedServerId else { return .requiresFullRefresh }
+        // Supersede a full snapshot fetched before this event arrived.
+        refreshGeneration &+= 1
+        guard let update = await ServerNavigationSnapshotBuilder.sessionUpdate(
+            from: event,
+            serverId: serverId
+        ), serverId == selectedServerId else {
+            return .requiresFullRefresh
+        }
+
+        let session = update.session
+        let scopedId = ScopedSessionID(serverId: serverId, id: session.id)
+        guard !pendingDeletedProjectIds.contains(
+            ScopedSessionID(serverId: serverId, id: session.projectId)
+        ) else {
+            return .applied(workspaceMembershipChanged: false)
+        }
+
+        pendingServerSessionIds.remove(scopedId)
+        var reconciled = session
+        if pendingArchivedSessionIds.contains(scopedId) {
+            if session.isArchived {
+                pendingArchivedSessionIds.remove(scopedId)
+            } else {
+                reconciled.isArchived = true
+            }
+        }
+
+        var assignments = workspaceAssignmentsByServer[serverId] ?? [:]
+        let previousWorkspace = assignments[session.id]
+        if let workspaceId = update.workspaceId {
+            assignments[session.id] = workspaceId
+        } else {
+            assignments.removeValue(forKey: session.id)
+        }
+        workspaceAssignmentsByServer[serverId] = assignments
+
+        var nextSessions = sessions
+        if let index = nextSessions.firstIndex(where: {
+            $0.serverId == serverId && $0.id == session.id
+        }) {
+            let previous = nextSessions[index]
+            if (previous.updatedAt ?? previous.createdAt)
+                == (reconciled.updatedAt ?? reconciled.createdAt)
+            {
+                // Metadata-only updates retain their exact array position.
+                nextSessions[index] = reconciled
+            } else {
+                nextSessions.remove(at: index)
+                insertByActivity(reconciled, into: &nextSessions)
+            }
+        } else {
+            insertByActivity(reconciled, into: &nextSessions)
+        }
+        if nextSessions != sessions {
+            sessions = nextSessions
+            persistSessions()
+        }
+        return .applied(
+            workspaceMembershipChanged: previousWorkspace != update.workspaceId
+        )
+    }
+
+    private func insertByActivity(
+        _ session: ChatSession,
+        into sessions: inout [ChatSession]
+    ) {
+        let activity = session.updatedAt ?? session.createdAt
+        let index = sessions.firstIndex {
+            ($0.updatedAt ?? $0.createdAt) < activity
+        } ?? sessions.endIndex
+        sessions.insert(session, at: index)
     }
 
     /// The latest authoritative workspace assignment for every session on a
