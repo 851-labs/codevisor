@@ -200,6 +200,7 @@ struct NativeTranscriptView: UIViewControllerRepresentable {
     let sendAnimationSourceFrame: CGRect?
     let presentationRole: TranscriptPresentationRole
     let reduceMotion: Bool
+    let scrollIndicatorBottomInset: CGFloat
     let claimSendAnimation: @MainActor (UserSendAnimationRequest) -> Bool
     let onSendAnimationStarted: (@MainActor (
         UserSendAnimationRequest,
@@ -245,6 +246,7 @@ struct NativeTranscriptView: UIViewControllerRepresentable {
             sendAnimationSourceFrame: sendAnimationSourceFrame,
             presentationRole: presentationRole,
             reduceMotion: reduceMotion,
+            scrollIndicatorBottomInset: scrollIndicatorBottomInset,
             claimSendAnimation: claimSendAnimation,
             onSendAnimationStarted: onSendAnimationStarted,
             onSendAnimationCompleted: onSendAnimationCompleted,

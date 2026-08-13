@@ -280,6 +280,7 @@ final class TranscriptViewController: UIViewController {
         sendAnimationSourceFrame: CGRect?,
         presentationRole: TranscriptPresentationRole,
         reduceMotion: Bool,
+        scrollIndicatorBottomInset: CGFloat,
         claimSendAnimation: @escaping (UserSendAnimationRequest) -> Bool,
         onSendAnimationStarted: ((
             UserSendAnimationRequest,
@@ -305,6 +306,7 @@ final class TranscriptViewController: UIViewController {
             sendAnimationSourceFrame: sendAnimationSourceFrame,
             presentationRole: presentationRole,
             reduceMotion: reduceMotion,
+            scrollIndicatorBottomInset: scrollIndicatorBottomInset,
             claimSendAnimation: claimSendAnimation,
             onSendAnimationStarted: onSendAnimationStarted,
             onSendAnimationCompleted: onSendAnimationCompleted,
@@ -435,7 +437,9 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         canvasView.backgroundColor = .clear
         addSubview(canvasView)
         showsHorizontalScrollIndicator = false
-        showsVerticalScrollIndicator = false
+        showsVerticalScrollIndicator = true
+        indicatorStyle = .default
+        automaticallyAdjustsScrollIndicatorInsets = false
         alwaysBounceVertical = true
         alwaysBounceHorizontal = false
         isDirectionalLockEnabled = true
@@ -511,6 +515,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         sendAnimationSourceFrame newSendAnimationSourceFrame: CGRect?,
         presentationRole newPresentationRole: TranscriptPresentationRole,
         reduceMotion newReduceMotion: Bool,
+        scrollIndicatorBottomInset newScrollIndicatorBottomInset: CGFloat,
         claimSendAnimation newClaimSendAnimation: @escaping (UserSendAnimationRequest) -> Bool,
         onSendAnimationStarted newOnSendAnimationStarted: ((
             UserSendAnimationRequest,
@@ -533,6 +538,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         hasOlderHistory = newHasOlderHistory
         isLoadingInitialHistory = newIsLoadingInitialHistory
         reduceMotion = newReduceMotion
+        updateBottomScrollIndicatorInsetIfNeeded(newScrollIndicatorBottomInset)
         sendAnimationSourceFrame = newSendAnimationSourceFrame
         claimSendAnimation = newClaimSendAnimation
         onSendAnimationStarted = newOnSendAnimationStarted
@@ -995,6 +1001,18 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             setDistanceFromBottom(preservedDistance)
         }
         lastDistanceFromBottom = currentDistanceFromBottom()
+    }
+
+    /// The composer floats over the scroll view, so its height must shorten
+    /// only the indicator track. Transcript content keeps its existing bottom
+    /// spacer and scroll geometry; this is a visual affordance, not an inset
+    /// that participates in positioning or restoration.
+    private func updateBottomScrollIndicatorInsetIfNeeded(_ rawInset: CGFloat) {
+        let bottomInset = max(0, rawInset)
+        guard abs(verticalScrollIndicatorInsets.bottom - bottomInset) > 0.5 else { return }
+        var indicatorInset = verticalScrollIndicatorInsets
+        indicatorInset.bottom = bottomInset
+        verticalScrollIndicatorInsets = indicatorInset
     }
 
     private func scrollToBottom() {

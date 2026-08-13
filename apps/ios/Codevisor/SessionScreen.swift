@@ -520,6 +520,7 @@ struct SessionTranscriptView: View {
             sendAnimationSourceFrame: sendAnimationSourceFrame,
             presentationRole: presentationRole,
             reduceMotion: reduceMotion,
+            scrollIndicatorBottomInset: composerHeight + 6,
             claimSendAnimation: { request in
                 controller.claimUserSendAnimation(request)
             },
