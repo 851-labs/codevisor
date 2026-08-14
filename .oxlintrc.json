@@ -1,0 +1,82 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "ignorePatterns": [
+    ".repos/**",
+    "apps/macos/**",
+    "coverage/**",
+    "dist/**",
+    "node_modules/**",
+    "**/routeTree.gen.ts"
+  ],
+  "plugins": ["typescript", "import", "unicorn", "oxc"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "warn"
+  },
+  "rules": {
+    "no-console": "warn",
+    "typescript/no-explicit-any": "error",
+    "max-lines": ["error", { "max": 500 }],
+    "unicorn/filename-case": ["error", { "case": "kebabCase" }],
+    "no-unsafe-optional-chaining": "warn",
+    "preserve-caught-error": "warn",
+    "no-useless-escape": "warn",
+    "no-control-regex": "warn",
+    "no-new": "warn",
+    "import/no-named-as-default": "warn",
+    "unicorn/consistent-function-scoping": "warn",
+    "unicorn/no-array-sort": "warn",
+    "unicorn/no-array-reverse": "warn",
+    "unicorn/no-useless-spread": "warn",
+    "unicorn/prefer-add-event-listener": "warn",
+    "unicorn/require-module-specifiers": "warn"
+  },
+  "overrides": [
+    {
+      "files": [
+        "apps/cloud/test/cloud.test.ts",
+        "apps/server/src/browser-use-provider.test.ts",
+        "apps/server/src/browser-use-provider.ts",
+        "apps/server/src/cli/support.test.ts",
+        "apps/server/src/code-executor.ts",
+        "apps/server/src/codevisor-provider.ts",
+        "apps/server/src/computer-use-provider.ts",
+        "apps/server/src/harness-auth.ts",
+        "apps/server/src/harness-lifecycle.test.ts",
+        "apps/server/src/harness-lifecycle.ts",
+        "apps/server/src/mcp-manager.test.ts",
+        "apps/server/src/mcp-manager.ts",
+        "apps/server/src/native-config-files.ts",
+        "apps/server/src/native-mcp-manager.test.ts",
+        "apps/server/src/native-mcp-manager.ts",
+        "apps/server/src/opencode-auth.ts",
+        "apps/server/src/serve.ts",
+        "apps/server/src/server.test.ts",
+        "apps/server/src/server.ts",
+        "apps/server/src/skills-manager.test.ts",
+        "apps/server/src/skills-manager.ts",
+        "apps/server/src/worktree-names.ts",
+        "packages/agent-runtime/src/index.test.ts",
+        "packages/agent-runtime/src/index.ts",
+        "packages/agent-runtime/src/providers/acp.ts",
+        "packages/agent-runtime/src/providers/claude.test.ts",
+        "packages/agent-runtime/src/providers/claude.ts",
+        "packages/agent-runtime/src/providers/codex/provider.test.ts",
+        "packages/agent-runtime/src/providers/codex/provider.ts",
+        "packages/api/src/index.ts",
+        "packages/api/src/openapi.ts",
+        "packages/cloud-client/src/machine-connection.test.ts",
+        "packages/db/src/index.test.ts",
+        "packages/db/src/index.ts",
+        "packages/terminal/src/index.test.ts",
+        "packages/terminal/src/index.ts",
+        "scripts/dev-ios.mjs",
+        "scripts/dev.mjs"
+      ],
+      "rules": {
+        "max-lines": "off"
+      }
+    }
+  ]
+}
