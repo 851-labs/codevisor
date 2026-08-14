@@ -5,7 +5,7 @@ import type {
   ProviderEnvironment,
   RuntimeEvent,
   ToolGatewayConfig
-} from "../../types.js"
+} from "@codevisor/agent-runtime"
 import type { CodexClient, CodexSpawnRequest } from "./client.js"
 import { codexUsageLimitsFrom, makeCodexProvider } from "./provider.js"
 

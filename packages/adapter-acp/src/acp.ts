@@ -28,10 +28,10 @@ import { Readable, Writable } from "node:stream"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import { Effect } from "effect"
-import type { BackgroundTerminalIntegration } from "../background-terminals.js"
-import { diffStatsFromTexts } from "../diff-stats.js"
-import { clampFailureDetail, summarizeProcessFailure } from "../process-failure.js"
-import type { AgentSessionSummary } from "../agent-sessions.js"
+import type { BackgroundTerminalIntegration } from "@codevisor/agent-runtime"
+import { diffStatsFromTexts } from "@codevisor/agent-runtime"
+import { clampFailureDetail, summarizeProcessFailure } from "@codevisor/agent-runtime"
+import type { AgentSessionSummary } from "@codevisor/agent-runtime"
 import type { DiffStat } from "@codevisor/api"
 import { makeAcpTerminalHost, type AcpTerminalHost } from "./acp-terminals.js"
 import {
@@ -54,7 +54,7 @@ import {
   type RuntimeEvent,
   type SetGoalUpdate,
   type ToolGatewayConfig
-} from "../types.js"
+} from "@codevisor/agent-runtime"
 
 export const acpProtocolVersion = acp.PROTOCOL_VERSION
 

@@ -31,7 +31,7 @@
     "swift:test": "swift test --package-path packages/swift",
     "swift:build:ios": "xcodebuild -project apps/ios/Codevisor.xcodeproj -scheme Codevisor -destination 'generic/platform=iOS Simulator' -derivedDataPath tmp/DerivedData-iOS-check -quiet build",
     "xcode:list": "xcodebuild -list -project apps/macos/Codevisor.xcodeproj",
-    "swift:lint": "swiftlint lint --quiet --strict --baseline .swiftlint-baseline.json",
+    "swift:lint": "scripts/swift-lint.sh",
     "swift:format": "scripts/swift-format.sh fix",
     "swift:format:check": "scripts/swift-format.sh check"
   },

@@ -5,8 +5,8 @@ import {
   DEFAULT_PROMOTION_DELAY_MS,
   type BackgroundTerminalIntegration,
   type ExternalTerminalStream
-} from "../background-terminals.js"
-import type { RuntimeEmit } from "../types.js"
+} from "@codevisor/agent-runtime"
+import type { RuntimeEmit } from "@codevisor/agent-runtime"
 
 /// Client-side implementation of the ACP `terminal/*` methods, backed by the
 /// server's background-terminal registry.

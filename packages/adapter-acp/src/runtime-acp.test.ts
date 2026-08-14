@@ -6,6 +6,21 @@ import { describe, expect, it } from "vitest"
 import {
   AgentRuntime,
   AgentRuntimeError,
+  harnessCatalog,
+  locateExecutableOnPath,
+  makeAgentRuntime,
+  normalizePromptInput,
+  toEventEnvelope,
+  withAttachmentNotes,
+  type AgentRuntimeConfig,
+  type PromptAttachmentInput,
+  type PromptInput,
+  type RuntimeEmit,
+  type RuntimeEvent
+} from "@codevisor/agent-runtime"
+import { makeClaudeProvider } from "@codevisor/adapter-claude"
+import { makeCodexProvider } from "@codevisor/adapter-codex"
+import {
   acpClientCapabilities,
   acpConfigSelection,
   acpConfigOptionIds,
@@ -25,26 +40,47 @@ import {
   grokGoalNotification,
   grokModeState,
   grokPlanApprovalQuestion,
-  harnessCatalog,
-  locateExecutableOnPath,
-  makeAgentRuntime,
+  makeAcpProvider,
   normalizeAcpConfigOptions,
   normalizeModeState,
-  normalizePromptInput,
   piAssistantErrorFromSessionJsonl,
   runtimeEventFromNotification,
   testAcpConnection,
-  toEventEnvelope,
   usesAcpModelSelectionExtension,
-  withAttachmentNotes,
   type AcpAgentConnection,
   type AcpConnector,
-  type AcpHarnessLaunchRequest,
-  type PromptAttachmentInput,
-  type PromptInput,
-  type RuntimeEmit,
-  type RuntimeEvent
+  type AcpHarnessLaunchRequest
 } from "./index.js"
+
+/// The pre-extraction runtime accepted `connector`/`acpAuthProbeTimeoutMs`
+/// directly and always registered the acp/claude/codex providers. These tests
+/// exercise the runtime *through* real adapters, so this shim recreates that
+/// wiring via the providerFactories composition the app uses.
+interface AcpRuntimeTestConfig extends AgentRuntimeConfig {
+  readonly connector?: AcpConnector
+  readonly acpAuthProbeTimeoutMs?: number
+}
+
+const makeAcpAgentRuntime = ({
+  connector,
+  acpAuthProbeTimeoutMs,
+  ...config
+}: AcpRuntimeTestConfig = {}) =>
+  makeAgentRuntime({
+    ...config,
+    providerFactories: [
+      (env, context) =>
+        makeAcpProvider(env, {
+          ...context,
+          ...(connector === undefined ? {} : { connector }),
+          ...(acpAuthProbeTimeoutMs === undefined
+            ? {}
+            : { authProbeTimeoutMs: acpAuthProbeTimeoutMs })
+        }),
+      (env, context) => makeClaudeProvider(env, context),
+      (env, context) => makeCodexProvider(env, context)
+    ]
+  })
 
 const run = <A>(effect: Effect.Effect<A, unknown>): Promise<A> => Effect.runPromise(effect)
 
@@ -238,7 +274,7 @@ describe("@codevisor/agent-runtime", () => {
 
   it("probes and delegates harness authentication", async () => {
     const connector = makeConnector()
-    const runtime = makeAgentRuntime({
+    const runtime = makeAcpAgentRuntime({
       connector,
       env: { PATH: "/bin" },
       executableExists: (name) => name === "gemini",
@@ -283,7 +319,7 @@ describe("@codevisor/agent-runtime", () => {
 
   it("times out a hung ACP auth probe and closes its connection", async () => {
     const connector = makeConnector()
-    const runtime = makeAgentRuntime({
+    const runtime = makeAcpAgentRuntime({
       acpAuthProbeTimeoutMs: 10,
       connector,
       env: { PATH: "/bin" },
@@ -307,7 +343,7 @@ describe("@codevisor/agent-runtime", () => {
   })
 
   it("discovers ready local executables and unavailable harnesses", async () => {
-    const runtime = makeAgentRuntime({
+    const runtime = makeAcpAgentRuntime({
       env: { PATH: "/bin" },
       executableExists: (name) => ["gemini", "opencode", "codex", "cursor-agent"].includes(name),
       // Pinned so path/version enrichment stays off regardless of what is
@@ -350,7 +386,7 @@ describe("@codevisor/agent-runtime", () => {
   })
 
   it("enriches ready harnesses with the resolved path and probed version", async () => {
-    const runtime = makeAgentRuntime({
+    const runtime = makeAcpAgentRuntime({
       env: { PATH: "/opt/tools" },
       locateExecutable: (name) => (name === "claude" ? "/opt/tools/claude" : undefined),
       readVersionOutput: (path) =>
@@ -381,7 +417,7 @@ describe("@codevisor/agent-runtime", () => {
 
   it("refreshes the environment so readiness picks up newly installed CLIs", async () => {
     let resolveCalls = 0
-    const runtime = makeAgentRuntime({
+    const runtime = makeAcpAgentRuntime({
       env: { PATH: "/before" },
       // Readiness is keyed off the live env's PATH: claude "installs" only
       // after refreshEnvironment swaps the env.
@@ -415,12 +451,12 @@ describe("@codevisor/agent-runtime", () => {
   })
 
   it("treats refreshEnvironment as a no-op without a resolveEnv", async () => {
-    const runtime = makeAgentRuntime({ env: { PATH: "/fixed" } })
+    const runtime = makeAcpAgentRuntime({ env: { PATH: "/fixed" } })
     await expect(run(runtime.refreshEnvironment)).resolves.toBeUndefined()
   })
 
   it("merges injected extra harnesses and tags them as custom", async () => {
-    const runtime = makeAgentRuntime({
+    const runtime = makeAcpAgentRuntime({
       env: { PATH: "/bin" },
       executableExists: (name) => name === "my-agent",
       locateExecutable: () => undefined,
@@ -456,7 +492,7 @@ describe("@codevisor/agent-runtime", () => {
   })
 
   it("reports disabled custom harnesses as unavailable and refuses their sessions", async () => {
-    const runtime = makeAgentRuntime({
+    const runtime = makeAcpAgentRuntime({
       env: { PATH: "/bin" },
       extraHarnesses: [
         {
@@ -482,7 +518,7 @@ describe("@codevisor/agent-runtime", () => {
   })
 
   it("drops extra harnesses whose id collides with a builtin", async () => {
-    const runtime = makeAgentRuntime({
+    const runtime = makeAcpAgentRuntime({
       env: { PATH: "/bin" },
       executableExists: () => false,
       locateExecutable: () => undefined,
@@ -506,12 +542,12 @@ describe("@codevisor/agent-runtime", () => {
   })
 
   it("keeps the builtin catalog identity when no extras are injected", () => {
-    const runtime = makeAgentRuntime({ env: { PATH: "/bin" } })
+    const runtime = makeAcpAgentRuntime({ env: { PATH: "/bin" } })
     expect(runtime.catalog).toBe(harnessCatalog)
   })
 
   it("swaps custom entries live via setExtraHarnesses", async () => {
-    const runtime = makeAgentRuntime({
+    const runtime = makeAcpAgentRuntime({
       env: { PATH: "/bin" },
       executableExists: () => false,
       locateExecutable: () => undefined
@@ -587,7 +623,7 @@ describe("@codevisor/agent-runtime", () => {
   it("lists native agent sessions through the provider hook", async () => {
     const fixture = [{ sessionId: "abc", cwd: "/repo", title: "Hi" }]
     const connector = makeConnector()
-    const runtime = makeAgentRuntime({
+    const runtime = makeAcpAgentRuntime({
       connector,
       env: { PATH: "/bin" },
       executableExists: () => true,
@@ -616,7 +652,7 @@ describe("@codevisor/agent-runtime", () => {
       profileKind: "managed" as const,
       env: { TEST_PROFILE: "account-1" }
     }
-    const runtime = makeAgentRuntime({
+    const runtime = makeAcpAgentRuntime({
       providers: {
         claude: {
           id: "claude",
@@ -660,7 +696,7 @@ describe("@codevisor/agent-runtime", () => {
 
   it("propagates resolveEnv failures as runtime errors and recovers", async () => {
     let attempts = 0
-    const runtime = makeAgentRuntime({
+    const runtime = makeAcpAgentRuntime({
       env: { PATH: "/before" },
       executableExists: (name, env) => name === "claude" && env.PATH === "/after",
       resolveEnv: () => {
@@ -682,7 +718,7 @@ describe("@codevisor/agent-runtime", () => {
 
   it("creates and loads agent sessions through the connector", async () => {
     const connector = makeConnector()
-    const runtime = makeAgentRuntime({
+    const runtime = makeAcpAgentRuntime({
       connector,
       env: { PATH: "/bin" },
       executableExists: (name) => name === "gemini",
@@ -730,7 +766,7 @@ describe("@codevisor/agent-runtime", () => {
 
   it("launches Pi through the pinned ACP adapter", async () => {
     const connector = makeConnector()
-    const runtime = makeAgentRuntime({
+    const runtime = makeAcpAgentRuntime({
       connector,
       env: { PATH: "/bin" },
       executableExists: (name) => ["npx", "pi"].includes(name),
@@ -753,7 +789,7 @@ describe("@codevisor/agent-runtime", () => {
 
   it("times out hung harness inspection and closes its connection", async () => {
     const connector = makeConnector()
-    const runtime = makeAgentRuntime({
+    const runtime = makeAcpAgentRuntime({
       connector,
       env: { PATH: "/bin" },
       executableExists: (name) => name === "gemini",
@@ -772,7 +808,7 @@ describe("@codevisor/agent-runtime", () => {
 
   it("maps harness inspection failures and closes their connection", async () => {
     const connector = makeConnector()
-    const runtime = makeAgentRuntime({
+    const runtime = makeAcpAgentRuntime({
       connector,
       env: { PATH: "/bin" },
       executableExists: (name) => name === "gemini",
@@ -790,7 +826,7 @@ describe("@codevisor/agent-runtime", () => {
 
   it("closes a loaded agent session and forgets it", async () => {
     const connector = makeConnector()
-    const runtime = makeAgentRuntime({
+    const runtime = makeAcpAgentRuntime({
       connector,
       env: { PATH: "/bin" },
       executableExists: (name) => name === "gemini",
@@ -817,7 +853,7 @@ describe("@codevisor/agent-runtime", () => {
 
   it("forgets a session even when closing its handle fails", async () => {
     const connector = makeConnector()
-    const runtime = makeAgentRuntime({
+    const runtime = makeAcpAgentRuntime({
       connector,
       env: { PATH: "/bin" },
       executableExists: (name) => name === "gemini",
@@ -838,7 +874,7 @@ describe("@codevisor/agent-runtime", () => {
 
   it("falls back to executable names when PATH lookup is delegated", async () => {
     const connector = makeConnector()
-    const runtime = makeAgentRuntime({
+    const runtime = makeAcpAgentRuntime({
       connector,
       env: { PATH: "/bin" },
       executableExists: (name) => ["gemini", "opencode"].includes(name),
@@ -856,7 +892,7 @@ describe("@codevisor/agent-runtime", () => {
 
   it("uses located executable paths for executable harnesses", async () => {
     const connector = makeConnector()
-    const runtime = makeAgentRuntime({
+    const runtime = makeAcpAgentRuntime({
       connector,
       env: { PATH: "/bin" },
       executableExists: (name) => name === "opencode",
@@ -874,7 +910,7 @@ describe("@codevisor/agent-runtime", () => {
   })
 
   it("constructs the Effect service layer and handles missing PATH", async () => {
-    await expect(run(makeAgentRuntime().discoverHarnesses)).resolves.toEqual(expect.any(Array))
+    await expect(run(makeAcpAgentRuntime().discoverHarnesses)).resolves.toEqual(expect.any(Array))
 
     // locateExecutable is pinned to "nothing found": the default locator also
     // probes absolute fallbackPaths (e.g. /Applications/Codex.app), which
@@ -889,7 +925,7 @@ describe("@codevisor/agent-runtime", () => {
       true
     )
 
-    const runtime = makeAgentRuntime({ env: {}, locateExecutable: () => undefined })
+    const runtime = makeAcpAgentRuntime({ env: {}, locateExecutable: () => undefined })
     expect((await run(runtime.discoverHarnesses))[0]?.readiness.detail).toBe(
       "CLI not found on PATH"
     )
@@ -937,7 +973,7 @@ describe("@codevisor/agent-runtime", () => {
 
   it("streams turn lifecycle and session output through the persistent sink", async () => {
     const connector = makeConnector()
-    const runtime = makeAgentRuntime({
+    const runtime = makeAcpAgentRuntime({
       connector,
       env: { PATH: "/bin" },
       executableExists: (name) => ["gemini", "npx"].includes(name),
@@ -979,7 +1015,7 @@ describe("@codevisor/agent-runtime", () => {
     // Regression test for the dropped-background-events bug: the sink used to
     // exist only for the duration of a prompt request.
     const connector = makeConnector()
-    const runtime = makeAgentRuntime({
+    const runtime = makeAcpAgentRuntime({
       connector,
       env: { PATH: "/bin" },
       executableExists: (name) => ["gemini", "npx"].includes(name),
@@ -1005,7 +1041,7 @@ describe("@codevisor/agent-runtime", () => {
 
   it("keeps per-session event order through the serial sink chain", async () => {
     const connector = makeConnector()
-    const runtime = makeAgentRuntime({
+    const runtime = makeAcpAgentRuntime({
       connector,
       env: { PATH: "/bin" },
       executableExists: (name) => ["gemini", "npx"].includes(name),
@@ -1032,7 +1068,7 @@ describe("@codevisor/agent-runtime", () => {
 
   it("emits mode and config updates through the sink", async () => {
     const connector = makeConnector()
-    const runtime = makeAgentRuntime({
+    const runtime = makeAcpAgentRuntime({
       connector,
       env: { PATH: "/bin" },
       executableExists: (name) => ["gemini", "npx"].includes(name),
@@ -1068,7 +1104,7 @@ describe("@codevisor/agent-runtime", () => {
 
   it("fails goal calls on harnesses without goal support", async () => {
     const connector = makeConnector()
-    const runtime = makeAgentRuntime({
+    const runtime = makeAcpAgentRuntime({
       connector,
       env: { PATH: "/bin" },
       executableExists: (name) => ["gemini", "npx"].includes(name),
@@ -1130,7 +1166,7 @@ describe("@codevisor/agent-runtime", () => {
       loadSession: () => Effect.die("unused"),
       readiness: () => ({ state: "ready" }) as const
     }
-    const runtime = makeAgentRuntime({
+    const runtime = makeAcpAgentRuntime({
       env: { PATH: "/bin" },
       executableExists: () => true,
       locateExecutable: (name) => `/bin/${name}`,
@@ -1155,7 +1191,7 @@ describe("@codevisor/agent-runtime", () => {
 
   it("reports unavailable or unknown harnesses before connecting", async () => {
     const connector = makeConnector()
-    const runtime = makeAgentRuntime({
+    const runtime = makeAcpAgentRuntime({
       connector,
       env: { PATH: "/bin" },
       executableExists: () => false
@@ -1204,7 +1240,7 @@ describe("@codevisor/agent-runtime", () => {
         Effect.succeed({ handle, sessionId: agentSessionId }),
       readiness: () => ({ state: "ready" }) as const
     }
-    const runtime = makeAgentRuntime({
+    const runtime = makeAcpAgentRuntime({
       env: { PATH: "/bin" },
       executableExists: () => true,
       locateExecutable: (name) => `/bin/${name}`,
@@ -1319,7 +1355,7 @@ describe("@codevisor/agent-runtime", () => {
         }),
       readiness: () => ({ state: "ready" }) as const
     }
-    const runtime = makeAgentRuntime({
+    const runtime = makeAcpAgentRuntime({
       env: { PATH: "/bin" },
       executableExists: () => true,
       locateExecutable: (name) => `/bin/${name}`,
@@ -1378,7 +1414,7 @@ describe("@codevisor/agent-runtime", () => {
       loadSession: () => Effect.die("unused"),
       readiness: () => ({ state: "ready" }) as const
     }
-    const runtime = makeAgentRuntime({
+    const runtime = makeAcpAgentRuntime({
       env: { PATH: "/bin" },
       executableExists: () => true,
       locateExecutable: (name) => `/bin/${name}`,
@@ -1431,8 +1467,7 @@ describe("@codevisor/agent-runtime", () => {
         loadSession: () => Effect.die("unused"),
         readiness: () => ({ state: "ready" }) as const
       }
-      runtime = makeAgentRuntime({
-        claudeCancelGraceMs: 42,
+      runtime = makeAcpAgentRuntime({
         env: { PATH: "/bin" },
         executableExists: () => true,
         locateExecutable: (name) => `/bin/${name}`,

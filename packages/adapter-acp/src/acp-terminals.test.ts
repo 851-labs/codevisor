@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { BackgroundTerminalRegistry } from "../background-terminals.js"
-import type { RuntimeEvent } from "../types.js"
+import type { BackgroundTerminalRegistry } from "@codevisor/agent-runtime"
+import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import {
   makeAcpTerminalHost,
   type AcpTerminalChild,

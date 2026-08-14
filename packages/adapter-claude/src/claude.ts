@@ -25,16 +25,13 @@ import {
   listClaudeAgentSessions,
   preferHarnessSessionTitles,
   type AgentSessionSummary
-} from "../agent-sessions.js"
+} from "@codevisor/agent-runtime"
 import { isAbsolute, resolve } from "node:path"
 import { Effect } from "effect"
-import { INLINE_IMAGE_MEDIA_TYPES, withAttachmentNotes } from "../attachments.js"
-import {
-  backgroundTerminalKey,
-  type BackgroundTerminalIntegration
-} from "../background-terminals.js"
-import { diffStatsFromTexts, lineCount } from "../diff-stats.js"
-import { findKnownModel, highestThinkingLevel, sanitizeModelValue } from "./model-selection.js"
+import { INLINE_IMAGE_MEDIA_TYPES, withAttachmentNotes } from "@codevisor/agent-runtime"
+import { backgroundTerminalKey, type BackgroundTerminalIntegration } from "@codevisor/agent-runtime"
+import { diffStatsFromTexts, lineCount } from "@codevisor/agent-runtime"
+import { findKnownModel, highestThinkingLevel, sanitizeModelValue } from "@codevisor/agent-runtime"
 import {
   adapterPromise,
   normalizePromptInput,
@@ -54,7 +51,7 @@ import {
   type RuntimeEmit,
   type RuntimeEvent,
   type ToolGatewayConfig
-} from "../types.js"
+} from "@codevisor/agent-runtime"
 
 /// Claude Code versions older than this predate the control-protocol features
 /// the Agent SDK relies on (streaming input, setModel/setPermissionMode).

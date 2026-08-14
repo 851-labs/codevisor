@@ -3,11 +3,11 @@ import {
   harnessCatalog,
   locateExecutableOnPath,
   resolveShellEnv,
-  spawnCodexClient,
   type AgentRuntimeService,
   type HarnessAccountContext,
   type HarnessDefinition
 } from "@codevisor/agent-runtime"
+import { spawnCodexClient } from "@codevisor/adapter-codex"
 import type {
   Harness,
   HarnessAccount,

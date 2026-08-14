@@ -1,13 +1,31 @@
+import { fileURLToPath } from "node:url"
 import { defineConfig } from "vitest/config"
 
-// The provider protocol surfaces (src/providers/**) are exercised primarily
-// against live claude/codex/adapter binaries — packaging smoke and e2e runs —
-// with unit fakes covering the mapping logic. Holding them to the repo's
-// global 100% would mean faking entire vendor protocols for little signal, so
-// this package carries ratcheted aggregate floors instead: raise them as the
-// fakes grow, never lower them. The core runtime files stay at 100%.
+// The runtime's integration tests live in @codevisor/adapter-acp
+// (runtime-acp.test.ts): they exercise the runtime through real adapters, and
+// the adapters depend on this package — the tests can't live here without a
+// package cycle. This config runs that suite as part of this package's test
+// run, with workspace imports aliased back to sources so coverage attributes
+// to this package's files (imports normally resolve to dist, which coverage
+// excludes).
+const src = (path: string): string => fileURLToPath(new URL(path, import.meta.url))
+
 export default defineConfig({
+  resolve: {
+    alias: {
+      "@codevisor/agent-runtime": src("./src/index.ts"),
+      "@codevisor/adapter-acp": src("../adapter-acp/src/index.ts"),
+      "@codevisor/adapter-claude": src("../adapter-claude/src/index.ts"),
+      "@codevisor/adapter-codex": src("../adapter-codex/src/index.ts")
+    }
+  },
   test: {
+    include: [
+      "src/**/*.test.ts",
+      "../adapter-acp/src/*.test.ts",
+      "../adapter-claude/src/*.test.ts",
+      "../adapter-codex/src/*.test.ts"
+    ],
     coverage: {
       all: true,
       include: ["src/**/*.ts"],
@@ -18,11 +36,26 @@ export default defineConfig({
         functions: 84,
         lines: 81,
         statements: 78,
-        "src/*.ts": {
+        // model-selection and stdio-transport moved here from providers/**
+        // during the adapter extraction and keep their ratcheted floors
+        // (raise as fakes grow, never lower). Everything else stays at 100%.
+        "src/!(model-selection|stdio-transport).ts": {
           branches: 100,
           functions: 100,
           lines: 100,
           statements: 100
+        },
+        "src/model-selection.ts": {
+          branches: 68,
+          functions: 83,
+          lines: 95,
+          statements: 85
+        },
+        "src/stdio-transport.ts": {
+          branches: 71,
+          functions: 76,
+          lines: 91,
+          statements: 86
         }
       }
     }

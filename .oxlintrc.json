@@ -18,8 +18,18 @@
   "rules": {
     "no-console": "warn",
     "typescript/no-explicit-any": "error",
-    "max-lines": ["error", { "max": 500 }],
-    "unicorn/filename-case": ["error", { "case": "kebabCase" }],
+    "max-lines": [
+      "error",
+      {
+        "max": 500
+      }
+    ],
+    "unicorn/filename-case": [
+      "error",
+      {
+        "case": "kebabCase"
+      }
+    ],
     "no-unsafe-optional-chaining": "warn",
     "preserve-caught-error": "warn",
     "no-useless-escape": "warn",
@@ -58,13 +68,13 @@
         "apps/server/src/skills-manager.test.ts",
         "apps/server/src/skills-manager.ts",
         "apps/server/src/worktree-names.ts",
-        "packages/agent-runtime/src/index.test.ts",
+        "packages/adapter-acp/src/acp.ts",
+        "packages/adapter-acp/src/runtime-acp.test.ts",
+        "packages/adapter-claude/src/claude.test.ts",
+        "packages/adapter-claude/src/claude.ts",
+        "packages/adapter-codex/src/provider.test.ts",
+        "packages/adapter-codex/src/provider.ts",
         "packages/agent-runtime/src/index.ts",
-        "packages/agent-runtime/src/providers/acp.ts",
-        "packages/agent-runtime/src/providers/claude.test.ts",
-        "packages/agent-runtime/src/providers/claude.ts",
-        "packages/agent-runtime/src/providers/codex/provider.test.ts",
-        "packages/agent-runtime/src/providers/codex/provider.ts",
         "packages/api/src/index.ts",
         "packages/api/src/openapi.ts",
         "packages/cloud-client/src/machine-connection.test.ts",

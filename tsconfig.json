@@ -1,10 +1,29 @@
 {
   "files": [],
   "references": [
-    { "path": "./packages/api" },
-    { "path": "./packages/db" },
-    { "path": "./packages/agent-runtime" },
-    { "path": "./packages/terminal" },
-    { "path": "./apps/server" }
+    {
+      "path": "./packages/api"
+    },
+    {
+      "path": "./packages/db"
+    },
+    {
+      "path": "./packages/agent-runtime"
+    },
+    {
+      "path": "./packages/terminal"
+    },
+    {
+      "path": "./apps/server"
+    },
+    {
+      "path": "./packages/adapter-acp"
+    },
+    {
+      "path": "./packages/adapter-claude"
+    },
+    {
+      "path": "./packages/adapter-codex"
+    }
   ]
 }

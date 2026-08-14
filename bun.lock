@@ -68,6 +68,9 @@
       },
       "dependencies": {
         "@babel/parser": "7.29.7",
+        "@codevisor/adapter-acp": "workspace:*",
+        "@codevisor/adapter-claude": "workspace:*",
+        "@codevisor/adapter-codex": "workspace:*",
         "@codevisor/agent-runtime": "workspace:*",
         "@codevisor/api": "workspace:*",
         "@codevisor/cloud-client": "workspace:*",
@@ -125,16 +128,50 @@
         "wrangler": "^4.110.0",
       },
     },
+    "packages/adapter-acp": {
+      "name": "@codevisor/adapter-acp",
+      "dependencies": {
+        "@agentclientprotocol/sdk": "1.1.0",
+        "@codevisor/agent-runtime": "workspace:*",
+        "@codevisor/api": "workspace:*",
+        "effect": "4.0.0-beta.92",
+      },
+      "devDependencies": {
+        "@codevisor/adapter-claude": "workspace:*",
+        "@codevisor/adapter-codex": "workspace:*",
+        "vitest": "4.1.6",
+      },
+    },
+    "packages/adapter-claude": {
+      "name": "@codevisor/adapter-claude",
+      "dependencies": {
+        "@anthropic-ai/claude-agent-sdk": "0.3.211",
+        "@codevisor/agent-runtime": "workspace:*",
+        "@codevisor/api": "workspace:*",
+        "effect": "4.0.0-beta.92",
+      },
+      "devDependencies": {
+        "vitest": "4.1.6",
+      },
+    },
+    "packages/adapter-codex": {
+      "name": "@codevisor/adapter-codex",
+      "dependencies": {
+        "@codevisor/agent-runtime": "workspace:*",
+        "@codevisor/api": "workspace:*",
+        "effect": "4.0.0-beta.92",
+        "smol-toml": "1.7.0",
+      },
+      "devDependencies": {
+        "vitest": "4.1.6",
+      },
+    },
     "packages/agent-runtime": {
       "name": "@codevisor/agent-runtime",
       "dependencies": {
-        "@agentclientprotocol/sdk": "1.1.0",
-        "@anthropic-ai/claude-agent-sdk": "0.3.211",
         "@codevisor/api": "workspace:*",
         "diff": "8.0.2",
         "effect": "4.0.0-beta.92",
-        "smol-toml": "1.7.0",
-        "zod": "4.4.3",
       },
       "devDependencies": {
         "vitest": "4.1.6",
@@ -353,6 +390,12 @@
     "@cloudflare/workerd-linux-arm64": ["@cloudflare/workerd-linux-arm64@1.20260708.1", "", { "os": "linux", "cpu": "arm64" }, "sha512-VLdNYOx5Hj+9C6isy0ACWZsbMtSxex2DIJWEe7cZxUdlphZ58ZT8zxNXK8yunFiowd34hn3VwGMopdvdj8lvmA=="],
 
     "@cloudflare/workerd-windows-64": ["@cloudflare/workerd-windows-64@1.20260708.1", "", { "os": "win32", "cpu": "x64" }, "sha512-bC/aSAwLy16Vjo24i9XU3aWH+eRgz7NeR5xPKavGbembO18ZywYTQbXh14eXtY6fAqN3RzRG8psijTdhX4xydA=="],
+
+    "@codevisor/adapter-acp": ["@codevisor/adapter-acp@workspace:packages/adapter-acp"],
+
+    "@codevisor/adapter-claude": ["@codevisor/adapter-claude@workspace:packages/adapter-claude"],
+
+    "@codevisor/adapter-codex": ["@codevisor/adapter-codex@workspace:packages/adapter-codex"],
 
     "@codevisor/agent-runtime": ["@codevisor/agent-runtime@workspace:packages/agent-runtime"],
 

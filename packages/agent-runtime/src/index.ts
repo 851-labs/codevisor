@@ -10,10 +10,7 @@ import type { AgentSessionSummary } from "./agent-sessions.js"
 import { accessSync, constants } from "node:fs"
 import { Context, Effect, Layer } from "effect"
 import type { BackgroundTerminalIntegration } from "./background-terminals.js"
-import { makeAcpProvider, type AcpConnector } from "./providers/acp.js"
 import { makeVersionProber } from "./version-probe.js"
-import { makeClaudeProvider } from "./providers/claude.js"
-import { makeCodexProvider } from "./providers/codex/provider.js"
 import {
   AgentRuntimeError,
   adapterPromise,
@@ -42,50 +39,8 @@ export * from "./background-terminals.js"
 export * from "./diff-stats.js"
 export * from "./shell-env.js"
 export * from "./agent-sessions.js"
-export {
-  acpClientCapabilities,
-  acpConfigSelection,
-  acpConfigOptionIds,
-  acpModelConfigId,
-  acpModelConfigOption,
-  acpReasoningEffortConfigId,
-  acpReasoningEffortConfigOption,
-  acpPermissionOutcome,
-  acpPermissionQuestion,
-  acpProtocolVersion,
-  acpPrompt,
-  applyAcpModelSelection,
-  applyAcpReasoningEffortSelection,
-  extractAcpModelState,
-  extractPiStartupInfo,
-  isPiStartupInfoNotification,
-  grokAskUserQuestion,
-  grokGoalNotification,
-  grokModeState,
-  grokPlanApprovalQuestion,
-  makeAcpProvider,
-  normalizeAcpConfigOptions,
-  normalizeModeState,
-  piAssistantErrorFromSessionJsonl,
-  runtimeEventFromNotification,
-  stdioAcpConnector,
-  testAcpConnection,
-  usesAcpModelSelectionExtension
-} from "./providers/acp.js"
-export type {
-  AcpAgentConnection,
-  AcpConnectionTestResult,
-  AcpConnector,
-  AcpHarnessLaunchRequest,
-  AcpPromptCapabilities,
-  GrokGoalNotification
-} from "./providers/acp.js"
-export { makeClaudeProvider } from "./providers/claude.js"
-export type { ClaudeProviderConfig, ClaudeQueryFn } from "./providers/claude.js"
-export { makeCodexProvider } from "./providers/codex/provider.js"
-export type { CodexProviderConfig } from "./providers/codex/provider.js"
-export { spawnCodexClient } from "./providers/codex/client.js"
-export type { CodexClient, CodexConnector, CodexSpawnRequest } from "./providers/codex/client.js"
+export * from "./stdio-transport.js"
+export * from "./model-selection.js"
 export { makeVersionProber, parseVersionOutput } from "./version-probe.js"
 export type { VersionProber, VersionProberOptions } from "./version-probe.js"
 export {
@@ -94,22 +49,35 @@ export {
   summarizeProcessFailure
 } from "./process-failure.js"
 
+/// Shared context the runtime hands to every provider factory: the pieces of
+/// runtime-owned state a harness adapter may integrate with.
+export interface ProviderFactoryContext {
+  readonly backgroundTerminals?: BackgroundTerminalIntegration
+}
+
+/// Constructs a provider against the runtime's live environment. Adapter
+/// packages (@codevisor/adapter-acp, -claude, -codex) export `make*Provider`
+/// functions that plug in here; the app composes the set it wants.
+export type ProviderFactory = (
+  environment: ProviderEnvironment,
+  context: ProviderFactoryContext
+) => AgentProvider
+
 export interface AgentRuntimeConfig {
   readonly env?: NodeJS.ProcessEnv
   readonly executableExists?: (name: string, env: NodeJS.ProcessEnv) => boolean
   readonly locateExecutable?: (name: string, env: NodeJS.ProcessEnv) => string | undefined
-  readonly connector?: AcpConnector
-  readonly acpAuthProbeTimeoutMs?: number
   readonly harnessInspectionTimeoutMs?: number
-  /// Claude interrupt grace before a stuck query is force-ended and retired.
-  /// Primarily injectable for deterministic integration tests.
-  readonly claudeCancelGraceMs?: number
   /// Server-owned terminals for agent background processes; providers surface
   /// long-running agent commands through it as attachable terminal tabs.
   /// Absent (tests, embedded runtimes), providers keep the plain behavior.
   readonly backgroundTerminals?: BackgroundTerminalIntegration
-  /// Extra providers (claude/codex) keyed by id; the ACP provider is always
-  /// registered. Exposed for tests and incremental provider rollout.
+  /// Harness adapters to register, constructed against the runtime's
+  /// environment. The runtime registers no providers on its own — the app
+  /// composes the adapter set (mix and match per deployment).
+  readonly providerFactories?: ReadonlyArray<ProviderFactory>
+  /// Pre-built providers keyed by id, merged after `providerFactories`
+  /// (same-id wins). Exposed for tests and incremental provider rollout.
   readonly providers?: Partial<Record<ProviderId, AgentProvider>>
   /// Re-resolves the runtime's environment (see `refreshEnvironment`).
   /// Typically `() => resolveShellEnv()` so PATH-based harness detection can
@@ -658,30 +626,14 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
       return path === undefined ? [] : [path]
     })
   const providers = new Map<ProviderId, AgentProvider>()
-  const backgroundTerminals =
+  const factoryContext: ProviderFactoryContext =
     config.backgroundTerminals === undefined
       ? {}
       : { backgroundTerminals: config.backgroundTerminals }
-  providers.set(
-    "acp",
-    makeAcpProvider(environment, {
-      ...backgroundTerminals,
-      ...(config.connector === undefined ? {} : { connector: config.connector }),
-      ...(config.acpAuthProbeTimeoutMs === undefined
-        ? {}
-        : { authProbeTimeoutMs: config.acpAuthProbeTimeoutMs })
-    })
-  )
-  providers.set(
-    "claude",
-    makeClaudeProvider(environment, {
-      ...backgroundTerminals,
-      ...(config.claudeCancelGraceMs === undefined
-        ? {}
-        : { cancelGraceMs: config.claudeCancelGraceMs })
-    })
-  )
-  providers.set("codex", makeCodexProvider(environment, backgroundTerminals))
+  for (const factory of config.providerFactories ?? []) {
+    const provider = factory(environment, factoryContext)
+    providers.set(provider.id, provider)
+  }
   for (const provider of Object.values(config.providers ?? {})) {
     providers.set(provider.id, provider)
   }

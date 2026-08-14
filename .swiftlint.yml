@@ -19,6 +19,7 @@ excluded:
   - tmp
   - .repos
   - node_modules
+  - "**/node_modules"
 
 file_length:
   warning: 500

@@ -22,15 +22,15 @@ import {
   preferHarnessSessionTitles,
   type AgentSessionSummary,
   type HarnessSessionTitle
-} from "../../agent-sessions.js"
-import { withAttachmentNotes } from "../../attachments.js"
+} from "@codevisor/agent-runtime"
+import { withAttachmentNotes } from "@codevisor/agent-runtime"
 import {
   backgroundTerminalKey,
   DEFAULT_PROMOTION_DELAY_MS,
   type BackgroundTerminalIntegration,
   type ExternalTerminalStream
-} from "../../background-terminals.js"
-import { diffStatsFromUnified, lineCount } from "../../diff-stats.js"
+} from "@codevisor/agent-runtime"
+import { diffStatsFromUnified, lineCount } from "@codevisor/agent-runtime"
 import {
   adapterPromise,
   normalizePromptInput,
@@ -48,8 +48,8 @@ import {
   type RuntimeEvent,
   type SetGoalUpdate,
   type ToolGatewayConfig
-} from "../../types.js"
-import { findKnownModel, highestThinkingLevel, sanitizeModelValue } from "../model-selection.js"
+} from "@codevisor/agent-runtime"
+import { findKnownModel, highestThinkingLevel, sanitizeModelValue } from "@codevisor/agent-runtime"
 import { spawnCodexClient, type CodexClient, type CodexConnector } from "./client.js"
 import { killCodexCommandProcesses, type CodexCommandKiller } from "./process-kill.js"
 

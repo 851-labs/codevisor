@@ -11,3 +11,6 @@
 
 # Mass swift-format pass (Phase 1)
 5aaab994f7ebfb5340fa920a88cdc8af90902bed
+
+# Swift packages move to packages/swift (Phase 2)
+ff3def86d5676e80e7ab0a5a60957a6617d278e6

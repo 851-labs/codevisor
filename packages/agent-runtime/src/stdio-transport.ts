@@ -1,6 +1,6 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import type { Readable, Writable } from "node:stream"
-import { summarizeProcessFailure } from "../process-failure.js"
+import { summarizeProcessFailure } from "./process-failure.js"
 
 /// The subset of a spawned child process a stdio transport needs. An
 /// interface rather than ChildProcess itself so lifecycle RACES are unit

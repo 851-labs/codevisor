@@ -1,9 +1,11 @@
 import {
   makeAgentRuntime,
   resolveShellEnv,
-  testAcpConnection,
   type BackgroundTerminalIntegration
 } from "@codevisor/agent-runtime"
+import { makeAcpProvider, testAcpConnection } from "@codevisor/adapter-acp"
+import { makeClaudeProvider } from "@codevisor/adapter-claude"
+import { makeCodexProvider } from "@codevisor/adapter-codex"
 import type { DataUpgradeProgress, UpdateInfo } from "@codevisor/api"
 import {
   makeAttachmentStore,
@@ -724,6 +726,11 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
       ...(customHarnesses.definitions.length === 0
         ? {}
         : { extraHarnesses: customHarnesses.definitions }),
+      providerFactories: [
+        (env, context) => makeAcpProvider(env, context),
+        (env, context) => makeClaudeProvider(env, context),
+        (env, context) => makeCodexProvider(env, context)
+      ],
       resolveEnv: () => resolveShellEnv()
     })
     const sessionActivity = makeActiveWorkSleepInhibitor()

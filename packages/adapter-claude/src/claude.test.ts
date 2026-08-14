@@ -5,7 +5,7 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import type { HarnessDefinition, ProviderEnvironment, RuntimeEvent } from "../types.js"
+import type { HarnessDefinition, ProviderEnvironment, RuntimeEvent } from "@codevisor/agent-runtime"
 import {
   type ClaudeProviderConfig,
   claudeUsageLimitsFrom,
