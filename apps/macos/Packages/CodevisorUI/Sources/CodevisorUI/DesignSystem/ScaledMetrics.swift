@@ -63,34 +63,21 @@ extension View {
     }
 }
 
-#if canImport(UIKit)
-import UIKit
-
-extension UIFont {
-    /// A monospaced system font pinned to a text style's hierarchy and
-    /// scaled through `UIFontMetrics`, so UIKit rescales it in place when
-    /// the content size category changes (`adjustsFontForContentSizeCategory`).
-    ///
-    /// Use instead of the fragile
-    /// `monospacedSystemFont(ofSize: preferredFont(forTextStyle:).pointSize)`
-    /// idiom, which produces a font UIKit cannot rescale — it only tracks
-    /// Dynamic Type if SwiftUI happens to rebuild the hosting view.
-    public static func scaledMonospacedSystemFont(
-        forTextStyle textStyle: UIFont.TextStyle,
-        weight: UIFont.Weight = .regular
-    ) -> UIFont {
-        // Base size must come from the default (Large) category — the
-        // metrics below apply the user's current category on top, and
-        // reading `preferredFont` without pinning would double-scale.
-        let baseDescriptor = UIFontDescriptor.preferredFontDescriptor(
-            withTextStyle: textStyle,
-            compatibleWith: UITraitCollection(preferredContentSizeCategory: .large)
-        )
-        let base = UIFont.monospacedSystemFont(
-            ofSize: baseDescriptor.pointSize,
-            weight: weight
-        )
-        return UIFontMetrics(forTextStyle: textStyle).scaledFont(for: base)
+extension View {
+    /// Expands a control's tappable area to at least `minimum` points square
+    /// (HIG: 44×44 pt) without affecting layout: the hit shape is padded out,
+    /// then the layout bounds are pulled back in. `base` is the control's
+    /// visible size at the default content size — when the visible control is
+    /// already larger (e.g. a `scaledFrame` at accessibility sizes), the hit
+    /// area simply grows with it.
+    public func expandedHitTarget(base: CGFloat, minimum: CGFloat = 44) -> some View {
+        let pad = max(0, (minimum - base) / 2)
+        return padding(pad)
+            .contentShape(Rectangle())
+            .padding(-pad)
     }
 }
-#endif
+
+// Note: the UIKit counterpart, `UIFont.scaledMonospacedSystemFont`, lives in
+// StreamMarkdown (which CodevisorUI depends on) so the markdown/transcript
+// rendering stack can use it too.

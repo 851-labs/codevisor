@@ -2184,7 +2184,7 @@ private struct NewTabPaneView: View {
             HStack(spacing: 14) {
                 Image(systemName: systemImage)
                     .font(.title3)
-                    .frame(width: 34)
+                    .scaledFrame(width: 34, relativeTo: .title3)
                     .foregroundStyle(.tint)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)

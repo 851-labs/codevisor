@@ -1437,7 +1437,7 @@ private struct SubagentSection: View {
                     // icon — the macOS transcript's icon-under-text ratio.
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .frame(width: 16)
+                    .scaledFrame(width: 16, relativeTo: .subheadline)
                 Text(call.displayTitle)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

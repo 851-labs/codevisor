@@ -154,10 +154,7 @@ enum UIKitMarkdownTextRunRenderer {
     ) -> NSAttributedString {
         let parsed = InlineMarkdown.attributedString(from: markdown, theme: theme)
         let output = NSMutableAttributedString()
-        let codeFont = UIFont.monospacedSystemFont(
-            ofSize: UIFont.preferredFont(forTextStyle: .callout).pointSize,
-            weight: .regular
-        )
+        let codeFont = UIFont.scaledMonospacedSystemFont(forTextStyle: .callout)
 
         for run in parsed.runs {
             let substring = String(parsed[run.range].characters)

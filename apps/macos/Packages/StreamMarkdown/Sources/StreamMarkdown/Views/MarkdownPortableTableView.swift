@@ -199,9 +199,7 @@ private enum TableCellMeasurement {
         let baseFont = UIFont.systemFont(
             ofSize: bodySize, weight: isHeader ? .semibold : .regular
         )
-        let codeFont = UIFont.monospacedSystemFont(
-            ofSize: UIFont.preferredFont(forTextStyle: .callout).pointSize, weight: .regular
-        )
+        let codeFont = UIFont.scaledMonospacedSystemFont(forTextStyle: .callout)
 
         // A UIKit-measurable copy of the cell with per-run fonts.
         let measurable = NSMutableAttributedString()

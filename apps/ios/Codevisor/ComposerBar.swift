@@ -630,10 +630,10 @@ struct ComposerBar: View {
             }
         } label: {
             Image(systemName: "paperclip")
-                .font(.system(size: 15, weight: .medium))
+                .font(.subheadline.weight(.medium))
                 .foregroundStyle(.secondary)
-                .frame(width: 28, height: 28)
-                .contentShape(Rectangle())
+                .scaledFrame(width: 28, height: 28, relativeTo: .subheadline)
+                .expandedHitTarget(base: 28)
         }
         .buttonStyle(.plain)
         .disabled(remainingAttachmentSlots == 0)
@@ -657,15 +657,15 @@ struct ComposerBar: View {
             Task { await controller.send() }
         } label: {
             Image(systemName: "arrow.up")
-                .font(.system(size: 14, weight: .bold))
-                .frame(width: 30, height: 30)
+                .font(.subheadline.weight(.bold))
+                .scaledFrame(width: 30, height: 30, relativeTo: .subheadline)
                 .foregroundStyle(canSend ? Color(.systemBackground) : Color.secondary.opacity(0.75))
                 .background(
                     Circle().fill(
                         canSend ? Color.primary.opacity(0.85) : Color.secondary.opacity(0.16)
                     )
                 )
-                .contentShape(Circle())
+                .expandedHitTarget(base: 30)
         }
         .buttonStyle(.plain)
         .disabled(!canSend)
@@ -677,11 +677,11 @@ struct ComposerBar: View {
             Task { await controller.stop() }
         } label: {
             Image(systemName: "stop.fill")
-                .font(.system(size: 12, weight: .bold))
-                .frame(width: 30, height: 30)
+                .font(.caption.weight(.bold))
+                .scaledFrame(width: 30, height: 30, relativeTo: .caption)
                 .foregroundStyle(.secondary)
                 .background(Circle().fill(Color.secondary.opacity(0.16)))
-                .contentShape(Circle())
+                .expandedHitTarget(base: 30)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Stop")

@@ -919,7 +919,7 @@ struct AddMachineSheet: View {
                 } label: {
                     Image(systemName: "xmark")
                         .font(.title3.weight(.semibold))
-                        .frame(width: 22, height: 22)
+                        .scaledFrame(width: 22, height: 22, relativeTo: .title3)
                 }
                 .buttonStyle(.glass)
                 .buttonBorderShape(.circle)
@@ -936,7 +936,7 @@ struct AddMachineSheet: View {
                                 .font(.title3.weight(.semibold))
                         }
                     }
-                    .frame(width: 22, height: 22)
+                    .scaledFrame(width: 22, height: 22, relativeTo: .title3)
                 }
                 .buttonStyle(.glass)
                 .buttonBorderShape(.circle)

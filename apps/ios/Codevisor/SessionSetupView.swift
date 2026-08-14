@@ -158,10 +158,7 @@ private struct SessionSetupPhaseView: View {
 
     private var logText: NSAttributedString {
         let result = NSMutableAttributedString()
-        let font = UIFont.monospacedSystemFont(
-            ofSize: UIFont.preferredFont(forTextStyle: .caption1).pointSize,
-            weight: .regular
-        )
+        let font = UIFont.scaledMonospacedSystemFont(forTextStyle: .caption1)
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 2
         for (index, line) in phase.logs.enumerated() {

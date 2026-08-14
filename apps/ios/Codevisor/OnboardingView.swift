@@ -513,7 +513,7 @@ private struct ManualSetupView: View {
                         Image(systemName: "desktopcomputer")
                             .font(.title3)
                             .foregroundStyle(.tint)
-                            .frame(width: 30)
+                            .scaledFrame(width: 30, relativeTo: .title3)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(machine.name)
                                 .fontWeight(.medium)
@@ -562,7 +562,7 @@ private struct ManualSetupView: View {
                     Image(systemName: "bolt.fill")
                         .font(.title3)
                         .foregroundStyle(.tint)
-                        .frame(width: 30)
+                        .scaledFrame(width: 30, relativeTo: .title3)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(remote.name)
                             .fontWeight(.medium)

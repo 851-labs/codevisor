@@ -163,12 +163,12 @@ private final class NativeCodeMemo {
     private var cached: NSAttributedString?
 
     func attributed(for text: AttributedString, fallback: Color) -> NSAttributedString {
-        let size = UIFont.preferredFont(forTextStyle: .callout).pointSize
+        let font = UIFont.scaledMonospacedSystemFont(forTextStyle: .callout)
+        let size = font.pointSize
         if let cached, text == self.text, size == fontSize, fallback == self.fallback {
             return cached
         }
         let result = NSMutableAttributedString()
-        let font = UIFont.monospacedSystemFont(ofSize: size, weight: .regular)
         let fallbackColor = UIColor(fallback)
         for run in text.runs {
             result.append(
