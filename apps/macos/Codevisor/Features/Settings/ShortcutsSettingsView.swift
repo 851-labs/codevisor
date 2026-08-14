@@ -67,7 +67,8 @@ private struct ShortcutKeycapView: View {
 
     var body: some View {
         Text(display)
-            .font(.system(size: 12, weight: .medium))
+            // 12 pt = the macOS `.callout` text style.
+            .font(.callout.weight(.medium))
             .monospacedDigit()
             .foregroundStyle(theme.textPrimary)
             .padding(.horizontal, 6)

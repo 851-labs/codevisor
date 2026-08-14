@@ -547,9 +547,9 @@ struct NotificationsSettingsView: View {
                     ZStack {
                         Circle()
                             .fill(theme.cardHoverBackground)
-                            .frame(width: 18, height: 18)
+                            .frame(width: 20, height: 20)
                         Image(systemName: "chevron.up.chevron.down")
-                            .font(.system(size: 7, weight: .semibold))
+                            .font(.system(size: Typography.IconSize.compact, weight: .semibold))
                             .foregroundStyle(theme.textPrimary)
                     }
                 }
@@ -566,9 +566,9 @@ struct NotificationsSettingsView: View {
                 ZStack {
                     Circle()
                         .strokeBorder(theme.textSecondary.opacity(0.75), lineWidth: 1)
-                        .frame(width: 18, height: 18)
+                        .frame(width: 20, height: 20)
                     Image(systemName: "play.fill")
-                        .font(.system(size: 7, weight: .semibold))
+                        .font(.system(size: Typography.IconSize.compact, weight: .semibold))
                         .foregroundStyle(theme.textSecondary)
                 }
                 .contentShape(Circle())

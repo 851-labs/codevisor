@@ -987,7 +987,7 @@ struct PaneTab: View {
                     .help(iconHelp)
             }
             Text(name)
-                .font(.system(size: 11.5))
+                .font(.tabLabel())
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .foregroundStyle(isSelected ? .primary : .secondary)
@@ -1006,7 +1006,7 @@ struct PaneTab: View {
     private var closeButton: some View {
         Button(action: onClose) {
             Image(systemName: "xmark")
-                .font(.system(size: 8.5, weight: .bold))
+                .font(.system(size: Typography.IconSize.compact, weight: .bold))
                 .foregroundStyle(isCloseHovered ? .primary : .secondary)
                 .frame(width: 16, height: 16)
                 .background(

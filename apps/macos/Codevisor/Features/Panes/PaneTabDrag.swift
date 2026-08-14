@@ -474,7 +474,7 @@ struct PaneTabDragGhost: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: iconName)
-                .font(.system(size: 9.5, weight: .semibold))
+                .font(.system(size: Typography.IconSize.compact, weight: .semibold))
                 .foregroundStyle(theme.accent)
             Text(name)
                 .font(.caption)

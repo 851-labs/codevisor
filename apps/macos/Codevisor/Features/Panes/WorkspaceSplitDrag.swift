@@ -255,7 +255,7 @@ struct WorkspaceSplitDragGhost: View {
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(theme.textSecondary)
             Text(name)
-                .font(.system(size: 11.5, weight: .medium))
+                .font(.tabLabel(weight: .medium))
                 .lineLimit(1)
                 .foregroundStyle(theme.textPrimary)
         }

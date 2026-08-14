@@ -228,7 +228,7 @@ struct OnboardingView: View {
                 .accessibilityHidden(true)
 
             Text("Welcome to Codevisor")
-                .font(.system(size: 36, weight: .bold))
+                .font(.heroTitle)
                 .padding(.top, 22)
 
             Text("All your coding agents, working in one place.")
@@ -247,13 +247,13 @@ struct OnboardingView: View {
     private var analyticsStep: some View {
         VStack(spacing: 0) {
             Image(systemName: "chart.line.uptrend.xyaxis")
-                .font(.system(size: 34, weight: .medium))
+                .font(.system(size: Typography.IconSize.hero, weight: .medium))
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
 
             Text("Help improve Codevisor")
-                .font(.system(size: 28, weight: .bold))
+                .font(.stepTitle)
                 .padding(.top, 18)
 
             VStack(alignment: .leading, spacing: 16) {
@@ -429,13 +429,13 @@ struct OnboardingView: View {
     private func stepHeader(symbol: String, title: String, subtitle: String) -> some View {
         VStack(spacing: 0) {
             Image(systemName: symbol)
-                .font(.system(size: 34, weight: .medium))
+                .font(.system(size: Typography.IconSize.hero, weight: .medium))
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
 
             Text(title)
-                .font(.system(size: 28, weight: .bold))
+                .font(.stepTitle)
                 .padding(.top, 18)
 
             Text(subtitle)

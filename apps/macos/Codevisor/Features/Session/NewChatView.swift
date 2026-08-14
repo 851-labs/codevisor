@@ -403,10 +403,10 @@ struct NewChatView: View {
     private var title: some View {
         if showsProjectSetup {
             Text("Add a project to start")
-                .font(.system(size: 26, weight: .semibold))
+                .font(.emptyStateTitle)
         } else {
             Text("What should we build?")
-                .font(.system(size: 26, weight: .semibold))
+                .font(.emptyStateTitle)
         }
     }
 

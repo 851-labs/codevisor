@@ -46,6 +46,10 @@ public enum Typography {
     public enum IconSize {
         /// Disclosure chevrons in settings rows.
         public static let disclosure: CGFloat = 10
+        /// The smallest allowed glyph: close/remove badges, picker
+        /// indicators, and other compact overlay controls. Matches the
+        /// macOS 10 pt legibility floor — never size a glyph below this.
+        public static let compact: CGFloat = 10
         /// Small chrome glyphs: tab icons, "+" buttons, chip icons,
         /// prev/next arrows.
         public static let chrome: CGFloat = 12

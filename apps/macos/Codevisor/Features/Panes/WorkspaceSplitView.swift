@@ -188,7 +188,7 @@ private struct SplitLeafHeader: View {
                     leadingIcon
 
                     Text(pane.map(title) ?? "New Tab")
-                        .font(.system(size: 11.5, weight: .medium))
+                        .font(.tabLabel(weight: .medium))
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .foregroundStyle(theme.textPrimary)

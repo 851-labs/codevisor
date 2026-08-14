@@ -783,7 +783,7 @@ struct ModeChip: View {
             Image(systemName: showsRemoveGlyph ? "xmark" : systemImage)
                 .font(
                     showsRemoveGlyph
-                        ? .system(size: 8.5, weight: .bold)
+                        ? .system(size: Typography.IconSize.compact, weight: .bold)
                         : .system(size: 11, weight: .semibold)
                 )
                 .frame(width: 16, height: 16)
@@ -1002,12 +1002,12 @@ private struct ComposerAttachmentThumb: View {
             onRemove()
         } label: {
             Image(systemName: "xmark")
-                .font(.system(size: 8, weight: .bold))
+                .font(.system(size: Typography.IconSize.compact, weight: .bold))
                 // Fixed dark-on-light styling (not theme-derived): the button
                 // sits on arbitrary image content, so it needs contrast
                 // against white screenshots and dark thumbnails alike.
                 .foregroundStyle(.white)
-                .frame(width: 16, height: 16)
+                .frame(width: 18, height: 18)
                 .background(Circle().fill(.black.opacity(0.78)))
                 .overlay(Circle().strokeBorder(.white.opacity(0.85), lineWidth: 1))
                 .contentShape(Circle())

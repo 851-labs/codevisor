@@ -876,7 +876,9 @@ private struct McpScrollingTextField: NSViewRepresentable {
         textField.isBezeled = false
         textField.drawsBackground = false
         textField.focusRingType = .none
-        textField.font = .systemFont(ofSize: 13)
+        // HIG: match standard controls via the dynamic system font variant
+        // rather than a hardcoded size.
+        textField.font = .controlContentFont(ofSize: NSFont.systemFontSize)
         textField.usesSingleLineMode = true
         textField.maximumNumberOfLines = 1
         textField.cell?.isScrollable = true
@@ -955,7 +957,7 @@ private struct McpKeyValueEditor: View {
                     LazyVStack(spacing: 0) {
                         if entries.isEmpty {
                             Text(emptyLabel)
-                                .font(.system(size: 13))
+                                .font(.body)
                                 .foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, minHeight: 24, maxHeight: 24)
                                 .background(rowBackground(at: 0))

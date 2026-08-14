@@ -1,4 +1,5 @@
 import AppKit
+import CodevisorUI
 import Darwin
 import Observation
 import QuartzCore
@@ -157,8 +158,10 @@ private struct DebugMetricsOverlay: View {
                     .foregroundStyle(.white.opacity(0.72))
                 Spacer()
                 Text("\(ShortcutCatalog.display(for: .toggleDebugOverlay)) to hide")
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.42))
+                    .font(.system(size: Typography.minimumTextSize, weight: .medium, design: .monospaced))
+                    // Text at the minimum size needs contrast headroom —
+                    // 0.42 white was doubly hard to read.
+                    .foregroundStyle(.white.opacity(0.6))
             }
 
             HStack(spacing: 8) {
@@ -223,8 +226,8 @@ private struct PrimaryMetric: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title)
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.48))
+                .font(.system(size: Typography.minimumTextSize, weight: .bold, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.6))
             Text(value)
                 .font(.system(size: 19, weight: .semibold, design: .monospaced))
                 .foregroundStyle(tint)
@@ -244,8 +247,8 @@ private struct ResourceMetric: View {
         VStack(spacing: 5) {
             HStack {
                 Text(title)
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.48))
+                    .font(.system(size: Typography.minimumTextSize, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.6))
                 Spacer()
                 Text(value)
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))

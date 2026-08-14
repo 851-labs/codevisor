@@ -27,7 +27,8 @@ struct NewTabPageView: View {
             ScrollView {
                 VStack(spacing: 24) {
                     Text("New tab")
-                        .font(.system(size: 15, weight: .semibold))
+                        // 15 pt = the macOS `.title3` text style.
+                        .font(.title3.weight(.semibold))
                         .foregroundStyle(theme.textSecondary)
                     // Side by side while the pane is wide enough; a narrow
                     // split column stacks the cards instead of clipping.
@@ -95,10 +96,12 @@ private struct NewTabOptionCard: View {
                     .frame(height: 32)
                 VStack(spacing: 4) {
                     Text(title)
-                        .font(.system(size: 13, weight: .medium))
+                        // 13 pt = the macOS `.body` text style.
+                        .font(.body.weight(.medium))
                         .foregroundStyle(theme.textPrimary)
                     Text(subtitle)
-                        .font(.system(size: 11))
+                        // 11 pt = the macOS `.subheadline` text style.
+                        .font(.subheadline)
                         .foregroundStyle(theme.textSecondary)
                         .multilineTextAlignment(.center)
                 }
