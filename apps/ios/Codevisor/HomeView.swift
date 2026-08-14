@@ -602,7 +602,7 @@ struct HomeView: View {
                         chatRow(
                             session,
                             projectName: projectName(for: session),
-                            showsFullWidthTopSeparator: session.id == visibleSessions.first?.id
+                            mailStyleSeparatorIsFirst: session.id == visibleSessions.first?.id
                         )
                     }
                     .onMove { source, destination in
@@ -740,7 +740,7 @@ struct HomeView: View {
     private func chatRow(
         _ session: ChatSession,
         projectName: String?,
-        showsFullWidthTopSeparator: Bool = false
+        mailStyleSeparatorIsFirst: Bool? = nil
     ) -> some View {
         Button {
             openChat(session)
@@ -752,7 +752,6 @@ struct HomeView: View {
             )
         }
         .buttonStyle(.plain)
-        .modifier(FullWidthTopSeparatorModifier(isVisible: showsFullWidthTopSeparator))
         .swipeActions(edge: .trailing) {
             Button {
                 _ = environment.archiveSessionAndWorkspaceIfEmpty(session)
@@ -762,6 +761,9 @@ struct HomeView: View {
             }
             .tint(.orange)
         }
+        // Apply row traits outside the swipe wrapper so they reach the List's
+        // actual cell rather than only the swipeable content hosted inside it.
+        .modifier(MailStyleSeparatorModifier(isFirst: mailStyleSeparatorIsFirst))
     }
 
     private func moveSessions(from source: IndexSet, to destination: Int) {
@@ -1579,22 +1581,28 @@ struct HomeView: View {
     }
 }
 
-/// The first separator belongs to the list as a whole, rather than to the
-/// first row's text column. Later separators retain the standard Mail-style
-/// leading inset beneath the row copy.
-private struct FullWidthTopSeparatorModifier: ViewModifier {
-    let isVisible: Bool
+/// Mail owns dividers on the following row's top edge. Native top separators
+/// disappear with the system swipe presentation, while hiding bottom edges
+/// means the final row never leaves a trailing divider.
+private struct MailStyleSeparatorModifier: ViewModifier {
+    /// `nil` leaves hierarchical list rows on SwiftUI's standard separator
+    /// behavior. Compact mode supplies `true` for its first row and `false`
+    /// for every later row.
+    let isFirst: Bool?
 
+    @ViewBuilder
     func body(content: Content) -> some View {
-        if isVisible {
-            content
-                .listRowSeparator(.hidden, edges: .top)
-                .listRowBackground(
-                    Color.clear.overlay(alignment: .top) {
-                        Divider()
-                            .padding(.horizontal, 16)
-                    }
-                )
+        if let isFirst {
+            if isFirst {
+                content
+                    .listRowSeparator(.visible, edges: .top)
+                    .listRowSeparator(.hidden, edges: .bottom)
+                    .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+            } else {
+                content
+                    .listRowSeparator(.visible, edges: .top)
+                    .listRowSeparator(.hidden, edges: .bottom)
+            }
         } else {
             content
         }
