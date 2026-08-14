@@ -99,11 +99,13 @@ import {
   rmSync,
   rmdirSync,
   statSync,
+  type Stats,
   writeFileSync
 } from "node:fs"
 import { readdir } from "node:fs/promises"
 import { homedir, hostname, tmpdir } from "node:os"
-import { dirname, join, resolve as resolvePath } from "node:path"
+import { basename, dirname, extname, isAbsolute, join, resolve as resolvePath } from "node:path"
+import { fileURLToPath } from "node:url"
 import {
   CloneError,
   GitError,
@@ -132,11 +134,6 @@ import { NativeMcpError, type NativeMcpManager } from "./native-mcp-manager.js"
 import { SkillsError, type SkillsManager } from "./skills-manager.js"
 import { availableDevelopmentWorktreeName } from "./food-worktree-names.js"
 import { availableProductionWorktreeName } from "./worktree-names.js"
-import {
-  assistantArtifactDirectory,
-  assistantArtifactGuidance,
-  finalizeAssistantArtifacts
-} from "./assistant-artifacts.js"
 
 export class ServerError extends Schema.TaggedErrorClass<ServerError>()("ServerError", {
   operation: Schema.String,
@@ -416,6 +413,46 @@ const requestedByteRange = (
   }
   return { start, end: Math.min(requestedEnd, size - 1) }
 }
+
+const filesystemMimeTypes: Readonly<Record<string, string>> = {
+  ".aac": "audio/aac",
+  ".aiff": "audio/aiff",
+  ".avi": "video/x-msvideo",
+  ".bmp": "image/bmp",
+  ".csv": "text/csv",
+  ".doc": "application/msword",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".gif": "image/gif",
+  ".heic": "image/heic",
+  ".html": "text/html",
+  ".jpeg": "image/jpeg",
+  ".jpg": "image/jpeg",
+  ".json": "application/json",
+  ".m4a": "audio/mp4",
+  ".m4v": "video/mp4",
+  ".md": "text/markdown",
+  ".mov": "video/quicktime",
+  ".mp3": "audio/mpeg",
+  ".mp4": "video/mp4",
+  ".pdf": "application/pdf",
+  ".png": "image/png",
+  ".ppt": "application/vnd.ms-powerpoint",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ".svg": "image/svg+xml",
+  ".tiff": "image/tiff",
+  ".tsv": "text/tab-separated-values",
+  ".txt": "text/plain",
+  ".wav": "audio/wav",
+  ".webm": "video/webm",
+  ".webp": "image/webp",
+  ".xls": "application/vnd.ms-excel",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".xml": "application/xml",
+  ".zip": "application/zip"
+}
+
+const filesystemMimeType = (path: string): string =>
+  filesystemMimeTypes[extname(path).toLowerCase()] ?? "application/octet-stream"
 
 /// Materializes attachment bytes as temp files so path-based provider inputs
 /// (Codex localImage, path notes for arbitrary files) can reference them.
@@ -1027,7 +1064,7 @@ const handleRequest = async (
     if (await routeFiles(services, request, response, url)) {
       return
     }
-    if (await routeFs(request, response, url)) {
+    if (await routeFs(services, request, response, url)) {
       return
     }
     if (await routeCloud(config, request, response, url)) {
@@ -1853,13 +1890,112 @@ const routeCloud = async (
 }
 
 const routeFs = async (
+  services: CodevisorServerServices,
   request: IncomingMessage,
   response: ServerResponse,
   url: URL
 ): Promise<boolean> => {
-  if (request.method !== "GET" || url.pathname !== "/v1/fs/list") {
-    return false
+  if (url.pathname === "/v1/fs/file" && (request.method === "GET" || request.method === "HEAD")) {
+    const requested = url.searchParams.get("path")
+    if (requested === null || requested.length === 0) {
+      throw new HttpFailure(400, "File path is required", "invalid_path")
+    }
+    let expanded: string
+    try {
+      expanded = requested.startsWith("file://")
+        ? fileURLToPath(requested)
+        : requested === "~"
+          ? homedir()
+          : requested.startsWith("~/")
+            ? join(homedir(), requested.slice(2))
+            : requested
+    } catch {
+      throw new HttpFailure(400, `Invalid file URL: ${requested}`, "invalid_path")
+    }
+    if (!isAbsolute(expanded)) {
+      const sessionId = url.searchParams.get("sessionId")
+      if (sessionId === null || sessionId.length === 0) {
+        throw new HttpFailure(400, "sessionId is required for a relative file path", "invalid_path")
+      }
+      const session = await run(services.db.getSessionSummary(sessionId.toLowerCase()))
+      /* v8 ignore next -- server-created local sessions always retain their project working directory. */
+      if (session.cwd === undefined) {
+        throw new HttpFailure(409, `Session has no working directory: ${sessionId}`, "missing_cwd")
+      }
+      expanded = resolvePath(session.cwd, expanded)
+    }
+
+    const path = resolvePath(expanded)
+    const fallbacks = [
+      path.replace(/#L\d+(?:-L?\d+)?$/, ""),
+      path.replace(/:\d+(?::\d+)?$/, "")
+    ].filter(
+      (candidate, index, values) => candidate !== path && values.indexOf(candidate) === index
+    )
+    let resolved = path
+    let info: Stats | undefined
+    let lastError: unknown
+    for (const candidate of [path, ...fallbacks]) {
+      try {
+        const candidateInfo = statSync(candidate)
+        if (candidateInfo.isFile()) {
+          resolved = candidate
+          info = candidateInfo
+          break
+        }
+        lastError = Object.assign(new Error(`Not a file: ${candidate}`), { code: "EISDIR" })
+      } catch (cause) {
+        lastError = cause
+      }
+    }
+    if (info === undefined) {
+      /* v8 ignore next -- every failed candidate records the filesystem error that determines the response. */
+      const code = (lastError as NodeJS.ErrnoException | undefined)?.code ?? ""
+      if (code === "ENOENT") {
+        throw new HttpFailure(404, `No such file: ${path}`, "not_found")
+      }
+      if (["EACCES", "EPERM"].includes(code)) {
+        throw new HttpFailure(403, `Permission denied: ${path}`, "permission_denied")
+      }
+      if (code === "EISDIR") {
+        throw new HttpFailure(400, `Not a file: ${path}`, "not_a_file")
+      }
+      throw lastError
+    }
+
+    const range = requestedByteRange(request.headers.range, info.size)
+    if (range === "invalid") {
+      response.writeHead(416, {
+        "Accept-Ranges": "bytes",
+        "Content-Range": `bytes */${info.size}`
+      })
+      response.end()
+      return true
+    }
+    const contentLength = range === undefined ? info.size : range.end - range.start + 1
+    response.writeHead(range === undefined ? 200 : 206, {
+      "Accept-Ranges": "bytes",
+      "Cache-Control": "private, no-store",
+      "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(basename(resolved))}`,
+      "Content-Length": contentLength,
+      ...(range === undefined
+        ? {}
+        : { "Content-Range": `bytes ${range.start}-${range.end}/${info.size}` }),
+      "Content-Type": filesystemMimeType(resolved),
+      "Last-Modified": info.mtime.toUTCString()
+    })
+    if (request.method === "HEAD") {
+      response.end()
+      return true
+    }
+    const stream = createReadStream(resolved, range === undefined ? {} : range)
+    /* v8 ignore next -- requires the live file to disappear after validation but before the stream opens. */
+    stream.once("error", (cause) => response.destroy(cause))
+    stream.pipe(response)
+    return true
   }
+
+  if (request.method !== "GET" || url.pathname !== "/v1/fs/list") return false
   const requested = url.searchParams.get("path") ?? "~"
   const showHidden = url.searchParams.get("showHidden") === "true"
   const home = homedir()
@@ -2873,49 +3009,10 @@ const sessionEventSink =
       (event.kind === "session.updated" &&
         (payload.turnState === "ended" || typeof payload.stopReason === "string"))
     ) {
-      return (async () => {
-        await finalizeAssistantTurn(services, fanout, serverId, sessionId)
-        await materializeRuntimeEvent(services.db, fanout, serverId, event, sessionId)
-      })()
+      return materializeRuntimeEvent(services.db, fanout, serverId, event, sessionId)
     }
     return materializeRuntimeEvent(services.db, fanout, serverId, event, sessionId)
   }
-
-const finalizeAssistantTurn = async (
-  services: CodevisorServerServices,
-  fanout: EventFanout,
-  serverId: string,
-  sessionId: string
-): Promise<void> => {
-  try {
-    const page = await run(services.db.getTranscriptPage(sessionId, undefined, 1))
-    const item = page.items.at(-1)
-    if (item?.role !== "assistant" || !item.isGenerating) return
-    const session = await run(services.db.getSessionSummary(sessionId))
-    const cwd = session.cwd
-    /* v8 ignore next -- runnable local sessions always persist their resolved working directory. */
-    if (cwd === undefined) return
-    const finalized = await finalizeAssistantArtifacts(services, {
-      cwd,
-      sessionId,
-      markdown: item.text,
-      startedAt: item.startedAt,
-      existingAttachments: item.attachments
-    })
-    if (!finalized.changed) return
-    await appendAndPublish(services.db, fanout, "session.output", sessionId, {
-      sessionUpdate: "assistant_message_finalized",
-      markdown: finalized.markdown,
-      /* v8 ignore next -- provider-backed assistant messages normally carry a stable message id. */
-      ...(item.messageId === undefined ? {} : { messageId: item.messageId }),
-      attachments: finalized.attachments,
-      serverId
-    })
-  } catch {
-    // Artifact promotion must never swallow the provider's terminal event.
-    // An unsafe, missing, or concurrently-written link remains plain Markdown.
-  }
-}
 
 /// Derives the directory a session runs in: the project's folder on this
 /// server, or its worktree at ~/codevisor/{projectId}/{worktreeName}. The result
@@ -3709,22 +3806,12 @@ const runPromptInBackground = async (
       sessionId
     )
     const agentSession = await ensureAgentSessionFor(services, fanout, serverId, sessionId)
-    const session = await run(services.db.getSessionSummary(sessionId))
-    /* v8 ignore next -- agent-backed local sessions always have a resolved cwd; the fallback preserves imported records. */
-    const artifactDirectory =
-      session.cwd === undefined ? undefined : assistantArtifactDirectory(session.cwd, sessionId)
-    if (artifactDirectory !== undefined) mkdirSync(artifactDirectory, { recursive: true })
-    /* v8 ignore next -- see the imported-record fallback above. */
-    const providerText =
-      artifactDirectory === undefined
-        ? text
-        : `${text}\n\n${assistantArtifactGuidance(artifactDirectory)}`
     // Session output, turn lifecycle, and the final stopReason all flow
     // through the standing sink registered at session create/load time.
     const input =
       refs.length === 0
-        ? providerText
-        : { attachments: await resolvePromptAttachments(services, refs), text: providerText }
+        ? text
+        : { attachments: await resolvePromptAttachments(services, refs), text }
     await run(services.agents.prompt(agentSession.sessionId, input))
   } catch (cause) {
     if (isAuthenticationFailure(cause)) {
@@ -3738,7 +3825,6 @@ const runPromptInBackground = async (
         serverId
       })
     }
-    await finalizeAssistantTurn(services, fanout, serverId, sessionId)
     await appendAndPublish(services.db, fanout, "session.error", sessionId, {
       message: failureMessage(cause),
       serverId

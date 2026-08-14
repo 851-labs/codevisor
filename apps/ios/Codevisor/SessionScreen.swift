@@ -85,11 +85,11 @@ struct SessionTranscriptView: View {
                 followsLatest = controller.scrollState?.followMode.followsLatest ?? true
                 isAtBottom = controller.scrollState?.isAtBottom ?? true
                 if attachmentImages == nil {
-                    attachmentImages = AttachmentImageStore { [weak controller] fileId in
+                    attachmentImages = AttachmentImageStore { [weak controller] source in
                         guard let controller else {
                             throw SessionControllerError.serverUnavailable
                         }
-                        return try await controller.fileData(id: fileId)
+                        return try await controller.fileData(for: source)
                     }
                 }
                 updateVisibleTranscriptLifecycle(for: presentationRole)
@@ -1077,7 +1077,11 @@ private struct AssistantTurnBody: View {
 
     @ViewBuilder
     private func assistantResponse(entryID: String, markdown: String) -> some View {
-        let segments = assistantMarkdownSegments(markdown, attachments: turn.attachments)
+        let segments = assistantMarkdownSegments(
+            markdown,
+            attachments: turn.attachments,
+            includeServerPaths: !isGenerating
+        )
         VStack(alignment: .leading, spacing: 8) {
             ForEach(Array(segments.enumerated()), id: \.offset) { index, segment in
                 switch segment {
@@ -1093,9 +1097,9 @@ private struct AssistantTurnBody: View {
                             animationPresentation: textAnimationPresentation
                         )
                     }
-                case let .attachment(attachment, label):
+                case let .file(file, label):
                     VStack(alignment: .leading, spacing: 4) {
-                        AttachmentThumbnailView(attachment: attachment, inline: true)
+                        AttachmentThumbnailView(file: file, inline: true)
                         Text(label)
                             .font(.caption)
                             .foregroundStyle(.secondary)

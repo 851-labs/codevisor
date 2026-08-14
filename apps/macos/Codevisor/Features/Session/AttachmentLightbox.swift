@@ -31,11 +31,11 @@ final class QuickLookController {
                 switch item {
                 case let .local(localData, _, _):
                     data = localData
-                case let .remote(fileId, _, _):
+                case let .remote(source, _, _):
                     guard let attachmentStore else {
                         throw QuickLookError.attachmentUnavailable
                     }
-                    data = try await attachmentStore.data(for: fileId)
+                    data = try await attachmentStore.data(for: source)
                 }
 
                 try Task.checkCancellation()

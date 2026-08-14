@@ -302,6 +302,9 @@ public protocol CodevisorServerClienting: Sendable {
     func promptSession(id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?) async throws -> ServerPromptAccepted
     func uploadFile(name: String, mimeType: String, data: Data) async throws -> ServerFileMetadata
     func fileData(id: String) async throws -> Data
+    /// Reads a live file from this machine. Relative paths are resolved by the
+    /// server against the specified session's authoritative working directory.
+    func fileData(sessionId: UUID, path: String) async throws -> Data
     func updateQueuedPrompt(sessionId: UUID, queueItemId: String, text: String) async throws -> ServerPromptQueueItem
     func deleteQueuedPrompt(sessionId: UUID, queueItemId: String) async throws
     func cancelSession(id: UUID) async throws
@@ -666,6 +669,10 @@ public extension CodevisorServerClienting {
     }
 
     func fileData(id: String) async throws -> Data {
+        throw CodevisorServerClientError.invalidResponse
+    }
+
+    func fileData(sessionId: UUID, path: String) async throws -> Data {
         throw CodevisorServerClientError.invalidResponse
     }
 
@@ -3476,6 +3483,19 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
     public func fileData(id: String) async throws -> Data {
         let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
         return try await performRaw("/v1/files/\(encoded)", method: "GET", body: nil, contentType: nil)
+    }
+
+    public func fileData(sessionId: UUID, path: String) async throws -> Data {
+        var components = URLComponents()
+        components.path = "/v1/fs/file"
+        components.queryItems = [
+            URLQueryItem(name: "path", value: path),
+            URLQueryItem(name: "sessionId", value: sessionId.uuidString)
+        ]
+        guard let requestPath = components.string else {
+            throw CodevisorServerClientError.invalidURL("fs/file")
+        }
+        return try await performRaw(requestPath, method: "GET", body: nil, contentType: nil)
     }
 
     public func updateQueuedPrompt(sessionId: UUID, queueItemId: String, text: String) async throws -> ServerPromptQueueItem {

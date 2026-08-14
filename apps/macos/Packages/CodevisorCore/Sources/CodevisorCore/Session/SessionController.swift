@@ -1566,6 +1566,21 @@ final public class SessionController {
         return try await serverClient.fileData(id: id)
     }
 
+    /// Fetches either immutable attachment bytes or a live path from the
+    /// machine that owns this session.
+    public func fileData(for source: PreviewFile.Source) async throws -> Data {
+        guard let serverClient else { throw SessionControllerError.serverUnavailable }
+        switch source {
+        case let .attachment(fileId):
+            return try await serverClient.fileData(id: fileId)
+        case let .serverPath(path):
+            guard let sessionId = serverSession?.id else {
+                throw SessionControllerError.serverUnavailable
+            }
+            return try await serverClient.fileData(sessionId: sessionId, path: path)
+        }
+    }
+
     private func stageAttachment(
         name: String, mimeType: String, kind: Attachment.Kind, data: Data,
         failureMessage: String? = nil

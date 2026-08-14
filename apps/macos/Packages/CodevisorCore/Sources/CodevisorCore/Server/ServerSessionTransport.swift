@@ -187,6 +187,10 @@ public struct ServerSessionTransport: Sendable {
         try await client.fileData(id: id)
     }
 
+    public func fileData(path: String) async throws -> Data {
+        try await client.fileData(sessionId: sessionId, path: path)
+    }
+
     public func updateQueuedPrompt(id: String, text: String) async throws -> ServerPromptQueueItem {
         try await client.updateQueuedPrompt(sessionId: sessionId, queueItemId: id, text: text)
     }

@@ -241,7 +241,11 @@ struct AssistantTurnView: View {
 
     @ViewBuilder
     private func assistantResponse(entryID: String, markdown: String) -> some View {
-        let segments = assistantMarkdownSegments(markdown, attachments: turn.attachments)
+        let segments = assistantMarkdownSegments(
+            markdown,
+            attachments: turn.attachments,
+            includeServerPaths: !turn.isGenerating
+        )
         VStack(alignment: .leading, spacing: 8) {
             ForEach(Array(segments.enumerated()), id: \.offset) { index, segment in
                 switch segment {
@@ -257,9 +261,9 @@ struct AssistantTurnView: View {
                             animationPresentation: textAnimationPresentation
                         )
                     }
-                case let .attachment(attachment, label):
+                case let .file(file, label):
                     VStack(alignment: .leading, spacing: 4) {
-                        AttachmentThumbnailView(attachment: attachment, inline: true)
+                        AttachmentThumbnailView(file: file, inline: true)
                         Text(label)
                             .font(.caption)
                             .foregroundStyle(.secondary)

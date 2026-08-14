@@ -42,6 +42,7 @@ import {
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
+import { pathToFileURL } from "node:url"
 import { promisify } from "node:util"
 import { WebSocket } from "ws"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -301,9 +302,8 @@ const makeAgents = (): AgentRuntimeService & {
       }),
     prompt: (sessionId, input) =>
       Effect.promise(async () => {
-        const providerText = typeof input === "string" ? input : input.text
-        const text = providerText.split("\n\n[Codevisor artifact delivery]\n", 1)[0] ?? providerText
-        prompts.push([sessionId, typeof input === "string" ? text : { ...input, text }])
+        const text = typeof input === "string" ? input : input.text
+        prompts.push([sessionId, input])
         if (text === "slow prompt") {
           await new Promise((resolve) => setTimeout(resolve, 250))
         }
@@ -4494,6 +4494,128 @@ describe("@codevisor/server", () => {
     expect(denied.body).toMatchObject({ code: "permission_denied" })
   })
 
+  it("streams live filesystem files by absolute or session-relative path", async () => {
+    const { server } = await start()
+    const root = mkdtempSync(join(tmpdir(), "codevisor-fs-file-"))
+    tempDirs.push(root)
+    const path = join(root, "report 2026.pdf")
+    const bytes = Buffer.from("0123456789")
+    writeFileSync(path, bytes)
+
+    const absolute = await fetch(`${server.url}/v1/fs/file?path=${encodeURIComponent(path)}`)
+    expect(absolute.status).toBe(200)
+    expect(absolute.headers.get("content-type")).toBe("application/pdf")
+    expect(absolute.headers.get("cache-control")).toBe("private, no-store")
+    expect(Buffer.from(await absolute.arrayBuffer())).toEqual(bytes)
+
+    const fileURL = await fetch(
+      `${server.url}/v1/fs/file?path=${encodeURIComponent(pathToFileURL(path).href)}`
+    )
+    expect(fileURL.status).toBe(200)
+    expect(Buffer.from(await fileURL.arrayBuffer())).toEqual(bytes)
+
+    const head = await fetch(`${server.url}/v1/fs/file?path=${encodeURIComponent(path)}`, {
+      method: "HEAD"
+    })
+    expect(head.status).toBe(200)
+    expect(head.headers.get("content-length")).toBe(String(bytes.byteLength))
+    expect((await head.arrayBuffer()).byteLength).toBe(0)
+
+    const partial = await fetch(
+      `${server.url}/v1/fs/file?path=${encodeURIComponent(`${path}:12`)}`,
+      { headers: { Range: "bytes=2-5" } }
+    )
+    expect(partial.status).toBe(206)
+    expect(partial.headers.get("content-range")).toBe(`bytes 2-5/${bytes.byteLength}`)
+    expect(await partial.text()).toBe("2345")
+
+    const invalidRange = await fetch(`${server.url}/v1/fs/file?path=${encodeURIComponent(path)}`, {
+      headers: { Range: "bytes=99-100" }
+    })
+    expect(invalidRange.status).toBe(416)
+    expect(invalidRange.headers.get("content-range")).toBe(`bytes */${bytes.byteLength}`)
+
+    const unknownTypePath = join(root, "opaque.codevisor-preview")
+    writeFileSync(unknownTypePath, "opaque")
+    const unknownType = await fetch(
+      `${server.url}/v1/fs/file?path=${encodeURIComponent(unknownTypePath)}`
+    )
+    expect(unknownType.status).toBe(200)
+    expect(unknownType.headers.get("content-type")).toBe("application/octet-stream")
+
+    const project = await jsonRequest(server, "/v1/projects", {
+      body: JSON.stringify({ folderPath: root, id: "live-file-project" }),
+      method: "POST"
+    })
+    const session = await jsonRequest(server, "/v1/sessions", {
+      body: JSON.stringify({
+        projectId: (project.body as { readonly id: string }).id,
+        harnessId: "codex"
+      }),
+      method: "POST"
+    })
+    const sessionId = (session.body as { readonly id: string }).id
+    const relative = await fetch(
+      `${server.url}/v1/fs/file?path=${encodeURIComponent("report 2026.pdf")}&sessionId=${encodeURIComponent(sessionId.toUpperCase())}`
+    )
+    expect(relative.status).toBe(200)
+    expect(Buffer.from(await relative.arrayBuffer())).toEqual(bytes)
+
+    expect((await fetch(`${server.url}/v1/fs/file`)).status).toBe(400)
+    expect((await fetch(`${server.url}/v1/fs/file?path=`)).status).toBe(400)
+    expect(
+      (
+        await fetch(
+          `${server.url}/v1/fs/file?path=${encodeURIComponent("file://example.com/report.pdf")}`
+        )
+      ).status
+    ).toBe(400)
+    expect((await fetch(`${server.url}/v1/fs/file?path=${encodeURIComponent("~")}`)).status).toBe(
+      400
+    )
+    expect(
+      (
+        await fetch(
+          `${server.url}/v1/fs/file?path=${encodeURIComponent(`~/codevisor-missing-${randomUUID()}`)}`
+        )
+      ).status
+    ).toBe(404)
+    expect((await fetch(`${server.url}/v1/fs/file?path=missing.pdf`)).status).toBe(400)
+    expect(
+      (
+        await fetch(
+          `${server.url}/v1/fs/file?path=${encodeURIComponent(join(root, "missing.pdf"))}`
+        )
+      ).status
+    ).toBe(404)
+    expect((await fetch(`${server.url}/v1/fs/file?path=${encodeURIComponent(root)}`)).status).toBe(
+      400
+    )
+
+    const nonDirectory = join(root, "not-a-directory")
+    writeFileSync(nonDirectory, "file")
+    expect(
+      (
+        await fetch(
+          `${server.url}/v1/fs/file?path=${encodeURIComponent(join(nonDirectory, "child"))}`
+        )
+      ).status
+    ).toBe(500)
+
+    const sealed = join(root, "sealed")
+    const privatePath = join(sealed, "private.txt")
+    mkdirSync(sealed)
+    writeFileSync(privatePath, "private")
+    chmodSync(sealed, 0o000)
+    let denied: Response
+    try {
+      denied = await fetch(`${server.url}/v1/fs/file?path=${encodeURIComponent(privatePath)}`)
+    } finally {
+      chmodSync(sealed, 0o755)
+    }
+    expect(denied!.status).toBe(403)
+  })
+
   it("clones a git remote into the managed repos dir as a project", async () => {
     const execFileAsync = promisify(execFile)
     const git = (args: ReadonlyArray<string>, cwd: string) =>
@@ -5800,77 +5922,6 @@ describe("@codevisor/server", () => {
     })
     rmSync(services.attachments.objectPath(String(png.body.sha256)), { force: true })
     expect((await fetch(`${server.url}/v1/files/${String(png.body.id)}`)).status).toBe(500)
-  })
-
-  it("automatically promotes assistant Markdown files before turn completion", async () => {
-    const { agents, server, services } = await start()
-    const projectFolder = mkdtempSync(join(tmpdir(), "codevisor-assistant-delivery-"))
-    tempDirs.push(projectFolder)
-    writeFileSync(join(projectFolder, "fixed.mov"), "screen recording bytes")
-    const project = await jsonRequest(server, "/v1/projects", {
-      body: JSON.stringify({ folderPath: projectFolder, id: "assistant-delivery-project" }),
-      method: "POST"
-    })
-    const sessionResponse = await jsonRequest(server, "/v1/sessions", {
-      body: JSON.stringify({
-        projectId: (project.body as { readonly id: string }).id,
-        harnessId: "codex"
-      }),
-      method: "POST"
-    })
-    const session = sessionResponse.body as { readonly id: string; readonly agentSessionId: string }
-
-    await agents.emit(session.agentSessionId, {
-      kind: "session.updated",
-      subjectId: session.id,
-      payload: { turnId: "artifact-turn", turnState: "started", initiatedBy: "user" }
-    })
-    await agents.emit(session.agentSessionId, {
-      kind: "session.output",
-      subjectId: session.id,
-      payload: {
-        sessionUpdate: "agent_message_chunk",
-        messageId: "answer-1",
-        content: { type: "text", text: "Done. [Recording](fixed.mov)" }
-      }
-    })
-    await agents.emit(session.agentSessionId, {
-      kind: "session.updated",
-      subjectId: session.id,
-      payload: {
-        turnId: "artifact-turn",
-        turnState: "ended",
-        initiatedBy: "user",
-        stopReason: "end_turn"
-      }
-    })
-
-    const transcript = await jsonRequest(server, `/v1/sessions/${session.id}/transcript?limit=8`)
-    const item = (transcript.body as { readonly items: Array<Record<string, unknown>> }).items[0]
-    expect(item?.text).toMatch(
-      /^Done\. \[Recording\]\(https:\/\/attachments\.codevisor\.invalid\/[a-f0-9-]+\)$/
-    )
-    expect(item?.attachments).toMatchObject([
-      { name: "fixed.mov", mimeType: "video/quicktime", kind: "file" }
-    ])
-    const rawAttachments = item?.attachments
-    const attachment = Array.isArray(rawAttachments)
-      ? (rawAttachments[0] as { readonly fileId: string } | undefined)
-      : undefined
-    const download = await fetch(`${server.url}/v1/files/${attachment?.fileId}`)
-    expect(await download.text()).toBe("screen recording bytes")
-
-    const events = await run(services.db.listSubjectEvents(session.id))
-    const finalization = events.findIndex(
-      (event) =>
-        (event.payload as { readonly sessionUpdate?: string }).sessionUpdate ===
-        "assistant_message_finalized"
-    )
-    const completion = events.findIndex(
-      (event) => (event.payload as { readonly turnState?: string }).turnState === "ended"
-    )
-    expect(finalization).toBeGreaterThan(-1)
-    expect(completion).toBeGreaterThan(finalization)
   })
 
   it("recovers legacy attachment rows and rejects corrupt SQLite bytes", async () => {

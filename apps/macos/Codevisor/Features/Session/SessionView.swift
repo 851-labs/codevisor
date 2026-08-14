@@ -98,9 +98,9 @@ struct SessionScreen: View {
             // the container, which owns the workspace tree.
             focus.startTypeToFocus()
             if attachmentImages == nil {
-                attachmentImages = AttachmentImageStore { [weak controller] fileId in
+                attachmentImages = AttachmentImageStore { [weak controller] source in
                     guard let controller else { throw SessionControllerError.serverUnavailable }
-                    return try await controller.fileData(id: fileId)
+                    return try await controller.fileData(for: source)
                 }
             }
         }

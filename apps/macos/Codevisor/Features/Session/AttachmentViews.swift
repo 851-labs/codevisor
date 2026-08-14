@@ -7,32 +7,31 @@ import CodevisorUI
 
 // MARK: - Image loading
 
-/// Loads and caches attachment images from the session's server
-/// (`GET /v1/files/:id`); the fetch goes through the controller's client so
-/// bearer auth carries over for remote servers.
+/// Loads and caches preview images through the session's server client, so
+/// immutable uploads and live paths share auth and remote-server routing.
 @MainActor
 @Observable
 final class AttachmentImageStore {
-    private let fetch: (String) async throws -> Data
+    private let fetch: (PreviewFile.Source) async throws -> Data
     private let cache = NSCache<NSString, NSImage>()
     private var failed: Set<String> = []
 
-    init(fetch: @escaping (String) async throws -> Data) {
+    init(fetch: @escaping (PreviewFile.Source) async throws -> Data) {
         self.fetch = fetch
     }
 
-    func cachedImage(for fileId: String) -> NSImage? {
-        cache.object(forKey: fileId as NSString)
+    func cachedImage(for source: PreviewFile.Source) -> NSImage? {
+        cache.object(forKey: source.cacheKey as NSString)
     }
 
-    func image(for attachment: Attachment) async -> NSImage? {
-        if let cached = cachedImage(for: attachment.fileId) { return cached }
-        guard !failed.contains(attachment.fileId) else { return nil }
+    func image(for file: PreviewFile) async -> NSImage? {
+        if let cached = cachedImage(for: file.source) { return cached }
+        guard !failed.contains(file.source.cacheKey) else { return nil }
         do {
-            let data = try await fetch(attachment.fileId)
-            let name = attachment.name
-            let mimeType = attachment.mimeType
-            let isVideo = attachment.isVideo
+            let data = try await fetch(file.source)
+            let name = file.name
+            let mimeType = file.mimeType
+            let isVideo = file.isVideo
             guard let image = await Task.detached(priority: .userInitiated, operation: {
                 await attachmentPreviewImage(
                     data: data,
@@ -41,31 +40,31 @@ final class AttachmentImageStore {
                     isVideo: isVideo
                 )
             }).value else {
-                failed.insert(attachment.fileId)
+                failed.insert(file.source.cacheKey)
                 return nil
             }
-            cache.setObject(image, forKey: attachment.fileId as NSString)
+            cache.setObject(image, forKey: file.source.cacheKey as NSString)
             return image
         } catch {
             // Missing files (deleted DB, cross-server session) render as a
             // placeholder rather than erroring the transcript.
-            failed.insert(attachment.fileId)
+            failed.insert(file.source.cacheKey)
             return nil
         }
     }
 
-    func data(for fileId: String) async throws -> Data {
-        try await fetch(fileId)
+    func data(for source: PreviewFile.Source) async throws -> Data {
+        try await fetch(source)
     }
 }
 
 // MARK: - Quick Look presentation
 
 /// What Quick Look is showing: bytes already on hand (composer drafts) or a
-/// stored file fetched by id (history).
+/// remote file fetched from the session's server (history or a live path).
 enum QuickLookItem: Equatable {
     case local(data: Data, name: String, mimeType: String)
-    case remote(fileId: String, name: String, mimeType: String)
+    case remote(source: PreviewFile.Source, name: String, mimeType: String)
 
     var name: String {
         switch self {
@@ -92,6 +91,16 @@ extension EnvironmentValues {
 extension Attachment {
     /// PDFs render like images (NSImage/PDFKit handle the data) rather than
     /// as generic file chips.
+    var isPDF: Bool {
+        mimeType == "application/pdf" || name.lowercased().hasSuffix(".pdf")
+    }
+
+    var isVideo: Bool { attachmentIsVideo(name: name, mimeType: mimeType) }
+
+    var hasVisualPreview: Bool { kind == .image || isPDF || isVideo }
+}
+
+extension PreviewFile {
     var isPDF: Bool {
         mimeType == "application/pdf" || name.lowercased().hasSuffix(".pdf")
     }
@@ -165,36 +174,46 @@ struct AttachmentThumbnailView: View {
     @Environment(\.theme) private var theme
     @Environment(\.quickLook) private var quickLook
     @Environment(\.attachmentImages) private var attachmentImages
-    let attachment: Attachment
-    var inline = false
+    let file: PreviewFile
+    var inline: Bool
 
     @State private var image: NSImage?
     @State private var didLoad = false
 
+    init(attachment: Attachment, inline: Bool = false) {
+        file = PreviewFile(attachment: attachment)
+        self.inline = inline
+    }
+
+    init(file: PreviewFile, inline: Bool = false) {
+        self.file = file
+        self.inline = inline
+    }
+
     var body: some View {
         Group {
-            if attachment.hasVisualPreview {
+            if file.hasVisualPreview {
                 imageThumb
                     .overlay(alignment: .bottomLeading) {
-                        if attachment.isPDF {
+                        if file.isPDF {
                             PDFBadge()
                         }
                     }
                     .overlay {
-                        if attachment.isVideo {
+                        if file.isVideo {
                             VideoPlayBadge()
                         }
                     }
             } else {
-                AttachmentFileChip(name: attachment.name) {
+                AttachmentFileChip(name: file.name) {
                     preview()
                 }
             }
         }
-        .task(id: attachment.fileId) {
-            guard attachment.hasVisualPreview, !didLoad else { return }
+        .task(id: file.id) {
+            guard file.hasVisualPreview, !didLoad else { return }
             didLoad = true
-            image = await attachmentImages?.image(for: attachment)
+            image = await attachmentImages?.image(for: file)
         }
     }
 
@@ -210,7 +229,7 @@ struct AttachmentThumbnailView: View {
                     .resizable()
                     .aspectRatio(contentMode: .fit)
             } else {
-                Image(systemName: attachment.isVideo ? "video" : "photo")
+                Image(systemName: file.isVideo ? "video" : "photo")
                     .foregroundStyle(.tertiary)
             }
         }
@@ -224,8 +243,8 @@ struct AttachmentThumbnailView: View {
         .onTapGesture {
             preview()
         }
-        .help(attachment.name)
-        .accessibilityLabel("Attachment \(attachment.name)")
+        .help(file.name)
+        .accessibilityLabel("Attachment \(file.name)")
         .accessibilityAddTraits(.isButton)
     }
 
@@ -234,7 +253,7 @@ struct AttachmentThumbnailView: View {
         return boundedAttachmentPreviewSize(
             aspectRatio: image.flatMap { previewAspectRatio(for: $0.size) },
             maximumSize: CGSize(width: 320, height: 280),
-            fallbackAspectRatio: attachment.isPDF ? 8.5 / 11.0 : 16.0 / 9.0
+            fallbackAspectRatio: file.isPDF ? 8.5 / 11.0 : 16.0 / 9.0
         )
     }
 
@@ -248,9 +267,9 @@ struct AttachmentThumbnailView: View {
     private func preview() {
         quickLook?.present(
             .remote(
-                fileId: attachment.fileId,
-                name: attachment.name,
-                mimeType: attachment.mimeType
+                source: file.source,
+                name: file.name,
+                mimeType: file.mimeType
             ),
             attachmentStore: attachmentImages
         )

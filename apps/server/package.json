@@ -28,7 +28,6 @@
     "@modelcontextprotocol/sdk": "1.29.0",
     "effect": "4.0.0-beta.92",
     "jsonc-parser": "3.3.1",
-    "mdast-util-from-markdown": "2.0.3",
     "playwright": "1.62.0-alpha-1783623505000",
     "proper-lockfile": "4.1.2",
     "qrcode-terminal": "0.12.0",
