@@ -8,3 +8,6 @@
 # Enable locally with:
 #   git config blame.ignoreRevsFile .git-blame-ignore-revs
 # (GitHub's blame view picks this file up automatically by name.)
+
+# Mass swift-format pass (Phase 1)
+5aaab994f7ebfb5340fa920a88cdc8af90902bed

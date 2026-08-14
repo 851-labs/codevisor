@@ -7,6 +7,7 @@ bun.lock
 *.xcworkspace/
 *.xcodeproj/
 **/routeTree.gen.ts
+.swiftlint-baseline.json
 .repos/
 apps/www/.source/
 tmp/

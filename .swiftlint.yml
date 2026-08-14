@@ -1,0 +1,33 @@
+# Structural lint only — formatting is swift-format's job (.swift-format).
+# Existing violations are grandfathered in .swiftlint-baseline.json (Phase 7
+# ratchet burns them down); run with --strict so new warnings fail.
+
+only_rules:
+  - file_length
+  - type_body_length
+  - file_name
+
+included:
+  - apps/ios
+  - apps/macos
+  - packages
+
+excluded:
+  - apps/macos/Codevisor/Vendor
+  - "**/.build"
+  - "**/DerivedData"
+  - tmp
+  - .repos
+  - node_modules
+
+file_length:
+  warning: 500
+  error: 1000
+  ignore_comment_only_lines: true
+
+type_body_length:
+  warning: 400
+  error: 800
+
+file_name:
+  severity: warning

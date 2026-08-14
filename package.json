@@ -18,7 +18,7 @@
     "test": "turbo run test",
     "test:coverage": "turbo run test:coverage",
     "check:js": "bun run format:check && bun run lint && bun run typecheck && bun run test:coverage && bun run release:scripts:test",
-    "check": "bun run check:js && bun run swift:test && bun run swift:build:ios",
+    "check": "bun run check:js && bun run swift:format:check && bun run swift:lint && bun run swift:test && bun run swift:build:ios",
     "dev:web": "bun run --cwd apps/www dev",
     "release:server": "scripts/release/build-server-archive.sh",
     "release:browser-extension": "node scripts/release/build-browser-extension.mjs",
@@ -30,7 +30,10 @@
     "setup:github-oauth": "node scripts/setup-github-oauth.mjs",
     "swift:test": "swift test --package-path apps/macos/Packages",
     "swift:build:ios": "xcodebuild -project apps/ios/Codevisor.xcodeproj -scheme Codevisor -destination 'generic/platform=iOS Simulator' -derivedDataPath tmp/DerivedData-iOS-check -quiet build",
-    "xcode:list": "xcodebuild -list -project apps/macos/Codevisor.xcodeproj"
+    "xcode:list": "xcodebuild -list -project apps/macos/Codevisor.xcodeproj",
+    "swift:lint": "swiftlint lint --quiet --strict --baseline .swiftlint-baseline.json",
+    "swift:format": "scripts/swift-format.sh fix",
+    "swift:format:check": "scripts/swift-format.sh check"
   },
   "devDependencies": {
     "@types/better-sqlite3": "7.6.13",
