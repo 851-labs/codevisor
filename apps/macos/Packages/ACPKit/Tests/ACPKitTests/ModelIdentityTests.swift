@@ -32,7 +32,7 @@ struct ModelIdentityTests {
         let servers: [McpServer] = [
             .stdio(name: "a", command: "node", args: [], env: []),
             .http(name: "b", url: "https://b", headers: []),
-            .sse(name: "c", url: "https://c", headers: [])
+            .sse(name: "c", url: "https://c", headers: []),
         ]
         let data = try ACPJSON.encoder.encode(servers)
         let decoded = try ACPJSON.decoder.decode([McpServer].self, from: data)

@@ -22,13 +22,15 @@ public final class ConfigOptionCache {
         self.key = key
         capabilitiesKey = "\(key)-server-capabilities"
         if let data = store.loadData(forKey: key),
-           let decoded = try? JSONDecoder().decode([String: [String: [SessionConfigOption]]].self, from: data) {
+            let decoded = try? JSONDecoder().decode([String: [String: [SessionConfigOption]]].self, from: data)
+        {
             cache = decoded
         } else {
             cache = [:]
         }
         if let data = store.loadData(forKey: capabilitiesKey),
-           let decoded = try? JSONDecoder().decode([String: [ServerHarnessCapability]].self, from: data) {
+            let decoded = try? JSONDecoder().decode([String: [ServerHarnessCapability]].self, from: data)
+        {
             capabilitiesCache = decoded
         } else {
             capabilitiesCache = [:]
@@ -57,7 +59,8 @@ public final class ConfigOptionCache {
         guard capabilitiesCache[serverId] == nil || provisionalCapabilityServers.contains(serverId) else {
             return
         }
-        let capabilities = harnesses
+        let capabilities =
+            harnesses
             .filter { $0.enabled && $0.isReady }
             .map {
                 ServerHarnessCapability(
@@ -134,12 +137,15 @@ public final class ConfigOptionCache {
         do {
             try store.saveData(JSONEncoder().encode(cache), forKey: key)
         } catch {
-            Log.persistence.error("Failed to save \(self.key, privacy: .public): \(String(describing: error), privacy: .public)")
+            Log.persistence.error(
+                "Failed to save \(self.key, privacy: .public): \(String(describing: error), privacy: .public)")
         }
         do {
             try store.saveData(JSONEncoder().encode(capabilitiesCache), forKey: capabilitiesKey)
         } catch {
-            Log.persistence.error("Failed to save \(self.capabilitiesKey, privacy: .public): \(String(describing: error), privacy: .public)")
+            Log.persistence.error(
+                "Failed to save \(self.capabilitiesKey, privacy: .public): \(String(describing: error), privacy: .public)"
+            )
         }
     }
 }

@@ -35,15 +35,17 @@ public struct PlanDocumentView: View {
 }
 
 #Preview {
-    PlanDocumentView(markdown: """
-    # Add goal banner
+    PlanDocumentView(
+        markdown: """
+            # Add goal banner
 
-    1. Extend the wire schema with `SessionGoal`
-    2. Map codex `thread/goal/*` in the provider
-    3. Render the banner above the composer
+            1. Extend the wire schema with `SessionGoal`
+            2. Map codex `thread/goal/*` in the provider
+            3. Render the banner above the composer
 
-    **Verification**: run the dev app and set a goal.
-    """)
+            **Verification**: run the dev app and set a goal.
+            """
+    )
     .padding()
     .frame(width: 560)
 }

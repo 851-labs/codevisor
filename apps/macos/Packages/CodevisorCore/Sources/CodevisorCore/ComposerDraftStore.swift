@@ -239,7 +239,8 @@ public final class ComposerDraftStore {
                 for (key, data) in writes { try store.saveData(data, forKey: key) }
                 for key in removals { try store.removeData(forKey: key) }
             } catch {
-                Log.persistence.error("Failed to update composer draft attachments: \(String(describing: error), privacy: .public)")
+                Log.persistence.error(
+                    "Failed to update composer draft attachments: \(String(describing: error), privacy: .public)")
             }
         }
     }
@@ -277,7 +278,8 @@ public final class ComposerDraftStore {
             do {
                 try store.saveData(PersistenceEncoding.encoder.encode(persisted), forKey: paneKey)
             } catch {
-                Log.persistence.error("Failed to save pane composer drafts: \(String(describing: error), privacy: .public)")
+                Log.persistence.error(
+                    "Failed to save pane composer drafts: \(String(describing: error), privacy: .public)")
             }
         }
     }

@@ -168,7 +168,7 @@ private struct CodevisorStartupSplashView: View {
 
     private var title: String {
         guard CodevisorAppVariant.isDevelopment,
-              CodevisorAppVariant.developmentInstanceID != nil
+            CodevisorAppVariant.developmentInstanceID != nil
         else { return "Codevisor" }
         return "Codevisor (\(CodevisorAppVariant.developmentWorktreeName))"
     }
@@ -230,7 +230,8 @@ private final class NetworkPathObserver: ObservableObject, @unchecked Sendable {
                 path.isExpensive ? "expensive" : "",
                 path.isConstrained ? "constrained" : "",
             ].joined(separator: ":")
-            let shouldRecover = self.previousSignature != nil
+            let shouldRecover =
+                self.previousSignature != nil
                 && self.previousSignature != signature
                 && path.status == .satisfied
             self.previousSignature = signature

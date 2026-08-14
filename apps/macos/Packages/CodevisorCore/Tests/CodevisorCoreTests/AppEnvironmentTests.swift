@@ -9,13 +9,13 @@ struct AppEnvironmentTests {
     @Test("Debug builds use isolated development defaults")
     func debugVariantDefaults() {
         #if DEBUG
-        #expect(CodevisorAppVariant.isDevelopment)
-        #expect(CodevisorAppVariant.localServerPort == CodevisorAppVariant.developmentPort)
-        #expect(CodevisorAppVariant.applicationSupportDirectoryName == "Codevisor Development")
+            #expect(CodevisorAppVariant.isDevelopment)
+            #expect(CodevisorAppVariant.localServerPort == CodevisorAppVariant.developmentPort)
+            #expect(CodevisorAppVariant.applicationSupportDirectoryName == "Codevisor Development")
         #else
-        #expect(!CodevisorAppVariant.isDevelopment)
-        #expect(CodevisorAppVariant.localServerPort == CodevisorAppVariant.productionPort)
-        #expect(CodevisorAppVariant.applicationSupportDirectoryName == "Codevisor")
+            #expect(!CodevisorAppVariant.isDevelopment)
+            #expect(CodevisorAppVariant.localServerPort == CodevisorAppVariant.productionPort)
+            #expect(CodevisorAppVariant.applicationSupportDirectoryName == "Codevisor")
         #endif
     }
 
@@ -103,13 +103,14 @@ struct AppEnvironmentTests {
             URL(fileURLWithPath: "/Users/me/src/website"),
             URL(fileURLWithPath: "/Users/me/src/Codevisor"),
             // Duplicates collapse into the existing project.
-            URL(fileURLWithPath: "/Users/me/src/website")
+            URL(fileURLWithPath: "/Users/me/src/website"),
         ])
 
         #expect(environment.settings.hasCompletedOnboarding)
         #expect(first?.folderURL.path == "/Users/me/src/website")
-        #expect(environment.projectList.projects.map(\.folderURL.path).sorted()
-            == ["/Users/me/src/Codevisor", "/Users/me/src/website"])
+        #expect(
+            environment.projectList.projects.map(\.folderURL.path).sorted()
+                == ["/Users/me/src/Codevisor", "/Users/me/src/website"])
     }
 
     @Test("Importable sessions are scoped to the folder and exclude known ones")

@@ -33,11 +33,12 @@ private enum ServerNavigationSnapshotBuilder {
                 do {
                     return try record.project(serverId: serverId)
                 } catch {
-                    failures.append(.init(
-                        kind: "project",
-                        id: record.id,
-                        description: String(describing: error)
-                    ))
+                    failures.append(
+                        .init(
+                            kind: "project",
+                            id: record.id,
+                            description: String(describing: error)
+                        ))
                     return nil
                 }
             }
@@ -45,19 +46,20 @@ private enum ServerNavigationSnapshotBuilder {
                 do {
                     return try record.chatSession(serverId: serverId)
                 } catch {
-                    failures.append(.init(
-                        kind: "session",
-                        id: record.id,
-                        description: String(describing: error)
-                    ))
+                    failures.append(
+                        .init(
+                            kind: "session",
+                            id: record.id,
+                            description: String(describing: error)
+                        ))
                     return nil
                 }
             }
             var assignments: [UUID: UUID] = [:]
             for record in sessions {
                 guard let sessionId = UUID(uuidString: record.id),
-                      let rawWorkspaceId = record.workspaceId,
-                      let workspaceId = UUID(uuidString: rawWorkspaceId)
+                    let rawWorkspaceId = record.workspaceId,
+                    let workspaceId = UUID(uuidString: rawWorkspaceId)
                 else { continue }
                 assignments[sessionId] = workspaceId
             }
@@ -76,7 +78,7 @@ private enum ServerNavigationSnapshotBuilder {
     ) async -> PreparedServerSessionUpdate? {
         await Task.detached(priority: .userInitiated) {
             guard let record = try? event.sessionRecord(),
-                  let session = try? record.chatSession(serverId: serverId)
+                let session = try? record.chatSession(serverId: serverId)
             else { return nil }
             return PreparedServerSessionUpdate(
                 session: session,
@@ -170,15 +172,17 @@ public final class ProjectListModel {
                 let data = try PersistenceEncoding.encoder.encode(snapshot)
                 try legacyMigrationStore.saveData(data, forKey: storageKey)
             } catch {
-                Log.sync.error("Failed to persist pending session markers: \(String(describing: error), privacy: .public)")
+                Log.sync.error(
+                    "Failed to persist pending session markers: \(String(describing: error), privacy: .public)")
             }
         }
     }
 
     private func loadPendingServerSessions() {
         guard let legacyMigrationStore,
-              let data = legacyMigrationStore.loadData(forKey: Self.pendingServerSessionsKey),
-              let ids = try? JSONDecoder().decode([ScopedSessionID].self, from: data) else { return }
+            let data = legacyMigrationStore.loadData(forKey: Self.pendingServerSessionsKey),
+            let ids = try? JSONDecoder().decode([ScopedSessionID].self, from: data)
+        else { return }
         pendingServerSessionIds = Set(ids)
     }
 
@@ -195,15 +199,18 @@ public final class ProjectListModel {
                 let data = try PersistenceEncoding.encoder.encode(snapshot)
                 try legacyMigrationStore.saveData(data, forKey: storageKey)
             } catch {
-                Log.sync.error("Failed to persist pending archived session markers: \(String(describing: error), privacy: .public)")
+                Log.sync.error(
+                    "Failed to persist pending archived session markers: \(String(describing: error), privacy: .public)"
+                )
             }
         }
     }
 
     private func loadPendingArchivedSessions() {
         guard let legacyMigrationStore,
-              let data = legacyMigrationStore.loadData(forKey: Self.pendingArchivedSessionsKey),
-              let ids = try? JSONDecoder().decode([ScopedSessionID].self, from: data) else { return }
+            let data = legacyMigrationStore.loadData(forKey: Self.pendingArchivedSessionsKey),
+            let ids = try? JSONDecoder().decode([ScopedSessionID].self, from: data)
+        else { return }
         pendingArchivedSessionIds = Set(ids)
     }
     /// Shared: formatter construction is milliseconds-expensive and the
@@ -366,9 +373,11 @@ public final class ProjectListModel {
 
     /// Sets the SF Symbol icon for a project.
     public func setIcon(_ symbolName: String, for project: Project) {
-        guard let index = projects.firstIndex(where: {
-            $0.serverId == project.serverId && $0.id == project.id
-        }) else { return }
+        guard
+            let index = projects.firstIndex(where: {
+                $0.serverId == project.serverId && $0.id == project.id
+            })
+        else { return }
         projects[index].symbolName = symbolName
         persistProjects()
         syncProject(projects[index])
@@ -378,15 +387,18 @@ public final class ProjectListModel {
         pendingDeletedProjectIds.insert(
             ScopedSessionID(serverId: project.serverId, id: project.id)
         )
-        let removedSessionIDs = sessions
+        let removedSessionIDs =
+            sessions
             .filter { $0.serverId == project.serverId && $0.projectId == project.id }
             .map(\.id)
-        pendingServerSessionIds.subtract(removedSessionIDs.map {
-            ScopedSessionID(serverId: project.serverId, id: $0)
-        })
-        pendingArchivedSessionIds.subtract(removedSessionIDs.map {
-            ScopedSessionID(serverId: project.serverId, id: $0)
-        })
+        pendingServerSessionIds.subtract(
+            removedSessionIDs.map {
+                ScopedSessionID(serverId: project.serverId, id: $0)
+            })
+        pendingArchivedSessionIds.subtract(
+            removedSessionIDs.map {
+                ScopedSessionID(serverId: project.serverId, id: $0)
+            })
         projects.removeAll { $0.serverId == project.serverId && $0.id == project.id }
         sessions.removeAll { $0.serverId == project.serverId && $0.projectId == project.id }
         persistProjects()
@@ -418,9 +430,11 @@ public final class ProjectListModel {
 
     /// Archives a session, removing it from the active list without deleting it.
     public func archiveSession(_ session: ChatSession) {
-        guard let index = sessions.firstIndex(where: {
-            $0.serverId == session.serverId && $0.id == session.id
-        }) else { return }
+        guard
+            let index = sessions.firstIndex(where: {
+                $0.serverId == session.serverId && $0.id == session.id
+            })
+        else { return }
         if serverClient != nil, session.serverId == selectedServerId {
             pendingArchivedSessionIds.insert(
                 ScopedSessionID(serverId: session.serverId, id: session.id)
@@ -443,9 +457,11 @@ public final class ProjectListModel {
     /// leftover marker would pin the chat archived forever — it would pop back
     /// out of the sidebar on the very next server refresh.
     public func unarchiveSession(_ session: ChatSession) {
-        guard let index = sessions.firstIndex(where: {
-            $0.serverId == session.serverId && $0.id == session.id
-        }) else { return }
+        guard
+            let index = sessions.firstIndex(where: {
+                $0.serverId == session.serverId && $0.id == session.id
+            })
+        else { return }
         pendingArchivedSessionIds.remove(
             ScopedSessionID(serverId: session.serverId, id: session.id)
         )
@@ -540,9 +556,11 @@ public final class ProjectListModel {
         serverId: String,
         throughSequence: Int? = nil
     ) {
-        guard let index = sessions.firstIndex(where: {
-            $0.serverId == serverId && $0.id == sessionId
-        }) else { return }
+        guard
+            let index = sessions.firstIndex(where: {
+                $0.serverId == serverId && $0.id == sessionId
+            })
+        else { return }
         let rendered = throughSequence ?? sessions[index].latestAttentionSequence
         sessions[index].lastSeenAttentionSequence = max(
             sessions[index].lastSeenAttentionSequence,
@@ -575,9 +593,11 @@ public final class ProjectListModel {
     }
 
     public func markSessionUnread(_ sessionId: UUID, serverId: String) {
-        guard let index = sessions.firstIndex(where: {
-            $0.serverId == serverId && $0.id == sessionId
-        }) else { return }
+        guard
+            let index = sessions.firstIndex(where: {
+                $0.serverId == serverId && $0.id == sessionId
+            })
+        else { return }
         sessions[index].unreadCount = max(1, sessions[index].unreadCount)
         persistSessions()
         guard let serverClient, serverId == selectedServerId else { return }
@@ -597,9 +617,10 @@ public final class ProjectListModel {
 
     private func applyAttention(_ remote: ServerSession, serverId: String) {
         guard let id = UUID(uuidString: remote.id),
-              let index = sessions.firstIndex(where: {
-                  $0.serverId == serverId && $0.id == id
-              }) else { return }
+            let index = sessions.firstIndex(where: {
+                $0.serverId == serverId && $0.id == id
+            })
+        else { return }
         sessions[index].latestAttentionSequence = remote.latestAttentionSequence ?? 0
         sessions[index].lastSeenAttentionSequence = remote.lastSeenAttentionSequence ?? 0
         sessions[index].unreadCount = remote.unreadCount ?? 0
@@ -616,9 +637,11 @@ public final class ProjectListModel {
     /// Local only: the draft hasn't been synced yet, and the first connect
     /// upserts the session carrying this worktree name.
     public func setWorktree(name: String, cwd: String, for sessionId: UUID, serverId: String) {
-        guard let index = sessions.firstIndex(where: {
-            $0.serverId == serverId && $0.id == sessionId
-        }) else { return }
+        guard
+            let index = sessions.firstIndex(where: {
+                $0.serverId == serverId && $0.id == sessionId
+            })
+        else { return }
         sessions[index].worktreeName = name
         sessions[index].cwd = cwd
         persistSessions()
@@ -626,9 +649,11 @@ public final class ProjectListModel {
 
     /// Records the agent-side session id once a brand-new session is created.
     public func setAgentSessionId(_ agentSessionId: String, for sessionId: UUID, serverId: String) {
-        guard let index = sessions.firstIndex(where: {
-            $0.serverId == serverId && $0.id == sessionId
-        }) else { return }
+        guard
+            let index = sessions.firstIndex(where: {
+                $0.serverId == serverId && $0.id == sessionId
+            })
+        else { return }
         sessions[index].agentSessionId = agentSessionId
         persistSessions()
         syncSession(sessions[index])
@@ -657,16 +682,17 @@ public final class ProjectListModel {
                 serverId: serverId
             )
             let timestamp = Self.importTimestamp(item.info.updatedAt)
-            sessions.append(ChatSession(
-                projectId: project.id,
-                serverId: serverId,
-                harnessId: item.harnessId,
-                agentSessionId: item.info.sessionId,
-                title: item.info.title ?? "Session",
-                origin: .imported,
-                createdAt: timestamp ?? Date(),
-                updatedAt: timestamp
-            ))
+            sessions.append(
+                ChatSession(
+                    projectId: project.id,
+                    serverId: serverId,
+                    harnessId: item.harnessId,
+                    agentSessionId: item.info.sessionId,
+                    title: item.info.title ?? "Session",
+                    origin: .imported,
+                    createdAt: timestamp ?? Date(),
+                    updatedAt: timestamp
+                ))
         }
         persistProjects()
         persistSessions()
@@ -689,16 +715,17 @@ public final class ProjectListModel {
                 continue
             }
             let timestamp = Self.importTimestamp(item.info.updatedAt)
-            sessions.append(ChatSession(
-                projectId: project.id,
-                serverId: project.serverId,
-                harnessId: item.harnessId,
-                agentSessionId: item.info.sessionId,
-                title: item.info.title ?? "Session",
-                origin: .imported,
-                createdAt: timestamp ?? Date(),
-                updatedAt: timestamp
-            ))
+            sessions.append(
+                ChatSession(
+                    projectId: project.id,
+                    serverId: project.serverId,
+                    harnessId: item.harnessId,
+                    agentSessionId: item.info.sessionId,
+                    title: item.info.title ?? "Session",
+                    origin: .imported,
+                    createdAt: timestamp ?? Date(),
+                    updatedAt: timestamp
+                ))
             didChange = true
         }
         guard didChange else { return }
@@ -738,9 +765,11 @@ public final class ProjectListModel {
         title: String,
         harnessId: String?
     ) -> ChatSession? {
-        guard let index = sessions.firstIndex(where: {
-            $0.serverId == session.serverId && $0.id == session.id
-        }) else { return nil }
+        guard
+            let index = sessions.firstIndex(where: {
+                $0.serverId == session.serverId && $0.id == session.id
+            })
+        else { return nil }
         if sessions[index].title == "New Chat" {
             sessions[index].title = title
         }
@@ -753,9 +782,11 @@ public final class ProjectListModel {
     }
 
     public func renameSession(_ session: ChatSession, to title: String) {
-        guard let index = sessions.firstIndex(where: {
-            $0.serverId == session.serverId && $0.id == session.id
-        }) else { return }
+        guard
+            let index = sessions.firstIndex(where: {
+                $0.serverId == session.serverId && $0.id == session.id
+            })
+        else { return }
         sessions[index].title = title
         persistSessions()
         syncSession(sessions[index])
@@ -811,12 +842,14 @@ public final class ProjectListModel {
     public func removeAll() {
         let projectIDs = projects.filter { $0.serverId == selectedServerId }.map(\.id)
         let sessionIDs = sessions.filter { $0.serverId == selectedServerId }.map(\.id)
-        pendingServerSessionIds.subtract(sessionIDs.map {
-            ScopedSessionID(serverId: selectedServerId, id: $0)
-        })
-        pendingArchivedSessionIds.subtract(sessionIDs.map {
-            ScopedSessionID(serverId: selectedServerId, id: $0)
-        })
+        pendingServerSessionIds.subtract(
+            sessionIDs.map {
+                ScopedSessionID(serverId: selectedServerId, id: $0)
+            })
+        pendingArchivedSessionIds.subtract(
+            sessionIDs.map {
+                ScopedSessionID(serverId: selectedServerId, id: $0)
+            })
         projects.removeAll { $0.serverId == selectedServerId }
         sessions.removeAll { $0.serverId == selectedServerId }
         persistProjects()
@@ -850,9 +883,11 @@ public final class ProjectListModel {
     }
 
     private func setArchived(_ archived: Bool, for project: Project) {
-        guard let index = projects.firstIndex(where: {
-            $0.serverId == project.serverId && $0.id == project.id
-        }) else { return }
+        guard
+            let index = projects.firstIndex(where: {
+                $0.serverId == project.serverId && $0.id == project.id
+            })
+        else { return }
         projects[index].isArchived = archived
         persistProjects()
         syncProject(projects[index])
@@ -942,18 +977,22 @@ public final class ProjectListModel {
         guard serverId == selectedServerId else { return .requiresFullRefresh }
         // Supersede a full snapshot fetched before this event arrived.
         refreshGeneration &+= 1
-        guard let update = await ServerNavigationSnapshotBuilder.sessionUpdate(
-            from: event,
-            serverId: serverId
-        ), serverId == selectedServerId else {
+        guard
+            let update = await ServerNavigationSnapshotBuilder.sessionUpdate(
+                from: event,
+                serverId: serverId
+            ), serverId == selectedServerId
+        else {
             return .requiresFullRefresh
         }
 
         let session = update.session
         let scopedId = ScopedSessionID(serverId: serverId, id: session.id)
-        guard !pendingDeletedProjectIds.contains(
-            ScopedSessionID(serverId: serverId, id: session.projectId)
-        ) else {
+        guard
+            !pendingDeletedProjectIds.contains(
+                ScopedSessionID(serverId: serverId, id: session.projectId)
+            )
+        else {
             return .applied(workspaceMembershipChanged: false)
         }
 
@@ -1007,9 +1046,10 @@ public final class ProjectListModel {
         into sessions: inout [ChatSession]
     ) {
         let activity = session.updatedAt ?? session.createdAt
-        let index = sessions.firstIndex {
-            ($0.updatedAt ?? $0.createdAt) < activity
-        } ?? sessions.endIndex
+        let index =
+            sessions.firstIndex {
+                ($0.updatedAt ?? $0.createdAt) < activity
+            } ?? sessions.endIndex
         sessions.insert(session, at: index)
     }
 
@@ -1073,7 +1113,9 @@ public final class ProjectListModel {
         return (otherServers + surviving).sorted { $0.createdAt > $1.createdAt }
     }
 
-    private func mergeSessions(local rawLocal: [ChatSession], remote rawRemote: [ChatSession], serverId: String) -> [ChatSession] {
+    private func mergeSessions(
+        local rawLocal: [ChatSession], remote rawRemote: [ChatSession], serverId: String
+    ) -> [ChatSession] {
         // Sessions of a tombstoned (optimistically deleted) project go down
         // with it — a pre-DELETE snapshot must not bring them back either.
         let remote = rawRemote.filter {
@@ -1144,7 +1186,8 @@ public final class ProjectListModel {
         // reach the server — an unsynced row is dropped by the next
         // authoritative refresh once its pending marker is gone.
         guard let serverClient,
-              session.serverId == selectedServerId else { return }
+            session.serverId == selectedServerId
+        else { return }
         let project = projects.first { $0.serverId == session.serverId && $0.id == session.projectId }
         Task {
             do {

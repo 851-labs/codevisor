@@ -6,15 +6,16 @@ import Testing
 struct AnalyticsClientTests {
     @Test("Event names are a closed manual allowlist")
     func eventAllowlist() {
-        #expect(Set(AnalyticsEventName.allCases.map(\.rawValue)) == [
-            "app opened",
-            "chat created",
-            "message sent",
-            "model selected",
-            "harness selected",
-            "turn completed",
-            "turn failed"
-        ])
+        #expect(
+            Set(AnalyticsEventName.allCases.map(\.rawValue)) == [
+                "app opened",
+                "chat created",
+                "message sent",
+                "model selected",
+                "harness selected",
+                "turn completed",
+                "turn failed",
+            ])
     }
 
     @Test("Token usage is reduced to coarse buckets")

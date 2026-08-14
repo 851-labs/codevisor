@@ -83,7 +83,9 @@ public final class CloudRelayLoopbackBridge: @unchecked Sendable {
             listener.start(queue: queue)
         }
         lock.withLock { self.port = port }
-        Log.cloud.info("Cloud loopback bridge for \(self.endpoint.machineDeviceId, privacy: .public) listening on 127.0.0.1:\(port)")
+        Log.cloud.info(
+            "Cloud loopback bridge for \(self.endpoint.machineDeviceId, privacy: .public) listening on 127.0.0.1:\(port)"
+        )
         return port
     }
 
@@ -139,7 +141,8 @@ public final class CloudRelayLoopbackBridge: @unchecked Sendable {
 
     /// RFC 6455 §4.2.2: base64(SHA1(key ‖ magic GUID)).
     static func webSocketAccept(forKey key: String) -> String {
-        let magic = key.trimmingCharacters(in: .whitespaces)
+        let magic =
+            key.trimmingCharacters(in: .whitespaces)
             + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
         let digest = Insecure.SHA1.hash(data: Data(magic.utf8))
         return Data(digest).base64EncodedString()
@@ -211,13 +214,15 @@ private final class LoopbackConnection: @unchecked Sendable {
 
     private func send(_ data: Data) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
-            connection.send(content: data, completion: .contentProcessed { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume()
-                }
-            })
+            connection.send(
+                content: data,
+                completion: .contentProcessed { error in
+                    if let error {
+                        continuation.resume(throwing: error)
+                    } else {
+                        continuation.resume()
+                    }
+                })
         }
     }
 
@@ -271,7 +276,7 @@ private final class LoopbackConnection: @unchecked Sendable {
         let requestLine = lines.removeFirst()
         let parts = requestLine.split(separator: " ", omittingEmptySubsequences: true)
         guard parts.count >= 3, parts[1].hasPrefix("/"),
-              parts[2].hasPrefix("HTTP/1.")
+            parts[2].hasPrefix("HTTP/1.")
         else { throw HTTPParseError.malformedHead }
         var headers: [(String, String)] = []
         for line in lines where !line.isEmpty {
@@ -288,7 +293,9 @@ private final class LoopbackConnection: @unchecked Sendable {
 
     private func serveHTTP(_ head: RequestHead) async throws {
         if head.value("Transfer-Encoding") != nil {
-            try await send(Self.encodeResponse(status: 501, headers: [:], body: Data("chunked request bodies are not supported\n".utf8)))
+            try await send(
+                Self.encodeResponse(
+                    status: 501, headers: [:], body: Data("chunked request bodies are not supported\n".utf8)))
             return
         }
         let contentLength = head.value("Content-Length").flatMap(Int.init) ?? 0
@@ -325,11 +332,12 @@ private final class LoopbackConnection: @unchecked Sendable {
                 guard let name = name as? String, let value = value as? String else { continue }
                 headers.append((name, value))
             }
-            try await send(Self.encodeResponse(
-                status: response.statusCode,
-                headers: Dictionary(headers, uniquingKeysWith: { first, _ in first }),
-                body: responseBody
-            ))
+            try await send(
+                Self.encodeResponse(
+                    status: response.statusCode,
+                    headers: Dictionary(headers, uniquingKeysWith: { first, _ in first }),
+                    body: responseBody
+                ))
         } catch {
             let message = "cloud relay error: \(error.localizedDescription)\n"
             try await send(Self.encodeResponse(status: 502, headers: [:], body: Data(message.utf8)))
@@ -391,13 +399,14 @@ private final class LoopbackConnection: @unchecked Sendable {
 
     private func serveWebSocket(_ head: RequestHead) async throws {
         guard let key = head.value("Sec-WebSocket-Key"),
-              let url = URL(string: "http://127.0.0.1\(head.target)")
+            let url = URL(string: "http://127.0.0.1\(head.target)")
         else {
             try await send(Self.encodeResponse(status: 400, headers: [:], body: Data()))
             return
         }
         let accept = CloudRelayLoopbackBridge.webSocketAccept(forKey: key)
-        let handshake = "HTTP/1.1 101 Switching Protocols\r\n"
+        let handshake =
+            "HTTP/1.1 101 Switching Protocols\r\n"
             + "Upgrade: websocket\r\n"
             + "Connection: Upgrade\r\n"
             + "Sec-WebSocket-Accept: \(accept)\r\n\r\n"
@@ -424,15 +433,17 @@ private final class LoopbackConnection: @unchecked Sendable {
                         try await self.send(Self.encodeFrame(opcode: 0x2, payload: data))
                     }
                 } catch {
-                    let clean = if case CloudRelayTransportError.channelClosed(.done) = error {
-                        true
-                    } else {
-                        false
-                    }
-                    try? await self.send(Self.encodeFrame(
-                        opcode: 0x8,
-                        payload: Self.closePayload(code: clean ? 1000 : 1011)
-                    ))
+                    let clean =
+                        if case CloudRelayTransportError.channelClosed(.done) = error {
+                            true
+                        } else {
+                            false
+                        }
+                    try? await self.send(
+                        Self.encodeFrame(
+                            opcode: 0x8,
+                            payload: Self.closePayload(code: clean ? 1000 : 1011)
+                        ))
                     connection.cancel()
                     return
                 }

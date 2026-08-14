@@ -131,7 +131,8 @@ struct AssistantTurnView: View {
             }
 
             if presentation.showsPlanDocument,
-               let planDocument = turn.planDocument, !planDocument.isEmpty {
+                let planDocument = turn.planDocument, !planDocument.isEmpty
+            {
                 PlanDocumentView(markdown: planDocument)
             }
             // The step checklist lives in the pinned TodoPanelView above the
@@ -147,11 +148,13 @@ struct AssistantTurnView: View {
             // A transient failure (e.g. 529 overload) is being retried — show it
             // instead of the plain "Thinking…" so the chat isn't a silent freeze.
             if presentation.showsResult,
-               !isWaitingOnUser, turn.isGenerating, let retry = turn.retryStatus {
+                !isWaitingOnUser, turn.isGenerating, let retry = turn.retryStatus
+            {
                 ChatActivityRow(retryLabel(retry))
             } else if postResponseGoalActivity == nil, presentation.showsResult,
-                      !isWaitingOnUser, turn.showsActivityIndicator,
-                      turn.contextCompactionStatus != .started {
+                !isWaitingOnUser, turn.showsActivityIndicator,
+                turn.contextCompactionStatus != .started
+            {
                 if turn.isThinking {
                     ShimmeringText.thinking
                 } else if !hasActiveTextEntranceAnimation {
@@ -168,7 +171,8 @@ struct AssistantTurnView: View {
             // newer text span starts — codex tags messages up front, so its
             // candidate never demotes.
             if presentation.showsResult,
-               let final = finalText, case let .text(entryID, markdown) = final {
+                let final = finalText, case let .text(entryID, markdown) = final
+            {
                 // Selection lives inside each native TextKit run. Keeping it
                 // there avoids a selection modifier on the segment VStack and
                 // keeps first-click geometry identical to display geometry.
@@ -203,7 +207,8 @@ struct AssistantTurnView: View {
             // reason". Clean completions and silently-recovered turns carry no
             // stopDetail and render nothing.
             if presentation.showsResult,
-               !turn.isGenerating, let stopDetail = turn.stopDetail {
+                !turn.isGenerating, let stopDetail = turn.stopDetail
+            {
                 turnErrorRow(stopDetail)
             }
         }
@@ -281,8 +286,9 @@ struct AssistantTurnView: View {
     @ViewBuilder
     private func turnErrorRow(_ message: String) -> some View {
         if let transcriptController,
-           transcriptController.errorRequiresHarnessAuthentication,
-           transcriptController.errorMessage == message {
+            transcriptController.errorRequiresHarnessAuthentication,
+            transcriptController.errorMessage == message
+        {
             ChatErrorRow(
                 message,
                 actionTitle: "Open Harness Settings",
@@ -292,7 +298,8 @@ struct AssistantTurnView: View {
                 }
             )
         } else if let transcriptController,
-                  transcriptController.canRetryTurn(turnID) {
+            transcriptController.canRetryTurn(turnID)
+        {
             ChatErrorRow(
                 message,
                 actionTitle: "Retry response",
@@ -371,8 +378,9 @@ struct AssistantTurnView: View {
                         // a tool call for each, so they group and render inline with
                         // the other tool calls that surround them.
                         if turn.hasDeferredWorkedDetails,
-                           let itemId = turn.deferredDetailItemId,
-                           let transcriptController {
+                            let itemId = turn.deferredDetailItemId,
+                            let transcriptController
+                        {
                             DeferredTranscriptDetails(controller: transcriptController, itemId: itemId)
                         } else {
                             TranscriptItemsView(
@@ -480,8 +488,6 @@ private struct WorkedContentReveal<Content: View>: View {
     }
 }
 
-
-
 private struct DeferredTranscriptDetails: View {
     let controller: SessionController
     let itemId: String
@@ -497,7 +503,7 @@ private struct DeferredTranscriptDetails: View {
             switch state {
             case .loading:
                 ShimmeringText(text: "Loading worked details…")
-                .task { await load() }
+                    .task { await load() }
             case .failed:
                 Button("Retry loading worked details") {
                     state = .loading

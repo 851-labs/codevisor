@@ -164,7 +164,8 @@ struct ChatScreen: View {
                     options: request.options
                 )
                 guard !Task.isCancelled,
-                      transcriptProjectionRequest == request else { return }
+                    transcriptProjectionRequest == request
+                else { return }
                 projectedRows = rows
                 isPreparingTranscript = false
             } catch is CancellationError {
@@ -238,10 +239,13 @@ struct ChatScreen: View {
 
     private func requestOlderHistoryLoad() {
         guard historyLoadTask == nil, controller.hasOlderHistory,
-              !controller.isLoadingOlderHistory else { return }
-        guard let token = olderHistoryPresentation.begin(
-            hasOlderHistory: controller.hasOlderHistory
-        ) else { return }
+            !controller.isLoadingOlderHistory
+        else { return }
+        guard
+            let token = olderHistoryPresentation.begin(
+                hasOlderHistory: controller.hasOlderHistory
+            )
+        else { return }
         historyLoadTask = Task { @MainActor in
             defer { historyLoadTask = nil }
             let insertedItemCount = await controller.loadOlderHistory()
@@ -282,155 +286,172 @@ struct ChatScreen: View {
         let waitingDescription = controller.waitingBackgroundTaskDescription
         let waitingAssistantID: UUID? = {
             guard !controller.hasActiveItem,
-                  waitingDescription != nil,
-                  case let .assistant(message)? = settled.last,
-                  message.turn.finalText != nil else { return nil }
+                waitingDescription != nil,
+                case let .assistant(message)? = settled.last,
+                message.turn.finalText != nil
+            else { return nil }
             return message.id
         }()
 
         if settled.isEmpty, !controller.hasActiveItem {
             if let message = pendingMessage {
                 let showsStartingAgent = controller.setupPhases.isEmpty
-                result.append(.init(
-                    // The settled model adopts this exact id, so the native
-                    // virtualizer keeps one host — and one layer animation —
-                    // across the optimistic-to-settled handoff.
-                    id: .message(message.id),
-                    content: .optimistic(
-                        message,
-                        showsStartingAgent: showsStartingAgent
-                    ),
-                    estimatedHeight: 90,
-                    measurementRevision: Self.optimisticMeasurementRevision(
-                        for: message,
-                        showsStartingAgent: showsStartingAgent
-                    )
-                ))
+                result.append(
+                    .init(
+                        // The settled model adopts this exact id, so the native
+                        // virtualizer keeps one host — and one layer animation —
+                        // across the optimistic-to-settled handoff.
+                        id: .message(message.id),
+                        content: .optimistic(
+                            message,
+                            showsStartingAgent: showsStartingAgent
+                        ),
+                        estimatedHeight: 90,
+                        measurementRevision: Self.optimisticMeasurementRevision(
+                            for: message,
+                            showsStartingAgent: showsStartingAgent
+                        )
+                    ))
             }
             if !controller.setupPhases.isEmpty {
-                result.append(.init(
-                    id: .setup,
-                    content: .setup(controller.setupPhases),
-                    estimatedHeight: 80
-                ))
+                result.append(
+                    .init(
+                        id: .setup,
+                        content: .setup(controller.setupPhases),
+                        estimatedHeight: 80
+                    ))
             }
         }
 
         for (index, item) in settled.enumerated() {
             if index == 0, case .assistant = item, !controller.setupPhases.isEmpty {
-                result.append(.init(
-                    id: .setup,
-                    content: .setup(controller.setupPhases),
-                    estimatedHeight: 80
-                ))
+                result.append(
+                    .init(
+                        id: .setup,
+                        content: .setup(controller.setupPhases),
+                        estimatedHeight: 80
+                    ))
             }
             let itemWaitingDescription = item.id == waitingAssistantID ? waitingDescription : nil
             if case let .assistant(message) = item,
-               let planDocument = message.turn.planDocument, !planDocument.isEmpty {
+                let planDocument = message.turn.planDocument, !planDocument.isEmpty
+            {
                 let revision = Self.measurementRevision(
                     for: item,
                     waitingOnBackgroundTask: itemWaitingDescription
                 )
-                let hasPlanningRow = message.turn.hasDeferredWorkedDetails
+                let hasPlanningRow =
+                    message.turn.hasDeferredWorkedDetails
                     || !message.turn.workedItemsBeforePlan.isEmpty
                 if hasPlanningRow {
-                    result.append(.init(
-                        id: .assistantPlanning(message.id),
-                        content: .assistantPlanning(message),
-                        estimatedHeight: 44,
-                        measurementRevision: revision
-                    ))
+                    result.append(
+                        .init(
+                            id: .assistantPlanning(message.id),
+                            content: .assistantPlanning(message),
+                            estimatedHeight: 44,
+                            measurementRevision: revision
+                        ))
                 }
-                result.append(.init(
-                    id: .plan(message.id),
-                    content: .planDocument(planDocument),
-                    estimatedHeight: Self.estimatedPlanHeight(planDocument),
-                    measurementRevision: Self.planMeasurementRevision(planDocument)
-                ))
-                let hasResultRow = !message.turn.workedItemsAfterPlan.isEmpty
+                result.append(
+                    .init(
+                        id: .plan(message.id),
+                        content: .planDocument(planDocument),
+                        estimatedHeight: Self.estimatedPlanHeight(planDocument),
+                        measurementRevision: Self.planMeasurementRevision(planDocument)
+                    ))
+                let hasResultRow =
+                    !message.turn.workedItemsAfterPlan.isEmpty
                     || message.turn.finalText != nil
                     || message.turn.stopDetail != nil
                     || message.turn.isGenerating
                 if hasResultRow {
-                    result.append(.init(
-                        id: .assistantResult(message.id),
-                        content: .assistantResult(
-                            message,
-                            waitingOnBackgroundTask: itemWaitingDescription
-                        ),
-                        estimatedHeight: 240,
-                        measurementRevision: revision
-                    ))
+                    result.append(
+                        .init(
+                            id: .assistantResult(message.id),
+                            content: .assistantResult(
+                                message,
+                                waitingOnBackgroundTask: itemWaitingDescription
+                            ),
+                            estimatedHeight: 240,
+                            measurementRevision: revision
+                        ))
                 }
             } else {
-                result.append(.init(
-                    id: .message(item.id),
-                    content: .message(
-                        item,
-                        waitingOnBackgroundTask: itemWaitingDescription
-                    ),
-                    estimatedHeight: Self.estimatedHeight(for: item),
-                    measurementRevision: Self.measurementRevision(
-                        for: item,
-                        waitingOnBackgroundTask: itemWaitingDescription
-                    )
-                ))
+                result.append(
+                    .init(
+                        id: .message(item.id),
+                        content: .message(
+                            item,
+                            waitingOnBackgroundTask: itemWaitingDescription
+                        ),
+                        estimatedHeight: Self.estimatedHeight(for: item),
+                        measurementRevision: Self.measurementRevision(
+                            for: item,
+                            waitingOnBackgroundTask: itemWaitingDescription
+                        )
+                    ))
             }
             if index == 0, case .user = item, !controller.setupPhases.isEmpty {
-                result.append(.init(
-                    id: .setup,
-                    content: .setup(controller.setupPhases),
-                    estimatedHeight: 80
-                ))
+                result.append(
+                    .init(
+                        id: .setup,
+                        content: .setup(controller.setupPhases),
+                        estimatedHeight: 80
+                    ))
             }
         }
 
         if settled.isEmpty, controller.hasActiveItem, !controller.setupPhases.isEmpty {
-            result.append(.init(
-                id: .setup,
-                content: .setup(controller.setupPhases),
-                estimatedHeight: 80
-            ))
+            result.append(
+                .init(
+                    id: .setup,
+                    content: .setup(controller.setupPhases),
+                    estimatedHeight: 80
+                ))
         }
         if controller.hasActiveItem {
             result.append(.init(id: .active, content: .active, estimatedHeight: 320))
         }
         if !pendingIsOpeningRow, let message = pendingMessage {
-            result.append(.init(
-                id: .message(message.id),
-                content: .optimistic(message, showsStartingAgent: false),
-                estimatedHeight: 90,
-                measurementRevision: Self.optimisticMeasurementRevision(
-                    for: message,
-                    showsStartingAgent: false
-                )
-            ))
+            result.append(
+                .init(
+                    id: .message(message.id),
+                    content: .optimistic(message, showsStartingAgent: false),
+                    estimatedHeight: 90,
+                    measurementRevision: Self.optimisticMeasurementRevision(
+                        for: message,
+                        showsStartingAgent: false
+                    )
+                ))
         }
         if let waitingDescription, waitingAssistantID == nil, !controller.hasActiveItem {
-            result.append(.init(
-                id: .backgroundTask,
-                content: .backgroundTask(waitingDescription),
-                estimatedHeight: 32
-            ))
+            result.append(
+                .init(
+                    id: .backgroundTask,
+                    content: .backgroundTask(waitingDescription),
+                    estimatedHeight: 32
+                ))
         }
         if let updatingHarnessName = controller.waitingHarnessUpdateName {
             // The user's prompt is queued server-side while the harness
             // updates — an honest, ephemeral marker that clears on release.
-            result.append(.init(
-                id: .updateGate,
-                content: .updateGate(updatingHarnessName),
-                estimatedHeight: 32
-            ))
+            result.append(
+                .init(
+                    id: .updateGate,
+                    content: .updateGate(updatingHarnessName),
+                    estimatedHeight: 32
+                ))
         }
         // Waiting for the server to come back (e.g. the managed server is
         // still booting right after an app update) is a loading state, not a
         // failure — the error banner only appears if the wait times out.
         if let serverWait = controller.serverWaitMessage {
-            result.append(.init(
-                id: .serverWait,
-                content: .serverWait(serverWait),
-                estimatedHeight: 32
-            ))
+            result.append(
+                .init(
+                    id: .serverWait,
+                    content: .serverWait(serverWait),
+                    estimatedHeight: 32
+                ))
         }
         if let error = controller.sessionErrorMessage {
             result.append(.init(id: .error, content: .error(error), estimatedHeight: 56))
@@ -441,11 +462,12 @@ struct ChatScreen: View {
         if case let .failed(message) = controller.status, message != controller.sessionErrorMessage {
             result.append(.init(id: .statusError, content: .error(message), estimatedHeight: 56))
         }
-        result.append(.init(
-            id: .bottomSpacer,
-            content: .bottomSpacer(max(1, composerHeight + 24)),
-            estimatedHeight: max(1, composerHeight + 24)
-        ))
+        result.append(
+            .init(
+                id: .bottomSpacer,
+                content: .bottomSpacer(max(1, composerHeight + 24)),
+                estimatedHeight: max(1, composerHeight + 24)
+            ))
         return result
     }
 
@@ -654,7 +676,11 @@ struct ChatScreen: View {
         .padding(.bottom, Self.composerBottomMargin)
         .padding(.top, 24)
         .frame(maxWidth: .infinity)
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
+        .onGeometryChange(for: CGFloat.self) {
+            $0.size.height
+        } action: {
+            composerHeight = $0
+        }
         .animation(Motion.quick(reduceMotion: reduceMotion), value: visibleComposerGlassElements)
         .animation(Motion.quick(reduceMotion: reduceMotion), value: controller.queuedPrompts.map(\.id))
         .animation(Motion.quick(reduceMotion: reduceMotion), value: isQueueExpanded)
@@ -697,7 +723,8 @@ struct ChatScreen: View {
             elements.append(.todos)
         }
         if controller.supportsGoals, !controller.isGoalEditing,
-           (controller.goal ?? controller.draftGoal) != nil {
+            (controller.goal ?? controller.draftGoal) != nil
+        {
             elements.append(.goal)
         }
         if !controller.queuedPrompts.isEmpty {
@@ -757,31 +784,31 @@ private struct TranscriptActiveItemView: View {
                 waitingOnBackgroundTask: waitingOnBackgroundTask,
                 goalActivity: goalActivity
             )
-                // The active row is hosted behind the transcript's observation
-                // isolation boundary, so environment values injected by the
-                // outer row factory are otherwise frozen until this row is
-                // remounted. Read and inject subagent activity here so a newly
-                // active child starts shimmering while its parent is still
-                // generating, not only after the parent turn settles.
-                .environment(
-                    \.runningSubagentToolCallIds,
-                    controller.runningSubagentToolCallIds
-                )
-                // Like subagent activity above, the outer active-row host's
-                // environment is frozen from when streaming began. Refresh
-                // hover suspension here so copy affordances wake up as soon
-                // as the turn ends into a background-task wait.
-                .environment(\.hoverTrackingSuspended, controller.isSending)
-                .id(item.id)
-                .onChange(of: revision, initial: true) { _, _ in
-                    invalidateRowMeasurement?()
-                }
-                .onChange(of: waitingOnBackgroundTask) { _, _ in
-                    invalidateRowMeasurement?()
-                }
-                .onChange(of: goalActivity) { _, _ in
-                    invalidateRowMeasurement?()
-                }
+            // The active row is hosted behind the transcript's observation
+            // isolation boundary, so environment values injected by the
+            // outer row factory are otherwise frozen until this row is
+            // remounted. Read and inject subagent activity here so a newly
+            // active child starts shimmering while its parent is still
+            // generating, not only after the parent turn settles.
+            .environment(
+                \.runningSubagentToolCallIds,
+                controller.runningSubagentToolCallIds
+            )
+            // Like subagent activity above, the outer active-row host's
+            // environment is frozen from when streaming began. Refresh
+            // hover suspension here so copy affordances wake up as soon
+            // as the turn ends into a background-task wait.
+            .environment(\.hoverTrackingSuspended, controller.isSending)
+            .id(item.id)
+            .onChange(of: revision, initial: true) { _, _ in
+                invalidateRowMeasurement?()
+            }
+            .onChange(of: waitingOnBackgroundTask) { _, _ in
+                invalidateRowMeasurement?()
+            }
+            .onChange(of: goalActivity) { _, _ in
+                invalidateRowMeasurement?()
+            }
         }
     }
 }

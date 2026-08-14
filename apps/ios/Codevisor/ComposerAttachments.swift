@@ -79,7 +79,8 @@ enum ComposerAttachmentStaging {
             .appendingPathComponent("ComposerAttachments", isDirectory: true)
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            let url = directory
+            let url =
+                directory
                 .appendingPathComponent(UUID().uuidString, isDirectory: true)
                 .appendingPathComponent(name)
             try FileManager.default.createDirectory(

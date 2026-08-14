@@ -43,7 +43,7 @@ struct AppSettingsPermissionsTests {
             "CODEVISOR_DEV_INSTANCE_ID": "lingonberry-abc",
             "CODEVISOR_DEV_DATA_DIR": "/tmp/instance",
             "HERDMAN_DEV_PORT": "1234",
-            "PATH": "/usr/bin"
+            "PATH": "/usr/bin",
         ]
 
         // A configured launch passes through and refreshes the stash with
@@ -53,11 +53,12 @@ struct AppSettingsPermissionsTests {
             stashed: ["CODEVISOR_DEV_DATA_DIR": "/tmp/old"]
         )
         #expect(fromRunner.environment == configured)
-        #expect(fromRunner.stash == [
-            "CODEVISOR_DEV_INSTANCE_ID": "lingonberry-abc",
-            "CODEVISOR_DEV_DATA_DIR": "/tmp/instance",
-            "HERDMAN_DEV_PORT": "1234"
-        ])
+        #expect(
+            fromRunner.stash == [
+                "CODEVISOR_DEV_INSTANCE_ID": "lingonberry-abc",
+                "CODEVISOR_DEV_DATA_DIR": "/tmp/instance",
+                "HERDMAN_DEV_PORT": "1234",
+            ])
 
         // macOS "Quit & Reopen" launches bare: the stashed configuration is
         // restored so the app keeps pointing at the same instance's data.

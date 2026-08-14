@@ -128,7 +128,7 @@ struct OnboardingView: View {
             for harness in current where harness.isReady {
                 let before = previous.first { $0.id == harness.id }
                 guard before?.lifecycle?.phase == "installing", before?.isReady != true,
-                      harness.auth != nil, !canUse(harness)
+                    harness.auth != nil, !canUse(harness)
                 else { continue }
                 authenticationHarness = harness
                 break
@@ -298,10 +298,12 @@ struct OnboardingView: View {
                     Text("Your work stays private")
                         .font(.callout.weight(.semibold))
 
-                    Text("Neither option includes prompts, responses, code, file paths, project names, browser content, or terminal commands.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    Text(
+                        "Neither option includes prompts, responses, code, file paths, project names, browser content, or terminal commands."
+                    )
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .padding(12)
@@ -345,7 +347,7 @@ struct OnboardingView: View {
                                 title: "Sign in with GitHub",
                                 icon: .asset("GitHubMark")
                             ) { startCloudSignIn() }
-                                .controlSize(.large)
+                            .controlSize(.large)
                         }
                         if environment.cloud.developmentAccountAvailable {
                             CloudSignInProviderButton(
@@ -600,10 +602,13 @@ struct OnboardingView: View {
                 if harness.auth?.supportsMultipleAccounts == true {
                     Button("Accounts…") { authenticationHarness = harness }
                 }
-                Toggle("Enable \(harness.name)", isOn: Binding(
-                    get: { harness.enabled },
-                    set: { enabled in Task { await setHarness(harness, enabled: enabled) } }
-                ))
+                Toggle(
+                    "Enable \(harness.name)",
+                    isOn: Binding(
+                        get: { harness.enabled },
+                        set: { enabled in Task { await setHarness(harness, enabled: enabled) } }
+                    )
+                )
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.small)
@@ -641,7 +646,9 @@ struct OnboardingView: View {
             replaceHarness(updated)
         } catch {
             replaceHarness(harness)
-            Log.server.error("Setting harness \(harness.id, privacy: .public) enabled=\(enabled, privacy: .public) during onboarding failed: \(String(describing: error), privacy: .public)")
+            Log.server.error(
+                "Setting harness \(harness.id, privacy: .public) enabled=\(enabled, privacy: .public) during onboarding failed: \(String(describing: error), privacy: .public)"
+            )
             toggleError = ToggleError(
                 title: enabled ? "Couldn't turn on \(harness.name)" : "Couldn't turn off \(harness.name)",
                 message: ErrorReporter.userFacingMessage(for: error)
@@ -712,7 +719,8 @@ struct OnboardingView: View {
             rescanError = nil
         } catch {
             Log.onboarding.error("Harness rescan failed: \(String(describing: error), privacy: .public)")
-            rescanError = "Couldn't check for installed agents. Make sure the Codevisor server is running, then try again."
+            rescanError =
+                "Couldn't check for installed agents. Make sure the Codevisor server is running, then try again."
         }
     }
 

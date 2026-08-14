@@ -56,12 +56,15 @@ public struct CustomSoundStore: Sendable {
     /// The converted sounds currently in the store, sorted by name.
     public func availableSounds() -> [URL] {
         let manager = FileManager.default
-        guard let urls = try? manager.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles]
-        ) else { return [] }
-        return urls
+        guard
+            let urls = try? manager.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles]
+            )
+        else { return [] }
+        return
+            urls
             .filter { $0.pathExtension.lowercased() == "caf" }
             .map(\.standardizedFileURL)
             .sorted {
@@ -108,7 +111,8 @@ public struct CustomSoundStore: Sendable {
         let manager = FileManager.default
         try manager.removeItem(at: url)
         if let library = manager.urls(for: .libraryDirectory, in: .userDomainMask).first {
-            let prepared = library
+            let prepared =
+                library
                 .appendingPathComponent("Sounds", isDirectory: true)
                 .appendingPathComponent(Self.preparedNotificationSoundName(for: url))
             try? manager.removeItem(at: prepared)
@@ -138,7 +142,7 @@ public struct CustomSoundStore: Sendable {
             AVLinearPCMBitDepthKey: 16,
             AVLinearPCMIsFloatKey: false,
             AVLinearPCMIsBigEndianKey: false,
-            AVLinearPCMIsNonInterleaved: false
+            AVLinearPCMIsNonInterleaved: false,
         ]
         let output = try AVAudioFile(
             forWriting: destination,

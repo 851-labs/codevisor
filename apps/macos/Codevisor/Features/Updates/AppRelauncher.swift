@@ -20,19 +20,20 @@ enum AppRelauncher {
             .filter { $0.key.hasPrefix("CODEVISOR_") }
             .sorted { $0.key < $1.key }
             .flatMap { ["--env", "\($0.key)=\($0.value)"] }
-        helper.arguments = [
-            "-c",
-            """
-            owner_pid="$1"
-            bundle_path="$2"
-            shift 2
-            while /bin/kill -0 "$owner_pid" 2>/dev/null; do /bin/sleep 0.1; done
-            exec /usr/bin/open -n "$@" "$bundle_path"
-            """,
-            "codevisor-relauncher",
-            String(ProcessInfo.processInfo.processIdentifier),
-            bundleURL.path
-        ] + environmentArguments
+        helper.arguments =
+            [
+                "-c",
+                """
+                owner_pid="$1"
+                bundle_path="$2"
+                shift 2
+                while /bin/kill -0 "$owner_pid" 2>/dev/null; do /bin/sleep 0.1; done
+                exec /usr/bin/open -n "$@" "$bundle_path"
+                """,
+                "codevisor-relauncher",
+                String(ProcessInfo.processInfo.processIdentifier),
+                bundleURL.path,
+            ] + environmentArguments
         do {
             try helper.run()
         } catch {

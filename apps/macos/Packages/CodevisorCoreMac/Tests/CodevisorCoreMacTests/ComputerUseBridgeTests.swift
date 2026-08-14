@@ -14,40 +14,49 @@ struct ComputerUseBridgeTests {
             path: "/System/Applications/Calculator.app"
         )
 
-        #expect(computerUseApplicationMatchScore(
-            query: "Calculator",
-            identity: calculator
-        ) == 0)
-        #expect(computerUseApplicationMatchScore(
-            query: "com.apple.calculator",
-            identity: calculator
-        ) == 0)
-        #expect(computerUseApplicationMatchScore(
-            query: "/System/Applications/Calculator.app",
-            identity: calculator
-        ) == 0)
-        #expect(computerUseApplicationMatchScore(
-            query: "Calcul",
-            identity: calculator
-        ) == 1)
-        #expect(computerUseApplicationMatchScore(
-            query: "Notes",
-            identity: calculator
-        ) == nil)
+        #expect(
+            computerUseApplicationMatchScore(
+                query: "Calculator",
+                identity: calculator
+            ) == 0)
+        #expect(
+            computerUseApplicationMatchScore(
+                query: "com.apple.calculator",
+                identity: calculator
+            ) == 0)
+        #expect(
+            computerUseApplicationMatchScore(
+                query: "/System/Applications/Calculator.app",
+                identity: calculator
+            ) == 0)
+        #expect(
+            computerUseApplicationMatchScore(
+                query: "Calcul",
+                identity: calculator
+            ) == 1)
+        #expect(
+            computerUseApplicationMatchScore(
+                query: "Notes",
+                identity: calculator
+            ) == nil)
     }
 
     @Test("Allows Codevisor while continuing to protect credential managers")
     func protectedApplicationIdentities() {
-        #expect(!computerUseApplicationIsProtected(ComputerUseApplicationIdentity(
-            id: "com.851labs.Codevisor.Development",
-            displayName: "Codevisor Dev",
-            path: "/Applications/Codevisor Dev.app"
-        )))
-        #expect(computerUseApplicationIsProtected(ComputerUseApplicationIdentity(
-            id: "com.1password.1password",
-            displayName: "1Password",
-            path: "/Applications/1Password.app"
-        )))
+        #expect(
+            !computerUseApplicationIsProtected(
+                ComputerUseApplicationIdentity(
+                    id: "com.851labs.Codevisor.Development",
+                    displayName: "Codevisor Dev",
+                    path: "/Applications/Codevisor Dev.app"
+                )))
+        #expect(
+            computerUseApplicationIsProtected(
+                ComputerUseApplicationIdentity(
+                    id: "com.1password.1password",
+                    displayName: "1Password",
+                    path: "/Applications/1Password.app"
+                )))
     }
 
     @Test("Searches system, global, and user application directories")
@@ -63,18 +72,21 @@ struct ComputerUseBridgeTests {
 
     @Test("Caps native sharing previews without changing their aspect ratio")
     func nativeSharingPreviewSize() {
-        #expect(computerUseNativePreviewSize(
-            windowFrame: CGRect(x: 10, y: 20, width: 1_200, height: 800),
-            pointPixelScale: 2
-        ) == CGSize(width: 960, height: 640))
-        #expect(computerUseNativePreviewSize(
-            windowFrame: CGRect(x: 10, y: 20, width: 300, height: 200),
-            pointPixelScale: 2
-        ) == CGSize(width: 600, height: 400))
-        #expect(computerUseNativePreviewSize(
-            windowFrame: .zero,
-            pointPixelScale: 2
-        ) == ComputerUseNativePreviewMetrics.fallbackSize)
+        #expect(
+            computerUseNativePreviewSize(
+                windowFrame: CGRect(x: 10, y: 20, width: 1_200, height: 800),
+                pointPixelScale: 2
+            ) == CGSize(width: 960, height: 640))
+        #expect(
+            computerUseNativePreviewSize(
+                windowFrame: CGRect(x: 10, y: 20, width: 300, height: 200),
+                pointPixelScale: 2
+            ) == CGSize(width: 600, height: 400))
+        #expect(
+            computerUseNativePreviewSize(
+                windowFrame: .zero,
+                pointPixelScale: 2
+            ) == ComputerUseNativePreviewMetrics.fallbackSize)
     }
 
     @Test("Maps Retina screenshot pixels back to logical window points")
@@ -104,59 +116,67 @@ struct ComputerUseBridgeTests {
     func clampsCoordinatesToWindow() {
         let frame = CGRect(x: 100, y: 200, width: 300, height: 150)
 
-        #expect(computerUseScreenshotPoint(
-            x: -200,
-            y: 9_000,
-            screenshotPixelSize: CGSize(width: 600, height: 300),
-            windowFrame: frame
-        ) == CGPoint(x: 100.5, y: 349.5))
+        #expect(
+            computerUseScreenshotPoint(
+                x: -200,
+                y: 9_000,
+                screenshotPixelSize: CGSize(width: 600, height: 300),
+                windowFrame: frame
+            ) == CGPoint(x: 100.5, y: 349.5))
     }
 
     @Test("Keeps semantic and pixel click addressing mutually exclusive")
     func distinguishesClickAddressing() {
-        #expect(computerUseClickAddressing(
-            snapshotID: "snapshot",
-            elementID: "12",
-            x: nil,
-            y: nil
-        ) == .semantic)
-        #expect(computerUseClickAddressing(
-            snapshotID: "snapshot",
-            elementID: nil,
-            x: 40,
-            y: 80
-        ) == .pixel)
-        #expect(computerUseClickAddressing(
-            snapshotID: "snapshot",
-            elementID: "12",
-            x: 40,
-            y: 80
-        ) == .ambiguous)
-        #expect(computerUseClickAddressing(
-            snapshotID: nil,
-            elementID: nil,
-            x: 40,
-            y: nil
-        ) == .invalid)
+        #expect(
+            computerUseClickAddressing(
+                snapshotID: "snapshot",
+                elementID: "12",
+                x: nil,
+                y: nil
+            ) == .semantic)
+        #expect(
+            computerUseClickAddressing(
+                snapshotID: "snapshot",
+                elementID: nil,
+                x: 40,
+                y: 80
+            ) == .pixel)
+        #expect(
+            computerUseClickAddressing(
+                snapshotID: "snapshot",
+                elementID: "12",
+                x: 40,
+                y: 80
+            ) == .ambiguous)
+        #expect(
+            computerUseClickAddressing(
+                snapshotID: nil,
+                elementID: nil,
+                x: 40,
+                y: nil
+            ) == .invalid)
     }
 
     @Test("Recognizes Chromium-class app identities without classifying Safari")
     func identifiesChromiumTargets() {
-        #expect(computerUseUsesChromiumInput(
-            appName: "Google Chrome",
-            bundleIdentifier: "com.google.Chrome",
-            executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-        ))
-        #expect(computerUseUsesChromiumInput(
-            appName: "Arc",
-            bundleIdentifier: "company.thebrowser.Browser",
-            executablePath: nil
-        ))
-        #expect(!computerUseUsesChromiumInput(
-            appName: "Safari",
-            bundleIdentifier: "com.apple.Safari",
-            executablePath: "/Applications/Safari.app/Contents/MacOS/Safari"
-        ))
+        #expect(
+            computerUseUsesChromiumInput(
+                appName: "Google Chrome",
+                bundleIdentifier: "com.google.Chrome",
+                executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+            ))
+        #expect(
+            computerUseUsesChromiumInput(
+                appName: "Arc",
+                bundleIdentifier: "company.thebrowser.Browser",
+                executablePath: nil
+            ))
+        #expect(
+            !computerUseUsesChromiumInput(
+                appName: "Safari",
+                bundleIdentifier: "com.apple.Safari",
+                executablePath: "/Applications/Safari.app/Contents/MacOS/Safari"
+            ))
     }
 
     @Test("Builds the Chromium primer and target click as one explicit sequence")
@@ -170,14 +190,16 @@ struct ComputerUseBridgeTests {
         )
 
         #expect(steps.count == 7)
-        #expect(steps[0] == ComputerUseChromiumClickStep(
-            kind: .move,
-            point: target,
-            windowPoint: local,
-            phase: 2,
-            clickState: 0,
-            delayAfterMilliseconds: 15
-        ))
+        #expect(
+            steps[0]
+                == ComputerUseChromiumClickStep(
+                    kind: .move,
+                    point: target,
+                    windowPoint: local,
+                    phase: 2,
+                    clickState: 0,
+                    delayAfterMilliseconds: 15
+                ))
         #expect(steps[1].point == CGPoint(x: -1, y: -1))
         #expect(steps[1].kind == .down)
         #expect(steps[2].kind == .up)
@@ -274,87 +296,106 @@ struct ComputerUseBridgeTests {
     func cursorTargetSpaceVisibility() {
         let visibleWindowID: CGWindowID = 42
         let visiblePID: pid_t = 314
-        let visibleWindows: [[String: Any]] = [[
-            kCGWindowNumber as String: NSNumber(value: visibleWindowID),
-            kCGWindowOwnerPID as String: NSNumber(value: visiblePID)
-        ]]
+        let visibleWindows: [[String: Any]] = [
+            [
+                kCGWindowNumber as String: NSNumber(value: visibleWindowID),
+                kCGWindowOwnerPID as String: NSNumber(value: visiblePID),
+            ]
+        ]
 
-        #expect(computerUseTargetIsOnVisibleSpace(
-            targetWindowID: visibleWindowID,
-            pid: visiblePID,
-            windowInfo: visibleWindows
-        ))
-        #expect(!computerUseTargetIsOnVisibleSpace(
-            targetWindowID: visibleWindowID + 1,
-            pid: visiblePID,
-            windowInfo: visibleWindows
-        ))
-        #expect(computerUseTargetIsOnVisibleSpace(
-            targetWindowID: nil,
-            pid: visiblePID,
-            windowInfo: visibleWindows
-        ))
-        #expect(!computerUseTargetIsOnVisibleSpace(
-            targetWindowID: nil,
-            pid: visiblePID + 1,
-            windowInfo: visibleWindows
-        ))
+        #expect(
+            computerUseTargetIsOnVisibleSpace(
+                targetWindowID: visibleWindowID,
+                pid: visiblePID,
+                windowInfo: visibleWindows
+            ))
+        #expect(
+            !computerUseTargetIsOnVisibleSpace(
+                targetWindowID: visibleWindowID + 1,
+                pid: visiblePID,
+                windowInfo: visibleWindows
+            ))
+        #expect(
+            computerUseTargetIsOnVisibleSpace(
+                targetWindowID: nil,
+                pid: visiblePID,
+                windowInfo: visibleWindows
+            ))
+        #expect(
+            !computerUseTargetIsOnVisibleSpace(
+                targetWindowID: nil,
+                pid: visiblePID + 1,
+                windowInfo: visibleWindows
+            ))
     }
 
     @Test("Shows the cursor whenever the controlled window is on the visible Space")
     func cursorVisibilityTracksTheTargetWindow() {
         let targetWindowID: CGWindowID = 42
         let targetPID: pid_t = 314
-        let visibleWindows: [[String: Any]] = [[
-            kCGWindowNumber as String: NSNumber(value: targetWindowID),
-            kCGWindowOwnerPID as String: NSNumber(value: targetPID)
-        ]]
+        let visibleWindows: [[String: Any]] = [
+            [
+                kCGWindowNumber as String: NSNumber(value: targetWindowID),
+                kCGWindowOwnerPID as String: NSNumber(value: targetPID),
+            ]
+        ]
 
-        #expect(computerUseCursorShouldBeVisible(
-            targetWindowID: targetWindowID,
-            targetPID: targetPID,
-            windowInfo: visibleWindows
-        ))
+        #expect(
+            computerUseCursorShouldBeVisible(
+                targetWindowID: targetWindowID,
+                targetPID: targetPID,
+                windowInfo: visibleWindows
+            ))
         // A different app may be ahead in the WindowServer list. Visibility
         // remains attached to the target; panel ordering handles occlusion.
-        let withUnrelatedFrontWindow: [[String: Any]] = [[
-            kCGWindowNumber as String: NSNumber(value: targetWindowID + 1),
-            kCGWindowOwnerPID as String: NSNumber(value: targetPID + 1)
-        ]] + visibleWindows
-        #expect(computerUseCursorShouldBeVisible(
-            targetWindowID: targetWindowID,
-            targetPID: targetPID,
-            windowInfo: withUnrelatedFrontWindow
-        ))
-        #expect(!computerUseCursorShouldBeVisible(
-            targetWindowID: targetWindowID,
-            targetPID: targetPID,
-            windowInfo: []
-        ))
-        #expect(computerUseWindowIsOnVisibleSpace(
-            targetWindowID,
-            windowInfo: visibleWindows
-        ))
+        let withUnrelatedFrontWindow: [[String: Any]] =
+            [
+                [
+                    kCGWindowNumber as String: NSNumber(value: targetWindowID + 1),
+                    kCGWindowOwnerPID as String: NSNumber(value: targetPID + 1),
+                ]
+            ] + visibleWindows
+        #expect(
+            computerUseCursorShouldBeVisible(
+                targetWindowID: targetWindowID,
+                targetPID: targetPID,
+                windowInfo: withUnrelatedFrontWindow
+            ))
+        #expect(
+            !computerUseCursorShouldBeVisible(
+                targetWindowID: targetWindowID,
+                targetPID: targetPID,
+                windowInfo: []
+            ))
+        #expect(
+            computerUseWindowIsOnVisibleSpace(
+                targetWindowID,
+                windowInfo: visibleWindows
+            ))
     }
 
     @Test("Promotes background events to foreground for a window on another Space")
     func crossSpaceDeliveryMode() {
-        #expect(computerUseResolvedDeliveryMode(
-            requested: "background",
-            targetIsOnVisibleSpace: false
-        ) == "foreground")
-        #expect(computerUseResolvedDeliveryMode(
-            requested: "background",
-            targetIsOnVisibleSpace: true
-        ) == "background")
-        #expect(computerUseResolvedDeliveryMode(
-            requested: "foreground",
-            targetIsOnVisibleSpace: false
-        ) == "foreground")
-        #expect(computerUseResolvedDeliveryMode(
-            requested: "invalid",
-            targetIsOnVisibleSpace: true
-        ) == nil)
+        #expect(
+            computerUseResolvedDeliveryMode(
+                requested: "background",
+                targetIsOnVisibleSpace: false
+            ) == "foreground")
+        #expect(
+            computerUseResolvedDeliveryMode(
+                requested: "background",
+                targetIsOnVisibleSpace: true
+            ) == "background")
+        #expect(
+            computerUseResolvedDeliveryMode(
+                requested: "foreground",
+                targetIsOnVisibleSpace: false
+            ) == "foreground")
+        #expect(
+            computerUseResolvedDeliveryMode(
+                requested: "invalid",
+                targetIsOnVisibleSpace: true
+            ) == nil)
     }
 
     @Test("Uses the same smooth cursor geometry at overlay and menu-bar scales")
@@ -382,19 +423,20 @@ struct ComputerUseBridgeTests {
     func cursorBackingScales() throws {
         var paintedByteCounts: [Int] = []
         for scale in [1, 2] {
-            let representation = try #require(NSBitmapImageRep(
-                bitmapDataPlanes: nil,
-                pixelsWide: 20 * scale,
-                pixelsHigh: 22 * scale,
-                bitsPerSample: 8,
-                samplesPerPixel: 4,
-                hasAlpha: true,
-                isPlanar: false,
-                colorSpaceName: .deviceRGB,
-                bitmapFormat: [],
-                bytesPerRow: 0,
-                bitsPerPixel: 0
-            ))
+            let representation = try #require(
+                NSBitmapImageRep(
+                    bitmapDataPlanes: nil,
+                    pixelsWide: 20 * scale,
+                    pixelsHigh: 22 * scale,
+                    bitsPerSample: 8,
+                    samplesPerPixel: 4,
+                    hasAlpha: true,
+                    isPlanar: false,
+                    colorSpaceName: .deviceRGB,
+                    bitmapFormat: [],
+                    bytesPerRow: 0,
+                    bitsPerPixel: 0
+                ))
             let graphicsContext = try #require(NSGraphicsContext(bitmapImageRep: representation))
             NSGraphicsContext.saveGraphicsState()
             NSGraphicsContext.current = graphicsContext
@@ -414,9 +456,10 @@ struct ComputerUseBridgeTests {
                 start: bitmapData,
                 count: representation.bytesPerRow * representation.pixelsHigh
             )
-            paintedByteCounts.append(bytes.reduce(into: 0) { count, byte in
-                if byte != 0 { count += 1 }
-            })
+            paintedByteCounts.append(
+                bytes.reduce(into: 0) { count, byte in
+                    if byte != 0 { count += 1 }
+                })
         }
 
         #expect(paintedByteCounts[0] > 0)
@@ -437,14 +480,16 @@ struct ComputerUseBridgeTests {
     func derivedScreenshotPixelSize() {
         let frame = CGRect(x: 500, y: 77, width: 656, height: 422)
 
-        #expect(computerUseDerivedScreenshotPixelSize(
-            windowFrame: frame,
-            pointPixelScale: 2
-        ) == CGSize(width: 1_312, height: 844))
-        #expect(computerUseDerivedScreenshotPixelSize(
-            windowFrame: frame,
-            pointPixelScale: 0.5
-        ) == CGSize(width: 656, height: 422))
+        #expect(
+            computerUseDerivedScreenshotPixelSize(
+                windowFrame: frame,
+                pointPixelScale: 2
+            ) == CGSize(width: 1_312, height: 844))
+        #expect(
+            computerUseDerivedScreenshotPixelSize(
+                windowFrame: frame,
+                pointPixelScale: 0.5
+            ) == CGSize(width: 656, height: 422))
 
         // The derived size must round-trip through the shared conversion the
         // same way a real capture at that scale would.
@@ -471,11 +516,13 @@ struct ComputerUseBridgeTests {
         )
 
         // Deterministic: the same session always prefers the same color.
-        #expect(preferred == computerUseCursorColorIndex(
-            sessionID: "session-a",
-            takenIndices: [],
-            paletteCount: paletteCount
-        ))
+        #expect(
+            preferred
+                == computerUseCursorColorIndex(
+                    sessionID: "session-a",
+                    takenIndices: [],
+                    paletteCount: paletteCount
+                ))
         #expect((0..<paletteCount).contains(preferred))
 
         // A concurrent session holding that color pushes this one elsewhere.
@@ -488,11 +535,12 @@ struct ComputerUseBridgeTests {
         #expect((0..<paletteCount).contains(probed))
 
         // With every color in use, stability wins over uniqueness.
-        #expect(computerUseCursorColorIndex(
-            sessionID: "session-a",
-            takenIndices: Set(0..<paletteCount),
-            paletteCount: paletteCount
-        ) == preferred)
+        #expect(
+            computerUseCursorColorIndex(
+                sessionID: "session-a",
+                takenIndices: Set(0..<paletteCount),
+                paletteCount: paletteCount
+            ) == preferred)
     }
 
     @Test("Releases a session's share only once it has actually gone quiet")
@@ -502,7 +550,7 @@ struct ComputerUseBridgeTests {
             "working": now.addingTimeInterval(-2),
             "thinking": now.addingTimeInterval(-computerUseIdleReleaseAfter + 5),
             "finished": now.addingTimeInterval(-computerUseIdleReleaseAfter - 1),
-            "abandoned": now.addingTimeInterval(-3_600)
+            "abandoned": now.addingTimeInterval(-3_600),
         ]
         let idle = computerUseIdleSessions(lastActivity: lastActivity, now: now)
 

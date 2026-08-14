@@ -55,9 +55,10 @@ public final class WorktreeCreator {
             return .failure(.message("A worktree is already being created."))
         }
         guard let client else {
-            return .failure(.message(
-                "Worktrees need the Codevisor server. Start it and try again."
-            ))
+            return .failure(
+                .message(
+                    "Worktrees need the Codevisor server. Start it and try again."
+                ))
         }
         isRunning = true
         defer { isRunning = false }
@@ -72,9 +73,11 @@ public final class WorktreeCreator {
                 for try await envelope in client.eventStream(
                     since: ServerSessionTransport.liveOnlyEventCursor
                 ) {
-                    guard case let .log(stream, line) = WorktreeSetupEvent.from(
-                        envelope, worktreeId: worktreeId
-                    ) else { continue }
+                    guard
+                        case let .log(stream, line) = WorktreeSetupEvent.from(
+                            envelope, worktreeId: worktreeId
+                        )
+                    else { continue }
                     self?.phase?.appendLog(stream: stream, line: line)
                 }
             } catch {
@@ -106,8 +109,9 @@ public final class WorktreeCreator {
     /// The server reports worktree failures as `{"error": "…"}` bodies.
     static func failureMessage(from body: String) -> String {
         guard let data = body.data(using: .utf8),
-              let payload = try? JSONDecoder().decode([String: String].self, from: data),
-              let error = payload["error"] else {
+            let payload = try? JSONDecoder().decode([String: String].self, from: data),
+            let error = payload["error"]
+        else {
             return body.isEmpty ? "Could not create the worktree." : body
         }
         return error

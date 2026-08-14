@@ -58,7 +58,7 @@ struct ThemeNormalizerTests {
             colors: [
                 "editorGutter.addedBackground": "#11aa11",
                 // Blank ansi key falls through to the gutter tier.
-                "terminal.ansiGreen": ""
+                "terminal.ansiGreen": "",
             ],
             fg: "#fff", bg: "#000"
         )

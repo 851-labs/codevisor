@@ -197,8 +197,8 @@ struct PaneGroupBar: View {
     /// events don't reliably reach any backing NSView of ours.
     private func handleStripScroll(_ event: NSEvent) -> NSEvent? {
         guard stripMaxScroll > 0,
-              let window = event.window,
-              window.isKeyWindow
+            let window = event.window,
+            window.isKeyWindow
         else { return event }
         // SwiftUI's global space is top-left based; event locations are
         // bottom-left based.
@@ -230,7 +230,8 @@ struct PaneGroupBar: View {
             // `_buttonWidthForNumberOfButtons…` + `_calculateStackingRegions`).
             let fitted = available / CGFloat(count)
             let isOverflowing = fitted < Self.minTabWidth
-            let tabWidth = isOverflowing
+            let tabWidth =
+                isOverflowing
                 ? Self.minTabWidth
                 : (frozenTabWidth.map { min($0, available) } ?? fitted)
             let slotWidth = tabWidth + Self.tabSpacing
@@ -257,55 +258,58 @@ struct PaneGroupBar: View {
                     slotWidth: slotWidth,
                     available: available
                 )
-                    // Pointer left the strip: relax frozen widths to refit.
-                    .onHover { hovering in
-                        guard !hovering, frozenTabWidth != nil else { return }
-                        withAnimation(Self.tabMotion) { frozenTabWidth = nil }
-                    }
-                    // The track holding all tabs (Terminal.app's window tab
-                    // bar): in dark mode a LIGHTER well — native tracks
-                    // render ~59,59,59 over the ~33 page, i.e. a ~12% white
-                    // lift (which also preserves the backdrop's wallpaper
-                    // tint); light mode keeps the subtle darkening. The +
-                    // stays outside it.
-                    .background(
-                        Capsule()
-                            .fill(colorScheme == .dark
+                // Pointer left the strip: relax frozen widths to refit.
+                .onHover { hovering in
+                    guard !hovering, frozenTabWidth != nil else { return }
+                    withAnimation(Self.tabMotion) { frozenTabWidth = nil }
+                }
+                // The track holding all tabs (Terminal.app's window tab
+                // bar): in dark mode a LIGHTER well — native tracks
+                // render ~59,59,59 over the ~33 page, i.e. a ~12% white
+                // lift (which also preserves the backdrop's wallpaper
+                // tint); light mode keeps the subtle darkening. The +
+                // stays outside it.
+                .background(
+                    Capsule()
+                        .fill(
+                            colorScheme == .dark
                                 ? Color.white.opacity(0.12)
-                                : Color.black.opacity(0.06))
+                                : Color.black.opacity(0.06)
+                        )
+                        .frame(height: barHeight)
+                )
+                // Drop-target ring: the track lights up while a dragged
+                // tab would insert into THIS bar (the caret shows where).
+                .overlay {
+                    if let dragCoordinator,
+                        let ref = group.dropRef,
+                        dragCoordinator.insertionCaret(for: ref) != nil
+                    {
+                        Capsule()
+                            .strokeBorder(theme.accent.opacity(0.5))
                             .frame(height: barHeight)
-                    )
-                    // Drop-target ring: the track lights up while a dragged
-                    // tab would insert into THIS bar (the caret shows where).
-                    .overlay {
-                        if let dragCoordinator,
-                           let ref = group.dropRef,
-                           dragCoordinator.insertionCaret(for: ref) != nil {
-                            Capsule()
-                                .strokeBorder(theme.accent.opacity(0.5))
-                                .frame(height: barHeight)
-                                .allowsHitTesting(false)
-                        }
+                            .allowsHitTesting(false)
                     }
-                    // Cross-group drop math needs the strip's leading edge
-                    // and slot metrics; the scroll monitor needs the frame
-                    // and range.
-                    .onGeometryChange(for: CGRect.self) { proxy in
-                        proxy.frame(in: .global)
-                    } action: { frame in
-                        stripFrame = frame
-                        stripMaxScroll = maxScroll
-                        measuredSlotWidth = slotWidth
-                        if let ref = group.dropRef {
-                            dragCoordinator?.updateStrip(
-                                minX: frame.minX,
-                                slotWidth: slotWidth,
-                                paneCount: group.state.panes.count,
-                                for: ref,
-                                owner: geometryOwner
-                            )
-                        }
+                }
+                // Cross-group drop math needs the strip's leading edge
+                // and slot metrics; the scroll monitor needs the frame
+                // and range.
+                .onGeometryChange(for: CGRect.self) { proxy in
+                    proxy.frame(in: .global)
+                } action: { frame in
+                    stripFrame = frame
+                    stripMaxScroll = maxScroll
+                    measuredSlotWidth = slotWidth
+                    if let ref = group.dropRef {
+                        dragCoordinator?.updateStrip(
+                            minX: frame.minX,
+                            slotWidth: slotWidth,
+                            paneCount: group.state.panes.count,
+                            for: ref,
+                            owner: geometryOwner
+                        )
                     }
+                }
 
                 addPaneButton
 
@@ -404,86 +408,87 @@ struct PaneGroupBar: View {
             // Re-rendered when a new tab's expansion is released (below).
             let _ = appearanceTick
             ForEach(Array(panes.enumerated()), id: \.element.id) { index, pane in
-                        let slot = index < slots.count ? slots[index] : (x: 0, width: tabWidth)
-                        // Fresh this commit: render at ~zero width AT its
-                        // final slot with ALL animation disabled, then a
-                        // next-tick withAnimation expands it in place. The
-                        // transition system is deliberately not used here —
-                        // inserted views inherit the ambient animation for
-                        // their initial geometry and fly in across the strip.
-                        let isAppearing = appearanceLedger.seeded
-                            && !appearanceLedger.knownIds.contains(pane.id)
-                        PaneTab(
-                            name: pane.kind == .chat ? (chatTitle?(pane) ?? pane.name) : pane.name,
-                            kind: pane.kind,
-                            isAgentOwned: pane.attachOnly,
-                            isSelected: pane.id == group.state.selectedPaneId,
-                            isDragging: draggingPaneId == pane.id,
-                            width: slot.width,
-                            // The chat pane has no ✕ (not closable); closable
-                            // tabs reveal theirs on hover, in the glyph's
-                            // place (Safari behavior).
-                            // State-driven: terminals and draft chats close
-                            // freely; an established chat needs another
-                            // established chat to remain (the workspace's
-                            // primary chat anchors the window).
-                            canClose: group.canClose(id: pane.id),
-                            // Hairline between adjacent tabs, hidden around
-                            // the selected capsule (native tab bars).
-                            showsTrailingSeparator: index < panes.count - 1
-                                && pane.id != group.state.selectedPaneId
-                                && panes[index + 1].id != group.state.selectedPaneId
-                                && draggingPaneId == nil,
-                            // ⌘N hint, shown while this bar is the
-                            // shortcuts' target (⌘1-9 reach the first nine).
-                            shortcutHint: showsShortcutHints && index < 9
-                                ? ShortcutCatalog.tabSelectionHint(index: index) : nil,
-                            onSelect: {
-                                group.select(id: pane.id)
-                                group.focusSelectedPane()
-                            },
-                            onClose: {
-                                // Freeze widths so remaining tabs slide over
-                                // without resizing (see frozenTabWidth).
-                                frozenTabWidth = tabWidth
-                                group.closePane(id: pane.id)
-                            }
-                        )
-                        // Folded slivers clip their content at the slot edge
-                        // (native stacked tabs show only their leading edge).
-                        .clipped()
-                        // The manual in-place expansion (see isAppearing):
-                        // anchored TRAILING — the new tab's right edge stays
-                        // planted while its left edge sweeps left, chasing
-                        // the neighbors it pushes out of the way.
-                        .scaleEffect(x: isAppearing ? 0.01 : 1, y: 1, anchor: .trailing)
-                        .offset(x: slot.x + (draggingPaneId == pane.id ? dragOffset : 0))
-                        // Dim the in-strip body while its ghost rides the
-                        // pointer to another bar.
-                        .opacity(draggingPaneId == pane.id && isCrossDragging ? 0.3 : 1)
-                        // Dragged above all; the selected above the tabs that
-                        // fold under it when it pins at a strip edge.
-                        .zIndex(
-                            draggingPaneId == pane.id
-                                ? 2
-                                : (pane.id == group.state.selectedPaneId ? 1 : 0)
-                        )
-                        // The dragged tab tracks the pointer directly (no
-                        // animated slot shifts), and a freshly inserted tab
-                        // commits its initial tiny-at-final-slot state with
-                        // NOTHING animated — the expansion is released
-                        // explicitly a tick later.
-                        .transaction { transaction in
-                            if draggingPaneId == pane.id || isAppearing {
-                                transaction.animation = nil
-                            }
-                        }
-                        // High priority so nothing steals the drag
-                        // mid-reorder; taps still pass through via the 3pt
-                        // minimum distance.
-                        .highPriorityGesture(reorderGesture(for: pane.id, slotWidth: slotWidth))
-                        // Closing tabs fade out; insertion is fully manual.
-                        .transition(.asymmetric(insertion: .identity, removal: .opacity))
+                let slot = index < slots.count ? slots[index] : (x: 0, width: tabWidth)
+                // Fresh this commit: render at ~zero width AT its
+                // final slot with ALL animation disabled, then a
+                // next-tick withAnimation expands it in place. The
+                // transition system is deliberately not used here —
+                // inserted views inherit the ambient animation for
+                // their initial geometry and fly in across the strip.
+                let isAppearing =
+                    appearanceLedger.seeded
+                    && !appearanceLedger.knownIds.contains(pane.id)
+                PaneTab(
+                    name: pane.kind == .chat ? (chatTitle?(pane) ?? pane.name) : pane.name,
+                    kind: pane.kind,
+                    isAgentOwned: pane.attachOnly,
+                    isSelected: pane.id == group.state.selectedPaneId,
+                    isDragging: draggingPaneId == pane.id,
+                    width: slot.width,
+                    // The chat pane has no ✕ (not closable); closable
+                    // tabs reveal theirs on hover, in the glyph's
+                    // place (Safari behavior).
+                    // State-driven: terminals and draft chats close
+                    // freely; an established chat needs another
+                    // established chat to remain (the workspace's
+                    // primary chat anchors the window).
+                    canClose: group.canClose(id: pane.id),
+                    // Hairline between adjacent tabs, hidden around
+                    // the selected capsule (native tab bars).
+                    showsTrailingSeparator: index < panes.count - 1
+                        && pane.id != group.state.selectedPaneId
+                        && panes[index + 1].id != group.state.selectedPaneId
+                        && draggingPaneId == nil,
+                    // ⌘N hint, shown while this bar is the
+                    // shortcuts' target (⌘1-9 reach the first nine).
+                    shortcutHint: showsShortcutHints && index < 9
+                        ? ShortcutCatalog.tabSelectionHint(index: index) : nil,
+                    onSelect: {
+                        group.select(id: pane.id)
+                        group.focusSelectedPane()
+                    },
+                    onClose: {
+                        // Freeze widths so remaining tabs slide over
+                        // without resizing (see frozenTabWidth).
+                        frozenTabWidth = tabWidth
+                        group.closePane(id: pane.id)
+                    }
+                )
+                // Folded slivers clip their content at the slot edge
+                // (native stacked tabs show only their leading edge).
+                .clipped()
+                // The manual in-place expansion (see isAppearing):
+                // anchored TRAILING — the new tab's right edge stays
+                // planted while its left edge sweeps left, chasing
+                // the neighbors it pushes out of the way.
+                .scaleEffect(x: isAppearing ? 0.01 : 1, y: 1, anchor: .trailing)
+                .offset(x: slot.x + (draggingPaneId == pane.id ? dragOffset : 0))
+                // Dim the in-strip body while its ghost rides the
+                // pointer to another bar.
+                .opacity(draggingPaneId == pane.id && isCrossDragging ? 0.3 : 1)
+                // Dragged above all; the selected above the tabs that
+                // fold under it when it pins at a strip edge.
+                .zIndex(
+                    draggingPaneId == pane.id
+                        ? 2
+                        : (pane.id == group.state.selectedPaneId ? 1 : 0)
+                )
+                // The dragged tab tracks the pointer directly (no
+                // animated slot shifts), and a freshly inserted tab
+                // commits its initial tiny-at-final-slot state with
+                // NOTHING animated — the expansion is released
+                // explicitly a tick later.
+                .transaction { transaction in
+                    if draggingPaneId == pane.id || isAppearing {
+                        transaction.animation = nil
+                    }
+                }
+                // High priority so nothing steals the drag
+                // mid-reorder; taps still pass through via the 3pt
+                // minimum distance.
+                .highPriorityGesture(reorderGesture(for: pane.id, slotWidth: slotWidth))
+                // Closing tabs fade out; insertion is fully manual.
+                .transition(.asymmetric(insertion: .identity, removal: .opacity))
             }
         }
         .frame(height: barHeight, alignment: .topLeading)
@@ -510,7 +515,8 @@ struct PaneGroupBar: View {
                 // visible as slivers beyond it, while tabs folding TOWARD it
                 // slide underneath (native behavior).
                 let leftPin = Self.stackSliver * CGFloat(min(index, Self.maxStackSlivers))
-                let rightPin = available - slotWidth
+                let rightPin =
+                    available - slotWidth
                     - Self.stackSliver * CGFloat(min(count - 1 - index, Self.maxStackSlivers))
                 xs.append(min(max(raw, leftPin), max(leftPin, rightPin)))
             } else {
@@ -544,7 +550,7 @@ struct PaneGroupBar: View {
     /// Scrolls so the selected tab sits fully clear of both edge stacks.
     private func scrollSelectionIntoView(count: Int, slotWidth: CGFloat, available: CGFloat) {
         guard let selectedId = group.state.selectedPaneId,
-              let selected = group.state.panes.firstIndex(where: { $0.id == selectedId })
+            let selected = group.state.panes.firstIndex(where: { $0.id == selectedId })
         else { return }
         let maxScroll = max(0, CGFloat(count) * slotWidth - available)
         guard maxScroll > 0 else {
@@ -590,9 +596,10 @@ struct PaneGroupBar: View {
                 // drag belongs to the cross-group coordinator (ghost tab +
                 // drop caret/region preview) until it comes back.
                 if let dragCoordinator,
-                   let ref = group.dropRef,
-                   let descriptor = group.state.panes.first(where: { $0.id == paneId }),
-                   dragCoordinator.escapesSourceBar(value.location, source: ref) {
+                    let ref = group.dropRef,
+                    let descriptor = group.state.panes.first(where: { $0.id == paneId }),
+                    dragCoordinator.escapesSourceBar(value.location, source: ref)
+                {
                     isCrossDragging = true
                     dragCoordinator.dragUpdated(
                         paneId: paneId,
@@ -690,9 +697,10 @@ struct PaneGroupBar: View {
     @ViewBuilder
     private var dropIndicator: some View {
         if let dragCoordinator,
-           let ref = group.dropRef,
-           let index = dragCoordinator.insertionCaret(for: ref),
-           let bar = dragCoordinator.barGeometry(for: ref) {
+            let ref = group.dropRef,
+            let index = dragCoordinator.insertionCaret(for: ref),
+            let bar = dragCoordinator.barGeometry(for: ref)
+        {
             // Capsule-height caret at the slot boundary the drop would land
             // in, clamped inside the strip, sliding between slots.
             let stripStart = bar.stripMinX - bar.barFrame.minX
@@ -820,7 +828,6 @@ struct PaneGroupBar: View {
     }
 }
 
-
 /// One tab: an equal-width segment with its content (glyph + name) centered,
 /// native-tab-bar style (Terminal, Safari). The selected tab is a stroked
 /// capsule inset within its slot; unselected neighbors are divided by
@@ -932,49 +939,49 @@ struct PaneTab: View {
                 // old and new selection. Only tab positions/widths animate.
                 .transaction { $0.animation = nil }
             }
-        // Hover reveals the ✕ pinned at the tab's leading edge (native
-        // window tab bars); the glyph + name stay centered.
-        .overlay(alignment: .leading) {
-            if canClose && isHovered && fitsCloseButton {
-                closeButton
-                    .padding(.leading, capsuleInset + 5)
-                    .transition(.opacity)
+            // Hover reveals the ✕ pinned at the tab's leading edge (native
+            // window tab bars); the glyph + name stay centered.
+            .overlay(alignment: .leading) {
+                if canClose && isHovered && fitsCloseButton {
+                    closeButton
+                        .padding(.leading, capsuleInset + 5)
+                        .transition(.opacity)
+                }
             }
-        }
-        // The ⌘N shortcut hint at the trailing edge, dropped when the tab is
-        // too narrow for it.
-        .overlay(alignment: .trailing) {
-            if showsHint, let shortcutHint {
-                Text(shortcutHint)
-                    .font(.caption)
-                    // Same ink as the tab name in both states.
-                    .foregroundStyle(isSelected ? .primary : .secondary)
-                    .padding(.trailing, capsuleInset + 8)
-                    .transition(.opacity)
-                    .allowsHitTesting(false)
+            // The ⌘N shortcut hint at the trailing edge, dropped when the tab is
+            // too narrow for it.
+            .overlay(alignment: .trailing) {
+                if showsHint, let shortcutHint {
+                    Text(shortcutHint)
+                        .font(.caption)
+                        // Same ink as the tab name in both states.
+                        .foregroundStyle(isSelected ? .primary : .secondary)
+                        .padding(.trailing, capsuleInset + 8)
+                        .transition(.opacity)
+                        .allowsHitTesting(false)
+                }
             }
-        }
-        .animation(.easeOut(duration: 0.12), value: showsHint)
-        // Hover states ease rather than pop: the tint fill and the ✕ share
-        // one short fade.
-        .animation(.easeOut(duration: 0.12), value: isHovered)
-        .padding(.horizontal, capsuleInset)
-        .frame(width: width, height: barHeight)
-        // The boundary hairline dividing unselected neighbors (native tab
-        // bars hide it around the selected capsule). Always mounted, faded —
-        // conditional insertion popped abruptly on selection changes.
-        .overlay(alignment: .trailing) {
-            Rectangle()
-                .fill(theme.separator)
-                .frame(width: 1, height: 14)
-                .offset(x: 0.5)
-                .opacity(showsTrailingSeparator ? 1 : 0)
-                .animation(.easeOut(duration: 0.12), value: showsTrailingSeparator)
-        }
-        .shadow(color: .black.opacity(isDragging ? 0.25 : 0), radius: 3, y: 1)
-        .contentShape(Rectangle())
-        .onTapGesture(perform: onSelect)
-        .onHover { isHovered = $0 }
+            .animation(.easeOut(duration: 0.12), value: showsHint)
+            // Hover states ease rather than pop: the tint fill and the ✕ share
+            // one short fade.
+            .animation(.easeOut(duration: 0.12), value: isHovered)
+            .padding(.horizontal, capsuleInset)
+            .frame(width: width, height: barHeight)
+            // The boundary hairline dividing unselected neighbors (native tab
+            // bars hide it around the selected capsule). Always mounted, faded —
+            // conditional insertion popped abruptly on selection changes.
+            .overlay(alignment: .trailing) {
+                Rectangle()
+                    .fill(theme.separator)
+                    .frame(width: 1, height: 14)
+                    .offset(x: 0.5)
+                    .opacity(showsTrailingSeparator ? 1 : 0)
+                    .animation(.easeOut(duration: 0.12), value: showsTrailingSeparator)
+            }
+            .shadow(color: .black.opacity(isDragging ? 0.25 : 0), radius: 3, y: 1)
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onSelect)
+            .onHover { isHovered = $0 }
     }
 
     private var capsuleContent: some View {

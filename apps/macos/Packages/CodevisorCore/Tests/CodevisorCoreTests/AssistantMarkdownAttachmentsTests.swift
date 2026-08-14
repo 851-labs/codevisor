@@ -24,12 +24,13 @@ struct AssistantMarkdownAttachmentsTests {
             "Done. [Recording](https://attachments.codevisor.invalid/file-1) [docs](https://example.com)",
             attachments: [recording, report]
         )
-        #expect(result == [
-            .markdown("Done. "),
-            .file(PreviewFile(attachment: recording), label: "Recording"),
-            .markdown(" [docs](https://example.com)"),
-            .file(PreviewFile(attachment: report), label: "report.pdf")
-        ])
+        #expect(
+            result == [
+                .markdown("Done. "),
+                .file(PreviewFile(attachment: recording), label: "Recording"),
+                .markdown(" [docs](https://example.com)"),
+                .file(PreviewFile(attachment: report), label: "report.pdf"),
+            ])
     }
 
     @Test("Local file links become live server-file segments")
@@ -40,103 +41,109 @@ struct AssistantMarkdownAttachmentsTests {
             "Made [Report](./output/report.pdf) and ![Screenshot](</tmp/screen shot.png>). [Web](https://example.com).",
             attachments: []
         )
-        #expect(result == [
-            .markdown("Made "),
-            .file(relative, label: "Report"),
-            .markdown(" and "),
-            .file(absolute, label: "Screenshot"),
-            .markdown(". [Web](https://example.com).")
-        ])
+        #expect(
+            result == [
+                .markdown("Made "),
+                .file(relative, label: "Report"),
+                .markdown(" and "),
+                .file(absolute, label: "Screenshot"),
+                .markdown(". [Web](https://example.com)."),
+            ])
     }
 
     @Test("Streaming leaves live file paths in Markdown until the turn completes")
     func streamingLocalFiles() {
         let markdown = "Made [Report](./output/report.pdf)"
-        #expect(assistantMarkdownSegments(
-            markdown,
-            attachments: [],
-            includeServerPaths: false
-        ) == [.markdown(markdown)])
+        #expect(
+            assistantMarkdownSegments(
+                markdown,
+                attachments: [],
+                includeServerPaths: false
+            ) == [.markdown(markdown)])
     }
 
     @Test("Extensionless Markdown destinations are local files")
     func extensionlessFiles() {
         let readme = PreviewFile(serverPath: "README")
-        #expect(assistantMarkdownSegments(
-            "Open [the readme](README).",
-            attachments: []
-        ) == [
-            .markdown("Open "),
-            .file(readme, label: "the readme"),
-            .markdown(".")
-        ])
+        #expect(
+            assistantMarkdownSegments(
+                "Open [the readme](README).",
+                attachments: []
+            ) == [
+                .markdown("Open "),
+                .file(readme, label: "the readme"),
+                .markdown("."),
+            ])
     }
 
     @Test("Links inside fenced code blocks remain literal Markdown")
     func fencedCode() {
         let markdown = #"""
-        Examples:
+            Examples:
 
-        ```markdown
-        ![Image](./cat.png)
-        > ```
-        [Still code](./cat.png)
-        [Download](./cat.png)
-        ```
+            ```markdown
+            ![Image](./cat.png)
+            > ```
+            [Still code](./cat.png)
+            [Download](./cat.png)
+            ```
 
-        ~~~~
-        [Another](../other.pdf)
-        ~~~~
-        """#
+            ~~~~
+            [Another](../other.pdf)
+            ~~~~
+            """#
         #expect(assistantMarkdownSegments(markdown, attachments: []) == [.markdown(markdown)])
     }
 
     @Test("Unclosed and quoted fences protect their contents")
     func incompleteAndQuotedFences() {
         let quoted = #"""
-        > ```
-        > [Literal](./inside.txt)
-        > ```
-
-        [Preview](./outside.txt)
-        """#
-        #expect(assistantMarkdownSegments(quoted, attachments: []) == [
-            .markdown(#"""
             > ```
             > [Literal](./inside.txt)
             > ```
-            """# + "\n\n"),
-            .file(PreviewFile(serverPath: "./outside.txt"), label: "Preview")
-        ])
+
+            [Preview](./outside.txt)
+            """#
+        #expect(
+            assistantMarkdownSegments(quoted, attachments: []) == [
+                .markdown(
+                    #"""
+                    > ```
+                    > [Literal](./inside.txt)
+                    > ```
+                    """# + "\n\n"),
+                .file(PreviewFile(serverPath: "./outside.txt"), label: "Preview"),
+            ])
 
         let unclosed = #"""
-        ```text
-        [Literal](./inside.txt)
-        """#
+            ```text
+            [Literal](./inside.txt)
+            """#
         #expect(assistantMarkdownSegments(unclosed, attachments: []) == [.markdown(unclosed)])
     }
 
     @Test("Inline and indented code never becomes a file preview")
     func inlineAndIndentedCode() {
         let markdown = #"""
-        Use `[Literal](./inline.txt)` or ``![Also literal](./inline.png)``.
+            Use `[Literal](./inline.txt)` or ``![Also literal](./inline.png)``.
 
-            [Indented](./block.txt)
+                [Indented](./block.txt)
 
-        Open [Preview](./outside.txt).
-        """#
+            Open [Preview](./outside.txt).
+            """#
         let beforePreview = #"""
-        Use `[Literal](./inline.txt)` or ``![Also literal](./inline.png)``.
+            Use `[Literal](./inline.txt)` or ``![Also literal](./inline.png)``.
 
-            [Indented](./block.txt)
+                [Indented](./block.txt)
 
-        Open
-        """# + " "
-        #expect(assistantMarkdownSegments(markdown, attachments: []) == [
-            .markdown(beforePreview),
-            .file(PreviewFile(serverPath: "./outside.txt"), label: "Preview"),
-            .markdown(".")
-        ])
+            Open
+            """# + " "
+        #expect(
+            assistantMarkdownSegments(markdown, attachments: []) == [
+                .markdown(beforePreview),
+                .file(PreviewFile(serverPath: "./outside.txt"), label: "Preview"),
+                .markdown("."),
+            ])
     }
 
     @Test("Escaped Markdown links remain text")
@@ -158,10 +165,12 @@ struct AssistantMarkdownAttachmentsTests {
             attachments: [recording],
             to: &turn
         )
-        #expect(turn.finalText == .text(
-            id: "acp:answer-1",
-            markdown: "[Recording](https://attachments.codevisor.invalid/file-1)"
-        ))
+        #expect(
+            turn.finalText
+                == .text(
+                    id: "acp:answer-1",
+                    markdown: "[Recording](https://attachments.codevisor.invalid/file-1)"
+                ))
         #expect(turn.attachments == [recording])
     }
 }

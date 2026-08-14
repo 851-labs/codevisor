@@ -29,11 +29,14 @@ func handleCorruptPayload(
     reportMessage: String? = nil
 ) {
     guard !data.isEmpty else {
-        Log.persistence.error("Empty persisted payload for \(key, privacy: .public): \(String(describing: error), privacy: .public)")
+        Log.persistence.error(
+            "Empty persisted payload for \(key, privacy: .public): \(String(describing: error), privacy: .public)")
         return
     }
     store.quarantineCorruptData(forKey: key)
-    Log.persistence.fault("Corrupt persisted payload for \(key, privacy: .public); kept a backup: \(String(describing: error), privacy: .public)")
+    Log.persistence.fault(
+        "Corrupt persisted payload for \(key, privacy: .public); kept a backup: \(String(describing: error), privacy: .public)"
+    )
     guard let reportTitle else { return }
     Task { @MainActor in
         ErrorReporter.shared.report(
@@ -96,7 +99,9 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
                 )
             } catch {
                 base = fileManager.temporaryDirectory
-                Log.persistence.fault("Application Support is unavailable; falling back to the temporary directory: \(String(describing: error), privacy: .public)")
+                Log.persistence.fault(
+                    "Application Support is unavailable; falling back to the temporary directory: \(String(describing: error), privacy: .public)"
+                )
                 Task { @MainActor in
                     ErrorReporter.shared.report(
                         .dataDirectoryUnavailable,
@@ -110,7 +115,9 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
         do {
             try fileManager.createDirectory(at: self.directory, withIntermediateDirectories: true)
         } catch {
-            Log.persistence.error("Failed to create data directory \(self.directory.path, privacy: .public): \(String(describing: error), privacy: .public)")
+            Log.persistence.error(
+                "Failed to create data directory \(self.directory.path, privacy: .public): \(String(describing: error), privacy: .public)"
+            )
         }
 
         // Drain queued writes before the process exits so a state change
@@ -120,12 +127,12 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
         // flushes on backgrounding — iOS apps are usually jetsammed from the
         // background without ever seeing a terminate notification.
         #if os(macOS)
-        let flushNotificationNames = ["NSApplicationWillTerminateNotification"]
+            let flushNotificationNames = ["NSApplicationWillTerminateNotification"]
         #else
-        let flushNotificationNames = [
-            "UIApplicationWillTerminateNotification",
-            "UIApplicationDidEnterBackgroundNotification"
-        ]
+            let flushNotificationNames = [
+                "UIApplicationWillTerminateNotification",
+                "UIApplicationDidEnterBackgroundNotification",
+            ]
         #endif
         terminationObservers = flushNotificationNames.map { name in
             NotificationCenter.default.addObserver(
@@ -162,7 +169,8 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
             // A fresh key with no file yet is the normal empty state.
             return nil
         } catch {
-            Log.persistence.error("Failed to read \(key, privacy: .public): \(String(describing: error), privacy: .public)")
+            Log.persistence.error(
+                "Failed to read \(key, privacy: .public): \(String(describing: error), privacy: .public)")
             return nil
         }
     }
@@ -203,7 +211,8 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
                     }
                 }
             } catch {
-                Log.persistence.error("Failed to write \(key, privacy: .public): \(String(describing: error), privacy: .public)")
+                Log.persistence.error(
+                    "Failed to write \(key, privacy: .public): \(String(describing: error), privacy: .public)")
                 self.notifyWriteFailure(key: key, error: error)
             }
         }
@@ -223,7 +232,8 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
             ErrorReporter.shared.report(
                 .persistenceWriteFailed,
                 title: "Couldn't Save Your Data",
-                message: "Codevisor couldn't write “\(key)” to its data folder, so recent changes may be lost. Check that your disk isn't full."
+                message:
+                    "Codevisor couldn't write “\(key)” to its data folder, so recent changes may be lost. Check that your disk isn't full."
             )
         }
     }
@@ -242,9 +252,11 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
         )
         do {
             try fileManager.moveItem(at: source, to: destination)
-            Log.persistence.fault("Quarantined corrupt \(key, privacy: .public) as \(destination.lastPathComponent, privacy: .public)")
+            Log.persistence.fault(
+                "Quarantined corrupt \(key, privacy: .public) as \(destination.lastPathComponent, privacy: .public)")
         } catch {
-            Log.persistence.error("Failed to quarantine corrupt \(key, privacy: .public): \(String(describing: error), privacy: .public)")
+            Log.persistence.error(
+                "Failed to quarantine corrupt \(key, privacy: .public): \(String(describing: error), privacy: .public)")
         }
     }
 
@@ -255,7 +267,7 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
         // reach this store — drain that stage first, so a save issued moments
         // before app termination is durably included in this flush.
         PersistenceEncoding.drain()
-        writeQueue.sync { }
+        writeQueue.sync {}
     }
 }
 

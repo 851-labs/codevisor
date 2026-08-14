@@ -208,7 +208,7 @@ struct MarkdownSegmentListView: View {
                     animationPath: "\(animationPath).\(index)",
                     reduceMotion: reduceMotion
                 )
-                    .equatable()
+                .equatable()
             }
         }
     }
@@ -242,22 +242,22 @@ private struct MarkdownSegmentView: View, Equatable {
         switch segment {
         case let .textRun(runBlocks):
             #if canImport(AppKit) || canImport(UIKit)
-            MarkdownTextRunView(
-                blocks: runBlocks,
-                foregroundColor: foregroundColor,
-                animationContext: animationTimeline.map {
-                    StreamingTextAnimationContext(
-                        timeline: $0,
-                        sourceID: animationPath,
-                        documentSource: documentSource,
-                        isStreaming: true,
-                        animatesInitialContent: animatesInitialContent,
-                        reduceMotion: reduceMotion
-                    )
-                }
-            )
+                MarkdownTextRunView(
+                    blocks: runBlocks,
+                    foregroundColor: foregroundColor,
+                    animationContext: animationTimeline.map {
+                        StreamingTextAnimationContext(
+                            timeline: $0,
+                            sourceID: animationPath,
+                            documentSource: documentSource,
+                            isStreaming: true,
+                            animatesInitialContent: animatesInitialContent,
+                            reduceMotion: reduceMotion
+                        )
+                    }
+                )
             #else
-            MarkdownPortableTextRunView(blocks: runBlocks, foregroundColor: foregroundColor)
+                MarkdownPortableTextRunView(blocks: runBlocks, foregroundColor: foregroundColor)
             #endif
         case let .block(block):
             MarkdownBlockView(
@@ -291,22 +291,22 @@ struct MarkdownBlockView: View {
             // MarkdownSegmentsView; render standalone blocks the same way so
             // they stay selectable.
             #if canImport(AppKit) || canImport(UIKit)
-            MarkdownTextRunView(
-                blocks: [block],
-                foregroundColor: foregroundColor,
-                animationContext: animationTimeline.map {
-                    StreamingTextAnimationContext(
-                        timeline: $0,
-                        sourceID: animationPath,
-                        documentSource: documentSource,
-                        isStreaming: true,
-                        animatesInitialContent: animatesInitialContent,
-                        reduceMotion: reduceMotion
-                    )
-                }
-            )
+                MarkdownTextRunView(
+                    blocks: [block],
+                    foregroundColor: foregroundColor,
+                    animationContext: animationTimeline.map {
+                        StreamingTextAnimationContext(
+                            timeline: $0,
+                            sourceID: animationPath,
+                            documentSource: documentSource,
+                            isStreaming: true,
+                            animatesInitialContent: animatesInitialContent,
+                            reduceMotion: reduceMotion
+                        )
+                    }
+                )
             #else
-            MarkdownPortableTextRunView(blocks: [block], foregroundColor: foregroundColor)
+                MarkdownPortableTextRunView(blocks: [block], foregroundColor: foregroundColor)
             #endif
 
         case let .codeBlock(language, code, isComplete):
@@ -331,9 +331,9 @@ struct MarkdownBlockView: View {
 
         case let .table(headers, alignments, rows):
             #if canImport(AppKit)
-            MarkdownTableView(headers: headers, alignments: alignments, rows: rows)
+                MarkdownTableView(headers: headers, alignments: alignments, rows: rows)
             #else
-            MarkdownPortableTableView(headers: headers, alignments: alignments, rows: rows)
+                MarkdownPortableTableView(headers: headers, alignments: alignments, rows: rows)
             #endif
 
         case .thematicBreak:
@@ -344,44 +344,48 @@ struct MarkdownBlockView: View {
 
 #Preview("Rich document") {
     ScrollView {
-        StreamingMarkdownView("""
-        # Heading One
+        StreamingMarkdownView(
+            """
+            # Heading One
 
-        A paragraph with **bold**, *italic*, and `inline code`.
+            A paragraph with **bold**, *italic*, and `inline code`.
 
-        - First bullet
-        - Second bullet
+            - First bullet
+            - Second bullet
 
-        1. Step one
-        2. Step two
+            1. Step one
+            2. Step two
 
-        > A thoughtful quote.
+            > A thoughtful quote.
 
-        | Name | Role |
-        | :--- | ---: |
-        | Ann  | Lead |
+            | Name | Role |
+            | :--- | ---: |
+            | Ann  | Lead |
 
-        ```swift
-        let greeting = "Hello"
-        print(greeting)
-        ```
+            ```swift
+            let greeting = "Hello"
+            print(greeting)
+            ```
 
-        ---
-        Done.
-        """)
+            ---
+            Done.
+            """
+        )
         .padding()
     }
     .frame(width: 460, height: 640)
 }
 
 #Preview("Streaming (incomplete fence)") {
-    StreamingMarkdownView("""
-    Here is some code being written:
+    StreamingMarkdownView(
+        """
+        Here is some code being written:
 
-    ```swift
-    func work() {
-        let value = 4
-    """)
+        ```swift
+        func work() {
+            let value = 4
+        """
+    )
     .padding()
     .frame(width: 420)
 }

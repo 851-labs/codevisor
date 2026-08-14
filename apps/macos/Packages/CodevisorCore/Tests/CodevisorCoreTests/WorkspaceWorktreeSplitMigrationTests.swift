@@ -70,7 +70,7 @@ struct WorkspaceWorktreeSplitMigrationTests {
             workspaces: repository,
             sessions: [
                 context(rootChat, cwd: "/repo"),
-                context(worktreeChat, worktreeName: "kiwi", cwd: "/wt/kiwi")
+                context(worktreeChat, worktreeName: "kiwi", cwd: "/wt/kiwi"),
             ],
             projectNames: [projectId: "repo"]
         )
@@ -110,7 +110,7 @@ struct WorkspaceWorktreeSplitMigrationTests {
             workspaces: repository,
             sessions: [
                 context(rootChat, cwd: "/repo"),
-                context(worktreeChat, worktreeName: "kiwi", cwd: "/wt/kiwi")
+                context(worktreeChat, worktreeName: "kiwi", cwd: "/wt/kiwi"),
             ],
             projectNames: [projectId: "repo"]
         )
@@ -157,7 +157,7 @@ struct WorkspaceWorktreeSplitMigrationTests {
         repository.save(workspace(rootDirectory: "/repo", chatIds: [rootChat, worktreeChat]))
         let sessions = [
             context(rootChat, cwd: "/repo"),
-            context(worktreeChat, worktreeName: "kiwi", cwd: "/wt/kiwi")
+            context(worktreeChat, worktreeName: "kiwi", cwd: "/wt/kiwi"),
         ]
 
         let first = WorkspaceWorktreeSplitMigration.runIfNeeded(
@@ -186,7 +186,7 @@ struct WorkspaceWorktreeSplitMigrationTests {
             workspaces: repository,
             sessions: [
                 context(rootChat, cwd: "/repo"),
-                context(worktreeChat, worktreeName: "kiwi", cwd: "/wt/kiwi")
+                context(worktreeChat, worktreeName: "kiwi", cwd: "/wt/kiwi"),
             ],
             projectNames: [:]
         )

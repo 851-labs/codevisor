@@ -20,7 +20,7 @@ struct ProjectRecommenderTests {
             session("a", cwd: "/src/old", updatedAt: "2026-01-01T00:00:00Z"),
             session("b", cwd: "/src/busy", updatedAt: "2026-06-01T00:00:00Z"),
             session("c", cwd: "/src/busy", updatedAt: "2026-06-20T12:30:00.123Z"),
-            session("d", cwd: "/src/recent", updatedAt: "2026-06-10T00:00:00Z")
+            session("d", cwd: "/src/recent", updatedAt: "2026-06-10T00:00:00Z"),
         ]
 
         let recommendations = ProjectRecommender.recommend(
@@ -38,7 +38,7 @@ struct ProjectRecommenderTests {
     func skipsMissingFolders() {
         let sessions = [
             session("a", cwd: "/src/gone", updatedAt: "2026-06-20T00:00:00Z"),
-            session("b", cwd: "/src/kept", updatedAt: "2026-01-01T00:00:00Z")
+            session("b", cwd: "/src/kept", updatedAt: "2026-01-01T00:00:00Z"),
         ]
 
         let recommendations = ProjectRecommender.recommend(
@@ -56,7 +56,7 @@ struct ProjectRecommenderTests {
             session("a", cwd: "/src/zebra"),
             session("b", cwd: "/src/alpha"),
             session("c", cwd: "/src/alpha"),
-            session("d", cwd: "/src/dated", updatedAt: "2026-06-01T00:00:00Z")
+            session("d", cwd: "/src/dated", updatedAt: "2026-06-01T00:00:00Z"),
         ]
 
         let recommendations = ProjectRecommender.recommend(
@@ -75,7 +75,7 @@ struct ProjectRecommenderTests {
             session("a", cwd: "/"),
             session("b", cwd: "/src/one", updatedAt: "2026-06-03T00:00:00Z"),
             session("c", cwd: "/src/two", updatedAt: "2026-06-02T00:00:00Z"),
-            session("d", cwd: "/src/three", updatedAt: "2026-06-01T00:00:00Z")
+            session("d", cwd: "/src/three", updatedAt: "2026-06-01T00:00:00Z"),
         ]
 
         let recommendations = ProjectRecommender.recommend(
@@ -96,7 +96,7 @@ struct ProjectRecommenderTests {
             session("darwin-temp", cwd: "/var/folders/24/token/T"),
             session("darwin-temp-child", cwd: "/private/var/folders/ab/token/T/agent-session"),
             session("similar-layout", cwd: "/src/var/folders/ab/token/T"),
-            session("named-t", cwd: "/src/T")
+            session("named-t", cwd: "/src/T"),
         ]
 
         let recommendations = ProjectRecommender.recommend(
@@ -117,7 +117,7 @@ struct ProjectRecommenderTests {
             session("state-root", cwd: "/Users/test/.codevisor"),
             session("state-data", cwd: "/Users/test/.codevisor/data"),
             session("state-remote", cwd: "/home/test/.codevisor/logs"),
-            session("similarly-named", cwd: "/src/my.codevisor.example")
+            session("similarly-named", cwd: "/src/my.codevisor.example"),
         ]
 
         let recommendations = ProjectRecommender.recommend(
@@ -135,7 +135,7 @@ struct ProjectRecommenderTests {
             session("root", cwd: "/Users/test/codevisor", updatedAt: "2026-07-03T00:00:00Z"),
             session("worktree", cwd: "/Users/test/codevisor/project-id/fix-auth", updatedAt: "2026-07-02T00:00:00Z"),
             session("similarly-named", cwd: "/Users/test/codevisor-project", updatedAt: "2026-07-01T00:00:00Z"),
-            session("project", cwd: "/src/project", updatedAt: "2026-06-01T00:00:00Z")
+            session("project", cwd: "/src/project", updatedAt: "2026-06-01T00:00:00Z"),
         ]
 
         let recommendations = ProjectRecommender.recommend(
@@ -159,7 +159,7 @@ struct ProjectRecommenderTests {
         let sessions = [
             session("worktree", cwd: "/src/app-fix-auth", updatedAt: "2026-07-03T00:00:00Z"),
             session("clone", cwd: "/src/app", updatedAt: "2026-07-02T00:00:00Z"),
-            session("other", cwd: "/src/other", updatedAt: "2026-07-01T00:00:00Z")
+            session("other", cwd: "/src/other", updatedAt: "2026-07-01T00:00:00Z"),
         ]
 
         let recommendations = ProjectRecommender.recommend(
@@ -178,7 +178,7 @@ struct ProjectRecommenderTests {
     func skipsMissingWorktreeRoots() {
         let sessions = [
             session("worktree", cwd: "/src/app-fix-auth", updatedAt: "2026-07-03T00:00:00Z"),
-            session("project", cwd: "/src/project", updatedAt: "2026-07-02T00:00:00Z")
+            session("project", cwd: "/src/project", updatedAt: "2026-07-02T00:00:00Z"),
         ]
 
         let recommendations = ProjectRecommender.recommend(
@@ -199,7 +199,8 @@ struct ProjectRecommenderTests {
         defer { try? fileManager.removeItem(at: scratch) }
 
         let root = scratch.appendingPathComponent("app", isDirectory: true)
-        let gitDir = root
+        let gitDir =
+            root
             .appendingPathComponent(".git", isDirectory: true)
             .appendingPathComponent("worktrees/fix-auth", isDirectory: true)
         let worktree = scratch.appendingPathComponent("app-fix-auth", isDirectory: true)

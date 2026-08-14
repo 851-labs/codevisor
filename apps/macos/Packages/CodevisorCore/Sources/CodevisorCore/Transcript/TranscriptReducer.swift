@@ -15,11 +15,13 @@ public enum TranscriptReducer {
             if let parent = parentToolCallId {
                 var bucket = turn.subagents[parent] ?? SubagentTranscript()
                 bucket.isThinking = false
-                appendText(text(from: block), messageId: messageId, entries: &bucket.entries, nextTextId: &bucket.nextTextId)
+                appendText(
+                    text(from: block), messageId: messageId, entries: &bucket.entries, nextTextId: &bucket.nextTextId)
                 turn.subagents[parent] = bucket
             } else {
                 turn.isThinking = false
-                let entryId = appendText(text(from: block), messageId: messageId, entries: &turn.entries, nextTextId: &turn.nextTextId)
+                let entryId = appendText(
+                    text(from: block), messageId: messageId, entries: &turn.entries, nextTextId: &turn.nextTextId)
                 // Finality rides per chunk (codex tags whole messages) or as a
                 // zero-length retro-tag (Claude demoting streamed preamble once
                 // a tool call starts). Keyed by entry id so `finalText` can
@@ -42,7 +44,7 @@ public enum TranscriptReducer {
             }
 
         case .userMessageChunk(_, _):
-            break // Echo of the user's own input.
+            break  // Echo of the user's own input.
 
         case let .toolCall(call):
             if let parent = call.parentToolCallId {
@@ -85,7 +87,7 @@ public enum TranscriptReducer {
             upsertTool(syntheticQuestionCall(for: resolution), entries: &turn.entries)
 
         case .question, .availableCommandsUpdate, .currentModeUpdate, .configOptionUpdate,
-             .usageUpdate, .goalUpdate, .goalCleared:
+            .usageUpdate, .goalUpdate, .goalCleared:
             // Session-level state; handled by SessionModel, not the transcript.
             break
         }
@@ -104,7 +106,8 @@ public enum TranscriptReducer {
         turn.attachments = attachments
         let identified = messageId.flatMap { textIndex("acp:\($0)", in: turn.entries) }
         if let index = identified ?? turn.finalTextIndex,
-           case let .text(id, _) = turn.entries[index] {
+            case let .text(id, _) = turn.entries[index]
+        {
             turn.entries[index] = .text(id: id, markdown: markdown)
             return
         }
@@ -198,27 +201,29 @@ public enum TranscriptReducer {
         status: ContextCompactionStatus,
         entries: inout [TranscriptEntry]
     ) {
-        let matchingIndex: Int? = if let id {
-            entries.firstIndex {
-                if case let .contextCompaction(existingId, _) = $0 { return existingId == id }
-                return false
+        let matchingIndex: Int? =
+            if let id {
+                entries.firstIndex {
+                    if case let .contextCompaction(existingId, _) = $0 { return existingId == id }
+                    return false
+                }
+            } else {
+                entries.lastIndex {
+                    if case .contextCompaction = $0 { return true }
+                    return false
+                }
             }
-        } else {
-            entries.lastIndex {
-                if case .contextCompaction = $0 { return true }
-                return false
-            }
-        }
 
         switch status {
         case .started:
             if let matchingIndex, let id {
                 entries[matchingIndex] = .contextCompaction(id: id, status: .started)
             } else {
-                entries.append(.contextCompaction(
-                    id: id ?? nextLegacyCompactionId(in: entries),
-                    status: .started
-                ))
+                entries.append(
+                    .contextCompaction(
+                        id: id ?? nextLegacyCompactionId(in: entries),
+                        status: .started
+                    ))
             }
         case .completed:
             if let matchingIndex, case let .contextCompaction(existingId, _) = entries[matchingIndex] {
@@ -234,10 +239,11 @@ public enum TranscriptReducer {
     }
 
     private static func nextLegacyCompactionId(in entries: [TranscriptEntry]) -> String {
-        let ids = Set(entries.compactMap { entry -> String? in
-            if case let .contextCompaction(id, _) = entry { return id }
-            return nil
-        })
+        let ids = Set(
+            entries.compactMap { entry -> String? in
+                if case let .contextCompaction(id, _) = entry { return id }
+                return nil
+            })
         var offset = ids.count
         while ids.contains("legacy-\(offset)") { offset += 1 }
         return "legacy-\(offset)"
@@ -273,7 +279,8 @@ public enum TranscriptReducer {
         if questions.count == 1 {
             body = answerText(for: questions[0], in: resolution)
         } else {
-            body = questions
+            body =
+                questions
                 .map { "\($0.question)\n\(answerText(for: $0, in: resolution))" }
                 .joined(separator: "\n\n")
         }
@@ -301,7 +308,8 @@ public enum TranscriptReducer {
     /// the update's own parent attribution, then to the main list.
     private static func applyToolUpdate(_ update: ToolCallUpdate, to turn: inout AssistantTurn) {
         if let index = toolIndex(update.toolCallId, in: turn.entries),
-           case let .tool(existing) = turn.entries[index] {
+            case let .tool(existing) = turn.entries[index]
+        {
             turn.isThinking = false
             turn.entries[index] = .tool(existing.applying(update))
             cascadeSettleIfParent(update, in: &turn)
@@ -309,8 +317,9 @@ public enum TranscriptReducer {
         }
         for key in turn.subagents.keys {
             guard var bucket = turn.subagents[key],
-                  let index = toolIndex(update.toolCallId, in: bucket.entries),
-                  case let .tool(existing) = bucket.entries[index] else { continue }
+                let index = toolIndex(update.toolCallId, in: bucket.entries),
+                case let .tool(existing) = bucket.entries[index]
+            else { continue }
             bucket.entries[index] = .tool(existing.applying(update))
             turn.subagents[key] = bucket
             cascadeSettleIfParent(update, in: &turn)
@@ -331,8 +340,9 @@ public enum TranscriptReducer {
     /// nested below it) with the parent's outcome.
     private static func cascadeSettleIfParent(_ update: ToolCallUpdate, in turn: inout AssistantTurn) {
         guard let status = update.status,
-              let outcome = outcome(for: status),
-              turn.subagents[update.toolCallId] != nil else { return }
+            let outcome = outcome(for: status),
+            turn.subagents[update.toolCallId] != nil
+        else { return }
         var queue = [update.toolCallId]
         var visited: Set<String> = []
         while let id = queue.popLast() {
@@ -379,11 +389,12 @@ public enum TranscriptReducer {
     private static func settle(entries: inout [TranscriptEntry], outcome: TurnOutcome) {
         for index in entries.indices {
             guard case var .tool(call) = entries[index], !call.isSettled else { continue }
-            call.status = switch outcome {
-            case .completed: .completed
-            case .cancelled: .cancelled
-            case .failed: .failed
-            }
+            call.status =
+                switch outcome {
+                case .completed: .completed
+                case .cancelled: .cancelled
+                case .failed: .failed
+                }
             entries[index] = .tool(call)
         }
     }

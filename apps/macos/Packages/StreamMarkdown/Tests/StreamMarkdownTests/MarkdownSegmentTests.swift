@@ -25,11 +25,12 @@ struct MarkdownSegmentTests {
             .paragraph("After"),
         ]
         let segments = MarkdownSegment.segments(from: blocks)
-        #expect(segments == [
-            .textRun([.paragraph("Before"), .paragraph("Still before")]),
-            .block(code),
-            .textRun([.paragraph("After")]),
-        ])
+        #expect(
+            segments == [
+                .textRun([.paragraph("Before"), .paragraph("Still before")]),
+                .block(code),
+                .textRun([.paragraph("After")]),
+            ])
     }
 
     @Test("Large text documents split into bounded layout runs")
@@ -40,10 +41,11 @@ struct MarkdownSegmentTests {
             .paragraph("tail"),
         ]
 
-        #expect(MarkdownSegment.segments(from: blocks) == [
-            .textRun([blocks[0]]),
-            .textRun([blocks[1], blocks[2]]),
-        ])
+        #expect(
+            MarkdownSegment.segments(from: blocks) == [
+                .textRun([blocks[0]]),
+                .textRun([blocks[1], blocks[2]]),
+            ])
     }
 
     @Test("Standalone non-text blocks stay standalone")

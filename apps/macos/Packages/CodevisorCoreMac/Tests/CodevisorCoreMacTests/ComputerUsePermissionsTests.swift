@@ -25,60 +25,66 @@ struct ComputerUsePermissionsTests {
     @Test("Gates launch only for onboarded installs missing permissions on a new version")
     func gateDecision() {
         // Fresh installs go through onboarding instead.
-        #expect(!computerUsePermissionsGateNeeded(
-            hasCompletedOnboarding: false,
-            permissionsReviewedVersion: nil,
-            setupSkipped: false,
-            reviewInProgress: false,
-            currentVersion: "1.2.0",
-            allGranted: false
-        ))
+        #expect(
+            !computerUsePermissionsGateNeeded(
+                hasCompletedOnboarding: false,
+                permissionsReviewedVersion: nil,
+                setupSkipped: false,
+                reviewInProgress: false,
+                currentVersion: "1.2.0",
+                allGranted: false
+            ))
         // Everything granted: no gate regardless of history.
-        #expect(!computerUsePermissionsGateNeeded(
-            hasCompletedOnboarding: true,
-            permissionsReviewedVersion: nil,
-            setupSkipped: false,
-            reviewInProgress: false,
-            currentVersion: "1.2.0",
-            allGranted: true
-        ))
+        #expect(
+            !computerUsePermissionsGateNeeded(
+                hasCompletedOnboarding: true,
+                permissionsReviewedVersion: nil,
+                setupSkipped: false,
+                reviewInProgress: false,
+                currentVersion: "1.2.0",
+                allGranted: true
+            ))
         // Updated (or first launch of a gated build) with permissions missing.
-        #expect(computerUsePermissionsGateNeeded(
-            hasCompletedOnboarding: true,
-            permissionsReviewedVersion: nil,
-            setupSkipped: false,
-            reviewInProgress: false,
-            currentVersion: "1.2.0",
-            allGranted: false
-        ))
-        #expect(computerUsePermissionsGateNeeded(
-            hasCompletedOnboarding: true,
-            permissionsReviewedVersion: "1.1.0",
-            setupSkipped: false,
-            reviewInProgress: false,
-            currentVersion: "1.2.0",
-            allGranted: false
-        ))
+        #expect(
+            computerUsePermissionsGateNeeded(
+                hasCompletedOnboarding: true,
+                permissionsReviewedVersion: nil,
+                setupSkipped: false,
+                reviewInProgress: false,
+                currentVersion: "1.2.0",
+                allGranted: false
+            ))
+        #expect(
+            computerUsePermissionsGateNeeded(
+                hasCompletedOnboarding: true,
+                permissionsReviewedVersion: "1.1.0",
+                setupSkipped: false,
+                reviewInProgress: false,
+                currentVersion: "1.2.0",
+                allGranted: false
+            ))
         // The same version asks at most once, even if permissions were later
         // revoked in System Settings.
-        #expect(!computerUsePermissionsGateNeeded(
-            hasCompletedOnboarding: true,
-            permissionsReviewedVersion: "1.2.0",
-            setupSkipped: false,
-            reviewInProgress: false,
-            currentVersion: "1.2.0",
-            allGranted: false
-        ))
+        #expect(
+            !computerUsePermissionsGateNeeded(
+                hasCompletedOnboarding: true,
+                permissionsReviewedVersion: "1.2.0",
+                setupSkipped: false,
+                reviewInProgress: false,
+                currentVersion: "1.2.0",
+                allGranted: false
+            ))
         // "Set Up Later" suppresses the gate on every version; the Settings
         // toggle is the way back in.
-        #expect(!computerUsePermissionsGateNeeded(
-            hasCompletedOnboarding: true,
-            permissionsReviewedVersion: "1.1.0",
-            setupSkipped: true,
-            reviewInProgress: false,
-            currentVersion: "1.2.0",
-            allGranted: false
-        ))
+        #expect(
+            !computerUsePermissionsGateNeeded(
+                hasCompletedOnboarding: true,
+                permissionsReviewedVersion: "1.1.0",
+                setupSkipped: true,
+                reviewInProgress: false,
+                currentVersion: "1.2.0",
+                allGranted: false
+            ))
     }
 
     @Test("Keeps an open review on screen across the Screen Recording restart")
@@ -86,32 +92,35 @@ struct ComputerUsePermissionsTests {
         // The user granted Screen Recording and macOS relaunched the app.
         // Everything is granted now, but the review they started has to come
         // back so they can see it worked and close it themselves.
-        #expect(computerUsePermissionsGateNeeded(
-            hasCompletedOnboarding: true,
-            permissionsReviewedVersion: nil,
-            setupSkipped: false,
-            reviewInProgress: true,
-            currentVersion: "1.2.0",
-            allGranted: true
-        ))
+        #expect(
+            computerUsePermissionsGateNeeded(
+                hasCompletedOnboarding: true,
+                permissionsReviewedVersion: nil,
+                setupSkipped: false,
+                reviewInProgress: true,
+                currentVersion: "1.2.0",
+                allGranted: true
+            ))
         // Even a version already marked reviewed keeps an open review up.
-        #expect(computerUsePermissionsGateNeeded(
-            hasCompletedOnboarding: true,
-            permissionsReviewedVersion: "1.2.0",
-            setupSkipped: false,
-            reviewInProgress: true,
-            currentVersion: "1.2.0",
-            allGranted: false
-        ))
+        #expect(
+            computerUsePermissionsGateNeeded(
+                hasCompletedOnboarding: true,
+                permissionsReviewedVersion: "1.2.0",
+                setupSkipped: false,
+                reviewInProgress: true,
+                currentVersion: "1.2.0",
+                allGranted: false
+            ))
         // Set Up Later still wins: it ends the review outright.
-        #expect(!computerUsePermissionsGateNeeded(
-            hasCompletedOnboarding: true,
-            permissionsReviewedVersion: nil,
-            setupSkipped: true,
-            reviewInProgress: true,
-            currentVersion: "1.2.0",
-            allGranted: false
-        ))
+        #expect(
+            !computerUsePermissionsGateNeeded(
+                hasCompletedOnboarding: true,
+                permissionsReviewedVersion: nil,
+                setupSkipped: true,
+                reviewInProgress: true,
+                currentVersion: "1.2.0",
+                allGranted: false
+            ))
     }
 
     @Test("Tracks live grant status and flags a mid-run Screen Recording grant")
@@ -170,9 +179,11 @@ struct ComputerUsePermissionsTests {
 
     @Test("Privacy pane deep links match the System Settings URL scheme")
     func paneDeepLinks() {
-        #expect(SystemSettingsPane.accessibility.url?.absoluteString
-            == "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
-        #expect(SystemSettingsPane.screenRecording.url?.absoluteString
-            == "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
+        #expect(
+            SystemSettingsPane.accessibility.url?.absoluteString
+                == "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+        #expect(
+            SystemSettingsPane.screenRecording.url?.absoluteString
+                == "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
     }
 }

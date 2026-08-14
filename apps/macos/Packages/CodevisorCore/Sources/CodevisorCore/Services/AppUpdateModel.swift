@@ -148,7 +148,7 @@ public final class AppUpdateModel {
 
     public static func bundleSourceRevision(_ bundle: Bundle = .main) -> String? {
         guard let value = bundle.object(forInfoDictionaryKey: "CodevisorSourceRevision") as? String,
-              !value.isEmpty, value != "unknown"
+            !value.isEmpty, value != "unknown"
         else { return nil }
         return value
     }

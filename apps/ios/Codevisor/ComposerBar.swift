@@ -152,7 +152,9 @@ struct ComposerBar: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 7)
                     .composerGlassSurface(cornerRadius: 18)
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                    .onGeometryChange(for: CGFloat.self) {
+                        $0.size.height
+                    } action: { height in
                         runPickersHeight = height
                     }
             }
@@ -163,7 +165,9 @@ struct ComposerBar: View {
                 selectTargetProject(project)
             }
         }
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+        .onGeometryChange(for: CGFloat.self) {
+            $0.size.height
+        } action: { height in
             // Publish only the resting size; see `collapsedHeight`.
             if !isExpanded, activeDragTranslation == 0, releaseHeight == nil {
                 collapsedHeight = height
@@ -267,7 +271,7 @@ struct ComposerBar: View {
                 LinearGradient(
                     colors: [
                         Color(.systemGroupedBackground).opacity(0),
-                        Color(.systemGroupedBackground)
+                        Color(.systemGroupedBackground),
                     ],
                     startPoint: .top,
                     endPoint: .bottom
@@ -550,7 +554,8 @@ struct ComposerBar: View {
             serverId: project.serverId,
             projectId: project.id
         )
-        let prefersWorktree = project.isGitRepository
+        let prefersWorktree =
+            project.isGitRepository
             && environment.composerDefaults.prefersWorktreeForNewWorkspaces(
                 forServer: project.serverId
             )
@@ -742,10 +747,13 @@ private struct ConfigChip: View {
 
     var body: some View {
         Menu {
-            Picker(option.name, selection: Binding(
-                get: { controller.configOptions.first { $0.id == option.id }?.currentValue ?? option.currentValue },
-                set: { value in Task { await controller.setConfigOption(option.id, value) } }
-            )) {
+            Picker(
+                option.name,
+                selection: Binding(
+                    get: { controller.configOptions.first { $0.id == option.id }?.currentValue ?? option.currentValue },
+                    set: { value in Task { await controller.setConfigOption(option.id, value) } }
+                )
+            ) {
                 ForEach(option.options) { value in
                     Text(value.name).tag(value.value)
                 }
@@ -761,7 +769,6 @@ private struct ConfigChip: View {
         .accessibilityLabel(option.name)
     }
 }
-
 
 /// The composer's text engine: UITextView under SwiftUI. Newlines on return,
 /// exact content-height reporting (insets included), scroll only on overflow.
@@ -824,7 +831,8 @@ private struct ComposerTextView: UIViewRepresentable {
                 // this representable before the coordinator's synchronous
                 // settle hook, adopt the existing editor instead of stacking
                 // a second local UITextView over it.
-                view = container.localEditor
+                view =
+                    container.localEditor
                     ?? ComposerTextViewHandoffRegistry.retirePromotionEditor(
                         ownedBy: container
                     )
@@ -875,7 +883,7 @@ private struct ComposerTextView: UIViewRepresentable {
         view.pasteConfiguration = UIPasteConfiguration(acceptableTypeIdentifiers: [
             UTType.plainText.identifier,
             UTType.fileURL.identifier,
-            UTType.image.identifier
+            UTType.image.identifier,
         ])
         view.setContentHuggingPriority(.defaultLow, for: .horizontal)
         view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -963,7 +971,7 @@ private struct ComposerTextView: UIViewRepresentable {
                 item.setNoResult()
                 provider.loadObject(ofClass: UIImage.self) { [weak self] object, _ in
                     guard let image = object as? UIImage,
-                          let data = image.pngData()
+                        let data = image.pngData()
                     else { return }
                     Task { @MainActor [weak self] in
                         self?.onPasteAttachments([.image(data: data, suggestedName: nil)])
@@ -1095,7 +1103,8 @@ enum ComposerTextViewHandoffRegistry {
         // dismissal, so transfer geometry/delegate ownership without ever
         // removing the active editor from its stable UIWindow superview.
         if let destination = match.value.pendingDestination,
-           destination.window != nil {
+            destination.window != nil
+        {
             place(match.value, through: destination)
             match.value.owner = destination
             match.value.ownerRole = .promotionDestination
@@ -1151,12 +1160,13 @@ enum ComposerTextViewHandoffRegistry {
     @discardableResult
     static func settlePromotedEditor(id: UUID) -> Bool {
         guard let entry = entries[id],
-              entry.ownerRole == .promotionDestination
+            entry.ownerRole == .promotionDestination
                 || entry.pendingDestination?.window != nil
         else { return false }
 
         if entry.ownerRole == .promotionSource,
-           let destination = entry.pendingDestination {
+            let destination = entry.pendingDestination
+        {
             entry.owner = destination
             entry.ownerRole = .promotionDestination
         }
@@ -1179,9 +1189,11 @@ enum ComposerTextViewHandoffRegistry {
     }
 
     static func layoutEditor(ownedBy container: ComposerTextViewContainer) {
-        guard let entry = entries.values.first(where: {
-            $0.owner === container && $0.isPortaled
-        }) else { return }
+        guard
+            let entry = entries.values.first(where: {
+                $0.owner === container && $0.isPortaled
+            })
+        else { return }
         portal(entry, through: container)
     }
 
@@ -1231,10 +1243,10 @@ enum ComposerTextViewHandoffRegistry {
     /// editor's UIWindow ancestry.
     static func beginStablePortalTransition(id: UUID) -> Bool {
         guard entries[id] == nil,
-              let port = ports[id],
-              let owner = port.source,
-              let editor = owner.localEditor,
-              owner.window != nil
+            let port = ports[id],
+            let owner = port.source,
+            let editor = owner.localEditor,
+            owner.window != nil
         else { return false }
         let entry = Entry(editor: editor, owner: owner, role: .promotionSource)
         entry.pendingDestination = port.destination
@@ -1265,9 +1277,9 @@ enum ComposerTextViewHandoffRegistry {
     /// first responder, so UIKit has no reason to end the keyboard session.
     static func completeStablePortalHandoff(id: UUID) -> Bool {
         guard let entry = entries[id],
-              entry.ownerRole == .promotionSource,
-              entry.pendingDestination?.window != nil,
-              let destination = entry.pendingDestination
+            entry.ownerRole == .promotionSource,
+            entry.pendingDestination?.window != nil,
+            let destination = entry.pendingDestination
         else { return false }
         entry.owner = destination
         entry.ownerRole = .promotionDestination
@@ -1341,8 +1353,8 @@ final class HeightReportingTextView: UITextView {
 
     private func fulfillPendingFocusRequestIfPossible() {
         guard let request = pendingFocusRequest,
-              window != nil,
-              isEditable
+            window != nil,
+            isEditable
         else { return }
         guard becomeFirstResponder() else { return }
         fulfilledFocusRequest = request

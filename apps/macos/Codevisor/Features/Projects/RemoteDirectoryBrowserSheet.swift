@@ -35,9 +35,10 @@ struct RemoteDirectoryBrowserSheet: View {
         self.client = client
         self.machineName = machineName
         self.onChoose = onChoose
-        _model = State(initialValue: RemoteDirectoryBrowserModel(machineName: machineName) { path, showHidden in
-            try await client.listDirectory(path: path, showHidden: showHidden)
-        })
+        _model = State(
+            initialValue: RemoteDirectoryBrowserModel(machineName: machineName) { path, showHidden in
+                try await client.listDirectory(path: path, showHidden: showHidden)
+            })
     }
 
     var body: some View {

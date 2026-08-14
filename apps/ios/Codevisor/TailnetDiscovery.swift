@@ -61,8 +61,8 @@ enum TailnetDiscovery {
         }
         guard let url = URL(string: "http://100.100.100.100/api/data") else { return nil }
         guard let data = await fetch(url, timeout: 1.5),
-              let decoded = try? JSONDecoder().decode(Quad100Data.self, from: data),
-              decoded.Status == "Running"
+            let decoded = try? JSONDecoder().decode(Quad100Data.self, from: data),
+            decoded.Status == "Running"
         else { return nil }
         return TailnetInfo(
             tailnetName: decoded.TailnetName ?? "",
@@ -80,7 +80,7 @@ enum TailnetDiscovery {
         while let interface = cursor {
             defer { cursor = interface.pointee.ifa_next }
             guard let address = interface.pointee.ifa_addr,
-                  address.pointee.sa_family == sa_family_t(AF_INET)
+                address.pointee.sa_family == sa_family_t(AF_INET)
             else { continue }
             var ipv4 = sockaddr_in()
             memcpy(&ipv4, address, MemoryLayout<sockaddr_in>.size)
@@ -102,7 +102,7 @@ enum TailnetDiscovery {
         let authority = hasPort ? host : "\(host):\(CodevisorServerConfig.productionPort)"
         guard let url = URL(string: "http://\(authority)/v1/discovery") else { return nil }
         guard let data = await fetch(url, timeout: 2),
-              let manifest = try? JSONDecoder().decode(Manifest.self, from: data)
+            let manifest = try? JSONDecoder().decode(Manifest.self, from: data)
         else { return nil }
         return FoundMachine(host: host, manifest: manifest)
     }
@@ -114,7 +114,7 @@ enum TailnetDiscovery {
         let session = URLSession(configuration: configuration)
         defer { session.invalidateAndCancel() }
         guard let (data, response) = try? await session.data(from: url),
-              (response as? HTTPURLResponse)?.statusCode == 200
+            (response as? HTTPURLResponse)?.statusCode == 200
         else { return nil }
         return data
     }
@@ -163,7 +163,7 @@ final class TailnetMachineDiscovery {
         var peers: [ServerTailnetPeer] = []
         for machine in remotes {
             guard let response = try? await machines.client(for: machine.id).tailnetPeers(),
-                  response.available
+                response.available
             else { continue }
             peers = response.peers
             break
@@ -185,7 +185,7 @@ final class TailnetMachineDiscovery {
                 for peer in chunk {
                     group.addTask {
                         guard let host = peer.host,
-                              let machine = await TailnetDiscovery.probe(host)
+                            let machine = await TailnetDiscovery.probe(host)
                         else { return nil }
                         return Discovered(
                             id: machine.manifest.machineId,

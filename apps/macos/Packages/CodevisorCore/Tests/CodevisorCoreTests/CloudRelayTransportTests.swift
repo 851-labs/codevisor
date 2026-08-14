@@ -70,14 +70,16 @@ struct CloudRelayTransportTests {
             switch envelope.frame {
             case .open:
                 guard let open = try? JSONDecoder().decode(OpenPayload.self, from: payload),
-                      open.channelType == "http" else { return }
+                    open.channelType == "http"
+                else { return }
                 lock.withLock { requestsByChannel[channelId] = (open.params, Data()) }
             case .data:
                 guard let frame = try? JSONDecoder().decode(ClientFrame.self, from: payload) else { return }
                 switch frame.kind {
                 case "chunk":
                     guard let encoded = frame.data,
-                          let chunk = CloudChannelCrypto.base64URLDecode(encoded) else { return }
+                        let chunk = CloudChannelCrypto.base64URLDecode(encoded)
+                    else { return }
                     lock.withLock { requestsByChannel[channelId]?.body.append(chunk) }
                 case "end":
                     finish(channelId: channelId)
@@ -103,7 +105,7 @@ struct CloudRelayTransportTests {
             let encoder = JSONEncoder()
             func sendJSON(_ value: some Encodable) {
                 guard let data = try? encoder.encode(value),
-                      let frame = try? machine.sealData(channelId: channelId, payload: data)
+                    let frame = try? machine.sealData(channelId: channelId, payload: data)
                 else { return }
                 scripted.relayToApp(machineId: machine.deviceId, frame: frame)
             }
@@ -220,10 +222,11 @@ struct CloudRelayTransportTests {
                     status: 404, headers: [:], bodyChunks: [Data("{}".utf8)]
                 )
             }
-            let info = Data("""
-            {"id":"m1","name":"Relay Mac","kind":"remote","version":"9.9.9",
-             "platform":"darwin","bindHost":"127.0.0.1","cloudDeviceId":"machine-1"}
-            """.utf8)
+            let info = Data(
+                """
+                {"id":"m1","name":"Relay Mac","kind":"remote","version":"9.9.9",
+                 "platform":"darwin","bindHost":"127.0.0.1","cloudDeviceId":"machine-1"}
+                """.utf8)
             return ScriptedHttpMachine.ScriptedResponse(
                 status: 200,
                 headers: ["Content-Type": "application/json"],
@@ -231,11 +234,12 @@ struct CloudRelayTransportTests {
             )
         }
         let (endpoint, hub) = makeEndpoint(scriptedMachine)
-        let client = CodevisorServerClient(config: CodevisorServerConfig(
-            baseURL: CodevisorMachine.cloudPlaceholderBaseURL,
-            requestTransport: CloudRelayRequestTransport(endpoint: endpoint),
-            webSocketTransport: CloudRelayWebSocketTransport(endpoint: endpoint)
-        ))
+        let client = CodevisorServerClient(
+            config: CodevisorServerConfig(
+                baseURL: CodevisorMachine.cloudPlaceholderBaseURL,
+                requestTransport: CloudRelayRequestTransport(endpoint: endpoint),
+                webSocketTransport: CloudRelayWebSocketTransport(endpoint: endpoint)
+            ))
 
         let info = try await client.info()
         #expect(info.name == "Relay Mac")

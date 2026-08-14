@@ -89,7 +89,7 @@ public enum WorkspaceTabZoomTransitionContract {
         cardSize: CGSize
     ) -> CGFloat? {
         guard canvasSize.isUsableTransitionSize,
-              cardSize.isUsableTransitionSize
+            cardSize.isUsableTransitionSize
         else { return nil }
         let scale = max(
             cardSize.width / canvasSize.width,
@@ -109,10 +109,10 @@ public enum WorkspaceTabZoomTransitionContract {
         reduceMotion: Bool = false
     ) -> WorkspaceTabZoomTransitionPlan? {
         guard !reduceMotion,
-              viewportFrame.isUsableTransitionFrame,
-              cardFrame.isUsableTransitionFrame,
-              canvasSize.isUsableTransitionSize,
-              viewportFrame.intersects(cardFrame)
+            viewportFrame.isUsableTransitionFrame,
+            cardFrame.isUsableTransitionFrame,
+            canvasSize.isUsableTransitionSize,
+            viewportFrame.intersects(cardFrame)
         else { return nil }
 
         let pane = endpoint(

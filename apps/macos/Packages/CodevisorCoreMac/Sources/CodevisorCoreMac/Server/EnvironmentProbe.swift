@@ -42,7 +42,7 @@ public struct EnvironmentProbe: Sendable {
             "\(home)/.volta/bin",
             "\(home)/.asdf/shims",
             "\(home)/.bun/bin",
-            "\(home)/.cargo/bin"
+            "\(home)/.cargo/bin",
         ]
     }
 
@@ -106,7 +106,7 @@ public struct EnvironmentProbe: Sendable {
         return Self.mergedPath([
             probed,
             Self.splitPath(baseEnvironment["PATH"]),
-            Self.fallbackPathDirectories(home: home)
+            Self.fallbackPathDirectories(home: home),
         ])
     }
 

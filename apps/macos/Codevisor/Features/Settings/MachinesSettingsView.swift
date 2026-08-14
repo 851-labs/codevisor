@@ -56,7 +56,8 @@ struct MachinesSettingsView: View {
                 ForEach(machines.allMachines) { machine in
                     NavigationLink(value: MachineSettingsRoute.machine(machine.id)) {
                         if machine.isCloud,
-                           let presence = machines.cloudMachine(forMachineId: machine.id) {
+                            let presence = machines.cloudMachine(forMachineId: machine.id)
+                        {
                             cloudMachineRow(machine, presence: presence)
                         } else {
                             machineRow(machine)
@@ -124,7 +125,9 @@ struct MachinesSettingsView: View {
             Button("Cancel", role: .cancel) {}
                 .settingsActionTint(theme)
         } message: { machine in
-            Text("“\(machine.name)” will be signed out of your cloud account. Nothing on the machine itself is changed — run `codevisor auth login` there to reconnect it.")
+            Text(
+                "“\(machine.name)” will be signed out of your cloud account. Nothing on the machine itself is changed — run `codevisor auth login` there to reconnect it."
+            )
         }
         .sheet(item: $addingDiscovered) { machine in
             RemoteMachineSheet(name: machine.name, host: machine.host) { host, name, token in
@@ -230,7 +233,8 @@ struct MachinesSettingsView: View {
                 let token = try await machines.issueLocalConnectionToken()
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(token, forType: .string)
-                tokenNotice = "Copied to the clipboard. Paste it into “Add Remote Machine” on the other device to let it connect to this Mac."
+                tokenNotice =
+                    "Copied to the clipboard. Paste it into “Add Remote Machine” on the other device to let it connect to this Mac."
             } catch {
                 tokenNotice = "Couldn't issue a token: the local server isn't running."
             }
@@ -253,7 +257,8 @@ struct MachinesSettingsView: View {
         } catch {
             Log.machines.error("Adding machine failed: \(String(describing: error), privacy: .public)")
             if case CodevisorServerClientError.httpStatus(401, _) = error {
-                return "That connection token was rejected by the machine. Check it with `codevisor token` and try again."
+                return
+                    "That connection token was rejected by the machine. Check it with `codevisor token` and try again."
             }
             return serverErrorMessage(error)
         }
@@ -353,7 +358,8 @@ struct MachinesSettingsView: View {
         let isSelected = machine.id == machines.selectedMachineId
         // A saved icon wins; without one, fall back to the presence-derived
         // glyph this row has always shown.
-        let symbolName = machine.appearance != nil
+        let symbolName =
+            machine.appearance != nil
             ? machine.resolvedAppearance.symbolName
             : (presence.os == "linux" ? "server.rack" : "desktopcomputer")
         return HStack(spacing: 10) {

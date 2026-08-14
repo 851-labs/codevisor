@@ -40,7 +40,7 @@ public final class ClientPreferences {
     ) -> Value {
         _ = revision
         guard let data = data(forKey: key),
-              let decoded = try? JSONDecoder().decode(Value.self, from: data)
+            let decoded = try? JSONDecoder().decode(Value.self, from: data)
         else { return defaultValue }
         return decoded
     }

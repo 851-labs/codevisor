@@ -62,7 +62,7 @@ private struct TitlebarSeparatorSuppressor: NSViewRepresentable {
 
         func apply() {
             guard let item = enclosingSplitViewItem(),
-                  item.titlebarSeparatorStyle != .none
+                item.titlebarSeparatorStyle != .none
             else { return }
             item.titlebarSeparatorStyle = .none
         }

@@ -17,8 +17,12 @@ struct MachineControllerTests {
 
     @Test("Remote host input normalizes to an HTTP server URL")
     func normalizedRemoteURL() throws {
-        #expect(try MachineController.normalizedRemoteURL(from: "mac-mini.tailnet.ts.net").absoluteString == "http://mac-mini.tailnet.ts.net:49361")
-        #expect(try MachineController.normalizedRemoteURL(from: "https://10.0.0.5:9999/path?x=1").absoluteString == "https://10.0.0.5:9999")
+        #expect(
+            try MachineController.normalizedRemoteURL(from: "mac-mini.tailnet.ts.net").absoluteString
+                == "http://mac-mini.tailnet.ts.net:49361")
+        #expect(
+            try MachineController.normalizedRemoteURL(from: "https://10.0.0.5:9999/path?x=1").absoluteString
+                == "https://10.0.0.5:9999")
         #expect(throws: MachineControllerError.invalidHost(" ")) {
             _ = try MachineController.normalizedRemoteURL(from: " ")
         }
@@ -162,16 +166,16 @@ struct MachineControllerTests {
     @Test("Machines without saved appearance metadata use stable defaults")
     func legacyAppearanceDefaults() throws {
         let legacyRegistry = """
-        {
-          "selectedMachineId": "remote-studio-49361",
-          "remoteMachines": [{
-            "id": "remote-studio-49361",
-            "name": "Studio",
-            "baseURL": "http://studio:49361",
-            "kind": "remote"
-          }]
-        }
-        """
+            {
+              "selectedMachineId": "remote-studio-49361",
+              "remoteMachines": [{
+                "id": "remote-studio-49361",
+                "name": "Studio",
+                "baseURL": "http://studio:49361",
+                "kind": "remote"
+              }]
+            }
+            """
         let store = InMemoryStore()
         try store.saveData(Data(legacyRegistry.utf8), forKey: "machines")
 
@@ -184,11 +188,11 @@ struct MachineControllerTests {
     @Test("Legacy saved colors are ignored while their icons remain")
     func legacyMachineColorsAreIgnored() throws {
         let legacyAppearance = """
-        {
-          "symbolName": "server.rack",
-          "colorHex": "#ff3b30"
-        }
-        """
+            {
+              "symbolName": "server.rack",
+              "colorHex": "#ff3b30"
+            }
+            """
 
         let appearance = try JSONDecoder().decode(MachineAppearance.self, from: Data(legacyAppearance.utf8))
 
@@ -404,7 +408,7 @@ struct MachineControllerTests {
             projects: [project],
             sessions: [
                 serverSession(id: sessionId, isArchived: false, workspaceId: workspaceId),
-                serverSession(id: siblingSessionId, isArchived: false, workspaceId: workspaceId)
+                serverSession(id: siblingSessionId, isArchived: false, workspaceId: workspaceId),
             ],
             workspaces: [serverWorkspace(isArchived: false)]
         )
@@ -546,7 +550,7 @@ struct MachineControllerTests {
 
         fake.setSessions([
             serverSession(id: sessionId, isArchived: false, workspaceId: nil),
-            serverSession(id: siblingSessionId, isArchived: false, workspaceId: nil)
+            serverSession(id: siblingSessionId, isArchived: false, workspaceId: nil),
         ])
         fake.setWorkspaces([])
         fake.emit(kind: "workspace.deleted", subjectId: workspaceId.uuidString)
@@ -726,7 +730,9 @@ struct MachineControllerTests {
     // construct the concrete macOS local server, which is no longer part of
     // this platform-neutral module.
 
-    private func makeController(store: InMemoryStore = InMemoryStore()) -> (
+    private func makeController(
+        store: InMemoryStore = InMemoryStore()
+    ) -> (
         controller: MachineController,
         projectList: ProjectListModel,
         store: InMemoryStore
@@ -894,19 +900,20 @@ private final class SyncFakeServerClient: CodevisorServerClienting, @unchecked S
     var listSessionCallCount: Int { lock.withLock { _listSessionCallCount } }
 
     func emit(kind: String, subjectId: String, payload: JSONValue = .null) {
-        let (event, targets): (ServerEventEnvelope, [AsyncThrowingStream<ServerEventEnvelope, any Error>.Continuation]) = lock.withLock {
-            let event = ServerEventEnvelope(
-                id: nextEventId,
-                serverId: "local",
-                kind: kind,
-                subjectId: subjectId,
-                createdAt: "2026-06-30T00:00:02.000Z",
-                payload: payload
-            )
-            nextEventId += 1
-            emittedEvents.append(event)
-            return (event, continuations)
-        }
+        let (event, targets):
+            (ServerEventEnvelope, [AsyncThrowingStream<ServerEventEnvelope, any Error>.Continuation]) = lock.withLock {
+                let event = ServerEventEnvelope(
+                    id: nextEventId,
+                    serverId: "local",
+                    kind: kind,
+                    subjectId: subjectId,
+                    createdAt: "2026-06-30T00:00:02.000Z",
+                    payload: payload
+                )
+                nextEventId += 1
+                emittedEvents.append(event)
+                return (event, continuations)
+            }
         for continuation in targets {
             continuation.yield(event)
         }
@@ -990,7 +997,8 @@ private final class SyncFakeServerClient: CodevisorServerClienting, @unchecked S
             }
             return currentVersion
         }
-        return ServerInfo(id: "local", name: "Local", kind: "local", version: version, platform: "darwin", bindHost: "127.0.0.1")
+        return ServerInfo(
+            id: "local", name: "Local", kind: "local", version: version, platform: "darwin", bindHost: "127.0.0.1")
     }
     func updateInfo(refresh: Bool, channel: ServerUpdateChannel) async throws -> ServerUpdateInfo {
         lock.withLock {

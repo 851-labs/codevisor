@@ -63,7 +63,7 @@ struct SessionSetupTests {
             WorktreeSetupEvent.from(
                 envelope(payload: [
                     "state": "log", "stream": "stderr",
-                    "line": "Preparing worktree (new branch 'codevisor/fix-auth')"
+                    "line": "Preparing worktree (new branch 'codevisor/fix-auth')",
                 ]),
                 worktreeId: "WT-1"
             ) == .log(stream: "stderr", line: "Preparing worktree (new branch 'codevisor/fix-auth')")
@@ -96,12 +96,14 @@ struct SessionSetupTests {
 
     @Test("Ignores other kinds, subjects, and unknown or malformed states")
     func ignoresUnrelated() {
-        #expect(WorktreeSetupEvent.from(
-            envelope(kind: "session.output", payload: ["state": "log", "line": "x"]), worktreeId: "wt-1"
-        ) == nil)
-        #expect(WorktreeSetupEvent.from(
-            envelope(subjectId: "wt-2", payload: ["state": "started"]), worktreeId: "wt-1"
-        ) == nil)
+        #expect(
+            WorktreeSetupEvent.from(
+                envelope(kind: "session.output", payload: ["state": "log", "line": "x"]), worktreeId: "wt-1"
+            ) == nil)
+        #expect(
+            WorktreeSetupEvent.from(
+                envelope(subjectId: "wt-2", payload: ["state": "started"]), worktreeId: "wt-1"
+            ) == nil)
         #expect(WorktreeSetupEvent.from(envelope(payload: ["state": "unknown"]), worktreeId: "wt-1") == nil)
         #expect(WorktreeSetupEvent.from(envelope(payload: ["state": "log"]), worktreeId: "wt-1") == nil)
         #expect(WorktreeSetupEvent.from(envelope(payload: ["other": true]), worktreeId: "wt-1") == nil)

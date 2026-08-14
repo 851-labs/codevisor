@@ -148,8 +148,10 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
         previousDistanceFromBottom: CGFloat
     ) -> CGFloat? {
         guard let previousIndex = previousLayout.indexByKey[key],
-              let nextIndex = indexByKey[key] else { return nil }
-        let previousAnchorTopFromBottom = previousLayout.bottomOffsets[previousIndex]
+            let nextIndex = indexByKey[key]
+        else { return nil }
+        let previousAnchorTopFromBottom =
+            previousLayout.bottomOffsets[previousIndex]
             + previousLayout.heights[previousIndex]
         let nextAnchorTopFromBottom = bottomOffsets[nextIndex] + heights[nextIndex]
         return max(

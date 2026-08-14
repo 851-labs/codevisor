@@ -18,13 +18,15 @@ struct MachinePickerToolbarMenu: View {
             // One list for everything the app can reach: configured machines
             // and cloud-relay machines alike, all selectable the same way.
             ForEach(machines.allMachines) { machine in
-                Toggle(isOn: Binding(
-                    get: { machine.id == machines.selectedMachineId },
-                    set: { isOn in
-                        guard isOn else { return }
-                        machines.selectMachine(machine.id)
-                    }
-                )) {
+                Toggle(
+                    isOn: Binding(
+                        get: { machine.id == machines.selectedMachineId },
+                        set: { isOn in
+                            guard isOn else { return }
+                            machines.selectMachine(machine.id)
+                        }
+                    )
+                ) {
                     Label {
                         Text(machine.name)
                     } icon: {

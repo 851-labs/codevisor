@@ -29,7 +29,8 @@ struct TerminalLaunchDescriptor: Equatable {
         // The session's cwd IS the workspace's one working directory
         // (worktree sessions open in the worktree), else the project
         // folder. The proxy passes the folder along via --cwd.
-        let sessionFolder = session.cwd.map(URL.init(fileURLWithPath:))
+        let sessionFolder =
+            session.cwd.map(URL.init(fileURLWithPath:))
             ?? project.folderURL
         return TerminalLaunchDescriptor(
             terminalKey: terminalKey,
@@ -52,7 +53,8 @@ struct TerminalLaunchDescriptor: Equatable {
     private static func localWorkingDirectory(for folderURL: URL) -> URL {
         var isDirectory: ObjCBool = false
         if FileManager.default.fileExists(atPath: folderURL.path, isDirectory: &isDirectory),
-           isDirectory.boolValue {
+            isDirectory.boolValue
+        {
             return folderURL
         }
         return FileManager.default.homeDirectoryForCurrentUser
@@ -69,11 +71,12 @@ enum TerminalProxyCommand {
     ) -> String {
         // The proxy's --session-id is an opaque key end-to-end (proxy, wire
         // schema, and the server's PTY map all treat it as a plain string).
-        let args = [
-            "--server", server.absoluteString,
-            "--session-id", terminalKey,
-            "--cwd", cwd
-        ] + (token.map { ["--token", $0] } ?? [])
+        let args =
+            [
+                "--server", server.absoluteString,
+                "--session-id", terminalKey,
+                "--cwd", cwd,
+            ] + (token.map { ["--token", $0] } ?? [])
             + (attachOnly ? ["--attach-only", "true"] : [])
         let executable = proxyExecutable()
         return ([executable.command] + executable.prefixArgs + args)
@@ -84,7 +87,8 @@ enum TerminalProxyCommand {
     nonisolated private static func proxyExecutable() -> (command: String, prefixArgs: [String]) {
         let environment = ProcessInfo.processInfo.environment
         if let override = environment["CODEVISOR_TERMINAL_PROXY"]
-            ?? environment["HERDMAN_TERMINAL_PROXY"], !override.isEmpty {
+            ?? environment["HERDMAN_TERMINAL_PROXY"], !override.isEmpty
+        {
             return (override, [])
         }
         if let entrypoint = proxyEntrypoint() {
@@ -97,7 +101,7 @@ enum TerminalProxyCommand {
         // not on it, so resolve the brew-installed proxy by absolute path.
         let installedCandidates = [
             "/opt/homebrew/bin/codevisor-terminal-proxy",
-            "/usr/local/bin/codevisor-terminal-proxy"
+            "/usr/local/bin/codevisor-terminal-proxy",
         ]
         if let installed = installedCandidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) {
             return (installed, [])
@@ -116,7 +120,7 @@ enum TerminalProxyCommand {
         let bundledCandidates = [
             Bundle.main.url(forResource: "terminal-proxy", withExtension: "js", subdirectory: "server"),
             Bundle.main.url(forResource: "terminal-proxy", withExtension: "js", subdirectory: "Server"),
-            Bundle.main.url(forResource: "codevisor-terminal-proxy", withExtension: "js")
+            Bundle.main.url(forResource: "codevisor-terminal-proxy", withExtension: "js"),
         ].compactMap { $0 }
         if let bundled = bundledCandidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) {
             return bundled

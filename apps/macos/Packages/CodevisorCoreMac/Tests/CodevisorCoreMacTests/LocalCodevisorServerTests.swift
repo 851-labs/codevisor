@@ -67,7 +67,7 @@ struct LocalCodevisorServerTests {
         managed.appOwned = true
         let client = FakeLocalServerClient(healthResults: [
             .failure(TestError()),
-            .success(managed)
+            .success(managed),
         ])
         var prepares = 0
         var starts = 0
@@ -99,9 +99,9 @@ struct LocalCodevisorServerTests {
         let directory = try makeTemporaryDirectory()
         let statusURL = directory.appendingPathComponent("data-upgrade.json")
         let client = FakeLocalServerClient(healthResults: [
-            .failure(TestError()), // pre-launch probe
-            .failure(TestError()), // first wait iteration while migrating
-            .success(.ready)
+            .failure(TestError()),  // pre-launch probe
+            .failure(TestError()),  // first wait iteration while migrating
+            .success(.ready),
         ])
         let running = LocalDataUpgradeProgress(
             state: "running",
@@ -183,7 +183,7 @@ struct LocalCodevisorServerTests {
         let client = FakeLocalServerClient(healthResults: [
             .failure(TestError()),
             .failure(TestError()),
-            .success(.ready)
+            .success(.ready),
         ])
         var launchedProcess: Process?
         let server = LocalCodevisorServer(
@@ -215,7 +215,7 @@ struct LocalCodevisorServerTests {
         wrong.bootId = "different-boot"
         let client = FakeLocalServerClient(healthResults: [
             .failure(TestError()),
-            .success(wrong)
+            .success(wrong),
         ])
         let server = LocalCodevisorServer(
             client: client,
@@ -248,15 +248,17 @@ struct LocalCodevisorServerTests {
         let configuration = LocalCodevisorServer.processConfiguration(for: request)
 
         #expect(configuration.executableURL.path == "/bin/bash")
-        #expect(Array(configuration.arguments.prefix(3)) == [
-            "-c",
-            "exec -a codevisor-server \"$0\" \"$@\"",
-            "/opt/homebrew/bin/node"
-        ])
-        #expect(Array(configuration.arguments.dropFirst(3).prefix(2)) == [
-            "/tmp/codevisor-server/main.js",
-            "serve"
-        ])
+        #expect(
+            Array(configuration.arguments.prefix(3)) == [
+                "-c",
+                "exec -a codevisor-server \"$0\" \"$@\"",
+                "/opt/homebrew/bin/node",
+            ])
+        #expect(
+            Array(configuration.arguments.dropFirst(3).prefix(2)) == [
+                "/tmp/codevisor-server/main.js",
+                "serve",
+            ])
         #expect(configuration.arguments.contains("--boot-id"))
         #expect(configuration.arguments.contains("test-boot"))
         #expect(configuration.arguments.contains("--app-owned"))
@@ -354,9 +356,9 @@ struct LocalCodevisorServerTests {
     func replacesStaleServer() async throws {
         let entrypoint = try makeRuntimeEntrypoint(version: "0.2.0")
         let client = FakeLocalServerClient(healthResults: [
-            .success(.running(version: "0.1.9")), // initial probe: stale server alive
-            .failure(TestError()),                // shutdown grace period: it exited
-            .success(.running(version: "0.2.0"))  // launched runtime becomes healthy
+            .success(.running(version: "0.1.9")),  // initial probe: stale server alive
+            .failure(TestError()),  // shutdown grace period: it exited
+            .success(.running(version: "0.2.0")),  // launched runtime becomes healthy
         ])
         var launches: [LocalCodevisorServerLaunchRequest] = []
         var terminatedPorts: [Int] = []
@@ -383,11 +385,11 @@ struct LocalCodevisorServerTests {
     func signalsStaleServerWithoutShutdownEndpoint() async throws {
         let entrypoint = try makeRuntimeEntrypoint(version: "0.2.0")
         let client = FakeLocalServerClient(healthResults: [
-            .success(.running(version: "0.1.9")), // initial probe: stale server alive
-            .success(.running(version: "0.1.9")), // shutdown grace period: still up
-            .success(.running(version: "0.1.9")), // SIGTERM check: still up
-            .failure(TestError()),                // post-signal poll: now gone
-            .success(.running(version: "0.2.0"))  // launched runtime becomes healthy
+            .success(.running(version: "0.1.9")),  // initial probe: stale server alive
+            .success(.running(version: "0.1.9")),  // shutdown grace period: still up
+            .success(.running(version: "0.1.9")),  // SIGTERM check: still up
+            .failure(TestError()),  // post-signal poll: now gone
+            .success(.running(version: "0.2.0")),  // launched runtime becomes healthy
         ])
         var launches: [LocalCodevisorServerLaunchRequest] = []
         var terminatedPorts: [Int] = []
@@ -415,7 +417,7 @@ struct LocalCodevisorServerTests {
         let client = FakeLocalServerClient(healthResults: [
             .success(.running(version: "0.2.0")),
             .failure(TestError()),
-            .success(.running(version: "0.2.0"))
+            .success(.running(version: "0.2.0")),
         ])
         var launches: [LocalCodevisorServerLaunchRequest] = []
         var terminatedPorts: [Int] = []
@@ -632,7 +634,9 @@ private final class FakeLocalServerClient: CodevisorServerClienting, @unchecked 
 
     func listHarnesses() async throws -> [ServerHarness] { [] }
     func info() async throws -> ServerInfo { fatalError("unused") }
-    func updateInfo(refresh: Bool, channel: ServerUpdateChannel) async throws -> ServerUpdateInfo { fatalError("unused") }
+    func updateInfo(refresh: Bool, channel: ServerUpdateChannel) async throws -> ServerUpdateInfo {
+        fatalError("unused")
+    }
     func issuePairingToken() async throws -> ServerPairingToken { fatalError("unused") }
     func capabilities(cwd: String) async throws -> ServerCapabilities { ServerCapabilities(harnesses: []) }
     func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness { fatalError("unused") }

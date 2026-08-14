@@ -10,12 +10,13 @@ struct WorkspaceTabZoomTransitionTests {
 
     @Test("Opening the grid collapses the pane into its exact card")
     func paneToGrid() throws {
-        let plan = try #require(WorkspaceTabZoomTransitionContract.plan(
-            direction: .paneToGrid,
-            viewportFrame: viewport,
-            cardFrame: card,
-            canvasSize: canvas
-        ))
+        let plan = try #require(
+            WorkspaceTabZoomTransitionContract.plan(
+                direction: .paneToGrid,
+                viewportFrame: viewport,
+                cardFrame: card,
+                canvasSize: canvas
+            ))
 
         #expect(plan.source.maskFrame == viewport)
         #expect(plan.destination.maskFrame == card)
@@ -29,12 +30,13 @@ struct WorkspaceTabZoomTransitionTests {
 
     @Test("The page canvas uses one uniform scale at both endpoints")
     func fixedCanvasGeometry() throws {
-        let plan = try #require(WorkspaceTabZoomTransitionContract.plan(
-            direction: .paneToGrid,
-            viewportFrame: viewport,
-            cardFrame: card,
-            canvasSize: canvas
-        ))
+        let plan = try #require(
+            WorkspaceTabZoomTransitionContract.plan(
+                direction: .paneToGrid,
+                viewportFrame: viewport,
+                cardFrame: card,
+                canvasSize: canvas
+            ))
 
         let fullFrame = plan.source.renderedCanvasFrame(canvasSize: canvas)
         let cardFrame = plan.destination.renderedCanvasFrame(canvasSize: canvas)
@@ -54,18 +56,20 @@ struct WorkspaceTabZoomTransitionTests {
 
     @Test("Opening a pane is the exact reverse geometry")
     func gridToPane() throws {
-        let collapse = try #require(WorkspaceTabZoomTransitionContract.plan(
-            direction: .paneToGrid,
-            viewportFrame: viewport,
-            cardFrame: card,
-            canvasSize: canvas
-        ))
-        let expand = try #require(WorkspaceTabZoomTransitionContract.plan(
-            direction: .gridToPane,
-            viewportFrame: viewport,
-            cardFrame: card,
-            canvasSize: canvas
-        ))
+        let collapse = try #require(
+            WorkspaceTabZoomTransitionContract.plan(
+                direction: .paneToGrid,
+                viewportFrame: viewport,
+                cardFrame: card,
+                canvasSize: canvas
+            ))
+        let expand = try #require(
+            WorkspaceTabZoomTransitionContract.plan(
+                direction: .gridToPane,
+                viewportFrame: viewport,
+                cardFrame: card,
+                canvasSize: canvas
+            ))
 
         #expect(expand.source == collapse.destination)
         #expect(expand.destination == collapse.source)
@@ -74,12 +78,13 @@ struct WorkspaceTabZoomTransitionTests {
 
     @Test("A newly inserted tab expands from its measured grid card")
     func newTabGridToPane() throws {
-        let plan = try #require(WorkspaceTabZoomTransitionContract.plan(
-            direction: .gridToPane,
-            viewportFrame: viewport,
-            cardFrame: card,
-            canvasSize: viewport.size
-        ))
+        let plan = try #require(
+            WorkspaceTabZoomTransitionContract.plan(
+                direction: .gridToPane,
+                viewportFrame: viewport,
+                cardFrame: card,
+                canvasSize: viewport.size
+            ))
 
         #expect(plan.source.maskFrame == card)
         #expect(plan.source.cornerRadius == 16)
@@ -99,38 +104,43 @@ struct WorkspaceTabZoomTransitionTests {
         let scale = max(card.width / canvas.width, card.height / canvas.height)
 
         #expect(y * scale == card.height / 2)
-        #expect(WorkspaceTabZoomTransitionContract.uncachedPlaceholderSymbolCenterY(
-            canvasSize: .zero,
-            cardSize: card.size
-        ) == nil)
+        #expect(
+            WorkspaceTabZoomTransitionContract.uncachedPlaceholderSymbolCenterY(
+                canvasSize: .zero,
+                cardSize: card.size
+            ) == nil)
     }
 
     @Test("Reduced motion and invalid measurements skip the pixel overlay")
     func rejectsInapplicableMotion() {
-        #expect(WorkspaceTabZoomTransitionContract.plan(
-            direction: .paneToGrid,
-            viewportFrame: viewport,
-            cardFrame: card,
-            canvasSize: canvas,
-            reduceMotion: true
-        ) == nil)
-        #expect(WorkspaceTabZoomTransitionContract.plan(
-            direction: .paneToGrid,
-            viewportFrame: .zero,
-            cardFrame: card,
-            canvasSize: canvas
-        ) == nil)
-        #expect(WorkspaceTabZoomTransitionContract.plan(
-            direction: .gridToPane,
-            viewportFrame: viewport,
-            cardFrame: CGRect(x: 500, y: 0, width: 100, height: 100),
-            canvasSize: canvas
-        ) == nil)
-        #expect(WorkspaceTabZoomTransitionContract.plan(
-            direction: .gridToPane,
-            viewportFrame: viewport,
-            cardFrame: card,
-            canvasSize: .zero
-        ) == nil)
+        #expect(
+            WorkspaceTabZoomTransitionContract.plan(
+                direction: .paneToGrid,
+                viewportFrame: viewport,
+                cardFrame: card,
+                canvasSize: canvas,
+                reduceMotion: true
+            ) == nil)
+        #expect(
+            WorkspaceTabZoomTransitionContract.plan(
+                direction: .paneToGrid,
+                viewportFrame: .zero,
+                cardFrame: card,
+                canvasSize: canvas
+            ) == nil)
+        #expect(
+            WorkspaceTabZoomTransitionContract.plan(
+                direction: .gridToPane,
+                viewportFrame: viewport,
+                cardFrame: CGRect(x: 500, y: 0, width: 100, height: 100),
+                canvasSize: canvas
+            ) == nil)
+        #expect(
+            WorkspaceTabZoomTransitionContract.plan(
+                direction: .gridToPane,
+                viewportFrame: viewport,
+                cardFrame: card,
+                canvasSize: .zero
+            ) == nil)
     }
 }

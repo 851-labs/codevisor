@@ -82,9 +82,10 @@ struct WorkspaceTabBar: View {
                         .frame(width: stripWidth, height: barHeight, alignment: .leading)
                         .background(
                             Capsule()
-                                .fill(colorScheme == .dark
-                                    ? Color.white.opacity(0.12)
-                                    : Color.black.opacity(0.06))
+                                .fill(
+                                    colorScheme == .dark
+                                        ? Color.white.opacity(0.12)
+                                        : Color.black.opacity(0.06))
                         )
                     }
                     .scrollIndicators(.hidden)
@@ -145,8 +146,9 @@ private struct WorkspaceTabDropDelegate: DropDelegate {
         guard let provider = info.itemProviders(for: [.plainText]).first else { return }
         provider.loadObject(ofClass: NSString.self) { object, _ in
             guard let value = object as? String,
-                  let sourceId = UUID(uuidString: value),
-                  sourceId != targetId else { return }
+                let sourceId = UUID(uuidString: value),
+                sourceId != targetId
+            else { return }
             Task { @MainActor in onMove(sourceId, targetId) }
         }
     }

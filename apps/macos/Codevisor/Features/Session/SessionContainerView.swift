@@ -43,136 +43,140 @@ struct SessionContainerView: View {
 
     var body: some View {
         contentColumn
-        // The NATIVE toolbar names the workspace — editable inline, like a
-        // document title. Edits pin the name (it stops tracking the primary
-        // chat's title).
-        .navigationTitle(workspaceName)
-        .focusedSceneValue(
-            \.workspaceLayoutActions,
-            WorkspaceLayoutActions(
-                workspaceId: store.workspace(for: session, project: project).id,
-                newTab: addCenterTab,
-                closeSplit: closeActiveLeaf,
-                closeTab: {
-                    let workspace = store.workspace(for: session, project: project)
-                    closeCenterTab(workspace.selectedCenterTabId)
-                },
-                previousTab: { selectRelativeCenterTab(offset: -1) },
-                nextTab: { selectRelativeCenterTab(offset: 1) },
-                previousSplit: { focusRelativeSplit(offset: -1) },
-                nextSplit: { focusRelativeSplit(offset: 1) },
-                split: splitActiveLeaf,
-                focus: focusAdjacentLeaf
+            // The NATIVE toolbar names the workspace — editable inline, like a
+            // document title. Edits pin the name (it stops tracking the primary
+            // chat's title).
+            .navigationTitle(workspaceName)
+            .focusedSceneValue(
+                \.workspaceLayoutActions,
+                WorkspaceLayoutActions(
+                    workspaceId: store.workspace(for: session, project: project).id,
+                    newTab: addCenterTab,
+                    closeSplit: closeActiveLeaf,
+                    closeTab: {
+                        let workspace = store.workspace(for: session, project: project)
+                        closeCenterTab(workspace.selectedCenterTabId)
+                    },
+                    previousTab: { selectRelativeCenterTab(offset: -1) },
+                    nextTab: { selectRelativeCenterTab(offset: 1) },
+                    previousSplit: { focusRelativeSplit(offset: -1) },
+                    nextSplit: { focusRelativeSplit(offset: 1) },
+                    split: splitActiveLeaf,
+                    focus: focusAdjacentLeaf
+                )
             )
-        )
-        // Background tasks that stream through a server-owned terminal get a
-        // tab in the bottom panel — a dev server is something running, not
-        // something a chat is waiting on. Synced at the WORKSPACE level
-        // across EVERY chat's controller (the panel is shared), with prunes
-        // scoped to each task's owning chat, so switching chats never tears
-        // down a sibling's tab. Reading the fingerprint in body keeps the
-        // observation live for all cached controllers.
-        .onChange(of: backgroundTaskFingerprint, initial: true) { _, _ in
-            syncWorkspaceBackgroundTerminals()
-        }
-        .task(id: session.id) {
-            splitDragCoordinator.canResolve = { sourceLeafId, resolution, canvasSize in
-                canMoveSplitLeaf(
-                    sourceLeafId,
-                    relativeTo: resolution.targetLeafId,
-                    edge: resolution.edge,
-                    canvasSize: canvasSize
-                )
+            // Background tasks that stream through a server-owned terminal get a
+            // tab in the bottom panel — a dev server is something running, not
+            // something a chat is waiting on. Synced at the WORKSPACE level
+            // across EVERY chat's controller (the panel is shared), with prunes
+            // scoped to each task's owning chat, so switching chats never tears
+            // down a sibling's tab. Reading the fingerprint in body keeps the
+            // observation live for all cached controllers.
+            .onChange(of: backgroundTaskFingerprint, initial: true) { _, _ in
+                syncWorkspaceBackgroundTerminals()
             }
-            splitDragCoordinator.onResolve = { sourceLeafId, resolution in
-                moveSplitLeaf(
-                    sourceLeafId,
-                    relativeTo: resolution.targetLeafId,
-                    edge: resolution.edge
-                )
-            }
-            // Lifecycle hooks (draft cleanup, dissolution) attach to the
-            // primary leaf up front; other leaves get them on first access.
-            // The ROUTED chat's leaf starts as the ACTIVE group, with the
-            // chat's TAB selected in it (the sidebar picked this chat — it
-            // must be the one facing the user, not whichever tab its group
-            // last showed).
-            var routedWorkspace = store.workspace(for: session, project: project)
-            let liveRoutedSession = environment.projectList.sessions.first {
-                $0.serverId == session.serverId && $0.id == session.id
-            } ?? session
-            // A chat removed by closing its old pane keeps its grow-only
-            // workspace index. If it is later restored/unarchived, route it
-            // back into that workspace as a fresh single-chat top tab.
-            if !liveRoutedSession.isArchived,
-               routedWorkspace.tabId(containingChat: session.id) == nil {
-                let tab = WorkspaceTab(root: .leaf(.centerInitial(sessionId: session.id)))
-                routedWorkspace.centerTabs.append(tab)
-                routedWorkspace.selectedCenterTabId = tab.id
-                environment.workspaces.save(routedWorkspace)
-                workspaceRevision += 1
-                liveCenterTree = tab.root
-            }
-            if let routedTabId = routedWorkspace.tabId(containingChat: session.id),
-               routedWorkspace.selectedCenterTabId != routedTabId {
-                routedWorkspace.selectedCenterTabId = routedTabId
-                environment.workspaces.save(routedWorkspace)
-                workspaceRevision += 1
-                liveCenterTree = routedWorkspace.centerTree
-            }
-            if let primaryLeaf = routedWorkspace.centerTree.groupId(containingChat: session.id) {
-                let model = configuredCenterModel(leafId: primaryLeaf)
-                if let chatPane = model.state.panes.first(where: {
-                    $0.kind == .chat && $0.chatSessionId == session.id
-                }), model.state.selectedPaneId != chatPane.id {
-                    model.select(id: chatPane.id)
+            .task(id: session.id) {
+                splitDragCoordinator.canResolve = { sourceLeafId, resolution, canvasSize in
+                    canMoveSplitLeaf(
+                        sourceLeafId,
+                        relativeTo: resolution.targetLeafId,
+                        edge: resolution.edge,
+                        canvasSize: canvasSize
+                    )
                 }
-                // Unconditional: with workspace-keyed identity this task
-                // re-runs for every routed-chat change WITHOUT a remount,
-                // and the newly routed chat's group takes over.
-                activateLeaf(primaryLeaf)
-                // The routed chat's composer takes keyboard focus — now
-                // if it's already registered, else the moment its
-                // (possibly later-laid-out) pane registers it.
-                sessionFocus.requestComposerFocus(forChat: session.id)
-            } else if let firstLeaf = routedWorkspace.centerTree.allGroups.first?.id {
-                // A legacy or draft CHAT-LESS workspace routed here through
-                // the grow-only session index uses its first group as the
-                // keyboard target.
-                _ = configuredCenterModel(leafId: firstLeaf)
-                activateLeaf(firstLeaf)
-            }
-            // Upward focus feedback: clicking into any chat's composer
-            // makes its group the active one (terminals do the same through
-            // their surface responder callbacks) — and the sidebar's chat
-            // selection follows the focused chat.
-            sessionFocus.onChatComposerFocused = { chatId in
-                if let leaf = store.workspace(for: session, project: project)
-                    .centerTree.groupId(containingChat: chatId),
-                   leaf != activeLeafId {
-                    activateLeaf(leaf)
+                splitDragCoordinator.onResolve = { sourceLeafId, resolution in
+                    moveSplitLeaf(
+                        sourceLeafId,
+                        relativeTo: resolution.targetLeafId,
+                        edge: resolution.edge
+                    )
                 }
-                rememberWorkspaceDefaults(from: chatId)
-                if chatId != session.id {
-                    onFocusedChatChanged?(chatId)
+                // Lifecycle hooks (draft cleanup, dissolution) attach to the
+                // primary leaf up front; other leaves get them on first access.
+                // The ROUTED chat's leaf starts as the ACTIVE group, with the
+                // chat's TAB selected in it (the sidebar picked this chat — it
+                // must be the one facing the user, not whichever tab its group
+                // last showed).
+                var routedWorkspace = store.workspace(for: session, project: project)
+                let liveRoutedSession =
+                    environment.projectList.sessions.first {
+                        $0.serverId == session.serverId && $0.id == session.id
+                    } ?? session
+                // A chat removed by closing its old pane keeps its grow-only
+                // workspace index. If it is later restored/unarchived, route it
+                // back into that workspace as a fresh single-chat top tab.
+                if !liveRoutedSession.isArchived,
+                    routedWorkspace.tabId(containingChat: session.id) == nil
+                {
+                    let tab = WorkspaceTab(root: .leaf(.centerInitial(sessionId: session.id)))
+                    routedWorkspace.centerTabs.append(tab)
+                    routedWorkspace.selectedCenterTabId = tab.id
+                    environment.workspaces.save(routedWorkspace)
+                    workspaceRevision += 1
+                    liveCenterTree = tab.root
+                }
+                if let routedTabId = routedWorkspace.tabId(containingChat: session.id),
+                    routedWorkspace.selectedCenterTabId != routedTabId
+                {
+                    routedWorkspace.selectedCenterTabId = routedTabId
+                    environment.workspaces.save(routedWorkspace)
+                    workspaceRevision += 1
+                    liveCenterTree = routedWorkspace.centerTree
+                }
+                if let primaryLeaf = routedWorkspace.centerTree.groupId(containingChat: session.id) {
+                    let model = configuredCenterModel(leafId: primaryLeaf)
+                    if let chatPane = model.state.panes.first(where: {
+                        $0.kind == .chat && $0.chatSessionId == session.id
+                    }), model.state.selectedPaneId != chatPane.id {
+                        model.select(id: chatPane.id)
+                    }
+                    // Unconditional: with workspace-keyed identity this task
+                    // re-runs for every routed-chat change WITHOUT a remount,
+                    // and the newly routed chat's group takes over.
+                    activateLeaf(primaryLeaf)
+                    // The routed chat's composer takes keyboard focus — now
+                    // if it's already registered, else the moment its
+                    // (possibly later-laid-out) pane registers it.
+                    sessionFocus.requestComposerFocus(forChat: session.id)
+                } else if let firstLeaf = routedWorkspace.centerTree.allGroups.first?.id {
+                    // A legacy or draft CHAT-LESS workspace routed here through
+                    // the grow-only session index uses its first group as the
+                    // keyboard target.
+                    _ = configuredCenterModel(leafId: firstLeaf)
+                    activateLeaf(firstLeaf)
+                }
+                // Upward focus feedback: clicking into any chat's composer
+                // makes its group the active one (terminals do the same through
+                // their surface responder callbacks) — and the sidebar's chat
+                // selection follows the focused chat.
+                sessionFocus.onChatComposerFocused = { chatId in
+                    if let leaf = store.workspace(for: session, project: project)
+                        .centerTree.groupId(containingChat: chatId),
+                        leaf != activeLeafId
+                    {
+                        activateLeaf(leaf)
+                    }
+                    rememberWorkspaceDefaults(from: chatId)
+                    if chatId != session.id {
+                        onFocusedChatChanged?(chatId)
+                    }
+                }
+                store.markOpened(session.id, serverId: session.serverId)
+                controller.rememberCurrentComposerConfiguration()
+                // UNSTARTED chats (eagerly created records with no first message
+                // yet) must not connect here: connecting launches an agent with
+                // the DEFAULT harness, silently making the choice their new-chat
+                // composer still offers. Their first send owns the connection.
+                guard session.agentSessionId != nil || controller.isConnected else { return }
+                if !controller.isPrepared && !controller.isConnected {
+                    await controller.prepare()
+                }
+                // Eagerly connect so the model/reasoning pickers are available for
+                // follow-ups (no-op if already connected, e.g. the new-chat handoff).
+                if !AppPreview.isRunning {
+                    await controller.connectIfNeeded()
                 }
             }
-            store.markOpened(session.id, serverId: session.serverId)
-            controller.rememberCurrentComposerConfiguration()
-            // UNSTARTED chats (eagerly created records with no first message
-            // yet) must not connect here: connecting launches an agent with
-            // the DEFAULT harness, silently making the choice their new-chat
-            // composer still offers. Their first send owns the connection.
-            guard session.agentSessionId != nil || controller.isConnected else { return }
-            if !controller.isPrepared && !controller.isConnected {
-                await controller.prepare()
-            }
-            // Eagerly connect so the model/reasoning pickers are available for
-            // follow-ups (no-op if already connected, e.g. the new-chat handoff).
-            if !AppPreview.isRunning {
-                await controller.connectIfNeeded()
-            }
-        }
     }
 
     /// Whether the center tab strip is on screen. Read by `contentColumn` to
@@ -264,7 +268,8 @@ struct SessionContainerView: View {
     // MARK: - Workspace tabs and split commands
 
     private func activeCenterModel(in workspace: Workspace) -> PaneGroupModel {
-        let leafId = activeLeafId
+        let leafId =
+            activeLeafId
             ?? workspace.selectedCenterTab?.activeLeafId
             ?? workspace.centerTree.allGroups.first!.id
         return configuredCenterModel(leafId: leafId)
@@ -329,8 +334,9 @@ struct SessionContainerView: View {
     private func moveCenterTab(_ sourceId: UUID, _ targetId: UUID) {
         var workspace = store.workspace(for: session, project: project)
         guard sourceId != targetId,
-              let source = workspace.centerTabs.firstIndex(where: { $0.id == sourceId }),
-              let target = workspace.centerTabs.firstIndex(where: { $0.id == targetId }) else { return }
+            let source = workspace.centerTabs.firstIndex(where: { $0.id == sourceId }),
+            let target = workspace.centerTabs.firstIndex(where: { $0.id == targetId })
+        else { return }
         let tab = workspace.centerTabs.remove(at: source)
         workspace.centerTabs.insert(tab, at: target)
         environment.workspaces.save(workspace)
@@ -379,9 +385,10 @@ struct SessionContainerView: View {
             workspace.centerTabs = [replacement]
             workspace.selectedCenterTabId = replacement.id
         } else if workspace.selectedCenterTabId == tabId {
-            workspace.selectedCenterTabId = workspace.centerTabs[
-                min(refreshedIndex, workspace.centerTabs.count - 1)
-            ].id
+            workspace.selectedCenterTabId =
+                workspace.centerTabs[
+                    min(refreshedIndex, workspace.centerTabs.count - 1)
+                ].id
         }
         environment.workspaces.save(workspace)
         workspaceRevision += 1
@@ -394,7 +401,8 @@ struct SessionContainerView: View {
 
     private func saveSelectedTree(_ tree: SplitNode, workspaceId: UUID) {
         guard var workspace = environment.workspaces.workspace(id: workspaceId),
-              let index = workspace.selectedCenterTabIndex else { return }
+            let index = workspace.selectedCenterTabIndex
+        else { return }
         // Divider callbacks carry render-time topology/fractions. Merge the
         // repository's live leaf states so a recent New Tab conversion or
         // title/session binding can never be overwritten by a resize.
@@ -404,7 +412,8 @@ struct SessionContainerView: View {
         }
         workspace.centerTabs[index].root = merged
         if merged.group(id: workspace.centerTabs[index].activeLeafId) == nil,
-           let first = merged.allGroups.first?.id {
+            let first = merged.allGroups.first?.id
+        {
             workspace.centerTabs[index].activeLeafId = first
         }
         environment.workspaces.save(workspace)
@@ -442,7 +451,8 @@ struct SessionContainerView: View {
     private func selectRelativeCenterTab(offset: Int) {
         let workspace = store.workspace(for: session, project: project)
         guard workspace.centerTabs.count > 1,
-              let index = workspace.selectedCenterTabIndex else { return }
+            let index = workspace.selectedCenterTabIndex
+        else { return }
         let target = (index + offset + workspace.centerTabs.count) % workspace.centerTabs.count
         selectCenterTab(workspace.centerTabs[target].id)
     }
@@ -458,9 +468,11 @@ struct SessionContainerView: View {
     private func splitLeaf(_ leafId: UUID, edge: SplitEdge) {
         var workspace = store.workspace(for: session, project: project)
         rememberWorkspaceDefaults(fromLeaf: leafId, in: workspace)
-        guard let tabIndex = workspace.centerTabs.firstIndex(where: {
-            $0.root.group(id: leafId) != nil
-        }) else { return }
+        guard
+            let tabIndex = workspace.centerTabs.firstIndex(where: {
+                $0.root.group(id: leafId) != nil
+            })
+        else { return }
         var state = PaneGroupState()
         _ = state.addNewTabPane()
         let newLeafId = UUID()
@@ -485,7 +497,8 @@ struct SessionContainerView: View {
         guard let tabIndex = workspace.selectedCenterTabIndex else { return }
         let current = workspace.centerTabs[tabIndex].root
         guard current.group(id: sourceLeafId) != nil,
-              current.group(id: targetLeafId) != nil else { return }
+            current.group(id: targetLeafId) != nil
+        else { return }
 
         let moved = current.movingGroup(
             id: sourceLeafId,
@@ -517,8 +530,9 @@ struct SessionContainerView: View {
     ) -> Bool {
         let workspace = store.workspace(for: session, project: project)
         guard let current = workspace.selectedCenterTab?.root,
-              canvasSize.width > 0,
-              canvasSize.height > 0 else { return false }
+            canvasSize.width > 0,
+            canvasSize.height > 0
+        else { return false }
         let candidate = current.movingGroup(
             id: sourceLeafId,
             relativeTo: targetLeafId,
@@ -529,7 +543,7 @@ struct SessionContainerView: View {
         let currentFrames = normalizedLeafFrames(current).values
         let candidateFrames = normalizedLeafFrames(candidate).values
         guard let currentMinWidth = currentFrames.map({ $0.width * canvasSize.width }).min(),
-              let currentMinHeight = currentFrames.map({ $0.height * canvasSize.height }).min()
+            let currentMinHeight = currentFrames.map({ $0.height * canvasSize.height }).min()
         else { return false }
 
         // A window may already be smaller than the nominal pane floor. In
@@ -561,10 +575,11 @@ struct SessionContainerView: View {
         guard let descriptor = model.state.selectedPane else { return }
         model.renamePane(id: descriptor.id, to: trimmed)
         if descriptor.kind == .chat,
-           let chatId = descriptor.chatSessionId,
-           let chat = environment.projectList.sessions.first(where: {
-               $0.serverId == session.serverId && $0.id == chatId
-           }) {
+            let chatId = descriptor.chatSessionId,
+            let chat = environment.projectList.sessions.first(where: {
+                $0.serverId == session.serverId && $0.id == chatId
+            })
+        {
             environment.projectList.renameSession(chat, to: trimmed)
         }
     }
@@ -699,8 +714,9 @@ struct SessionContainerView: View {
                     // never points at an archived session (focus may land
                     // on a terminal, which reports nothing).
                     if closedSessionId == session.id,
-                       closingCenterTabId == nil,
-                       let survivor = firstSurvivingChatId() {
+                        closingCenterTabId == nil,
+                        let survivor = firstSurvivingChatId()
+                    {
                         onFocusedChatChanged?(survivor)
                     }
                 } else {
@@ -724,17 +740,19 @@ struct SessionContainerView: View {
         // new container's focus intents.
         model.chatContent = { [weak model] descriptor in
             if descriptor.kind == .newTab {
-                return AnyView(NewTabPageView(
-                    paneId: descriptor.id,
-                    group: model,
-                    onNewChat: { [weak model] in
-                        createChat(convertingPlaceholder: descriptor.id, in: model)
-                    }
-                ))
+                return AnyView(
+                    NewTabPageView(
+                        paneId: descriptor.id,
+                        group: model,
+                        onNewChat: { [weak model] in
+                            createChat(convertingPlaceholder: descriptor.id, in: model)
+                        }
+                    ))
             }
-            return AnyView(chatPaneContent(
-                descriptor: descriptor, group: model, focus: sessionFocus
-            ))
+            return AnyView(
+                chatPaneContent(
+                    descriptor: descriptor, group: model, focus: sessionFocus
+                ))
         }
         return model
     }
@@ -773,17 +791,20 @@ struct SessionContainerView: View {
             leafId: leafId, workspace: workspace, session: session, project: project
         )
         guard model.state.panes.isEmpty else { return }
-        guard let tabIndex = workspace.centerTabs.firstIndex(where: {
-            $0.root.group(id: leafId) != nil
-        }) else { return }
+        guard
+            let tabIndex = workspace.centerTabs.firstIndex(where: {
+                $0.root.group(id: leafId) != nil
+            })
+        else { return }
         let oldLeafIds = workspace.centerTabs[tabIndex].root.allGroups.map(\.id)
         if let pruned = workspace.centerTabs[tabIndex].root.removingGroup(id: leafId) {
             workspace.centerTabs[tabIndex].root = pruned
             let oldIndex = oldLeafIds.firstIndex(of: leafId) ?? 0
             let survivors = pruned.allGroups.map(\.id)
-            workspace.centerTabs[tabIndex].activeLeafId = survivors[
-                min(oldIndex, survivors.count - 1)
-            ]
+            workspace.centerTabs[tabIndex].activeLeafId =
+                survivors[
+                    min(oldIndex, survivors.count - 1)
+                ]
             environment.workspaces.save(workspace)
             liveCenterTree = pruned
             store.evictCenterLeaf(workspaceId: workspace.id, leafId: leafId)
@@ -799,9 +820,10 @@ struct SessionContainerView: View {
                 workspace.centerTabs = [replacement]
                 workspace.selectedCenterTabId = replacement.id
             } else if workspace.selectedCenterTabId == closingTabId {
-                workspace.selectedCenterTabId = workspace.centerTabs[
-                    min(tabIndex, workspace.centerTabs.count - 1)
-                ].id
+                workspace.selectedCenterTabId =
+                    workspace.centerTabs[
+                        min(tabIndex, workspace.centerTabs.count - 1)
+                    ].id
             }
             environment.workspaces.save(workspace)
             store.evictCenterLeaf(workspaceId: workspace.id, leafId: leafId)
@@ -844,7 +866,8 @@ struct SessionContainerView: View {
     /// not mint a duplicate session controller for it.
     private func rememberWorkspaceDefaults(fromLeaf leafId: UUID, in workspace: Workspace) {
         guard let selected = workspace.selectedPane(inLeaf: leafId),
-              selected.kind == .chat else { return }
+            selected.kind == .chat
+        else { return }
         if let chatId = selected.chatSessionId {
             rememberWorkspaceDefaults(from: chatId)
         } else {
@@ -854,17 +877,20 @@ struct SessionContainerView: View {
     }
 
     private func rememberWorkspaceDefaults(from chatId: UUID) {
-        guard let chat = environment.projectList.sessions.first(where: {
-            $0.serverId == session.serverId && $0.id == chatId
-        }) else { return }
+        guard
+            let chat = environment.projectList.sessions.first(where: {
+                $0.serverId == session.serverId && $0.id == chatId
+            })
+        else { return }
         if let live = store.activeController(for: chat) {
             live.rememberCurrentComposerConfiguration()
             return
         }
         guard chat.agentSessionId?.isEmpty == false,
-              let chatProject = environment.projectList.projects.first(where: {
-                  $0.serverId == chat.serverId && $0.id == chat.projectId
-              }) else { return }
+            let chatProject = environment.projectList.projects.first(where: {
+                $0.serverId == chat.serverId && $0.id == chat.projectId
+            })
+        else { return }
         store.controller(for: chat, project: chatProject)
             .rememberCurrentComposerConfiguration()
     }
@@ -882,12 +908,11 @@ struct SessionContainerView: View {
         if live.shouldShowNewChatComposer { return true }
         if live.hasAcceptedFirstSend { return false }
         guard chatSession.agentSessionId == nil else { return false }
-        return !(
-            live.isConnected
-                || live.isConnecting
-                || live.isSending
-                || live.pendingUserMessage != nil
-        )
+        return
+            !(live.isConnected
+            || live.isConnecting
+            || live.isSending
+            || live.pendingUserMessage != nil)
     }
 
     /// A chat pane's display title: its referenced session's LIVE title
@@ -909,7 +934,8 @@ struct SessionContainerView: View {
             .flatMap { group in group.state.panes }
         return descriptors.first { descriptor in
             guard descriptor.kind == .chat,
-                  let candidateId = descriptor.chatSessionId else { return false }
+                let candidateId = descriptor.chatSessionId
+            else { return false }
             return environment.projectList.sessions.contains { candidate in
                 candidate.serverId == session.serverId
                     && candidate.id == candidateId
@@ -931,9 +957,11 @@ struct SessionContainerView: View {
         if let chatSessionId = descriptor.chatSessionId {
             if let chatSession = environment.projectList.sessions.first(where: {
                 $0.serverId == session.serverId && $0.id == chatSessionId
-            }), let chatProject = environment.projectList.projects.first(where: {
-                $0.serverId == session.serverId && $0.id == chatSession.projectId
-            }) {
+            }),
+                let chatProject = environment.projectList.projects.first(where: {
+                    $0.serverId == session.serverId && $0.id == chatSession.projectId
+                })
+            {
                 if isUnstarted(chatSession) {
                     // An eagerly created chat that hasn't had its first
                     // message: still the new-chat composer (harness choice
@@ -1005,9 +1033,11 @@ struct SessionContainerView: View {
     private var workspaceChatControllers: [(chatId: UUID, controller: SessionController)] {
         let workspace = store.workspace(for: session, project: project)
         return workspace.chatSessionIds.compactMap { chatId in
-            guard let chat = environment.projectList.sessions.first(where: {
-                $0.serverId == session.serverId && $0.id == chatId
-            }), let controller = store.activeController(for: chat) else { return nil }
+            guard
+                let chat = environment.projectList.sessions.first(where: {
+                    $0.serverId == session.serverId && $0.id == chatId
+                }), let controller = store.activeController(for: chat)
+            else { return nil }
             return (chatId, controller)
         }
     }

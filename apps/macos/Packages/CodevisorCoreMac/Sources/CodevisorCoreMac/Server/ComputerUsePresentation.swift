@@ -98,14 +98,14 @@ enum ComputerUseCursorMetrics {
 /// while remaining distinguishable from one another at pointer size.
 enum ComputerUseCursorPalette {
     static let colors: [NSColor] = [
-        NSColor(calibratedRed: 0.35, green: 0.34, blue: 0.84, alpha: 1), // indigo
-        NSColor(calibratedRed: 0.83, green: 0.32, blue: 0.31, alpha: 1), // coral
-        NSColor(calibratedRed: 0.13, green: 0.55, blue: 0.45, alpha: 1), // teal
-        NSColor(calibratedRed: 0.80, green: 0.47, blue: 0.13, alpha: 1), // amber
-        NSColor(calibratedRed: 0.61, green: 0.31, blue: 0.73, alpha: 1), // purple
-        NSColor(calibratedRed: 0.17, green: 0.47, blue: 0.82, alpha: 1), // blue
-        NSColor(calibratedRed: 0.78, green: 0.31, blue: 0.60, alpha: 1), // magenta
-        NSColor(calibratedRed: 0.42, green: 0.56, blue: 0.14, alpha: 1)  // olive
+        NSColor(calibratedRed: 0.35, green: 0.34, blue: 0.84, alpha: 1),  // indigo
+        NSColor(calibratedRed: 0.83, green: 0.32, blue: 0.31, alpha: 1),  // coral
+        NSColor(calibratedRed: 0.13, green: 0.55, blue: 0.45, alpha: 1),  // teal
+        NSColor(calibratedRed: 0.80, green: 0.47, blue: 0.13, alpha: 1),  // amber
+        NSColor(calibratedRed: 0.61, green: 0.31, blue: 0.73, alpha: 1),  // purple
+        NSColor(calibratedRed: 0.17, green: 0.47, blue: 0.82, alpha: 1),  // blue
+        NSColor(calibratedRed: 0.78, green: 0.31, blue: 0.60, alpha: 1),  // magenta
+        NSColor(calibratedRed: 0.42, green: 0.56, blue: 0.14, alpha: 1),  // olive
     ]
 
     static func color(at index: Int) -> NSColor {
@@ -229,7 +229,8 @@ enum ComputerUseStatusMetrics {
 
     static func cursorFrame(appCount: Int, in bounds: CGRect) -> CGRect {
         let count = CGFloat(max(appCount, 1))
-        let slotMinX = horizontalPadding
+        let slotMinX =
+            horizontalPadding
             + iconSize
             + max(0, count - 1) * iconStep
             + iconCursorSpacing
@@ -539,9 +540,11 @@ final class ComputerUsePresentationState: NSObject {
         sessionID: String,
         to target: CGPoint
     ) {
-        let start = presentation.displayedTip ?? constrained(
-            CGPoint(x: target.x - 74, y: target.y + 42)
-        )
+        let start =
+            presentation.displayedTip
+            ?? constrained(
+                CGPoint(x: target.x - 74, y: target.y + 42)
+            )
         let distance = hypot(target.x - start.x, target.y - start.y)
         if distance < 1 {
             place(presentation: presentation, tip: target, rotation: 0, bodyOffset: .zero)
@@ -675,7 +678,7 @@ final class ComputerUsePresentationState: NSObject {
             .canJoinAllSpaces,
             .fullScreenAuxiliary,
             .stationary,
-            .ignoresCycle
+            .ignoresCycle,
         ]
         panel.animationBehavior = .none
     }
@@ -713,8 +716,10 @@ final class ComputerUsePresentationState: NSObject {
     }
 
     @objc private func applicationDidTerminate(_ notification: Notification) {
-        guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
-            as? NSRunningApplication else { return }
+        guard
+            let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
+                as? NSRunningApplication
+        else { return }
         targetTerminated(pid: app.processIdentifier)
     }
 
@@ -798,15 +803,17 @@ final class ComputerUsePresentationState: NSObject {
     }
 
     private func matchingWindow(pid: pid_t, frame: CGRect) -> CGWindowID? {
-        guard let windows = CGWindowListCopyWindowInfo(
-            [.optionOnScreenOnly, .excludeDesktopElements],
-            kCGNullWindowID
-        ) as? [[String: Any]] else { return nil }
+        guard
+            let windows = CGWindowListCopyWindowInfo(
+                [.optionOnScreenOnly, .excludeDesktopElements],
+                kCGNullWindowID
+            ) as? [[String: Any]]
+        else { return nil }
         return windows.compactMap { info -> (id: CGWindowID, overlap: CGFloat)? in
             guard (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == pid,
-                  let number = info[kCGWindowNumber as String] as? NSNumber,
-                  let bounds = info[kCGWindowBounds as String] as? NSDictionary,
-                  let candidate = CGRect(dictionaryRepresentation: bounds)
+                let number = info[kCGWindowNumber as String] as? NSNumber,
+                let bounds = info[kCGWindowBounds as String] as? NSDictionary,
+                let candidate = CGRect(dictionaryRepresentation: bounds)
             else { return nil }
             let overlap = candidate.intersection(frame)
             return (number.uint32Value, overlap.width * overlap.height)
@@ -826,8 +833,10 @@ final class ComputerUsePresentationState: NSObject {
     }
 
     private func constrained(_ point: CGPoint) -> CGPoint {
-        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(point) })
-            ?? NSScreen.main ?? NSScreen.screens.first else { return point }
+        guard
+            let screen = NSScreen.screens.first(where: { $0.frame.contains(point) })
+                ?? NSScreen.main ?? NSScreen.screens.first
+        else { return point }
         let frame = screen.visibleFrame
         return CGPoint(
             x: min(frame.maxX - (cursorSize.width - cursorTipAnchor.x), max(frame.minX + cursorTipAnchor.x, point.x)),
@@ -837,9 +846,11 @@ final class ComputerUsePresentationState: NSObject {
 
     private func screenMappings() -> [(cgFrame: CGRect, appKitFrame: CGRect)] {
         NSScreen.screens.compactMap { screen in
-            guard let number = screen.deviceDescription[
-                NSDeviceDescriptionKey("NSScreenNumber")
-            ] as? NSNumber else { return nil }
+            guard
+                let number = screen.deviceDescription[
+                    NSDeviceDescriptionKey("NSScreenNumber")
+                ] as? NSNumber
+            else { return nil }
             return (CGDisplayBounds(CGDirectDisplayID(number.uint32Value)), screen.frame)
         }
     }
@@ -1067,14 +1078,16 @@ private final class ComputerUseCursorView: NSView {
         let radius: CGFloat = 28 + clickProgress * 1.0
         // Soften the accent toward the original neutral fog so the glow reads
         // as a subtle halo in the agent's color rather than a saturated blob.
-        let fog = tint.blended(withFraction: 0.55, of: NSColor(calibratedWhite: 0.42, alpha: 1))
+        let fog =
+            tint.blended(withFraction: 0.55, of: NSColor(calibratedWhite: 0.42, alpha: 1))
             ?? tint
-        let colors = [
-            fog.withAlphaComponent(0.32 + clickProgress * 0.02).cgColor,
-            fog.withAlphaComponent(0.20 + clickProgress * 0.015).cgColor,
-            fog.withAlphaComponent(0.07).cgColor,
-            NSColor.clear.cgColor
-        ] as CFArray
+        let colors =
+            [
+                fog.withAlphaComponent(0.32 + clickProgress * 0.02).cgColor,
+                fog.withAlphaComponent(0.20 + clickProgress * 0.015).cgColor,
+                fog.withAlphaComponent(0.07).cgColor,
+                NSColor.clear.cgColor,
+            ] as CFArray
         if let gradient = CGGradient(
             colorsSpace: CGColorSpaceCreateDeviceRGB(),
             colors: colors,
@@ -1098,7 +1111,8 @@ private final class ComputerUseCursorView: NSView {
             tip: pointerTip,
             size: ComputerUseCursorMetrics.pointerSize
         )
-        let rotationPivot = rotationAroundCenter
+        let rotationPivot =
+            rotationAroundCenter
             ? CGPoint(x: path.bounds.midX, y: path.bounds.midY)
             : pointerTip
 
@@ -1314,7 +1328,8 @@ private final class ComputerUseControlStatusItem: NSObject {
         if let statusView {
             statusView.frame.size = CGSize(width: width, height: NSStatusBar.system.thickness)
             statusView.icons = visibleApps.map(\.icon)
-            statusView.cursorColor = entries.count == 1
+            statusView.cursorColor =
+                entries.count == 1
                 ? ComputerUseCursorPalette.color(at: entries.values.first?.colorIndex ?? 0)
                 : NSColor(calibratedWhite: 0.94, alpha: 1)
         }
@@ -1329,7 +1344,8 @@ private final class ComputerUseControlStatusItem: NSObject {
         // One row per agent/app pairing so stopping one agent's control never
         // tears down another agent that shares the same app.
         for (key, entry) in sortedEntries() {
-            let title = "Stop Using \(entry.appName)"
+            let title =
+                "Stop Using \(entry.appName)"
                 + (entry.agentLabel.map { " — \($0)" } ?? "")
             let menuItem = NSMenuItem(
                 title: title,
@@ -1342,10 +1358,11 @@ private final class ComputerUseControlStatusItem: NSObject {
                     .foregroundColor: ComputerUseCursorPalette.color(at: entry.colorIndex)
                 ]
             )
-            attributedTitle.append(NSAttributedString(
-                string: title,
-                attributes: [.foregroundColor: NSColor.labelColor]
-            ))
+            attributedTitle.append(
+                NSAttributedString(
+                    string: title,
+                    attributes: [.foregroundColor: NSColor.labelColor]
+                ))
             menuItem.attributedTitle = attributedTitle
             menuItem.target = self
             menuItem.representedObject = ComputerUseShareKeyBox(key: key)
@@ -1387,7 +1404,8 @@ private final class ComputerUseControlStatusItem: NSObject {
 
     private func applicationIcon(pid: pid_t) -> NSImage {
         if let app = NSRunningApplication(processIdentifier: pid),
-           let bundleURL = app.bundleURL {
+            let bundleURL = app.bundleURL
+        {
             let icon = NSWorkspace.shared.icon(forFile: bundleURL.path)
             icon.size = CGSize(width: 18, height: 18)
             return icon

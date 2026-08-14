@@ -41,8 +41,9 @@ public final class WorkspaceSyncModel {
         let generation = refreshGeneration
         do {
             guard let records = try await client.listWorkspaces(),
-                  projectList.selectedServerId == serverId,
-                  generation == refreshGeneration else { return }
+                projectList.selectedServerId == serverId,
+                generation == refreshGeneration
+            else { return }
             reconcile(records, serverId: serverId)
         } catch {
             Log.sync.error(
@@ -55,7 +56,8 @@ public final class WorkspaceSyncModel {
     /// coalesced snapshot refreshes session membership as well.
     public func removeWorkspace(id: UUID, serverId: String) {
         guard let workspace = repository.workspace(id: id),
-              workspace.serverId == serverId else { return }
+            workspace.serverId == serverId
+        else { return }
         sessionsInvalidatedByWorkspaceDeletion[serverId, default: []]
             .formUnion(workspace.chatSessionIds)
         repository.delete(id: id)
@@ -71,9 +73,11 @@ public final class WorkspaceSyncModel {
         if sessionsInvalidatedByWorkspaceDeletion[serverId]?.contains(sessionId) == true {
             return .dismiss
         }
-        guard let session = projectList.sessions.first(where: {
-            $0.id == sessionId && $0.serverId == serverId
-        }) else { return .dismiss }
+        guard
+            let session = projectList.sessions.first(where: {
+                $0.id == sessionId && $0.serverId == serverId
+            })
+        else { return .dismiss }
         guard let workspaceId = repository.workspaceId(forSession: sessionId) else {
             return session.isArchived ? .dismiss : .keep
         }
@@ -90,8 +94,9 @@ public final class WorkspaceSyncModel {
         serverId: String
     ) -> WorkspaceRouteDisposition {
         guard let workspace = repository.workspace(id: workspaceId),
-              workspace.serverId == serverId,
-              !workspace.isArchived else { return .dismiss }
+            workspace.serverId == serverId,
+            !workspace.isArchived
+        else { return .dismiss }
 
         let active = projectList.sessions.filter { session in
             session.serverId == serverId
@@ -125,8 +130,9 @@ public final class WorkspaceSyncModel {
 
         for record in records {
             guard let id = UUID(uuidString: record.id),
-                  let projectId = UUID(uuidString: record.projectId),
-                  let createdAt = Self.date(from: record.createdAt) else {
+                let projectId = UUID(uuidString: record.projectId),
+                let createdAt = Self.date(from: record.createdAt)
+            else {
                 Log.sync.error("Dropping unmappable server workspace \(record.id, privacy: .public)")
                 continue
             }
@@ -138,14 +144,16 @@ public final class WorkspaceSyncModel {
                 })?.worktreeName
             }.first
             let existing = repository.workspace(id: id)
-            let migrationSource = existing == nil
+            let migrationSource =
+                existing == nil
                 ? sessionIds.lazy.compactMap { sessionId -> Workspace? in
                     guard let oldId = self.repository.workspaceId(forSession: sessionId), oldId != id else {
                         return nil
                     }
                     guard let source = self.repository.workspace(id: oldId),
-                          !source.chatSessionIds.isEmpty,
-                          source.chatSessionIds.allSatisfy({ assignments[$0] == id }) else {
+                        !source.chatSessionIds.isEmpty,
+                        source.chatSessionIds.allSatisfy({ assignments[$0] == id })
+                    else {
                         return nil
                     }
                     return source
@@ -216,10 +224,12 @@ public final class WorkspaceSyncModel {
         // Only identities previously confirmed by the server participate in
         // snapshot deletion. Legacy/client-only layouts survive older servers
         // and are adopted once a session publishes their workspace id.
-        for workspace in repository.loadAll() where
+        for workspace in repository.loadAll()
+        where
             workspace.serverId == serverId
-                && workspace.isServerSynced
-                && !remoteIds.contains(workspace.id) {
+            && workspace.isServerSynced
+            && !remoteIds.contains(workspace.id)
+        {
             sessionsInvalidatedByWorkspaceDeletion[serverId, default: []]
                 .formUnion(workspace.chatSessionIds)
             repository.delete(id: workspace.id)
@@ -229,14 +239,16 @@ public final class WorkspaceSyncModel {
         // A legacy automatic workspace can be superseded by multiple
         // authoritative identities. Once every chat routes elsewhere it no
         // longer owns navigation or layout state and can be removed safely.
-        for workspace in repository.loadAll() where
+        for workspace in repository.loadAll()
+        where
             workspace.serverId == serverId
-                && !workspace.isServerSynced
-                && !workspace.chatSessionIds.isEmpty
-                && workspace.chatSessionIds.allSatisfy({ sessionId in
-                    guard let assigned = assignments[sessionId] else { return false }
-                    return assigned != workspace.id
-                }) {
+            && !workspace.isServerSynced
+            && !workspace.chatSessionIds.isEmpty
+            && workspace.chatSessionIds.allSatisfy({ sessionId in
+                guard let assigned = assignments[sessionId] else { return false }
+                return assigned != workspace.id
+            })
+        {
             repository.delete(id: workspace.id)
             changed = true
         }

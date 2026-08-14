@@ -101,12 +101,13 @@ private final class CodevisorGhosttySurfaceView: Ghostty.SurfaceView {
     /// can go stale and would eat composer/menu key equivalents.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if event.type == .keyDown, window?.firstResponder === self, let onPaneCommand,
-           // ⌘J is claimed here rather than left to the menu command: the
-           // SwiftUI focused-scene value backing it is not reliably published
-           // while an AppKit view is first responder. ⌘W likewise closes the
-           // selected tab while a pane is focused; with focus elsewhere the
-           // window's normal ⌘W applies.
-           let command = ShortcutCatalog.paneCommand(for: event, includingPanelToggle: true) {
+            // ⌘J is claimed here rather than left to the menu command: the
+            // SwiftUI focused-scene value backing it is not reliably published
+            // while an AppKit view is first responder. ⌘W likewise closes the
+            // selected tab while a pane is focused; with focus elsewhere the
+            // window's normal ⌘W applies.
+            let command = ShortcutCatalog.paneCommand(for: event, includingPanelToggle: true)
+        {
             onPaneCommand(command)
             return true
         }
@@ -164,7 +165,8 @@ final class GhosttyTerminalSurface: TerminalSurface {
 
         let view = CodevisorGhosttySurfaceView(CodevisorGhosttyApp.shared.app, baseConfig: config)
         if view.error != nil {
-            Ghostty.logger.error("terminal surface creation failed for \(descriptor.workingDirectory.path, privacy: .public)")
+            Ghostty.logger.error(
+                "terminal surface creation failed for \(descriptor.workingDirectory.path, privacy: .public)")
             ErrorReporter.shared.report(
                 .terminalOpenFailed,
                 title: "Couldn't Open the Terminal",

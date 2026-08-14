@@ -651,7 +651,9 @@ struct NotificationsSettingsView: View {
         do {
             try customSoundStore.deleteSound(at: URL(fileURLWithPath: sound.path))
         } catch {
-            Log.attachments.error("Deleting custom sound \(sound.path, privacy: .public) failed: \(String(describing: error), privacy: .public)")
+            Log.attachments.error(
+                "Deleting custom sound \(sound.path, privacy: .public) failed: \(String(describing: error), privacy: .public)"
+            )
             soundError = SoundActionError(
                 title: "Couldn't Remove the Sound",
                 message: ErrorReporter.userFacingMessage(for: error)
@@ -704,7 +706,7 @@ struct NotificationsSettingsView: View {
     private func refreshSoundChoices() {
         soundChoices = SystemSoundCatalog.availableSounds(including: [
             settings.chatFinishedSoundPath,
-            settings.actionRequiredSoundPath
+            settings.actionRequiredSoundPath,
         ])
     }
 
@@ -774,7 +776,9 @@ struct GeneralSettingsView: View {
             } header: {
                 Text("Privacy")
             } footer: {
-                Text("Anonymous. Prompts, responses, code, file paths, browser content, and terminal commands are never included.")
+                Text(
+                    "Anonymous. Prompts, responses, code, file paths, browser content, and terminal commands are never included."
+                )
             }
 
             Section("Data") {

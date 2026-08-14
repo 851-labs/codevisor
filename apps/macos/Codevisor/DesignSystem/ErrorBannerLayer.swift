@@ -76,20 +76,20 @@ private struct ErrorBannerView: View {
 }
 
 #if DEBUG
-#Preview("Error banners") {
-    let reporter = ErrorReporter()
-    reporter.report(
-        "Couldn't save your settings",
-        message: "The disk may be full. Free up space and try again."
-    )
-    reporter.report(
-        "Couldn't delete the session on the server",
-        message: "It may reappear the next time this list refreshes."
-    )
-    return ZStack {
-        Color(nsColor: .windowBackgroundColor)
-        ErrorBannerLayer(reporter: reporter)
+    #Preview("Error banners") {
+        let reporter = ErrorReporter()
+        reporter.report(
+            "Couldn't save your settings",
+            message: "The disk may be full. Free up space and try again."
+        )
+        reporter.report(
+            "Couldn't delete the session on the server",
+            message: "It may reappear the next time this list refreshes."
+        )
+        return ZStack {
+            Color(nsColor: .windowBackgroundColor)
+            ErrorBannerLayer(reporter: reporter)
+        }
+        .frame(width: 700, height: 400)
     }
-    .frame(width: 700, height: 400)
-}
 #endif

@@ -122,14 +122,17 @@ public final class ComposerDefaultsStore {
 
         let decoder = JSONDecoder()
         if let current = try? decoder.decode(Defaults.self, from: data),
-           current.version == Self.schemaVersion {
+            current.version == Self.schemaVersion
+        {
             defaults = current
             return
         }
 
         if let version3 = try? decoder.decode(DefaultsV3.self, from: data),
-           version3.version == 3 {
-            let recoveredWorkspaces = store.loadData(forKey: legacyMigrationBackupKey)
+            version3.version == 3
+        {
+            let recoveredWorkspaces =
+                store.loadData(forKey: legacyMigrationBackupKey)
                 .flatMap { try? decoder.decode(ScopedDefaultsV2.self, from: $0) }
                 .map(Self.workspaceDefaults(from:)) ?? [:]
             defaults = Defaults(
@@ -249,7 +252,8 @@ public final class ComposerDefaultsStore {
             machine.lastHarnessId = harnessId
             defaults.machines[serverId] = machine
         case let .workspace(id, serverId):
-            var workspace = workspaceDefaults(id: id, serverId: serverId)
+            var workspace =
+                workspaceDefaults(id: id, serverId: serverId)
                 ?? WorkspaceDefaults(serverId: serverId)
             workspace.serverId = serverId
             workspace.lastHarnessId = harnessId
@@ -320,7 +324,8 @@ public final class ComposerDefaultsStore {
             machine.configSelections[harnessId] = selections
             defaults.machines[serverId] = machine
         case let .workspace(id, serverId):
-            var workspace = workspaceDefaults(id: id, serverId: serverId)
+            var workspace =
+                workspaceDefaults(id: id, serverId: serverId)
                 ?? WorkspaceDefaults(serverId: serverId)
             var selections = workspace.configSelections[harnessId] ?? [:]
             selections.merge(configValues) { _, latest in latest }
@@ -341,7 +346,8 @@ public final class ComposerDefaultsStore {
         configValues: [String: String]
     ) {
         guard let harnessId, !harnessId.isEmpty else { return }
-        var workspace = workspaceDefaults(id: workspaceId, serverId: serverId)
+        var workspace =
+            workspaceDefaults(id: workspaceId, serverId: serverId)
             ?? WorkspaceDefaults(serverId: serverId)
         workspace.serverId = serverId
         workspace.lastHarnessId = harnessId
@@ -376,8 +382,9 @@ public final class ComposerDefaultsStore {
             changed = true
         }
         if let harnessId, !harnessId.isEmpty,
-           machine.configSelections[harnessId] == nil,
-           !configValues.isEmpty {
+            machine.configSelections[harnessId] == nil,
+            !configValues.isEmpty
+        {
             machine.configSelections[harnessId] = configValues
             changed = true
         }
@@ -395,7 +402,8 @@ public final class ComposerDefaultsStore {
         configValues: [String: String]
     ) {
         guard defaults.workspaces[workspaceId.uuidString] == nil,
-              let harnessId, !harnessId.isEmpty else { return }
+            let harnessId, !harnessId.isEmpty
+        else { return }
         defaults.workspaces[workspaceId.uuidString] = WorkspaceDefaults(
             serverId: serverId,
             lastHarnessId: harnessId,
@@ -434,7 +442,8 @@ public final class ComposerDefaultsStore {
             do {
                 try store.removeData(forKey: backupKey)
             } catch {
-                Log.persistence.error("Failed to remove \(backupKey, privacy: .public): \(String(describing: error), privacy: .public)")
+                Log.persistence.error(
+                    "Failed to remove \(backupKey, privacy: .public): \(String(describing: error), privacy: .public)")
             }
         }
         persist()
@@ -442,7 +451,8 @@ public final class ComposerDefaultsStore {
 
     private func workspaceDefaults(id: UUID, serverId: String) -> WorkspaceDefaults? {
         guard let workspace = defaults.workspaces[id.uuidString],
-              workspace.serverId == nil || workspace.serverId == serverId else {
+            workspace.serverId == nil || workspace.serverId == serverId
+        else {
             return nil
         }
         return workspace
@@ -453,7 +463,9 @@ public final class ComposerDefaultsStore {
             do {
                 try store.saveData(data, forKey: migrationBackupKey)
             } catch {
-                Log.persistence.error("Failed to back up \(self.key, privacy: .public) before migration: \(String(describing: error), privacy: .public)")
+                Log.persistence.error(
+                    "Failed to back up \(self.key, privacy: .public) before migration: \(String(describing: error), privacy: .public)"
+                )
             }
         }
         persist(immediately: true)
@@ -484,7 +496,8 @@ public final class ComposerDefaultsStore {
             do {
                 try store.saveData(PersistenceEncoding.encoder.encode(snapshot), forKey: key)
             } catch {
-                Log.persistence.error("Failed to save \(key, privacy: .public): \(String(describing: error), privacy: .public)")
+                Log.persistence.error(
+                    "Failed to save \(key, privacy: .public): \(String(describing: error), privacy: .public)")
             }
         }
     }

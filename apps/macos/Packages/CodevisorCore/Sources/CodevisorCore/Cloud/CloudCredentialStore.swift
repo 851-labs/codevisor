@@ -49,7 +49,8 @@ extension CloudCredentialStore {
             try saveAppDeviceId(deviceId)
         }
         if let secret = try appSecretKey(),
-           let publicKey = try? CloudChannelCrypto.publicKey(forSecretKey: secret) {
+            let publicKey = try? CloudChannelCrypto.publicKey(forSecretKey: secret)
+        {
             return CloudAppDeviceIdentity(deviceId: deviceId, secretKey: secret, publicKey: publicKey)
         }
         let pair = CloudChannelCrypto.generateKeyPair()

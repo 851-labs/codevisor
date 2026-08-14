@@ -124,9 +124,10 @@ public final class RemoteDirectoryBrowserModel {
     public func select(_ entryPath: String, inColumn columnPath: String) async {
         guard let index = columns.firstIndex(where: { $0.path == columnPath }) else { return }
         if columns[index].selectedEntryPath == entryPath,
-           columns.count > index + 1,
-           columns[index + 1].path == entryPath {
-            return // Re-click of the current selection; child column is live.
+            columns.count > index + 1,
+            columns[index + 1].path == entryPath
+        {
+            return  // Re-click of the current selection; child column is live.
         }
         generation += 1
         let requestGeneration = generation
@@ -221,12 +222,13 @@ public final class RemoteDirectoryBrowserModel {
                 guard generation == requestGeneration else { return }
                 var column = resolvedColumn(for: listing)
                 if let selected = selections[index],
-                   listing.entries.contains(where: { $0.path == selected }) {
+                    listing.entries.contains(where: { $0.path == selected })
+                {
                     column.selectedEntryPath = selected
                     reloaded.append(column)
                 } else {
                     reloaded.append(column)
-                    break // Deeper columns hang off a folder no longer shown.
+                    break  // Deeper columns hang off a folder no longer shown.
                 }
             } catch {
                 guard generation == requestGeneration else { return }

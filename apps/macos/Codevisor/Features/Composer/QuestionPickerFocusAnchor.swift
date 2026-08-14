@@ -125,8 +125,9 @@ final class QuestionPickerKeyView: NSView {
         guard let characters = event.charactersIgnoringModifiers else { return nil }
         if characters == " " { return .space }
         if characters.count == 1,
-           let digit = characters.first?.wholeNumberValue,
-           (1...9).contains(digit) {
+            let digit = characters.first?.wholeNumberValue,
+            (1...9).contains(digit)
+        {
             return .digit(digit)
         }
         return nil

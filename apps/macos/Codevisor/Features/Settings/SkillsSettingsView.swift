@@ -189,7 +189,7 @@ struct SkillsSettingsView: View {
                         .accessibilityLabel("Remove all broken skill links")
                     }
                 }
-                }
+            }
 
             if anyOutOfSync {
                 Section {
@@ -210,7 +210,7 @@ struct SkillsSettingsView: View {
                         .disabled(isMutating)
                     }
                 }
-                }
+            }
 
             Section {
                 if let actionError {
@@ -248,7 +248,7 @@ struct SkillsSettingsView: View {
                         }
                     }
                 }
-                }
+            }
         }
         .settingsPaneFormStyle(theme)
         .disabled(isMutating)

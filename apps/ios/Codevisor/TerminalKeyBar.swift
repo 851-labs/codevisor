@@ -17,23 +17,26 @@ final class TerminalKeyController: ObservableObject {
 
     init() {
         let center = NotificationCenter.default
-        observers.append(center.addObserver(
-            forName: UIResponder.keyboardWillShowNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in self?.keyboardVisible = true }
-        })
-        observers.append(center.addObserver(
-            forName: UIResponder.keyboardWillHideNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in self?.keyboardVisible = false }
-        })
+        observers.append(
+            center.addObserver(
+                forName: UIResponder.keyboardWillShowNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in self?.keyboardVisible = true }
+            })
+        observers.append(
+            center.addObserver(
+                forName: UIResponder.keyboardWillHideNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in self?.keyboardVisible = false }
+            })
         // SwiftTerm auto-clears the control modifier after applying it to the
         // next keystroke; mirror that in the button state.
-        observers.append(center.addObserver(
-            forName: .terminalViewControlModifierReset, object: nil, queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in self?.ctrlActive = false }
-        })
+        observers.append(
+            center.addObserver(
+                forName: .terminalViewControlModifierReset, object: nil, queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in self?.ctrlActive = false }
+            })
     }
 
     deinit {
@@ -141,7 +144,9 @@ struct TerminalKeyBar: View {
         .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 
-    private func repeatKey(_ icon: String, _ label: String, _ arrow: TerminalKeyController.Arrow)
+    private func repeatKey(
+        _ icon: String, _ label: String, _ arrow: TerminalKeyController.Arrow
+    )
         -> some View
     {
         RepeatKeyButton(icon: icon, label: label) { controller.sendArrow(arrow) }

@@ -7,8 +7,9 @@ import ACPKit
 @Suite("ConfigOptionCache")
 struct ConfigOptionCacheTests {
     private func option(_ value: String) -> SessionConfigOption {
-        SessionConfigOption(id: "model", name: "Model", category: "model", currentValue: value,
-                            options: [SessionConfigSelectOption(value: value, name: value.uppercased())])
+        SessionConfigOption(
+            id: "model", name: "Model", category: "model", currentValue: value,
+            options: [SessionConfigSelectOption(value: value, name: value.uppercased())])
     }
 
     @Test("Stores and retrieves options per harness")

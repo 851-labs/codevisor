@@ -73,17 +73,19 @@ struct CloudChannelCryptoTests {
         let sealedRequest = try opened.cipher.seal(
             request, channelId: "ch-1", direction: .openerToResponder, seq: 0
         )
-        #expect(try responder.open(
-            sealedRequest, channelId: "ch-1", direction: .openerToResponder, seq: 0
-        ) == request)
+        #expect(
+            try responder.open(
+                sealedRequest, channelId: "ch-1", direction: .openerToResponder, seq: 0
+            ) == request)
 
         let reply = Data([1, 2, 3, 255])
         let sealedReply = try responder.seal(
             reply, channelId: "ch-1", direction: .responderToOpener, seq: 0
         )
-        #expect(try opened.cipher.open(
-            sealedReply, channelId: "ch-1", direction: .responderToOpener, seq: 0
-        ) == reply)
+        #expect(
+            try opened.cipher.open(
+                sealedReply, channelId: "ch-1", direction: .responderToOpener, seq: 0
+            ) == reply)
     }
 
     @Test("Binds ciphertext to channel, direction, and seq")
@@ -111,9 +113,10 @@ struct CloudChannelCryptoTests {
         #expect(throws: CloudChannelCryptoError.openFailed) {
             _ = try responder.open(sealed, channelId: "ch-1", direction: .openerToResponder, seq: 5)
         }
-        #expect(try responder.open(
-            sealed, channelId: "ch-1", direction: .openerToResponder, seq: 4
-        ) == Data([7]))
+        #expect(
+            try responder.open(
+                sealed, channelId: "ch-1", direction: .openerToResponder, seq: 4
+            ) == Data([7]))
     }
 
     @Test("Authenticates the opener's static key (dual DH)")

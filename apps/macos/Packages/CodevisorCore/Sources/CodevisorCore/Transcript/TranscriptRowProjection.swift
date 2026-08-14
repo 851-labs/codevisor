@@ -124,7 +124,8 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
             switch self {
             case .message, .assistantPlanning, .plan, .assistantResult: true
             case .active, .setup, .backgroundTask, .updateGate, .connecting,
-                 .serverWait, .error, .statusError, .bottomSpacer: false
+                .serverWait, .error, .statusError, .bottomSpacer:
+                false
             }
         }
 
@@ -244,46 +245,52 @@ public actor TranscriptRowProjectionCache {
         let waitingDescription = input.waitingBackgroundTaskDescription
         let waitingAssistantID: UUID? = {
             guard !input.hasActiveItem,
-                  waitingDescription != nil,
-                  case let .assistant(message)? = settled.last,
-                  message.turn.finalText != nil else { return nil }
+                waitingDescription != nil,
+                case let .assistant(message)? = settled.last,
+                message.turn.finalText != nil
+            else { return nil }
             return message.id
         }()
 
         if settled.isEmpty, !input.hasActiveItem {
             if let message = pendingMessage {
                 let showsStartingAgent = !hasSetup
-                rows.append(.init(
-                    id: .message(message.id),
-                    content: .optimistic(message, showsStartingAgent: showsStartingAgent),
-                    estimatedHeight: 90,
-                    measurementRevision: optimisticMeasurementRevision(
-                        for: message,
-                        showsStartingAgent: showsStartingAgent
-                    )
-                ))
+                rows.append(
+                    .init(
+                        id: .message(message.id),
+                        content: .optimistic(message, showsStartingAgent: showsStartingAgent),
+                        estimatedHeight: 90,
+                        measurementRevision: optimisticMeasurementRevision(
+                            for: message,
+                            showsStartingAgent: showsStartingAgent
+                        )
+                    ))
             }
             if hasSetup {
-                rows.append(.init(
-                    id: .setup,
-                    content: .setup(input.setupPhases),
-                    estimatedHeight: 80
-                ))
+                rows.append(
+                    .init(
+                        id: .setup,
+                        content: .setup(input.setupPhases),
+                        estimatedHeight: 80
+                    ))
             }
             if !input.isLoadingInitialHistory, pendingMessage == nil {
                 if let message = input.serverWaitMessage {
-                    rows.append(.init(
-                        id: .serverWait,
-                        content: .serverWait(message),
-                        estimatedHeight: 32
-                    ))
+                    rows.append(
+                        .init(
+                            id: .serverWait,
+                            content: .serverWait(message),
+                            estimatedHeight: 32
+                        ))
                 } else if options.includesConnectingRow,
-                          case let .connecting(message) = input.status {
-                    rows.append(.init(
-                        id: .connecting,
-                        content: .connecting(message),
-                        estimatedHeight: 32
-                    ))
+                    case let .connecting(message) = input.status
+                {
+                    rows.append(
+                        .init(
+                            id: .connecting,
+                            content: .connecting(message),
+                            estimatedHeight: 32
+                        ))
                 }
             }
         }
@@ -291,11 +298,12 @@ public actor TranscriptRowProjectionCache {
         for (index, item) in settled.enumerated() {
             if index.isMultiple(of: 32), Task.isCancelled { throw CancellationError() }
             if index == 0, hasSetup, isAssistant(item) {
-                rows.append(.init(
-                    id: .setup,
-                    content: .setup(input.setupPhases),
-                    estimatedHeight: 80
-                ))
+                rows.append(
+                    .init(
+                        id: .setup,
+                        content: .setup(input.setupPhases),
+                        estimatedHeight: 80
+                    ))
             }
             appendSettled(
                 item,
@@ -305,41 +313,45 @@ public actor TranscriptRowProjectionCache {
                 to: &rows
             )
             if index == 0, hasSetup, isUser(item) {
-                rows.append(.init(
-                    id: .setup,
-                    content: .setup(input.setupPhases),
-                    estimatedHeight: 80
-                ))
+                rows.append(
+                    .init(
+                        id: .setup,
+                        content: .setup(input.setupPhases),
+                        estimatedHeight: 80
+                    ))
             }
         }
 
         if settled.isEmpty, input.hasActiveItem, hasSetup {
-            rows.append(.init(
-                id: .setup,
-                content: .setup(input.setupPhases),
-                estimatedHeight: 80
-            ))
+            rows.append(
+                .init(
+                    id: .setup,
+                    content: .setup(input.setupPhases),
+                    estimatedHeight: 80
+                ))
         }
         if input.hasActiveItem {
             rows.append(.init(id: .active, content: .active, estimatedHeight: 320))
         }
         if !pendingIsOpeningRow, let message = pendingMessage {
-            rows.append(.init(
-                id: .message(message.id),
-                content: .optimistic(message, showsStartingAgent: false),
-                estimatedHeight: 90,
-                measurementRevision: optimisticMeasurementRevision(
-                    for: message,
-                    showsStartingAgent: false
-                )
-            ))
+            rows.append(
+                .init(
+                    id: .message(message.id),
+                    content: .optimistic(message, showsStartingAgent: false),
+                    estimatedHeight: 90,
+                    measurementRevision: optimisticMeasurementRevision(
+                        for: message,
+                        showsStartingAgent: false
+                    )
+                ))
         }
         if let waitingDescription, waitingAssistantID == nil, !input.hasActiveItem {
-            rows.append(.init(
-                id: .backgroundTask,
-                content: .backgroundTask(waitingDescription),
-                estimatedHeight: 32
-            ))
+            rows.append(
+                .init(
+                    id: .backgroundTask,
+                    content: .backgroundTask(waitingDescription),
+                    estimatedHeight: 32
+                ))
         }
         if let name = input.waitingHarnessUpdateName {
             rows.append(.init(id: .updateGate, content: .updateGate(name), estimatedHeight: 32))
@@ -351,16 +363,18 @@ public actor TranscriptRowProjectionCache {
             rows.append(.init(id: .error, content: .error(message), estimatedHeight: 56))
         }
         if case let .failed(message) = input.status,
-           message != input.sessionErrorMessage {
+            message != input.sessionErrorMessage
+        {
             rows.append(.init(id: .statusError, content: .error(message), estimatedHeight: 56))
         }
         if let requestedHeight = options.bottomSpacerHeight {
             let height = max(1, requestedHeight)
-            rows.append(.init(
-                id: .bottomSpacer,
-                content: .bottomSpacer(height),
-                estimatedHeight: height
-            ))
+            rows.append(
+                .init(
+                    id: .bottomSpacer,
+                    content: .bottomSpacer(height),
+                    estimatedHeight: height
+                ))
         }
         return rows
     }
@@ -371,17 +385,19 @@ public actor TranscriptRowProjectionCache {
         to rows: inout [TranscriptPresentationRow]
     ) {
         guard case let .assistant(message) = item,
-              let planDocument = message.turn.planDocument,
-              !planDocument.isEmpty else {
-            rows.append(.init(
-                id: .message(item.id),
-                content: .message(item, waitingOnBackgroundTask: waitingOnBackgroundTask),
-                estimatedHeight: estimatedHeight(for: item),
-                measurementRevision: measurementRevision(
-                    for: item,
-                    waitingOnBackgroundTask: waitingOnBackgroundTask
-                )
-            ))
+            let planDocument = message.turn.planDocument,
+            !planDocument.isEmpty
+        else {
+            rows.append(
+                .init(
+                    id: .message(item.id),
+                    content: .message(item, waitingOnBackgroundTask: waitingOnBackgroundTask),
+                    estimatedHeight: estimatedHeight(for: item),
+                    measurementRevision: measurementRevision(
+                        for: item,
+                        waitingOnBackgroundTask: waitingOnBackgroundTask
+                    )
+                ))
             return
         }
 
@@ -390,32 +406,36 @@ public actor TranscriptRowProjectionCache {
             waitingOnBackgroundTask: waitingOnBackgroundTask
         )
         if message.turn.hasDeferredWorkedDetails || !message.turn.workedItemsBeforePlan.isEmpty {
-            rows.append(.init(
-                id: .assistantPlanning(message.id),
-                content: .assistantPlanning(message),
-                estimatedHeight: 44,
-                measurementRevision: revision
-            ))
+            rows.append(
+                .init(
+                    id: .assistantPlanning(message.id),
+                    content: .assistantPlanning(message),
+                    estimatedHeight: 44,
+                    measurementRevision: revision
+                ))
         }
-        rows.append(.init(
-            id: .plan(message.id),
-            content: .planDocument(planDocument),
-            estimatedHeight: estimatedPlanHeight(planDocument),
-            measurementRevision: planMeasurementRevision(planDocument)
-        ))
+        rows.append(
+            .init(
+                id: .plan(message.id),
+                content: .planDocument(planDocument),
+                estimatedHeight: estimatedPlanHeight(planDocument),
+                measurementRevision: planMeasurementRevision(planDocument)
+            ))
         if !message.turn.workedItemsAfterPlan.isEmpty
             || message.turn.finalText != nil
             || message.turn.stopDetail != nil
-            || message.turn.isGenerating {
-            rows.append(.init(
-                id: .assistantResult(message.id),
-                content: .assistantResult(
-                    message,
-                    waitingOnBackgroundTask: waitingOnBackgroundTask
-                ),
-                estimatedHeight: 240,
-                measurementRevision: revision
-            ))
+            || message.turn.isGenerating
+        {
+            rows.append(
+                .init(
+                    id: .assistantResult(message.id),
+                    content: .assistantResult(
+                        message,
+                        waitingOnBackgroundTask: waitingOnBackgroundTask
+                    ),
+                    estimatedHeight: 240,
+                    measurementRevision: revision
+                ))
         }
     }
 

@@ -8,15 +8,17 @@ struct MachineDeeplinkTests {
     func parsesFullLink() {
         let url = URL(
             string:
-            "codevisor://add-machine?host=box.tail.net&port=49361&token=hm_abc&name=Build%20Box"
+                "codevisor://add-machine?host=box.tail.net&port=49361&token=hm_abc&name=Build%20Box"
         )!
         let deeplink = MachineDeeplink.parse(url)
-        #expect(deeplink == MachineDeeplink(
-            host: "box.tail.net",
-            port: 49_361,
-            token: "hm_abc",
-            name: "Build Box"
-        ))
+        #expect(
+            deeplink
+                == MachineDeeplink(
+                    host: "box.tail.net",
+                    port: 49_361,
+                    token: "hm_abc",
+                    name: "Build Box"
+                ))
         #expect(deeplink?.hostWithPort == "box.tail.net:49361")
         #expect(deeplink?.displayName == "Build Box")
     }
@@ -37,7 +39,7 @@ struct MachineDeeplinkTests {
             "codevisor://open-session?id=1",
             "codevisor://add-machine?host=box.tail.net",
             "codevisor://add-machine?token=hm_x",
-            "codevisor://add-machine?host=%20&token=hm_x"
+            "codevisor://add-machine?host=%20&token=hm_x",
         ]
         for raw in rejected {
             #expect(MachineDeeplink.parse(URL(string: raw)!) == nil, "expected nil for \(raw)")

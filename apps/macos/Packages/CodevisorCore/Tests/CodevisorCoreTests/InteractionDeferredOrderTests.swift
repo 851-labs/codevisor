@@ -16,14 +16,15 @@ struct InteractionDeferredOrderTests {
         let values = [
             Item(id: 3, value: "new three"),
             Item(id: 1, value: "new one"),
-            Item(id: 2, value: "new two")
+            Item(id: 2, value: "new two"),
         ]
 
-        #expect(order.applying(to: values, id: \.id) == [
-            Item(id: 1, value: "new one"),
-            Item(id: 2, value: "new two"),
-            Item(id: 3, value: "new three")
-        ])
+        #expect(
+            order.applying(to: values, id: \.id) == [
+                Item(id: 1, value: "new one"),
+                Item(id: 2, value: "new two"),
+                Item(id: 3, value: "new three"),
+            ])
     }
 
     @Test("Additions stay visible and removals disappear")
@@ -34,7 +35,7 @@ struct InteractionDeferredOrderTests {
         let withAddition = [
             Item(id: 3, value: "three"),
             Item(id: 2, value: "two"),
-            Item(id: 1, value: "one")
+            Item(id: 1, value: "one"),
         ]
         let firstRender = order.applying(to: withAddition, id: \.id)
         #expect(firstRender.map(\.id) == [1, 2, 3])

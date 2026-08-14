@@ -183,7 +183,8 @@ final class TerminalFocusController {
         chatQuestionPickers[sessionId] = nil
         guard let window = view.window else { return }
         let responder = window.firstResponder
-        let pickerHeldFocus = responder === view
+        let pickerHeldFocus =
+            responder === view
             // Teardown ordering may already have dropped focus to the
             // window — nobody owns it, the returning composer may claim it.
             || responder === window
@@ -211,7 +212,8 @@ final class TerminalFocusController {
         guard let responder = window.firstResponder, responder !== window else { return true }
         if responder is Ghostty.SurfaceView { return false }
         if let anchor = responder as? NSView,
-           chatQuestionPickers.contains(where: { $0.key != sessionId && $0.value.view === anchor }) {
+            chatQuestionPickers.contains(where: { $0.key != sessionId && $0.value.view === anchor })
+        {
             return false
         }
         if let textView = responder as? NSTextView, textView.isEditable {
@@ -276,7 +278,8 @@ final class TerminalFocusController {
     /// question, the live picker.
     func focusComposer() {
         if let chatId = centerGroup?.state.selectedPane?.chatSessionId,
-           let view = composerAreaView(forChat: chatId) {
+            let view = composerAreaView(forChat: chatId)
+        {
             view.window?.makeFirstResponder(view)
             return
         }
@@ -293,9 +296,10 @@ final class TerminalFocusController {
     /// terminal or editor without routing keys into an unrelated chat.
     func focusPaneBackground() {
         guard let window = hostWindow,
-              window.isKeyWindow,
-              window.attachedSheet == nil,
-              NSApp.modalWindow == nil else { return }
+            window.isKeyWindow,
+            window.attachedSheet == nil,
+            NSApp.modalWindow == nil
+        else { return }
         window.makeFirstResponder(nil)
     }
 
@@ -327,13 +331,13 @@ final class TerminalFocusController {
     /// so the two paths and the menu share one definition of each shortcut.
     private func handleTabCommand(_ event: NSEvent) -> Bool {
         guard let centerGroup,
-              let window = hostWindow ?? composerTextView?.window,
-              event.window === window,
-              window.isKeyWindow,
-              window.attachedSheet == nil,
-              NSApp.modalWindow == nil,
-              // Focused terminals (either group) route their own commands.
-              !(window.firstResponder is Ghostty.SurfaceView)
+            let window = hostWindow ?? composerTextView?.window,
+            event.window === window,
+            window.isKeyWindow,
+            window.attachedSheet == nil,
+            NSApp.modalWindow == nil,
+            // Focused terminals (either group) route their own commands.
+            !(window.firstResponder is Ghostty.SurfaceView)
         else { return false }
         // ⌘J is deliberately excluded: with focus outside a terminal the
         // SwiftUI menu command handles it, and claiming it here would
@@ -354,16 +358,17 @@ final class TerminalFocusController {
         // target reference (or one detached from the window) naturally
         // opts out here — no explicit visibility flag needed.
         guard let target = typeToFocusTarget(),
-              let window = target.window,
-              event.window === window,
-              window.isKeyWindow,
-              window.attachedSheet == nil,
-              NSApp.modalWindow == nil,
-              window.firstResponder !== target,
-              Self.isTypeToFocusEvent(
-                  event,
-                  includesQuestionPickerCommands: target is QuestionPickerKeyView
-              ) else {
+            let window = target.window,
+            event.window === window,
+            window.isKeyWindow,
+            window.attachedSheet == nil,
+            NSApp.modalWindow == nil,
+            window.firstResponder !== target,
+            Self.isTypeToFocusEvent(
+                event,
+                includesQuestionPickerCommands: target is QuestionPickerKeyView
+            )
+        else {
             return event
         }
 
@@ -372,11 +377,13 @@ final class TerminalFocusController {
         // exactly what should move focus into the composer. AppKit represents
         // an active NSTextField with its editable NSTextView field editor.
         if let currentTextView = window.firstResponder as? NSTextView,
-           currentTextView.isEditable {
+            currentTextView.isEditable
+        {
             return event
         }
         if let currentTextField = window.firstResponder as? NSTextField,
-           currentTextField.isEditable {
+            currentTextField.isEditable
+        {
             return event
         }
         if window.firstResponder is Ghostty.SurfaceView {
@@ -385,7 +392,8 @@ final class TerminalFocusController {
         // A focused question picker owns its keys (digits select options,
         // space toggles) — never pull them away to another chat's composer.
         if let responder = window.firstResponder as? NSView,
-           chatQuestionPickers.values.contains(where: { $0.view === responder }) {
+            chatQuestionPickers.values.contains(where: { $0.view === responder })
+        {
             return event
         }
 
@@ -453,10 +461,11 @@ final class TerminalFocusController {
         }
         for zone in zones {
             guard let window = zone.view.window,
-                  event.window === window,
-                  window.attachedSheet == nil,
-                  NSApp.modalWindow == nil,
-                  let zoneSuperview = zone.view.superview else { continue }
+                event.window === window,
+                window.attachedSheet == nil,
+                NSApp.modalWindow == nil,
+                let zoneSuperview = zone.view.superview
+            else { continue }
             // Geometry check scoped to the zone's own subtree (hitTest
             // takes superview coordinates). Overlays floating inside its
             // frame — the composer card, scroll-to-bottom — are excluded
@@ -466,8 +475,9 @@ final class TerminalFocusController {
 
             let responderBeforeClick = window.firstResponder
             if let composer = zone.chatId.flatMap({ chatComposers[$0]?.view }),
-               responderBeforeClick === composer {
-                return event // Already writing in this chat.
+                responderBeforeClick === composer
+            {
+                return event  // Already writing in this chat.
             }
 
             DispatchQueue.main.async {
@@ -481,7 +491,8 @@ final class TerminalFocusController {
                 // transcript would end native selection tracking and clear
                 // TranscriptSelectableTextView's selected range.
                 if let responderView = responderBeforeClick as? NSView,
-                   hitView === responderView || hitView.isDescendant(of: responderView) {
+                    hitView === responderView || hitView.isDescendant(of: responderView)
+                {
                     return
                 }
 
@@ -515,14 +526,16 @@ final class TerminalFocusController {
                 }
                 // Return, keypad Enter, Escape, and Space operate the picker.
                 if event.keyCode == 36 || event.keyCode == 76 || event.keyCode == 53
-                    || event.charactersIgnoringModifiers == " " {
+                    || event.charactersIgnoringModifiers == " "
+                {
                     return true
                 }
             }
         }
 
         guard modifiers.intersection([.command, .control, .function]).isEmpty,
-              event.specialKey == nil else { return false }
+            event.specialKey == nil
+        else { return false }
 
         // Keep Space available for scrolling and Full Keyboard Access button
         // activation when the ordinary composer is not focused. A question

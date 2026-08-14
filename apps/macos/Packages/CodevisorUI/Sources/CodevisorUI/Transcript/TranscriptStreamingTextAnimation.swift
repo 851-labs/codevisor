@@ -27,14 +27,15 @@ public enum TranscriptStreamingTextIdentity {
             return main(turnID: turnID, entryID: id)
         }
         for (parentToolCallID, transcript) in turn.subagents {
-            result.append(contentsOf: transcript.entries.compactMap { entry -> String? in
-                guard case let .text(id, _) = entry else { return nil }
-                return subagent(
-                    turnID: turnID,
-                    parentToolCallID: parentToolCallID,
-                    entryID: id
-                )
-            })
+            result.append(
+                contentsOf: transcript.entries.compactMap { entry -> String? in
+                    guard case let .text(id, _) = entry else { return nil }
+                    return subagent(
+                        turnID: turnID,
+                        parentToolCallID: parentToolCallID,
+                        entryID: id
+                    )
+                })
         }
         return result
     }

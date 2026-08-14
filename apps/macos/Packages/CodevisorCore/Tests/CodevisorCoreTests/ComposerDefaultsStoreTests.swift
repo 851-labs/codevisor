@@ -11,9 +11,10 @@ struct ComposerDefaultsStoreTests {
         #expect(defaults.lastHarnessId(forServer: "local") == nil)
         #expect(defaults.lastProjectId(forServer: "local") == nil)
         #expect(defaults.configSelections(forHarness: "claude-code", onServer: "local").isEmpty)
-        #expect(defaults.lastHarnessId(
-            for: .workspace(id: UUID(), serverId: "local")
-        ) == nil)
+        #expect(
+            defaults.lastHarnessId(
+                for: .workspace(id: UUID(), serverId: "local")
+            ) == nil)
     }
 
     @Test("An explicit harness selection is remembered immediately")
@@ -72,12 +73,14 @@ struct ComposerDefaultsStoreTests {
             configValues: ["model": "gpt-5.6", "effort": "xhigh", "speed": "standard"]
         )
 
-        #expect(defaults.configSelections(forHarness: "claude-code", onServer: "local") == [
-            "model": "opus", "effort": "high", "speed": "fast"
-        ])
-        #expect(defaults.configSelections(forHarness: "codex", onServer: "local") == [
-            "model": "gpt-5.6", "effort": "xhigh", "speed": "standard"
-        ])
+        #expect(
+            defaults.configSelections(forHarness: "claude-code", onServer: "local") == [
+                "model": "opus", "effort": "high", "speed": "fast",
+            ])
+        #expect(
+            defaults.configSelections(forHarness: "codex", onServer: "local") == [
+                "model": "gpt-5.6", "effort": "xhigh", "speed": "standard",
+            ])
     }
 
     @Test("Partial option updates retain temporarily unavailable values")
@@ -97,9 +100,10 @@ struct ComposerDefaultsStoreTests {
             configValues: ["model": "gpt-5.5", "effort": "medium"]
         )
 
-        #expect(defaults.configSelections(forHarness: "codex", onServer: "local") == [
-            "model": "gpt-5.5", "effort": "medium", "speed": "fast"
-        ])
+        #expect(
+            defaults.configSelections(forHarness: "codex", onServer: "local") == [
+                "model": "gpt-5.5", "effort": "medium", "speed": "fast",
+            ])
     }
 
     @Test("Invalid empty selections do not erase existing defaults")
@@ -117,40 +121,47 @@ struct ComposerDefaultsStoreTests {
         )
 
         #expect(defaults.lastHarnessId(forServer: "local") == "claude-code")
-        #expect(defaults.configSelections(forHarness: "claude-code", onServer: "local") == [
-            "model": "opus"
-        ])
+        #expect(
+            defaults.configSelections(forHarness: "claude-code", onServer: "local") == [
+                "model": "opus"
+            ])
     }
 
     @Test("Migrates scoped V2 data without losing machine or workspace configuration")
     func migratesScopedV2() throws {
-        let legacy = #"{"machines":{"local":{"lastHarnessId":"claude-code","runInWorktree":true,"configSelections":{"claude-code":{"model":"opus","effort":"high","speed":"fast"},"codex":{"model":"gpt-5.6","effort":"xhigh","speed":"standard"}}},"remote-a":{"lastHarnessId":"codex","runInWorktree":false,"configSelections":{"codex":{"model":"remote-model","effort":"medium"}}}},"workspaces":{"00000000-0000-0000-0000-000000000001":{"lastHarnessId":"codex","configSelections":{"codex":{"model":"older-workspace-model","speed":"fast"}}}}}"#
+        let legacy =
+            #"{"machines":{"local":{"lastHarnessId":"claude-code","runInWorktree":true,"configSelections":{"claude-code":{"model":"opus","effort":"high","speed":"fast"},"codex":{"model":"gpt-5.6","effort":"xhigh","speed":"standard"}}},"remote-a":{"lastHarnessId":"codex","runInWorktree":false,"configSelections":{"codex":{"model":"remote-model","effort":"medium"}}}},"workspaces":{"00000000-0000-0000-0000-000000000001":{"lastHarnessId":"codex","configSelections":{"codex":{"model":"older-workspace-model","speed":"fast"}}}}}"#
         let legacyData = Data(legacy.utf8)
         let store = InMemoryStore(storage: ["composer-defaults": legacyData])
 
         let defaults = ComposerDefaultsStore(store: store)
 
         #expect(defaults.lastHarnessId(forServer: "local") == "claude-code")
-        #expect(defaults.configSelections(forHarness: "claude-code", onServer: "local") == [
-            "model": "opus", "effort": "high", "speed": "fast"
-        ])
-        #expect(defaults.configSelections(forHarness: "codex", onServer: "local") == [
-            "model": "gpt-5.6", "effort": "xhigh", "speed": "standard"
-        ])
-        #expect(defaults.configSelections(forHarness: "codex", onServer: "remote-a") == [
-            "model": "remote-model", "effort": "medium"
-        ])
-        let workspaceId = try #require(UUID(
-            uuidString: "00000000-0000-0000-0000-000000000001"
-        ))
+        #expect(
+            defaults.configSelections(forHarness: "claude-code", onServer: "local") == [
+                "model": "opus", "effort": "high", "speed": "fast",
+            ])
+        #expect(
+            defaults.configSelections(forHarness: "codex", onServer: "local") == [
+                "model": "gpt-5.6", "effort": "xhigh", "speed": "standard",
+            ])
+        #expect(
+            defaults.configSelections(forHarness: "codex", onServer: "remote-a") == [
+                "model": "remote-model", "effort": "medium",
+            ])
+        let workspaceId = try #require(
+            UUID(
+                uuidString: "00000000-0000-0000-0000-000000000001"
+            ))
         let workspaceScope = ComposerDefaultsStore.Scope.workspace(
             id: workspaceId,
             serverId: "local"
         )
         #expect(defaults.lastHarnessId(for: workspaceScope) == "codex")
-        #expect(defaults.configSelections(forHarness: "codex", in: workspaceScope) == [
-            "model": "older-workspace-model", "speed": "fast"
-        ])
+        #expect(
+            defaults.configSelections(forHarness: "codex", in: workspaceScope) == [
+                "model": "older-workspace-model", "speed": "fast",
+            ])
         #expect(store.loadData(forKey: "composer-defaults-pre-v4-backup") == legacyData)
 
         let migrated = try #require(store.loadData(forKey: "composer-defaults"))
@@ -164,7 +175,8 @@ struct ComposerDefaultsStoreTests {
 
     @Test("A V2 migration is idempotent and keeps its original backup")
     func migrationIsIdempotent() {
-        let legacy = #"{"machines":{"local":{"lastHarnessId":"codex","runInWorktree":false,"configSelections":{"codex":{"model":"gpt-5.6"}}}},"workspaces":{}}"#
+        let legacy =
+            #"{"machines":{"local":{"lastHarnessId":"codex","runInWorktree":false,"configSelections":{"codex":{"model":"gpt-5.6"}}}},"workspaces":{}}"#
         let legacyData = Data(legacy.utf8)
         let store = InMemoryStore(storage: ["composer-defaults": legacyData])
 
@@ -178,15 +190,17 @@ struct ComposerDefaultsStoreTests {
 
     @Test("Migrates V3 while retaining its machine defaults")
     func migratesV3() throws {
-        let current = #"{"machines":{"local":{"lastHarnessId":"codex","lastRunLocation":"newWorktree","configSelections":{"codex":{"model":"newer-model"}}}},"version":3}"#
+        let current =
+            #"{"machines":{"local":{"lastHarnessId":"codex","lastRunLocation":"newWorktree","configSelections":{"codex":{"model":"newer-model"}}}},"version":3}"#
         let store = InMemoryStore(storage: ["composer-defaults": Data(current.utf8)])
 
         let defaults = ComposerDefaultsStore(store: store)
 
         #expect(defaults.lastHarnessId(forServer: "local") == "codex")
-        #expect(defaults.configSelections(forHarness: "codex", onServer: "local") == [
-            "model": "newer-model"
-        ])
+        #expect(
+            defaults.configSelections(forHarness: "codex", onServer: "local") == [
+                "model": "newer-model"
+            ])
         let migrated = try #require(store.loadData(forKey: "composer-defaults"))
         let object = try #require(JSONSerialization.jsonObject(with: migrated) as? [String: Any])
         #expect(object["version"] as? Int == 4)
@@ -194,14 +208,17 @@ struct ComposerDefaultsStoreTests {
 
     @Test("A V3 upgrade recovers V2 workspace snapshots from the safety backup")
     func recoversV2WorkspaceBackup() throws {
-        let workspaceId = try #require(UUID(
-            uuidString: "00000000-0000-0000-0000-000000000001"
-        ))
-        let version3 = #"{"machines":{"local":{"lastHarnessId":"codex","configSelections":{"codex":{"model":"global-model"}}}},"version":3}"#
-        let version2 = #"{"machines":{"local":{"lastHarnessId":"codex","configSelections":{"codex":{"model":"global-model"}}}},"workspaces":{"00000000-0000-0000-0000-000000000001":{"lastHarnessId":"opencode","configSelections":{"opencode":{"model":"big-pickle"}}}}}"#
+        let workspaceId = try #require(
+            UUID(
+                uuidString: "00000000-0000-0000-0000-000000000001"
+            ))
+        let version3 =
+            #"{"machines":{"local":{"lastHarnessId":"codex","configSelections":{"codex":{"model":"global-model"}}}},"version":3}"#
+        let version2 =
+            #"{"machines":{"local":{"lastHarnessId":"codex","configSelections":{"codex":{"model":"global-model"}}}},"workspaces":{"00000000-0000-0000-0000-000000000001":{"lastHarnessId":"opencode","configSelections":{"opencode":{"model":"big-pickle"}}}}}"#
         let store = InMemoryStore(storage: [
             "composer-defaults": Data(version3.utf8),
-            "composer-defaults-pre-v3-backup": Data(version2.utf8)
+            "composer-defaults-pre-v3-backup": Data(version2.utf8),
         ])
 
         let defaults = ComposerDefaultsStore(store: store)
@@ -211,38 +228,44 @@ struct ComposerDefaultsStoreTests {
         )
 
         #expect(defaults.lastHarnessId(for: scope) == "opencode")
-        #expect(defaults.configSelections(forHarness: "opencode", in: scope) == [
-            "model": "big-pickle"
-        ])
+        #expect(
+            defaults.configSelections(forHarness: "opencode", in: scope) == [
+                "model": "big-pickle"
+            ])
     }
 
     @Test("Migrates the pre-workspace machines-only format")
     func migratesMachinesOnlyFormat() {
-        let legacy = #"{"machines":{"local":{"lastHarnessId":"claude-code","runInWorktree":true,"configSelections":{"claude-code":{"model":"opus","speed":"fast"}}}}}"#
+        let legacy =
+            #"{"machines":{"local":{"lastHarnessId":"claude-code","runInWorktree":true,"configSelections":{"claude-code":{"model":"opus","speed":"fast"}}}}}"#
         let store = InMemoryStore(storage: ["composer-defaults": Data(legacy.utf8)])
 
         let defaults = ComposerDefaultsStore(store: store)
 
         #expect(defaults.lastHarnessId(forServer: "local") == "claude-code")
-        #expect(defaults.configSelections(forHarness: "claude-code", onServer: "local") == [
-            "model": "opus", "speed": "fast"
-        ])
+        #expect(
+            defaults.configSelections(forHarness: "claude-code", onServer: "local") == [
+                "model": "opus", "speed": "fast",
+            ])
     }
 
     @Test("Migrates the flat pre-machine format to the local machine")
     func migratesFlatFormat() {
-        let legacy = #"{"lastHarnessId":"claude-code","runInWorktree":true,"configSelections":{"claude-code":{"model":"opus","effort":"high","speed":"fast"},"codex":{"model":"gpt-5.6"}}}"#
+        let legacy =
+            #"{"lastHarnessId":"claude-code","runInWorktree":true,"configSelections":{"claude-code":{"model":"opus","effort":"high","speed":"fast"},"codex":{"model":"gpt-5.6"}}}"#
         let store = InMemoryStore(storage: ["composer-defaults": Data(legacy.utf8)])
 
         let defaults = ComposerDefaultsStore(store: store)
 
         #expect(defaults.lastHarnessId(forServer: "local") == "claude-code")
-        #expect(defaults.configSelections(forHarness: "claude-code", onServer: "local") == [
-            "model": "opus", "effort": "high", "speed": "fast"
-        ])
-        #expect(defaults.configSelections(forHarness: "codex", onServer: "local") == [
-            "model": "gpt-5.6"
-        ])
+        #expect(
+            defaults.configSelections(forHarness: "claude-code", onServer: "local") == [
+                "model": "opus", "effort": "high", "speed": "fast",
+            ])
+        #expect(
+            defaults.configSelections(forHarness: "codex", onServer: "local") == [
+                "model": "gpt-5.6"
+            ])
     }
 
     @Test("Migrates a partial flat payload that only remembered run location")
@@ -272,15 +295,17 @@ struct ComposerDefaultsStoreTests {
         let reopened = ComposerDefaultsStore(store: store)
 
         #expect(reopened.lastHarnessId(forServer: "local") == "codex")
-        #expect(reopened.configSelections(forHarness: "codex", onServer: "local") == [
-            "model": "gpt-5.6", "effort": "xhigh", "speed": "fast"
-        ])
+        #expect(
+            reopened.configSelections(forHarness: "codex", onServer: "local") == [
+                "model": "gpt-5.6", "effort": "xhigh", "speed": "fast",
+            ])
         #expect(store.loadData(forKey: "composer-defaults-pre-v4-backup") == nil)
     }
 
     @Test("Clear resets active defaults and removes the migration backup")
     func clears() {
-        let legacy = #"{"machines":{"local":{"lastHarnessId":"codex","configSelections":{"codex":{"model":"gpt-5.6"}}}},"workspaces":{}}"#
+        let legacy =
+            #"{"machines":{"local":{"lastHarnessId":"codex","configSelections":{"codex":{"model":"gpt-5.6"}}}},"workspaces":{}}"#
         let store = InMemoryStore(storage: ["composer-defaults": Data(legacy.utf8)])
         let defaults = ComposerDefaultsStore(store: store)
         #expect(store.loadData(forKey: "composer-defaults-pre-v4-backup") != nil)
@@ -325,7 +350,10 @@ struct ComposerDefaultsStoreTests {
         let data = try #require(store.loadData(forKey: "composer-defaults"))
         let object = try JSONSerialization.jsonObject(with: data)
         let canonical = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
-        #expect(String(decoding: canonical, as: UTF8.self) == #"{"machines":{"local":{"configSelections":{"claude-code":{"effort":"high","model":"opus"}},"lastHarnessId":"claude-code"}},"version":4,"workspaces":{}}"#)
+        #expect(
+            String(decoding: canonical, as: UTF8.self)
+                == #"{"machines":{"local":{"configSelections":{"claude-code":{"effort":"high","model":"opus"}},"lastHarnessId":"claude-code"}},"version":4,"workspaces":{}}"#
+        )
     }
 
     @Test("Workspace inheritance is isolated and follows the last focused chat")
@@ -360,13 +388,15 @@ struct ComposerDefaultsStoreTests {
         let scopeA = ComposerDefaultsStore.Scope.workspace(id: workspaceA, serverId: "local")
         let scopeB = ComposerDefaultsStore.Scope.workspace(id: workspaceB, serverId: "local")
         #expect(reopened.lastHarnessId(for: scopeA) == "opencode")
-        #expect(reopened.configSelections(forHarness: "opencode", in: scopeA) == [
-            "model": "small-pickle"
-        ])
+        #expect(
+            reopened.configSelections(forHarness: "opencode", in: scopeA) == [
+                "model": "small-pickle"
+            ])
         #expect(reopened.lastHarnessId(for: scopeB) == "codex")
-        #expect(reopened.configSelections(forHarness: "codex", in: scopeB) == [
-            "model": "gpt-5.6"
-        ])
+        #expect(
+            reopened.configSelections(forHarness: "codex", in: scopeB) == [
+                "model": "gpt-5.6"
+            ])
         #expect(reopened.lastHarnessId(forServer: "local") == nil)
     }
 
@@ -384,9 +414,10 @@ struct ComposerDefaultsStoreTests {
 
         #expect(defaults.lastHarnessId(forServer: "remote-a") == "codex")
         #expect(defaults.lastHarnessId(forServer: "remote-b") == "claude-code")
-        #expect(defaults.configSelections(forHarness: "codex", onServer: "remote-a") == [
-            "model": "model-a"
-        ])
+        #expect(
+            defaults.configSelections(forHarness: "codex", onServer: "remote-a") == [
+                "model": "model-a"
+            ])
         #expect(defaults.configSelections(forHarness: "codex", onServer: "remote-b").isEmpty)
     }
 }

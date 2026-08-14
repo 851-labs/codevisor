@@ -17,8 +17,9 @@ public struct TranscriptInitialPresentationGate: Sendable, Equatable {
         resolvedKeys: Set<String>,
     ) -> Bool {
         guard !isReady,
-              !isHydrating,
-              requiredKeys.isSubset(of: resolvedKeys) else { return false }
+            !isHydrating,
+            requiredKeys.isSubset(of: resolvedKeys)
+        else { return false }
         isReady = true
         return true
     }

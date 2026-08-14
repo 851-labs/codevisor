@@ -42,35 +42,35 @@ struct StreamingSegmenterTests {
     }
 
     private static let richDocument = """
-    # Streaming report
+        # Streaming report
 
-    First paragraph with **bold** and `inline code` spans that runs a bit \
-    long so multiple chunks land inside it.
+        First paragraph with **bold** and `inline code` spans that runs a bit \
+        long so multiple chunks land inside it.
 
-    - bullet one
-    - bullet two
+        - bullet one
+        - bullet two
 
-    1. step one
-    2. step two
+        1. step one
+        2. step two
 
-    ```swift
-    let value = 42
+        ```swift
+        let value = 42
 
-    print(value) // blank line above is inside the fence
-    ```
+        print(value) // blank line above is inside the fence
+        ```
 
-    > a quote
-    > spanning lines
+        > a quote
+        > spanning lines
 
-    | Name | Role |
-    | :--- | ---: |
-    | Ann  | Lead |
-    | Bob  | IC   |
+        | Name | Role |
+        | :--- | ---: |
+        | Ann  | Lead |
+        | Bob  | IC   |
 
-    ---
+        ---
 
-    Closing paragraph after a thematic break.
-    """
+        Closing paragraph after a thematic break.
+        """
 
     @Test("Chunked streaming matches a full parse at every prefix", arguments: [1, 3, 7, 16, 64])
     func chunkedEquivalence(chunkSize: Int) {
@@ -134,9 +134,11 @@ struct StreamingSegmenterTests {
         // previous flush returned (SwiftUI diffs String storage pointers).
         #expect(first.first == second.first)
         if case let .textRun(oldBlocks) = first[0], case let .textRun(newBlocks) = second[0],
-           case let .paragraph(oldText) = oldBlocks[0], case let .paragraph(newText) = newBlocks[0] {
-            #expect(oldText.utf8.withContiguousStorageIfAvailable { $0.baseAddress }
-                == newText.utf8.withContiguousStorageIfAvailable { $0.baseAddress })
+            case let .paragraph(oldText) = oldBlocks[0], case let .paragraph(newText) = newBlocks[0]
+        {
+            #expect(
+                oldText.utf8.withContiguousStorageIfAvailable { $0.baseAddress }
+                    == newText.utf8.withContiguousStorageIfAvailable { $0.baseAddress })
         } else {
             Issue.record("expected leading text runs")
         }
@@ -166,19 +168,22 @@ struct StreamingSegmenterTests {
     @Test("settledCut ignores the final line, blanks inside blocks, and all-content tails")
     func settledCutRules() {
         // Final line can still grow: no cut in "para\n" (lines: para, "").
-        #expect(StreamingSegmenter.settledCut(
-            lines: ["para", ""],
-            blocks: parser.parseBlocks("para\n")
-        ) == nil)
+        #expect(
+            StreamingSegmenter.settledCut(
+                lines: ["para", ""],
+                blocks: parser.parseBlocks("para\n")
+            ) == nil)
         // A blank between two settled paragraphs is a cut.
-        #expect(StreamingSegmenter.settledCut(
-            lines: ["a", "", "b", "more"],
-            blocks: parser.parseBlocks("a\n\nb\nmore")
-        ) == 1)
+        #expect(
+            StreamingSegmenter.settledCut(
+                lines: ["a", "", "b", "more"],
+                blocks: parser.parseBlocks("a\n\nb\nmore")
+            ) == 1)
         // The blank inside an open fence is fence content, not a cut.
-        #expect(StreamingSegmenter.settledCut(
-            lines: ["```", "code", "", "tail"],
-            blocks: parser.parseBlocks("```\ncode\n\ntail")
-        ) == nil)
+        #expect(
+            StreamingSegmenter.settledCut(
+                lines: ["```", "code", "", "tail"],
+                blocks: parser.parseBlocks("```\ncode\n\ntail")
+            ) == nil)
     }
 }

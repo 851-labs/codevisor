@@ -34,10 +34,13 @@ struct SessionTranscriptView: View {
     /// events and shared viewport state until the handoff commits.
     var presentationRole: TranscriptPresentationRole = .foreground
     var onSendAnimationCompleted: ((UserSendAnimationRequest) -> Void)? = nil
-    var onSendAnimationStarted: ((
-        UserSendAnimationRequest,
-        TranscriptSendAnimationTarget
-    ) -> Bool)? = nil
+    var onSendAnimationStarted:
+        (
+            (
+                UserSendAnimationRequest,
+                TranscriptSendAnimationTarget
+            ) -> Bool
+        )? = nil
     var onComposerWillSend: ((String, CGRect) -> Void)? = nil
     /// A promoted New Chat keeps its UIKit editor first responder while its
     /// real workspace route mounts underneath. Ordinary chats still dismiss
@@ -119,7 +122,8 @@ struct SessionTranscriptView: View {
                         options: request.options
                     )
                     guard !Task.isCancelled,
-                          transcriptProjectionRequest == request else { return }
+                        transcriptProjectionRequest == request
+                    else { return }
                     projectedRows = rows
                     // The empty/loading snapshot is only a placeholder. Keep
                     // the native transcript parked until the projection that
@@ -220,9 +224,10 @@ struct SessionTranscriptView: View {
         let waitingDescription = controller.waitingBackgroundTaskDescription
         let waitingAssistantID: UUID? = {
             guard !controller.hasActiveItem,
-                  waitingDescription != nil,
-                  case let .assistant(message)? = settled.last,
-                  message.turn.finalText != nil else { return nil }
+                waitingDescription != nil,
+                case let .assistant(message)? = settled.last,
+                message.turn.finalText != nil
+            else { return nil }
             return message.id
         }()
 
@@ -231,40 +236,44 @@ struct SessionTranscriptView: View {
         if settled.isEmpty, !controller.hasActiveItem {
             if let message = pendingMessage {
                 let showsStartingAgent = !hasSetup
-                rows.append(.init(
-                    id: .message(message.id),
-                    content: .optimistic(
-                        message,
-                        showsStartingAgent: showsStartingAgent
-                    ),
-                    estimatedHeight: 90,
-                    measurementRevision: Self.optimisticMeasurementRevision(
-                        for: message,
-                        showsStartingAgent: showsStartingAgent
-                    )
-                ))
+                rows.append(
+                    .init(
+                        id: .message(message.id),
+                        content: .optimistic(
+                            message,
+                            showsStartingAgent: showsStartingAgent
+                        ),
+                        estimatedHeight: 90,
+                        measurementRevision: Self.optimisticMeasurementRevision(
+                            for: message,
+                            showsStartingAgent: showsStartingAgent
+                        )
+                    ))
             }
             if hasSetup {
-                rows.append(.init(
-                    id: .setup,
-                    content: .setup(controller.setupPhases),
-                    estimatedHeight: 80
-                ))
+                rows.append(
+                    .init(
+                        id: .setup,
+                        content: .setup(controller.setupPhases),
+                        estimatedHeight: 80
+                    ))
             }
             // Initial history loading is an overlay, never transcript geometry.
             if !controller.isLoadingInitialHistory, pendingMessage == nil {
                 if let message = controller.serverWaitMessage {
-                    rows.append(.init(
-                        id: .serverWait,
-                        content: .serverWait(message),
-                        estimatedHeight: 32
-                    ))
+                    rows.append(
+                        .init(
+                            id: .serverWait,
+                            content: .serverWait(message),
+                            estimatedHeight: 32
+                        ))
                 } else if case let .connecting(message) = controller.status {
-                    rows.append(.init(
-                        id: .connecting,
-                        content: .connecting(message),
-                        estimatedHeight: 32
-                    ))
+                    rows.append(
+                        .init(
+                            id: .connecting,
+                            content: .connecting(message),
+                            estimatedHeight: 32
+                        ))
                 }
             }
         }
@@ -274,11 +283,12 @@ struct SessionTranscriptView: View {
         // message, whose send triggered it.
         for (index, item) in settled.enumerated() {
             if index == 0, hasSetup, isAssistant(item) {
-                rows.append(.init(
-                    id: .setup,
-                    content: .setup(controller.setupPhases),
-                    estimatedHeight: 80
-                ))
+                rows.append(
+                    .init(
+                        id: .setup,
+                        content: .setup(controller.setupPhases),
+                        estimatedHeight: 80
+                    ))
             }
             appendSettled(
                 item,
@@ -288,58 +298,64 @@ struct SessionTranscriptView: View {
                 to: &rows
             )
             if index == 0, hasSetup, isUser(item) {
-                rows.append(.init(
-                    id: .setup,
-                    content: .setup(controller.setupPhases),
-                    estimatedHeight: 80
-                ))
+                rows.append(
+                    .init(
+                        id: .setup,
+                        content: .setup(controller.setupPhases),
+                        estimatedHeight: 80
+                    ))
             }
         }
 
         if settled.isEmpty, controller.hasActiveItem, hasSetup {
-            rows.append(.init(
-                id: .setup,
-                content: .setup(controller.setupPhases),
-                estimatedHeight: 80
-            ))
+            rows.append(
+                .init(
+                    id: .setup,
+                    content: .setup(controller.setupPhases),
+                    estimatedHeight: 80
+                ))
         }
         if controller.hasActiveItem {
             rows.append(.init(id: .active, content: .active, estimatedHeight: 320))
         }
         if !pendingIsOpeningRow, let message = pendingMessage {
-            rows.append(.init(
-                id: .message(message.id),
-                content: .optimistic(message, showsStartingAgent: false),
-                estimatedHeight: 90,
-                measurementRevision: Self.optimisticMeasurementRevision(
-                    for: message,
-                    showsStartingAgent: false
-                )
-            ))
+            rows.append(
+                .init(
+                    id: .message(message.id),
+                    content: .optimistic(message, showsStartingAgent: false),
+                    estimatedHeight: 90,
+                    measurementRevision: Self.optimisticMeasurementRevision(
+                        for: message,
+                        showsStartingAgent: false
+                    )
+                ))
         }
 
         if let waitingDescription, waitingAssistantID == nil, !controller.hasActiveItem {
-            rows.append(.init(
-                id: .backgroundTask,
-                content: .backgroundTask(waitingDescription),
-                estimatedHeight: 32
-            ))
+            rows.append(
+                .init(
+                    id: .backgroundTask,
+                    content: .backgroundTask(waitingDescription),
+                    estimatedHeight: 32
+                ))
         }
         if let updatingHarnessName = controller.waitingHarnessUpdateName {
-            rows.append(.init(
-                id: .updateGate,
-                content: .updateGate(updatingHarnessName),
-                estimatedHeight: 32
-            ))
+            rows.append(
+                .init(
+                    id: .updateGate,
+                    content: .updateGate(updatingHarnessName),
+                    estimatedHeight: 32
+                ))
         }
 
         if !settled.isEmpty || controller.hasActiveItem {
             if let message = controller.serverWaitMessage {
-                rows.append(.init(
-                    id: .serverWait,
-                    content: .serverWait(message),
-                    estimatedHeight: 32
-                ))
+                rows.append(
+                    .init(
+                        id: .serverWait,
+                        content: .serverWait(message),
+                        estimatedHeight: 32
+                    ))
             }
         }
 
@@ -347,17 +363,19 @@ struct SessionTranscriptView: View {
             rows.append(.init(id: .error, content: .error(message), estimatedHeight: 56))
         }
         if case let .failed(message) = controller.status, message != controller.sessionErrorMessage {
-            rows.append(.init(
-                id: .statusError,
-                content: .error(message),
-                estimatedHeight: 56
-            ))
+            rows.append(
+                .init(
+                    id: .statusError,
+                    content: .error(message),
+                    estimatedHeight: 56
+                ))
         }
-        rows.append(.init(
-            id: .bottomSpacer,
-            content: .bottomSpacer(max(1, composerHeight + 24)),
-            estimatedHeight: max(1, composerHeight + 24)
-        ))
+        rows.append(
+            .init(
+                id: .bottomSpacer,
+                content: .bottomSpacer(max(1, composerHeight + 24)),
+                estimatedHeight: max(1, composerHeight + 24)
+            ))
         return rows
     }
 
@@ -367,20 +385,22 @@ struct SessionTranscriptView: View {
         to rows: inout [TranscriptVirtualRow]
     ) {
         guard case let .assistant(message) = item,
-              let planDocument = message.turn.planDocument,
-              !planDocument.isEmpty else {
-            rows.append(.init(
-                id: .message(item.id),
-                content: .message(
-                    item,
-                    waitingOnBackgroundTask: waitingOnBackgroundTask
-                ),
-                estimatedHeight: Self.estimatedHeight(for: item),
-                measurementRevision: Self.measurementRevision(
-                    for: item,
-                    waitingOnBackgroundTask: waitingOnBackgroundTask
-                )
-            ))
+            let planDocument = message.turn.planDocument,
+            !planDocument.isEmpty
+        else {
+            rows.append(
+                .init(
+                    id: .message(item.id),
+                    content: .message(
+                        item,
+                        waitingOnBackgroundTask: waitingOnBackgroundTask
+                    ),
+                    estimatedHeight: Self.estimatedHeight(for: item),
+                    measurementRevision: Self.measurementRevision(
+                        for: item,
+                        waitingOnBackgroundTask: waitingOnBackgroundTask
+                    )
+                ))
             return
         }
 
@@ -389,33 +409,38 @@ struct SessionTranscriptView: View {
             waitingOnBackgroundTask: waitingOnBackgroundTask
         )
         if message.turn.hasDeferredWorkedDetails
-            || !message.turn.workedItemsBeforePlan.isEmpty {
-            rows.append(.init(
-                id: .assistantPlanning(message.id),
-                content: .assistantPlanning(message),
-                estimatedHeight: 44,
-                measurementRevision: revision
-            ))
+            || !message.turn.workedItemsBeforePlan.isEmpty
+        {
+            rows.append(
+                .init(
+                    id: .assistantPlanning(message.id),
+                    content: .assistantPlanning(message),
+                    estimatedHeight: 44,
+                    measurementRevision: revision
+                ))
         }
-        rows.append(.init(
-            id: .plan(message.id),
-            content: .planDocument(planDocument),
-            estimatedHeight: Self.estimatedPlanHeight(planDocument),
-            measurementRevision: Self.planMeasurementRevision(planDocument)
-        ))
+        rows.append(
+            .init(
+                id: .plan(message.id),
+                content: .planDocument(planDocument),
+                estimatedHeight: Self.estimatedPlanHeight(planDocument),
+                measurementRevision: Self.planMeasurementRevision(planDocument)
+            ))
         if !message.turn.workedItemsAfterPlan.isEmpty
             || message.turn.finalText != nil
             || message.turn.stopDetail != nil
-            || message.turn.isGenerating {
-            rows.append(.init(
-                id: .assistantResult(message.id),
-                content: .assistantResult(
-                    message,
-                    waitingOnBackgroundTask: waitingOnBackgroundTask
-                ),
-                estimatedHeight: 240,
-                measurementRevision: revision
-            ))
+            || message.turn.isGenerating
+        {
+            rows.append(
+                .init(
+                    id: .assistantResult(message.id),
+                    content: .assistantResult(
+                        message,
+                        waitingOnBackgroundTask: waitingOnBackgroundTask
+                    ),
+                    estimatedHeight: 240,
+                    measurementRevision: revision
+                ))
         }
     }
 
@@ -497,7 +522,9 @@ struct SessionTranscriptView: View {
             .padding(.horizontal, 10)
             .padding(.bottom, 6)
         }
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+        .onGeometryChange(for: CGFloat.self) {
+            $0.size.height
+        } action: { height in
             availableHeight = height
         }
         // The watermark hands the space over rather than blinking out.
@@ -722,10 +749,13 @@ struct SessionTranscriptView: View {
 
     private func requestOlderHistoryLoad() {
         guard historyLoadTask == nil, controller.hasOlderHistory,
-              !controller.isLoadingOlderHistory else { return }
-        guard let token = olderHistoryPresentation.begin(
-            hasOlderHistory: controller.hasOlderHistory
-        ) else { return }
+            !controller.isLoadingOlderHistory
+        else { return }
+        guard
+            let token = olderHistoryPresentation.begin(
+                hasOlderHistory: controller.hasOlderHistory
+            )
+        else { return }
         historyLoadTask = Task { @MainActor in
             defer { historyLoadTask = nil }
             let insertedItemCount = await controller.loadOlderHistory()
@@ -841,20 +871,20 @@ private struct TranscriptActiveItemView: View {
                 waitingOnBackgroundTask: waitingOnBackgroundTask,
                 goalActivity: goalActivity
             )
-                .environment(
-                    \.runningSubagentToolCallIds,
-                    controller.runningSubagentToolCallIds
-                )
-                .id(item.id)
-                .onChange(of: revision, initial: true) { _, _ in
-                    invalidateRowMeasurement?()
-                }
-                .onChange(of: waitingOnBackgroundTask) { _, _ in
-                    invalidateRowMeasurement?()
-                }
-                .onChange(of: goalActivity) { _, _ in
-                    invalidateRowMeasurement?()
-                }
+            .environment(
+                \.runningSubagentToolCallIds,
+                controller.runningSubagentToolCallIds
+            )
+            .id(item.id)
+            .onChange(of: revision, initial: true) { _, _ in
+                invalidateRowMeasurement?()
+            }
+            .onChange(of: waitingOnBackgroundTask) { _, _ in
+                invalidateRowMeasurement?()
+            }
+            .onChange(of: goalActivity) { _, _ in
+                invalidateRowMeasurement?()
+            }
         }
     }
 }
@@ -1038,9 +1068,10 @@ private struct AssistantTurnBody: View {
                 if !isWaitingOnUser, isGenerating, let retry = turn.retryStatus {
                     ChatActivityRow(retryLabel(retry))
                 } else if postResponseGoalActivity == nil,
-                          !isWaitingOnUser,
-                          turn.showsActivityIndicator,
-                          turn.contextCompactionStatus != .started {
+                    !isWaitingOnUser,
+                    turn.showsActivityIndicator,
+                    turn.contextCompactionStatus != .started
+                {
                     if turn.isThinking {
                         ShimmeringText.thinking
                     } else if !hasActiveTextEntranceAnimation {
@@ -1128,8 +1159,9 @@ private struct AssistantTurnBody: View {
     @ViewBuilder
     private func turnErrorRow(_ message: String) -> some View {
         if let transcriptController,
-           transcriptController.errorRequiresHarnessAuthentication,
-           transcriptController.errorMessage == message {
+            transcriptController.errorRequiresHarnessAuthentication,
+            transcriptController.errorMessage == message
+        {
             ChatErrorRow(
                 message,
                 actionTitle: "Open Settings",
@@ -1138,7 +1170,8 @@ private struct AssistantTurnBody: View {
                 }
             )
         } else if let transcriptController,
-                  transcriptController.canRetryTurn(turnId) {
+            transcriptController.canRetryTurn(turnId)
+        {
             ChatErrorRow(
                 message,
                 actionTitle: "Retry response",
@@ -1219,8 +1252,9 @@ private struct AssistantTurnBody: View {
                     WorkedContentReveal(key: key, store: store) {
                         VStack(alignment: .leading, spacing: 12) {
                             if allowsDeferred, turn.hasDeferredWorkedDetails,
-                               let itemId = turn.deferredDetailItemId,
-                               let transcriptController {
+                                let itemId = turn.deferredDetailItemId,
+                                let transcriptController
+                            {
                                 DeferredWorkedDetails(
                                     controller: transcriptController,
                                     itemId: itemId
@@ -1516,11 +1550,11 @@ private struct DeferredWorkedDetails: View {
                 Button("Retry loading worked details") { failed = false }
             } else {
                 ShimmeringText(text: "Loading worked details…")
-                .task {
-                    if await !controller.loadTranscriptDetails(itemId) {
-                        failed = true
+                    .task {
+                        if await !controller.loadTranscriptDetails(itemId) {
+                            failed = true
+                        }
                     }
-                }
             }
         }
         .font(.callout)

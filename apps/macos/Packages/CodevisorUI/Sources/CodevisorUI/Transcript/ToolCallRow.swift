@@ -1,6 +1,6 @@
 import ACPKit
 #if canImport(AppKit)
-import AppKit
+    import AppKit
 #endif
 import CodevisorCore
 import StreamMarkdown
@@ -272,7 +272,9 @@ public struct ToolCallContentCard: View {
             // The status badge only earns its place on command output —
             // reads/edits/searches signal success by their content.
             if call.isSettled, call.kind == .execute || call.status == .failed || call.status == .cancelled {
-                HStack { Spacer(); statusBadge }
+                HStack {
+                    Spacer(); statusBadge
+                }
             }
         }
         .padding(10)
@@ -288,26 +290,26 @@ public struct ToolCallContentCard: View {
             switch block {
             case let .text(text, _):
                 #if canImport(AppKit) || canImport(UIKit)
-                SelectableTextView(
-                    attributedText: NSAttributedString(
-                        string: text,
-                        attributes: [
-                            .font: OSFont.monospacedSystemFont(
-                                ofSize: OSFont.preferredFont(forTextStyle: .caption1).pointSize,
-                                weight: .regular
-                            ),
-                            .foregroundColor: OSColor(theme.textPrimary),
-                        ]
-                    ),
-                    fillsWidth: true
-                )
-                .frame(maxWidth: .infinity, alignment: .leading)
-                #else
-                Text(text)
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(theme.textPrimary)
-                    .textSelection(.enabled)
+                    SelectableTextView(
+                        attributedText: NSAttributedString(
+                            string: text,
+                            attributes: [
+                                .font: OSFont.monospacedSystemFont(
+                                    ofSize: OSFont.preferredFont(forTextStyle: .caption1).pointSize,
+                                    weight: .regular
+                                ),
+                                .foregroundColor: OSColor(theme.textPrimary),
+                            ]
+                        ),
+                        fillsWidth: true
+                    )
                     .frame(maxWidth: .infinity, alignment: .leading)
+                #else
+                    Text(text)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(theme.textPrimary)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 #endif
             // Web-search sources arrive as resource_link blocks; render each as
             // a tappable title over its host.
@@ -405,22 +407,40 @@ public struct ToolSourceLinkView: View {
 
 #Preview {
     VStack(alignment: .leading, spacing: 10) {
-        ToolCallRow(call: ToolCall(toolCallId: "1", title: "Ran rg -n \"barnsong|village|farm|MCP\"", kind: .execute, status: .completed,
-                                   content: [.content(.text("$ rg -n \"barnsong\"\nzsh:1: no matches found: wrangler*"))]))
         ToolCallRow(
-            call: ToolCall(toolCallId: "2", title: "Edited release.yml", kind: .edit, status: .inProgress,
-                           diffStats: [ToolCallDiffStat(path: "release.yml", added: 13, removed: 7)]),
+            call: ToolCall(
+                toolCallId: "1", title: "Ran rg -n \"barnsong|village|farm|MCP\"", kind: .execute, status: .completed,
+                content: [.content(.text("$ rg -n \"barnsong\"\nzsh:1: no matches found: wrangler*"))]))
+        ToolCallRow(
+            call: ToolCall(
+                toolCallId: "2", title: "Edited release.yml", kind: .edit, status: .inProgress,
+                diffStats: [ToolCallDiffStat(path: "release.yml", added: 13, removed: 7)]),
             isTurnActive: true
         )
-        ToolCallRow(call: ToolCall(toolCallId: "3", title: "Read README.md", kind: .read, status: .completed,
-                                   content: [.content(.text("# Barnsong"))]))
-        ToolCallRow(call: ToolCall(toolCallId: "4", title: "Edited main.swift", kind: .edit, status: .cancelled,
-                                   content: [.diff(path: "main.swift", oldText: "let a = 1\n", newText: "let a = 2\n")]))
-        ToolCallRow(call: ToolCall(toolCallId: "5", title: "Searched for Swift 6.2 release date", kind: .webSearch, status: .completed,
-                                   content: [
-                                       .content(.resourceLink(ResourceLink(name: "Swift 6.2 Released | Swift.org", uri: "https://www.swift.org/blog/swift-6.2-released/", title: "Swift 6.2 Released | Swift.org"))),
-                                       .content(.resourceLink(ResourceLink(name: "Releases · swiftlang/swift", uri: "https://github.com/swiftlang/swift/releases", title: "Releases · swiftlang/swift")))
-                                   ]))
+        ToolCallRow(
+            call: ToolCall(
+                toolCallId: "3", title: "Read README.md", kind: .read, status: .completed,
+                content: [.content(.text("# Barnsong"))]))
+        ToolCallRow(
+            call: ToolCall(
+                toolCallId: "4", title: "Edited main.swift", kind: .edit, status: .cancelled,
+                content: [.diff(path: "main.swift", oldText: "let a = 1\n", newText: "let a = 2\n")]))
+        ToolCallRow(
+            call: ToolCall(
+                toolCallId: "5", title: "Searched for Swift 6.2 release date", kind: .webSearch, status: .completed,
+                content: [
+                    .content(
+                        .resourceLink(
+                            ResourceLink(
+                                name: "Swift 6.2 Released | Swift.org",
+                                uri: "https://www.swift.org/blog/swift-6.2-released/",
+                                title: "Swift 6.2 Released | Swift.org"))),
+                    .content(
+                        .resourceLink(
+                            ResourceLink(
+                                name: "Releases · swiftlang/swift", uri: "https://github.com/swiftlang/swift/releases",
+                                title: "Releases · swiftlang/swift"))),
+                ]))
     }
     .padding()
     .frame(width: 520)

@@ -95,7 +95,7 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
 
     private func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         guard let url = request.url,
-              let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         else { throw CloudRelayTransportError.invalidRequest }
         var path = components.path.isEmpty ? "/" : components.path
         if let query = components.query, !query.isEmpty {
@@ -135,12 +135,14 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
             if let body = request.httpBody, !body.isEmpty {
                 var offset = body.startIndex
                 while offset < body.endIndex {
-                    let end = body.index(offset, offsetBy: Self.chunkSize, limitedBy: body.endIndex)
+                    let end =
+                        body.index(offset, offsetBy: Self.chunkSize, limitedBy: body.endIndex)
                         ?? body.endIndex
-                    try await channel.sendJSON(ClientFrame(
-                        kind: "chunk",
-                        data: CloudChannelCrypto.base64URLEncode(body[offset..<end])
-                    ))
+                    try await channel.sendJSON(
+                        ClientFrame(
+                            kind: "chunk",
+                            data: CloudChannelCrypto.base64URLEncode(body[offset..<end])
+                        ))
                     offset = end
                 }
             }
@@ -160,8 +162,8 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
                     responseHeaders = frame.headers ?? [:]
                 case "chunk":
                     guard status != nil,
-                          let encoded = frame.data,
-                          let chunk = CloudChannelCrypto.base64URLDecode(encoded)
+                        let encoded = frame.data,
+                        let chunk = CloudChannelCrypto.base64URLDecode(encoded)
                     else { throw CloudRelayTransportError.invalidFrame }
                     body.append(chunk)
                 case "end":
@@ -172,12 +174,12 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
                 if sawEnd { break }
             }
             guard let status, sawEnd,
-                  let response = HTTPURLResponse(
-                      url: url,
-                      statusCode: status,
-                      httpVersion: "HTTP/1.1",
-                      headerFields: responseHeaders
-                  )
+                let response = HTTPURLResponse(
+                    url: url,
+                    statusCode: status,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: responseHeaders
+                )
             else { throw CloudRelayTransportError.channelClosed(nil) }
             await channel.close(reason: .done)
             return (body, response)
@@ -223,7 +225,8 @@ final class CloudRelayWebSocketConnection: ServerWebSocketConnecting, @unchecked
 
         var path = "/"
         if let url = request.url,
-           let components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+            let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        {
             path = components.path.isEmpty ? "/" : components.path
             if let query = components.query, !query.isEmpty {
                 path += "?\(query)"

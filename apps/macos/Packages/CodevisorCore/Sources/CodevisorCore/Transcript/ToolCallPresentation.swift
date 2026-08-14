@@ -14,14 +14,15 @@ enum CodevisorGatewayOperation: String {
 
 extension ToolCall {
     var codevisorGatewayOperation: CodevisorGatewayOperation? {
-        let normalized = title
+        let normalized =
+            title
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
 
         let prefixes = [
             "mcp__codevisor__", "codevisor.", "codevisor_",
             // Persisted transcripts keep their original wire-level tool names.
-            "mcp__herdman__", "herdman.", "herdman_"
+            "mcp__herdman__", "herdman.", "herdman_",
         ]
         let operation = prefixes.first(where: normalized.hasPrefix).map {
             String(normalized.dropFirst($0.count))
@@ -32,7 +33,8 @@ extension ToolCall {
     /// Codex's built-in tool discovery is part of the same integration flow
     /// when it appears beside Codevisor calls, and deserves a readable label.
     var isToolDiscoveryCall: Bool {
-        let normalized = title
+        let normalized =
+            title
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
             .replacingOccurrences(of: "_", with: "")

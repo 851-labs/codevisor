@@ -27,7 +27,7 @@ struct CloudAuthDeeplinkTests {
             "codevisor://cloud-auth",
             "codevisor://cloud-auth?ott=",
             "codevisor://cloud-auth?ott=%20",
-            "codevisor://cloud-auth?token=abc"
+            "codevisor://cloud-auth?token=abc",
         ]
         for raw in rejected {
             #expect(CloudAuthDeeplink.parse(URL(string: raw)!) == nil, "expected nil for \(raw)")

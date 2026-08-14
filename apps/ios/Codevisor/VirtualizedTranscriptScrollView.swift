@@ -102,7 +102,8 @@ private final class TranscriptContentHostingController: UIHostingController<AnyV
             await Task.yield()
             await Task.yield()
             guard let self, !Task.isCancelled,
-                  measurementGeneration == generation else { return }
+                measurementGeneration == generation
+            else { return }
             pendingMeasurementTask = nil
             view.layoutIfNeeded()
             measureAndReportHeight()
@@ -199,7 +200,8 @@ private final class TranscriptRowHost: UIView {
 
     func install(row: TranscriptVirtualRow, rootView: AnyView, force: Bool = false) {
         let representsDifferentRow = representedRow?.layoutKey != row.layoutKey
-        let needsRoot = force
+        let needsRoot =
+            force
             || representedRow?.content != row.content
             || representedRow?.measurementRevision != row.measurementRevision
         representedRow = row
@@ -254,12 +256,13 @@ private final class TranscriptRowHost: UIView {
         // height, following offsets, document size, and every mounted frame in
         // one non-animated virtual-layout transaction before UIKit paints.
         isPresentationReady = true
-        onMeasuredHeight?(.init(
-            key: row.layoutKey,
-            revision: row.measurementRevision,
-            rowWidthHalfPoints: Int((contentWidthConstraint.constant * 2).rounded()),
-            height: height,
-        ))
+        onMeasuredHeight?(
+            .init(
+                key: row.layoutKey,
+                revision: row.measurementRevision,
+                rowWidthHalfPoints: Int((contentWidthConstraint.constant * 2).rounded()),
+                height: height,
+            ))
     }
 }
 
@@ -303,10 +306,12 @@ final class TranscriptViewController: UIViewController {
         reduceMotion: Bool,
         scrollIndicatorBottomInset: CGFloat,
         claimSendAnimation: @escaping (UserSendAnimationRequest) -> Bool,
-        onSendAnimationStarted: ((
-            UserSendAnimationRequest,
-            TranscriptSendAnimationTarget
-        ) -> Bool)?,
+        onSendAnimationStarted: (
+            (
+                UserSendAnimationRequest,
+                TranscriptSendAnimationTarget
+            ) -> Bool
+        )?,
         onSendAnimationCompleted: @escaping (UserSendAnimationRequest) -> Void,
         rowContent: @escaping (TranscriptVirtualRow) -> AnyView,
         onViewportChange: @escaping (SessionScrollState) -> Void,
@@ -389,9 +394,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     )
     private var measurements = TranscriptMeasurementLedger()
     private var settledRowHeightSnapshot: [String: SessionMeasuredRow] = [:]
-    private var measurementCaches: [
-        SessionMeasurementCacheKey: [String: SessionMeasuredRow]
-    ] = [:]
+    private var measurementCaches: [SessionMeasurementCacheKey: [String: SessionMeasuredRow]] = [:]
     private var measurementCacheLRU: [SessionMeasurementCacheKey] = []
     private var activeMeasurementCacheKey: SessionMeasurementCacheKey?
     private var layoutFingerprint = 0
@@ -436,10 +439,13 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     private var pendingSendAnimationRowKey: String?
     private var sendAnimationSourceFrame: CGRect?
     private var claimSendAnimation: ((UserSendAnimationRequest) -> Bool)?
-    private var onSendAnimationStarted: ((
-        UserSendAnimationRequest,
-        TranscriptSendAnimationTarget
-    ) -> Bool)?
+    private var onSendAnimationStarted:
+        (
+            (
+                UserSendAnimationRequest,
+                TranscriptSendAnimationTarget
+            ) -> Bool
+        )?
     private var onSendAnimationCompleted: ((UserSendAnimationRequest) -> Void)?
     private var activeSendAnimationRequest: UserSendAnimationRequest?
     private var sendAnimationCompletion: TranscriptSendAnimationCompletion?
@@ -567,13 +573,16 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         reduceMotion newReduceMotion: Bool,
         scrollIndicatorBottomInset newScrollIndicatorBottomInset: CGFloat,
         claimSendAnimation newClaimSendAnimation: @escaping (UserSendAnimationRequest) -> Bool,
-        onSendAnimationStarted newOnSendAnimationStarted: ((
-            UserSendAnimationRequest,
-            TranscriptSendAnimationTarget
-        ) -> Bool)?,
-        onSendAnimationCompleted newOnSendAnimationCompleted: @escaping (
-            UserSendAnimationRequest
-        ) -> Void,
+        onSendAnimationStarted newOnSendAnimationStarted: (
+            (
+                UserSendAnimationRequest,
+                TranscriptSendAnimationTarget
+            ) -> Bool
+        )?,
+        onSendAnimationCompleted newOnSendAnimationCompleted:
+            @escaping (
+                UserSendAnimationRequest
+            ) -> Void,
         rowContent newRowContent: @escaping (TranscriptVirtualRow) -> AnyView,
         onViewportChange: @escaping (SessionScrollState) -> Void,
         onBottomStateChange: @escaping (Bool) -> Void,
@@ -608,7 +617,8 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         claimSendAnimation = newClaimSendAnimation
         onSendAnimationStarted = newOnSendAnimationStarted
         onSendAnimationCompleted = newOnSendAnimationCompleted
-        let becameForeground = presentationRole != .foreground
+        let becameForeground =
+            presentationRole != .foreground
             && newPresentationRole == .foreground
         presentationRole = newPresentationRole
 
@@ -649,7 +659,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         let prependedItemCount = reversePrependCount(from: rows, to: newRows)
         let rebuiltRows: Bool
         if prependedItemCount != nil, isNativeScrollInteractionActive,
-           !layoutFingerprintChanged
+            !layoutFingerprintChanged
         {
             deferredRowsDuringScroll = newRows
             rebuiltRows = false
@@ -723,7 +733,8 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         _ newRows: [TranscriptVirtualRow],
         layoutFingerprintChanged: Bool,
     ) -> Bool {
-        let geometryChanged = rows.count != newRows.count
+        let geometryChanged =
+            rows.count != newRows.count
             || zip(rows, newRows).contains { old, new in
                 old.id != new.id
                     || old.estimatedHeight != new.estimatedHeight
@@ -764,9 +775,11 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     ) -> Int? {
         guard !oldRows.isEmpty, newRows.count > oldRows.count else { return nil }
         let insertedCount = newRows.count - oldRows.count
-        guard zip(oldRows, newRows.dropFirst(insertedCount)).allSatisfy({ old, new in
-            old.id == new.id
-        }) else { return nil }
+        guard
+            zip(oldRows, newRows.dropFirst(insertedCount)).allSatisfy({ old, new in
+                old.id == new.id
+            })
+        else { return nil }
         return insertedCount
     }
 
@@ -775,15 +788,17 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         to newRows: [TranscriptVirtualRow],
     ) {
         guard oldRows.contains(where: { $0.id == .active }),
-              let activeHeight = measurements[TranscriptVirtualRow.ID.active.layoutKey],
-              !newRows.contains(where: { $0.id == .active }) else { return }
+            let activeHeight = measurements[TranscriptVirtualRow.ID.active.layoutKey],
+            !newRows.contains(where: { $0.id == .active })
+        else { return }
         let oldKeys = Set(oldRows.map(\.layoutKey))
         let insertedSettledRows = newRows.filter {
             $0.id.isCacheableSettledRow && !oldKeys.contains($0.layoutKey)
         }
         guard insertedSettledRows.count == 1,
-              let settledActive = insertedSettledRows.first,
-              measurements[settledActive.layoutKey] == nil else { return }
+            let settledActive = insertedSettledRows.first,
+            measurements[settledActive.layoutKey] == nil
+        else { return }
         measurements.setProvisional(activeHeight, for: settledActive.layoutKey)
     }
 
@@ -793,8 +808,9 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     ) {
         for row in newRows {
             guard row.id.isCacheableSettledRow,
-                  let previous = previousRowsByKey[row.layoutKey],
-                  previous.measurementRevision != row.measurementRevision else { continue }
+                let previous = previousRowsByKey[row.layoutKey],
+                previous.measurementRevision != row.measurementRevision
+            else { continue }
             let key = row.layoutKey
             measurements.markStale(key)
             pendingMeasurements.removeValue(forKey: key)
@@ -853,9 +869,10 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         valid.reserveCapacity(cached.count)
         for row in rows {
             guard row.id.isCacheableSettledRow,
-                  let measurement = cached[row.layoutKey],
-                  measurement.revision == row.measurementRevision,
-                  measurement.height > 0 else { continue }
+                let measurement = cached[row.layoutKey],
+                measurement.revision == row.measurementRevision,
+                measurement.height > 0
+            else { continue }
             valid[row.layoutKey] = measurement
             measurements.setExact(measurement.height, for: row.layoutKey)
         }
@@ -863,19 +880,19 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         measurementCaches[key] = valid
         installExactSpacerMeasurements()
         for (mountedKey, height) in provisionalMountedHeights
-            where measurements[mountedKey] == nil
-        {
+        where measurements[mountedKey] == nil {
             measurements.setProvisional(height, for: mountedKey)
         }
 
         if let restore = pendingInitialState?.virtualTranscript,
-           restore.measurementCacheKey == key
+            restore.measurementCacheKey == key
         {
             for (rowKey, height) in restore.rowHeightsByKey where height > 0 {
                 guard let row = rowByKey[rowKey], measurements[rowKey] == nil else { continue }
                 if row.id.isCacheableSettledRow {
                     guard let settled = restore.settledRowsByKey[rowKey],
-                          settled.revision == row.measurementRevision else { continue }
+                        settled.revision == row.measurementRevision
+                    else { continue }
                     measurements.setExact(height, for: rowKey)
                     let measurement = SessionMeasuredRow(
                         height: height,
@@ -898,40 +915,44 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         let pinsExplicitBottom = bottomJumpGate.isActive
         let visibleAnchorKey: String?
         if !pinsExplicitBottom,
-           !followsStreamingLatest,
-           let previousDistance,
-           !previousLayout.isEmpty
+            !followsStreamingLatest,
+            let previousDistance,
+            !previousLayout.isEmpty
         {
             let visibleRange = previousLayout.visibleRange(
                 distanceFromBottom: previousDistance,
                 viewportHeight: viewportHeight,
                 overscanCount: 0,
             )
-            visibleAnchorKey = visibleRange.compactMap { index -> String? in
-                guard previousLayout.keys.indices.contains(index) else { return nil }
-                let key = previousLayout.keys[index]
-                return measurements[key] == nil ? nil : key
-            }.first ?? visibleRange.first.flatMap { index in
-                previousLayout.keys.indices.contains(index)
-                    ? previousLayout.keys[index]
-                    : nil
-            }
+            visibleAnchorKey =
+                visibleRange.compactMap { index -> String? in
+                    guard previousLayout.keys.indices.contains(index) else { return nil }
+                    let key = previousLayout.keys[index]
+                    return measurements[key] == nil ? nil : key
+                }.first
+                ?? visibleRange.first.flatMap { index in
+                    previousLayout.keys.indices.contains(index)
+                        ? previousLayout.keys[index]
+                        : nil
+                }
         } else {
             visibleAnchorKey = nil
         }
-        let distanceToPreserve: CGFloat? = if let lockedRestoreDistance {
-            lockedRestoreDistance
-        } else if pinsExplicitBottom {
-            0
-        } else if initialPositionApplied {
-            followsStreamingLatest ? 0 : currentDistanceFromBottom()
-        } else {
-            nil
-        }
+        let distanceToPreserve: CGFloat? =
+            if let lockedRestoreDistance {
+                lockedRestoreDistance
+            } else if pinsExplicitBottom {
+                0
+            } else if initialPositionApplied {
+                followsStreamingLatest ? 0 : currentDistanceFromBottom()
+            } else {
+                nil
+            }
 
         var initialRestoreRange: Range<Int>?
         applyPositionTransaction {
-            virtualLayout = incrementallyUpdatedLayout(changedHeights: changedHeights)
+            virtualLayout =
+                incrementallyUpdatedLayout(changedHeights: changedHeights)
                 ?? VirtualTranscriptLayout(
                     items: rows.map {
                         .init(key: $0.layoutKey, estimatedHeight: $0.estimatedHeight)
@@ -960,13 +981,16 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             } else if let anchor = disclosureViewportAnchor {
                 setViewportTop(anchor.viewportTop)
             } else if let distanceToPreserve {
-                let anchoredDistance = pinsExplicitBottom ? nil : visibleAnchorKey.flatMap { key in
-                    virtualLayout.distanceFromBottom(
-                        preservingAnchor: key,
-                        previousLayout: previousLayout,
-                        previousDistanceFromBottom: distanceToPreserve,
-                    )
-                }
+                let anchoredDistance =
+                    pinsExplicitBottom
+                    ? nil
+                    : visibleAnchorKey.flatMap { key in
+                        virtualLayout.distanceFromBottom(
+                            preservingAnchor: key,
+                            previousLayout: previousLayout,
+                            previousDistanceFromBottom: distanceToPreserve,
+                        )
+                    }
                 let resolvedDistance = anchoredDistance ?? distanceToPreserve
                 if lockedRestoreDistance != nil {
                     lockedRestoreDistance = resolvedDistance
@@ -983,8 +1007,9 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         changedHeights: [String: CGFloat]?,
     ) -> VirtualTranscriptLayout? {
         guard let changedHeights, !changedHeights.isEmpty,
-              !virtualLayout.isEmpty,
-              virtualLayout.keys.count == rows.count else { return nil }
+            !virtualLayout.isEmpty,
+            virtualLayout.keys.count == rows.count
+        else { return nil }
         var layout = virtualLayout
         for (key, height) in changedHeights {
             guard let updated = layout.updatingHeight(forKey: key, to: height) else {
@@ -1040,7 +1065,8 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
 
     private func applyPendingInitialPositionIfPossible() {
         guard !initialPositionApplied, viewportHeight > 0 else { return }
-        let shouldPublishInitialPosition = lastStableScrollState == nil
+        let shouldPublishInitialPosition =
+            lastStableScrollState == nil
             || (pendingInitialState?.isAtBottom == true && followsLatest)
         let restoredRange = pendingInitialState?.virtualTranscript?.renderedWindow.flatMap {
             virtualLayout.renderedRange(anchorKey: $0.anchorKey, count: $0.count)
@@ -1049,7 +1075,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
 
         if let state = pendingInitialState, !state.isAtBottom {
             if state.distanceFromBottom > viewportGeometry.maximumDistanceFromBottom + 0.5,
-               hasOlderHistory
+                hasOlderHistory
             {
                 setViewportTop(viewportGeometry.minimumOffsetY)
                 checkForHistoryPrefetch(force: true)
@@ -1144,10 +1170,11 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
 
         let atBottom = distance <= Self.atBottomThreshold
         publishBottomState(atBottom)
-        let isUserMovement = isTracking || isDragging || isDecelerating
+        let isUserMovement =
+            isTracking || isDragging || isDecelerating
             || isExplicitUserScroll
         if !isApplyingPosition, isUserMovement,
-           distance > previousDistance + 0.5, followsLatest
+            distance > previousDistance + 0.5, followsLatest
         {
             followsLatest = false
             onFollowStateChange?(false)
@@ -1199,8 +1226,9 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     /// row is part of the authoritative document geometry.
     private func acknowledgeOlderHistoryPresentationIfPossible() {
         guard deferredRowsDuringScroll == nil,
-              let target = olderHistoryPresentationTarget,
-              rows.first?.layoutKey == target.oldestRowKey else { return }
+            let target = olderHistoryPresentationTarget,
+            rows.first?.layoutKey == target.oldestRowKey
+        else { return }
         olderHistoryPresentationTarget = nil
         onOlderHistoryPresented?(target.token)
     }
@@ -1241,7 +1269,8 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
 
     private func updateMountedRows(rangeOverride: Range<Int>? = nil) {
         guard initialPositionApplied || viewportHeight > 0,
-              let hostingParent else { return }
+            let hostingParent
+        else { return }
         let targetRange: Range<Int>
         if let rangeOverride {
             targetRange = rangeOverride
@@ -1251,20 +1280,22 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
 
         let mountedIndices = mountedHosts.keys.compactMap { virtualLayout.indexByKey[$0] }
         let mountedRange: Range<Int>? = mountedIndices.min().flatMap { lower in
-            mountedIndices.max().map { upper in lower ..< (upper + 1) }
+            mountedIndices.max().map { upper in lower..<(upper + 1) }
         }
-        let range: Range<Int> = if rangeOverride == nil,
-                                   let mountedRange,
-                                   mountedRange.lowerBound <= targetRange.lowerBound,
-                                   mountedRange.upperBound >= targetRange.upperBound
-        {
-            mountedRange
-        } else {
-            targetRange
-        }
-        let requiredKeys = Set(range.compactMap { index in
-            virtualLayout.keys.indices.contains(index) ? virtualLayout.keys[index] : nil
-        })
+        let range: Range<Int> =
+            if rangeOverride == nil,
+                let mountedRange,
+                mountedRange.lowerBound <= targetRange.lowerBound,
+                mountedRange.upperBound >= targetRange.upperBound
+            {
+                mountedRange
+            } else {
+                targetRange
+            }
+        let requiredKeys = Set(
+            range.compactMap { index in
+                virtualLayout.keys.indices.contains(index) ? virtualLayout.keys[index] : nil
+            })
 
         let obsoleteKeys = mountedHosts.keys.filter { !requiredKeys.contains($0) }
         for key in obsoleteKeys {
@@ -1340,7 +1371,8 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     ) {
         for (key, host) in mountedHosts {
             guard let row = rowByKey[key],
-                  previousRowsByKey[key]?.content != row.content else { continue }
+                previousRowsByKey[key]?.content != row.content
+            else { continue }
             host.install(row: row, rootView: measuredRootView(for: row), force: true)
         }
     }
@@ -1438,15 +1470,16 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             ),
         )
         guard accepts(measurement) else { return }
-        let needsCommit = pendingMeasurements[measurement.key].map {
-            $0.revision != measurement.revision
-                || $0.rowWidthHalfPoints != measurement.rowWidthHalfPoints
-                || TranscriptPixelGeometry.differs(
-                    $0.height,
-                    measurement.height,
-                    scale: scale,
-                )
-        } ?? measurements.needsCommit(measurement.height, for: measurement.key)
+        let needsCommit =
+            pendingMeasurements[measurement.key].map {
+                $0.revision != measurement.revision
+                    || $0.rowWidthHalfPoints != measurement.rowWidthHalfPoints
+                    || TranscriptPixelGeometry.differs(
+                        $0.height,
+                        measurement.height,
+                        scale: scale,
+                    )
+            } ?? measurements.needsCommit(measurement.height, for: measurement.key)
         guard needsCommit else {
             // Cached settled rows can report the exact height already in the
             // ledger. The host has still completed a fresh SwiftUI layout, so
@@ -1487,7 +1520,8 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         var committedHeights: [String: CGFloat] = [:]
         for (key, measurement) in pending {
             guard accepts(measurement),
-                  measurements.needsCommit(measurement.height, for: key) else { continue }
+                measurements.needsCommit(measurement.height, for: key)
+            else { continue }
             if storeMeasuredHeight(measurement.height, for: key) {
                 committedHeights[key] = measurement.height
             }
@@ -1506,23 +1540,26 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     /// row anchoring.
     private func resolveBottomJumpIfPossible() {
         guard bottomJumpGate.isActive,
-              initialPositionApplied,
-              viewportHeight > 0 else { return }
-        let requiredKeys = Set(plannedMountedRange().compactMap { index in
-            virtualLayout.keys.indices.contains(index) ? virtualLayout.keys[index] : nil
-        })
+            initialPositionApplied,
+            viewportHeight > 0
+        else { return }
+        let requiredKeys = Set(
+            plannedMountedRange().compactMap { index in
+                virtualLayout.keys.indices.contains(index) ? virtualLayout.keys[index] : nil
+            })
         let mountedKeys = Set(mountedHosts.keys)
         guard requiredKeys.isSubset(of: mountedKeys) else {
             updateMountedRows()
             return
         }
-        let resolvedKeys = Set(requiredKeys.filter { key in
-            guard let host = mountedHosts[key] else { return false }
-            return measurements[key] != nil
-                && !measurements.isStale(key)
-                && host.isAttachmentGeometryReady
-                && host.isPresentationReady
-        })
+        let resolvedKeys = Set(
+            requiredKeys.filter { key in
+                guard let host = mountedHosts[key] else { return false }
+                return measurements[key] != nil
+                    && !measurements.isStale(key)
+                    && host.isAttachmentGeometryReady
+                    && host.isPresentationReady
+            })
         _ = bottomJumpGate.resolve(
             requiredKeys: requiredKeys,
             resolvedKeys: resolvedKeys,
@@ -1532,13 +1569,15 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
 
     private func updateInitialPresentationReadiness() {
         guard !initialPresentationGate.isReady,
-              !isDetaching,
-              initialPositionApplied,
-              viewportHeight > 0 else { return }
+            !isDetaching,
+            initialPositionApplied,
+            viewportHeight > 0
+        else { return }
 
-        let requiredKeys = Set(plannedMountedRange().compactMap { index in
-            virtualLayout.keys.indices.contains(index) ? virtualLayout.keys[index] : nil
-        })
+        let requiredKeys = Set(
+            plannedMountedRange().compactMap { index in
+                virtualLayout.keys.indices.contains(index) ? virtualLayout.keys[index] : nil
+            })
         let mountedKeys = Set(mountedHosts.keys)
         guard requiredKeys.isSubset(of: mountedKeys) else {
             // Resolving estimates can change which rows intersect the initial
@@ -1547,18 +1586,21 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             updateMountedRows()
             return
         }
-        let resolvedKeys = Set(requiredKeys.filter { key in
-            guard let host = mountedHosts[key] else { return false }
-            return measurements[key] != nil
-                && !measurements.isStale(key)
-                && host.isAttachmentGeometryReady
-                && host.isPresentationReady
-        })
-        guard initialPresentationGate.resolve(
-            isHydrating: isLoadingInitialHistory || isPreparingInitialProjection,
-            requiredKeys: requiredKeys,
-            resolvedKeys: resolvedKeys,
-        ) else { return }
+        let resolvedKeys = Set(
+            requiredKeys.filter { key in
+                guard let host = mountedHosts[key] else { return false }
+                return measurements[key] != nil
+                    && !measurements.isStale(key)
+                    && host.isAttachmentGeometryReady
+                    && host.isPresentationReady
+            })
+        guard
+            initialPresentationGate.resolve(
+                isHydrating: isLoadingInitialHistory || isPreparingInitialProjection,
+                requiredKeys: requiredKeys,
+                resolvedKeys: resolvedKeys,
+            )
+        else { return }
 
         applyPositionTransaction {
             canvasView.alpha = 1
@@ -1569,9 +1611,10 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
 
     private func accepts(_ measurement: TranscriptRowMeasurement) -> Bool {
         guard let row = rowByKey[measurement.key],
-              row.measurementRevision == measurement.revision,
-              measurement.rowWidthHalfPoints
-              == Int((effectiveRowWidth * 2).rounded()) else { return false }
+            row.measurementRevision == measurement.revision,
+            measurement.rowWidthHalfPoints
+                == Int((effectiveRowWidth * 2).rounded())
+        else { return false }
         return true
     }
 
@@ -1598,7 +1641,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         change: @escaping () -> Void,
     ) {
         guard initialPositionApplied,
-              virtualLayout.indexByKey[rowKey] != nil
+            virtualLayout.indexByKey[rowKey] != nil
         else {
             change()
             return
@@ -1614,7 +1657,8 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         disclosureAnchorReleaseTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(450))
             guard !Task.isCancelled,
-                  self?.disclosureViewportAnchor?.id == anchor.id else { return }
+                self?.disclosureViewportAnchor?.id == anchor.id
+            else { return }
             self?.disclosureViewportAnchor = nil
             self?.disclosureAnchorReleaseTask = nil
         }
@@ -1628,22 +1672,26 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
 
     private func startPendingSendAnimationIfPossible() {
         guard let request = pendingSendAnimationRequest,
-              let rowKey = pendingSendAnimationRowKey else { return }
+            let rowKey = pendingSendAnimationRowKey
+        else { return }
         guard initialPositionApplied, bounds.width > 0, bounds.height > 0,
-              let host = mountedHosts[rowKey], host.isPresentationReady else { return }
+            let host = mountedHosts[rowKey], host.isPresentationReady
+        else { return }
 
         // Prewarmed destinations do not own animation consumption, but their
         // full-screen layout is the authoritative endpoint for New Chat's
         // flight layer. Report it before the foreground-only claim gate.
         let usesExternalFlight: Bool
         if let onSendAnimationStarted,
-           let target = sendAnimationTarget(in: host, rowKey: rowKey) {
+            let target = sendAnimationTarget(in: host, rowKey: rowKey)
+        {
             usesExternalFlight = onSendAnimationStarted(request, target)
         } else {
             usesExternalFlight = false
         }
         guard presentationRole == .foreground,
-              let claimSendAnimation else { return }
+            let claimSendAnimation
+        else { return }
 
         func claimAndClear() -> Bool {
             let claimed = claimSendAnimation(request)
@@ -1661,24 +1709,28 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             claimAndCompleteWithoutAnimation()
             return
         }
-        let bottomSpacerHeight = rows.last { $0.id == .bottomSpacer }.flatMap { row in
-            if case let .bottomSpacer(height) = row.content { height } else { nil }
-        } ?? 0
+        let bottomSpacerHeight =
+            rows.last { $0.id == .bottomSpacer }.flatMap { row in
+                if case let .bottomSpacer(height) = row.content { height } else { nil }
+            } ?? 0
         let fallbackSourceY = contentOffset.y + bounds.height - bottomSpacerHeight + 48
         // Composer reports its editor frame in the global SwiftUI coordinate
         // space, which maps to window coordinates on iOS. Converting through
         // the canvas gives the row animation the real launch position rather
         // than an estimated offset above the bottom spacer.
-        let sourceY = sendAnimationSourceFrame.map { sourceFrame in
-            canvasView.convert(
-                CGPoint(x: sourceFrame.midX, y: sourceFrame.midY),
-                from: nil
-            ).y
-        } ?? fallbackSourceY
-        guard let plan = TranscriptSendAnimationMetrics.plan(
-            sourceY: sourceY,
-            targetY: host.frame.minY
-        ) else {
+        let sourceY =
+            sendAnimationSourceFrame.map { sourceFrame in
+                canvasView.convert(
+                    CGPoint(x: sourceFrame.midX, y: sourceFrame.midY),
+                    from: nil
+                ).y
+            } ?? fallbackSourceY
+        guard
+            let plan = TranscriptSendAnimationMetrics.plan(
+                sourceY: sourceY,
+                targetY: host.frame.minY
+            )
+        else {
             claimAndCompleteWithoutAnimation()
             return
         }
@@ -1695,7 +1747,8 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         activeSendAnimationRequest = request
         let completion = TranscriptSendAnimationCompletion { [weak self] _ in
             guard let self,
-                  self.activeSendAnimationRequest?.token == request.token else { return }
+                self.activeSendAnimationRequest?.token == request.token
+            else { return }
             host.layer.opacity = 1
             self.activeSendAnimationRequest = nil
             self.sendAnimationCompletion = nil
@@ -1711,8 +1764,8 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         rowKey: String
     ) -> TranscriptSendAnimationTarget? {
         guard rowByKey[rowKey]?.isUserMessage == true,
-              !host.bounds.isEmpty,
-              let snapshot = host.snapshotView(afterScreenUpdates: false)
+            !host.bounds.isEmpty,
+            let snapshot = host.snapshotView(afterScreenUpdates: false)
         else { return nil }
         snapshot.isUserInteractionEnabled = false
         snapshot.accessibilityElementsHidden = true
@@ -1744,7 +1797,8 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
 
     private func emitViewportSnapshot() {
         guard presentationRole == .foreground,
-              !isDetaching, initialPositionConfigured, viewportHeight > 0 else { return }
+            !isDetaching, initialPositionConfigured, viewportHeight > 0
+        else { return }
         let distance = currentDistanceFromBottom()
         publishBottomState(distance <= Self.atBottomThreshold)
         let state = SessionScrollState(
@@ -1772,7 +1826,8 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         let indices = mountedHosts.keys.compactMap { virtualLayout.indexByKey[$0] }.sorted()
         let renderedWindow: SessionRenderedTranscriptWindow? = indices.first.flatMap { first in
             guard let last = indices.last,
-                  virtualLayout.keys.indices.contains(first) else { return nil }
+                virtualLayout.keys.indices.contains(first)
+            else { return nil }
             return SessionRenderedTranscriptWindow(
                 anchorKey: virtualLayout.keys[first],
                 count: last - first + 1,

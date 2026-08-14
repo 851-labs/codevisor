@@ -81,7 +81,8 @@ final class StreamingSegmenter {
 
     private func streamingSegments(for text: String) -> [MarkdownSegment] {
         if let lastText, !lastIsComplete, !lastText.isEmpty,
-           let delta = Self.utf8Suffix(of: text, after: lastText) {
+            let delta = Self.utf8Suffix(of: text, after: lastText)
+        {
             pendingTail += delta
         } else {
             // First streaming frame, or a rewrite (the final-answer candidate
@@ -149,7 +150,8 @@ final class StreamingSegmenter {
             prefix.withUTF8 { prefixBytes -> String? in
                 guard textBytes.count >= prefixBytes.count else { return nil }
                 if !prefixBytes.isEmpty,
-                   memcmp(textBytes.baseAddress!, prefixBytes.baseAddress!, prefixBytes.count) != 0 {
+                    memcmp(textBytes.baseAddress!, prefixBytes.baseAddress!, prefixBytes.count) != 0
+                {
                     return nil
                 }
                 // Decoding from a byte offset is safe even when a chunk

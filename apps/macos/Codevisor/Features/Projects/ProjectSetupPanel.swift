@@ -43,7 +43,8 @@ final class ProjectSetupModel {
                 subtitle: "Cloned · \(Self.abbreviatedPath(project.folderURL))"
             )
         }
-        let custom = customFolders
+        let custom =
+            customFolders
             .filter { !clonedPaths.contains($0.standardizedFileURL.path) }
             .map { url in
                 FolderChoice(
@@ -52,7 +53,8 @@ final class ProjectSetupModel {
                     subtitle: Self.abbreviatedPath(url)
                 )
             }
-        let suggested = recommendations
+        let suggested =
+            recommendations
             .filter { recommendation in
                 let path = recommendation.folderURL.standardizedFileURL.path
                 return !clonedPaths.contains(path)
@@ -182,7 +184,7 @@ struct ProjectSetupSelectionView: View {
                 LazyVGrid(
                     columns: [
                         GridItem(.flexible(), spacing: 8),
-                        GridItem(.flexible(), spacing: 8)
+                        GridItem(.flexible(), spacing: 8),
                     ],
                     spacing: 8
                 ) {
@@ -309,9 +311,11 @@ struct ProjectSetupPanel: View {
             Button {
                 confirm()
             } label: {
-                Text(model.selectedFolders.count > 1
-                    ? "Add \(model.selectedFolders.count) Projects"
-                    : "Open Project")
+                Text(
+                    model.selectedFolders.count > 1
+                        ? "Add \(model.selectedFolders.count) Projects"
+                        : "Open Project"
+                )
                 .contentTransition(.numericText())
                 .frame(minWidth: 96)
             }

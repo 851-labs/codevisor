@@ -176,7 +176,8 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
         sidebarState = try container.decodeIfPresent(SessionSidebarState.self, forKey: .sidebarState) ?? .idle
-        sidebarStateChangedAt = try container.decodeIfPresent(Date.self, forKey: .sidebarStateChangedAt)
+        sidebarStateChangedAt =
+            try container.decodeIfPresent(Date.self, forKey: .sidebarStateChangedAt)
             ?? updatedAt
             ?? createdAt
         latestAttentionSequence = try container.decodeIfPresent(Int.self, forKey: .latestAttentionSequence) ?? 0

@@ -115,7 +115,7 @@ func computerUseUsesChromiumInput(
         "google chrome", "com.google.chrome", "chromium", "microsoft edge",
         "com.microsoft.edgemac", "brave browser", "com.brave.browser", "vivaldi",
         "com.vivaldi.vivaldi", "opera", "com.operasoftware.opera", "arc.app",
-        "company.thebrowser.browser", "electron framework"
+        "company.thebrowser.browser", "electron framework",
     ]
     return chromiumIdentities.contains(where: identity.contains)
 }
@@ -133,7 +133,7 @@ func computerUseApplicationIsProtected(_ identity: ComputerUseApplicationIdentit
         .replacingOccurrences(of: " ", with: "")
     let protected = [
         "1password", "com.agilebits", "bitwarden", "lastpass",
-        "dashlane", "keeper", "keychainaccess", "com.apple.passwords"
+        "dashlane", "keeper", "keychainaccess", "com.apple.passwords",
     ]
     return protected.contains(where: normalized.contains)
 }
@@ -152,7 +152,7 @@ func computerUseApplicationMatchScore(
         identity.id.lowercased(),
         identity.displayName.lowercased(),
         identity.path.lowercased(),
-        URL(fileURLWithPath: identity.path).deletingPathExtension().lastPathComponent.lowercased()
+        URL(fileURLWithPath: identity.path).deletingPathExtension().lastPathComponent.lowercased(),
     ]
     if exactValues.contains(normalized) || exactValues.contains(expandedPath) { return 0 }
     return identity.displayName.lowercased().contains(normalized) ? 1 : nil
@@ -163,7 +163,7 @@ func computerUseApplicationSearchRoots(homeDirectory: URL) -> [URL] {
         URL(fileURLWithPath: "/Applications", isDirectory: true),
         URL(fileURLWithPath: "/System/Applications", isDirectory: true),
         URL(fileURLWithPath: "/System/Library/CoreServices/Applications", isDirectory: true),
-        homeDirectory.appendingPathComponent("Applications", isDirectory: true)
+        homeDirectory.appendingPathComponent("Applications", isDirectory: true),
     ]
 }
 
@@ -196,26 +196,28 @@ func computerUseChromiumClickPlan(
             phase: 2,
             clickState: 1,
             delayAfterMilliseconds: 100
-        )
+        ),
     ]
     let clickPairs = min(2, max(1, count))
     for clickState in 1...clickPairs {
-        steps.append(ComputerUseChromiumClickStep(
-            kind: .down,
-            point: point,
-            windowPoint: windowPoint,
-            phase: 3,
-            clickState: Int64(clickState),
-            delayAfterMilliseconds: 1
-        ))
-        steps.append(ComputerUseChromiumClickStep(
-            kind: .up,
-            point: point,
-            windowPoint: windowPoint,
-            phase: 3,
-            clickState: Int64(clickState),
-            delayAfterMilliseconds: clickState < clickPairs ? 80 : 0
-        ))
+        steps.append(
+            ComputerUseChromiumClickStep(
+                kind: .down,
+                point: point,
+                windowPoint: windowPoint,
+                phase: 3,
+                clickState: Int64(clickState),
+                delayAfterMilliseconds: 1
+            ))
+        steps.append(
+            ComputerUseChromiumClickStep(
+                kind: .up,
+                point: point,
+                windowPoint: windowPoint,
+                phase: 3,
+                clickState: Int64(clickState),
+                delayAfterMilliseconds: clickState < clickPairs ? 80 : 0
+            ))
     }
     return steps
 }
@@ -412,7 +414,8 @@ public final class ComputerUseBridge: @unchecked Sendable {
         let tokenURL = supportDirectory.appendingPathComponent("computer-use-token")
         let token: String
         if let existing = try? String(contentsOf: tokenURL, encoding: .utf8)
-            .trimmingCharacters(in: .whitespacesAndNewlines), !existing.isEmpty {
+            .trimmingCharacters(in: .whitespacesAndNewlines), !existing.isEmpty
+        {
             token = existing
         } else {
             token = UUID().uuidString + UUID().uuidString
@@ -528,7 +531,7 @@ public final class ComputerUseBridge: @unchecked Sendable {
                     let id = message["id"] as? String ?? ""
                     if !authenticated {
                         guard message["type"] as? String == "authenticate",
-                              message["token"] as? String == token
+                            message["token"] as? String == token
                         else { throw BridgeError("Authentication failed") }
                         authenticated = true
                         response = ["id": id, "result": textResult("authenticated")]
@@ -546,7 +549,7 @@ public final class ComputerUseBridge: @unchecked Sendable {
                     let object = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any]
                     response = [
                         "id": object?["id"] as? String ?? "",
-                        "error": String(describing: error)
+                        "error": String(describing: error),
                     ]
                 }
                 guard let data = try? JSONSerialization.data(withJSONObject: response) else { return }
@@ -756,7 +759,8 @@ public final class ComputerUseBridge: @unchecked Sendable {
                             )
                         )
                     }
-                    path = deliveryMode == "foreground"
+                    path =
+                        deliveryMode == "foreground"
                         ? try withAppFronted(
                             app: app,
                             window: window,
@@ -783,7 +787,7 @@ public final class ComputerUseBridge: @unchecked Sendable {
                     "delivered": true,
                     "verified": false,
                     "effect": "unverifiable",
-                    "next": "Confirm the effect in the returned app state. Re-snapshot before another action."
+                    "next": "Confirm the effect in the returned app state. Re-snapshot before another action.",
                 ]
                 if let accessibilityAction {
                     semanticMetadata["accessibilityAction"] = accessibilityAction
@@ -841,9 +845,10 @@ public final class ComputerUseBridge: @unchecked Sendable {
                     "effect": "unverifiable",
                     "screenshotPoint": [
                         "x": double(arguments["x"]) ?? 0,
-                        "y": double(arguments["y"]) ?? 0
+                        "y": double(arguments["y"]) ?? 0,
                     ],
-                    "next": "Confirm the effect in the returned screenshot. If unchanged, re-snapshot and retry once with deliveryMode foreground or use Browser Use for web-page content."
+                    "next":
+                        "Confirm the effect in the returned screenshot. If unchanged, re-snapshot and retry once with deliveryMode foreground or use Browser Use for web-page content.",
                 ]
                 if let windowID { pixelMetadata["windowId"] = Int(windowID) }
                 actionMetadata = pixelMetadata
@@ -902,7 +907,7 @@ public final class ComputerUseBridge: @unchecked Sendable {
                 )
             }
             guard let element = target?.element, let action = arguments["action"] as? String,
-                  axPerformAction(element, action as CFString, pid: app.processIdentifier) == .success
+                axPerformAction(element, action as CFString, pid: app.processIdentifier) == .success
             else { throw BridgeError("That accessibility action is unavailable") }
             if let targetFrame = target?.frame {
                 ComputerUsePresentation.moveCursor(
@@ -937,7 +942,8 @@ public final class ComputerUseBridge: @unchecked Sendable {
         case "scroll":
             let direction = arguments["direction"] as? String ?? "down"
             let pages = max(1, double(arguments["pages"]) ?? 1)
-            let point = target?.frame.map { CGPoint(x: $0.midX, y: $0.midY) }
+            let point =
+                target?.frame.map { CGPoint(x: $0.midX, y: $0.midY) }
                 ?? frame(of: window).map { CGPoint(x: $0.midX, y: $0.midY) }
                 ?? .zero
             ComputerUsePresentation.moveCursor(sessionID: sessionID, to: point)
@@ -973,16 +979,18 @@ public final class ComputerUseBridge: @unchecked Sendable {
                     to: CGPoint(x: targetFrame.midX, y: targetFrame.midY)
                 )
             }
-            guard axSetAttribute(
-                element,
-                kAXValueAttribute as CFString,
-                value as CFTypeRef,
-                pid: app.processIdentifier
-            ) == .success
+            guard
+                axSetAttribute(
+                    element,
+                    kAXValueAttribute as CFString,
+                    value as CFTypeRef,
+                    pid: app.processIdentifier
+                ) == .success
             else { throw BridgeError("The element is not settable") }
-            let verified = copyAttribute(element, kAXValueAttribute).map {
-                String(describing: $0)
-            } == String(describing: value)
+            let verified =
+                copyAttribute(element, kAXValueAttribute).map {
+                    String(describing: $0)
+                } == String(describing: value)
             actionMetadata = actionResultMetadata(
                 kind: "set_value",
                 path: "accessibility",
@@ -1026,15 +1034,16 @@ public final class ComputerUseBridge: @unchecked Sendable {
             let selectedRange = try textSelectionRange(element: element, arguments: arguments)
             var range = selectedRange
             guard let value = AXValueCreate(.cfRange, &range),
-                  axSetAttribute(
-                      element,
-                      kAXSelectedTextRangeAttribute as CFString,
-                      value,
-                      pid: app.processIdentifier
-                  ) == .success
+                axSetAttribute(
+                    element,
+                    kAXSelectedTextRangeAttribute as CFString,
+                    value,
+                    pid: app.processIdentifier
+                ) == .success
             else { throw BridgeError("The element does not support text selection") }
             let actualRange = selectedTextRange(element)
-            let verified = actualRange?.location == selectedRange.location
+            let verified =
+                actualRange?.location == selectedRange.location
                 && actualRange?.length == selectedRange.length
             actionMetadata = actionResultMetadata(
                 kind: "select_text",
@@ -1067,7 +1076,7 @@ public final class ComputerUseBridge: @unchecked Sendable {
                         query: application.identity.id,
                         identity: runningIdentity($0)
                     ) == 0
-                })
+                }),
             ] as [String: Any]
         }
         // Include running apps outside the standard install roots (development
@@ -1078,11 +1087,15 @@ public final class ComputerUseBridge: @unchecked Sendable {
             apps.append([
                 "id": identity.id,
                 "displayName": identity.displayName,
-                "isRunning": true
+                "isRunning": true,
             ])
         }
-        apps = apps
-            .sorted { String(describing: $0["displayName"]).localizedCaseInsensitiveCompare(String(describing: $1["displayName"])) == .orderedAscending }
+        apps =
+            apps
+            .sorted {
+                String(describing: $0["displayName"]).localizedCaseInsensitiveCompare(
+                    String(describing: $1["displayName"])) == .orderedAscending
+            }
         return textResult(try json(apps))
     }
 
@@ -1095,7 +1108,8 @@ public final class ComputerUseBridge: @unchecked Sendable {
 
     private func runningIdentity(_ app: NSRunningApplication) -> ComputerUseApplicationIdentity {
         let path = app.bundleURL?.path ?? app.executableURL?.path ?? ""
-        let displayName = app.localizedName
+        let displayName =
+            app.localizedName
             ?? app.bundleURL?.deletingPathExtension().lastPathComponent
             ?? app.bundleIdentifier
             ?? "App"
@@ -1109,13 +1123,14 @@ public final class ComputerUseBridge: @unchecked Sendable {
     private func installedApplication(at url: URL) -> InstalledApplication? {
         let standardized = url.standardizedFileURL
         guard standardized.pathExtension.lowercased() == "app",
-              let bundle = Bundle(url: standardized)
+            let bundle = Bundle(url: standardized)
         else { return nil }
         let info = bundle.infoDictionary ?? [:]
         guard info["LSBackgroundOnly"] as? Bool != true,
-              info["LSUIElement"] as? Bool != true
+            info["LSUIElement"] as? Bool != true
         else { return nil }
-        let displayName = (info["CFBundleDisplayName"] as? String)
+        let displayName =
+            (info["CFBundleDisplayName"] as? String)
             ?? (info[kCFBundleNameKey as String] as? String)
             ?? standardized.deletingPathExtension().lastPathComponent
         let identity = ComputerUseApplicationIdentity(
@@ -1134,11 +1149,13 @@ public final class ComputerUseBridge: @unchecked Sendable {
         for root in computerUseApplicationSearchRoots(
             homeDirectory: FileManager.default.homeDirectoryForCurrentUser
         ) where FileManager.default.fileExists(atPath: root.path) {
-            guard let enumerator = FileManager.default.enumerator(
-                at: root,
-                includingPropertiesForKeys: nil,
-                options: [.skipsHiddenFiles, .skipsPackageDescendants]
-            ) else { continue }
+            guard
+                let enumerator = FileManager.default.enumerator(
+                    at: root,
+                    includingPropertiesForKeys: nil,
+                    options: [.skipsHiddenFiles, .skipsPackageDescendants]
+                )
+            else { continue }
             for case let url as URL in enumerator where url.pathExtension.lowercased() == "app" {
                 urls.insert(url.standardizedFileURL)
                 enumerator.skipDescendants()
@@ -1216,14 +1233,15 @@ public final class ComputerUseBridge: @unchecked Sendable {
         // An app that publishes its content upside down would otherwise send
         // every coordinate — tree frames, the cursor, pointer events — to the
         // mirror image of the control that was named.
-        let contentIsFlipped = windowFrame.map {
-            windowContentIsFlipped(
-                application: application,
-                window: window,
-                windowID: windowID,
-                windowFrame: $0
-            )
-        } ?? false
+        let contentIsFlipped =
+            windowFrame.map {
+                windowContentIsFlipped(
+                    application: application,
+                    window: window,
+                    windowID: windowID,
+                    windowFrame: $0
+                )
+            } ?? false
         snapshotTree(
             window,
             depth: 0,
@@ -1251,18 +1269,20 @@ public final class ComputerUseBridge: @unchecked Sendable {
                 createdAt: DispatchTime.now().uptimeNanoseconds
             )
             if session.count > 8,
-               let oldest = session.min(by: { $0.value.createdAt < $1.value.createdAt })?.key {
+                let oldest = session.min(by: { $0.value.createdAt < $1.value.createdAt })?.key
+            {
                 session.removeValue(forKey: oldest)
             }
             snapshots[sessionID] = session
             latestSnapshotIDs[sessionID] = snapshotID
         }
         let accessibilityText = lines.joined(separator: "\n")
-        let screenshotMetadata: [String: Any] = if capture == nil {
-            ["available": false, "reason": outcome.reason ?? "No screenshot was produced."]
-        } else {
-            ["available": true]
-        }
+        let screenshotMetadata: [String: Any] =
+            if capture == nil {
+                ["available": false, "reason": outcome.reason ?? "No screenshot was produced."]
+            } else {
+                ["available": true]
+            }
         var metadata: [String: Any] = [
             "snapshotId": snapshotID,
             "app": name,
@@ -1271,11 +1291,11 @@ public final class ComputerUseBridge: @unchecked Sendable {
                 "name": app.localizedName ?? name,
                 "path": app.bundleURL?.path ?? "",
                 "pid": app.processIdentifier,
-                "isRunning": true
+                "isRunning": true,
             ],
             "text": accessibilityText,
             "accessibilityTree": accessibilityText,
-            "screenshot": screenshotMetadata
+            "screenshot": screenshotMetadata,
         ]
         // A modal sheet blocks every other control in the window, so say so
         // rather than leaving the model to infer it from the tree.
@@ -1295,11 +1315,13 @@ public final class ComputerUseBridge: @unchecked Sendable {
         let windows = windowInventory(application: application, pinnedWindowID: windowID)
         metadata["windows"] = windows
         if windows.count > 1,
-           let focused = windows.first(where: { $0["isFocused"] as? Bool == true }),
-           focused["isSessionWindow"] as? Bool != true,
-           let focusedID = focused["windowId"] {
+            let focused = windows.first(where: { $0["isFocused"] as? Bool == true }),
+            focused["isSessionWindow"] as? Bool != true,
+            let focusedID = focused["windowId"]
+        {
             metadata["focusedWindowId"] = focusedID
-            metadata["next"] = "This app's focused window is not the one being inspected. Pass window_id \(focusedID) to switch to it."
+            metadata["next"] =
+                "This app's focused window is not the one being inspected. Pass window_id \(focusedID) to switch to it."
         }
         if let windowID {
             metadata["windowId"] = Int(windowID)
@@ -1311,13 +1333,13 @@ public final class ComputerUseBridge: @unchecked Sendable {
         if let pixelSize = capture?.pixelSize {
             metadata["screenshotSize"] = [
                 "width": pixelSize.width,
-                "height": pixelSize.height
+                "height": pixelSize.height,
             ]
             metadata["windowBounds"] = [
                 "x": 0,
                 "y": 0,
                 "width": pixelSize.width,
-                "height": pixelSize.height
+                "height": pixelSize.height,
             ]
             // windowBounds/screenshotSize are pixels while screenWindowBounds
             // is display points; publish the ratio so consumers can convert.
@@ -1330,7 +1352,7 @@ public final class ComputerUseBridge: @unchecked Sendable {
             content.append([
                 "type": "image",
                 "mimeType": "image/png",
-                "data": capture.data.base64EncodedString()
+                "data": capture.data.base64EncodedString(),
             ])
         }
         return ["content": content]
@@ -1351,16 +1373,17 @@ public final class ComputerUseBridge: @unchecked Sendable {
                 "name": app.localizedName ?? name,
                 "path": app.bundleURL?.path ?? "",
                 "pid": app.processIdentifier,
-                "isRunning": true
+                "isRunning": true,
             ],
             "text": "",
             "accessibilityTree": "",
             "windows": [],
             "screenshot": [
                 "available": false,
-                "reason": "This app has no open window to capture. \(detail)"
+                "reason": "This app has no open window to capture. \(detail)",
             ],
-            "next": "The app is running with no window. Press a key such as cmd+n to open one, then call get_app_state again."
+            "next":
+                "The app is running with no window. Press a key such as cmd+n to open one, then call get_app_state again.",
         ]
         return ["content": [["type": "text", "text": try json(metadata)]]]
     }
@@ -1377,10 +1400,12 @@ public final class ComputerUseBridge: @unchecked Sendable {
         guard depth <= 64, records.count < 1_200 else { return }
         let id = String(records.count)
         let role = stringAttribute(element, kAXRoleAttribute) ?? "element"
-        let title = stringAttribute(element, kAXTitleAttribute)
+        let title =
+            stringAttribute(element, kAXTitleAttribute)
             ?? stringAttribute(element, kAXDescriptionAttribute)
             ?? ""
-        let value = role.localizedCaseInsensitiveContains("secure")
+        let value =
+            role.localizedCaseInsensitiveContains("secure")
             ? "<redacted>"
             : (stringAttribute(element, kAXValueAttribute)
                 ?? selectionDescription(of: element, role: role)
@@ -1392,13 +1417,14 @@ public final class ComputerUseBridge: @unchecked Sendable {
         // while their items are correct. Publishing it invites a click into
         // nowhere, so only emit a frame that could actually be aimed at.
         if let elementFrame,
-           elementFrame.width > 0,
-           elementFrame.height > 0,
-           let screenshotFrame = computerUseScreenshotFrame(
-               screenFrame: elementFrame,
-               screenshotPixelSize: screenshotPixelSize,
-               windowFrame: screenshotWindowFrame
-           ) {
+            elementFrame.width > 0,
+            elementFrame.height > 0,
+            let screenshotFrame = computerUseScreenshotFrame(
+                screenFrame: elementFrame,
+                screenshotPixelSize: screenshotPixelSize,
+                windowFrame: screenshotWindowFrame
+            )
+        {
             line += " Frame: \(frameObject(screenshotFrame))"
         }
         let actions = actionNames(of: element)
@@ -1406,7 +1432,7 @@ public final class ComputerUseBridge: @unchecked Sendable {
         let settable = [
             kAXValueAttribute,
             kAXSelectedTextRangeAttribute,
-            kAXFocusedAttribute
+            kAXFocusedAttribute,
         ].filter { isSettable(element, attribute: $0) }
         if !settable.isEmpty { line += " Settable: \(settable.joined(separator: ","))" }
         if !value.isEmpty, value != title {
@@ -1414,9 +1440,10 @@ public final class ComputerUseBridge: @unchecked Sendable {
             line += " Value: \(String(rendered.prefix(4_000)))"
         }
         if let selectedRange = selectedTextRange(element), selectedRange.length > 0,
-           !value.isEmpty, selectedRange.location >= 0,
-           NSMaxRange(NSRange(location: selectedRange.location, length: selectedRange.length))
-             <= (value as NSString).length {
+            !value.isEmpty, selectedRange.location >= 0,
+            NSMaxRange(NSRange(location: selectedRange.location, length: selectedRange.length))
+                <= (value as NSString).length
+        {
             let selected = (value as NSString).substring(
                 with: NSRange(location: selectedRange.location, length: selectedRange.length)
             )
@@ -1441,9 +1468,10 @@ public final class ComputerUseBridge: @unchecked Sendable {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { throw BridgeError("app is required") }
         if let pid = pid_t(normalized),
-           let exactPID = controllableRunningApplications().first(where: {
-               $0.processIdentifier == pid
-           }) {
+            let exactPID = controllableRunningApplications().first(where: {
+                $0.processIdentifier == pid
+            })
+        {
             return try requireUnprotected(exactPID)
         }
 
@@ -1462,11 +1490,13 @@ public final class ComputerUseBridge: @unchecked Sendable {
         var candidates = installedApplications()
         let expandedPath = (normalized as NSString).expandingTildeInPath
         if FileManager.default.fileExists(atPath: expandedPath),
-           let direct = installedApplication(at: URL(fileURLWithPath: expandedPath)) {
+            let direct = installedApplication(at: URL(fileURLWithPath: expandedPath))
+        {
             candidates.insert(direct, at: 0)
         }
         if let bundleURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: normalized),
-           let direct = installedApplication(at: bundleURL) {
+            let direct = installedApplication(at: bundleURL)
+        {
             candidates.insert(direct, at: 0)
         }
         let installedMatches = candidates.compactMap { application -> (InstalledApplication, Int)? in
@@ -1541,10 +1571,11 @@ public final class ComputerUseBridge: @unchecked Sendable {
     }
 
     private func mainWindow(_ application: AXUIElement) throws -> AXUIElement {
-        let candidates = [
-            elementAttribute(application, kAXFocusedWindowAttribute),
-            elementAttribute(application, kAXMainWindowAttribute)
-        ].compactMap { $0 } + elementsAttribute(application, kAXWindowsAttribute)
+        let candidates =
+            [
+                elementAttribute(application, kAXFocusedWindowAttribute),
+                elementAttribute(application, kAXMainWindowAttribute),
+            ].compactMap { $0 } + elementsAttribute(application, kAXWindowsAttribute)
         if let window = candidates.first(where: { candidate in
             stringAttribute(candidate, kAXRoleAttribute) == (kAXWindowRole as String)
         }) {
@@ -1563,9 +1594,11 @@ public final class ComputerUseBridge: @unchecked Sendable {
         application: AXUIElement,
         requestedWindowID: CGWindowID
     ) throws {
-        guard elementsAttribute(application, kAXWindowsAttribute).contains(where: {
-            computerUseWindowID(for: $0) == requestedWindowID
-        }) else {
+        guard
+            elementsAttribute(application, kAXWindowsAttribute).contains(where: {
+                computerUseWindowID(for: $0) == requestedWindowID
+            })
+        else {
             throw BridgeError(
                 "That window does not belong to this app. Use a windowId from the app state's windows list."
             )
@@ -1610,17 +1643,20 @@ public final class ComputerUseBridge: @unchecked Sendable {
             // another Space, which would silently drop the pin and re-resolve
             // to whatever is focused. The focused/main windows still resolve
             // then, so search those too.
-            let candidates = elementsAttribute(application, kAXWindowsAttribute) + [
-                elementAttribute(application, kAXFocusedWindowAttribute),
-                elementAttribute(application, kAXMainWindowAttribute)
-            ].compactMap { $0 }
+            let candidates =
+                elementsAttribute(application, kAXWindowsAttribute)
+                + [
+                    elementAttribute(application, kAXFocusedWindowAttribute),
+                    elementAttribute(application, kAXMainWindowAttribute),
+                ].compactMap { $0 }
             if let pinned = candidates.first(where: { computerUseWindowID(for: $0) == pinnedID }) {
                 return (pinned, pinnedID)
             }
         }
 
         let window = try mainWindow(application)
-        let windowID = computerUseWindowID(for: window)
+        let windowID =
+            computerUseWindowID(for: window)
             ?? frame(of: window).flatMap { matchingWindowID(pid: pid, frame: $0) }
         lock.withLock {
             if let windowID {
@@ -1676,16 +1712,18 @@ public final class ComputerUseBridge: @unchecked Sendable {
         let snakeKey = prefix + "_element_index"
         if let rawID = arguments[camelKey] ?? arguments[snakeKey] {
             let id = String(describing: rawID)
-            let snapshotID = ((arguments["snapshotId"] ?? arguments["snapshot_id"]) as? String)
+            let snapshotID =
+                ((arguments["snapshotId"] ?? arguments["snapshot_id"]) as? String)
                 ?? lock.withLock({ latestSnapshotIDs[sessionID] })
             if !id.isEmpty, let snapshotID,
-               let frame = lock.withLock({ snapshots[sessionID]?[snapshotID]?.elements[id]?.frame }) {
+                let frame = lock.withLock({ snapshots[sessionID]?[snapshotID]?.elements[id]?.frame })
+            {
                 return CGPoint(x: frame.midX, y: frame.midY)
             }
         }
         guard let frame = frame(of: window),
-              let x = double(arguments[prefix + "X"] ?? arguments[prefix + "_x"]),
-              let y = double(arguments[prefix + "Y"] ?? arguments[prefix + "_y"])
+            let x = double(arguments[prefix + "X"] ?? arguments[prefix + "_x"]),
+            let y = double(arguments[prefix + "Y"] ?? arguments[prefix + "_y"])
         else { throw BridgeError("Drag endpoints require current elements or coordinates") }
         return screenshotPoint(
             x: x,
@@ -1705,18 +1743,21 @@ public final class ComputerUseBridge: @unchecked Sendable {
         windowID: CGWindowID?,
         snapshotID: String?
     ) -> CGPoint {
-        let snapshot = snapshotID.flatMap { id in
-            lock.withLock { snapshots[sessionID]?[id] }
-        } ?? lock.withLock {
-            latestSnapshotIDs[sessionID].flatMap { snapshots[sessionID]?[$0] }
-        }
+        let snapshot =
+            snapshotID.flatMap { id in
+                lock.withLock { snapshots[sessionID]?[id] }
+            }
+            ?? lock.withLock {
+                latestSnapshotIDs[sessionID].flatMap { snapshots[sessionID]?[$0] }
+            }
         // Coordinates are pixels in a specific snapshot's screenshot. A
         // snapshot of a different window cannot map this action's coordinates.
         if let snapshot,
-           computerUseSnapshotMatchesWindow(
-               snapshotWindowID: snapshot.windowID,
-               targetWindowID: windowID
-           ) {
+            computerUseSnapshotMatchesWindow(
+                snapshotWindowID: snapshot.windowID,
+                targetWindowID: windowID
+            )
+        {
             // A nil pixel size here means the snapshot's accessibility frames
             // were reported unscaled (no screenshot), so 1x is correct.
             return computerUseScreenshotPoint(
@@ -1748,13 +1789,15 @@ public final class ComputerUseBridge: @unchecked Sendable {
         var matched: UInt32 = 0
         var resolved = CGMainDisplayID()
         if CGGetDisplaysWithRect(frame, UInt32(displays.count), &displays, &matched) == .success,
-           matched > 0 {
-            resolved = displays.prefix(Int(matched)).max { lhs, rhs in
-                let lhsOverlap = CGDisplayBounds(lhs).intersection(frame)
-                let rhsOverlap = CGDisplayBounds(rhs).intersection(frame)
-                return lhsOverlap.width * lhsOverlap.height
-                    < rhsOverlap.width * rhsOverlap.height
-            } ?? resolved
+            matched > 0
+        {
+            resolved =
+                displays.prefix(Int(matched)).max { lhs, rhs in
+                    let lhsOverlap = CGDisplayBounds(lhs).intersection(frame)
+                    let rhsOverlap = CGDisplayBounds(rhs).intersection(frame)
+                    return lhsOverlap.width * lhsOverlap.height
+                        < rhsOverlap.width * rhsOverlap.height
+                } ?? resolved
         }
         guard let mode = CGDisplayCopyDisplayMode(resolved), mode.width > 0 else { return 1 }
         return max(1, CGFloat(mode.pixelWidth) / CGFloat(mode.width))
@@ -1851,15 +1894,17 @@ public final class ComputerUseBridge: @unchecked Sendable {
             desired = [
                 kAXPressAction as String,
                 kAXConfirmAction as String,
-                "AXOpen"
+                "AXOpen",
             ]
         }
         let advertised = actionNames(of: target.element)
-        guard let action = desired.first(where: { desiredAction in
-            advertised.contains(where: {
-                $0.caseInsensitiveCompare(desiredAction) == .orderedSame
+        guard
+            let action = desired.first(where: { desiredAction in
+                advertised.contains(where: {
+                    $0.caseInsensitiveCompare(desiredAction) == .orderedSame
+                })
             })
-        }) else {
+        else {
             return nil
         }
         for attempt in 0..<max(clickCount, 1) {
@@ -1879,13 +1924,15 @@ public final class ComputerUseBridge: @unchecked Sendable {
     private func selectionDescription(of element: AXUIElement, role: String) -> String? {
         guard role == "AXPopUpButton" || role == "AXComboBox" else { return nil }
         if let selected = elementsAttribute(element, kAXSelectedChildrenAttribute).first,
-           let title = stringAttribute(selected, kAXTitleAttribute) ?? stringAttribute(selected, kAXValueAttribute),
-           !title.isEmpty {
+            let title = stringAttribute(selected, kAXTitleAttribute) ?? stringAttribute(selected, kAXValueAttribute),
+            !title.isEmpty
+        {
             return title
         }
         for child in elementsAttribute(element, kAXChildrenAttribute) {
             if let text = stringAttribute(child, kAXValueAttribute)
-                ?? stringAttribute(child, kAXTitleAttribute), !text.isEmpty {
+                ?? stringAttribute(child, kAXTitleAttribute), !text.isEmpty
+            {
                 return text
             }
         }
@@ -1906,20 +1953,23 @@ public final class ComputerUseBridge: @unchecked Sendable {
 
     private func focus(element: AXUIElement, application: AXUIElement, pid: pid_t) throws {
         if isSettable(element, attribute: kAXFocusedAttribute),
-           axSetAttribute(
-               element,
-               kAXFocusedAttribute as CFString,
-               kCFBooleanTrue,
-               pid: pid
-           ) == .success {
+            axSetAttribute(
+                element,
+                kAXFocusedAttribute as CFString,
+                kCFBooleanTrue,
+                pid: pid
+            ) == .success
+        {
             return
         }
-        guard axSetAttribute(
-            application,
-            kAXFocusedUIElementAttribute as CFString,
-            element,
-            pid: pid
-        ) == .success else {
+        guard
+            axSetAttribute(
+                application,
+                kAXFocusedUIElementAttribute as CFString,
+                element,
+                pid: pid
+            ) == .success
+        else {
             throw BridgeError("The selected element could not receive keyboard focus")
         }
     }
@@ -1928,13 +1978,16 @@ public final class ComputerUseBridge: @unchecked Sendable {
         _ arguments: [String: Any],
         windowID: CGWindowID?
     ) throws -> String {
-        let requested = (arguments["deliveryMode"] ?? arguments["delivery_mode"]) as? String
+        let requested =
+            (arguments["deliveryMode"] ?? arguments["delivery_mode"]) as? String
             ?? "background"
         let targetIsVisible = windowID.map(windowIsOnVisibleSpace)
-        guard let resolved = computerUseResolvedDeliveryMode(
-            requested: requested,
-            targetIsOnVisibleSpace: targetIsVisible
-        ) else {
+        guard
+            let resolved = computerUseResolvedDeliveryMode(
+                requested: requested,
+                targetIsOnVisibleSpace: targetIsVisible
+            )
+        else {
             throw BridgeError("deliveryMode must be background or foreground")
         }
         // PID-targeted events cannot be trusted to reach a window on an
@@ -1976,7 +2029,7 @@ public final class ComputerUseBridge: @unchecked Sendable {
             "effect": verified ? "confirmed" : "unverifiable",
             "next": verified
                 ? "The requested state was confirmed in the target accessibility object."
-                : "Confirm the effect in the returned app state before continuing."
+                : "Confirm the effect in the returned app state before continuing.",
         ]
         if let deliveryMode { result["deliveryMode"] = deliveryMode }
         for (key, value) in detail { result[key] = value }
@@ -2006,23 +2059,25 @@ public final class ComputerUseBridge: @unchecked Sendable {
             while search.length >= 0 {
                 let candidate = value.range(of: needle, options: [], range: search)
                 if candidate.location == NSNotFound { break }
-                let prefixMatches = prefix.map { expected in
-                    let expectedLength = (expected as NSString).length
-                    guard candidate.location >= expectedLength else { return false }
-                    return value.substring(
-                        with: NSRange(
-                            location: candidate.location - expectedLength,
-                            length: expectedLength
-                        )
-                    ) == expected
-                } ?? true
-                let suffixMatches = suffix.map { expected in
-                    let expectedLength = (expected as NSString).length
-                    let start = NSMaxRange(candidate)
-                    guard start + expectedLength <= fullLength else { return false }
-                    return value.substring(with: NSRange(location: start, length: expectedLength))
-                        == expected
-                } ?? true
+                let prefixMatches =
+                    prefix.map { expected in
+                        let expectedLength = (expected as NSString).length
+                        guard candidate.location >= expectedLength else { return false }
+                        return value.substring(
+                            with: NSRange(
+                                location: candidate.location - expectedLength,
+                                length: expectedLength
+                            )
+                        ) == expected
+                    } ?? true
+                let suffixMatches =
+                    suffix.map { expected in
+                        let expectedLength = (expected as NSString).length
+                        let start = NSMaxRange(candidate)
+                        guard start + expectedLength <= fullLength else { return false }
+                        return value.substring(with: NSRange(location: start, length: expectedLength))
+                            == expected
+                    } ?? true
                 if prefixMatches && suffixMatches { matches.append(candidate) }
                 let next = candidate.location + max(candidate.length, 1)
                 if next > fullLength { break }
@@ -2044,7 +2099,8 @@ public final class ComputerUseBridge: @unchecked Sendable {
             throw BridgeError("The requested UTF-16 selection range is outside the editable value")
         }
         switch arguments["selectionType"] as? String ?? arguments["selection_type"] as? String
-            ?? "text" {
+            ?? "text"
+        {
         case "text", "range": break
         case "cursor_before": range.length = 0
         case "cursor_after": range.location = NSMaxRange(range); range.length = 0
@@ -2055,7 +2111,8 @@ public final class ComputerUseBridge: @unchecked Sendable {
 
     private func selectedTextRange(_ element: AXUIElement) -> CFRange? {
         guard let raw = copyAttribute(element, kAXSelectedTextRangeAttribute),
-              CFGetTypeID(raw) == AXValueGetTypeID() else { return nil }
+            CFGetTypeID(raw) == AXValueGetTypeID()
+        else { return nil }
         var range = CFRange()
         return AXValueGetValue(raw as! AXValue, .cfRange, &range) ? range : nil
     }
@@ -2070,14 +2127,15 @@ public final class ComputerUseBridge: @unchecked Sendable {
         var fullRange = CFRange(location: 0, length: utf16Length)
         guard let rangeValue = AXValueCreate(.cfRange, &fullRange) else { return nil }
         var raw: CFTypeRef?
-        guard AXUIElementCopyParameterizedAttributeValue(
-            element,
-            kAXAttributedStringForRangeParameterizedAttribute as CFString,
-            rangeValue,
-            &raw
-        ) == .success,
-        let raw,
-        CFGetTypeID(raw) == CFAttributedStringGetTypeID()
+        guard
+            AXUIElementCopyParameterizedAttributeValue(
+                element,
+                kAXAttributedStringForRangeParameterizedAttribute as CFString,
+                rangeValue,
+                &raw
+            ) == .success,
+            let raw,
+            CFGetTypeID(raw) == CFAttributedStringGetTypeID()
         else { return nil }
         let attributed = raw as! NSAttributedString
         let lines = plainText.components(separatedBy: "\n")
@@ -2089,18 +2147,21 @@ public final class ComputerUseBridge: @unchecked Sendable {
             location += (text as NSString).length + 1
 
             let font = attributes[NSAttributedString.Key("AXFont")] as? NSFont
-            let fontDictionary = attributes[NSAttributedString.Key("AXFont")]
+            let fontDictionary =
+                attributes[NSAttributedString.Key("AXFont")]
                 as? [String: Any]
             let dictionarySize = (fontDictionary?["AXFontSize"] as? NSNumber)?.doubleValue
-            let size = font?.pointSize
+            let size =
+                font?.pointSize
                 ?? dictionarySize.map { CGFloat($0) }
                 ?? 0
             let fontName = [
                 font?.fontName,
                 fontDictionary?["AXFontName"] as? String,
-                fontDictionary?["AXFontDisplayName"] as? String
+                fontDictionary?["AXFontDisplayName"] as? String,
             ].compactMap { $0 }.joined(separator: " ").lowercased()
-            let bold = font?.fontDescriptor.symbolicTraits.contains(.bold) == true
+            let bold =
+                font?.fontDescriptor.symbolicTraits.contains(.bold) == true
                 || fontName.contains("bold")
                 || fontName.contains("semibold")
                 || fontName.contains("heavy")
@@ -2128,12 +2189,14 @@ public final class ComputerUseBridge: @unchecked Sendable {
         point: CGPoint
     ) -> AXUIElement? {
         var hit: AXUIElement?
-        guard AXUIElementCopyElementAtPosition(
-            application,
-            Float(point.x),
-            Float(point.y),
-            &hit
-        ) == .success else { return nil }
+        guard
+            AXUIElementCopyElementAtPosition(
+                application,
+                Float(point.x),
+                Float(point.y),
+                &hit
+            ) == .success
+        else { return nil }
         return hit
     }
 
@@ -2249,7 +2312,7 @@ public final class ComputerUseBridge: @unchecked Sendable {
                 "isSessionWindow": id == pinnedWindowID,
                 "isFocused": id == focusedID,
                 "hasModalSheet": !sheetElements(of: candidate).isEmpty,
-                "isOnActiveSpace": windowIsOnVisibleSpace(id)
+                "isOnActiveSpace": windowIsOnVisibleSpace(id),
             ]
             if let title = stringAttribute(candidate, kAXTitleAttribute), !title.isEmpty {
                 entry["title"] = title
@@ -2285,15 +2348,17 @@ public final class ComputerUseBridge: @unchecked Sendable {
     }
 
     private func matchingWindowID(pid: pid_t, frame: CGRect) -> CGWindowID? {
-        guard let windows = CGWindowListCopyWindowInfo(
-            [.excludeDesktopElements],
-            kCGNullWindowID
-        ) as? [[String: Any]] else { return nil }
+        guard
+            let windows = CGWindowListCopyWindowInfo(
+                [.excludeDesktopElements],
+                kCGNullWindowID
+            ) as? [[String: Any]]
+        else { return nil }
         return windows.compactMap { info -> (id: CGWindowID, overlap: CGFloat)? in
             guard (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == pid,
-                  let number = info[kCGWindowNumber as String] as? NSNumber,
-                  let bounds = info[kCGWindowBounds as String] as? NSDictionary,
-                  let candidate = CGRect(dictionaryRepresentation: bounds)
+                let number = info[kCGWindowNumber as String] as? NSNumber,
+                let bounds = info[kCGWindowBounds as String] as? NSDictionary,
+                let candidate = CGRect(dictionaryRepresentation: bounds)
             else { return nil }
             let overlap = candidate.intersection(frame)
             return (number.uint32Value, overlap.width * overlap.height)
@@ -2335,14 +2400,21 @@ public final class ComputerUseBridge: @unchecked Sendable {
         }
         let groupID = Int64(DispatchTime.now().uptimeNanoseconds & UInt64(Int64.max))
         for clickIndex in 1...max(1, count) {
-            guard let moved = CGEvent(mouseEventSource: source, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: eventTypes.button),
-                  let down = CGEvent(mouseEventSource: source, mouseType: eventTypes.down, mouseCursorPosition: point, mouseButton: eventTypes.button),
-                  let up = CGEvent(mouseEventSource: source, mouseType: eventTypes.up, mouseCursorPosition: point, mouseButton: eventTypes.button)
+            guard
+                let moved = CGEvent(
+                    mouseEventSource: source, mouseType: .mouseMoved, mouseCursorPosition: point,
+                    mouseButton: eventTypes.button),
+                let down = CGEvent(
+                    mouseEventSource: source, mouseType: eventTypes.down, mouseCursorPosition: point,
+                    mouseButton: eventTypes.button),
+                let up = CGEvent(
+                    mouseEventSource: source, mouseType: eventTypes.up, mouseCursorPosition: point,
+                    mouseButton: eventTypes.button)
             else { throw BridgeError("Unable to create mouse event") }
             for (event, clickState, phase) in [
                 (moved, 0, 2),
                 (down, clickIndex, 3),
-                (up, clickIndex, 3)
+                (up, clickIndex, 3),
             ] {
                 configureTargetedMouseEvent(
                     event,
@@ -2430,12 +2502,14 @@ public final class ComputerUseBridge: @unchecked Sendable {
             case .down: type = .leftMouseDown
             case .up: type = .leftMouseUp
             }
-            guard let event = CGEvent(
-                mouseEventSource: source,
-                mouseType: type,
-                mouseCursorPosition: step.point,
-                mouseButton: .left
-            ) else { throw BridgeError("Unable to create Chromium mouse event") }
+            guard
+                let event = CGEvent(
+                    mouseEventSource: source,
+                    mouseType: type,
+                    mouseCursorPosition: step.point,
+                    mouseButton: .left
+                )
+            else { throw BridgeError("Unable to create Chromium mouse event") }
             configureTargetedMouseEvent(
                 event,
                 point: step.point,
@@ -2478,7 +2552,8 @@ public final class ComputerUseBridge: @unchecked Sendable {
             Thread.sleep(forTimeInterval: 0.05)
         }
         if NSWorkspace.shared.frontmostApplication?.processIdentifier != app.processIdentifier,
-           let url = app.bundleURL {
+            let url = app.bundleURL
+        {
             let configuration = NSWorkspace.OpenConfiguration()
             configuration.activates = true
             let opened = DispatchSemaphore(value: 0)
@@ -2538,12 +2613,14 @@ public final class ComputerUseBridge: @unchecked Sendable {
         pid: pid_t,
         global: Bool
     ) throws {
-        guard let event = CGEvent(
-            mouseEventSource: source,
-            mouseType: type,
-            mouseCursorPosition: point,
-            mouseButton: button
-        ) else { throw BridgeError("Unable to create mouse event") }
+        guard
+            let event = CGEvent(
+                mouseEventSource: source,
+                mouseType: type,
+                mouseCursorPosition: point,
+                mouseButton: button
+            )
+        else { throw BridgeError("Unable to create mouse event") }
         event.setIntegerValueField(.mouseEventClickState, value: 1)
         if global { event.post(tap: .cghidEventTap) } else { event.postToPid(pid) }
         Thread.sleep(forTimeInterval: 0.02)
@@ -2559,14 +2636,16 @@ public final class ComputerUseBridge: @unchecked Sendable {
         let magnitude = Int32(min(Double(Int32.max), max(1, (12 * pages).rounded())))
         let vertical: Int32 = direction == "up" ? magnitude : direction == "down" ? -magnitude : 0
         let horizontal: Int32 = direction == "left" ? magnitude : direction == "right" ? -magnitude : 0
-        guard let event = CGEvent(
-            scrollWheelEvent2Source: nil,
-            units: .line,
-            wheelCount: 2,
-            wheel1: vertical,
-            wheel2: horizontal,
-            wheel3: 0
-        ) else { throw BridgeError("Unable to create scroll event") }
+        guard
+            let event = CGEvent(
+                scrollWheelEvent2Source: nil,
+                units: .line,
+                wheelCount: 2,
+                wheel1: vertical,
+                wheel2: horizontal,
+                wheel3: 0
+            )
+        else { throw BridgeError("Unable to create scroll event") }
         event.location = point
         if global { event.post(tap: .cghidEventTap) } else { event.postToPid(pid) }
     }
@@ -2583,7 +2662,7 @@ public final class ComputerUseBridge: @unchecked Sendable {
             "return": 36, "enter": 36, "tab": 48, "space": 49, "delete": 51,
             "backspace": 51, "forwarddelete": 117, "home": 115, "end": 119,
             "escape": 53, "left": 123, "right": 124, "down": 125, "up": 126,
-            "pageup": 116, "pagedown": 121
+            "pageup": 116, "pagedown": 121,
         ]
         let parts = value.split(separator: "+").map {
             String($0).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2611,7 +2690,7 @@ public final class ComputerUseBridge: @unchecked Sendable {
             throw BridgeError("Unsupported key: \(value)")
         }
         guard let down = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true),
-              let up = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: false)
+            let up = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: false)
         else { throw BridgeError("Unable to create keyboard event") }
         down.flags = flags
         up.flags = flags
@@ -2634,7 +2713,7 @@ public final class ComputerUseBridge: @unchecked Sendable {
                 continue
             }
             guard let down = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true),
-                  let up = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false)
+                let up = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false)
             else { throw BridgeError("Unable to create keyboard event") }
             let units = Array(String(character).utf16)
             units.withUnsafeBufferPointer { buffer in
@@ -2649,7 +2728,7 @@ public final class ComputerUseBridge: @unchecked Sendable {
 
     private func postKeyCode(_ code: CGKeyCode, pid: pid_t, global: Bool) throws {
         guard let down = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true),
-              let up = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: false)
+            let up = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: false)
         else { throw BridgeError("Unable to create keyboard event") }
         postKeyboardEvent(down, pid: pid, global: global)
         postKeyboardEvent(up, pid: pid, global: global)
@@ -2705,10 +2784,12 @@ public final class ComputerUseBridge: @unchecked Sendable {
                     contentFilter: filter,
                     configuration: configuration
                 )
-                guard let data = NSBitmapImageRep(cgImage: image).representation(
-                    using: .png,
-                    properties: [:]
-                ) else {
+                guard
+                    let data = NSBitmapImageRep(cgImage: image).representation(
+                        using: .png,
+                        properties: [:]
+                    )
+                else {
                     box.failure = "The captured image could not be encoded."
                     return
                 }
@@ -2744,7 +2825,8 @@ public final class ComputerUseBridge: @unchecked Sendable {
         let box = ScreenshotBox()
         SCScreenshotManager.captureImage(in: frame) { image, _ in
             if let image,
-               let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) {
+                let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
+            {
                 box.capture = ScreenshotCapture(
                     data: data,
                     pixelSize: CGSize(width: image.width, height: image.height),
@@ -2758,10 +2840,11 @@ public final class ComputerUseBridge: @unchecked Sendable {
     }
 
     private func windowIsOnVisibleSpace(_ windowID: CGWindowID) -> Bool {
-        let info = CGWindowListCopyWindowInfo(
-            [.optionOnScreenOnly, .excludeDesktopElements],
-            kCGNullWindowID
-        ) as? [[String: Any]] ?? []
+        let info =
+            CGWindowListCopyWindowInfo(
+                [.optionOnScreenOnly, .excludeDesktopElements],
+                kCGNullWindowID
+            ) as? [[String: Any]] ?? []
         return computerUseWindowIsOnVisibleSpace(windowID, windowInfo: info)
     }
 
@@ -2918,9 +3001,10 @@ private func elementsAttribute(_ element: AXUIElement, _ name: String) -> [AXUIE
 
 private func frame(of element: AXUIElement) -> CGRect? {
     guard let positionValue = copyAttribute(element, kAXPositionAttribute),
-          let sizeValue = copyAttribute(element, kAXSizeAttribute),
-          CFGetTypeID(positionValue) == AXValueGetTypeID(),
-          CFGetTypeID(sizeValue) == AXValueGetTypeID() else { return nil }
+        let sizeValue = copyAttribute(element, kAXSizeAttribute),
+        CFGetTypeID(positionValue) == AXValueGetTypeID(),
+        CFGetTypeID(sizeValue) == AXValueGetTypeID()
+    else { return nil }
     let position = positionValue as! AXValue
     let size = sizeValue as! AXValue
     var origin = CGPoint.zero

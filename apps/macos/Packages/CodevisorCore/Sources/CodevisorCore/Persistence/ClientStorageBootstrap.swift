@@ -40,7 +40,7 @@ public enum ClientStorageBootstrap {
         "composer-drafts",
         "composer-pane-drafts",
         "pending-server-sessions-v1",
-        "pending-archived-sessions-v1"
+        "pending-archived-sessions-v1",
     ]
 
     private static let stringPreferenceKeys: Set<String> = [
@@ -51,19 +51,19 @@ public enum ClientStorageBootstrap {
         "sidebar.expandedProjects",
         "sidebar.expandedWorkspaces",
         "update.skippedVersion",
-        "update.skippedServerVersion"
+        "update.skippedServerVersion",
     ]
 
     private static let boolPreferenceKeys: Set<String> = [
         "sidebar.collapsed",
         "sidebar.showArchived",
         "sidebar.archivedExpanded",
-        "ios.onboarding.dismissed"
+        "ios.onboarding.dismissed",
     ]
 
     private static let dynamicStringPreferencePrefixes = [
         "harnessUpdateDismissed.",
-        "harnessInstallMethod."
+        "harnessInstallMethod.",
     ]
 
     private static let dynamicDataPreferencePrefixes = [
@@ -124,7 +124,8 @@ public enum ClientStorageBootstrap {
         migrateRenamedApplicationSupport: Bool,
         renamedLegacyDirectory: URL?
     ) throws -> ClientStorage {
-        let renamedDirectory = renamedLegacyDirectory
+        let renamedDirectory =
+            renamedLegacyDirectory
             ?? (migrateRenamedApplicationSupport
                 ? CodevisorAppVariant.legacyApplicationSupportURL(fileManager: fileManager)
                 : nil)
@@ -132,7 +133,8 @@ public enum ClientStorageBootstrap {
         let cleanupDirectories = [directory, renamedDirectory].compactMap { $0 }
         let databaseURL = directory.appendingPathComponent(ClientDatabase.fileName)
         let database = try ClientDatabase(url: databaseURL, fileManager: fileManager)
-        let backupURL = directory
+        let backupURL =
+            directory
             .appendingPathComponent("MigrationRecovery", isDirectory: true)
             .appendingPathComponent("client.sqlite.pre-schema")
         try database.migrate(backupURL: backupURL)
@@ -207,7 +209,8 @@ public enum ClientStorageBootstrap {
             for file in files {
                 var data = file.data
                 if file.key == "machines",
-                   var registry = try? JSONDecoder().decode(MachineRegistry.self, from: data) {
+                    var registry = try? JSONDecoder().decode(MachineRegistry.self, from: data)
+                {
                     for index in registry.remoteMachines.indices {
                         guard let token = registry.remoteMachines[index].token, !token.isEmpty else {
                             continue
@@ -292,7 +295,8 @@ public enum ClientStorageBootstrap {
             name: legacyCleanupMigrationName
         )
         do {
-            let recovery = directory
+            let recovery =
+                directory
                 .appendingPathComponent("MigrationRecovery", isDirectory: true)
                 .appendingPathComponent("legacy-client-state-v1", isDirectory: true)
             try fileManager.createDirectory(
@@ -307,7 +311,8 @@ public enum ClientStorageBootstrap {
                 let destination = recovery.appendingPathComponent(source.lastPathComponent)
                 var recoveredURL = destination
                 if source.lastPathComponent == "machines.json",
-                   let sanitized = try database.value(forKey: "machines") {
+                    let sanitized = try database.value(forKey: "machines")
+                {
                     try sanitized.write(to: destination, options: .atomic)
                     try fileManager.removeItem(at: source)
                 } else if fileManager.fileExists(atPath: destination.path) {
@@ -414,11 +419,12 @@ public enum ClientStorageBootstrap {
                 includingPropertiesForKeys: [.isRegularFileKey],
                 options: [.skipsHiddenFiles]
             )
-            candidates.append(contentsOf: contents.filter { url in
-                let name = url.lastPathComponent
-                if legacyKey(forFileName: name) != nil { return true }
-                return exactLegacyKeys.contains { name.hasPrefix("\($0).json.corrupt-") }
-            })
+            candidates.append(
+                contentsOf: contents.filter { url in
+                    let name = url.lastPathComponent
+                    if legacyKey(forFileName: name) != nil { return true }
+                    return exactLegacyKeys.contains { name.hasPrefix("\($0).json.corrupt-") }
+                })
         }
         return candidates
     }
@@ -450,7 +456,8 @@ public enum ClientStorageBootstrap {
                 return LegacyPreference(key: key, data: try JSONEncoder().encode(value))
             }
             if key == "remoteBrowserRecents",
-               let value = defaults.dictionary(forKey: key) as? [String: [String]] {
+                let value = defaults.dictionary(forKey: key) as? [String: [String]]
+            {
                 return LegacyPreference(key: key, data: try JSONEncoder().encode(value))
             }
             return nil
@@ -476,17 +483,19 @@ public enum ClientStorageBootstrap {
         fileManager: FileManager
     ) {
         let root = directory.appendingPathComponent("MigrationRecovery", isDirectory: true)
-        guard let children = try? fileManager.contentsOfDirectory(
-            at: root,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else { return }
+        guard
+            let children = try? fileManager.contentsOfDirectory(
+                at: root,
+                includingPropertiesForKeys: [.contentModificationDateKey],
+                options: [.skipsHiddenFiles]
+            )
+        else { return }
         let cutoff = Date().addingTimeInterval(-recoveryRetention)
         for child in children {
             guard child.lastPathComponent.hasPrefix("legacy-client-state-"),
-                  let values = try? child.resourceValues(forKeys: [.contentModificationDateKey]),
-                  let modified = values.contentModificationDate,
-                  modified < cutoff
+                let values = try? child.resourceValues(forKeys: [.contentModificationDateKey]),
+                let modified = values.contentModificationDate,
+                modified < cutoff
             else { continue }
             try? fileManager.removeItem(at: child)
         }

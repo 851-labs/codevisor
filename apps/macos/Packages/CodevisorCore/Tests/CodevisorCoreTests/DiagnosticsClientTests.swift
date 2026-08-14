@@ -7,16 +7,17 @@ import Testing
 struct DiagnosticsClientTests {
     @Test("Handled issue names are a closed, content-free allowlist")
     func issueAllowlist() {
-        #expect(Set(DiagnosticIssueName.allCases.map(\.rawValue)) == [
-            "corrupt_persisted_data",
-            "data_directory_unavailable",
-            "persistence_write_failed",
-            "project_sync_failed",
-            "bulk_sync_failed",
-            "server_delete_failed",
-            "terminal_open_failed",
-            "app_relaunch_failed"
-        ])
+        #expect(
+            Set(DiagnosticIssueName.allCases.map(\.rawValue)) == [
+                "corrupt_persisted_data",
+                "data_directory_unavailable",
+                "persistence_write_failed",
+                "project_sync_failed",
+                "bulk_sync_failed",
+                "server_delete_failed",
+                "terminal_open_failed",
+                "app_relaunch_failed",
+            ])
     }
 
     @Test("Sanitizer strips user content and keeps only allowlisted technical data")
@@ -35,18 +36,18 @@ struct DiagnosticsClientTests {
         event.tags = [
             "component": "sync",
             "diagnostic_issue": "bulk_sync_failed",
-            "private_project": "secret"
+            "private_project": "secret",
         ]
         event.context = [
             "app": [
                 "app_identifier": "com.851labs.Codevisor",
                 "app_version": "1.2.3",
                 "app_build": "42",
-                "app_name": "private"
+                "app_name": "private",
             ],
             "os": ["name": "macOS", "version": "26.0", "raw_description": "private"],
             "device": ["arch": "arm64", "name": "Private Mac"],
-            "private": ["path": "/Users/person/secret"]
+            "private": ["path": "/Users/person/secret"],
         ]
 
         let frame = Frame()
@@ -72,13 +73,15 @@ struct DiagnosticsClientTests {
         #expect(sanitized.message == nil)
         #expect(sanitized.extra == nil)
         #expect(sanitized.modules == nil)
-        #expect(sanitized.tags == [
-            "component": "sync",
-            "diagnostic_issue": "bulk_sync_failed"
-        ])
-        #expect(sanitized.context?["app"]?.keys.sorted() == [
-            "app_build", "app_identifier", "app_version"
-        ])
+        #expect(
+            sanitized.tags == [
+                "component": "sync",
+                "diagnostic_issue": "bulk_sync_failed",
+            ])
+        #expect(
+            sanitized.context?["app"]?.keys.sorted() == [
+                "app_build", "app_identifier", "app_version",
+            ])
         #expect(sanitized.context?["os"]?.keys.sorted() == ["name", "version"])
         #expect(sanitized.context?["device"]?.keys.sorted() == ["arch"])
         #expect(sanitized.context?["private"] == nil)

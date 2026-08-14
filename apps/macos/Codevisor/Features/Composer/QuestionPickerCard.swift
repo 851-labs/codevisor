@@ -278,7 +278,8 @@ struct QuestionPickerContent: View {
     }
 
     private func browserExtensionFileIcon(_ url: URL) -> some View {
-        let icon = browserExtensionIconURL
+        let icon =
+            browserExtensionIconURL
             .flatMap(NSImage.init(contentsOf:))
             ?? NSWorkspace.shared.icon(forFile: url.path)
         icon.size = NSSize(width: 48, height: 48)
@@ -452,7 +453,8 @@ struct QuestionPickerContent: View {
             // so a follow-up Return/arrow works no matter where focus was.
             // Choosing "Other" goes straight to its answer field instead.
             if index >= question.options.count,
-               selections[question.id, default: []].contains(Self.otherToken) {
+                selections[question.id, default: []].contains(Self.otherToken)
+            {
                 focusNotes()
             } else {
                 focusPicker()
@@ -467,7 +469,8 @@ struct QuestionPickerContent: View {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.caption)
                     .foregroundStyle(
-                        isHighlighted ? AnyShapeStyle(.white)
+                        isHighlighted
+                            ? AnyShapeStyle(.white)
                             : isSelected ? AnyShapeStyle(theme.accent) : AnyShapeStyle(.tertiary)
                     )
                 Text(label)
@@ -475,13 +478,15 @@ struct QuestionPickerContent: View {
                 if let description, !description.isEmpty {
                     Text(description)
                         .lineLimit(1)
-                        .foregroundStyle(isHighlighted ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.secondary))
+                        .foregroundStyle(
+                            isHighlighted ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.secondary))
                 }
                 Spacer(minLength: 0)
                 if index < 9 {
                     Text("\(index + 1)")
                         .font(.caption2.monospacedDigit())
-                        .foregroundStyle(isHighlighted ? AnyShapeStyle(.white.opacity(0.7)) : AnyShapeStyle(.quaternary))
+                        .foregroundStyle(
+                            isHighlighted ? AnyShapeStyle(.white.opacity(0.7)) : AnyShapeStyle(.quaternary))
                 }
             }
             .foregroundStyle(isHighlighted ? Color.white : Color.primary)
@@ -490,9 +495,11 @@ struct QuestionPickerContent: View {
             .background(
                 RoundedRectangle(cornerRadius: 6)
                     .fill(
-                        isHighlighted ? AnyShapeStyle(theme.accent)
-                            : isSelected ? AnyShapeStyle(theme.rowSelectedBackground)
-                            : AnyShapeStyle(Color.clear)
+                        isHighlighted
+                            ? AnyShapeStyle(theme.accent)
+                            : isSelected
+                                ? AnyShapeStyle(theme.rowSelectedBackground)
+                                : AnyShapeStyle(Color.clear)
                     )
             )
             .contentShape(RoundedRectangle(cornerRadius: 6))
@@ -550,11 +557,13 @@ struct QuestionPickerContent: View {
 
     private func footer(_ question: QuestionSpec) -> some View {
         HStack(spacing: 8) {
-            Text(question.multiSelect == true
-                ? "Space toggles · Return continues · Esc dismisses"
-                : "↑↓ and 1-9 select · Return continues · Esc dismisses")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+            Text(
+                question.multiSelect == true
+                    ? "Space toggles · Return continues · Esc dismisses"
+                    : "↑↓ and 1-9 select · Return continues · Esc dismisses"
+            )
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
             Spacer()
             // Action buttons cluster tighter than the hint text.
             HStack(spacing: 4) {

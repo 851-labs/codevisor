@@ -85,14 +85,16 @@ public final class AppEnvironment {
             catalog: ThemeCatalog(
                 customThemesDirectory: customThemesDirectory
                     ?? FileManager.default.temporaryDirectory
-                        .appendingPathComponent("codevisor-themes-\(UUID().uuidString)")
+                    .appendingPathComponent("codevisor-themes-\(UUID().uuidString)")
             )
         )
-        self.appUpdate = appUpdate ?? AppUpdateModel(
-            currentVersion: AppUpdateModel.bundleVersion(),
-            currentBuildNumber: AppUpdateModel.bundleBuildNumber(),
-            allowsAlphaUpdates: settings.alphaUpdatesEnabled
-        )
+        self.appUpdate =
+            appUpdate
+            ?? AppUpdateModel(
+                currentVersion: AppUpdateModel.bundleVersion(),
+                currentBuildNumber: AppUpdateModel.bundleBuildNumber(),
+                allowsAlphaUpdates: settings.alphaUpdatesEnabled
+            )
         self.projectList = ProjectListModel(
             projectRepository: projectRepository,
             sessionRepository: sessionRepository,
@@ -185,14 +187,17 @@ public final class AppEnvironment {
                 .flatMap { tab in tab.root.group(id: tab.activeLeafId) }
                 .flatMap(\.selectedPane)
                 .flatMap { $0.kind == .chat ? $0.chatSessionId : nil }
-            let candidateIds = [selectedChatId].compactMap { $0 }
+            let candidateIds =
+                [selectedChatId].compactMap { $0 }
                 + workspace.chatSessionIds.filter { $0 != selectedChatId }
             let candidates = candidateIds.compactMap { id in
                 projectList.sessions.first {
                     $0.serverId == workspace.serverId && $0.id == id
                 }
             }
-            let source = candidates.first ?? projectList.sessions
+            let source =
+                candidates.first
+                ?? projectList.sessions
                 .filter {
                     $0.serverId == workspace.serverId
                         && workspaces.workspaceId(forSession: $0.id) == workspace.id
@@ -279,8 +284,9 @@ public final class AppEnvironment {
         archiveSession(session)
 
         guard let workspaceId = workspaces.workspaceId(forSession: session.id),
-              let workspace = workspaces.workspace(id: workspaceId),
-              !workspace.isArchived else { return false }
+            let workspace = workspaces.workspace(id: workspaceId),
+            !workspace.isArchived
+        else { return false }
 
         let hasActiveChat = projectList.sessions.contains { candidate in
             candidate.serverId == workspace.serverId
@@ -298,10 +304,12 @@ public final class AppEnvironment {
     public func archiveWorkspace(_ workspace: Workspace) {
         setWorkspaceArchived(workspace, true)
 
-        for session in projectList.sessions where
+        for session in projectList.sessions
+        where
             session.serverId == workspace.serverId
-                && !session.isArchived
-                && workspaces.workspaceId(forSession: session.id) == workspace.id {
+            && !session.isArchived
+            && workspaces.workspaceId(forSession: session.id) == workspace.id
+        {
             projectList.archiveSession(session)
         }
     }
@@ -403,7 +411,7 @@ public final class AppEnvironment {
         onServer serverId: String
     ) {
         guard var harnesses = harnessLifecycleByServer[serverId],
-              let index = harnesses.firstIndex(where: { $0.id == harnessId })
+            let index = harnesses.firstIndex(where: { $0.id == harnessId })
         else { return }
         harnesses[index].lifecycle = lifecycle
         harnessLifecycleByServer[serverId] = harnesses
@@ -567,12 +575,14 @@ public final class AppEnvironment {
     }
 
     public static let sampleProjects: [Project] = [
-        Project.fromFolder(URL(fileURLWithPath: "/Users/me/src/Codevisor"), createdAt: Date(timeIntervalSince1970: 2_000)),
-        Project.fromFolder(URL(fileURLWithPath: "/Users/me/src/website"), createdAt: Date(timeIntervalSince1970: 1_000)),
+        Project.fromFolder(
+            URL(fileURLWithPath: "/Users/me/src/Codevisor"), createdAt: Date(timeIntervalSince1970: 2_000)),
+        Project.fromFolder(
+            URL(fileURLWithPath: "/Users/me/src/website"), createdAt: Date(timeIntervalSince1970: 1_000)),
         // No sessions reference this one, so previews exercise the
         // "No sessions yet" empty state.
         Project.fromFolder(URL(fileURLWithPath: "/Users/me/src/scratch"), createdAt: Date(timeIntervalSince1970: 750)),
-        archivedSampleProject
+        archivedSampleProject,
     ]
 
     /// Mock sessions for the sample projects, so sidebar previews show
@@ -601,11 +611,12 @@ public final class AppEnvironment {
             title: "Refresh landing page copy",
             createdAt: Date(timeIntervalSinceNow: -432_000),
             updatedAt: Date(timeIntervalSinceNow: -345_600)
-        )
+        ),
     ]
 
     private static var archivedSampleProject: Project {
-        var project = Project.fromFolder(URL(fileURLWithPath: "/Users/me/src/old"), createdAt: Date(timeIntervalSince1970: 500))
+        var project = Project.fromFolder(
+            URL(fileURLWithPath: "/Users/me/src/old"), createdAt: Date(timeIntervalSince1970: 500))
         project.isArchived = true
         return project
     }
@@ -626,7 +637,7 @@ public struct PreviewHarnessService: HarnessServicing {
                 id: "codex", name: "Codex", symbolName: "chevron.left.forwardslash.chevron.right",
                 source: "registry", launchKind: "executable", enabled: true,
                 readiness: ServerHarnessReadiness(state: "ready")
-            )
+            ),
         ]
     }
 
@@ -642,14 +653,14 @@ public struct PreviewHarnessService: HarnessServicing {
                 launchKind: "executable", enabled: true,
                 readiness: ServerHarnessReadiness(state: "unavailable", detail: "Not installed"),
                 installHint: "npm install -g opencode-ai"
-            )
+            ),
         ]
     }
 
     public func listSessions(forHarnessId harnessId: String) async throws -> [SessionInfo] {
         [
             SessionInfo(sessionId: "ext-1", cwd: "/Users/me/src/website", title: "Fix the landing page"),
-            SessionInfo(sessionId: "ext-2", cwd: "/Users/me/src/Codevisor", title: "Add tests")
+            SessionInfo(sessionId: "ext-2", cwd: "/Users/me/src/Codevisor", title: "Add tests"),
         ]
     }
 }

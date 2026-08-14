@@ -42,9 +42,11 @@ struct AppearanceSettingsView: View {
             } header: {
                 Text("Themes")
             } footer: {
-                Text("Any VSCode or Shiki color theme works. The theme styles the whole app, including the terminal and code blocks.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text(
+                    "Any VSCode or Shiki color theme works. The theme styles the whole app, including the terminal and code blocks."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
 
             Section {
@@ -65,7 +67,9 @@ struct AppearanceSettingsView: View {
                                 do {
                                     try manager.deleteCustomTheme(id: descriptor.id)
                                 } catch {
-                                    Log.theming.error("Deleting custom theme \(descriptor.id, privacy: .public) failed: \(String(describing: error), privacy: .public)")
+                                    Log.theming.error(
+                                        "Deleting custom theme \(descriptor.id, privacy: .public) failed: \(String(describing: error), privacy: .public)"
+                                    )
                                     themeError = ThemeError(
                                         title: "Couldn't Delete the Theme",
                                         message: ErrorReporter.userFacingMessage(for: error)

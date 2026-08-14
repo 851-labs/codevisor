@@ -22,9 +22,10 @@ struct WorktreeCreatorTests {
 
     @Test("An HTTP failure surfaces the server's error message and fails the phase")
     func httpFailure() async {
-        let client = WorktreeStubClient(result: .failure(
-            CodevisorServerClientError.httpStatus(422, #"{"error":"Not a git repository."}"#)
-        ))
+        let client = WorktreeStubClient(
+            result: .failure(
+                CodevisorServerClientError.httpStatus(422, #"{"error":"Not a git repository."}"#)
+            ))
         let creator = WorktreeCreator()
 
         let result = await creator.create(projectId: UUID(), client: client)
@@ -50,9 +51,10 @@ struct WorktreeCreatorTests {
 
     @Test("reset clears a failed phase so the picker can return")
     func resetClearsPhase() async {
-        let client = WorktreeStubClient(result: .failure(
-            CodevisorServerClientError.httpStatus(500, "")
-        ))
+        let client = WorktreeStubClient(
+            result: .failure(
+                CodevisorServerClientError.httpStatus(500, "")
+            ))
         let creator = WorktreeCreator()
         _ = await creator.create(projectId: UUID(), client: client)
         #expect(creator.phase != nil)
@@ -70,11 +72,14 @@ struct WorktreeCreatorTests {
     }
 
     private static func worktree(name: String) -> ServerWorktree {
-        try! JSONDecoder().decode(ServerWorktree.self, from: Data("""
-        {"id":"\(UUID().uuidString.lowercased())","projectId":"\(UUID().uuidString)",
-        "serverId":"local","name":"\(name)","branch":"codevisor/\(name)",
-        "path":"/wt/\(name)","createdAt":"2026-01-01T00:00:00Z"}
-        """.utf8))
+        try! JSONDecoder().decode(
+            ServerWorktree.self,
+            from: Data(
+                """
+                {"id":"\(UUID().uuidString.lowercased())","projectId":"\(UUID().uuidString)",
+                "serverId":"local","name":"\(name)","branch":"codevisor/\(name)",
+                "path":"/wt/\(name)","createdAt":"2026-01-01T00:00:00Z"}
+                """.utf8))
     }
 }
 

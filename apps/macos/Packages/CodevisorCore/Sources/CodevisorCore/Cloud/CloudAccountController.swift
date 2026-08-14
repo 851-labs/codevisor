@@ -63,7 +63,8 @@ public final class CloudAccountController {
     /// onto the relay), created lazily on first `loopbackBaseURL` access and
     /// torn down with the account. Keyed by cloud device id; the pinned
     /// public key detects re-provisioned machines whose bridge is stale.
-    @ObservationIgnored private var loopbackBridges: [String: (bridge: CloudRelayLoopbackBridge, publicKey: String)] = [:]
+    @ObservationIgnored private var loopbackBridges: [String: (bridge: CloudRelayLoopbackBridge, publicKey: String)] =
+        [:]
     /// Ports of listening bridges. Observable so machine lists synthesized
     /// from cloud presence recompute their base URLs when a bridge comes up.
     private var loopbackPorts: [String: UInt16] = [:]
@@ -132,7 +133,8 @@ public final class CloudAccountController {
     /// without GitHub configured redirect to the /login page instead. The
     /// redirect value is percent-encoded so its own `?app=` query survives.
     public func signInURL(scheme: String) -> URL {
-        let base = serverURL.absoluteString.hasSuffix("/")
+        let base =
+            serverURL.absoluteString.hasSuffix("/")
             ? String(serverURL.absoluteString.dropLast())
             : serverURL.absoluteString
         var allowed = CharacterSet.urlQueryAllowed
@@ -271,7 +273,8 @@ public final class CloudAccountController {
                     }
                     Log.cloud.log("Deregistered this machine from the cloud account on sign-out")
                 } catch {
-                    Log.cloud.error("Local machine cloud deregistration failed: \(String(describing: error), privacy: .public)")
+                    Log.cloud.error(
+                        "Local machine cloud deregistration failed: \(String(describing: error), privacy: .public)")
                 }
             }
         }
@@ -292,14 +295,14 @@ public final class CloudAccountController {
         guard state.isSignedIn, let token = storedToken else { return }
         do {
             machines = try await client.machines(token: token)
-#if DEBUG || NAVIGATION_DIAGNOSTICS
-            let machineSummary = machines.map { machine in
-                "\(machine.name){id=\(machine.deviceId),online=\(machine.online)}"
-            }.joined(separator: ",")
-            Log.cloud.notice(
-                "CLOUDDBG machines.refresh server=\(self.serverURL.absoluteString, privacy: .public) count=\(self.machines.count) machines=[\(machineSummary, privacy: .public)]"
-            )
-#endif
+            #if DEBUG || NAVIGATION_DIAGNOSTICS
+                let machineSummary = machines.map { machine in
+                    "\(machine.name){id=\(machine.deviceId),online=\(machine.online)}"
+                }.joined(separator: ",")
+                Log.cloud.notice(
+                    "CLOUDDBG machines.refresh server=\(self.serverURL.absoluteString, privacy: .public) count=\(self.machines.count) machines=[\(machineSummary, privacy: .public)]"
+                )
+            #endif
             pruneLoopbackBridges()
             lastError = nil
             onMachinesRefreshed?()
@@ -342,7 +345,8 @@ public final class CloudAccountController {
                     return
                 }
             } catch {
-                Log.cloud.debug("Local machine cloud registration skipped: \(String(describing: error), privacy: .public)")
+                Log.cloud.debug(
+                    "Local machine cloud registration skipped: \(String(describing: error), privacy: .public)")
             }
             self?.localRegistrationTask = nil
         }

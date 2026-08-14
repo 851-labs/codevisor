@@ -7,11 +7,11 @@ struct SessionConfigTests {
     @Test("Decodes a real model config option")
     func decodesModelOption() throws {
         let json = """
-        {"id":"model","name":"Model","description":"Model Codex uses","category":"model","type":"select",
-         "currentValue":"gpt-5.5",
-         "options":[{"value":"gpt-5.5","name":"GPT-5.5","description":"Frontier"},
-                    {"value":"gpt-5.4","name":"GPT-5.4"}]}
-        """
+            {"id":"model","name":"Model","description":"Model Codex uses","category":"model","type":"select",
+             "currentValue":"gpt-5.5",
+             "options":[{"value":"gpt-5.5","name":"GPT-5.5","description":"Frontier"},
+                        {"value":"gpt-5.4","name":"GPT-5.4"}]}
+            """
         let option = try ACPJSON.decoder.decode(SessionConfigOption.self, from: Data(json.utf8))
         #expect(option.id == "model")
         #expect(option.category == "model")
@@ -23,9 +23,9 @@ struct SessionConfigTests {
     @Test("Flattens grouped options")
     func grouped() throws {
         let json = """
-        {"id":"model","name":"Model","currentValue":"a",
-         "options":[{"group":"g1","name":"Group 1","options":[{"value":"a","name":"A"},{"value":"b","name":"B"}]}]}
-        """
+            {"id":"model","name":"Model","currentValue":"a",
+             "options":[{"group":"g1","name":"Group 1","options":[{"value":"a","name":"A"},{"value":"b","name":"B"}]}]}
+            """
         let option = try ACPJSON.decoder.decode(SessionConfigOption.self, from: Data(json.utf8))
         #expect(option.options.map(\.value) == ["a", "b"])
     }
@@ -41,7 +41,10 @@ struct SessionConfigTests {
         let option = SessionConfigOption(
             id: "reasoning", name: "Reasoning", description: "effort", category: "thought_level",
             currentValue: "high",
-            options: [SessionConfigSelectOption(value: "low", name: "low"), SessionConfigSelectOption(value: "high", name: "high")]
+            options: [
+                SessionConfigSelectOption(value: "low", name: "low"),
+                SessionConfigSelectOption(value: "high", name: "high"),
+            ]
         )
         let data = try ACPJSON.encoder.encode(option)
         #expect(try ACPJSON.decoder.decode(SessionConfigOption.self, from: data) == option)
@@ -58,8 +61,9 @@ struct SessionConfigTests {
     @Test("config_option_update session update round-trips")
     func configUpdate() throws {
         let update = SessionUpdate.configOptionUpdate([
-            SessionConfigOption(id: "model", name: "Model", currentValue: "a",
-                                options: [SessionConfigSelectOption(value: "a", name: "A")])
+            SessionConfigOption(
+                id: "model", name: "Model", currentValue: "a",
+                options: [SessionConfigSelectOption(value: "a", name: "A")])
         ])
         let data = try ACPJSON.encoder.encode(update)
         #expect(try ACPJSON.decoder.decode(SessionUpdate.self, from: data) == update)
@@ -67,7 +71,8 @@ struct SessionConfigTests {
 
     @Test("usage_update session update decodes cost + context tokens")
     func usageUpdate() throws {
-        let json = #"{"sessionUpdate":"usage_update","used":12345,"size":200000,"inputTokens":9000,"cachedInputTokens":2000,"outputTokens":1345,"totalTokens":12345,"cost":{"amount":0.0123,"currency":"USD","kind":"reported"}}"#
+        let json =
+            #"{"sessionUpdate":"usage_update","used":12345,"size":200000,"inputTokens":9000,"cachedInputTokens":2000,"outputTokens":1345,"totalTokens":12345,"cost":{"amount":0.0123,"currency":"USD","kind":"reported"}}"#
         let update = try ACPJSON.decoder.decode(SessionUpdate.self, from: Data(json.utf8))
         guard case let .usageUpdate(usage) = update else {
             Issue.record("expected usageUpdate, got \(update)")

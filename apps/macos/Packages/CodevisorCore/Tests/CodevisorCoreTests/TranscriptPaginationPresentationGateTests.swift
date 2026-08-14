@@ -27,10 +27,12 @@ struct TranscriptPaginationPresentationGateTests {
             oldestRowKey: "message:older"
         )
         #expect(gate.isPresented)
-        #expect(gate.presentationTarget == .init(
-            token: 1,
-            oldestRowKey: "message:older"
-        ))
+        #expect(
+            gate.presentationTarget
+                == .init(
+                    token: 1,
+                    oldestRowKey: "message:older"
+                ))
 
         let staleCommit = gate.didPresent(token: 2)
         #expect(!staleCommit)

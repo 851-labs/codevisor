@@ -155,12 +155,13 @@ final class ScriptedCloudHub: @unchecked Sendable {
             var machineId: String?
             var channelId: String?
         }
-        let data = try! JSONEncoder().encode(Envelope(
-            code: code,
-            message: message,
-            machineId: machineId,
-            channelId: channelId
-        ))
+        let data = try! JSONEncoder().encode(
+            Envelope(
+                code: code,
+                message: message,
+                machineId: machineId,
+                channelId: channelId
+            ))
         socket.push(.string(String(decoding: data, as: UTF8.self)))
     }
 

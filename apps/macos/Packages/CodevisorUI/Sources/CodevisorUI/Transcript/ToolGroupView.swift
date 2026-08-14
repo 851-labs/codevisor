@@ -24,28 +24,28 @@ public struct ToolGroupView: View {
 
     private static var iconFont: Font {
         #if os(iOS)
-        .subheadline
+            .subheadline
         #else
-        .callout
+            .callout
         #endif
     }
 
     private static var iconColumnWidth: CGFloat {
         #if os(iOS)
-        // The terminal symbol is slightly wider than the old 16pt column.
-        // Keep its ink inside the clipped transcript-row host.
-        18
+            // The terminal symbol is slightly wider than the old 16pt column.
+            // Keep its ink inside the clipped transcript-row host.
+            18
         #else
-        16
+            16
         #endif
     }
 
     private static var headerSpacing: CGFloat {
         #if os(iOS)
-        // Preserve the existing 24pt icon-column-plus-gap label inset.
-        6
+            // Preserve the existing 24pt icon-column-plus-gap label inset.
+            6
         #else
-        8
+            8
         #endif
     }
 
@@ -109,12 +109,15 @@ public struct ToolGroupView: View {
 }
 
 #Preview {
-    ToolGroupView(group: ToolCallGroup(calls: [
-        ToolCall(toolCallId: "1", title: "Ran rg -n \"barnsong|village|farm\"", kind: .execute, status: .completed,
-                 content: [.content(.text("no matches found"))]),
-        ToolCall(toolCallId: "2", title: "Searched for files", kind: .search, status: .completed),
-        ToolCall(toolCallId: "3", title: "Ran pwd && rg --files", kind: .execute, status: .completed)
-    ]))
+    ToolGroupView(
+        group: ToolCallGroup(calls: [
+            ToolCall(
+                toolCallId: "1", title: "Ran rg -n \"barnsong|village|farm\"", kind: .execute, status: .completed,
+                content: [.content(.text("no matches found"))]),
+            ToolCall(toolCallId: "2", title: "Searched for files", kind: .search, status: .completed),
+            ToolCall(toolCallId: "3", title: "Ran pwd && rg --files", kind: .execute, status: .completed),
+        ])
+    )
     .padding()
     .frame(width: 520)
 }

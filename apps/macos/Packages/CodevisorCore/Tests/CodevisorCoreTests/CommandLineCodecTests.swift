@@ -4,9 +4,10 @@ import Testing
 @Suite("Command line codec")
 struct CommandLineCodecTests {
     @Test func parsesQuotedArgumentsAndEscapes() throws {
-        #expect(try CommandLineCodec.parse("npx -y 'package name' \"two words\" escaped\\ value") == [
-            "npx", "-y", "package name", "two words", "escaped value"
-        ])
+        #expect(
+            try CommandLineCodec.parse("npx -y 'package name' \"two words\" escaped\\ value") == [
+                "npx", "-y", "package name", "two words", "escaped value",
+            ])
     }
 
     @Test func preservesEmptyArguments() throws {

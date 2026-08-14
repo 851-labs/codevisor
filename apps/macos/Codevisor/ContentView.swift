@@ -30,7 +30,8 @@ struct CodevisorApp: App {
         if !CodevisorAppVariant.isDevelopment {
             environment.localServer?.configureManagedService(serverAgent.managedService)
         }
-        let sparkleUpdater = CodevisorAppVariant.enablesSparkleUpdater
+        let sparkleUpdater =
+            CodevisorAppVariant.enablesSparkleUpdater
             ? SparkleUpdateController(
                 model: environment.appUpdate,
                 localServer: environment.localServer,
@@ -63,8 +64,9 @@ struct CodevisorApp: App {
                 // for; the dialog's own buttons clear it.
                 environment.settings.setPermissionsReviewInProgress(true)
             } else if allGranted,
-                      environment.settings.permissionsReviewedVersion
-                        != AppUpdateModel.bundleVersion() {
+                environment.settings.permissionsReviewedVersion
+                    != AppUpdateModel.bundleVersion()
+            {
                 // Everything already granted and no review open: count this
                 // version reviewed so a later revoke does not re-gate it.
                 environment.settings.setPermissionsReviewedVersion(AppUpdateModel.bundleVersion())
@@ -274,8 +276,9 @@ struct RootView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .codevisorOpenChatNotification)) { note in
             guard let sessionIdString = note.userInfo?["sessionId"] as? String,
-                  let sessionId = UUID(uuidString: sessionIdString),
-                  let serverId = note.userInfo?["serverId"] as? String else { return }
+                let sessionId = UUID(uuidString: sessionIdString),
+                let serverId = note.userInfo?["serverId"] as? String
+            else { return }
             Task { await openNotificationSession(sessionId, serverId: serverId) }
         }
         .task { await reconcileSkippedPermissions() }
@@ -388,7 +391,8 @@ struct RootView: View {
         }
         for attempt in 0..<30 {
             if let servers = try? await environment.serverClient.listMcpServers(),
-               let computer = servers.first(where: { $0.kind == "computerUse" }) {
+                let computer = servers.first(where: { $0.kind == "computerUse" })
+            {
                 if computer.enabled {
                     _ = try? await environment.serverClient.setMcpServerEnabled(
                         id: "computer",
@@ -408,9 +412,11 @@ struct RootView: View {
             environment.machines.selectMachine(serverId)
             await environment.prepareSelectedMachine()
         }
-        guard let session = environment.projectList.sessions.first(where: {
-            $0.serverId == serverId && $0.id == sessionId
-        }) else { return }
+        guard
+            let session = environment.projectList.sessions.first(where: {
+                $0.serverId == serverId && $0.id == sessionId
+            })
+        else { return }
         preferredProjectId = session.projectId
         selection = .session(serverId: serverId, id: sessionId)
     }
@@ -547,12 +553,13 @@ struct RootView: View {
             switch selection {
             case let .session(serverId, sessionId):
                 if serverId == environment.machines.selectedMachineId,
-                   let session = environment.projectList.sessions.first(where: {
-                       $0.serverId == serverId && $0.id == sessionId
-                   }),
-                   let project = environment.projectList.projects.first(where: {
-                       $0.serverId == serverId && $0.id == session.projectId
-                   }) {
+                    let session = environment.projectList.sessions.first(where: {
+                        $0.serverId == serverId && $0.id == sessionId
+                    }),
+                    let project = environment.projectList.projects.first(where: {
+                        $0.serverId == serverId && $0.id == session.projectId
+                    })
+                {
                     let controller = store.controller(for: session, project: project)
                     // Identity is the WORKSPACE, not the chat: clicking a
                     // sibling chat swaps only the routed session (the container
@@ -573,7 +580,9 @@ struct RootView: View {
                             self.selection = .session(serverId: serverId, id: chatId)
                         }
                     )
-                    .id("\(session.serverId):\((environment.workspaces.workspaceId(forSession: session.id) ?? session.id).uuidString)")
+                    .id(
+                        "\(session.serverId):\((environment.workspaces.workspaceId(forSession: session.id) ?? session.id).uuidString)"
+                    )
                     .onAppear { preferredProjectId = project.id }
                 } else {
                     // The routed session can't be resolved (machine switch,
@@ -591,8 +600,9 @@ struct RootView: View {
     private var blocksSelectedServerContent: Bool {
         if environment.appUpdate.isUpdating { return true }
         if environment.machines.selectedMachine.isLocal,
-           let progress = environment.localServer?.dataUpgradeProgress,
-           progress.state == "running" || progress.state == "failed" {
+            let progress = environment.localServer?.dataUpgradeProgress,
+            progress.state == "running" || progress.state == "failed"
+        {
             return true
         }
         if case .ready = environment.machines.selectedServerAvailability {

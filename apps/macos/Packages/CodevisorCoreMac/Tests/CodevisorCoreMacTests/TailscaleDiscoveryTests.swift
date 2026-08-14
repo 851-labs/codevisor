@@ -6,40 +6,40 @@ import Testing
 @Suite("Tailscale discovery")
 struct TailscaleDiscoveryTests {
     private let statusFixture = """
-    {
-      "Version": "1.98.8",
-      "BackendState": "Running",
-      "Self": {
-        "HostName": "my-mac",
-        "DNSName": "my-mac.tail6fc9a.ts.net.",
-        "TailscaleIPs": ["100.64.0.1"],
-        "OS": "macOS",
-        "Online": true
-      },
-      "Peer": {
-        "key1": {
-          "HostName": "build-box",
-          "DNSName": "build-box.tail6fc9a.ts.net.",
-          "TailscaleIPs": ["100.64.0.2", "fd7a::2"],
-          "OS": "linux",
-          "Online": true
-        },
-        "key2": {
-          "HostName": "asleep-laptop",
-          "DNSName": "asleep-laptop.tail6fc9a.ts.net.",
-          "TailscaleIPs": ["100.64.0.3"],
-          "OS": "macOS",
-          "Online": false
-        },
-        "key3": {
-          "HostName": "bare-peer",
-          "DNSName": "",
-          "TailscaleIPs": ["100.64.0.4"],
-          "Online": true
+        {
+          "Version": "1.98.8",
+          "BackendState": "Running",
+          "Self": {
+            "HostName": "my-mac",
+            "DNSName": "my-mac.tail6fc9a.ts.net.",
+            "TailscaleIPs": ["100.64.0.1"],
+            "OS": "macOS",
+            "Online": true
+          },
+          "Peer": {
+            "key1": {
+              "HostName": "build-box",
+              "DNSName": "build-box.tail6fc9a.ts.net.",
+              "TailscaleIPs": ["100.64.0.2", "fd7a::2"],
+              "OS": "linux",
+              "Online": true
+            },
+            "key2": {
+              "HostName": "asleep-laptop",
+              "DNSName": "asleep-laptop.tail6fc9a.ts.net.",
+              "TailscaleIPs": ["100.64.0.3"],
+              "OS": "macOS",
+              "Online": false
+            },
+            "key3": {
+              "HostName": "bare-peer",
+              "DNSName": "",
+              "TailscaleIPs": ["100.64.0.4"],
+              "Online": true
+            }
+          }
         }
-      }
-    }
-    """.data(using: .utf8)!
+        """.data(using: .utf8)!
 
     @Test("Decodes peers from status --json, stripping trailing DNS dots")
     func decodesPeers() {
@@ -97,15 +97,16 @@ struct TailscaleDiscoveryTests {
 
         await service.refresh(registeredHosts: [])
         #expect(service.isAvailable)
-        #expect(service.discovered == [
-            DiscoveredMachine(
-                id: "machine-1",
-                name: "build-box",
-                host: "build-box.tail6fc9a.ts.net",
-                version: "1.2.3",
-                os: "linux"
-            )
-        ])
+        #expect(
+            service.discovered == [
+                DiscoveredMachine(
+                    id: "machine-1",
+                    name: "build-box",
+                    host: "build-box.tail6fc9a.ts.net",
+                    version: "1.2.3",
+                    os: "linux"
+                )
+            ])
 
         // Already-registered hosts disappear from the section.
         await service.refresh(registeredHosts: ["build-box.tail6fc9a.ts.net"])

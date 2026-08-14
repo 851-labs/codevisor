@@ -76,15 +76,16 @@ public struct CodevisorMachine: Identifiable, Sendable, Codable, Equatable {
     public var isCloud: Bool { id.hasPrefix(Self.cloudIdPrefix) }
 
     public var resolvedAppearance: MachineAppearance {
-        let fallback = if isLocal {
-            MachineAppearance.localDefault
-        } else if isCloud {
-            MachineAppearance.cloudDefault
-        } else {
-            MachineAppearance.remoteDefault
-        }
+        let fallback =
+            if isLocal {
+                MachineAppearance.localDefault
+            } else if isCloud {
+                MachineAppearance.cloudDefault
+            } else {
+                MachineAppearance.remoteDefault
+            }
         guard let appearance,
-              !appearance.symbolName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            !appearance.symbolName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else { return fallback }
         return appearance
     }
@@ -192,16 +193,18 @@ public struct MachineRegistry: Sendable, Codable, Equatable {
         selectedMachineId = try container.decode(String.self, forKey: .selectedMachineId)
         // Registries persisted before this flag existed decode as "no explicit
         // choice yet", so they benefit from auto-selection like fresh installs.
-        hasExplicitMachineSelection = try container.decodeIfPresent(
-            Bool.self,
-            forKey: .hasExplicitMachineSelection
-        ) ?? false
+        hasExplicitMachineSelection =
+            try container.decodeIfPresent(
+                Bool.self,
+                forKey: .hasExplicitMachineSelection
+            ) ?? false
         remoteMachines = try container.decode([CodevisorMachine].self, forKey: .remoteMachines)
         localAppearance = try container.decodeIfPresent(MachineAppearance.self, forKey: .localAppearance)
-        cloudAppearances = try container.decodeIfPresent(
-            [String: MachineAppearance].self,
-            forKey: .cloudAppearances
-        ) ?? [:]
+        cloudAppearances =
+            try container.decodeIfPresent(
+                [String: MachineAppearance].self,
+                forKey: .cloudAppearances
+            ) ?? [:]
     }
 }
 
@@ -284,13 +287,14 @@ public final class MachineController {
         self.workspaceSync = workspaceSync
         self.localServer = localServer
         self.requestGate = requestGate
-        self.clientFactory = clientFactory ?? {
-            CodevisorServerClient(
-                config: $0.serverConfig,
-                requestGate: requestGate,
-                machineId: $0.id
-            )
-        }
+        self.clientFactory =
+            clientFactory ?? {
+                CodevisorServerClient(
+                    config: $0.serverConfig,
+                    requestGate: requestGate,
+                    machineId: $0.id
+                )
+            }
         self.updatePollInterval = updatePollInterval
         self.updatePollAttempts = updatePollAttempts
         if let data = store.loadData(forKey: "machines") {
@@ -388,20 +392,21 @@ public final class MachineController {
     /// (local + remote) machines plus one synthesized entry per cloud machine
     /// that no configured machine already represents.
     public var allMachines: [CodevisorMachine] {
-        machines + cloudOnlyMachines.map { cloud in
-            var machine = CodevisorMachine.cloud(from: cloud)
-            // A real loopback address (bridged onto the relay) replaces the
-            // placeholder once the machine's bridge is listening, so baseURL
-            // consumers like the external terminal proxy can actually dial it.
-            if let loopback = cloudProvider?.loopbackBaseURL(for: cloud) {
-                machine.baseURL = loopback
+        machines
+            + cloudOnlyMachines.map { cloud in
+                var machine = CodevisorMachine.cloud(from: cloud)
+                // A real loopback address (bridged onto the relay) replaces the
+                // placeholder once the machine's bridge is listening, so baseURL
+                // consumers like the external terminal proxy can actually dial it.
+                if let loopback = cloudProvider?.loopbackBaseURL(for: cloud) {
+                    machine.baseURL = loopback
+                }
+                // Cloud machines aren't stored in the registry, so their saved
+                // icon lives in a side map keyed by the stable `cloud:` id. Nil
+                // resolves to the icloud default.
+                machine.appearance = registry.cloudAppearances[machine.id]
+                return machine
             }
-            // Cloud machines aren't stored in the registry, so their saved
-            // icon lives in a side map keyed by the stable `cloud:` id. Nil
-            // resolves to the icloud default.
-            machine.appearance = registry.cloudAppearances[machine.id]
-            return machine
-        }
     }
 
     /// Cloud machines that aren't already represented by a configured machine,
@@ -433,7 +438,7 @@ public final class MachineController {
     /// The cloud presence entry backing a `cloud:` machine id, if any.
     public func cloudMachine(forMachineId id: String) -> CloudMachine? {
         guard let deviceId = CodevisorMachine.cloudDeviceId(forMachineId: id),
-              let cloudProvider, cloudProvider.isCloudSignedIn
+            let cloudProvider, cloudProvider.isCloudSignedIn
         else { return nil }
         return cloudProvider.cloudMachines.first { $0.deviceId == deviceId }
     }
@@ -517,9 +522,9 @@ public final class MachineController {
     /// No-op once the user has explicitly chosen or no non-local machine exists.
     private func autoSelectPreferredMachineIfNeeded() {
         guard !registry.hasExplicitMachineSelection,
-              localServer == nil,
-              selectedMachineId == CodevisorMachine.local.id,
-              let candidate = preferredAutoSelectionCandidate()
+            localServer == nil,
+            selectedMachineId == CodevisorMachine.local.id,
+            let candidate = preferredAutoSelectionCandidate()
         else { return }
         // Deliberately not selectMachine: the auto-pick must stay non-explicit
         // so it can be re-picked if this machine later disappears.
@@ -550,8 +555,9 @@ public final class MachineController {
     public func reconcileCloudSelection() {
         let selectedId = selectedMachineId
         if selectedId.hasPrefix(CodevisorMachine.cloudIdPrefix),
-           machine(for: selectedId) != nil,
-           projectList.selectedServerId != selectedId {
+            machine(for: selectedId) != nil,
+            projectList.selectedServerId != selectedId
+        {
             selectMachine(selectedId)
             // The shell's selection-change task is keyed on the machine id,
             // which never changed here (the persisted selection was this cloud
@@ -654,7 +660,7 @@ public final class MachineController {
     public func renameMachine(_ id: String, to name: String) throws {
         guard id != CodevisorMachine.local.id else { throw MachineControllerError.cannotRenameLocal }
         guard let customName = Self.normalizedName(name),
-              let index = registry.remoteMachines.firstIndex(where: { $0.id == id })
+            let index = registry.remoteMachines.firstIndex(where: { $0.id == id })
         else { return }
         registry.remoteMachines[index].name = customName
         persist()
@@ -856,7 +862,9 @@ public final class MachineController {
                     }
                     return
                 } catch {
-                    Log.machines.error("Event sync for \(serverId, privacy: .public) failed; resubscribing: \(String(describing: error), privacy: .public)")
+                    Log.machines.error(
+                        "Event sync for \(serverId, privacy: .public) failed; resubscribing: \(String(describing: error), privacy: .public)"
+                    )
                     guard let self, !Task.isCancelled else { return }
                     // Reconcile durable metadata, then subscribe live-only
                     // again. This skips a malformed event instead of retrying
@@ -903,7 +911,7 @@ public final class MachineController {
                 workspaceSync?.removeWorkspace(id: id, serverId: serverId)
             }
         case "session.created", "session.updated", "session.attention.updated",
-             "session.archived", "session.unarchived":
+            "session.archived", "session.unarchived":
             switch await projectList.applyServerSessionEvent(event, serverId: serverId) {
             case let .applied(workspaceMembershipChanged):
                 if workspaceMembershipChanged {
@@ -984,7 +992,9 @@ public final class MachineController {
                 )
             } catch {
                 updateInfoByMachineId[id] = nil
-                Log.machines.debug("Update info probe for \(id, privacy: .public) failed: \(String(describing: error), privacy: .public)")
+                Log.machines.debug(
+                    "Update info probe for \(id, privacy: .public) failed: \(String(describing: error), privacy: .public)"
+                )
             }
         } catch {
             // A local server that failed to start has a more useful story
@@ -999,7 +1009,8 @@ public final class MachineController {
                 statusByMachineId[id] = MachineStatus(isReachable: false, label: "Invalid connection token")
             } else {
                 statusByMachineId[id] = MachineStatus(isReachable: false, label: "Unreachable")
-                Log.machines.debug("Status probe for \(id, privacy: .public) failed: \(String(describing: error), privacy: .public)")
+                Log.machines.debug(
+                    "Status probe for \(id, privacy: .public) failed: \(String(describing: error), privacy: .public)")
             }
         }
     }
@@ -1080,16 +1091,18 @@ public final class MachineController {
                 var restartedWithDifferentVersion =
                     (initialVersion ?? initialHealth?.version).map { info.version != $0 } ?? false
                 if !restartedWithDifferentVersion,
-                   let initialBootId = initialHealth?.bootId,
-                   let currentBootId = (try? await client.health())?.bootId {
+                    let initialBootId = initialHealth?.bootId,
+                    let currentBootId = (try? await client.health())?.bootId
+                {
                     restartedWithDifferentVersion = currentBootId != initialBootId
                 }
                 var requestedChannelIsCurrent = false
                 if !exactTargetReached, restartedWithDifferentVersion,
-                   let update = try? await client.updateInfo(
-                       refresh: true,
-                       channel: updateChannel
-                   ) {
+                    let update = try? await client.updateInfo(
+                        refresh: true,
+                        channel: updateChannel
+                    )
+                {
                     requestedChannelIsCurrent = !update.updateAvailable
                 }
                 if exactTargetReached || requestedChannelIsCurrent {
@@ -1144,7 +1157,8 @@ public final class MachineController {
         guard !trimmed.isEmpty else { throw MachineControllerError.invalidHost(input) }
         let withScheme = trimmed.contains("://") ? trimmed : "http://\(trimmed)"
         guard var components = URLComponents(string: withScheme),
-              components.host?.isEmpty == false else {
+            components.host?.isEmpty == false
+        else {
             throw MachineControllerError.invalidHost(input)
         }
         if components.scheme == nil {
@@ -1200,7 +1214,8 @@ public final class MachineController {
             }
             try store.saveData(JSONEncoder().encode(persisted), forKey: key)
         } catch {
-            Log.persistence.error("Failed to save \(self.key, privacy: .public): \(String(describing: error), privacy: .public)")
+            Log.persistence.error(
+                "Failed to save \(self.key, privacy: .public): \(String(describing: error), privacy: .public)")
         }
     }
 }
@@ -1212,7 +1227,8 @@ private extension MachineRegistry {
         // Cloud selections persist by id (stable across launches); when the
         // machine isn't available (signed out), selection falls back to
         // local at resolution time instead of being rewritten here.
-        let keepsSelection = allIds.contains(selectedMachineId)
+        let keepsSelection =
+            allIds.contains(selectedMachineId)
             || selectedMachineId.hasPrefix(CodevisorMachine.cloudIdPrefix)
         return MachineRegistry(
             selectedMachineId: keepsSelection ? selectedMachineId : CodevisorMachine.local.id,

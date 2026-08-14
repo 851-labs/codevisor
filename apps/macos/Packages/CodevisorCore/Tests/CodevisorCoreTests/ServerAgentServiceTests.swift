@@ -36,19 +36,20 @@ struct ServerAgentServiceTests {
                     agentSessionId: nil, title: "Other harness", origin: .codevisor,
                     isArchived: false, worktreeName: nil, cwd: "/db/repo",
                     createdAt: "2026-01-01T00:00:00.000Z", updatedAt: nil, usage: nil
-                )
+                ),
             ]
         )
         let service = ServerHarnessService(client: client)
 
         let sessions = try await service.listSessions(forHarnessId: "claude-code")
 
-        #expect(sessions == [
-            SessionInfo(
-                sessionId: "agent-1", cwd: "/db/repo", title: "DB chat",
-                updatedAt: "2026-01-02T00:00:00.000Z"
-            )
-        ])
+        #expect(
+            sessions == [
+                SessionInfo(
+                    sessionId: "agent-1", cwd: "/db/repo", title: "DB chat",
+                    updatedAt: "2026-01-02T00:00:00.000Z"
+                )
+            ])
     }
 
     @Test("listSessions propagates non-404 errors")
@@ -90,7 +91,9 @@ private final class AgentSessionsFakeClient: CodevisorServerClienting, @unchecke
     func listHarnesses() async throws -> [ServerHarness] { [] }
     func health() async throws -> ServerHealth { ServerHealth(ok: true, version: "0", database: "ready") }
     func info() async throws -> ServerInfo { fatalError("unused") }
-    func updateInfo(refresh: Bool, channel: ServerUpdateChannel) async throws -> ServerUpdateInfo { fatalError("unused") }
+    func updateInfo(refresh: Bool, channel: ServerUpdateChannel) async throws -> ServerUpdateInfo {
+        fatalError("unused")
+    }
     func issuePairingToken() async throws -> ServerPairingToken { fatalError("unused") }
     func capabilities(cwd: String) async throws -> ServerCapabilities { ServerCapabilities(harnesses: []) }
     func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness { fatalError("unused") }

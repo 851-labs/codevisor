@@ -256,9 +256,11 @@ struct NewChatView: View {
                 for: environment.machines.selectedMachineId
             )
         }
-        .focusedSceneValue(\.newChatComposerFocus, NewChatComposerFocus(
-            focus: { focus.focusComposer() }
-        ))
+        .focusedSceneValue(
+            \.newChatComposerFocus,
+            NewChatComposerFocus(
+                focus: { focus.focusComposer() }
+            ))
     }
 
     // MARK: - Run pickers (standalone new-chat page only)
@@ -290,17 +292,21 @@ struct NewChatView: View {
             // Toggle for the native selected checkmark; MenuSymbolIcon
             // because AppKit menus drop plain SF Symbol images.
             ForEach(pickerProjects) { project in
-                Toggle(isOn: Binding(
-                    get: { selected.id == project.id },
-                    set: { isOn in
-                        guard isOn else { return }
-                        selectTargetProject(project, controller: controller)
-                        // Re-probe git capability so the run-location picker
-                        // appears/disappears with fresh data.
-                        Task { await environment.projectList.refreshFromServer() }
-                    }
-                )) {
-                    Label { Text(project.name) } icon: {
+                Toggle(
+                    isOn: Binding(
+                        get: { selected.id == project.id },
+                        set: { isOn in
+                            guard isOn else { return }
+                            selectTargetProject(project, controller: controller)
+                            // Re-probe git capability so the run-location picker
+                            // appears/disappears with fresh data.
+                            Task { await environment.projectList.refreshFromServer() }
+                        }
+                    )
+                ) {
+                    Label {
+                        Text(project.name)
+                    } icon: {
                         MenuSymbolIcon(systemName: FilledSymbol.preferred(project.symbolName))
                     }
                 }
@@ -309,7 +315,9 @@ struct NewChatView: View {
             Button {
                 addProjectFlow.begin()
             } label: {
-                Label { Text("New project…") } icon: {
+                Label {
+                    Text("New project…")
+                } icon: {
                     MenuSymbolIcon(systemName: "folder.badge.plus")
                 }
             }
@@ -334,25 +342,33 @@ struct NewChatView: View {
     private func runLocationPicker(_ controller: SessionController) -> some View {
         let newWorktree = controller.wantsNewWorktree
         return Menu {
-            Toggle(isOn: Binding(
-                get: { !newWorktree },
-                set: { isOn in
-                    guard isOn else { return }
-                    selectRunLocation(newWorktree: false, controller: controller)
-                }
-            )) {
-                Label { Text("Project directory") } icon: {
+            Toggle(
+                isOn: Binding(
+                    get: { !newWorktree },
+                    set: { isOn in
+                        guard isOn else { return }
+                        selectRunLocation(newWorktree: false, controller: controller)
+                    }
+                )
+            ) {
+                Label {
+                    Text("Project directory")
+                } icon: {
                     MenuSymbolIcon(systemName: "folder.fill")
                 }
             }
-            Toggle(isOn: Binding(
-                get: { newWorktree },
-                set: { isOn in
-                    guard isOn else { return }
-                    selectRunLocation(newWorktree: true, controller: controller)
-                }
-            )) {
-                Label { Text("New worktree") } icon: {
+            Toggle(
+                isOn: Binding(
+                    get: { newWorktree },
+                    set: { isOn in
+                        guard isOn else { return }
+                        selectRunLocation(newWorktree: true, controller: controller)
+                    }
+                )
+            ) {
+                Label {
+                    Text("New worktree")
+                } icon: {
                     MenuSymbolIcon(systemName: "arrow.triangle.branch")
                 }
             }
@@ -379,7 +395,8 @@ struct NewChatView: View {
             serverId: project.serverId,
             projectId: project.id
         )
-        let prefersWorktree = project.isGitRepository
+        let prefersWorktree =
+            project.isGitRepository
             && environment.composerDefaults.prefersWorktreeForNewWorkspaces(
                 forServer: project.serverId
             )
@@ -477,9 +494,10 @@ struct NewChatView: View {
         // An explicit entry point ("New chat here") re-points even a retained
         // draft at that project; the generic entry follows the draft.
         if paneDraftId == nil,
-           let explicitProjectId,
-           controller.project.id != explicitProjectId,
-           let explicit = projects.first(where: { $0.id == explicitProjectId }) {
+            let explicitProjectId,
+            controller.project.id != explicitProjectId,
+            let explicit = projects.first(where: { $0.id == explicitProjectId })
+        {
             selectTargetProject(explicit, controller: controller)
         }
         controller.onFirstSend = { [weak controller] in
@@ -488,11 +506,12 @@ struct NewChatView: View {
             let title = Self.title(from: controller.composerText)
             let session: ChatSession
             if let preCreatedSession,
-               let updated = environment.projectList.updateSessionForFirstSend(
-                   preCreatedSession,
-                   title: title,
-                   harnessId: controller.selectedHarnessId
-               ) {
+                let updated = environment.projectList.updateSessionForFirstSend(
+                    preCreatedSession,
+                    title: title,
+                    harnessId: controller.selectedHarnessId
+                )
+            {
                 // The record already exists (eager creation put it in the
                 // sidebar, already stamped with the workspace's directory);
                 // first send fills in what's now known.
@@ -601,7 +620,8 @@ struct NewChatView: View {
         Task {
             await controller.prepare()
             if !AppPreview.isRunning,
-               !controller.showsNewChatAfterSetupFailure {
+                !controller.showsNewChatAfterSetupFailure
+            {
                 await controller.connectIfNeeded()
             }
         }
@@ -610,7 +630,8 @@ struct NewChatView: View {
     private static func title(from prompt: String) -> String {
         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let firstLine = trimmed.split(separator: "\n").first.map(String.init) ?? "New session"
-        return firstLine.count > 48 ? String(firstLine.prefix(48)) + "…" : (firstLine.isEmpty ? "New session" : firstLine)
+        return firstLine.count > 48
+            ? String(firstLine.prefix(48)) + "…" : (firstLine.isEmpty ? "New session" : firstLine)
     }
 }
 

@@ -43,7 +43,8 @@ struct QuestionCardView: View {
     private var isSubmittable: Bool {
         for spec in request.questions {
             if (selections[spec.id] ?? []).contains(Self.otherSentinel),
-               (notes[spec.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                (notes[spec.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            {
                 return false
             }
         }

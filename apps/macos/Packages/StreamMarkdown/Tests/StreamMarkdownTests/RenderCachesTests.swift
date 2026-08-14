@@ -12,7 +12,7 @@ struct RenderCachesTests {
         let first = cache.segments(for: text)
         let second = cache.segments(for: text)
         #expect(first == second)
-        #expect(first.count == 2) // text run + code block
+        #expect(first.count == 2)  // text run + code block
     }
 
     @Test("MarkdownSegmentCache evicts least-recently-used entries at the limit")

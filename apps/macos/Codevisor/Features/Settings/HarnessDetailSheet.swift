@@ -130,10 +130,12 @@ struct HarnessDetailSheet: View {
                 }
             }
             if app.updateAvailable {
-                Text("Replaces \(app.appName) with the verified build from its own update feed. Safe while the app is running — it uses the new version after its next launch.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                Text(
+                    "Replaces \(app.appName) with the verified build from its own update feed. Safe while the app is running — it uses the new version after its next launch."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             }
             if let bundledAppError {
                 Text(bundledAppError)
@@ -168,7 +170,7 @@ struct HarnessDetailSheet: View {
             environment.harnessCatalogDidChange(onServer: serverId)
             // The swap runs server-side (download + verify + replace) —
             // poll the on-demand snapshot until the version settles.
-            for _ in 0 ..< 150 {
+            for _ in 0..<150 {
                 try? await Task.sleep(for: .seconds(2))
                 await loadBundledApp()
                 if bundledApp?.updateAvailable != true { return }
@@ -218,13 +220,14 @@ struct HarnessDetailSheet: View {
 }
 
 #Preview {
-    HarnessDetailSheet(harness: ServerHarness(
-        id: "codex", name: "Codex", symbolName: "chevron.left.forwardslash.chevron.right",
-        source: "registry", launchKind: "executable", enabled: true,
-        readiness: ServerHarnessReadiness(
-            state: "ready",
-            path: "/Applications/ChatGPT.app/Contents/Resources/codex",
-            version: "0.145.0-alpha.18"
-        )
-    ))
+    HarnessDetailSheet(
+        harness: ServerHarness(
+            id: "codex", name: "Codex", symbolName: "chevron.left.forwardslash.chevron.right",
+            source: "registry", launchKind: "executable", enabled: true,
+            readiness: ServerHarnessReadiness(
+                state: "ready",
+                path: "/Applications/ChatGPT.app/Contents/Resources/codex",
+                version: "0.145.0-alpha.18"
+            )
+        ))
 }

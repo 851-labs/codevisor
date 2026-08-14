@@ -1,8 +1,8 @@
 import SwiftUI
 #if canImport(AppKit)
-import AppKit
+    import AppKit
 #elseif canImport(UIKit)
-import UIKit
+    import UIKit
 #endif
 
 /// Renders a fenced code block with a language label and a copy button.
@@ -24,11 +24,11 @@ struct CodeBlockView: View {
     /// evaluation — for a streaming block, every ~16ms flush.
     @State private var plainMemo = PlainCodeMemo()
     #if canImport(UIKit)
-    /// Memoizes the UIKit NSAttributedString conversion: the run-by-run
-    /// rebuild is O(tokens) on the main thread and `body` re-evaluates on
-    /// every layout/measurement pass, so the same settled block re-converted
-    /// repeatedly while scrolling.
-    @State private var nativeMemo = NativeCodeMemo()
+        /// Memoizes the UIKit NSAttributedString conversion: the run-by-run
+        /// rebuild is O(tokens) on the main thread and `body` re-evaluates on
+        /// every layout/measurement pass, so the same settled block re-converted
+        /// repeatedly while scrolling.
+        @State private var nativeMemo = NativeCodeMemo()
     #endif
 
     var body: some View {
@@ -65,28 +65,28 @@ struct CodeBlockView: View {
             Divider()
 
             #if canImport(AppKit)
-            HorizontalCodeScrollView(
-                text: highlighted ?? settledCacheProbe ?? plainMemo.attributed(for: code),
-                foreground: theme.codeForeground
-            )
-            #elseif canImport(UIKit)
-            ScrollView(.horizontal, showsIndicators: false) {
-                SelectableTextView(
-                    attributedText: nativeMemo.attributed(
-                        for: highlighted ?? settledCacheProbe ?? plainMemo.attributed(for: code),
-                        fallback: theme.codeForeground
-                    ),
-                    fillsWidth: false
+                HorizontalCodeScrollView(
+                    text: highlighted ?? settledCacheProbe ?? plainMemo.attributed(for: code),
+                    foreground: theme.codeForeground
                 )
-                .padding(10)
-            }
-            #else
-            ScrollView(.horizontal, showsIndicators: false) {
-                Text(highlighted ?? settledCacheProbe ?? plainMemo.attributed(for: code))
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(theme.codeForeground)
+            #elseif canImport(UIKit)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    SelectableTextView(
+                        attributedText: nativeMemo.attributed(
+                            for: highlighted ?? settledCacheProbe ?? plainMemo.attributed(for: code),
+                            fallback: theme.codeForeground
+                        ),
+                        fillsWidth: false
+                    )
                     .padding(10)
-            }
+                }
+            #else
+                ScrollView(.horizontal, showsIndicators: false) {
+                    Text(highlighted ?? settledCacheProbe ?? plainMemo.attributed(for: code))
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(theme.codeForeground)
+                        .padding(10)
+                }
             #endif
         }
         .background(theme.codeBackground)
@@ -132,10 +132,10 @@ struct CodeBlockView: View {
 
     private func copy() {
         #if canImport(AppKit)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(code, forType: .string)
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(code, forType: .string)
         #elseif canImport(UIKit)
-        UIPasteboard.general.string = code
+            UIPasteboard.general.string = code
         #endif
         didCopy = true
         // Flash the confirmation, then settle back to "Copy" (matching the
@@ -151,221 +151,221 @@ struct CodeBlockView: View {
 }
 
 #if canImport(UIKit)
-/// Last-value memo for the UIKit attributed-text conversion. Plain class in
-/// `@State`: non-observable, and the `AttributedString` comparison is cheap
-/// between evaluations that share storage — it does real work only when the
-/// highlighted text, Dynamic Type size, or theme foreground actually changes.
-@MainActor
-private final class NativeCodeMemo {
-    private var text: AttributedString?
-    private var fontSize: CGFloat?
-    private var fallback: Color?
-    private var cached: NSAttributedString?
+    /// Last-value memo for the UIKit attributed-text conversion. Plain class in
+    /// `@State`: non-observable, and the `AttributedString` comparison is cheap
+    /// between evaluations that share storage — it does real work only when the
+    /// highlighted text, Dynamic Type size, or theme foreground actually changes.
+    @MainActor
+    private final class NativeCodeMemo {
+        private var text: AttributedString?
+        private var fontSize: CGFloat?
+        private var fallback: Color?
+        private var cached: NSAttributedString?
 
-    func attributed(for text: AttributedString, fallback: Color) -> NSAttributedString {
-        let font = UIFont.scaledMonospacedSystemFont(forTextStyle: .callout)
-        let size = font.pointSize
-        if let cached, text == self.text, size == fontSize, fallback == self.fallback {
-            return cached
-        }
-        let result = NSMutableAttributedString()
-        let fallbackColor = UIColor(fallback)
-        for run in text.runs {
-            result.append(
-                NSAttributedString(
-                    string: String(text[run.range].characters),
-                    attributes: [
-                        .font: font,
-                        .foregroundColor: run.foregroundColor.map { UIColor($0) }
-                            ?? fallbackColor,
-                    ]
+        func attributed(for text: AttributedString, fallback: Color) -> NSAttributedString {
+            let font = UIFont.scaledMonospacedSystemFont(forTextStyle: .callout)
+            let size = font.pointSize
+            if let cached, text == self.text, size == fontSize, fallback == self.fallback {
+                return cached
+            }
+            let result = NSMutableAttributedString()
+            let fallbackColor = UIColor(fallback)
+            for run in text.runs {
+                result.append(
+                    NSAttributedString(
+                        string: String(text[run.range].characters),
+                        attributes: [
+                            .font: font,
+                            .foregroundColor: run.foregroundColor.map { UIColor($0) }
+                                ?? fallbackColor,
+                        ]
+                    )
                 )
-            )
+            }
+            self.text = text
+            fontSize = size
+            self.fallback = fallback
+            cached = result
+            return result
         }
-        self.text = text
-        fontSize = size
-        self.fallback = fallback
-        cached = result
-        return result
     }
-}
 #endif
 
 #if canImport(AppKit)
-/// A horizontal-only code scroller that hands vertical trackpad gestures to
-/// the transcript. SwiftUI's horizontal `ScrollView` consumes both axes on
-/// macOS, so merely moving the pointer over a code block could stop the outer
-/// conversation mid-scroll.
-private struct HorizontalCodeScrollView: NSViewRepresentable {
-    let text: AttributedString
-    let foreground: Color
+    /// A horizontal-only code scroller that hands vertical trackpad gestures to
+    /// the transcript. SwiftUI's horizontal `ScrollView` consumes both axes on
+    /// macOS, so merely moving the pointer over a code block could stop the outer
+    /// conversation mid-scroll.
+    private struct HorizontalCodeScrollView: NSViewRepresentable {
+        let text: AttributedString
+        let foreground: Color
 
-    func makeNSView(context: Context) -> CodeScrollView {
-        let scrollView = CodeScrollView()
-        scrollView.setContent(text, foreground: foreground)
-        return scrollView
+        func makeNSView(context: Context) -> CodeScrollView {
+            let scrollView = CodeScrollView()
+            scrollView.setContent(text, foreground: foreground)
+            return scrollView
+        }
+
+        func updateNSView(_ scrollView: CodeScrollView, context: Context) {
+            scrollView.setContent(text, foreground: foreground)
+        }
+
+        func sizeThatFits(
+            _ proposal: ProposedViewSize, nsView scrollView: CodeScrollView, context: Context
+        ) -> CGSize? {
+            let contentSize = scrollView.contentFittingSize
+            let width = proposal.width.flatMap { $0.isFinite ? $0 : nil } ?? contentSize.width
+            return CGSize(width: width, height: contentSize.height)
+        }
     }
 
-    func updateNSView(_ scrollView: CodeScrollView, context: Context) {
-        scrollView.setContent(text, foreground: foreground)
-    }
+    @MainActor
+    private final class CodeScrollView: NSScrollView {
+        private enum GestureAxis {
+            case horizontal
+            case vertical
+        }
 
-    func sizeThatFits(
-        _ proposal: ProposedViewSize, nsView scrollView: CodeScrollView, context: Context
-    ) -> CGSize? {
-        let contentSize = scrollView.contentFittingSize
-        let width = proposal.width.flatMap { $0.isFinite ? $0 : nil } ?? contentSize.width
-        return CGSize(width: width, height: contentSize.height)
-    }
-}
+        private let codeTextView: TranscriptSelectableTextView
+        private var gestureAxis: GestureAxis?
+        private var renderedText: AttributedString?
+        private var renderedForeground: Color?
+        private(set) var contentFittingSize = CGSize(width: 1, height: 1)
 
-@MainActor
-private final class CodeScrollView: NSScrollView {
-    private enum GestureAxis {
-        case horizontal
-        case vertical
-    }
+        override init(frame frameRect: NSRect) {
+            let textStorage = NSTextStorage()
+            let layoutManager = NSLayoutManager()
+            textStorage.addLayoutManager(layoutManager)
+            let textContainer = NSTextContainer(
+                size: NSSize(
+                    width: CGFloat.greatestFiniteMagnitude,
+                    height: CGFloat.greatestFiniteMagnitude
+                )
+            )
+            textContainer.lineFragmentPadding = 0
+            textContainer.widthTracksTextView = false
+            textContainer.heightTracksTextView = false
+            layoutManager.addTextContainer(textContainer)
+            codeTextView = TranscriptSelectableTextView(frame: .zero, textContainer: textContainer)
 
-    private let codeTextView: TranscriptSelectableTextView
-    private var gestureAxis: GestureAxis?
-    private var renderedText: AttributedString?
-    private var renderedForeground: Color?
-    private(set) var contentFittingSize = CGSize(width: 1, height: 1)
+            super.init(frame: frameRect)
+            drawsBackground = false
+            borderType = .noBorder
+            hasHorizontalScroller = false
+            hasVerticalScroller = false
+            horizontalScrollElasticity = .automatic
+            verticalScrollElasticity = .none
+            automaticallyAdjustsContentInsets = false
+            usesPredominantAxisScrolling = true
 
-    override init(frame frameRect: NSRect) {
-        let textStorage = NSTextStorage()
-        let layoutManager = NSLayoutManager()
-        textStorage.addLayoutManager(layoutManager)
-        let textContainer = NSTextContainer(
-            size: NSSize(
+            codeTextView.isEditable = false
+            codeTextView.isSelectable = true
+            codeTextView.isRichText = true
+            codeTextView.drawsBackground = false
+            codeTextView.textContainerInset = NSSize(width: 10, height: 10)
+            codeTextView.isHorizontallyResizable = true
+            codeTextView.isVerticallyResizable = true
+            codeTextView.minSize = .zero
+            codeTextView.maxSize = NSSize(
                 width: CGFloat.greatestFiniteMagnitude,
                 height: CGFloat.greatestFiniteMagnitude
             )
-        )
-        textContainer.lineFragmentPadding = 0
-        textContainer.widthTracksTextView = false
-        textContainer.heightTracksTextView = false
-        layoutManager.addTextContainer(textContainer)
-        codeTextView = TranscriptSelectableTextView(frame: .zero, textContainer: textContainer)
-
-        super.init(frame: frameRect)
-        drawsBackground = false
-        borderType = .noBorder
-        hasHorizontalScroller = false
-        hasVerticalScroller = false
-        horizontalScrollElasticity = .automatic
-        verticalScrollElasticity = .none
-        automaticallyAdjustsContentInsets = false
-        usesPredominantAxisScrolling = true
-
-        codeTextView.isEditable = false
-        codeTextView.isSelectable = true
-        codeTextView.isRichText = true
-        codeTextView.drawsBackground = false
-        codeTextView.textContainerInset = NSSize(width: 10, height: 10)
-        codeTextView.isHorizontallyResizable = true
-        codeTextView.isVerticallyResizable = true
-        codeTextView.minSize = .zero
-        codeTextView.maxSize = NSSize(
-            width: CGFloat.greatestFiniteMagnitude,
-            height: CGFloat.greatestFiniteMagnitude
-        )
-        codeTextView.focusRingType = .none
-        documentView = codeTextView
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    func setContent(_ text: AttributedString, foreground: Color) {
-        guard renderedText != text || renderedForeground != foreground else { return }
-        renderedText = text
-        renderedForeground = foreground
-
-        codeTextView.textStorage?.setAttributedString(
-            Self.nativeText(text, foreground: foreground)
-        )
-        guard let layoutManager = codeTextView.layoutManager,
-            let textContainer = codeTextView.textContainer
-        else { return }
-        layoutManager.ensureLayout(for: textContainer)
-        let used = layoutManager.usedRect(for: textContainer)
-        let size = CGSize(
-            width: max(1, ceil(used.width) + 20),
-            height: max(1, ceil(used.height) + 20)
-        )
-        contentFittingSize = size
-        if codeTextView.frame.size != size {
-            codeTextView.setFrameSize(size)
-            reflectScrolledClipView(contentView)
+            codeTextView.focusRingType = .none
+            documentView = codeTextView
         }
-    }
 
-    private static func nativeText(
-        _ text: AttributedString, foreground: Color
-    ) -> NSAttributedString {
-        let result = NSMutableAttributedString()
-        let font = NSFont.monospacedSystemFont(
-            ofSize: NSFont.preferredFont(forTextStyle: .callout).pointSize,
-            weight: .regular
-        )
-        for run in text.runs {
-            var attributes: [NSAttributedString.Key: Any] = [
-                .font: font,
-                .foregroundColor: NSColor(foreground),
-            ]
-            if let tokenColor = run.foregroundColor {
-                attributes[.foregroundColor] = NSColor(tokenColor)
-            }
-            result.append(
-                NSAttributedString(
-                    string: String(text[run.range].characters),
-                    attributes: attributes
-                )
+        @available(*, unavailable)
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        func setContent(_ text: AttributedString, foreground: Color) {
+            guard renderedText != text || renderedForeground != foreground else { return }
+            renderedText = text
+            renderedForeground = foreground
+
+            codeTextView.textStorage?.setAttributedString(
+                Self.nativeText(text, foreground: foreground)
             )
-        }
-        return result
-    }
-
-    override func scrollWheel(with event: NSEvent) {
-        let hasGesturePhase = !event.phase.isEmpty || !event.momentumPhase.isEmpty
-        if event.phase.contains(.began) || gestureAxis == nil || !hasGesturePhase {
-            gestureAxis = preferredAxis(for: event)
-        }
-
-        if gestureAxis == .vertical, let outerScrollView = enclosingVerticalScrollView {
-            outerScrollView.scrollWheel(with: event)
-        } else {
-            super.scrollWheel(with: event)
-        }
-
-        if !hasGesturePhase || event.phase.contains(.ended) || event.phase.contains(.cancelled)
-            || event.momentumPhase.contains(.ended) || event.momentumPhase.contains(.cancelled)
-        {
-            gestureAxis = nil
-        }
-    }
-
-    private func preferredAxis(for event: NSEvent) -> GestureAxis {
-        if event.modifierFlags.contains(.shift) { return .horizontal }
-        return abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX) ? .vertical : .horizontal
-    }
-
-    private var enclosingVerticalScrollView: NSScrollView? {
-        var ancestor = superview
-        while let view = ancestor {
-            if let scrollView = view as? NSScrollView, scrollView !== self,
-                scrollView.hasVerticalScroller
-            {
-                return scrollView
+            guard let layoutManager = codeTextView.layoutManager,
+                let textContainer = codeTextView.textContainer
+            else { return }
+            layoutManager.ensureLayout(for: textContainer)
+            let used = layoutManager.usedRect(for: textContainer)
+            let size = CGSize(
+                width: max(1, ceil(used.width) + 20),
+                height: max(1, ceil(used.height) + 20)
+            )
+            contentFittingSize = size
+            if codeTextView.frame.size != size {
+                codeTextView.setFrameSize(size)
+                reflectScrolledClipView(contentView)
             }
-            ancestor = view.superview
         }
-        return nil
+
+        private static func nativeText(
+            _ text: AttributedString, foreground: Color
+        ) -> NSAttributedString {
+            let result = NSMutableAttributedString()
+            let font = NSFont.monospacedSystemFont(
+                ofSize: NSFont.preferredFont(forTextStyle: .callout).pointSize,
+                weight: .regular
+            )
+            for run in text.runs {
+                var attributes: [NSAttributedString.Key: Any] = [
+                    .font: font,
+                    .foregroundColor: NSColor(foreground),
+                ]
+                if let tokenColor = run.foregroundColor {
+                    attributes[.foregroundColor] = NSColor(tokenColor)
+                }
+                result.append(
+                    NSAttributedString(
+                        string: String(text[run.range].characters),
+                        attributes: attributes
+                    )
+                )
+            }
+            return result
+        }
+
+        override func scrollWheel(with event: NSEvent) {
+            let hasGesturePhase = !event.phase.isEmpty || !event.momentumPhase.isEmpty
+            if event.phase.contains(.began) || gestureAxis == nil || !hasGesturePhase {
+                gestureAxis = preferredAxis(for: event)
+            }
+
+            if gestureAxis == .vertical, let outerScrollView = enclosingVerticalScrollView {
+                outerScrollView.scrollWheel(with: event)
+            } else {
+                super.scrollWheel(with: event)
+            }
+
+            if !hasGesturePhase || event.phase.contains(.ended) || event.phase.contains(.cancelled)
+                || event.momentumPhase.contains(.ended) || event.momentumPhase.contains(.cancelled)
+            {
+                gestureAxis = nil
+            }
+        }
+
+        private func preferredAxis(for event: NSEvent) -> GestureAxis {
+            if event.modifierFlags.contains(.shift) { return .horizontal }
+            return abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX) ? .vertical : .horizontal
+        }
+
+        private var enclosingVerticalScrollView: NSScrollView? {
+            var ancestor = superview
+            while let view = ancestor {
+                if let scrollView = view as? NSScrollView, scrollView !== self,
+                    scrollView.hasVerticalScroller
+                {
+                    return scrollView
+                }
+                ancestor = view.superview
+            }
+            return nil
+        }
     }
-}
 #endif
 
 /// Last-value memo for the un-highlighted fallback text. Plain class in

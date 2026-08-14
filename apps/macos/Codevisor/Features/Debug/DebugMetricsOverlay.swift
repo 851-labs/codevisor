@@ -280,11 +280,13 @@ private struct FrameDurationMeter: View {
             let thresholdY = size.height - size.height * 16.67 / maximumSample
             threshold.move(to: CGPoint(x: 0, y: thresholdY))
             threshold.addLine(to: CGPoint(x: size.width, y: thresholdY))
-            context.stroke(threshold, with: .color(.white.opacity(0.16)), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+            context.stroke(
+                threshold, with: .color(.white.opacity(0.16)), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
 
             guard !visibleSamples.isEmpty else { return }
             let spacing = 1.5
-            let barWidth = max((size.width - spacing * CGFloat(visibleSamples.count - 1)) / CGFloat(visibleSamples.count), 1)
+            let barWidth = max(
+                (size.width - spacing * CGFloat(visibleSamples.count - 1)) / CGFloat(visibleSamples.count), 1)
 
             for (index, sample) in visibleSamples.enumerated() {
                 let cappedSample = min(sample, maximumSample)
@@ -295,11 +297,12 @@ private struct FrameDurationMeter: View {
                     width: barWidth,
                     height: height
                 )
-                let color: Color = switch sample {
-                case ..<18: .green
-                case ..<34: .yellow
-                default: .orange
-                }
+                let color: Color =
+                    switch sample {
+                    case ..<18: .green
+                    case ..<34: .yellow
+                    default: .orange
+                    }
                 context.fill(Path(roundedRect: rect, cornerRadius: 1), with: .color(color.opacity(0.9)))
             }
         }

@@ -51,16 +51,22 @@ public enum LineDiff {
             // Emit the current hunk's removals first, then its additions —
             // matching git's presentation of a replacement.
             while oldIndex < oldLines.count, removalOffsets.contains(oldIndex) {
-                rows.append(Row(id: rows.count, kind: .removed, oldLine: oldIndex + 1, newLine: nil, text: oldLines[oldIndex]))
+                rows.append(
+                    Row(id: rows.count, kind: .removed, oldLine: oldIndex + 1, newLine: nil, text: oldLines[oldIndex]))
                 oldIndex += 1
             }
             while newIndex < newLines.count, insertionOffsets.contains(newIndex) {
-                rows.append(Row(id: rows.count, kind: .added, oldLine: nil, newLine: newIndex + 1, text: newLines[newIndex]))
+                rows.append(
+                    Row(id: rows.count, kind: .added, oldLine: nil, newLine: newIndex + 1, text: newLines[newIndex]))
                 newIndex += 1
             }
             if oldIndex < oldLines.count, newIndex < newLines.count,
-               !removalOffsets.contains(oldIndex), !insertionOffsets.contains(newIndex) {
-                rows.append(Row(id: rows.count, kind: .context, oldLine: oldIndex + 1, newLine: newIndex + 1, text: newLines[newIndex]))
+                !removalOffsets.contains(oldIndex), !insertionOffsets.contains(newIndex)
+            {
+                rows.append(
+                    Row(
+                        id: rows.count, kind: .context, oldLine: oldIndex + 1, newLine: newIndex + 1,
+                        text: newLines[newIndex]))
                 oldIndex += 1
                 newIndex += 1
             }

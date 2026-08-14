@@ -1,9 +1,9 @@
 import QuartzCore
 import SwiftUI
 #if canImport(AppKit)
-import AppKit
+    import AppKit
 #elseif canImport(UIKit)
-import UIKit
+    import UIKit
 #endif
 
 /// A horizontal shimmer sweep masked to the content's shape, used for
@@ -96,7 +96,7 @@ final class ShimmerSweepLayer: CAGradientLayer {
                 primary,
                 primary.copy(alpha: 0.9)!,
                 primary.copy(alpha: 0)!,
-                primary.copy(alpha: 0)!
+                primary.copy(alpha: 0)!,
             ]
             CATransaction.commit()
         }
@@ -123,97 +123,97 @@ final class ShimmerSweepLayer: CAGradientLayer {
 }
 
 #if canImport(AppKit)
-private struct PlatformShimmerView: NSViewRepresentable {
-    let colorScheme: ColorScheme
+    private struct PlatformShimmerView: NSViewRepresentable {
+        let colorScheme: ColorScheme
 
-    func makeNSView(context: Context) -> ShimmerLayerHostView {
-        let view = ShimmerLayerHostView(frame: .zero)
-        view.colorScheme = colorScheme
-        return view
+        func makeNSView(context: Context) -> ShimmerLayerHostView {
+            let view = ShimmerLayerHostView(frame: .zero)
+            view.colorScheme = colorScheme
+            return view
+        }
+
+        func updateNSView(_ nsView: ShimmerLayerHostView, context: Context) {
+            nsView.colorScheme = colorScheme
+            nsView.updateShimmer()
+        }
     }
 
-    func updateNSView(_ nsView: ShimmerLayerHostView, context: Context) {
-        nsView.colorScheme = colorScheme
-        nsView.updateShimmer()
-    }
-}
+    @MainActor
+    private final class ShimmerLayerHostView: NSView {
+        let shimmerLayer = ShimmerSweepLayer()
+        var colorScheme: ColorScheme = .light
 
-@MainActor
-private final class ShimmerLayerHostView: NSView {
-    let shimmerLayer = ShimmerSweepLayer()
-    var colorScheme: ColorScheme = .light
+        override init(frame frameRect: NSRect) {
+            super.init(frame: frameRect)
+            wantsLayer = true
+            layer?.addSublayer(shimmerLayer)
+        }
 
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        layer?.addSublayer(shimmerLayer)
-    }
+        @available(*, unavailable)
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
 
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
+        override func layout() {
+            super.layout()
+            updateShimmer()
+        }
 
-    override func layout() {
-        super.layout()
-        updateShimmer()
-    }
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            updateShimmer()
+        }
 
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        updateShimmer()
+        func updateShimmer() {
+            shimmerLayer.update(size: bounds.size, colorScheme: colorScheme)
+        }
     }
-
-    func updateShimmer() {
-        shimmerLayer.update(size: bounds.size, colorScheme: colorScheme)
-    }
-}
 #elseif canImport(UIKit)
-private struct PlatformShimmerView: UIViewRepresentable {
-    let colorScheme: ColorScheme
+    private struct PlatformShimmerView: UIViewRepresentable {
+        let colorScheme: ColorScheme
 
-    func makeUIView(context: Context) -> ShimmerLayerHostView {
-        let view = ShimmerLayerHostView(frame: .zero)
-        view.colorScheme = colorScheme
-        return view
+        func makeUIView(context: Context) -> ShimmerLayerHostView {
+            let view = ShimmerLayerHostView(frame: .zero)
+            view.colorScheme = colorScheme
+            return view
+        }
+
+        func updateUIView(_ uiView: ShimmerLayerHostView, context: Context) {
+            uiView.colorScheme = colorScheme
+            uiView.updateShimmer()
+        }
     }
 
-    func updateUIView(_ uiView: ShimmerLayerHostView, context: Context) {
-        uiView.colorScheme = colorScheme
-        uiView.updateShimmer()
-    }
-}
+    @MainActor
+    private final class ShimmerLayerHostView: UIView {
+        let shimmerLayer = ShimmerSweepLayer()
+        var colorScheme: ColorScheme = .light
 
-@MainActor
-private final class ShimmerLayerHostView: UIView {
-    let shimmerLayer = ShimmerSweepLayer()
-    var colorScheme: ColorScheme = .light
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            isUserInteractionEnabled = false
+            layer.addSublayer(shimmerLayer)
+        }
 
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        isUserInteractionEnabled = false
-        layer.addSublayer(shimmerLayer)
-    }
+        @available(*, unavailable)
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
 
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            updateShimmer()
+        }
 
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        updateShimmer()
-    }
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            updateShimmer()
+        }
 
-    override func didMoveToWindow() {
-        super.didMoveToWindow()
-        updateShimmer()
+        func updateShimmer() {
+            shimmerLayer.update(size: bounds.size, colorScheme: colorScheme)
+        }
     }
-
-    func updateShimmer() {
-        shimmerLayer.update(size: bounds.size, colorScheme: colorScheme)
-    }
-}
 #endif
 
 extension View {

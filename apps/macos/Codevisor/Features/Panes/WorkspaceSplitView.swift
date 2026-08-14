@@ -323,12 +323,16 @@ private struct SplitLeafHeader: View {
     @ViewBuilder
     private func unreadToggleButton(_ session: ChatSession) -> some View {
         if isUnread(session) {
-            Button { sessionStore?.markRead(session) } label: {
+            Button {
+                sessionStore?.markRead(session)
+            } label: {
                 Label("Mark as read", systemImage: "message")
                     .labelStyle(.titleAndIcon)
             }
         } else {
-            Button { sessionStore?.markUnread(session) } label: {
+            Button {
+                sessionStore?.markUnread(session)
+            } label: {
                 Label("Mark as unread", systemImage: "message.badge")
                     .labelStyle(.titleAndIcon)
             }
@@ -341,7 +345,9 @@ private struct SplitLeafHeader: View {
     }
 
     private func splitMenuItem(_ name: String, icon: String, edge: SplitEdge) -> some View {
-        Button { onSplit(edge) } label: {
+        Button {
+            onSplit(edge)
+        } label: {
             Label(name, systemImage: icon)
                 .labelStyle(.titleAndIcon)
         }
@@ -380,11 +386,12 @@ private struct SplitDividerGrip: NSViewRepresentable {
             for area in trackingAreas {
                 removeTrackingArea(area)
             }
-            addTrackingArea(NSTrackingArea(
-                rect: .zero,
-                options: [.cursorUpdate, .mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
-                owner: self
-            ))
+            addTrackingArea(
+                NSTrackingArea(
+                    rect: .zero,
+                    options: [.cursorUpdate, .mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+                    owner: self
+                ))
         }
 
         override func cursorUpdate(with event: NSEvent) { cursor.set() }
@@ -588,12 +595,13 @@ private struct SplitBranchView: View {
                 updated[index] = start[index] + delta
                 updated[index + 1] = start[index + 1] - delta
                 liveFractions = updated
-                replaceLiveNode(.split(
-                    orientation: orientation,
-                    children: zip(children, updated).map {
-                        SplitChild(fraction: $1, node: $0.node)
-                    }
-                ))
+                replaceLiveNode(
+                    .split(
+                        orientation: orientation,
+                        children: zip(children, updated).map {
+                            SplitChild(fraction: $1, node: $0.node)
+                        }
+                    ))
             },
             onEnded: {
                 if let liveFractions {

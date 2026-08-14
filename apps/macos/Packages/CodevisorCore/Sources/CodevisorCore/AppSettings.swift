@@ -116,15 +116,17 @@ public struct AppSettings: Sendable, Codable, Equatable {
         permissionsReviewedVersion = try container.decodeIfPresent(String.self, forKey: .permissionsReviewedVersion)
         permissionsSetupSkipped = try container.decodeIfPresent(Bool.self, forKey: .permissionsSetupSkipped) ?? false
         onboardingStep = try container.decodeIfPresent(Int.self, forKey: .onboardingStep)
-        permissionsReviewInProgress = try container.decodeIfPresent(
-            Bool.self,
-            forKey: .permissionsReviewInProgress
-        ) ?? false
+        permissionsReviewInProgress =
+            try container.decodeIfPresent(
+                Bool.self,
+                forKey: .permissionsReviewInProgress
+            ) ?? false
         importExternalSessions = try container.decodeIfPresent(Bool.self, forKey: .importExternalSessions) ?? false
         // Existing installations completed onboarding before this preference
         // existed. Enable analytics for that migration cohort; fresh installs
         // remain disabled until the final onboarding step is completed.
-        shareAnalytics = try container.decodeIfPresent(Bool.self, forKey: .shareAnalytics)
+        shareAnalytics =
+            try container.decodeIfPresent(Bool.self, forKey: .shareAnalytics)
             ?? hasCompletedOnboarding
         // Native diagnostics are a separate data class. Never extend an older
         // analytics choice to Sentry without a new, explicit decision.
@@ -138,16 +140,19 @@ public struct AppSettings: Sendable, Codable, Equatable {
         lightThemeId = try container.decodeIfPresent(String.self, forKey: .lightThemeId) ?? ThemeCatalog.systemLightID
         darkThemeId = try container.decodeIfPresent(String.self, forKey: .darkThemeId) ?? ThemeCatalog.systemDarkID
         notificationsEnabled = try container.decodeIfPresent(Bool.self, forKey: .notificationsEnabled) ?? true
-        systemNotificationsEnabled = try container.decodeIfPresent(Bool.self, forKey: .systemNotificationsEnabled) ?? true
+        systemNotificationsEnabled =
+            try container.decodeIfPresent(Bool.self, forKey: .systemNotificationsEnabled) ?? true
         notificationSoundsEnabled = try container.decodeIfPresent(Bool.self, forKey: .notificationSoundsEnabled) ?? true
-        chatFinishedSoundPath = try container.decodeIfPresent(
-            String.self,
-            forKey: .chatFinishedSoundPath
-        ) ?? Self.defaultNotificationSoundPath
-        actionRequiredSoundPath = try container.decodeIfPresent(
-            String.self,
-            forKey: .actionRequiredSoundPath
-        ) ?? Self.defaultNotificationSoundPath
+        chatFinishedSoundPath =
+            try container.decodeIfPresent(
+                String.self,
+                forKey: .chatFinishedSoundPath
+            ) ?? Self.defaultNotificationSoundPath
+        actionRequiredSoundPath =
+            try container.decodeIfPresent(
+                String.self,
+                forKey: .actionRequiredSoundPath
+            ) ?? Self.defaultNotificationSoundPath
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -337,7 +342,8 @@ public final class AppSettingsModel {
         do {
             try store.saveData(JSONEncoder().encode(settings), forKey: key)
         } catch {
-            Log.persistence.error("Failed to save \(self.key, privacy: .public): \(String(describing: error), privacy: .public)")
+            Log.persistence.error(
+                "Failed to save \(self.key, privacy: .public): \(String(describing: error), privacy: .public)")
         }
     }
 }

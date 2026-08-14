@@ -163,7 +163,8 @@ public final class CloudAccountClient: CloudAccountClienting, Sendable {
             var token: String?
         }
         if let token = (try? JSONDecoder().decode(VerifyBody.self, from: data))?.token,
-           !token.isEmpty {
+            !token.isEmpty
+        {
             return token
         }
         throw CloudAccountClientError.missingToken
@@ -232,7 +233,8 @@ public final class CloudAccountClient: CloudAccountClienting, Sendable {
     }
 
     private func url(for path: String) throws -> URL {
-        let trimmedBase = baseURL.absoluteString.hasSuffix("/")
+        let trimmedBase =
+            baseURL.absoluteString.hasSuffix("/")
             ? String(baseURL.absoluteString.dropLast())
             : baseURL.absoluteString
         guard let url = URL(string: trimmedBase + path) else {

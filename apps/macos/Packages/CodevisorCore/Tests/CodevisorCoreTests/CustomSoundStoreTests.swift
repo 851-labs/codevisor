@@ -27,11 +27,12 @@ struct CustomSoundStoreTests {
         guard let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1) else {
             throw CustomSoundStore.ImportError.conversionFailed
         }
-        let settings: [String: Any] = compressed
+        let settings: [String: Any] =
+            compressed
             ? [
                 AVFormatIDKey: kAudioFormatMPEG4AAC,
                 AVSampleRateKey: sampleRate,
-                AVNumberOfChannelsKey: 1
+                AVNumberOfChannelsKey: 1,
             ]
             : [
                 AVFormatIDKey: kAudioFormatLinearPCM,
@@ -40,7 +41,7 @@ struct CustomSoundStoreTests {
                 AVLinearPCMBitDepthKey: 16,
                 AVLinearPCMIsFloatKey: false,
                 AVLinearPCMIsBigEndianKey: false,
-                AVLinearPCMIsNonInterleaved: false
+                AVLinearPCMIsNonInterleaved: false,
             ]
         let file = try AVAudioFile(
             forWriting: url,

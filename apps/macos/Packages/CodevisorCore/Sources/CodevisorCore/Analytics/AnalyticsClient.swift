@@ -63,17 +63,18 @@ public final class AnalyticsClient {
         }
 
         #if DEBUG
-        guard ProcessInfo.processInfo.environment["CODEVISOR_ENABLE_ANALYTICS"] == "1" else {
-            self.enabled = false
-            return
-        }
+            guard ProcessInfo.processInfo.environment["CODEVISOR_ENABLE_ANALYTICS"] == "1" else {
+                self.enabled = false
+                return
+            }
         #endif
 
         guard let token = Bundle.main.object(forInfoDictionaryKey: Self.projectTokenKey) as? String,
-              !token.isEmpty,
-              !token.hasPrefix("$("),
-              let host = Bundle.main.object(forInfoDictionaryKey: Self.hostKey) as? String,
-              URL(string: host) != nil else { return }
+            !token.isEmpty,
+            !token.hasPrefix("$("),
+            let host = Bundle.main.object(forInfoDictionaryKey: Self.hostKey) as? String,
+            URL(string: host) != nil
+        else { return }
 
         projectToken = token
         self.host = host
@@ -147,25 +148,25 @@ public final class AnalyticsClient {
             "arch": Self.architecture,
             "release_channel": Self.releaseChannel,
             // Do not derive or retain approximate location from the request IP.
-            "$geoip_disable": true
+            "$geoip_disable": true,
         ]
     }
 
     private static var architecture: String {
         #if arch(arm64)
-        "arm64"
+            "arm64"
         #elseif arch(x86_64)
-        "x86_64"
+            "x86_64"
         #else
-        "unknown"
+            "unknown"
         #endif
     }
 
     private static var releaseChannel: String {
         #if DEBUG
-        "development"
+            "development"
         #else
-        "release"
+            "release"
         #endif
     }
 }

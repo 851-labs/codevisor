@@ -50,8 +50,8 @@ struct HarnessUpdateBannerView: View {
         guard let harness else { return false }
         if isQueued { return true }
         guard let latestVersion,
-              harness.updateInfo?.updateAvailable == true,
-              latestVersion != dismissedVersion
+            harness.updateInfo?.updateAvailable == true,
+            latestVersion != dismissedVersion
         else { return false }
         return true
     }
@@ -81,7 +81,9 @@ struct HarnessUpdateBannerView: View {
                             Task { await applyPending(harness.id) }
                         }
                         .controlSize(.small)
-                        .help("Install without waiting for chats to finish — running chats keep the previous version until restarted")
+                        .help(
+                            "Install without waiting for chats to finish — running chats keep the previous version until restarted"
+                        )
                         Button("Cancel") {
                             Task { await cancelPending(harness.id) }
                         }

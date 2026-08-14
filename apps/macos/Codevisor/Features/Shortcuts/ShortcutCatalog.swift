@@ -129,7 +129,8 @@ enum ShortcutCatalog {
                 displayOverride: "⌘1–⌘9", category: .tabsAndSplits
             )
         case .previousTab:
-            ShortcutDefinition(.previousTab, "Previous Tab", ShortcutCombo("[", [.command, .shift]), category: .tabsAndSplits)
+            ShortcutDefinition(
+                .previousTab, "Previous Tab", ShortcutCombo("[", [.command, .shift]), category: .tabsAndSplits)
         case .nextTab:
             ShortcutDefinition(.nextTab, "Next Tab", ShortcutCombo("]", [.command, .shift]), category: .tabsAndSplits)
         case .previousSplit:
@@ -143,20 +144,30 @@ enum ShortcutCatalog {
         case .splitUp:
             ShortcutDefinition(.splitUp, "Split Up", nil, category: .tabsAndSplits)
         case .splitDown:
-            ShortcutDefinition(.splitDown, "Split Down", ShortcutCombo("d", [.command, .shift]), category: .tabsAndSplits)
+            ShortcutDefinition(
+                .splitDown, "Split Down", ShortcutCombo("d", [.command, .shift]), category: .tabsAndSplits)
         case .focusSplitLeft:
-            ShortcutDefinition(.focusSplitLeft, "Focus Split Left", ShortcutCombo(.leftArrow, [.command, .option]), category: .tabsAndSplits)
+            ShortcutDefinition(
+                .focusSplitLeft, "Focus Split Left", ShortcutCombo(.leftArrow, [.command, .option]),
+                category: .tabsAndSplits)
         case .focusSplitRight:
-            ShortcutDefinition(.focusSplitRight, "Focus Split Right", ShortcutCombo(.rightArrow, [.command, .option]), category: .tabsAndSplits)
+            ShortcutDefinition(
+                .focusSplitRight, "Focus Split Right", ShortcutCombo(.rightArrow, [.command, .option]),
+                category: .tabsAndSplits)
         case .focusSplitAbove:
-            ShortcutDefinition(.focusSplitAbove, "Focus Split Above", ShortcutCombo(.upArrow, [.command, .option]), category: .tabsAndSplits)
+            ShortcutDefinition(
+                .focusSplitAbove, "Focus Split Above", ShortcutCombo(.upArrow, [.command, .option]),
+                category: .tabsAndSplits)
         case .focusSplitBelow:
-            ShortcutDefinition(.focusSplitBelow, "Focus Split Below", ShortcutCombo(.downArrow, [.command, .option]), category: .tabsAndSplits)
+            ShortcutDefinition(
+                .focusSplitBelow, "Focus Split Below", ShortcutCombo(.downArrow, [.command, .option]),
+                category: .tabsAndSplits)
 
         case .toggleBottomPanel:
             ShortcutDefinition(.toggleBottomPanel, "Toggle Bottom Panel", ShortcutCombo("j", .command), category: .view)
         case .toggleDebugOverlay:
-            ShortcutDefinition(.toggleDebugOverlay, "Toggle Debug Overlay", ShortcutCombo("`", .command), category: .view)
+            ShortcutDefinition(
+                .toggleDebugOverlay, "Toggle Debug Overlay", ShortcutCombo("`", .command), category: .view)
 
         case .composerSend:
             ShortcutDefinition(
@@ -190,9 +201,11 @@ enum ShortcutCatalog {
                 displayOverride: "Space", category: .questionPicker
             )
         case .questionPickerSubmit:
-            ShortcutDefinition(.questionPickerSubmit, "Submit Answer", ShortcutCombo(.return), category: .questionPicker)
+            ShortcutDefinition(
+                .questionPickerSubmit, "Submit Answer", ShortcutCombo(.return), category: .questionPicker)
         case .questionPickerDismiss:
-            ShortcutDefinition(.questionPickerDismiss, "Dismiss Without Answering", ShortcutCombo(.escape), category: .questionPicker)
+            ShortcutDefinition(
+                .questionPickerDismiss, "Dismiss Without Answering", ShortcutCombo(.escape), category: .questionPicker)
         }
     }
 

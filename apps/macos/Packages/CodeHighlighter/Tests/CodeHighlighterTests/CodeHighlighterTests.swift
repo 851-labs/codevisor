@@ -27,7 +27,7 @@ struct CodeHighlighterTests {
                 language: "swift",
                 themeKey: "test-theme",
                 themeJSON: themeJSON
-        ))
+            ))
         #expect(tokens.count == 2)
         #expect(tokens[0].map(\.content).joined() == "// hi")
         // `func` is a keyword.

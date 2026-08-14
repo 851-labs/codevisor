@@ -61,8 +61,9 @@ struct McpSettingsView: View {
                     servers.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
                     if created.authType == "oauth" {
                         Task {
-                            do { try await beginOAuth(created) }
-                            catch { errorMessage = ErrorReporter.userFacingMessage(for: error) }
+                            do { try await beginOAuth(created) } catch {
+                                errorMessage = ErrorReporter.userFacingMessage(for: error)
+                            }
                         }
                     }
                 }
@@ -76,8 +77,9 @@ struct McpSettingsView: View {
                     replace(server, with: updated)
                     if updated.authType == "oauth" && updated.connectionState == "needsAuthorization" {
                         Task {
-                            do { try await beginOAuth(updated) }
-                            catch { errorMessage = ErrorReporter.userFacingMessage(for: error) }
+                            do { try await beginOAuth(updated) } catch {
+                                errorMessage = ErrorReporter.userFacingMessage(for: error)
+                            }
                         }
                     }
                 }
@@ -107,7 +109,9 @@ struct McpSettingsView: View {
                 Button("Cancel", role: .cancel) { nativeServerPendingRemoval = nil }
                     .settingsActionTint(theme)
             } message: {
-                Text("Codevisor edits only this entry in \(abbreviatePath(nativeServerPendingRemoval?.configPath ?? "")), backs the file up first, and keeps the entry so you can undo.")
+                Text(
+                    "Codevisor edits only this entry in \(abbreviatePath(nativeServerPendingRemoval?.configPath ?? "")), backs the file up first, and keeps the entry so you can undo."
+                )
             }
             .confirmationDialog(
                 "Remove \(serverPendingRemoval?.name ?? "MCP server")?",
@@ -262,9 +266,11 @@ struct McpSettingsView: View {
                             .foregroundStyle(.secondary)
                     } else if let removal = lastNativeRemoval {
                         HStack(spacing: 8) {
-                            Text("Removed \(removal.serverName) from \(harnessNames(for: [removal.harnessId])). The original file was backed up.")
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
+                            Text(
+                                "Removed \(removal.serverName) from \(harnessNames(for: [removal.harnessId])). The original file was backed up."
+                            )
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
                             Button("Undo") {
                                 Task { await undoNativeRemoval(removal) }
                             }
@@ -507,9 +513,10 @@ struct McpSettingsView: View {
     }
 
     private func harnessNames(for harnessIds: [String]) -> String {
-        let names = nativeScan?.harnesses.reduce(into: [String: String]()) { partial, harness in
-            partial[harness.harnessId] = harness.harnessName
-        } ?? [:]
+        let names =
+            nativeScan?.harnesses.reduce(into: [String: String]()) { partial, harness in
+                partial[harness.harnessId] = harness.harnessName
+            } ?? [:]
         return harnessIds.map { names[$0] ?? $0 }.joined(separator: ", ")
     }
 
@@ -559,7 +566,8 @@ struct McpSettingsView: View {
                     // handshake needs someone at that machine's desktop, so
                     // Browser Use always runs the managed browser there.
                     if browserConfiguration.chromeAvailable,
-                       browserConfiguration.supportsExtensionFlow {
+                        browserConfiguration.supportsExtensionFlow
+                    {
                         Button {
                             Task { await setPreferredBrowser("chrome") }
                         } label: {
@@ -580,9 +588,10 @@ struct McpSettingsView: View {
                         }
                     }
                     if browserConfiguration.chromeAvailable,
-                       browserConfiguration.supportsExtensionFlow,
-                       !browserConfiguration.chromeConnected,
-                       browserConfiguration.developmentExtensionPath != nil {
+                        browserConfiguration.supportsExtensionFlow,
+                        !browserConfiguration.chromeConnected,
+                        browserConfiguration.developmentExtensionPath != nil
+                    {
                         Divider()
                         Button("Install Chrome Extension…") {
                             Task { await installBrowserExtension() }
@@ -594,8 +603,9 @@ struct McpSettingsView: View {
                 .controlSize(.small)
                 .settingsActionTint(theme)
             }
-            let needsAuthorization = server.authType == "oauth" &&
-                ["needsAuthorization", "expired", "error"].contains(server.connectionState)
+            let needsAuthorization =
+                server.authType == "oauth"
+                && ["needsAuthorization", "expired", "error"].contains(server.connectionState)
             if needsAuthorization {
                 Button("Connect…") {
                     Task { try? await beginOAuth(server) }
@@ -603,10 +613,13 @@ struct McpSettingsView: View {
                 .settingsActionTint(theme)
                 .controlSize(.small)
             } else {
-                Toggle("Enable \(server.name)", isOn: Binding(
-                    get: { server.enabled },
-                    set: { enabled in Task { await setEnabled(server, enabled: enabled) } }
-                ))
+                Toggle(
+                    "Enable \(server.name)",
+                    isOn: Binding(
+                        get: { server.enabled },
+                        set: { enabled in Task { await setEnabled(server, enabled: enabled) } }
+                    )
+                )
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.small)
@@ -642,7 +655,8 @@ struct McpSettingsView: View {
 
     private func statusText(_ server: ServerMcpServer) -> String {
         if server.authType == "oauth",
-           ["needsAuthorization", "expired", "error"].contains(server.connectionState) {
+            ["needsAuthorization", "expired", "error"].contains(server.connectionState)
+        {
             return "Not connected"
         }
         switch server.connectionState {
@@ -659,7 +673,8 @@ struct McpSettingsView: View {
 
     private func statusSymbol(_ server: ServerMcpServer) -> String {
         if server.authType == "oauth",
-           ["needsAuthorization", "expired", "error"].contains(server.connectionState) {
+            ["needsAuthorization", "expired", "error"].contains(server.connectionState)
+        {
             return "circle"
         }
         switch server.connectionState {
@@ -675,7 +690,8 @@ struct McpSettingsView: View {
 
     private func statusStyle(_ server: ServerMcpServer) -> AnyShapeStyle {
         if server.authType == "oauth",
-           ["needsAuthorization", "expired", "error"].contains(server.connectionState) {
+            ["needsAuthorization", "expired", "error"].contains(server.connectionState)
+        {
             return AnyShapeStyle(.secondary)
         }
         switch server.connectionState {
@@ -1141,9 +1157,11 @@ private struct McpServerEditorSheet: View {
         self.save = save
         _name = State(initialValue: initialServer?.name ?? "")
         _transport = State(initialValue: initialServer?.transport ?? "http")
-        _location = State(initialValue: initialServer?.url ?? CommandLineCodec.format(
-            [initialServer?.command].compactMap { $0 } + (initialServer?.args ?? [])
-        ))
+        _location = State(
+            initialValue: initialServer?.url
+                ?? CommandLineCodec.format(
+                    [initialServer?.command].compactMap { $0 } + (initialServer?.args ?? [])
+                ))
         _authSelection = State(initialValue: initialServer?.authType ?? "auto")
         _detectedAuthType = State(initialValue: initialServer?.authType)
         _bearerToken = State(initialValue: "")
@@ -1153,12 +1171,14 @@ private struct McpServerEditorSheet: View {
         let environmentNames = Set(initialServer?.environmentNames ?? [])
         initialHeaderNames = headerNames
         initialEnvironmentNames = environmentNames
-        _headerEntries = State(initialValue: headerNames.sorted().map {
-            McpSecretEntry(name: $0, value: "", existing: true)
-        })
-        _environmentEntries = State(initialValue: environmentNames.sorted().map {
-            McpSecretEntry(name: $0, value: "", existing: true)
-        })
+        _headerEntries = State(
+            initialValue: headerNames.sorted().map {
+                McpSecretEntry(name: $0, value: "", existing: true)
+            })
+        _environmentEntries = State(
+            initialValue: environmentNames.sorted().map {
+                McpSecretEntry(name: $0, value: "", existing: true)
+            })
     }
 
     var body: some View {
@@ -1189,10 +1209,14 @@ private struct McpServerEditorSheet: View {
                             text: $location,
                             prompt: Text(verbatim: "https://mcp.sentry.dev")
                         )
-                        TextField("Name", text: Binding(
-                            get: { name },
-                            set: { name = $0; nameWasEdited = true }
-                        ), prompt: Text("Sentry"))
+                        TextField(
+                            "Name",
+                            text: Binding(
+                                get: { name },
+                                set: {
+                                    name = $0; nameWasEdited = true
+                                }
+                            ), prompt: Text("Sentry"))
                         authorizationPicker
                         if effectiveAuthType == "bearer" {
                             SecureField("Bearer Token", text: $bearerToken, prompt: Text("Paste token"))
@@ -1203,10 +1227,14 @@ private struct McpServerEditorSheet: View {
                             text: $location,
                             prompt: Text("npx @playwright/mcp@latest")
                         )
-                        TextField("Name", text: Binding(
-                            get: { name },
-                            set: { name = $0; nameWasEdited = true }
-                        ), prompt: Text("Playwright"))
+                        TextField(
+                            "Name",
+                            text: Binding(
+                                get: { name },
+                                set: {
+                                    name = $0; nameWasEdited = true
+                                }
+                            ), prompt: Text("Playwright"))
                     }
                 }
                 .listRowBackground(themedFormRowBackground)
@@ -1377,9 +1405,8 @@ private struct McpServerEditorSheet: View {
         } else {
             hasValidLocation = !location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
-        return !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-            hasValidLocation &&
-            validSecretEntries(headerEntries) && validSecretEntries(environmentEntries)
+        return !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && hasValidLocation
+            && validSecretEntries(headerEntries) && validSecretEntries(environmentEntries)
     }
 
     private func validSecretEntries(_ entries: [McpSecretEntry]) -> Bool {
@@ -1389,10 +1416,11 @@ private struct McpServerEditorSheet: View {
     }
 
     private func changedValues(_ entries: [McpSecretEntry]) -> [String: String] {
-        Dictionary(uniqueKeysWithValues: entries.compactMap { entry in
-            let name = entry.name.trimmingCharacters(in: .whitespacesAndNewlines)
-            return name.isEmpty || entry.value.isEmpty ? nil : (name, entry.value)
-        })
+        Dictionary(
+            uniqueKeysWithValues: entries.compactMap { entry in
+                let name = entry.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                return name.isEmpty || entry.value.isEmpty ? nil : (name, entry.value)
+            })
     }
 
     private func detectAuthorization() async {
@@ -1424,22 +1452,23 @@ private struct McpServerEditorSheet: View {
         defer { isSaving = false }
         do {
             let commandComponents = transport == "stdio" ? try CommandLineCodec.parse(location) : []
-            try await save(McpFormValues(
-                name: name,
-                transport: transport,
-                location: transport == "stdio" ? commandComponents[0] : location,
-                arguments: transport == "stdio" ? Array(commandComponents.dropFirst()) : [],
-                authSelection: authSelection,
-                effectiveAuthType: effectiveAuthType,
-                bearerToken: bearerToken.isEmpty ? nil : bearerToken,
-                oauthScope: oauthScope.isEmpty ? nil : oauthScope,
-                oauthClientId: clientId.isEmpty ? nil : clientId,
-                oauthClientSecret: clientSecret.isEmpty ? nil : clientSecret,
-                headers: changedValues(headerEntries),
-                environment: changedValues(environmentEntries),
-                removedHeaders: Array(initialHeaderNames.subtracting(headerEntries.map(\.name))),
-                removedEnvironment: Array(initialEnvironmentNames.subtracting(environmentEntries.map(\.name)))
-            ))
+            try await save(
+                McpFormValues(
+                    name: name,
+                    transport: transport,
+                    location: transport == "stdio" ? commandComponents[0] : location,
+                    arguments: transport == "stdio" ? Array(commandComponents.dropFirst()) : [],
+                    authSelection: authSelection,
+                    effectiveAuthType: effectiveAuthType,
+                    bearerToken: bearerToken.isEmpty ? nil : bearerToken,
+                    oauthScope: oauthScope.isEmpty ? nil : oauthScope,
+                    oauthClientId: clientId.isEmpty ? nil : clientId,
+                    oauthClientSecret: clientSecret.isEmpty ? nil : clientSecret,
+                    headers: changedValues(headerEntries),
+                    environment: changedValues(environmentEntries),
+                    removedHeaders: Array(initialHeaderNames.subtracting(headerEntries.map(\.name))),
+                    removedEnvironment: Array(initialEnvironmentNames.subtracting(environmentEntries.map(\.name)))
+                ))
             dismiss()
         } catch let error as CommandLineCodec.ParseError {
             errorMessage = error.localizedDescription
@@ -1751,8 +1780,9 @@ private struct McpServerDetailSheet: View {
     private func loadTools() async {
         isLoadingTools = true
         defer { isLoadingTools = false }
-        do { tools = try await client.listMcpTools(id: server.id) }
-        catch { errorMessage = ErrorReporter.userFacingMessage(for: error) }
+        do { tools = try await client.listMcpTools(id: server.id) } catch {
+            errorMessage = ErrorReporter.userFacingMessage(for: error)
+        }
     }
 
     private func remove() async {

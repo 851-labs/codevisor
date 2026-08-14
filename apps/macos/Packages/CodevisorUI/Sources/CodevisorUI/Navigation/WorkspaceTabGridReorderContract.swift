@@ -54,10 +54,12 @@ public enum WorkspaceTabGridReorderContract {
         )
         guard toleratedBounds.contains(point) else { return nil }
 
-        guard let candidate = usable.min(by: {
-            $0.frame.center.distanceSquared(to: point)
-                < $1.frame.center.distanceSquared(to: point)
-        }), candidate.index != currentIndex else { return nil }
+        guard
+            let candidate = usable.min(by: {
+                $0.frame.center.distanceSquared(to: point)
+                    < $1.frame.center.distanceSquared(to: point)
+            }), candidate.index != currentIndex
+        else { return nil }
 
         let origin = current.frame.center
         let destination = candidate.frame.center
@@ -66,10 +68,9 @@ public enum WorkspaceTabGridReorderContract {
         let distanceSquared = dx * dx + dy * dy
         guard distanceSquared > 0 else { return nil }
 
-        let progress = (
-            (point.x - origin.x) * dx
-                + (point.y - origin.y) * dy
-        ) / distanceSquared
+        let progress =
+            ((point.x - origin.x) * dx
+                + (point.y - origin.y) * dy) / distanceSquared
         guard progress >= commitProgress else { return nil }
         return candidate.index
     }

@@ -58,7 +58,7 @@ final class AttachmentImageStore {
             return cached
         }
         guard let payload = await Self.disk.load(baseKey: key, expectedVersion: nil),
-              let preview = await decodeDiskPayload(payload)
+            let preview = await decodeDiskPayload(payload)
         else { return nil }
         storeInMemory(preview, key: key)
         return preview
@@ -71,7 +71,7 @@ final class AttachmentImageStore {
         let resolvedVersion = await fileVersion(for: file.source)
 
         if let cached = Self.memory.object(forKey: key as NSString)?.value,
-           cached.version == resolvedVersion
+            cached.version == resolvedVersion
         {
             return cached
         }
@@ -96,14 +96,18 @@ final class AttachmentImageStore {
         let task = Task<AttachmentPreviewImage?, Never> {
             do {
                 let data = try await fetch(source)
-                guard let image = await Task.detached(priority: .userInitiated, operation: {
-                    await attachmentPreviewImage(
-                        data: data,
-                        name: name,
-                        mimeType: mimeType,
-                        isVideo: isVideo
-                    )
-                }).value, let aspectRatio = previewAspectRatio(for: image.size)
+                guard
+                    let image = await Task.detached(
+                        priority: .userInitiated,
+                        operation: {
+                            await attachmentPreviewImage(
+                                data: data,
+                                name: name,
+                                mimeType: mimeType,
+                                isVideo: isVideo
+                            )
+                        }
+                    ).value, let aspectRatio = previewAspectRatio(for: image.size)
                 else { return nil }
                 return AttachmentPreviewImage(
                     image: image,
@@ -123,9 +127,12 @@ final class AttachmentImageStore {
 
         storeInMemory(loaded, key: key)
         Task(priority: .utility) {
-            if let encoded = await Task.detached(priority: .utility, operation: {
-                pngData(for: loaded.image)
-            }).value {
+            if let encoded = await Task.detached(
+                priority: .utility,
+                operation: {
+                    pngData(for: loaded.image)
+                }
+            ).value {
                 await Self.disk.store(
                     baseKey: key,
                     version: loaded.version,
@@ -207,7 +214,8 @@ private actor AttachmentPreviewDiskCache {
 
     init() {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        directory = caches
+        directory =
+            caches
             .appendingPathComponent("Codevisor", isDirectory: true)
             .appendingPathComponent("AttachmentThumbnails-v1", isDirectory: true)
     }
@@ -215,14 +223,14 @@ private actor AttachmentPreviewDiskCache {
     func load(baseKey: String, expectedVersion: String?) -> Payload? {
         let urls = entryURLs(for: baseKey)
         guard let metadataData = try? Data(contentsOf: urls.metadata),
-              let metadata = try? JSONDecoder().decode(Metadata.self, from: metadataData),
-              metadata.baseKey == baseKey,
-              expectedVersion == nil || metadata.version == expectedVersion,
-              metadata.width.isFinite,
-              metadata.height.isFinite,
-              metadata.width > 0,
-              metadata.height > 0,
-              let thumbnail = try? Data(contentsOf: urls.thumbnail)
+            let metadata = try? JSONDecoder().decode(Metadata.self, from: metadataData),
+            metadata.baseKey == baseKey,
+            expectedVersion == nil || metadata.version == expectedVersion,
+            metadata.width.isFinite,
+            metadata.height.isFinite,
+            metadata.width > 0,
+            metadata.height > 0,
+            let thumbnail = try? Data(contentsOf: urls.thumbnail)
         else { return nil }
 
         let now = Date()
@@ -282,15 +290,17 @@ private actor AttachmentPreviewDiskCache {
     private func trimIfNeeded() {
         let manager = FileManager.default
         let keys: Set<URLResourceKey> = [.contentModificationDateKey, .fileSizeKey]
-        guard let files = try? manager.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: Array(keys),
-            options: [.skipsHiddenFiles]
-        ) else { return }
+        guard
+            let files = try? manager.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: Array(keys),
+                options: [.skipsHiddenFiles]
+            )
+        else { return }
 
         var entries: [Entry] = files.compactMap { thumbnailURL in
             guard thumbnailURL.pathExtension == "thumb",
-                  let values = try? thumbnailURL.resourceValues(forKeys: keys)
+                let values = try? thumbnailURL.resourceValues(forKeys: keys)
             else { return nil }
             return Entry(
                 thumbnailURL: thumbnailURL,
@@ -320,7 +330,7 @@ private nonisolated func previewAspectRatio(for size: CGSize) -> CGFloat? {
 
 private nonisolated func pngData(for image: NSImage) -> Data? {
     guard let tiff = image.tiffRepresentation,
-          let representation = NSBitmapImageRep(data: tiff)
+        let representation = NSBitmapImageRep(data: tiff)
     else { return nil }
     return representation.representation(using: .png, properties: [:])
 }
@@ -343,7 +353,8 @@ nonisolated func attachmentPreviewImage(
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let pathExtension = (name as NSString).pathExtension.isEmpty
+        let pathExtension =
+            (name as NSString).pathExtension.isEmpty
             ? (UTType(mimeType: mimeType)?.preferredFilenameExtension ?? "mp4")
             : (name as NSString).pathExtension
         let file = directory.appendingPathComponent("preview.\(pathExtension)")

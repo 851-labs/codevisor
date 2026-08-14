@@ -56,11 +56,14 @@ struct MarkdownParserTests {
     @Test("Parses ordered lists preserving numbers")
     func orderedList() {
         let blocks = parser.parse("1. first\n2. second\n10) tenth")
-        #expect(blocks == [.orderedList([
-            OrderedListItem(number: 1, text: "first"),
-            OrderedListItem(number: 2, text: "second"),
-            OrderedListItem(number: 10, text: "tenth")
-        ])])
+        #expect(
+            blocks == [
+                .orderedList([
+                    OrderedListItem(number: 1, text: "first"),
+                    OrderedListItem(number: 2, text: "second"),
+                    OrderedListItem(number: 10, text: "tenth"),
+                ])
+            ])
     }
 
     @Test("Parses thematic breaks")
@@ -80,17 +83,20 @@ struct MarkdownParserTests {
     @Test("Parses a GFM table with alignments")
     func table() {
         let markdown = """
-        | Name | Age | City |
-        | :--- | :-: | ---: |
-        | Ann  | 30  | NYC  |
-        | Bob  | 25  | LA   |
-        """
+            | Name | Age | City |
+            | :--- | :-: | ---: |
+            | Ann  | 30  | NYC  |
+            | Bob  | 25  | LA   |
+            """
         let blocks = parser.parse(markdown)
-        #expect(blocks == [.table(
-            headers: ["Name", "Age", "City"],
-            alignments: [.leading, .center, .trailing],
-            rows: [["Ann", "30", "NYC"], ["Bob", "25", "LA"]]
-        )])
+        #expect(
+            blocks == [
+                .table(
+                    headers: ["Name", "Age", "City"],
+                    alignments: [.leading, .center, .trailing],
+                    rows: [["Ann", "30", "NYC"], ["Bob", "25", "LA"]]
+                )
+            ])
     }
 
     @Test("Pads short table rows to the header width")
@@ -104,27 +110,28 @@ struct MarkdownParserTests {
     @Test("Interleaves block types in document order")
     func mixedDocument() {
         let markdown = """
-        # Title
+            # Title
 
-        Intro paragraph.
+            Intro paragraph.
 
-        - one
-        - two
+            - one
+            - two
 
-        ```
-        code
-        ```
+            ```
+            code
+            ```
 
-        Done.
-        """
+            Done.
+            """
         let blocks = parser.parse(markdown)
-        #expect(blocks == [
-            .heading(level: 1, text: "Title"),
-            .paragraph("Intro paragraph."),
-            .bulletList(["one", "two"]),
-            .codeBlock(language: nil, code: "code", isComplete: true),
-            .paragraph("Done.")
-        ])
+        #expect(
+            blocks == [
+                .heading(level: 1, text: "Title"),
+                .paragraph("Intro paragraph."),
+                .bulletList(["one", "two"]),
+                .codeBlock(language: nil, code: "code", isComplete: true),
+                .paragraph("Done."),
+            ])
     }
 
     @Test("Empty input yields no blocks")

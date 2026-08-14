@@ -111,10 +111,13 @@ struct NativeTranscriptView: UIViewControllerRepresentable {
     let reduceMotion: Bool
     let scrollIndicatorBottomInset: CGFloat
     let claimSendAnimation: @MainActor (UserSendAnimationRequest) -> Bool
-    let onSendAnimationStarted: (@MainActor (
-        UserSendAnimationRequest,
-        TranscriptSendAnimationTarget
-    ) -> Bool)?
+    let onSendAnimationStarted:
+        (
+            @MainActor (
+                UserSendAnimationRequest,
+                TranscriptSendAnimationTarget
+            ) -> Bool
+        )?
     let onSendAnimationCompleted: @MainActor (UserSendAnimationRequest) -> Void
     let rowContent: @MainActor (TranscriptVirtualRow) -> AnyView
     let onViewportChange: @MainActor (SessionScrollState) -> Void

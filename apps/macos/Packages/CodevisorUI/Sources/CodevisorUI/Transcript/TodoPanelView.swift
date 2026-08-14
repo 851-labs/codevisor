@@ -120,7 +120,7 @@ public struct TodoPanelView: View {
         plan: Plan(entries: [
             PlanEntry(content: "Read the existing code", priority: .high, status: .completed),
             PlanEntry(content: "Implement the change", priority: .medium, status: .inProgress),
-            PlanEntry(content: "Add tests", priority: .low, status: .pending)
+            PlanEntry(content: "Add tests", priority: .low, status: .pending),
         ]),
         isExpanded: $isExpanded
     )

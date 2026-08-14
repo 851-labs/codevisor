@@ -75,7 +75,8 @@ final class StreamingTextAnimationTimeline {
     func scheduleSegment(at now: TimeInterval) -> TimeInterval {
         let start = max(nextSegmentStartTime, now)
         let queuedDelay = max(0, start - now)
-        let step = queuedDelay < StreamingTextAnimationSpec.maximumRegularQueueDelay
+        let step =
+            queuedDelay < StreamingTextAnimationSpec.maximumRegularQueueDelay
             ? StreamingTextAnimationSpec.segmentDelay
             : StreamingTextAnimationSpec.catchUpDelay
         nextSegmentStartTime = start + step
@@ -154,9 +155,10 @@ final class StreamingTextAnimationTimeline {
         // state write avoids mutating SwiftUI state during that render pass.
         Task { @MainActor [weak self] in
             guard let self,
-                  self.observerGeneration == generation,
-                  self.reportedActive == active,
-                  self.activityObserver != nil else { return }
+                self.observerGeneration == generation,
+                self.reportedActive == active,
+                self.activityObserver != nil
+            else { return }
             observer(active)
         }
     }
@@ -266,7 +268,8 @@ final class StreamingTextAnimationState {
             // user turns Reduce Motion back off mid-response, only genuinely
             // new words animate.
             for (index, range) in ranges.enumerated() {
-                let start = sourceIsAppendOnly && index < oldWords.count
+                let start =
+                    sourceIsAppendOnly && index < oldWords.count
                     ? oldWords[index].startTime
                     : now - StreamingTextAnimationSpec.fadeDuration
                 nextWords.append(Word(text: range.text, startTime: start))

@@ -14,7 +14,8 @@ public struct AttachmentPreviewGeometryState: Sendable, Equatable {
         fallbackAspectRatio: CGFloat = 16.0 / 9.0
     ) {
         guard !isResolved else { return }
-        let fallback = fallbackAspectRatio.isFinite && fallbackAspectRatio > 0
+        let fallback =
+            fallbackAspectRatio.isFinite && fallbackAspectRatio > 0
             ? fallbackAspectRatio
             : 16.0 / 9.0
         if let candidate, candidate.isFinite, candidate > 0 {
@@ -34,7 +35,8 @@ public func boundedAttachmentPreviewSize(
     maximumSize: CGSize,
     fallbackAspectRatio: CGFloat = 16.0 / 9.0
 ) -> CGSize {
-    let fallback = fallbackAspectRatio.isFinite && fallbackAspectRatio > 0
+    let fallback =
+        fallbackAspectRatio.isFinite && fallbackAspectRatio > 0
         ? fallbackAspectRatio
         : 16.0 / 9.0
     let ratio: CGFloat

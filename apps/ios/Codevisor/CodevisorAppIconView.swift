@@ -9,20 +9,22 @@ struct CodevisorAppIconView: View {
 
     private static let appIcon: UIImage? = {
         let bundle = Bundle.main
-        let icons = bundle.object(forInfoDictionaryKey: "CFBundleIcons")
+        let icons =
+            bundle.object(forInfoDictionaryKey: "CFBundleIcons")
             as? [String: Any]
         let primaryIcon = icons?["CFBundlePrimaryIcon"] as? [String: Any]
         guard let fileNames = primaryIcon?["CFBundleIconFiles"] as? [String],
-              let resourceURLs = bundle.urls(
-                  forResourcesWithExtension: "png",
-                  subdirectory: nil
-              )
+            let resourceURLs = bundle.urls(
+                forResourcesWithExtension: "png",
+                subdirectory: nil
+            )
         else { return nil }
 
         // Icon Composer catalogs are valid app icons but are not regular image
         // assets: asking UIImage(named:) for their catalog name throws an
         // Objective-C exception. Load the rendered icon file directly instead.
-        let images = resourceURLs
+        let images =
+            resourceURLs
             .filter { url in
                 fileNames.contains { fileName in
                     url.deletingPathExtension().lastPathComponent

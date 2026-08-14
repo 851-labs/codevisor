@@ -103,16 +103,17 @@ final class ChatControllerCache {
             return draft
         }
         let persisted = environment.composerDrafts.draft(forServer: serverId)
-        let restoredProject = persisted.flatMap { saved in
-            environment.projectList.projects.first {
-                $0.serverId == serverId && $0.id == saved.projectId
-            }
-        } ?? environment.composerDefaults.lastProjectId(forServer: serverId).flatMap {
-            rememberedId in
-            environment.projectList.activeProjects.first {
-                $0.serverId == serverId && $0.id == rememberedId
-            }
-        } ?? preferredProject
+        let restoredProject =
+            persisted.flatMap { saved in
+                environment.projectList.projects.first {
+                    $0.serverId == serverId && $0.id == saved.projectId
+                }
+            } ?? environment.composerDefaults.lastProjectId(forServer: serverId).flatMap {
+                rememberedId in
+                environment.projectList.activeProjects.first {
+                    $0.serverId == serverId && $0.id == rememberedId
+                }
+            } ?? preferredProject
         environment.composerDefaults.rememberNewWorkspaceProject(
             serverId: serverId,
             projectId: restoredProject.id
@@ -128,7 +129,8 @@ final class ChatControllerCache {
         // Fresh drafts start from the machine's remembered run-location
         // choice (worktrees only apply to git projects). Retained drafts
         // returned above keep whatever the user toggled.
-        controller.wantsNewWorktree = restoredProject.isGitRepository
+        controller.wantsNewWorktree =
+            restoredProject.isGitRepository
             && environment.composerDefaults.prefersWorktreeForNewWorkspaces(
                 forServer: serverId
             )

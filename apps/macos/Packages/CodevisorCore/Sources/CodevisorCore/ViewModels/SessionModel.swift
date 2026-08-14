@@ -378,16 +378,17 @@ public final class SessionModel {
     private func scheduleFlush() {
         guard !isFlushScheduled else { return }
         isFlushScheduled = true
-        let interval: Duration = if isViewVisible || Self.eventFlushInterval == .zero {
-            // Zero base means a test drives settling by yielding; never make
-            // it wait out the background cadence.
-            Self.flushInterval(
-                base: Self.eventFlushInterval,
-                streamedBytes: transcriptStreamBytes
-            )
-        } else {
-            Self.backgroundEventFlushInterval
-        }
+        let interval: Duration =
+            if isViewVisible || Self.eventFlushInterval == .zero {
+                // Zero base means a test drives settling by yielding; never make
+                // it wait out the background cadence.
+                Self.flushInterval(
+                    base: Self.eventFlushInterval,
+                    streamedBytes: transcriptStreamBytes
+                )
+            } else {
+                Self.backgroundEventFlushInterval
+            }
         Task { @MainActor [weak self] in
             if interval > .zero {
                 try? await Task.sleep(for: interval)
@@ -411,10 +412,11 @@ public final class SessionModel {
             case let .user(message):
                 return total + message.text.utf8.count
             case let .assistant(message):
-                return total + message.turn.entries.reduce(0) { sum, entry in
-                    if case let .text(_, markdown) = entry { return sum + markdown.utf8.count }
-                    return sum
-                }
+                return total
+                    + message.turn.entries.reduce(0) { sum, entry in
+                        if case let .text(_, markdown) = entry { return sum + markdown.utf8.count }
+                        return sum
+                    }
             }
         }
     }
@@ -444,15 +446,17 @@ public final class SessionModel {
         result.reserveCapacity(events.count)
         for event in events {
             if case let .update(.agentMessageChunk(block, messageId, parent, phase)) = event,
-               case let .text(text, annotations) = block, annotations == nil, !text.isEmpty,
-               case let .update(.agentMessageChunk(previousBlock, previousId, previousParent, previousPhase)) =
-                   result.last,
-               case let .text(previousText, previousAnnotations) = previousBlock,
-               previousAnnotations == nil, !previousText.isEmpty,
-               messageId == previousId, parent == previousParent, phase == previousPhase {
-                result[result.count - 1] = .update(.agentMessageChunk(
-                    .text(previousText + text), messageId: messageId, parentToolCallId: parent, phase: phase
-                ))
+                case let .text(text, annotations) = block, annotations == nil, !text.isEmpty,
+                case let .update(.agentMessageChunk(previousBlock, previousId, previousParent, previousPhase)) =
+                    result.last,
+                case let .text(previousText, previousAnnotations) = previousBlock,
+                previousAnnotations == nil, !previousText.isEmpty,
+                messageId == previousId, parent == previousParent, phase == previousPhase
+            {
+                result[result.count - 1] = .update(
+                    .agentMessageChunk(
+                        .text(previousText + text), messageId: messageId, parentToolCallId: parent, phase: phase
+                    ))
             } else {
                 result.append(event)
             }
@@ -522,9 +526,10 @@ public final class SessionModel {
             // Only undo this mutation if it is still the newest request and
             // the live config stream has not already supplied another value.
             if configMutationRevisions[configId] == revision,
-               let previousValue,
-               let index = configOptions.firstIndex(where: { $0.id == configId }),
-               configOptions[index].currentValue == value {
+                let previousValue,
+                let index = configOptions.firstIndex(where: { $0.id == configId }),
+                configOptions[index].currentValue == value
+            {
                 configOptions[index].currentValue = previousValue
             }
             errorMessage = serverErrorMessage(error)
@@ -985,7 +990,8 @@ public final class SessionModel {
     ) -> [SessionConfigOption] {
         currentOptions.map { option in
             guard let selected = selections[option.id],
-                  option.options.contains(where: { $0.value == selected }) else {
+                option.options.contains(where: { $0.value == selected })
+            else {
                 return option
             }
             var merged = option
@@ -1002,9 +1008,10 @@ public final class SessionModel {
         let categoryOrder = [
             SessionConfigOption.Category.model: 0,
             SessionConfigOption.Category.thoughtLevel: 1,
-            SessionConfigOption.Category.speed: 2
+            SessionConfigOption.Category.speed: 2,
         ]
-        let changed = restoredOptions
+        let changed =
+            restoredOptions
             .filter { runtimeValues[$0.id] != $0.currentValue }
             .sorted {
                 (categoryOrder[$0.category ?? ""] ?? 99) < (categoryOrder[$1.category ?? ""] ?? 99)
@@ -1026,7 +1033,8 @@ public final class SessionModel {
     @discardableResult
     public func loadOlderHistory() async -> Int {
         guard usesPaginatedHistory, hasOlderHistory, !isLoadingOlderHistory,
-              let cursor = olderHistoryCursor else { return 0 }
+            let cursor = olderHistoryCursor
+        else { return 0 }
         isLoadingOlderHistory = true
         defer { isLoadingOlderHistory = false }
         do {
@@ -1095,7 +1103,7 @@ public final class SessionModel {
                 // `modelFallback` is session-level state, not per-turn detail:
                 // replaying history must not resurrect a dismissed notice.
                 case .userMessage, .queueUpdated, .retrying, .backgroundTasks, .runtimeState,
-                     .planApprovalRequired, .updateGate, .modelFallback:
+                    .planApprovalRequired, .updateGate, .modelFallback:
                     break
                 }
             }
@@ -1139,8 +1147,9 @@ public final class SessionModel {
             return (.settled(index), settledConversation[index])
         }
         if case let .assistant(message) = activeItem,
-           message.turn.deferredDetailItemId == itemId,
-           let activeItem {
+            message.turn.deferredDetailItemId == itemId,
+            let activeItem
+        {
             return (.active, activeItem)
         }
         return nil
@@ -1242,8 +1251,9 @@ public final class SessionModel {
             // sits one or more bubbles back — routing by ownership keeps that
             // section growing instead of spawning a spurious new bubble.
             if let index = owningItemIndex(for: update),
-               case .assistant(var message) = item(at: index),
-               !(index == itemCount - 1 && message.turn.isGenerating) {
+                case .assistant(var message) = item(at: index),
+                !(index == itemCount - 1 && message.turn.isGenerating)
+            {
                 TranscriptReducer.apply(update, to: &message.turn)
                 setItem(.assistant(message), at: index)
                 recordToolRoute(for: update, itemId: message.id)
@@ -1284,7 +1294,8 @@ public final class SessionModel {
         default:
             return nil
         }
-        let ownerId = parentId.flatMap { toolOwnerItemIds[$0] }
+        let ownerId =
+            parentId.flatMap { toolOwnerItemIds[$0] }
             ?? toolCallId.flatMap { toolOwnerItemIds[$0] }
         guard let ownerId else { return nil }
         if activeItem?.id == ownerId { return settledConversation.count }
@@ -1335,7 +1346,8 @@ public final class SessionModel {
                 retryable: retryable
             )
             lastTurnInitiator = initiatedBy
-            lastTurnEndedWithError = stopDetail != nil
+            lastTurnEndedWithError =
+                stopDetail != nil
                 || (stopReason != .endTurn && stopReason != .cancelled)
             endTurn()
         case let .failed(message, retryable):
@@ -1482,7 +1494,7 @@ public final class SessionModel {
             case .contextCompaction:
                 return .modelStream
             case .userMessageChunk, .availableCommandsUpdate, .currentModeUpdate,
-                 .configOptionUpdate, .usageUpdate, .goalUpdate, .goalCleared:
+                .configOptionUpdate, .usageUpdate, .goalUpdate, .goalCleared:
                 return nil
             }
         case .retrying:
@@ -1492,7 +1504,7 @@ public final class SessionModel {
         case .assistantFinalized:
             return .modelStream
         case .finished, .failed, .authenticationRequired, .queueUpdated, .updateGate,
-             .backgroundTasks, .runtimeState, .planApprovalRequired, .modelFallback:
+            .backgroundTasks, .runtimeState, .planApprovalRequired, .modelFallback:
             return nil
         }
     }
@@ -1518,12 +1530,14 @@ public final class SessionModel {
         // and whatever the agent did in between. Stamp attachments the
         // optimistic append may not have carried.
         if let echoId = id.flatMap(UUID.init(uuidString:)),
-           let index = settledConversation.lastIndex(where: { item in
-               if case let .user(user) = item { return user.id == echoId }
-               return false
-           }) {
+            let index = settledConversation.lastIndex(where: { item in
+                if case let .user(user) = item { return user.id == echoId }
+                return false
+            })
+        {
             if case var .user(user) = settledConversation[index],
-               user.attachments.isEmpty, !attachments.isEmpty {
+                user.attachments.isEmpty, !attachments.isEmpty
+            {
                 user.attachments = attachments
                 settledConversation[index] = .user(user)
             }
@@ -1544,11 +1558,13 @@ public final class SessionModel {
             return
         }
         settleActiveItem()
-        appendSettled(.user(UserMessage(
-            id: id.flatMap(UUID.init(uuidString:)) ?? UUID(),
-            text: text,
-            attachments: attachments
-        )))
+        appendSettled(
+            .user(
+                UserMessage(
+                    id: id.flatMap(UUID.init(uuidString:)) ?? UUID(),
+                    text: text,
+                    attachments: attachments
+                )))
         startActiveBubble()
         if !isSending { isSending = true }
     }
@@ -1563,7 +1579,8 @@ public final class SessionModel {
         // A pathological sequence of remote deletes should not leave an
         // unbounded side table while no further queue events arrive.
         if pendingQueuePromotionIDs.count > 32 {
-            let newest = pendingQueuePromotionIDs
+            let newest =
+                pendingQueuePromotionIDs
                 .sorted { $0.value > $1.value }
                 .prefix(32)
                 .map { ($0.key, $0.value) }
@@ -1575,7 +1592,8 @@ public final class SessionModel {
         guard let id else { return false }
         let now = ProcessInfo.processInfo.systemUptime
         guard let deadline = pendingQueuePromotionIDs.removeValue(forKey: id),
-              deadline > now else { return false }
+            deadline > now
+        else { return false }
         return true
     }
 
@@ -1622,11 +1640,12 @@ public final class SessionModel {
         // including a stale one replayed from history on reconnect.
         errorMessage = nil
         harnessAuthenticationErrorMessage = nil
-        activeItem = .assistant(AssistantMessage(
-            // Waiting for the first provider event is not itself reasoning.
-            // Explicit thought chunks flip this to true in TranscriptReducer.
-            turn: AssistantTurn(isGenerating: true, isThinking: false, startedAt: now())
-        ))
+        activeItem = .assistant(
+            AssistantMessage(
+                // Waiting for the first provider event is not itself reasoning.
+                // Explicit thought chunks flip this to true in TranscriptReducer.
+                turn: AssistantTurn(isGenerating: true, isThinking: false, startedAt: now())
+            ))
         if !hasActiveItem { hasActiveItem = true }
     }
 

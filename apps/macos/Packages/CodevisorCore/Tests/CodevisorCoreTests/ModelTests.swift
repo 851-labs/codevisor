@@ -26,7 +26,9 @@ struct ModelTests {
     func harnessAuthTerminalAttachKey() throws {
         let current = try JSONDecoder().decode(
             ServerHarnessAuthFlow.self,
-            from: Data(#"{"id":"flow-1","accountId":"account-1","kind":"terminal","terminalId":"terminal-1","terminalKey":"auth:flow-1"}"#.utf8)
+            from: Data(
+                #"{"id":"flow-1","accountId":"account-1","kind":"terminal","terminalId":"terminal-1","terminalKey":"auth:flow-1"}"#
+                    .utf8)
         )
         let legacy = try JSONDecoder().decode(
             ServerHarnessAuthFlow.self,
@@ -58,10 +60,10 @@ struct ModelTests {
     func legacyProjectDecoding() throws {
         let id = UUID()
         let json = """
-        {"id":"\(id.uuidString)","serverId":"local","name":"Legacy",
-         "folderURL":"file:///Users/me/src/legacy/","isArchived":false,
-         "symbolName":"folder","origin":"codevisor","createdAt":768000000}
-        """
+            {"id":"\(id.uuidString)","serverId":"local","name":"Legacy",
+             "folderURL":"file:///Users/me/src/legacy/","isArchived":false,
+             "symbolName":"folder","origin":"codevisor","createdAt":768000000}
+            """
         let project = try JSONDecoder().decode(Project.self, from: Data(json.utf8))
         #expect(project.locations.count == 1)
         #expect(project.locations.first?.serverId == "local")
@@ -74,9 +76,9 @@ struct ModelTests {
         let sessionId = UUID()
         let projectId = UUID()
         let json = """
-        {"id":"\(sessionId.uuidString)","workspaceId":"\(projectId.uuidString)",
-         "title":"Legacy","createdAt":768000000}
-        """
+            {"id":"\(sessionId.uuidString)","workspaceId":"\(projectId.uuidString)",
+             "title":"Legacy","createdAt":768000000}
+            """
         let session = try JSONDecoder().decode(ChatSession.self, from: Data(json.utf8))
         #expect(session.projectId == projectId)
         #expect(session.worktreeName == nil)
@@ -142,9 +144,10 @@ struct ModelTests {
 
         let empty = AssistantMessage(turn: AssistantTurn())
         let generating = AssistantMessage(turn: AssistantTurn(isGenerating: true))
-        let answer = AssistantMessage(turn: AssistantTurn(
-            entries: [.text(id: "answer", markdown: "done")]
-        ))
+        let answer = AssistantMessage(
+            turn: AssistantTurn(
+                entries: [.text(id: "answer", markdown: "done")]
+            ))
         let failure = AssistantMessage(turn: AssistantTurn(stopDetail: "provider failed"))
         let deferred = AssistantMessage(turn: AssistantTurn(hasDeferredWorkedDetails: true))
         let plan = AssistantMessage(turn: AssistantTurn(planDocument: "Ship it"))

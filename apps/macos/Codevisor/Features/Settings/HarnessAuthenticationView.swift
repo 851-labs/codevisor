@@ -70,8 +70,8 @@ struct HarnessAuthenticationView: View {
                         machine: environment.machines.selectedMachine,
                         lifecycle: authTerminalLifecycle
                     )
-                        .frame(minHeight: 280)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .frame(minHeight: 280)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
                     authProgress
                 }
                 .padding(20)
@@ -132,7 +132,8 @@ struct HarnessAuthenticationView: View {
                                 Button("Sign In") { submitApiKey(account: account, method: method) }
                                     .settingsActionTint(theme)
                                     .keyboardShortcut(.defaultAction)
-                                    .disabled(apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isWorking)
+                                    .disabled(
+                                        apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isWorking)
                             }
                         }
                     }
@@ -144,11 +145,13 @@ struct HarnessAuthenticationView: View {
         .task { await load() }
         .onDisappear {
             guard let flow else { return }
-            Task { try? await client.cancelHarnessLogin(
-                harnessId: harness.id,
-                accountId: flow.accountId,
-                flowId: flow.id
-            ) }
+            Task {
+                try? await client.cancelHarnessLogin(
+                    harnessId: harness.id,
+                    accountId: flow.accountId,
+                    flowId: flow.id
+                )
+            }
         }
     }
 
@@ -277,17 +280,23 @@ struct HarnessAuthenticationView: View {
     }
 
     private func activate(_ account: ServerHarnessAccount) async {
-        await perform { accounts = try await client.activateHarnessAccount(harnessId: harness.id, accountId: account.id) }
+        await perform {
+            accounts = try await client.activateHarnessAccount(harnessId: harness.id, accountId: account.id)
+        }
         await refreshHarness()
     }
 
     private func logout(_ account: ServerHarnessAccount) async {
-        await perform { _ = try await client.logoutHarnessAccount(harnessId: harness.id, accountId: account.id); await load() }
+        await perform {
+            _ = try await client.logoutHarnessAccount(harnessId: harness.id, accountId: account.id); await load()
+        }
         await refreshHarness()
     }
 
     private func remove(_ account: ServerHarnessAccount) async {
-        await perform { try await client.removeHarnessAccount(harnessId: harness.id, accountId: account.id); await load() }
+        await perform {
+            try await client.removeHarnessAccount(harnessId: harness.id, accountId: account.id); await load()
+        }
         await refreshHarness()
     }
 
@@ -333,7 +342,8 @@ struct HarnessAuthenticationView: View {
     private func poll(accountId: String) async {
         for _ in 0..<300 where !Task.isCancelled && flow != nil {
             try? await Task.sleep(for: .seconds(2))
-            guard let account = try? await client.probeHarnessAccount(harnessId: harness.id, accountId: accountId) else { continue }
+            guard let account = try? await client.probeHarnessAccount(harnessId: harness.id, accountId: accountId)
+            else { continue }
             if account.authState == "authenticated" || account.authState == "notRequired" {
                 flow = nil
                 await finishAuthentication(accountId: accountId)
@@ -378,7 +388,9 @@ struct HarnessAuthenticationView: View {
     }
 
     private func refreshHarness() async {
-        if let updated = try? await environment.refreshHarnessAuthentication(harnessId: harness.id, onServer: scopedServerId) {
+        if let updated = try? await environment.refreshHarnessAuthentication(
+            harnessId: harness.id, onServer: scopedServerId)
+        {
             methods = updated.auth?.loginMethods ?? methods
             onChange(updated)
         }
@@ -387,8 +399,7 @@ struct HarnessAuthenticationView: View {
     private func perform(_ operation: () async throws -> Void) async {
         isWorking = true
         defer { isWorking = false }
-        do { try await operation(); errorMessage = nil }
-        catch { errorMessage = serverErrorMessage(error) }
+        do { try await operation(); errorMessage = nil } catch { errorMessage = serverErrorMessage(error) }
     }
 
     private func copy(_ value: String) {
@@ -427,7 +438,7 @@ private struct AuthTerminalView: NSViewRepresentable {
             child.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             child.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             child.topAnchor.constraint(equalTo: container.topAnchor),
-            child.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+            child.bottomAnchor.constraint(equalTo: container.bottomAnchor),
         ])
         return container
     }

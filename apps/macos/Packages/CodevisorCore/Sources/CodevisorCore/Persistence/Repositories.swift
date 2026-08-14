@@ -60,7 +60,8 @@ public struct CodableRepository<Element: Codable & Sendable>: Sendable {
             do {
                 try store.saveData(PersistenceEncoding.encoder.encode(elements), forKey: key)
             } catch {
-                Log.persistence.error("Failed to save \(key, privacy: .public): \(String(describing: error), privacy: .public)")
+                Log.persistence.error(
+                    "Failed to save \(key, privacy: .public): \(String(describing: error), privacy: .public)")
             }
         }
     }
@@ -167,8 +168,9 @@ public struct DefaultProjectRepository: ProjectRepository {
         // the first time the new key comes up empty. Project's decoder maps the
         // legacy shape onto locations.
         guard let data = store.loadData(forKey: "workspaces"),
-              let legacy = try? JSONDecoder().decode([Project].self, from: data),
-              !legacy.isEmpty else { return [] }
+            let legacy = try? JSONDecoder().decode([Project].self, from: data),
+            !legacy.isEmpty
+        else { return [] }
         repository.save(legacy)
         // One-time migration: make the new key visible to direct store reads
         // before returning, preserving the old synchronous save semantics.

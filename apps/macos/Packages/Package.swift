@@ -8,7 +8,7 @@ let package = Package(
     name: "CodevisorKit",
     platforms: [
         .macOS("26.0"),
-        .iOS("26.0")
+        .iOS("26.0"),
     ],
     products: [
         .library(name: "ACPKit", targets: ["ACPKit"]),
@@ -17,11 +17,11 @@ let package = Package(
         .library(name: "CodeHighlighter", targets: ["CodeHighlighter"]),
         .library(name: "CodevisorCore", targets: ["CodevisorCore"]),
         .library(name: "CodevisorCoreMac", targets: ["CodevisorCoreMac"]),
-        .library(name: "CodevisorUI", targets: ["CodevisorUI"])
+        .library(name: "CodevisorUI", targets: ["CodevisorUI"]),
     ],
     dependencies: [
         .package(url: "https://github.com/PostHog/posthog-ios.git", exact: "3.59.3"),
-        .package(url: "https://github.com/getsentry/sentry-cocoa.git", exact: "9.23.0")
+        .package(url: "https://github.com/getsentry/sentry-cocoa.git", exact: "9.23.0"),
     ],
     targets: [
         // MARK: CodevisorTheming (VSCode/Shiki theme parsing, normalization,
@@ -87,13 +87,13 @@ let package = Package(
                 "ACPKit",
                 "CodevisorTheming",
                 .product(name: "PostHog", package: "posthog-ios"),
-                .product(name: "Sentry", package: "sentry-cocoa")
+                .product(name: "Sentry", package: "sentry-cocoa"),
             ],
             path: "CodevisorCore/Sources/CodevisorCore",
             swiftSettings: [.swiftLanguageMode(.v6)],
             linkerSettings: [
                 .linkedLibrary("sqlite3"),
-                .linkedFramework("Security")
+                .linkedFramework("Security"),
             ]
         ),
         .testTarget(
@@ -101,7 +101,7 @@ let package = Package(
             dependencies: [
                 "CodevisorCore",
                 "ACPKit",
-                .product(name: "Sentry", package: "sentry-cocoa")
+                .product(name: "Sentry", package: "sentry-cocoa"),
             ],
             path: "CodevisorCore/Tests/CodevisorCoreTests",
             swiftSettings: [.swiftLanguageMode(.v6)]
@@ -125,7 +125,7 @@ let package = Package(
                 "CodevisorCore",
                 "CodevisorTheming",
                 "StreamMarkdown",
-                "CodeHighlighter"
+                "CodeHighlighter",
             ],
             path: "CodevisorUI/Sources/CodevisorUI",
             swiftSettings: [.swiftLanguageMode(.v6)]
@@ -134,7 +134,7 @@ let package = Package(
             name: "CodevisorUITests",
             dependencies: [
                 "CodevisorUI",
-                "ACPKit"
+                "ACPKit",
             ],
             path: "CodevisorUI/Tests/CodevisorUITests",
             swiftSettings: [.swiftLanguageMode(.v6)]
@@ -145,10 +145,10 @@ let package = Package(
             dependencies: [
                 "CodevisorCoreMac",
                 "CodevisorCore",
-                "ACPKit"
+                "ACPKit",
             ],
             path: "CodevisorCoreMac/Tests/CodevisorCoreMacTests",
             swiftSettings: [.swiftLanguageMode(.v6)]
-        )
+        ),
     ]
 )

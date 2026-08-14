@@ -22,9 +22,9 @@ public enum Typography {
     /// iOS/iPadOS: 11 pt · macOS: 10 pt. Nothing readable may go below this.
     public static let minimumTextSize: CGFloat = {
         #if os(macOS)
-        return 10
+            return 10
         #else
-        return 11
+            return 11
         #endif
     }()
 
@@ -32,9 +32,9 @@ public enum Typography {
     /// iOS/iPadOS: 17 pt · macOS: 13 pt.
     public static let defaultTextSize: CGFloat = {
         #if os(macOS)
-        return 13
+            return 13
         #else
-        return 17
+            return 17
         #endif
     }()
 

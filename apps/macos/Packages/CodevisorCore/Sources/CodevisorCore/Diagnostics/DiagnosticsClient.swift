@@ -58,16 +58,17 @@ public final class DiagnosticsClient {
         }
 
         #if DEBUG
-        guard ProcessInfo.processInfo.environment["CODEVISOR_ENABLE_DIAGNOSTICS"] == "1" else {
-            consentGate.setEnabled(false)
-            return
-        }
+            guard ProcessInfo.processInfo.environment["CODEVISOR_ENABLE_DIAGNOSTICS"] == "1" else {
+                consentGate.setEnabled(false)
+                return
+            }
         #endif
 
         guard let value = Bundle.main.object(forInfoDictionaryKey: Self.dsnKey) as? String,
-              !value.isEmpty,
-              !value.hasPrefix("$("),
-              URL(string: value)?.scheme == "https" else { return }
+            !value.isEmpty,
+            !value.hasPrefix("$("),
+            URL(string: value)?.scheme == "https"
+        else { return }
 
         dsn = value
         setEnabled(enabled)
@@ -119,9 +120,9 @@ public final class DiagnosticsClient {
         // data surface.
         options.enableCrashHandler = true
         #if os(macOS)
-        // macOS-only Sentry option; iOS reports uncaught exceptions through
-        // the crash handler itself.
-        options.enableUncaughtNSExceptionReporting = false
+            // macOS-only Sentry option; iOS reports uncaught exceptions through
+            // the crash handler itself.
+            options.enableUncaughtNSExceptionReporting = false
         #endif
         options.enableSigtermReporting = false
         options.enableAutoSessionTracking = false
@@ -177,9 +178,11 @@ public final class DiagnosticsClient {
     }
 
     private static var cacheDirectoryURL: URL {
-        let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+        let base =
+            FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
-        return base
+        return
+            base
             .appendingPathComponent(CodevisorAppVariant.applicationSupportDirectoryName, isDirectory: true)
             .appendingPathComponent("Diagnostics", isDirectory: true)
     }

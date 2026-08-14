@@ -62,7 +62,7 @@ public struct GoalBannerView: View {
     private var usageLine: some View {
         let parts = [
             goal.tokensUsed > 0 ? "\(Self.tokens(goal.tokensUsed)) tokens" : nil,
-            goal.timeUsedSeconds > 0 ? Self.elapsed(goal.timeUsedSeconds) : nil
+            goal.timeUsedSeconds > 0 ? Self.elapsed(goal.timeUsedSeconds) : nil,
         ].compactMap { $0 }
         if !parts.isEmpty {
             Text(parts.joined(separator: " · "))
@@ -117,11 +117,12 @@ public struct GoalBannerView: View {
     }
 
     static func tokens(_ count: Int) -> String {
-        let formatted: String = switch count {
-        case 1_000_000...: String(format: "%.1fM", Double(count) / 1_000_000)
-        case 1_000...: String(format: "%.1fk", Double(count) / 1_000)
-        default: "\(count)"
-        }
+        let formatted: String =
+            switch count {
+            case 1_000_000...: String(format: "%.1fM", Double(count) / 1_000_000)
+            case 1_000...: String(format: "%.1fk", Double(count) / 1_000)
+            default: "\(count)"
+            }
         // "54.0k" reads as noise — trim the empty fraction.
         return formatted.replacingOccurrences(of: ".0k", with: "k")
             .replacingOccurrences(of: ".0M", with: "M")

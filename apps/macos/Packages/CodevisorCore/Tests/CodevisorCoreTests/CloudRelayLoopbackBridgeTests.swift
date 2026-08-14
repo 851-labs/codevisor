@@ -87,7 +87,7 @@ struct CloudRelayLoopbackBridgeTests {
 
         private func sendJSON(_ value: some Encodable, channelId: String) {
             guard let data = try? JSONEncoder().encode(value),
-                  let frame = try? machine.sealData(channelId: channelId, payload: data)
+                let frame = try? machine.sealData(channelId: channelId, payload: data)
             else { return }
             scripted.relayToApp(machineId: machine.deviceId, frame: frame)
         }
@@ -105,7 +105,8 @@ struct CloudRelayLoopbackBridgeTests {
             switch envelope.frame {
             case .open:
                 guard let payload,
-                      let probe = try? JSONDecoder().decode(ChannelTypeProbe.self, from: payload) else { return }
+                    let probe = try? JSONDecoder().decode(ChannelTypeProbe.self, from: payload)
+                else { return }
                 switch probe.channelType {
                 case "http":
                     guard let open = try? JSONDecoder().decode(HttpOpenPayload.self, from: payload) else { return }
@@ -149,7 +150,8 @@ struct CloudRelayLoopbackBridgeTests {
             switch frame.kind {
             case "chunk":
                 guard let encoded = frame.data,
-                      let chunk = CloudChannelCrypto.base64URLDecode(encoded) else { return }
+                    let chunk = CloudChannelCrypto.base64URLDecode(encoded)
+                else { return }
                 lock.withLock { httpChannels[channelId]?.body.append(chunk) }
             case "end":
                 finish(channelId: channelId)

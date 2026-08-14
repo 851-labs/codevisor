@@ -26,7 +26,8 @@ struct MachineSettingsDetailView: View {
 
     private var displayName: String {
         if let machine, machine.isCloud,
-           let presence = environment.machines.cloudMachine(forMachineId: machineId) {
+            let presence = environment.machines.cloudMachine(forMachineId: machineId)
+        {
             return presence.name
         }
         return machine?.name ?? "Machine"
@@ -86,7 +87,8 @@ struct MachineSettingsDetailView: View {
                             Text("Connection token")
                             Text(tokenError ?? "Lets another device connect to this Mac.")
                                 .font(.callout)
-                                .foregroundStyle(tokenError == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(theme.statusWarn))
+                                .foregroundStyle(
+                                    tokenError == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(theme.statusWarn))
                         }
                         Spacer()
                         Button {
@@ -116,7 +118,8 @@ struct MachineSettingsDetailView: View {
     private var statusText: String {
         if isConnected { return "Connected" }
         if let machine, machine.isCloud,
-           let presence = environment.machines.cloudMachine(forMachineId: machineId) {
+            let presence = environment.machines.cloudMachine(forMachineId: machineId)
+        {
             return presence.online ? "Online · Codevisor Cloud" : "Offline · Codevisor Cloud"
         }
         if let status = environment.machines.statusByMachineId[machineId] {

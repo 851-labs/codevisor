@@ -150,7 +150,7 @@ public enum PaletteDeriver {
             ?? fg.mixed(with: sidebarBg, weight: 0.08)
         let rowSelected =
             themeColor(resolved, keys: ["list.activeSelectionBackground"], over: sidebarBg)
-                .flatMap { usableRowFill($0, text: fg, base: sidebarBg) ? $0 : nil }
+            .flatMap { usableRowFill($0, text: fg, base: sidebarBg) ? $0 : nil }
             ?? authoredAccent.flatMap {
                 accentRowFill($0, alpha: isDark ? 0.28 : 0.22, text: fg, base: sidebarBg)
             }

@@ -19,14 +19,22 @@ struct WorkedItemsTests {
             .text(id: "t0", markdown: "thinking"),
             tool("a", .read), tool("b", .read), tool("c", .search),
             .text(id: "t1", markdown: "more"),
-            tool("d", .execute)
+            tool("d", .execute),
         ]).workedItems
 
         #expect(result.count == 4)
         #expect(result[0] == .text(id: "t0", markdown: "thinking"))
-        if case let .toolGroup(group) = result[1] { #expect(group.calls.count == 3) } else { Issue.record("expected group") }
+        if case let .toolGroup(group) = result[1] {
+            #expect(group.calls.count == 3)
+        } else {
+            Issue.record("expected group")
+        }
         #expect(result[2] == .text(id: "t1", markdown: "more"))
-        if case let .toolGroup(group) = result[3] { #expect(group.calls.count == 1) } else { Issue.record("expected group") }
+        if case let .toolGroup(group) = result[3] {
+            #expect(group.calls.count == 1)
+        } else {
+            Issue.record("expected group")
+        }
     }
 
     @Test("Grouping carries unsettled activity metadata without a view scan")
@@ -36,11 +44,12 @@ struct WorkedItemsTests {
         let result = turn([
             .tool(settled),
             .text(id: "between", markdown: "Next"),
-            .tool(running)
+            .tool(running),
         ]).workedItems
 
         guard case let .toolGroup(settledGroup) = result.first,
-              case let .toolGroup(runningGroup) = result.last else {
+            case let .toolGroup(runningGroup) = result.last
+        else {
             Issue.record("expected two groups")
             return
         }
@@ -55,17 +64,21 @@ struct WorkedItemsTests {
         let result = turn([
             tool("before", .read),
             .contextCompaction(id: "compact-1", status: .completed),
-            tool("after", .execute)
+            tool("after", .execute),
         ]).workedItems
 
         #expect(result.count == 3)
         if case let .toolGroup(group) = result[0] {
             #expect(group.calls.map(\.toolCallId) == ["before"])
-        } else { Issue.record("expected leading tool group") }
+        } else {
+            Issue.record("expected leading tool group")
+        }
         #expect(result[1] == .contextCompaction(id: "compact-1", status: .completed))
         if case let .toolGroup(group) = result[2] {
             #expect(group.calls.map(\.toolCallId) == ["after"])
-        } else { Issue.record("expected trailing tool group") }
+        } else {
+            Issue.record("expected trailing tool group")
+        }
     }
 
     @Test("WorkedItem identities are unique")
@@ -89,13 +102,17 @@ struct WorkedItemsTests {
         #expect(before.count == 1)
         if case let .toolGroup(group) = before.first {
             #expect(group.calls.map(\.toolCallId) == ["explore-1", "explore-2"])
-        } else { Issue.record("expected a planning tool group") }
+        } else {
+            Issue.record("expected a planning tool group")
+        }
 
         let after = t.workedItemsAfterPlan
-        #expect(after.count == 1) // the final-answer text is excluded from the slice
+        #expect(after.count == 1)  // the final-answer text is excluded from the slice
         if case let .toolGroup(group) = after.first {
             #expect(group.calls.map(\.toolCallId) == ["impl-1", "impl-2"])
-        } else { Issue.record("expected an implementation tool group") }
+        } else {
+            Issue.record("expected an implementation tool group")
+        }
     }
 
     @Test("Without a plan, all worked items stay in the before section")
@@ -110,16 +127,26 @@ struct WorkedItemsTests {
         let result = turn([
             tool("a", .read),
             tool("task-1", .agent),
-            tool("b", .execute)
+            tool("b", .execute),
         ]).workedItems
 
         #expect(result.count == 3)
-        if case let .toolGroup(group) = result[0] { #expect(group.calls.map(\.toolCallId) == ["a"]) } else { Issue.record("expected group") }
+        if case let .toolGroup(group) = result[0] {
+            #expect(group.calls.map(\.toolCallId) == ["a"])
+        } else {
+            Issue.record("expected group")
+        }
         if case let .subagent(id, call) = result[1] {
             #expect(id == "task-1")
             #expect(call.kind == .agent)
-        } else { Issue.record("expected subagent item") }
-        if case let .toolGroup(group) = result[2] { #expect(group.calls.map(\.toolCallId) == ["b"]) } else { Issue.record("expected group") }
+        } else {
+            Issue.record("expected subagent item")
+        }
+        if case let .toolGroup(group) = result[2] {
+            #expect(group.calls.map(\.toolCallId) == ["b"])
+        } else {
+            Issue.record("expected group")
+        }
         #expect(Set(result.map(\.id)).count == result.count)
     }
 
@@ -140,13 +167,21 @@ struct WorkedItemsTests {
             .text(id: "t0", markdown: "child prose"),
             .tool(ToolCall(toolCallId: "sub-a", title: "Read", kind: .read)),
             .tool(ToolCall(toolCallId: "sub-b", title: "Grep", kind: .search)),
-            .tool(ToolCall(toolCallId: "task-2", title: "Agent: nested", kind: .agent))
+            .tool(ToolCall(toolCallId: "task-2", title: "Agent: nested", kind: .agent)),
         ])
         let items = base.subagentItems("task-1")
         #expect(items.count == 3)
         #expect(items[0] == .text(id: "t0", markdown: "child prose"))
-        if case let .toolGroup(group) = items[1] { #expect(group.calls.count == 2) } else { Issue.record("expected group") }
-        if case let .subagent(id, _) = items[2] { #expect(id == "task-2") } else { Issue.record("expected nested subagent") }
+        if case let .toolGroup(group) = items[1] {
+            #expect(group.calls.count == 2)
+        } else {
+            Issue.record("expected group")
+        }
+        if case let .subagent(id, _) = items[2] {
+            #expect(id == "task-2")
+        } else {
+            Issue.record("expected nested subagent")
+        }
         #expect(base.subagentItems("unknown").isEmpty)
     }
 
@@ -154,11 +189,14 @@ struct WorkedItemsTests {
     func summaries() {
         #expect(ToolCallSummary.describe([call(.read), call(.read), call(.read)]) == "Read 3 files")
         #expect(ToolCallSummary.describe([call(.read)]) == "Read a file")
-        #expect(ToolCallSummary.describe([call(.search), call(.execute), call(.execute)]) == "Searched code and ran 2 commands")
+        #expect(
+            ToolCallSummary.describe([call(.search), call(.execute), call(.execute)])
+                == "Searched code and ran 2 commands")
         #expect(ToolCallSummary.describe([call(.edit)]) == "Edited a file")
         #expect(ToolCallSummary.describe([call(.webSearch)]) == "Searched the web")
         #expect(ToolCallSummary.describe([call(.webSearch), call(.webSearch)]) == "Ran 2 web searches")
-        #expect(ToolCallSummary.describe([call(.webSearch), call(.fetch)]) == "Searched the web and fetched a resource")
+        #expect(
+            ToolCallSummary.describe([call(.webSearch), call(.fetch)]) == "Searched the web and fetched a resource")
         #expect(ToolCallSummary.describe([]) == "")
     }
 
@@ -182,7 +220,7 @@ struct WorkedItemsTests {
         let calls = [
             ToolCall(toolCallId: "1", title: "ToolSearch"),
             ToolCall(toolCallId: "2", title: "mcp__codevisor__search"),
-            ToolCall(toolCallId: "3", title: "codevisor_execute")
+            ToolCall(toolCallId: "3", title: "codevisor_execute"),
         ]
         #expect(ToolCallSummary.describe(calls) == "Used 3 integration tools")
         #expect(ToolCallSummary.symbol(calls) == "puzzlepiece.extension")
@@ -223,13 +261,15 @@ struct WorkedItemsTests {
         TranscriptReducer.apply(.agentMessageChunk(.text("Done."), messageId: "m3"), to: &turn)
 
         // Streaming view: everything in arrival order, nothing pulled out.
-        #expect(turn.streamingItems.map(\.id) == [
-            "wtext:acp:m1", "wgroup:a", "wtext:acp:m2", "wgroup:b", "wtext:acp:m3"
-        ])
+        #expect(
+            turn.streamingItems.map(\.id) == [
+                "wtext:acp:m1", "wgroup:a", "wtext:acp:m2", "wgroup:b", "wtext:acp:m3",
+            ])
         // Finished view: the final text is split out below the worked section.
-        #expect(turn.workedItems.map(\.id) == [
-            "wtext:acp:m1", "wgroup:a", "wtext:acp:m2", "wgroup:b"
-        ])
+        #expect(
+            turn.workedItems.map(\.id) == [
+                "wtext:acp:m1", "wgroup:a", "wtext:acp:m2", "wgroup:b",
+            ])
         #expect(turn.finalText == .text(id: "acp:m3", markdown: "Done."))
     }
 }

@@ -556,9 +556,10 @@ struct ProjectListModelTests {
         for _ in 0..<50 {
             let snapshot = await fakeServer.snapshot()
             if snapshot.upsertedProjectIDs.contains(project.id.uuidString),
-               snapshot.upsertedSessionIDs.contains(session.id.uuidString),
-               snapshot.deletedSessionIDs.contains(session.id.uuidString),
-               snapshot.deletedProjectIDs.contains(project.id.uuidString) {
+                snapshot.upsertedSessionIDs.contains(session.id.uuidString),
+                snapshot.deletedSessionIDs.contains(session.id.uuidString),
+                snapshot.deletedProjectIDs.contains(project.id.uuidString)
+            {
                 return
             }
             try await Task.sleep(nanoseconds: 10_000_000)
@@ -632,7 +633,7 @@ struct ProjectListModelTests {
         let repository = DefaultProjectRepository(store: store)
         repository.save([
             Project(name: "old", createdAt: Date(timeIntervalSince1970: 1)),
-            Project(name: "new", createdAt: Date(timeIntervalSince1970: 9))
+            Project(name: "new", createdAt: Date(timeIntervalSince1970: 9)),
         ])
         let model = ProjectListModel(
             projectRepository: repository,
@@ -689,15 +690,16 @@ struct ProjectListModelTests {
             // The newest workspace per project wins, not the first one.
             workspace(projectId: usedEarlier.id, createdAt: 15),
             // Workspace history is scoped to the selected machine.
-            workspace(projectId: unusedNewer.id, createdAt: 30, serverId: "remote")
+            workspace(projectId: unusedNewer.id, createdAt: 30, serverId: "remote"),
         ])
 
-        #expect(ordered.map(\.name) == [
-            "used-latest",
-            "used-earlier",
-            "unused-newer",
-            "unused-older"
-        ])
+        #expect(
+            ordered.map(\.name) == [
+                "used-latest",
+                "used-earlier",
+                "unused-newer",
+                "unused-older",
+            ])
     }
 
     @Test("New sessions are scoped to a project and persisted")
@@ -754,12 +756,13 @@ struct ProjectListModelTests {
         let imported = [
             ImportedSession(
                 harnessId: "claude-code",
-                info: SessionInfo(sessionId: "ext-1", cwd: "/tmp/a", title: "Old chat", updatedAt: "2026-06-01T00:00:00Z")
+                info: SessionInfo(
+                    sessionId: "ext-1", cwd: "/tmp/a", title: "Old chat", updatedAt: "2026-06-01T00:00:00Z")
             ),
             ImportedSession(
                 harnessId: "claude-code",
                 info: SessionInfo(sessionId: "ext-2", cwd: "/tmp/a")
-            )
+            ),
         ]
 
         model.importSessions(imported, into: project)
@@ -783,22 +786,25 @@ struct ProjectListModelTests {
         // seconds, so exercise the exact format used by the server endpoint.
         let newTimestamp = "2026-06-03T00:00:00.123Z"
 
-        model.importSessions([
-            ImportedSession(
-                harnessId: "codex",
-                info: SessionInfo(sessionId: "ext-1", cwd: "/tmp/a", title: "Agent title", updatedAt: oldTimestamp)
-            )
-        ], serverId: "local")
+        model.importSessions(
+            [
+                ImportedSession(
+                    harnessId: "codex",
+                    info: SessionInfo(sessionId: "ext-1", cwd: "/tmp/a", title: "Agent title", updatedAt: oldTimestamp)
+                )
+            ], serverId: "local")
         let project = model.projects.first!
         let imported = model.sessions(in: project).first!
         model.renameSession(imported, to: "My title")
 
-        model.importSessions([
-            ImportedSession(
-                harnessId: "codex",
-                info: SessionInfo(sessionId: "ext-1", cwd: "/tmp/a", title: "Changed agent title", updatedAt: newTimestamp)
-            )
-        ], serverId: "local")
+        model.importSessions(
+            [
+                ImportedSession(
+                    harnessId: "codex",
+                    info: SessionInfo(
+                        sessionId: "ext-1", cwd: "/tmp/a", title: "Changed agent title", updatedAt: newTimestamp)
+                )
+            ], serverId: "local")
 
         let refreshed = model.sessions(in: project).first!
         #expect(model.sessions.count == 1)
@@ -810,12 +816,13 @@ struct ProjectListModelTests {
         #expect(persisted.updatedAt == refreshed.updatedAt)
 
         // An older scanner result must never roll server/app activity back.
-        model.importSessions([
-            ImportedSession(
-                harnessId: "codex",
-                info: SessionInfo(sessionId: "ext-1", cwd: "/tmp/a", updatedAt: oldTimestamp)
-            )
-        ], serverId: "local")
+        model.importSessions(
+            [
+                ImportedSession(
+                    harnessId: "codex",
+                    info: SessionInfo(sessionId: "ext-1", cwd: "/tmp/a", updatedAt: oldTimestamp)
+                )
+            ], serverId: "local")
         #expect(model.sessions(in: project).first?.updatedAt == refreshed.updatedAt)
     }
 
@@ -852,9 +859,11 @@ struct ProjectListModelTests {
         // switched to local: the results still belong to the remote machine.
         let (model, _, _) = makeModel()
         model.showsImportedSessions = true
-        model.importSessions([
-            ImportedSession(harnessId: "codex", info: SessionInfo(sessionId: "r-1", cwd: "/srv/proj", title: "Remote"))
-        ], serverId: "remote-mac-mini")
+        model.importSessions(
+            [
+                ImportedSession(
+                    harnessId: "codex", info: SessionInfo(sessionId: "r-1", cwd: "/srv/proj", title: "Remote"))
+            ], serverId: "remote-mac-mini")
 
         #expect(model.projects.allSatisfy { $0.serverId == "remote-mac-mini" })
         #expect(model.sessions.allSatisfy { $0.serverId == "remote-mac-mini" })
@@ -873,9 +882,11 @@ struct ProjectListModelTests {
 
         // Confirming a pending import after switching back to local must not
         // re-tag the sessions to the local machine.
-        model.importSessions([
-            ImportedSession(harnessId: "codex", info: SessionInfo(sessionId: "r-2", cwd: "/srv/proj", title: "Remote"))
-        ], into: project)
+        model.importSessions(
+            [
+                ImportedSession(
+                    harnessId: "codex", info: SessionInfo(sessionId: "r-2", cwd: "/srv/proj", title: "Remote"))
+            ], into: project)
 
         #expect(model.sessions.allSatisfy { $0.serverId == "remote-mac-mini" })
         #expect(model.activeProjects.isEmpty)
@@ -969,7 +980,9 @@ private actor FakeServerClient: CodevisorServerClienting {
 
     func info() async throws -> ServerInfo { fatalError("unused") }
 
-    func updateInfo(refresh: Bool, channel: ServerUpdateChannel) async throws -> ServerUpdateInfo { fatalError("unused") }
+    func updateInfo(refresh: Bool, channel: ServerUpdateChannel) async throws -> ServerUpdateInfo {
+        fatalError("unused")
+    }
 
     func issuePairingToken() async throws -> ServerPairingToken { fatalError("unused") }
 

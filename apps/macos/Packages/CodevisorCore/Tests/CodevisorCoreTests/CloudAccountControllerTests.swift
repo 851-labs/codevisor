@@ -378,7 +378,7 @@ struct CloudAccountControllerTests {
             CloudInstanceInfo(service: "codevisor-cloud", instance: "Dev", authProviders: ["dev"])
         )
         let (controller, _, _) = makeController(client: devOnly)
-        #expect(controller.supportsGitHubSignIn) // unknown yet → assume GitHub
+        #expect(controller.supportsGitHubSignIn)  // unknown yet → assume GitHub
         await controller.bootstrap()
         #expect(!controller.supportsGitHubSignIn)
 

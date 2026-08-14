@@ -122,7 +122,8 @@ final class SessionStore {
         // focus routing overwrite the workspace profile before the draft
         // composer appears.
         if session.agentSessionId?.isEmpty != false,
-           let location = paneDraftLocation(for: session) {
+            let location = paneDraftLocation(for: session)
+        {
             return paneDraft(
                 paneId: location.paneId,
                 project: project,
@@ -180,16 +181,17 @@ final class SessionStore {
             return draft
         }
         let persisted = environment.composerDrafts.draft(forServer: project.serverId)
-        let restoredProject = persisted.flatMap { saved in
-            environment.projectList.projects.first {
-                $0.serverId == project.serverId && $0.id == saved.projectId
-            }
-        } ?? environment.composerDefaults.lastProjectId(forServer: project.serverId).flatMap {
-            rememberedId in
-            environment.projectList.activeProjects.first {
-                $0.serverId == project.serverId && $0.id == rememberedId
-            }
-        } ?? project
+        let restoredProject =
+            persisted.flatMap { saved in
+                environment.projectList.projects.first {
+                    $0.serverId == project.serverId && $0.id == saved.projectId
+                }
+            } ?? environment.composerDefaults.lastProjectId(forServer: project.serverId).flatMap {
+                rememberedId in
+                environment.projectList.activeProjects.first {
+                    $0.serverId == project.serverId && $0.id == rememberedId
+                }
+            } ?? project
         environment.composerDefaults.rememberNewWorkspaceProject(
             serverId: restoredProject.serverId,
             projectId: restoredProject.id
@@ -206,7 +208,8 @@ final class SessionStore {
         // Fresh drafts start from the machine's remembered run-location
         // choice (worktrees only apply to git projects). Retained drafts
         // returned above keep whatever the user toggled.
-        controller.wantsNewWorktree = restoredProject.isGitRepository
+        controller.wantsNewWorktree =
+            restoredProject.isGitRepository
             && environment.composerDefaults.prefersWorktreeForNewWorkspaces(
                 forServer: restoredProject.serverId
             )
@@ -235,7 +238,8 @@ final class SessionStore {
     /// display name.
     func applyWorktree(_ worktree: ServerWorktree, toWorkspaceOf sessionId: UUID) {
         guard let workspaceId = environment.workspaces.workspaceId(forSession: sessionId),
-              var workspace = environment.workspaces.workspace(id: workspaceId) else { return }
+            var workspace = environment.workspaces.workspace(id: workspaceId)
+        else { return }
         workspace.rootDirectory = worktree.path
         workspace.worktreeName = worktree.name
         environment.workspaces.save(workspace)
@@ -250,7 +254,8 @@ final class SessionStore {
             return controller
         }
         guard session.agentSessionId?.isEmpty != false,
-              let location = paneDraftLocation(for: session) else { return nil }
+            let location = paneDraftLocation(for: session)
+        else { return nil }
         return paneDrafts[location.paneId]
     }
 
@@ -266,7 +271,8 @@ final class SessionStore {
         for session: ChatSession
     ) -> (workspaceId: UUID, paneId: UUID)? {
         guard let workspaceId = environment.workspaces.workspaceId(forSession: session.id),
-              let workspace = environment.workspaces.workspace(id: workspaceId) else {
+            let workspace = environment.workspaces.workspace(id: workspaceId)
+        else {
             return nil
         }
         let paneId = workspace.pane(containingChat: session.id)?.id
@@ -354,10 +360,12 @@ final class SessionStore {
     /// duplicate instances would clobber each other's saves).
     func centerPaneGroup(for session: ChatSession, project: Project) -> PaneGroupModel {
         let workspace = workspace(for: session, project: project)
-        guard let leafId = workspace.centerTabs.lazy.compactMap({
-            $0.root.groupId(containingChat: session.id)
-        }).first
-            ?? workspace.centerTree.allGroups.first?.id else {
+        guard
+            let leafId = workspace.centerTabs.lazy.compactMap({
+                $0.root.groupId(containingChat: session.id)
+            }).first
+                ?? workspace.centerTree.allGroups.first?.id
+        else {
             // Unreachable (a workspace always has a leaf); satisfies the
             // optional without a second cache.
             return makePaneGroup(for: session, project: project, placement: .center)
@@ -383,9 +391,10 @@ final class SessionStore {
         // just-deleted workspace as a zombie sidebar row. Hand such screens a
         // stable ephemeral stand-in instead.
         if environment.workspaces.workspaceId(forSession: session.id) == nil,
-           !environment.projectList.sessions.contains(where: {
-               $0.serverId == session.serverId && $0.id == session.id && !$0.isArchived
-           }) {
+            !environment.projectList.sessions.contains(where: {
+                $0.serverId == session.serverId && $0.id == session.id && !$0.isArchived
+            })
+        {
             if let cached = ephemeralWorkspaces[session.id] { return cached }
             let ephemeral = environment.workspaces.ephemeralWorkspace(for: seed)
             ephemeralWorkspaces[session.id] = ephemeral
@@ -436,10 +445,12 @@ final class SessionStore {
         // to a specific tree leaf: the given one, else the leaf hosting this
         // session's chat.
         let workspace = workspace(for: session, project: project)
-        let resolvedLeafId = placement == .center
-            ? (leafId ?? workspace.centerTabs.lazy.compactMap {
-                $0.root.groupId(containingChat: session.id)
-            }.first)
+        let resolvedLeafId =
+            placement == .center
+            ? (leafId
+                ?? workspace.centerTabs.lazy.compactMap {
+                    $0.root.groupId(containingChat: session.id)
+                }.first)
             : nil
         let repository = WorkspacePaneGroupRepository(
             workspaceId: workspace.id,
@@ -456,9 +467,10 @@ final class SessionStore {
                 // not have synced its cwd yet. Resolve the live session at
                 // pane-creation time so terminals open in the worktree, not
                 // the project folder.
-                let liveSession = projectList?.sessions.first {
-                    $0.serverId == session.serverId && $0.id == session.id
-                } ?? session
+                let liveSession =
+                    projectList?.sessions.first {
+                        $0.serverId == session.serverId && $0.id == session.id
+                    } ?? session
                 return PaneContext(
                     paneId: descriptor.id,
                     sessionId: session.id,
@@ -471,7 +483,8 @@ final class SessionStore {
             }
         )
         // Identity for cross-group drops (bar targets, content zones).
-        model.dropRef = placement == .bottom
+        model.dropRef =
+            placement == .bottom
             ? .bottom
             : resolvedLeafId.map { .centerLeaf($0) }
         return model
@@ -669,9 +682,11 @@ final class SessionStore {
     }
 
     private func deliverNotification(for key: SessionKey, kind: ChatAttentionKind) {
-        guard let session = environment.projectList.sessions.first(where: {
-            $0.serverId == key.serverId && $0.id == key.sessionId
-        }) else { return }
+        guard
+            let session = environment.projectList.sessions.first(where: {
+                $0.serverId == key.serverId && $0.id == key.sessionId
+            })
+        else { return }
         notificationDelivery.deliver(
             ChatAttentionEvent(
                 sessionId: session.id,

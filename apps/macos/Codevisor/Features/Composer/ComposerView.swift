@@ -287,7 +287,9 @@ struct ComposerCard: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+            .onGeometryChange(for: CGFloat.self) {
+                $0.size.height
+            } action: {
                 slashMenuContentHeight = $0
             }
             .composerGlassSurface(cornerRadius: ComposerGlassStyle.accessoryCornerRadius)
@@ -305,7 +307,9 @@ struct ComposerCard: View {
                         }
                     }
                     .padding(6)
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                    .onGeometryChange(for: CGFloat.self) {
+                        $0.size.height
+                    } action: {
                         slashMenuContentHeight = $0
                     }
                 }
@@ -360,16 +364,18 @@ struct ComposerCard: View {
                     .disabled(true)
             } else {
                 ForEach(option.options) { value in
-                    Toggle(isOn: Binding(
-                        get: {
-                            controller.configOptions.first { $0.id == option.id }?.currentValue
-                                == value.value
-                        },
-                        set: { isOn in
-                            guard isOn else { return }
-                            Task { await controller.setConfigOption(option.id, value.value) }
-                        }
-                    )) {
+                    Toggle(
+                        isOn: Binding(
+                            get: {
+                                controller.configOptions.first { $0.id == option.id }?.currentValue
+                                    == value.value
+                            },
+                            set: { isOn in
+                                guard isOn else { return }
+                                Task { await controller.setConfigOption(option.id, value.value) }
+                            }
+                        )
+                    ) {
                         Text(value.name)
                     }
                 }
@@ -462,7 +468,9 @@ struct ComposerCard: View {
                     .frame(width: 26, height: 26)
                     .help("Stopping…")
             } else {
-                Button { Task { await controller.stop() } } label: {
+                Button {
+                    Task { await controller.stop() }
+                } label: {
                     Image(systemName: "stop.fill")
                         .font(.system(size: 10, weight: .bold))
                         .frame(width: 26, height: 26)
@@ -499,26 +507,30 @@ struct ComposerCard: View {
             // Goal mode still respects the connecting gate: `submitGoal…`
             // silently drops input while connecting, so an enabled-looking
             // button would be a lie.
-            let hasSubmittableContent = controller.isGoalComposerArmed
+            let hasSubmittableContent =
+                controller.isGoalComposerArmed
                 ? !controller.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 : hasComposerDraft || !visibleSlashMatches.isEmpty
-            let isBlockedByCapabilities = hasSubmittableContent
+            let isBlockedByCapabilities =
+                hasSubmittableContent
                 && controller.isConnectingToHarness
-            let isEnabled = !isAppUpdateInProgress && (controller.isGoalComposerArmed
-                ? hasSubmittableContent
-                    && !controller.isConnecting
-                    && !controller.isConnectingToHarness
-                : !controller.isConnectingToHarness
-                    && (controller.canSend || !visibleSlashMatches.isEmpty))
+            let isEnabled =
+                !isAppUpdateInProgress
+                && (controller.isGoalComposerArmed
+                    ? hasSubmittableContent
+                        && !controller.isConnecting
+                        && !controller.isConnectingToHarness
+                    : !controller.isConnectingToHarness
+                        && (controller.canSend || !visibleSlashMatches.isEmpty))
             ComposerSubmitButton(
                 isEnabled: isEnabled,
                 help: isAppUpdateInProgress
                     ? "Updating… you can send once the update finishes."
                     : isBlockedByCapabilities
                         ? "Connecting to harness…"
-                    : controller.isConnecting
-                        ? "Connecting… you can send once the agent is ready."
-                        : "Send (↩)",
+                        : controller.isConnecting
+                            ? "Connecting… you can send once the agent is ready."
+                            : "Send (↩)",
                 accessibilityLabel: "Send"
             ) {
                 submitOrAcceptSlash()
@@ -533,7 +545,8 @@ struct ComposerCard: View {
     private var slashQuery: String? {
         guard let range = slashTokenRange else { return nil }
         let text = controller.composerText as NSString
-        return text
+        return
+            text
             .substring(with: NSRange(location: range.location + 1, length: range.length - 1))
             .lowercased()
     }
@@ -1086,16 +1099,18 @@ struct ModelConfigMenu: View {
     private func section(_ title: String, _ option: SessionConfigOption) -> some View {
         Section(title) {
             ForEach(option.options) { value in
-                Toggle(isOn: Binding(
-                    get: {
-                        controller.configOptions.first { $0.id == option.id }?.currentValue
-                            == value.value
-                    },
-                    set: { isOn in
-                        guard isOn else { return }
-                        Task { await controller.setConfigOption(option.id, value.value) }
-                    }
-                )) {
+                Toggle(
+                    isOn: Binding(
+                        get: {
+                            controller.configOptions.first { $0.id == option.id }?.currentValue
+                                == value.value
+                        },
+                        set: { isOn in
+                            guard isOn else { return }
+                            Task { await controller.setConfigOption(option.id, value.value) }
+                        }
+                    )
+                ) {
                     Text(value.name)
                 }
                 .help(value.description ?? "")
@@ -1167,13 +1182,15 @@ struct HarnessPickerMenu: View {
             } else {
                 Menu {
                     ForEach(controller.harnesses) { harness in
-                        Toggle(isOn: Binding(
-                            get: { harness.id == controller.selectedHarnessId },
-                            set: { isOn in
-                                guard isOn else { return }
-                                Task { await controller.selectHarness(harness.id) }
-                            }
-                        )) {
+                        Toggle(
+                            isOn: Binding(
+                                get: { harness.id == controller.selectedHarnessId },
+                                set: { isOn in
+                                    guard isOn else { return }
+                                    Task { await controller.selectHarness(harness.id) }
+                                }
+                            )
+                        ) {
                             Label {
                                 // Text-level dot: macOS menus drop SF Symbol
                                 // decorations, so the update marker rides in
@@ -1221,15 +1238,15 @@ struct HarnessPickerMenu: View {
 }
 
 #if DEBUG
-#Preview("Empty state composer") {
-    ComposerCard(controller: .preview())
-        .padding()
-        .frame(width: 640)
-}
+    #Preview("Empty state composer") {
+        ComposerCard(controller: .preview())
+            .padding()
+            .frame(width: 640)
+    }
 
-#Preview("Connected composer") {
-    ComposerCard(controller: .preview(model: .preview()), placeholder: "Ask for follow-up changes")
-        .padding()
-        .frame(width: 640)
-}
+    #Preview("Connected composer") {
+        ComposerCard(controller: .preview(model: .preview()), placeholder: "Ask for follow-up changes")
+            .padding()
+            .frame(width: 640)
+    }
 #endif

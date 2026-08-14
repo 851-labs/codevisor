@@ -139,7 +139,9 @@ private struct CloudAccountScreen: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: { machine in
-            Text("“\(machine.name)” will be signed out of your account. Nothing on the machine itself is changed — run codevisor auth login there to reconnect it.")
+            Text(
+                "“\(machine.name)” will be signed out of your account. Nothing on the machine itself is changed — run codevisor auth login there to reconnect it."
+            )
         }
     }
 
@@ -215,8 +217,10 @@ private struct CloudAccountScreen: View {
 
         Section {
             if cloud.machines.isEmpty {
-                InlineCodeText("No machines connected yet. Run `codevisor auth login` on a machine to connect it to your account.")
-                    .foregroundStyle(.secondary)
+                InlineCodeText(
+                    "No machines connected yet. Run `codevisor auth login` on a machine to connect it to your account."
+                )
+                .foregroundStyle(.secondary)
             } else {
                 ForEach(cloud.machines) { machine in
                     machineRow(machine)
@@ -329,11 +333,13 @@ private struct CloudAccountScreen: View {
     private var currentServerDescription: String {
         if let custom = cloud.customServerURL {
             if let instance = cloud.customInstanceName, !instance.isEmpty {
-                return "Using self-hosted server “\(instance)” at \(custom.absoluteString). Connecting to a different server signs you out."
+                return
+                    "Using self-hosted server “\(instance)” at \(custom.absoluteString). Connecting to a different server signs you out."
             }
             return "Using self-hosted server \(custom.absoluteString). Connecting to a different server signs you out."
         }
-        return "Using the default Codevisor Cloud. Enter the URL of a self-hosted instance to use it instead — connecting signs you out of the current server."
+        return
+            "Using the default Codevisor Cloud. Enter the URL of a self-hosted instance to use it instead — connecting signs you out of the current server."
     }
 
     private func connectCustomServer() {
@@ -376,7 +382,7 @@ private struct CloudAccountScreen: View {
         ) { callbackURL in
             isSigningIn = false
             guard let callbackURL,
-                  let deeplink = CloudAuthDeeplink.parse(callbackURL)
+                let deeplink = CloudAuthDeeplink.parse(callbackURL)
             else { return }
             Task { await cloud.completeSignIn(ott: deeplink.ott) }
         }
@@ -417,7 +423,8 @@ final class CloudSignInCoordinator: NSObject, ASWebAuthenticationPresentationCon
     /// for production installs); prefer the scheme matching this build so the
     /// handoff round-trips into the right place.
     static var callbackScheme: String {
-        let schemes = (Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]])?
+        let schemes =
+            (Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]])?
             .flatMap { ($0["CFBundleURLSchemes"] as? [String]) ?? [] } ?? []
         let preferred = CodevisorAppVariant.isDevelopment ? "codevisor-dev" : "codevisor"
         if schemes.contains(preferred) { return preferred }
@@ -678,7 +685,8 @@ struct MachinesSettingsScreen: View {
                 }
             }
             if let devRemote = CodevisorAppVariant.developmentRemote,
-               developmentMachine(devRemote) == nil {
+                developmentMachine(devRemote) == nil
+            {
                 developmentSection(devRemote)
             }
         }
@@ -895,7 +903,8 @@ struct AddMachineSheet: View {
                             .autocorrectionDisabled()
                     }
                 } footer: {
-                    InlineCodeText("Run `codevisor token` on the machine, or copy it from the `codevisor setup` output.")
+                    InlineCodeText(
+                        "Run `codevisor token` on the machine, or copy it from the `codevisor setup` output.")
                 }
                 if let errorMessage {
                     Section {
@@ -1004,7 +1013,9 @@ private struct HarnessesSettingsScreen: View {
     var body: some View {
         List {
             if isLoading {
-                HStack { Spacer(); ProgressView(); Spacer() }
+                HStack {
+                    Spacer(); ProgressView(); Spacer()
+                }
             } else if let errorMessage {
                 Text(errorMessage).foregroundStyle(.red)
             } else {
@@ -1095,7 +1106,9 @@ private struct McpSettingsScreen: View {
     var body: some View {
         List {
             if isLoading {
-                HStack { Spacer(); ProgressView(); Spacer() }
+                HStack {
+                    Spacer(); ProgressView(); Spacer()
+                }
             } else if let errorMessage {
                 Text(errorMessage).foregroundStyle(.red)
             } else if servers.isEmpty {
@@ -1184,7 +1197,9 @@ private struct SkillsSettingsScreen: View {
     var body: some View {
         List {
             if isLoading {
-                HStack { Spacer(); ProgressView(); Spacer() }
+                HStack {
+                    Spacer(); ProgressView(); Spacer()
+                }
             } else if let errorMessage {
                 Text(errorMessage).foregroundStyle(.red)
             } else if let scan {
@@ -1304,8 +1319,8 @@ struct InlineCodeText: View {
                 }
                 return result
                     + Text(piece.element)
-                        .font(.footnote.monospaced())
-                        .customAttribute(ChipMarker())
+                    .font(.footnote.monospaced())
+                    .customAttribute(ChipMarker())
             }
             .textRenderer(ChipRenderer())
     }

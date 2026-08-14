@@ -28,7 +28,7 @@ struct SessionModelStreamPacingTests {
             chunk("a", messageId: "m1"),
             chunk("b", messageId: "m2"),
             chunk("c", messageId: "m2", parent: "tool-1"),
-            chunk("d", messageId: "m2", parent: "tool-1", phase: .commentary)
+            chunk("d", messageId: "m2", parent: "tool-1", phase: .commentary),
         ]
         #expect(SessionModel.coalesced(events) == events)
     }
@@ -52,7 +52,7 @@ struct SessionModelStreamPacingTests {
         var single = AssistantTurn()
         let updates: [SessionUpdate] = [
             .agentMessageChunk(.text("Hello "), messageId: "m1", parentToolCallId: nil, phase: nil),
-            .agentMessageChunk(.text("world"), messageId: "m1", parentToolCallId: nil, phase: nil)
+            .agentMessageChunk(.text("world"), messageId: "m1", parentToolCallId: nil, phase: nil),
         ]
         for update in updates {
             TranscriptReducer.apply(update, to: &single)

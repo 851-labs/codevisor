@@ -27,7 +27,8 @@ public struct WorkspaceTab: Codable, Sendable, Equatable, Identifiable {
         self.id = id
         self.customTitle = customTitle
         self.root = root
-        self.activeLeafId = activeLeafId.flatMap { root.group(id: $0) != nil ? $0 : nil }
+        self.activeLeafId =
+            activeLeafId.flatMap { root.group(id: $0) != nil ? $0 : nil }
             ?? root.allGroups.first?.id
             ?? UUID()
     }
@@ -41,7 +42,8 @@ public struct WorkspaceTab: Codable, Sendable, Equatable, Identifiable {
         let decodedRoot = try container.decode(SplitNode.self, forKey: .root)
         root = decodedRoot
         let decoded = try container.decodeIfPresent(UUID.self, forKey: .activeLeafId)
-        activeLeafId = decoded.flatMap { decodedRoot.group(id: $0) != nil ? $0 : nil }
+        activeLeafId =
+            decoded.flatMap { decodedRoot.group(id: $0) != nil ? $0 : nil }
             ?? decodedRoot.allGroups.first?.id
             ?? UUID()
     }
@@ -119,9 +121,10 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
                 let decodedSelection = try container.decodeIfPresent(
                     UUID.self, forKey: .selectedCenterTabId
                 )
-                selectedCenterTabId = decodedSelection.flatMap { candidate in
-                    decodedTabs.contains { $0.id == candidate } ? candidate : nil
-                } ?? decodedTabs[0].id
+                selectedCenterTabId =
+                    decodedSelection.flatMap { candidate in
+                        decodedTabs.contains { $0.id == candidate } ? candidate : nil
+                    } ?? decodedTabs[0].id
             }
         } else {
             let legacy = try container.decode(SplitNode.self, forKey: .centerTree)
@@ -210,9 +213,10 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
         self.serverId = serverId
         self.projectId = projectId
         self.centerTabs = centerTabs
-        self.selectedCenterTabId = selectedCenterTabId.flatMap { candidate in
-            centerTabs.contains { $0.id == candidate } ? candidate : nil
-        } ?? centerTabs[0].id
+        self.selectedCenterTabId =
+            selectedCenterTabId.flatMap { candidate in
+                centerTabs.contains { $0.id == candidate } ? candidate : nil
+            } ?? centerTabs[0].id
         self.bottomGroup = bottomGroup
         self.createdAt = createdAt
         self.isArchived = isArchived
@@ -228,7 +232,8 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
             guard let index = selectedCenterTabIndex else { return }
             centerTabs[index].root = newValue
             if newValue.group(id: centerTabs[index].activeLeafId) == nil,
-               let first = newValue.allGroups.first?.id {
+                let first = newValue.allGroups.first?.id
+            {
                 centerTabs[index].activeLeafId = first
             }
         }
@@ -283,7 +288,8 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
         func selectedOnly(_ node: SplitNode) -> SplitNode {
             switch node {
             case let .group(id, state):
-                let selected = state.selectedPane
+                let selected =
+                    state.selectedPane
                     ?? state.panes.first
                     ?? PaneDescriptorState(
                         id: UUID(), kind: .newTab, name: "New Tab", terminalKey: UUID().uuidString
@@ -295,9 +301,11 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
                 single.isVisible = true
                 return .group(id: id, state: single)
             case let .split(orientation, children):
-                return .split(orientation: orientation, children: children.map {
-                    SplitChild(fraction: $0.fraction, node: selectedOnly($0.node))
-                })
+                return .split(
+                    orientation: orientation,
+                    children: children.map {
+                        SplitChild(fraction: $0.fraction, node: selectedOnly($0.node))
+                    })
             }
         }
 

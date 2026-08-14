@@ -139,9 +139,10 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
             version = try container.decode(Int.self, forKey: .version)
             workspaces = try container.decode([Workspace].self, forKey: .workspaces)
             sessionIndex = try container.decode([UUID: UUID].self, forKey: .sessionIndex)
-            performedMigrations = try container.decodeIfPresent(
-                Set<String>.self, forKey: .performedMigrations
-            ) ?? []
+            performedMigrations =
+                try container.decodeIfPresent(
+                    Set<String>.self, forKey: .performedMigrations
+                ) ?? []
         }
     }
 
@@ -187,9 +188,10 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
     public func setAutomaticName(_ name: String, forWorkspace workspaceId: UUID) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty,
-              var workspace = workspace(id: workspaceId),
-              !workspace.hasCustomName,
-              workspace.name != trimmed else { return }
+            var workspace = workspace(id: workspaceId),
+            !workspace.hasCustomName,
+            workspace.name != trimmed
+        else { return }
         workspace.name = trimmed
         save(workspace)
     }
@@ -225,14 +227,16 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
 
         // Migrate the session's pre-workspace pane state, tagging its chat
         // pane with the session it references.
-        var center = legacyGroups?.load(sessionId: seed.sessionId, placement: .center)
+        var center =
+            legacyGroups?.load(sessionId: seed.sessionId, placement: .center)
             ?? .centerInitial(sessionId: seed.sessionId)
         for index in center.panes.indices where center.panes[index].kind == .chat {
             if center.panes[index].chatSessionId == nil {
                 center.panes[index].chatSessionId = seed.sessionId
             }
         }
-        let bottom = legacyGroups?.load(sessionId: seed.sessionId, placement: .bottom)
+        let bottom =
+            legacyGroups?.load(sessionId: seed.sessionId, placement: .bottom)
             ?? .initial(sessionId: seed.sessionId)
 
         let workspace = Workspace(
@@ -288,7 +292,8 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
                 var repaired = tab
                 repaired.root = pruned
                 if pruned.group(id: repaired.activeLeafId) == nil,
-                   let first = pruned.allGroups.first?.id {
+                    let first = pruned.allGroups.first?.id
+                {
                     repaired.activeLeafId = first
                 }
                 return repaired
@@ -305,7 +310,8 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
             loaded.workspaces[index] = workspace
         }
         if (requiresRewrite || loaded.workspaces != workspacesBeforeHealing),
-           let encoded = try? JSONEncoder().encode(loaded) {
+            let encoded = try? JSONEncoder().encode(loaded)
+        {
             try? store.saveData(encoded, forKey: key)
         }
         lock.withLock { if cache == nil { cache = loaded } }
@@ -324,7 +330,8 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
             do {
                 try store.saveData(PersistenceEncoding.encoder.encode(payload), forKey: key)
             } catch {
-                Log.persistence.error("Failed to save \(key, privacy: .public): \(String(describing: error), privacy: .public)")
+                Log.persistence.error(
+                    "Failed to save \(key, privacy: .public): \(String(describing: error), privacy: .public)")
             }
         }
     }
@@ -365,9 +372,11 @@ public final class WorkspacePaneGroupRepository: PaneGroupRepository, @unchecked
         case .center:
             let targetId = groupId ?? workspace.centerTree.allGroups.first?.id
             guard let targetId else { return }
-            guard let tabIndex = workspace.centerTabs.firstIndex(where: {
-                $0.root.group(id: targetId) != nil
-            }) else { return }
+            guard
+                let tabIndex = workspace.centerTabs.firstIndex(where: {
+                    $0.root.group(id: targetId) != nil
+                })
+            else { return }
             workspace.centerTabs[tabIndex].root = workspace.centerTabs[tabIndex].root
                 .updatingGroup(id: targetId) { _ in state }
         }

@@ -54,9 +54,11 @@ public final class TerminalTransport {
         onEvent: @escaping EventHandler
     ) {
         self.config = config
-        self.requestTransport = config.requestTransport
+        self.requestTransport =
+            config.requestTransport
             ?? URLSessionRequestTransport(session: urlSession)
-        self.webSocketTransport = config.webSocketTransport
+        self.webSocketTransport =
+            config.webSocketTransport
             ?? URLSessionWebSocketTransport(session: urlSession)
         self.onEvent = onEvent
     }
@@ -153,7 +155,8 @@ public final class TerminalTransport {
             data: data, cols: cols, rows: rows
         )
         guard let encoded = try? JSONEncoder().encode(frame),
-              let text = String(data: encoded, encoding: .utf8) else { return }
+            let text = String(data: encoded, encoding: .utf8)
+        else { return }
         sendChain = Task { [previous = sendChain] in
             await previous.value
             try? await socket.send(.string(text))
@@ -164,7 +167,7 @@ public final class TerminalTransport {
 
     private func connect() {
         guard !closed, let websocketPath,
-              var components = URLComponents(url: config.baseURL, resolvingAgainstBaseURL: false)
+            var components = URLComponents(url: config.baseURL, resolvingAgainstBaseURL: false)
         else { return }
         components.scheme = config.baseURL.scheme == "https" ? "wss" : "ws"
         components.path = websocketPath

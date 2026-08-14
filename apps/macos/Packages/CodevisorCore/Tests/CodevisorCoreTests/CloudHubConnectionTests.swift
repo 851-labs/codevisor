@@ -389,12 +389,13 @@ struct CloudHubConnectionTests {
         #expect(recorder.messages.map { String(decoding: $0, as: UTF8.self) } == ["reply-1", "reply-2"])
 
         // Consuming data replenishes the peer's window with credit frames.
-        #expect(await waitUntil {
-            scripted.relayEnvelopes.contains {
-                if case .credit = $0.frame { return true }
-                return false
-            }
-        })
+        #expect(
+            await waitUntil {
+                scripted.relayEnvelopes.contains {
+                    if case .credit = $0.frame { return true }
+                    return false
+                }
+            })
 
         // A machine-initiated close reaches onClosed with its reason.
         scripted.relayToApp(
@@ -437,12 +438,13 @@ struct CloudHubConnectionTests {
         )
         #expect(await waitUntil { recorder.closes == [.protocolError] })
         #expect(recorder.messages.isEmpty)
-        #expect(await waitUntil {
-            scripted.relayEnvelopes.contains {
-                if case let .close(_, _, reason) = $0.frame { return reason == .protocolError }
-                return false
-            }
-        })
+        #expect(
+            await waitUntil {
+                scripted.relayEnvelopes.contains {
+                    if case let .close(_, _, reason) = $0.frame { return reason == .protocolError }
+                    return false
+                }
+            })
 
         // The dead channel rejects further sends.
         await #expect(throws: CloudHubConnectionError.channelClosed) {
@@ -510,16 +512,17 @@ struct CloudHubConnectionTests {
 
         // Once the fatal close is observed, openChannel fails fast instead of
         // retrying forever.
-        #expect(await waitUntil {
-            do {
-                try await hub.waitUntilReady()
-                return false
-            } catch let error as CloudHubConnectionError {
-                return error == .rejected(closeCode: 4200)
-            } catch {
-                return false
-            }
-        })
+        #expect(
+            await waitUntil {
+                do {
+                    try await hub.waitUntilReady()
+                    return false
+                } catch let error as CloudHubConnectionError {
+                    return error == .rejected(closeCode: 4200)
+                } catch {
+                    return false
+                }
+            })
         await hub.shutdown()
     }
 

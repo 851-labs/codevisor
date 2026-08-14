@@ -7,17 +7,18 @@ struct ToolCallTests {
     @Test("applying merges only present fields")
     func applyingMerges() {
         let base = ToolCall(toolCallId: "t1", title: "Read file", kind: .read, status: .pending)
-        let merged = base.applying(ToolCallUpdate(
-            toolCallId: "t1",
-            status: .completed,
-            content: [.content(.text("done"))],
-            locations: [ToolCallLocation(path: "/a", line: 3)],
-            rawInput: ["path": "/a"],
-            rawOutput: ["ok": true]
-        ))
-        #expect(merged.title == "Read file") // unchanged
-        #expect(merged.kind == .read)        // unchanged
-        #expect(merged.status == .completed) // updated
+        let merged = base.applying(
+            ToolCallUpdate(
+                toolCallId: "t1",
+                status: .completed,
+                content: [.content(.text("done"))],
+                locations: [ToolCallLocation(path: "/a", line: 3)],
+                rawInput: ["path": "/a"],
+                rawOutput: ["ok": true]
+            ))
+        #expect(merged.title == "Read file")  // unchanged
+        #expect(merged.kind == .read)  // unchanged
+        #expect(merged.status == .completed)  // updated
         #expect(merged.content?.count == 1)
         #expect(merged.locations?.first?.line == 3)
         #expect(merged.rawInput?["path"] == .string("/a"))
@@ -68,11 +69,11 @@ struct ToolCallTests {
     @Test("Unknown content elements are skipped, siblings kept")
     func unknownContentLenient() throws {
         let json = """
-        {"toolCallId":"x","title":"Edit","content":[
-            {"type":"hologram","data":"???"},
-            {"type":"diff","path":"/a.txt","oldText":"1","newText":"2"}
-        ]}
-        """
+            {"toolCallId":"x","title":"Edit","content":[
+                {"type":"hologram","data":"???"},
+                {"type":"diff","path":"/a.txt","oldText":"1","newText":"2"}
+            ]}
+            """
         let call = try ACPJSON.decoder.decode(ToolCall.self, from: Data(json.utf8))
         #expect(call.content?.count == 1)
         guard case .diff(let path, _, _) = call.content?.first else {
@@ -97,7 +98,8 @@ struct ToolCallTests {
             .applying(ToolCallUpdate(toolCallId: "sub-2", parentToolCallId: "task-1"))
         #expect(attached.parentToolCallId == "task-1")
         #expect(attached.applying(ToolCallUpdate(toolCallId: "sub-2", status: .completed)).parentToolCallId == "task-1")
-        #expect(ToolCallUpdate(toolCallId: "sub-3", parentToolCallId: "task-9").asToolCall().parentToolCallId == "task-9")
+        #expect(
+            ToolCallUpdate(toolCallId: "sub-3", parentToolCallId: "task-9").asToolCall().parentToolCallId == "task-9")
     }
 
     @Test("agent kind decodes; unknown kinds stay lenient")
@@ -114,10 +116,10 @@ struct ToolCallTests {
     func webSearchSources() throws {
         // Verbatim shape the claude provider emits for a WebSearch completion.
         let json = """
-        {"toolCallId":"ws-1","title":"Searched for swift release","kind":"web_search","status":"completed","content":[
-            {"type":"content","content":{"type":"resource_link","name":"Swift 6.2 Released | Swift.org","title":"Swift 6.2 Released | Swift.org","uri":"https://www.swift.org/blog/swift-6.2-released/"}}
-        ]}
-        """
+            {"toolCallId":"ws-1","title":"Searched for swift release","kind":"web_search","status":"completed","content":[
+                {"type":"content","content":{"type":"resource_link","name":"Swift 6.2 Released | Swift.org","title":"Swift 6.2 Released | Swift.org","uri":"https://www.swift.org/blog/swift-6.2-released/"}}
+            ]}
+            """
         let call = try ACPJSON.decoder.decode(ToolCall.self, from: Data(json.utf8))
         #expect(call.kind == .webSearch)
         #expect(call.content?.count == 1)

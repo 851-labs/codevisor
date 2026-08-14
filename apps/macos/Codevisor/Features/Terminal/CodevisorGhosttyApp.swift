@@ -83,10 +83,11 @@ final class CodevisorGhosttyApp {
 
         _ = ghostty_init(UInt(CommandLine.argc), CommandLine.unsafeArgv)
 
-        let config = Ghostty.Config(config: Self.buildConfig(
-            theme: Self.currentTheme,
-            systemIsDark: Self.currentSystemIsDark
-        ))
+        let config = Ghostty.Config(
+            config: Self.buildConfig(
+                theme: Self.currentTheme,
+                systemIsDark: Self.currentSystemIsDark
+            ))
         self.config = config
 
         // Runtime config modeled on upstream Ghostty.App.init (L60-70). The
@@ -98,12 +99,19 @@ final class CodevisorGhosttyApp {
             supports_selection_clipboard: true,
             wakeup_cb: { userdata in CodevisorGhosttyApp.wakeup(userdata) },
             action_cb: { app, target, action in CodevisorGhosttyApp.action(app!, target: target, action: action) },
-            read_clipboard_cb: { userdata, loc, state in CodevisorGhosttyApp.readClipboard(userdata, location: loc, state: state) },
+            read_clipboard_cb: { userdata, loc, state in
+                CodevisorGhosttyApp.readClipboard(userdata, location: loc, state: state)
+            },
             confirm_read_clipboard_cb: { userdata, str, state, request in
-                CodevisorGhosttyApp.confirmReadClipboard(userdata, string: str, state: state, request: request) },
+                CodevisorGhosttyApp.confirmReadClipboard(userdata, string: str, state: state, request: request)
+            },
             write_clipboard_cb: { userdata, loc, content, len, confirm in
-                CodevisorGhosttyApp.writeClipboard(userdata, location: loc, content: content, len: len, confirm: confirm) },
-            close_surface_cb: { userdata, processAlive in CodevisorGhosttyApp.closeSurface(userdata, processAlive: processAlive) }
+                CodevisorGhosttyApp.writeClipboard(
+                    userdata, location: loc, content: content, len: len, confirm: confirm)
+            },
+            close_surface_cb: { userdata, processAlive in
+                CodevisorGhosttyApp.closeSurface(userdata, processAlive: processAlive)
+            }
         )
 
         guard let app = ghostty_app_new(&runtime_cfg, config.config) else {
@@ -186,10 +194,11 @@ final class CodevisorGhosttyApp {
     /// Rebuilds the config for the current theme and pushes it to the app and
     /// every live surface.
     private func reloadConfig() {
-        let newConfig = Ghostty.Config(config: Self.buildConfig(
-            theme: Self.currentTheme,
-            systemIsDark: Self.currentSystemIsDark
-        ))
+        let newConfig = Ghostty.Config(
+            config: Self.buildConfig(
+                theme: Self.currentTheme,
+                systemIsDark: Self.currentSystemIsDark
+            ))
         ghostty_app_update_config(app, newConfig.config!)
         for view in surfaces.allObjects {
             if let surface = view.surface {
@@ -206,9 +215,10 @@ final class CodevisorGhosttyApp {
     /// as libghostty expects (it reads `dirname(resources)/terminfo`).
     private static func prepareBundledResources() -> String {
         let fm = FileManager.default
-        guard let tarball = Bundle.main.url(forResource: "ghostty-resources", withExtension: "tar.gz")
-            ?? Bundle.main.resourceURL?.appendingPathComponent("ghostty-resources.tar.gz"),
-              fm.fileExists(atPath: tarball.path)
+        guard
+            let tarball = Bundle.main.url(forResource: "ghostty-resources", withExtension: "tar.gz")
+                ?? Bundle.main.resourceURL?.appendingPathComponent("ghostty-resources.tar.gz"),
+            fm.fileExists(atPath: tarball.path)
         else {
             fatalError("Missing bundled ghostty-resources.tar.gz.")
         }
@@ -229,8 +239,9 @@ final class CodevisorGhosttyApp {
         let bundleVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
         let stamp = "\(bundleVersion)|\(tarballSize)|\(tarballMtime)"
         if fm.fileExists(atPath: ghosttyDir.path),
-           let existing = try? String(contentsOf: stampURL, encoding: .utf8),
-           existing == stamp {
+            let existing = try? String(contentsOf: stampURL, encoding: .utf8),
+            existing == stamp
+        {
             return ghosttyDir.path
         }
 
@@ -248,7 +259,8 @@ final class CodevisorGhosttyApp {
                 try stamp.write(to: stampURL, atomically: true, encoding: .utf8)
             } catch {
                 // Non-fatal: extraction just reruns on the next launch.
-                Log.terminal.debug("ghostty resources stamp write failed: \(String(describing: error), privacy: .public)")
+                Log.terminal.debug(
+                    "ghostty resources stamp write failed: \(String(describing: error), privacy: .public)")
             }
             return ghosttyDir.path
         } catch {
@@ -269,11 +281,11 @@ final class CodevisorGhosttyApp {
         // which intermittently segfaults at launch on macOS 26/27 betas.
         // Codevisor has its own crash reporting; Ghostty's stays off.
         var contents = """
-        font-family = Menlo
-        font-size = \(terminalFontSize)
-        crash-report = false
+            font-family = Menlo
+            font-size = \(terminalFontSize)
+            crash-report = false
 
-        """
+            """
         if let theme {
             contents += "background = \(theme.background.hexString())\n"
             contents += "foreground = \(theme.foreground.hexString())\n"
@@ -293,7 +305,8 @@ final class CodevisorGhosttyApp {
                 }
             }
         } else {
-            let isDark = systemIsDark
+            let isDark =
+                systemIsDark
                 ?? (NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua)
             // System theme: the terminal doesn't paint a background at all —
             // a near-zero opacity surface composites straight onto the
@@ -323,7 +336,8 @@ final class CodevisorGhosttyApp {
     /// `Theme.windowBackground`).
     private static func systemWindowBackgroundHex(isDark: Bool) -> String {
         var hex = isDark ? "1E1E1E" : "FFFFFF"
-        let appearance = NSAppearance(named: isDark ? .darkAqua : .aqua)
+        let appearance =
+            NSAppearance(named: isDark ? .darkAqua : .aqua)
             ?? NSApp.effectiveAppearance
         appearance.performAsCurrentDrawingAppearance {
             if let rgb = NSColor.windowBackgroundColor.usingColorSpace(.sRGB) {
@@ -394,9 +408,11 @@ final class CodevisorGhosttyApp {
     nonisolated static func closeSurface(_ userdata: UnsafeMutableRawPointer?, processAlive: Bool) {
         let surface = surfaceUserdata(from: userdata)
         onMain {
-            NotificationCenter.default.post(name: Ghostty.Notification.ghosttyCloseSurface, object: surface, userInfo: [
-                "process_alive": processAlive,
-            ])
+            NotificationCenter.default.post(
+                name: Ghostty.Notification.ghosttyCloseSurface, object: surface,
+                userInfo: [
+                    "process_alive": processAlive
+                ])
         }
     }
 
@@ -459,7 +475,8 @@ final class CodevisorGhosttyApp {
             switch request {
             case .paste:
                 alert.messageText = "Warning: Potentially Unsafe Paste"
-                alert.informativeText = "Pasting this text may be dangerous as it looks like some text will be executed as a command."
+                alert.informativeText =
+                    "Pasting this text may be dangerous as it looks like some text will be executed as a command."
             case .osc_52_read:
                 alert.messageText = "Authorize Clipboard Access"
                 alert.informativeText = "An application is attempting to read from the clipboard."
@@ -526,7 +543,8 @@ final class CodevisorGhosttyApp {
             guard let textPlainContent = contentArray.first(where: { $0.mime == "text/plain" }) else { return }
             let alert = NSAlert()
             alert.messageText = "Authorize Clipboard Access"
-            alert.informativeText = "An application is attempting to write to the clipboard:\n\n\(textPlainContent.data.prefix(256))"
+            alert.informativeText =
+                "An application is attempting to write to the clipboard:\n\n\(textPlainContent.data.prefix(256))"
             alert.alertStyle = .warning
             alert.addButton(withTitle: "Allow")
             alert.addButton(withTitle: "Cancel")
@@ -668,7 +686,8 @@ final class CodevisorGhosttyApp {
                 }
             case GHOSTTY_TARGET_SURFACE:
                 guard let surface = target.target.surface,
-                      let surfaceView = surfaceView(from: surface) else { return false }
+                    let surfaceView = surfaceView(from: surface)
+                else { return false }
                 onMain {
                     NotificationCenter.default.post(
                         name: .ghosttyConfigDidChange,

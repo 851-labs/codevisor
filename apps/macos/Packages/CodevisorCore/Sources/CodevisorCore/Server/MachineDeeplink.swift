@@ -31,15 +31,16 @@ public struct MachineDeeplink: Equatable, Sendable {
     /// can handle a link generated for production installs.
     public static func parse(_ url: URL) -> MachineDeeplink? {
         guard let scheme = url.scheme?.lowercased(),
-              scheme == "codevisor" || scheme == "codevisor-dev",
-              url.host()?.lowercased() == "add-machine",
-              let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            scheme == "codevisor" || scheme == "codevisor-dev",
+            url.host()?.lowercased() == "add-machine",
+            let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         else { return nil }
 
         var values: [String: String] = [:]
         for item in components.queryItems ?? [] {
             if let value = item.value?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !value.isEmpty {
+                !value.isEmpty
+            {
                 values[item.name] = value
             }
         }

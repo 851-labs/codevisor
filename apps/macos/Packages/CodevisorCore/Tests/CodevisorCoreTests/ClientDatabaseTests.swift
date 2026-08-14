@@ -129,11 +129,13 @@ struct ClientDatabaseTests {
 
         #expect(store.loadData(forKey: key) == data)
         #expect(try database.value(forKey: key) == nil)
-        #expect(FileManager.default.fileExists(
-            atPath: directory
-                .appendingPathComponent("ClientAssets/DraftAttachments/\(key).json")
-                .path
-        ))
+        #expect(
+            FileManager.default.fileExists(
+                atPath:
+                    directory
+                    .appendingPathComponent("ClientAssets/DraftAttachments/\(key).json")
+                    .path
+            ))
 
         try store.resetClientData()
         #expect(store.loadData(forKey: key) == nil)
@@ -154,7 +156,8 @@ struct ClientDatabaseTests {
         let projectsData = try JSONEncoder().encode([project])
         try projectsData.write(to: directory.appendingPathComponent("projects.json"))
 
-        let renamedLegacyDirectory = directory
+        let renamedLegacyDirectory =
+            directory
             .deletingLastPathComponent()
             .appendingPathComponent("HerdMan-\(UUID().uuidString)")
         try FileManager.default.createDirectory(
@@ -259,22 +262,26 @@ struct ClientDatabaseTests {
             ) == "grid"
         )
         #expect(defaults.object(forKey: "sidebar.collapsed") == nil)
-        #expect(!FileManager.default.fileExists(
-            atPath: directory.appendingPathComponent("projects.json").path
-        ))
-        #expect(!FileManager.default.fileExists(
-            atPath: directory.appendingPathComponent("machines.json").path
-        ))
-        #expect(!FileManager.default.fileExists(
-            atPath: renamedLegacyDirectory.appendingPathComponent("sessions.json").path
-        ))
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: directory.appendingPathComponent("projects.json").path
+            ))
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: directory.appendingPathComponent("machines.json").path
+            ))
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: renamedLegacyDirectory.appendingPathComponent("sessions.json").path
+            ))
 
         let recovery = directory.appendingPathComponent(
             "MigrationRecovery/legacy-client-state-v1"
         )
-        #expect(FileManager.default.fileExists(
-            atPath: recovery.appendingPathComponent("projects.json").path
-        ))
+        #expect(
+            FileManager.default.fileExists(
+                atPath: recovery.appendingPathComponent("projects.json").path
+            ))
         let recoveredRegistry = try JSONDecoder().decode(
             MachineRegistry.self,
             from: Data(contentsOf: recovery.appendingPathComponent("machines.json"))
@@ -304,9 +311,10 @@ struct ClientDatabaseTests {
         )
         #expect(reopenedAgain.store.loadData(forKey: "projects") == changedProjects)
         #expect(defaults.object(forKey: "sidebar.collapsed") == nil)
-        #expect(!FileManager.default.fileExists(
-            atPath: directory.appendingPathComponent("projects.json").path
-        ))
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: directory.appendingPathComponent("projects.json").path
+            ))
     }
 
     @MainActor

@@ -39,11 +39,12 @@ private func markdownLines(_ markdown: NSString) -> [MarkdownLine] {
             with: NSRange(location: sourceRange.location, length: contentEnd - sourceRange.location)
         )
         let (content, quoteDepth) = markdownContainerContent(line)
-        result.append(MarkdownLine(
-            content: content,
-            quoteDepth: quoteDepth,
-            sourceRange: sourceRange
-        ))
+        result.append(
+            MarkdownLine(
+                content: content,
+                quoteDepth: quoteDepth,
+                sourceRange: sourceRange
+            ))
         location = NSMaxRange(sourceRange)
     }
     return result
@@ -112,7 +113,8 @@ private func mergedMarkdownRanges(_ ranges: [NSRange]) -> [NSRange] {
             merged.append(range)
             continue
         }
-        merged[merged.count - 1].length = max(NSMaxRange(previous), NSMaxRange(range))
+        merged[merged.count - 1].length =
+            max(NSMaxRange(previous), NSMaxRange(range))
             - previous.location
     }
     return merged
@@ -123,20 +125,23 @@ private func markdownBlockCodeRanges(_ markdown: NSString) -> [NSRange] {
     var fence: MarkdownFence?
     for line in markdownLines(markdown) {
         if let openFence = fence, line.quoteDepth < openFence.quoteDepth {
-            ranges.append(NSRange(
-                location: openFence.sourceLocation,
-                length: line.sourceRange.location - openFence.sourceLocation
-            ))
+            ranges.append(
+                NSRange(
+                    location: openFence.sourceLocation,
+                    length: line.sourceRange.location - openFence.sourceLocation
+                ))
             fence = nil
         }
         if let openFence = fence {
             if line.quoteDepth == openFence.quoteDepth,
-               let closing = markdownFenceRun(in: line.content, closing: true),
-               closing.0 == openFence.character, closing.1 >= openFence.length {
-                ranges.append(NSRange(
-                    location: openFence.sourceLocation,
-                    length: NSMaxRange(line.sourceRange) - openFence.sourceLocation
-                ))
+                let closing = markdownFenceRun(in: line.content, closing: true),
+                closing.0 == openFence.character, closing.1 >= openFence.length
+            {
+                ranges.append(
+                    NSRange(
+                        location: openFence.sourceLocation,
+                        length: NSMaxRange(line.sourceRange) - openFence.sourceLocation
+                    ))
                 fence = nil
             }
             continue
@@ -153,10 +158,11 @@ private func markdownBlockCodeRanges(_ markdown: NSString) -> [NSRange] {
         }
     }
     if let fence {
-        ranges.append(NSRange(
-            location: fence.sourceLocation,
-            length: markdown.length - fence.sourceLocation
-        ))
+        ranges.append(
+            NSRange(
+                location: fence.sourceLocation,
+                length: markdown.length - fence.sourceLocation
+            ))
     }
     return mergedMarkdownRanges(ranges)
 }
@@ -182,7 +188,7 @@ private func markdownInlineCodeRanges(
         var cursor = range.location
         while cursor < end {
             guard markdown.character(at: cursor) == 96,
-                  !markdownCharacterIsEscaped(at: cursor, in: markdown)
+                !markdownCharacterIsEscaped(at: cursor, in: markdown)
             else {
                 cursor += 1
                 continue
@@ -194,7 +200,7 @@ private func markdownInlineCodeRanges(
             var closingEnd: Int?
             while search < end {
                 guard markdown.character(at: search) == 96,
-                      !markdownCharacterIsEscaped(at: search, in: markdown)
+                    !markdownCharacterIsEscaped(at: search, in: markdown)
                 else {
                     search += 1
                     continue
@@ -242,7 +248,8 @@ private func localServerPath(_ target: String) -> String? {
     }
     let decoded = target.removingPercentEncoding ?? target
     if decoded.hasPrefix("/") || decoded.hasPrefix("./") || decoded.hasPrefix("../")
-        || decoded.hasPrefix("~/") {
+        || decoded.hasPrefix("~/")
+    {
         return decoded
     }
     // A transcript has no useful browser-relative navigation context, so a
@@ -268,17 +275,18 @@ public func assistantMarkdownSegments(
 
     for match in assistantLinkExpression.matches(in: markdown, range: fullRange) {
         guard !markdownCharacterIsEscaped(at: match.range.location, in: markdown as NSString),
-              !codeRanges.contains(where: { NSIntersectionRange($0, match.range).length > 0 })
+            !codeRanges.contains(where: { NSIntersectionRange($0, match.range).length > 0 })
         else { continue }
         guard let matchRange = Range(match.range, in: markdown),
-              let targetRange = [2, 3]
+            let targetRange = [2, 3]
                 .compactMap({ Range(match.range(at: $0), in: markdown) })
                 .first
         else { continue }
         let target = String(markdown[targetRange])
         let file: PreviewFile
         if target.hasPrefix(attachmentOrigin),
-           let attachment = byID[String(target.dropFirst(attachmentOrigin.count))] {
+            let attachment = byID[String(target.dropFirst(attachmentOrigin.count))]
+        {
             file = PreviewFile(attachment: attachment)
             referenced.insert(attachment.fileId)
         } else if includeServerPaths, let path = localServerPath(target) {
@@ -289,7 +297,8 @@ public func assistantMarkdownSegments(
         if offset < matchRange.lowerBound {
             segments.append(.markdown(String(markdown[offset..<matchRange.lowerBound])))
         }
-        let label = Range(match.range(at: 1), in: markdown)
+        let label =
+            Range(match.range(at: 1), in: markdown)
             .map { String(markdown[$0]) }
             .flatMap { $0.isEmpty ? nil : $0 }
             ?? file.name

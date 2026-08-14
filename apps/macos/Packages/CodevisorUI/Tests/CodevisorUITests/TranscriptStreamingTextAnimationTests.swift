@@ -21,9 +21,10 @@ struct TranscriptStreamingTextAnimationTests {
             )
         )
 
-        #expect(ids == [
-            "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE:main:t0",
-            "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE:subagent:agent-1:t0",
-        ])
+        #expect(
+            ids == [
+                "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE:main:t0",
+                "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE:subagent:agent-1:t0",
+            ])
     }
 }

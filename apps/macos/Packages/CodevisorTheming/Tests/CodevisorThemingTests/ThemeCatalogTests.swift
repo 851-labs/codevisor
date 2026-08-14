@@ -33,10 +33,12 @@ struct ThemeCatalogTests {
         #expect(themes[1].id == ThemeCatalog.systemDarkID)
         let groups = themes.map(\.group)
         // Groups appear in section order with no interleaving.
-        #expect(groups == groups.sorted { a, b in
-            let order: [ThemeDescriptor.Group] = [.system, .pierre, .shiki, .custom]
-            return order.firstIndex(of: a)! < order.firstIndex(of: b)!
-        })
+        #expect(
+            groups
+                == groups.sorted { a, b in
+                    let order: [ThemeDescriptor.Group] = [.system, .pierre, .shiki, .custom]
+                    return order.firstIndex(of: a)! < order.firstIndex(of: b)!
+                })
         #expect(catalog.themes(ofType: .light).allSatisfy { $0.type == .light })
     }
 

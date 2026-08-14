@@ -210,15 +210,22 @@ struct SubagentSectionView: View {
         to: &turn
     )
     TranscriptReducer.apply(
-        .agentMessageChunk(.text("Scanning the session views first."), messageId: "msg-sub", parentToolCallId: "task-1"),
+        .agentMessageChunk(
+            .text("Scanning the session views first."), messageId: "msg-sub", parentToolCallId: "task-1"),
         to: &turn
     )
     TranscriptReducer.apply(
-        .toolCall(ToolCall(toolCallId: "sub-1", title: "Read SessionView.swift", kind: .read, status: .completed, parentToolCallId: "task-1")),
+        .toolCall(
+            ToolCall(
+                toolCallId: "sub-1", title: "Read SessionView.swift", kind: .read, status: .completed,
+                parentToolCallId: "task-1")),
         to: &turn
     )
     TranscriptReducer.apply(
-        .toolCall(ToolCall(toolCallId: "sub-2", title: "Searched for streamFingerprint", kind: .search, status: .inProgress, parentToolCallId: "task-1")),
+        .toolCall(
+            ToolCall(
+                toolCallId: "sub-2", title: "Searched for streamFingerprint", kind: .search, status: .inProgress,
+                parentToolCallId: "task-1")),
         to: &turn
     )
     return ScrollView {

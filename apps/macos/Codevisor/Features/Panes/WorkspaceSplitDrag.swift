@@ -88,7 +88,8 @@ final class WorkspaceSplitDragCoordinator {
 
     func previewEdge(for leafId: UUID) -> SplitEdge? {
         guard let resolution = active?.resolution,
-              resolution.targetLeafId == leafId else { return nil }
+            resolution.targetLeafId == leafId
+        else { return nil }
         return resolution.edge
     }
 
@@ -99,7 +100,8 @@ final class WorkspaceSplitDragCoordinator {
     }
 
     private func resolve(_ location: CGPoint, sourceLeafId: UUID) -> WorkspaceSplitDropResolution? {
-        let target = leafFrames
+        let target =
+            leafFrames
             .filter { leafId, registration in
                 leafId != sourceLeafId
                     && registration.frame.width > 0
@@ -137,9 +139,10 @@ final class WorkspaceSplitDragCoordinator {
             (edge: .leading, distance: u),
             (edge: .trailing, distance: 1 - u),
             (edge: .top, distance: v),
-            (edge: .bottom, distance: 1 - v)
+            (edge: .bottom, distance: 1 - v),
         ]
-        return candidates
+        return
+            candidates
             .sorted { $0.distance < $1.distance }
             .map(\.edge)
     }

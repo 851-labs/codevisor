@@ -15,14 +15,14 @@ public struct CloudAuthDeeplink: Equatable, Sendable {
     /// can handle a link generated for production installs.
     public static func parse(_ url: URL) -> CloudAuthDeeplink? {
         guard let scheme = url.scheme?.lowercased(),
-              scheme == "codevisor" || scheme == "codevisor-dev",
-              url.host()?.lowercased() == "cloud-auth",
-              let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-              let ott = components.queryItems?
-                  .first(where: { $0.name == "ott" })?
-                  .value?
-                  .trimmingCharacters(in: .whitespacesAndNewlines),
-              !ott.isEmpty
+            scheme == "codevisor" || scheme == "codevisor-dev",
+            url.host()?.lowercased() == "cloud-auth",
+            let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+            let ott = components.queryItems?
+                .first(where: { $0.name == "ott" })?
+                .value?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            !ott.isEmpty
         else { return nil }
         return CloudAuthDeeplink(ott: ott)
     }

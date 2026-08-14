@@ -105,7 +105,7 @@ struct HarnessesSettingsView: View {
             for harness in current where harness.isReady {
                 let before = previous.first { $0.id == harness.id }
                 guard before?.lifecycle?.phase == "installing", before?.isReady != true,
-                      harness.auth != nil, !canUse(harness)
+                    harness.auth != nil, !canUse(harness)
                 else { continue }
                 authenticationHarness = harness
                 break
@@ -176,10 +176,13 @@ struct HarnessesSettingsView: View {
                     .settingsActionTint(theme)
                     .help(updateHelp(harness))
                 }
-                Toggle("Enable \(harness.name)", isOn: Binding(
-                    get: { harness.enabled },
-                    set: { enabled in Task { await setServerHarness(harness.id, enabled: enabled) } }
-                ))
+                Toggle(
+                    "Enable \(harness.name)",
+                    isOn: Binding(
+                        get: { harness.enabled },
+                        set: { enabled in Task { await setServerHarness(harness.id, enabled: enabled) } }
+                    )
+                )
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.small)
@@ -250,7 +253,8 @@ struct HarnessesSettingsView: View {
             let started = try await environment.machines.client(for: serverId)
                 .updateHarness(id: harness.id)
             if let lifecycle = started.lifecycle,
-               let index = serverHarnesses.firstIndex(where: { $0.id == harness.id }) {
+                let index = serverHarnesses.firstIndex(where: { $0.id == harness.id })
+            {
                 serverHarnesses[index].lifecycle = lifecycle
                 environment.setHarnessLifecycle(
                     lifecycle,
@@ -337,7 +341,9 @@ struct HarnessesSettingsView: View {
             environment.harnessCatalogDidChange(onServer: serverId)
         } catch {
             updateServerHarness(id, enabled: !enabled)
-            Log.server.error("Setting harness \(id, privacy: .public) enabled=\(enabled, privacy: .public) failed: \(String(describing: error), privacy: .public)")
+            Log.server.error(
+                "Setting harness \(id, privacy: .public) enabled=\(enabled, privacy: .public) failed: \(String(describing: error), privacy: .public)"
+            )
             let name = serverHarnesses.first(where: { $0.id == id })?.name ?? id
             toggleError = ToggleError(
                 title: enabled ? "Couldn't turn on \(name)" : "Couldn't turn off \(name)",

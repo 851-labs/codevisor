@@ -15,7 +15,7 @@ struct TranscriptReducerTests {
     func mergesText() {
         let turn = reduce([
             .agentMessageChunk(.text("Hello ")),
-            .agentMessageChunk(.text("world"))
+            .agentMessageChunk(.text("world")),
         ])
         #expect(turn.entries.count == 1)
         #expect(turn.entries.first == .text(id: "t0", markdown: "Hello world"))
@@ -30,11 +30,12 @@ struct TranscriptReducerTests {
             .toolCall(ToolCall(toolCallId: "b", title: "Search")),
             .agentMessageChunk(.text("middle")),
             .toolCall(ToolCall(toolCallId: "c", title: "Run")),
-            .agentMessageChunk(.text("final"))
+            .agentMessageChunk(.text("final")),
         ])
-        #expect(turn.entries.map(\.id) == [
-            "text:t0", "tool:a", "tool:b", "text:t1", "tool:c", "text:t2"
-        ])
+        #expect(
+            turn.entries.map(\.id) == [
+                "text:t0", "tool:a", "tool:b", "text:t1", "tool:c", "text:t2",
+            ])
     }
 
     @Test("Text after a tool call starts a new span")
@@ -42,7 +43,7 @@ struct TranscriptReducerTests {
         let turn = reduce([
             .agentMessageChunk(.text("before")),
             .toolCall(ToolCall(toolCallId: "a", title: "T")),
-            .agentMessageChunk(.text("after"))
+            .agentMessageChunk(.text("after")),
         ])
         #expect(turn.entries.count == 3)
         #expect(turn.entries[2] == .text(id: "t1", markdown: "after"))
@@ -56,31 +57,34 @@ struct TranscriptReducerTests {
             .agentMessageChunk(.text("Barnsong is "), messageId: "msg-final"),
             .toolCall(ToolCall(toolCallId: "b", title: "Read package", kind: .read, status: .completed)),
             .agentMessageChunk(.text("a game."), messageId: "msg-final"),
-            .toolCall(ToolCall(toolCallId: "c", title: "Run tests", kind: .execute, status: .completed))
+            .toolCall(ToolCall(toolCallId: "c", title: "Run tests", kind: .execute, status: .completed)),
         ])
 
-        #expect(turn.entries.map(\.id) == [
-            "text:acp:msg-prelude",
-            "tool:a",
-            "text:acp:msg-final",
-            "tool:b",
-            "tool:c"
-        ])
+        #expect(
+            turn.entries.map(\.id) == [
+                "text:acp:msg-prelude",
+                "tool:a",
+                "text:acp:msg-final",
+                "tool:b",
+                "tool:c",
+            ])
         #expect(turn.finalText == .text(id: "acp:msg-final", markdown: "Barnsong is a game."))
-        #expect(turn.workedEntries.map(\.id) == [
-            "text:acp:msg-prelude",
-            "tool:a",
-            "tool:b",
-            "tool:c"
-        ])
+        #expect(
+            turn.workedEntries.map(\.id) == [
+                "text:acp:msg-prelude",
+                "tool:a",
+                "tool:b",
+                "tool:c",
+            ])
     }
 
     @Test("Commentary-tagged spans never become the final answer")
     func commentaryPhaseExcludedFromFinal() {
         let turn = reduce([
-            .agentMessageChunk(.text("Checking the tests."), messageId: "m1", parentToolCallId: nil, phase: .commentary),
+            .agentMessageChunk(
+                .text("Checking the tests."), messageId: "m1", parentToolCallId: nil, phase: .commentary),
             .toolCall(ToolCall(toolCallId: "a", title: "Run tests", kind: .execute, status: .completed)),
-            .agentMessageChunk(.text("They pass."), messageId: "m2", parentToolCallId: nil, phase: .final)
+            .agentMessageChunk(.text("They pass."), messageId: "m2", parentToolCallId: nil, phase: .final),
         ])
         #expect(turn.finalText == .text(id: "acp:m2", markdown: "They pass."))
         #expect(turn.workedEntries.map(\.id) == ["text:acp:m1", "tool:a"])
@@ -113,7 +117,7 @@ struct TranscriptReducerTests {
     func finalPhaseSurvivesTrailingTools() {
         let turn = reduce([
             .agentMessageChunk(.text("Done."), messageId: "m1", parentToolCallId: nil, phase: .final),
-            .toolCall(ToolCall(toolCallId: "a", title: "Cleanup", kind: .execute, status: .completed))
+            .toolCall(ToolCall(toolCallId: "a", title: "Cleanup", kind: .execute, status: .completed)),
         ])
         #expect(turn.finalText == .text(id: "acp:m1", markdown: "Done."))
     }
@@ -137,7 +141,7 @@ struct TranscriptReducerTests {
     func subagentPhaseIgnored() {
         let turn = reduce([
             .agentMessageChunk(.text("main answer")),
-            .agentMessageChunk(.text("child note"), messageId: "msg-sub", parentToolCallId: "task-1")
+            .agentMessageChunk(.text("child note"), messageId: "msg-sub", parentToolCallId: "task-1"),
         ])
         #expect(turn.finalText == .text(id: "t0", markdown: "main answer"))
         #expect(turn.textPhases.isEmpty)
@@ -148,7 +152,7 @@ struct TranscriptReducerTests {
         let turn = reduce([
             .toolCall(ToolCall(toolCallId: "a", title: "Read", status: .pending)),
             .agentMessageChunk(.text("note")),
-            .toolCallUpdate(ToolCallUpdate(toolCallId: "a", status: .completed, content: [.content(.text("done"))]))
+            .toolCallUpdate(ToolCallUpdate(toolCallId: "a", status: .completed, content: [.content(.text("done"))])),
         ])
         // The tool entry stays at index 0 (order preserved), now completed.
         guard case let .tool(call) = turn.entries[0] else { Issue.record("expected tool"); return }
@@ -233,7 +237,8 @@ struct TranscriptReducerTests {
     @Test("Plan updates are captured; commands and mode updates are ignored")
     func planAndIgnored() {
         var turn = AssistantTurn()
-        TranscriptReducer.apply(.plan(Plan(entries: [PlanEntry(content: "step", priority: .high, status: .pending)])), to: &turn)
+        TranscriptReducer.apply(
+            .plan(Plan(entries: [PlanEntry(content: "step", priority: .high, status: .pending)])), to: &turn)
         TranscriptReducer.apply(.availableCommandsUpdate([AvailableCommand(name: "x", description: "y")]), to: &turn)
         TranscriptReducer.apply(.currentModeUpdate(currentModeId: "fast"), to: &turn)
         TranscriptReducer.apply(.userMessageChunk(.text("echo")), to: &turn)
@@ -249,7 +254,8 @@ struct TranscriptReducerTests {
         #expect(turn.isThinking == false)
         // A later document replaces the first; the step plan is independent.
         TranscriptReducer.apply(.planDocument(markdown: "# Final Plan"), to: &turn)
-        TranscriptReducer.apply(.plan(Plan(entries: [PlanEntry(content: "step", priority: .medium, status: .inProgress)])), to: &turn)
+        TranscriptReducer.apply(
+            .plan(Plan(entries: [PlanEntry(content: "step", priority: .medium, status: .inProgress)])), to: &turn)
         #expect(turn.planDocument == "# Final Plan")
         #expect(turn.plan?.entries.count == 1)
         #expect(turn.entries.isEmpty)
@@ -284,7 +290,7 @@ struct TranscriptReducerTests {
         let turn = reduce([
             .agentMessageChunk(.text("thinking out loud")),
             .toolCall(ToolCall(toolCallId: "a", title: "Read")),
-            .agentMessageChunk(.text("Here is the answer."))
+            .agentMessageChunk(.text("Here is the answer.")),
         ])
         #expect(turn.finalText == .text(id: "t1", markdown: "Here is the answer."))
         #expect(turn.workedEntries.map(\.id) == ["text:t0", "tool:a"])
@@ -296,7 +302,7 @@ struct TranscriptReducerTests {
     func endsOnTool() {
         let turn = reduce([
             .agentMessageChunk(.text("working")),
-            .toolCall(ToolCall(toolCallId: "a", title: "Run"))
+            .toolCall(ToolCall(toolCallId: "a", title: "Run")),
         ])
         #expect(turn.finalText == .text(id: "t0", markdown: "working"))
         #expect(turn.workedEntries.map(\.id) == ["tool:a"])
@@ -315,11 +321,12 @@ struct TranscriptReducerTests {
     func resendPreservesStreamedState() {
         let turn = reduce([
             .toolCall(ToolCall(toolCallId: "a", title: "Edit", kind: .edit, status: .pending)),
-            .toolCallUpdate(ToolCallUpdate(
-                toolCallId: "a",
-                diffStats: [ToolCallDiffStat(path: "/a", added: 5, removed: 2)]
-            )),
-            .toolCall(ToolCall(toolCallId: "a", title: "Edited a.txt", kind: .edit, status: .completed))
+            .toolCallUpdate(
+                ToolCallUpdate(
+                    toolCallId: "a",
+                    diffStats: [ToolCallDiffStat(path: "/a", added: 5, removed: 2)]
+                )),
+            .toolCall(ToolCall(toolCallId: "a", title: "Edited a.txt", kind: .edit, status: .completed)),
         ])
         guard case let .tool(call) = turn.entries.first else {
             Issue.record("expected tool entry")
@@ -338,7 +345,7 @@ struct TranscriptReducerTests {
             .toolCall(ToolCall(toolCallId: "task-1", title: "Agent: explore", kind: .agent, status: .inProgress)),
             .agentThoughtChunk(.text("hmm"), messageId: nil, parentToolCallId: "task-1"),
             .agentMessageChunk(.text("child "), messageId: "msg-sub", parentToolCallId: "task-1"),
-            .agentMessageChunk(.text("text"), messageId: "msg-sub", parentToolCallId: "task-1")
+            .agentMessageChunk(.text("text"), messageId: "msg-sub", parentToolCallId: "task-1"),
         ])
         #expect(turn.entries.map(\.id) == ["tool:task-1"])
         let bucket = turn.subagents["task-1"]
@@ -353,7 +360,8 @@ struct TranscriptReducerTests {
     @Test("Parented thought chunks flip only the bucket's thinking state")
     func subagentThinkingIsolated() {
         var turn = AssistantTurn(isGenerating: true, isThinking: true)
-        TranscriptReducer.apply(.agentThoughtChunk(.text("child hmm"), messageId: nil, parentToolCallId: "task-1"), to: &turn)
+        TranscriptReducer.apply(
+            .agentThoughtChunk(.text("child hmm"), messageId: nil, parentToolCallId: "task-1"), to: &turn)
         #expect(turn.isThinking == true)
         #expect(turn.subagents["task-1"]?.isThinking == true)
         #expect(turn.subagents["task-1"]?.entries.isEmpty == true)
@@ -376,7 +384,7 @@ struct TranscriptReducerTests {
             .agentMessageChunk(.text("one "), messageId: nil, parentToolCallId: "task-1"),
             .agentMessageChunk(.text("two "), messageId: nil, parentToolCallId: "task-2"),
             .agentMessageChunk(.text("more"), messageId: nil, parentToolCallId: "task-1"),
-            .agentMessageChunk(.text("main text"))
+            .agentMessageChunk(.text("main text")),
         ])
         #expect(turn.subagents["task-1"]?.entries == [.text(id: "t0", markdown: "one more")])
         #expect(turn.subagents["task-2"]?.entries == [.text(id: "t0", markdown: "two ")])
@@ -387,9 +395,12 @@ struct TranscriptReducerTests {
     func childToolSettleByLookup() {
         let turn = reduce([
             .toolCall(ToolCall(toolCallId: "task-1", title: "Agent: explore", kind: .agent)),
-            .toolCall(ToolCall(toolCallId: "sub-read", title: "Read", kind: .read, status: .inProgress, parentToolCallId: "task-1")),
+            .toolCall(
+                ToolCall(
+                    toolCallId: "sub-read", title: "Read", kind: .read, status: .inProgress, parentToolCallId: "task-1")
+            ),
             // Settle updates (tool results) carry no parent attribution.
-            .toolCallUpdate(ToolCallUpdate(toolCallId: "sub-read", status: .completed))
+            .toolCallUpdate(ToolCallUpdate(toolCallId: "sub-read", status: .completed)),
         ])
         #expect(turn.entries.map(\.id) == ["tool:task-1"])
         guard case let .tool(child)? = turn.subagents["task-1"]?.entries.first else {
@@ -417,14 +428,21 @@ struct TranscriptReducerTests {
     func cascadeSettle() {
         var turn = reduce([
             .toolCall(ToolCall(toolCallId: "task-1", title: "Agent: outer", kind: .agent, status: .inProgress)),
-            .toolCall(ToolCall(toolCallId: "task-2", title: "Agent: inner", kind: .agent, status: .inProgress, parentToolCallId: "task-1")),
-            .toolCall(ToolCall(toolCallId: "sub-run", title: "Run", kind: .execute, status: .inProgress, parentToolCallId: "task-2"))
+            .toolCall(
+                ToolCall(
+                    toolCallId: "task-2", title: "Agent: inner", kind: .agent, status: .inProgress,
+                    parentToolCallId: "task-1")),
+            .toolCall(
+                ToolCall(
+                    toolCallId: "sub-run", title: "Run", kind: .execute, status: .inProgress, parentToolCallId: "task-2"
+                )),
         ])
         TranscriptReducer.apply(.agentThoughtChunk(.text("x"), messageId: nil, parentToolCallId: "task-2"), to: &turn)
         TranscriptReducer.apply(.toolCallUpdate(ToolCallUpdate(toolCallId: "task-1", status: .completed)), to: &turn)
 
         guard case let .tool(inner)? = turn.subagents["task-1"]?.entries.first,
-              case let .tool(grandchild)? = turn.subagents["task-2"]?.entries.first else {
+            case let .tool(grandchild)? = turn.subagents["task-2"]?.entries.first
+        else {
             Issue.record("expected nested tools")
             return
         }
@@ -437,7 +455,10 @@ struct TranscriptReducerTests {
     func settleRecursesBuckets() {
         var turn = reduce([
             .toolCall(ToolCall(toolCallId: "task-1", title: "Agent: explore", kind: .agent, status: .inProgress)),
-            .toolCall(ToolCall(toolCallId: "sub-read", title: "Read", kind: .read, status: .inProgress, parentToolCallId: "task-1"))
+            .toolCall(
+                ToolCall(
+                    toolCallId: "sub-read", title: "Read", kind: .read, status: .inProgress, parentToolCallId: "task-1")
+            ),
         ])
         TranscriptReducer.apply(.agentThoughtChunk(.text("x"), messageId: nil, parentToolCallId: "task-1"), to: &turn)
         TranscriptReducer.settleToolCalls(&turn, outcome: .cancelled)
@@ -455,7 +476,7 @@ struct TranscriptReducerTests {
         let turn = reduce([
             .toolCall(ToolCall(toolCallId: "task-1", title: "Agent: explore", kind: .agent)),
             .toolCall(ToolCall(toolCallId: "sub-read", title: "Read", kind: .read, parentToolCallId: "task-1")),
-            .toolCall(ToolCall(toolCallId: "main-run", title: "Run", kind: .execute))
+            .toolCall(ToolCall(toolCallId: "main-run", title: "Run", kind: .execute)),
         ])
         #expect(Set(turn.allToolCalls.map(\.toolCallId)) == ["task-1", "sub-read", "main-run"])
     }
@@ -467,7 +488,7 @@ struct TranscriptReducerTests {
             .toolCall(ToolCall(toolCallId: "running", title: "Edit", status: .inProgress)),
             .toolCall(ToolCall(toolCallId: "pending", title: "Run", status: .pending)),
             .toolCall(ToolCall(toolCallId: "statusless", title: "Fetch")),
-            .toolCall(ToolCall(toolCallId: "broken", title: "Bash", status: .failed))
+            .toolCall(ToolCall(toolCallId: "broken", title: "Bash", status: .failed)),
         ])
         TranscriptReducer.settleToolCalls(&turn, outcome: .cancelled)
         let statuses = turn.toolCalls.map(\.status)

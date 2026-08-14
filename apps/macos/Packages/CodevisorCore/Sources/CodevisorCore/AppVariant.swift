@@ -35,7 +35,8 @@ public enum CodevisorAppVariant: Sendable {
         stashed: [String: String]?
     ) -> (environment: [String: String], stash: [String: String]?) {
         let devPrefixes = ["CODEVISOR_", "HERDMAN_"]
-        let isConfigured = live["CODEVISOR_DEV_INSTANCE_ID"] != nil
+        let isConfigured =
+            live["CODEVISOR_DEV_INSTANCE_ID"] != nil
             || live["HERDMAN_DEV_INSTANCE_ID"] != nil
         if isConfigured {
             let stash = live.filter { pair in
@@ -53,9 +54,9 @@ public enum CodevisorAppVariant: Sendable {
 
     public static var isDevelopment: Bool {
         #if DEBUG
-        true
+            true
         #else
-        false
+            false
         #endif
     }
 
@@ -87,8 +88,8 @@ public enum CodevisorAppVariant: Sendable {
     /// Production builds always use their normal architecture-specific feed.
     public static var developmentSparkleFeedURL: String? {
         guard isDevelopment,
-              let value = environment["CODEVISOR_DEV_SPARKLE_FEED_URL"],
-              !value.isEmpty
+            let value = environment["CODEVISOR_DEV_SPARKLE_FEED_URL"],
+            !value.isEmpty
         else { return nil }
         return value
     }
@@ -119,7 +120,7 @@ public enum CodevisorAppVariant: Sendable {
                 URLQueryItem(name: "host", value: host),
                 URLQueryItem(name: "port", value: String(port)),
                 URLQueryItem(name: "token", value: token),
-                URLQueryItem(name: "name", value: name)
+                URLQueryItem(name: "name", value: name),
             ]
             return components.string ?? ""
         }
@@ -129,8 +130,8 @@ public enum CodevisorAppVariant: Sendable {
         guard isDevelopment else { return nil }
         let env = environment
         guard let host = env["CODEVISOR_DEV_REMOTE_HOST"], !host.isEmpty,
-              let port = env["CODEVISOR_DEV_REMOTE_PORT"].flatMap(Int.init),
-              let token = env["CODEVISOR_DEV_REMOTE_TOKEN"], !token.isEmpty
+            let port = env["CODEVISOR_DEV_REMOTE_PORT"].flatMap(Int.init),
+            let token = env["CODEVISOR_DEV_REMOTE_TOKEN"], !token.isEmpty
         else { return nil }
         return DevelopmentRemote(
             host: host,
@@ -160,7 +161,7 @@ public enum CodevisorAppVariant: Sendable {
     /// an empty token means "not ready" and is treated as absent.
     static func developmentCloud(from environment: [String: String]) -> DevelopmentCloud? {
         guard let raw = environment["CODEVISOR_DEV_CLOUD_URL"], !raw.isEmpty,
-              let url = URL(string: raw)
+            let url = URL(string: raw)
         else { return nil }
         let token = environment["CODEVISOR_DEV_CLOUD_TOKEN"]
         return DevelopmentCloud(
@@ -179,15 +180,17 @@ public enum CodevisorAppVariant: Sendable {
 
     public static func applicationSupportURL(fileManager: FileManager = .default) -> URL {
         if isDevelopment,
-           let override = environment["CODEVISOR_DEV_DATA_DIR"]
-            ?? environment["HERDMAN_DEV_DATA_DIR"],
-           !override.isEmpty {
+            let override = environment["CODEVISOR_DEV_DATA_DIR"]
+                ?? environment["HERDMAN_DEV_DATA_DIR"],
+            !override.isEmpty
+        {
             return createdDirectory(
                 at: URL(fileURLWithPath: override, isDirectory: true),
                 fileManager: fileManager
             )
         }
-        let base = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        let base =
+            fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? Self.homeDirectory(fileManager: fileManager).appendingPathComponent("Library/Application Support")
         return createdDirectory(
             at: base.appendingPathComponent(applicationSupportDirectoryName, isDirectory: true),
@@ -216,10 +219,12 @@ public enum CodevisorAppVariant: Sendable {
         fileManager: FileManager = .default
     ) -> URL? {
         guard !isDevelopment else { return nil }
-        let base = fileManager.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first ?? Self.homeDirectory(fileManager: fileManager)
+        let base =
+            fileManager.urls(
+                for: .applicationSupportDirectory,
+                in: .userDomainMask
+            ).first
+            ?? Self.homeDirectory(fileManager: fileManager)
             .appendingPathComponent("Library/Application Support")
         return base.appendingPathComponent("HerdMan", isDirectory: true)
     }
@@ -234,7 +239,9 @@ public enum CodevisorAppVariant: Sendable {
                 try fileManager.copyItem(at: source, to: target)
                 Log.persistence.log("Migrated legacy HerdMan file \(source.lastPathComponent, privacy: .public)")
             } catch {
-                Log.persistence.error("Failed to migrate legacy HerdMan file \(source.lastPathComponent, privacy: .public): \(String(describing: error), privacy: .public)")
+                Log.persistence.error(
+                    "Failed to migrate legacy HerdMan file \(source.lastPathComponent, privacy: .public): \(String(describing: error), privacy: .public)"
+                )
             }
         }
     }
@@ -267,9 +274,9 @@ public enum CodevisorAppVariant: Sendable {
     /// fallbacks/dev layouts there — iOS has no local server).
     private static func homeDirectory(fileManager: FileManager) -> URL {
         #if os(macOS)
-        fileManager.homeDirectoryForCurrentUser
+            fileManager.homeDirectoryForCurrentUser
         #else
-        URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+            URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
         #endif
     }
 
@@ -277,7 +284,9 @@ public enum CodevisorAppVariant: Sendable {
         do {
             try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         } catch {
-            Log.persistence.error("Failed to create data directory \(directory.path, privacy: .public): \(String(describing: error), privacy: .public)")
+            Log.persistence.error(
+                "Failed to create data directory \(directory.path, privacy: .public): \(String(describing: error), privacy: .public)"
+            )
         }
         return directory
     }

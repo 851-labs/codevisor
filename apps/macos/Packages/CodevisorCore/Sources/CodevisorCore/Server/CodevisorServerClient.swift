@@ -27,8 +27,8 @@ public enum CodevisorServerClientError: Error, Equatable, Sendable, LocalizedErr
 /// clone errors use this to pick actionable guidance.
 public func serverErrorCode(_ error: any Error) -> String? {
     guard case let CodevisorServerClientError.httpStatus(_, body) = error,
-          let data = body.data(using: .utf8),
-          let payload = try? JSONDecoder().decode([String: String?].self, from: data)
+        let data = body.data(using: .utf8),
+        let payload = try? JSONDecoder().decode([String: String?].self, from: data)
     else { return nil }
     return payload["code"] ?? nil
 }
@@ -58,8 +58,9 @@ public func isTaskCancellation(_ error: any Error) -> Bool {
 public func serverErrorMessage(_ error: any Error) -> String {
     if case let CodevisorServerClientError.httpStatus(_, body) = error {
         if let data = body.data(using: .utf8),
-           let payload = try? JSONDecoder().decode([String: String].self, from: data),
-           let message = payload["error"] {
+            let payload = try? JSONDecoder().decode([String: String].self, from: data),
+            let message = payload["error"]
+        {
             return message
         }
         return body.isEmpty ? "The Codevisor server rejected the request." : body
@@ -69,7 +70,7 @@ public func serverErrorMessage(_ error: any Error) -> String {
     if let urlError = error as? URLError {
         switch urlError.code {
         case .cannotConnectToHost, .cannotFindHost, .networkConnectionLost,
-             .timedOut, .secureConnectionFailed, .cannotLoadFromNetwork:
+            .timedOut, .secureConnectionFailed, .cannotLoadFromNetwork:
             return serverUnreachableErrorMessage
         case .notConnectedToInternet, .internationalRoamingOff, .dataNotAllowed:
             return "You appear to be offline. Check your network connection, then try again."
@@ -84,7 +85,8 @@ public func serverErrorMessage(_ error: any Error) -> String {
     // falls back to its description rather than showing nothing.
     let nsError = error as NSError
     if nsError.domain == NSCocoaErrorDomain || nsError.domain == NSURLErrorDomain
-        || nsError.domain == NSPOSIXErrorDomain {
+        || nsError.domain == NSPOSIXErrorDomain
+    {
         return nsError.localizedDescription
     }
     return String(describing: error)
@@ -164,7 +166,9 @@ public protocol CodevisorServerClienting: Sendable {
     func removeHarnessAccount(harnessId: String, accountId: String) async throws
     func activateHarnessAccount(harnessId: String, accountId: String) async throws -> [ServerHarnessAccount]
     func probeHarnessAccount(harnessId: String, accountId: String) async throws -> ServerHarnessAccount
-    func loginHarnessAccount(harnessId: String, accountId: String, methodId: String?, apiKey: String?) async throws -> ServerHarnessAuthFlow
+    func loginHarnessAccount(
+        harnessId: String, accountId: String, methodId: String?, apiKey: String?
+    ) async throws -> ServerHarnessAuthFlow
     func cancelHarnessLogin(harnessId: String, accountId: String, flowId: String) async throws
     func logoutHarnessAccount(harnessId: String, accountId: String) async throws -> ServerHarnessAccount
     func listPiAuthProviders() async throws -> [ServerPiAuthProvider]
@@ -174,7 +178,9 @@ public protocol CodevisorServerClienting: Sendable {
     func cancelPiAuthFlow(id: String) async throws
     func removePiAuthProvider(id: String) async throws
     func listOpenCodeAuthProviders(accountId: String) async throws -> [ServerOpenCodeAuthProvider]
-    func startOpenCodeAuth(accountId: String, providerId: String, methodId: String, inputs: [String: String]?, apiKey: String?) async throws -> ServerOpenCodeAuthFlow
+    func startOpenCodeAuth(
+        accountId: String, providerId: String, methodId: String, inputs: [String: String]?, apiKey: String?
+    ) async throws -> ServerOpenCodeAuthFlow
     func openCodeAuthFlow(id: String) async throws -> ServerOpenCodeAuthFlow
     func answerOpenCodeAuthFlow(id: String, code: String) async throws -> ServerOpenCodeAuthFlow
     func cancelOpenCodeAuthFlow(id: String) async throws
@@ -299,7 +305,9 @@ public protocol CodevisorServerClienting: Sendable {
     /// `messageId` is the CLIENT's id for its optimistic user message; the
     /// server adopts it as the queue item id, so the user echo comes back
     /// with the same id and reconciles by identity.
-    func promptSession(id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?) async throws -> ServerPromptAccepted
+    func promptSession(
+        id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?
+    ) async throws -> ServerPromptAccepted
     func uploadFile(name: String, mimeType: String, data: Data) async throws -> ServerFileMetadata
     func fileData(id: String) async throws -> Data
     /// Reads a live file from this machine. Relative paths are resolved by the
@@ -462,8 +470,10 @@ public extension CodevisorServerClienting {
         return AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    for try await event in source where
-                        event.subjectId.caseInsensitiveCompare(id.uuidString) == .orderedSame {
+                    for try await event in source
+                    where
+                        event.subjectId.caseInsensitiveCompare(id.uuidString) == .orderedSame
+                    {
                         continuation.yield(event)
                     }
                     continuation.finish()
@@ -535,7 +545,8 @@ public extension CodevisorServerClienting {
     func createHarnessAccount(harnessId: String, label: String?) async throws -> ServerHarnessAccount {
         throw CodevisorServerClientError.invalidResponse
     }
-    func renameHarnessAccount(harnessId: String, accountId: String, label: String) async throws -> ServerHarnessAccount {
+    func renameHarnessAccount(harnessId: String, accountId: String, label: String) async throws -> ServerHarnessAccount
+    {
         throw CodevisorServerClientError.invalidResponse
     }
     func removeHarnessAccount(harnessId: String, accountId: String) async throws {}
@@ -543,7 +554,9 @@ public extension CodevisorServerClienting {
     func probeHarnessAccount(harnessId: String, accountId: String) async throws -> ServerHarnessAccount {
         throw CodevisorServerClientError.invalidResponse
     }
-    func loginHarnessAccount(harnessId: String, accountId: String, methodId: String?, apiKey: String?) async throws -> ServerHarnessAuthFlow {
+    func loginHarnessAccount(
+        harnessId: String, accountId: String, methodId: String?, apiKey: String?
+    ) async throws -> ServerHarnessAuthFlow {
         throw CodevisorServerClientError.invalidResponse
     }
     func cancelHarnessLogin(harnessId: String, accountId: String, flowId: String) async throws {}
@@ -563,7 +576,9 @@ public extension CodevisorServerClienting {
     func cancelPiAuthFlow(id: String) async throws {}
     func removePiAuthProvider(id: String) async throws {}
     func listOpenCodeAuthProviders(accountId: String) async throws -> [ServerOpenCodeAuthProvider] { [] }
-    func startOpenCodeAuth(accountId: String, providerId: String, methodId: String, inputs: [String: String]?, apiKey: String?) async throws -> ServerOpenCodeAuthFlow {
+    func startOpenCodeAuth(
+        accountId: String, providerId: String, methodId: String, inputs: [String: String]?, apiKey: String?
+    ) async throws -> ServerOpenCodeAuthFlow {
         throw CodevisorServerClientError.invalidResponse
     }
     func openCodeAuthFlow(id: String) async throws -> ServerOpenCodeAuthFlow {
@@ -655,13 +670,16 @@ public extension CodevisorServerClienting {
 
     /// Default for fakes/older transports: attachments are dropped and the
     /// text-only prompt path is used.
-    func promptSession(id: UUID, text: String, attachments: [ServerAttachmentRef]) async throws -> ServerPromptAccepted {
+    func promptSession(id: UUID, text: String, attachments: [ServerAttachmentRef]) async throws -> ServerPromptAccepted
+    {
         try await promptSession(id: id, text: text)
     }
 
     /// Default for fakes/older transports: the message id is advisory (it
     /// only sharpens echo reconciliation), so dropping it is safe.
-    func promptSession(id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?) async throws -> ServerPromptAccepted {
+    func promptSession(
+        id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?
+    ) async throws -> ServerPromptAccepted {
         try await promptSession(id: id, text: text, attachments: attachments)
     }
 
@@ -2013,7 +2031,10 @@ public struct ServerPromptQueueItem: Codable, Identifiable, Equatable, Sendable 
     public var updatedAt: String
     public var attachments: [ServerAttachmentRef]?
 
-    init(id: String, sessionId: String, text: String, createdAt: String, updatedAt: String, attachments: [ServerAttachmentRef]? = nil) {
+    init(
+        id: String, sessionId: String, text: String, createdAt: String, updatedAt: String,
+        attachments: [ServerAttachmentRef]? = nil
+    ) {
         self.id = id
         self.sessionId = sessionId
         self.text = text
@@ -2286,9 +2307,10 @@ public struct ServerSession: Decodable, Equatable, Sendable {
             sidebarState: sidebarState ?? .idle,
             sidebarStateChangedAt: sidebarStateChangedAt.flatMap {
                 try? ServerDateCoding.date(from: $0)
-            } ?? updatedAt.flatMap {
-                try? ServerDateCoding.date(from: $0)
-            },
+            }
+                ?? updatedAt.flatMap {
+                    try? ServerDateCoding.date(from: $0)
+                },
             latestAttentionSequence: latestAttentionSequence ?? 0,
             lastSeenAttentionSequence: lastSeenAttentionSequence ?? 0,
             unreadCount: unreadCount ?? 0,
@@ -2515,9 +2537,11 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
         machineId: String? = nil
     ) {
         self.config = config
-        self.requestTransport = config.requestTransport
+        self.requestTransport =
+            config.requestTransport
             ?? URLSessionRequestTransport(session: urlSession)
-        self.webSocketTransport = config.webSocketTransport
+        self.webSocketTransport =
+            config.webSocketTransport
             ?? URLSessionWebSocketTransport(session: urlSession)
         self.requestGate = requestGate
         self.machineId = machineId
@@ -2745,8 +2769,11 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
         try await send(harnessAccountsPath(harnessId), method: "POST", body: HarnessAccountBody(label: label))
     }
 
-    public func renameHarnessAccount(harnessId: String, accountId: String, label: String) async throws -> ServerHarnessAccount {
-        try await send(harnessAccountPath(harnessId, accountId), method: "PATCH", body: HarnessAccountBody(label: label))
+    public func renameHarnessAccount(
+        harnessId: String, accountId: String, label: String
+    ) async throws -> ServerHarnessAccount {
+        try await send(
+            harnessAccountPath(harnessId, accountId), method: "PATCH", body: HarnessAccountBody(label: label))
     }
 
     public func removeHarnessAccount(harnessId: String, accountId: String) async throws {
@@ -2754,23 +2781,31 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
     }
 
     public func activateHarnessAccount(harnessId: String, accountId: String) async throws -> [ServerHarnessAccount] {
-        try await send("\(harnessAccountPath(harnessId, accountId))/activate", method: "POST", body: Optional<EmptyBody>.none)
+        try await send(
+            "\(harnessAccountPath(harnessId, accountId))/activate", method: "POST", body: Optional<EmptyBody>.none)
     }
 
     public func probeHarnessAccount(harnessId: String, accountId: String) async throws -> ServerHarnessAccount {
-        try await send("\(harnessAccountPath(harnessId, accountId))/auth/probe", method: "POST", body: Optional<EmptyBody>.none)
+        try await send(
+            "\(harnessAccountPath(harnessId, accountId))/auth/probe", method: "POST", body: Optional<EmptyBody>.none)
     }
 
-    public func loginHarnessAccount(harnessId: String, accountId: String, methodId: String?, apiKey: String?) async throws -> ServerHarnessAuthFlow {
-        try await send("\(harnessAccountPath(harnessId, accountId))/login", method: "POST", body: HarnessLoginBody(methodId: methodId, apiKey: apiKey))
+    public func loginHarnessAccount(
+        harnessId: String, accountId: String, methodId: String?, apiKey: String?
+    ) async throws -> ServerHarnessAuthFlow {
+        try await send(
+            "\(harnessAccountPath(harnessId, accountId))/login", method: "POST",
+            body: HarnessLoginBody(methodId: methodId, apiKey: apiKey))
     }
 
     public func cancelHarnessLogin(harnessId: String, accountId: String, flowId: String) async throws {
-        try await sendNoResponse("\(harnessAccountPath(harnessId, accountId))/login/\(pathComponent(flowId))", method: "DELETE")
+        try await sendNoResponse(
+            "\(harnessAccountPath(harnessId, accountId))/login/\(pathComponent(flowId))", method: "DELETE")
     }
 
     public func logoutHarnessAccount(harnessId: String, accountId: String) async throws -> ServerHarnessAccount {
-        try await send("\(harnessAccountPath(harnessId, accountId))/logout", method: "POST", body: Optional<EmptyBody>.none)
+        try await send(
+            "\(harnessAccountPath(harnessId, accountId))/logout", method: "POST", body: Optional<EmptyBody>.none)
     }
 
     public func listPiAuthProviders() async throws -> [ServerPiAuthProvider] {
@@ -2809,7 +2844,9 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
         try await get(openCodeProvidersPath(accountId))
     }
 
-    public func startOpenCodeAuth(accountId: String, providerId: String, methodId: String, inputs: [String: String]?, apiKey: String?) async throws -> ServerOpenCodeAuthFlow {
+    public func startOpenCodeAuth(
+        accountId: String, providerId: String, methodId: String, inputs: [String: String]?, apiKey: String?
+    ) async throws -> ServerOpenCodeAuthFlow {
         try await send(
             "\(openCodeProvidersPath(accountId))/\(pathComponent(providerId))/login",
             method: "POST",
@@ -3432,11 +3469,15 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
         try await promptSession(id: id, text: text, attachments: [])
     }
 
-    public func promptSession(id: UUID, text: String, attachments: [ServerAttachmentRef]) async throws -> ServerPromptAccepted {
+    public func promptSession(
+        id: UUID, text: String, attachments: [ServerAttachmentRef]
+    ) async throws -> ServerPromptAccepted {
         try await promptSession(id: id, text: text, attachments: attachments, messageId: nil)
     }
 
-    public func promptSession(id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?) async throws -> ServerPromptAccepted {
+    public func promptSession(
+        id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?
+    ) async throws -> ServerPromptAccepted {
         try await send(
             "/v1/sessions/\(id.uuidString)/prompt",
             method: "POST",
@@ -3520,7 +3561,7 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
         components.path = "/v1/fs/file"
         components.queryItems = [
             URLQueryItem(name: "path", value: path),
-            URLQueryItem(name: "sessionId", value: sessionId.uuidString)
+            URLQueryItem(name: "sessionId", value: sessionId.uuidString),
         ]
         guard let requestPath = components.string else {
             throw CodevisorServerClientError.invalidURL("fs/file")
@@ -3528,7 +3569,9 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
         return requestPath
     }
 
-    public func updateQueuedPrompt(sessionId: UUID, queueItemId: String, text: String) async throws -> ServerPromptQueueItem {
+    public func updateQueuedPrompt(
+        sessionId: UUID, queueItemId: String, text: String
+    ) async throws -> ServerPromptQueueItem {
         try await send(
             "/v1/sessions/\(sessionId.uuidString)/queue/\(queueItemId)",
             method: "PATCH",
@@ -3679,7 +3722,8 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
                         }
                         let failure = error as NSError
                         if failure.domain == NSPOSIXErrorDomain,
-                           failure.code == POSIXErrorCode.EMSGSIZE.rawValue {
+                            failure.code == POSIXErrorCode.EMSGSIZE.rawValue
+                        {
                             continuation.finish(throwing: error)
                             return
                         }
@@ -3832,17 +3876,17 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
     /// request waits before dispatch while startup/update downtime is known.
     private func waitForServerIfNeeded(path: String) async throws {
         guard !Self.isLifecyclePath(path), let requestGate, let machineId else { return }
-#if DEBUG || NAVIGATION_DIAGNOSTICS
-        Log.cloud.notice(
-            "CLOUDRELAYDBG request.gate.begin machine=\(machineId, privacy: .public) path=\(path, privacy: .public)"
-        )
-#endif
+        #if DEBUG || NAVIGATION_DIAGNOSTICS
+            Log.cloud.notice(
+                "CLOUDRELAYDBG request.gate.begin machine=\(machineId, privacy: .public) path=\(path, privacy: .public)"
+            )
+        #endif
         try await requestGate.waitUntilReady(for: machineId)
-#if DEBUG || NAVIGATION_DIAGNOSTICS
-        Log.cloud.notice(
-            "CLOUDRELAYDBG request.gate.end machine=\(machineId, privacy: .public) path=\(path, privacy: .public)"
-        )
-#endif
+        #if DEBUG || NAVIGATION_DIAGNOSTICS
+            Log.cloud.notice(
+                "CLOUDRELAYDBG request.gate.end machine=\(machineId, privacy: .public) path=\(path, privacy: .public)"
+            )
+        #endif
     }
 
     private static func isLifecyclePath(_ path: String) -> Bool {

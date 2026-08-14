@@ -16,8 +16,8 @@ final class NewChatPresentationSession {
 
     var visibleFrameInWindow: CGRect? {
         guard let view = presentedController?.viewIfLoaded,
-              let window = view.window,
-              !view.bounds.isEmpty
+            let window = view.window,
+            !view.bounds.isEmpty
         else { return nil }
         return view.convert(view.bounds, to: window)
     }
@@ -42,7 +42,7 @@ final class NewChatPresentationSession {
     /// visual owner while the destination mounts underneath them.
     func snapshotView(hidingComposerText: Bool = false) -> UIView? {
         guard let view = presentedController?.viewIfLoaded,
-              !view.bounds.isEmpty
+            !view.bounds.isEmpty
         else { return nil }
         let editor = hidingComposerText ? firstEditableTextView(in: view) : nil
         let previousAlpha = editor?.alpha
@@ -120,7 +120,7 @@ struct NewChatPresentationReader: UIViewControllerRepresentable {
 
         private func resolve() {
             guard let presented = enclosingPresentedController(),
-                  resolvedController !== presented
+                resolvedController !== presented
             else { return }
             resolvedController = presented
             IOSNavigationDiagnostics.record(
@@ -142,14 +142,15 @@ struct NewChatPresentationReader: UIViewControllerRepresentable {
             if let highestPresentedAncestor { return highestPresentedAncestor }
 
             guard let window = viewIfLoaded?.window,
-                  var controller = window.rootViewController
+                var controller = window.rootViewController
             else { return nil }
             while let presented = controller.presentedViewController,
-                  !presented.isBeingDismissed {
+                !presented.isBeingDismissed
+            {
                 controller = presented
             }
             guard controller !== window.rootViewController,
-                  view.isDescendant(of: controller.view)
+                view.isDescendant(of: controller.view)
             else { return nil }
             return controller
         }
@@ -218,14 +219,15 @@ final class NewChatPromotionSurface {
 
     func install() {
         guard !didInstall,
-              !sourceFrame.isEmpty,
-              let sourceWindow,
-              sourceWindow.bounds.width > 0,
-              sourceWindow.bounds.height > 0
+            !sourceFrame.isEmpty,
+            let sourceWindow,
+            sourceWindow.bounds.width > 0,
+            sourceWindow.bounds.height > 0
         else { return }
         didInstall = true
 
-        let retainedResponder = ComposerTextViewHandoffRegistry
+        let retainedResponder =
+            ComposerTextViewHandoffRegistry
             .beginStablePortalTransition(id: editorHandoffID)
         IOSNavigationDiagnostics.record(
             "newChat.promotionSurface.sourceEditorCovered",
@@ -309,7 +311,10 @@ final class NewChatPromotionSurface {
         // has supplied a snapshot of its final row. The snapshot is the exact
         // renderer ordinary sends animate; it is not a second bubble style.
         if outgoingSourceEditorFrame?.isEmpty == false,
-           !didResolveOutgoingTarget { return }
+            !didResolveOutgoingTarget
+        {
+            return
+        }
         didStartExpansion = true
         guard let sourceWindow else {
             onExpanded?()
@@ -343,10 +348,11 @@ final class NewChatPromotionSurface {
         // full-duration cross-fade reads as duplicate buttons, labels, and
         // composer outlines. iMessage performs the semantic handoff at the
         // end of the sheet expansion, when those geometries nearly coincide.
-        animator.addAnimations({
-            self.sourceSnapshot?.alpha = 0
-            self.liveHostingController?.view.alpha = 1
-        }, delayFactor: 0.68)
+        animator.addAnimations(
+            {
+                self.sourceSnapshot?.alpha = 0
+                self.liveHostingController?.view.alpha = 1
+            }, delayFactor: 0.68)
         animator.addCompletion { [weak self] _ in
             self?.sourceSnapshot?.removeFromSuperview()
             self?.sourceSnapshot = nil
@@ -366,12 +372,12 @@ final class NewChatPromotionSurface {
     func setOutgoingMessageTarget(_ target: TranscriptSendAnimationTarget) -> Bool {
         didResolveOutgoingTarget = true
         guard duration > 0,
-              let outgoingSourceEditorFrame,
-              !outgoingSourceEditorFrame.isEmpty,
-              let plan = TranscriptSendAnimationMetrics.plan(
-                  sourceY: outgoingSourceEditorFrame.midY,
-                  targetY: target.rowFrame.minY
-              )
+            let outgoingSourceEditorFrame,
+            !outgoingSourceEditorFrame.isEmpty,
+            let plan = TranscriptSendAnimationMetrics.plan(
+                sourceY: outgoingSourceEditorFrame.midY,
+                targetY: target.rowFrame.minY
+            )
         else {
             outgoingTarget = nil
             outgoingPlan = nil
@@ -386,8 +392,9 @@ final class NewChatPromotionSurface {
 
     private func installAndStartOutgoingFlight(in sourceWindow: UIWindow) {
         guard outgoingFlightView == nil,
-              let outgoingTarget,
-              let outgoingPlan else { return }
+            let outgoingTarget,
+            let outgoingPlan
+        else { return }
         let flight = outgoingTarget.rowSnapshot
         flight.frame = outgoingTarget.rowFrame
         flight.isUserInteractionEnabled = false
@@ -421,7 +428,8 @@ final class NewChatPromotionSurface {
         // app-window container while promotion is active so VoiceOver sees
         // the same live navigation surface as sighted users. The keyboard is
         // hosted by its own system window and remains independently exposed.
-        sourceWindow.accessibilityElements = [liveView]
+        sourceWindow.accessibilityElements =
+            [liveView]
             + (ComposerTextViewHandoffRegistry.promotedEditor(id: editorHandoffID)
                 .map { [$0] } ?? [])
     }

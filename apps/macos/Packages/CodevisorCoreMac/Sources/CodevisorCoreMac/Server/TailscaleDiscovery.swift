@@ -33,7 +33,7 @@ public enum TailscaleStatusReader {
     public static let binaryCandidates = [
         "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
         "/usr/local/bin/tailscale",
-        "/opt/homebrew/bin/tailscale"
+        "/opt/homebrew/bin/tailscale",
     ]
 
     /// Decodes the JSON printed by `tailscale status --json`. Exposed for
@@ -250,7 +250,7 @@ public final class MachineDiscoveryService {
         let session = URLSession(configuration: configuration)
         defer { session.invalidateAndCancel() }
         guard let (data, response) = try? await session.data(from: url),
-              (response as? HTTPURLResponse)?.statusCode == 200
+            (response as? HTTPURLResponse)?.statusCode == 200
         else { return nil }
         return try? JSONDecoder().decode(ServerDiscoveryInfo.self, from: data)
     }

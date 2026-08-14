@@ -126,8 +126,9 @@ public enum WorktreeSetupEvent: Equatable, Sendable {
 
     public static func from(_ envelope: ServerEventEnvelope, worktreeId: String) -> WorktreeSetupEvent? {
         guard envelope.kind == "worktree.setup",
-              envelope.subjectId.caseInsensitiveCompare(worktreeId) == .orderedSame,
-              let state = envelope.payload["state"]?.stringValue else {
+            envelope.subjectId.caseInsensitiveCompare(worktreeId) == .orderedSame,
+            let state = envelope.payload["state"]?.stringValue
+        else {
             return nil
         }
         switch state {
@@ -160,8 +161,9 @@ public enum ProjectSetupEvent: Equatable, Sendable {
 
     public static func from(_ envelope: ServerEventEnvelope, projectId: String) -> ProjectSetupEvent? {
         guard envelope.kind == "project.setup",
-              envelope.subjectId.caseInsensitiveCompare(projectId) == .orderedSame,
-              let state = envelope.payload["state"]?.stringValue else {
+            envelope.subjectId.caseInsensitiveCompare(projectId) == .orderedSame,
+            let state = envelope.payload["state"]?.stringValue
+        else {
             return nil
         }
         switch state {

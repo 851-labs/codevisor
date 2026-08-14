@@ -84,10 +84,10 @@ public actor WorkspacePanePreviewDiskStore {
             ofItemAtPath: destination.path
         )
         #if os(iOS)
-        try? fileManager.setAttributes(
-            [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
-            ofItemAtPath: destination.path
-        )
+            try? fileManager.setAttributes(
+                [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
+                ofItemAtPath: destination.path
+            )
         #endif
         try evictIfNeeded(protecting: destination)
     }
@@ -99,11 +99,13 @@ public actor WorkspacePanePreviewDiskStore {
     }
 
     public func removeWorkspace(_ workspaceId: UUID) throws {
-        guard let urls = try? fileManager.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
-        ) else { return }
+        guard
+            let urls = try? fileManager.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            )
+        else { return }
         let prefix = "v1-\(workspaceId.uuidString.lowercased())-"
         for url in urls where url.lastPathComponent.hasPrefix(prefix) {
             try fileManager.removeItem(at: url)
@@ -148,7 +150,7 @@ public actor WorkspacePanePreviewDiskStore {
         let keys: Set<URLResourceKey> = [
             .isRegularFileKey,
             .fileSizeKey,
-            .contentModificationDateKey
+            .contentModificationDateKey,
         ]
         return try fileManager.contentsOfDirectory(
             at: directory,

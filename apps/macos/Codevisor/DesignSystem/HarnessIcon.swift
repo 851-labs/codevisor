@@ -65,9 +65,9 @@ struct MenuSymbolIcon: View {
     static func rasterizedSymbol(named name: String, size: CGFloat) -> NSImage? {
         MenuIconRasterizer.tinted(cacheKey: "symbol:\(name)@\(size)") {
             guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil),
-                  let configured = symbol.withSymbolConfiguration(
-                      NSImage.SymbolConfiguration(pointSize: size - 1, weight: .medium)
-                  )
+                let configured = symbol.withSymbolConfiguration(
+                    NSImage.SymbolConfiguration(pointSize: size - 1, weight: .medium)
+                )
             else { return nil }
             return MenuIconRasterizer.labelTintedBitmap(drawing: configured, size: configured.size)
         }
@@ -120,18 +120,18 @@ enum MenuIconRasterizer {
     static func labelTintedBitmap(drawing image: NSImage, size: NSSize) -> NSImage? {
         let scale: CGFloat = 2
         guard size.width > 0, size.height > 0,
-              let rep = NSBitmapImageRep(
-                  bitmapDataPlanes: nil,
-                  pixelsWide: Int(size.width * scale),
-                  pixelsHigh: Int(size.height * scale),
-                  bitsPerSample: 8,
-                  samplesPerPixel: 4,
-                  hasAlpha: true,
-                  isPlanar: false,
-                  colorSpaceName: .deviceRGB,
-                  bytesPerRow: 0,
-                  bitsPerPixel: 0
-              )
+            let rep = NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: Int(size.width * scale),
+                pixelsHigh: Int(size.height * scale),
+                bitsPerSample: 8,
+                samplesPerPixel: 4,
+                hasAlpha: true,
+                isPlanar: false,
+                colorSpaceName: .deviceRGB,
+                bytesPerRow: 0,
+                bitsPerPixel: 0
+            )
         else { return nil }
         rep.size = size
         NSGraphicsContext.saveGraphicsState()

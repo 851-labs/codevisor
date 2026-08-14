@@ -29,16 +29,18 @@ enum SystemSoundCatalog {
         let directories = [
             URL(fileURLWithPath: "/System/Library/Sounds", isDirectory: true),
             URL(fileURLWithPath: "/Library/Sounds", isDirectory: true),
-            userSounds
+            userSounds,
         ].compactMap { $0 }
 
         var systemPaths = Set<String>()
         for directory in directories {
-            guard let urls = try? manager.contentsOfDirectory(
-                at: directory,
-                includingPropertiesForKeys: [.isRegularFileKey],
-                options: [.skipsHiddenFiles]
-            ) else { continue }
+            guard
+                let urls = try? manager.contentsOfDirectory(
+                    at: directory,
+                    includingPropertiesForKeys: [.isRegularFileKey],
+                    options: [.skipsHiddenFiles]
+                )
+            else { continue }
             for url in urls where supportedExtensions.contains(url.pathExtension.lowercased()) {
                 // These are private copies prepared for UserNotifications, not
                 // additional choices the user intentionally installed.
@@ -109,8 +111,9 @@ final class ChatNotificationManager: NSObject, ChatNotificationDelivering, UNUse
 
     func prepareAuthorizationIfNeeded() async {
         guard let settings = settingsModel?.settings,
-              settings.notificationsEnabled,
-              settings.systemNotificationsEnabled else { return }
+            settings.notificationsEnabled,
+            settings.systemNotificationsEnabled
+        else { return }
         let current = await center.notificationSettings()
         guard current.authorizationStatus == .notDetermined else { return }
         _ = await requestAuthorization()
@@ -189,9 +192,11 @@ final class ChatNotificationManager: NSObject, ChatNotificationDelivering, UNUse
     }
 
     func openSystemNotificationSettings() {
-        guard let url = URL(
-            string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
-        ) else { return }
+        guard
+            let url = URL(
+                string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
+            )
+        else { return }
         NSWorkspace.shared.open(url)
     }
 
@@ -218,7 +223,7 @@ final class ChatNotificationManager: NSObject, ChatNotificationDelivering, UNUse
             Self.sessionIdKey: event.sessionId.uuidString,
             Self.serverIdKey: event.serverId,
             Self.kindKey: event.kind.rawValue,
-            Self.testKey: isTest
+            Self.testKey: isTest,
         ]
         if settings.notificationSoundsEnabled {
             let path = soundPath(for: event.kind, settings: settings)
@@ -227,12 +232,14 @@ final class ChatNotificationManager: NSObject, ChatNotificationDelivering, UNUse
             let preparedName = await Task.detached { [self] in
                 prepareNotificationSoundFile(at: path)
             }.value
-            content.sound = preparedName.map {
-                UNNotificationSound(named: UNNotificationSoundName(rawValue: $0))
-            } ?? .default
+            content.sound =
+                preparedName.map {
+                    UNNotificationSound(named: UNNotificationSoundName(rawValue: $0))
+                } ?? .default
         }
 
-        let identifier = isTest
+        let identifier =
+            isTest
             ? "codevisor.chat.test.\(event.id.uuidString)"
             : notificationIdentifier(sessionId: event.sessionId, kind: event.kind)
         if !isTest {
@@ -291,11 +298,12 @@ final class ChatNotificationManager: NSObject, ChatNotificationDelivering, UNUse
                 // values mean the prepared copy is already current — skip the
                 // per-notification delete/re-copy.
                 if let sourceAttributes = try? manager.attributesOfItem(atPath: source.path),
-                   let destinationAttributes = try? manager.attributesOfItem(atPath: destination.path),
-                   let sourceSize = sourceAttributes[.size] as? UInt64,
-                   let sourceDate = sourceAttributes[.modificationDate] as? Date,
-                   sourceSize == destinationAttributes[.size] as? UInt64,
-                   sourceDate == destinationAttributes[.modificationDate] as? Date {
+                    let destinationAttributes = try? manager.attributesOfItem(atPath: destination.path),
+                    let sourceSize = sourceAttributes[.size] as? UInt64,
+                    let sourceDate = sourceAttributes[.modificationDate] as? Date,
+                    sourceSize == destinationAttributes[.size] as? UInt64,
+                    sourceDate == destinationAttributes[.modificationDate] as? Date
+                {
                     return destination.lastPathComponent
                 }
                 try manager.removeItem(at: destination)
@@ -338,9 +346,10 @@ final class ChatNotificationManager: NSObject, ChatNotificationDelivering, UNUse
     ) async {
         let info = response.notification.request.content.userInfo
         guard info[Self.testKey] as? Bool != true,
-              let sessionId = info[Self.sessionIdKey] as? String,
-              UUID(uuidString: sessionId) != nil,
-              let serverId = info[Self.serverIdKey] as? String else { return }
+            let sessionId = info[Self.sessionIdKey] as? String,
+            UUID(uuidString: sessionId) != nil,
+            let serverId = info[Self.serverIdKey] as? String
+        else { return }
         NSApp.activate(ignoringOtherApps: true)
         NotificationCenter.default.post(
             name: .codevisorOpenChatNotification,

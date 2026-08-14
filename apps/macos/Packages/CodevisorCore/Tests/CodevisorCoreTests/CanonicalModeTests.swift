@@ -12,7 +12,7 @@ struct CanonicalModeTests {
             SessionMode(id: "agent", name: "Agent", canonicalId: "ask"),
             SessionMode(id: "goal", name: "Goal mode"),
             SessionMode(id: "read-only", name: "Read-only", canonicalId: "readOnly"),
-            SessionMode(id: "weird", name: "Weird", canonicalId: "someday-new")
+            SessionMode(id: "weird", name: "Weird", canonicalId: "someday-new"),
         ]
     )
 

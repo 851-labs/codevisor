@@ -14,7 +14,7 @@ struct MarkdownBlockTests {
             .orderedList([OrderedListItem(number: 1, text: "one")]),
             .blockQuote([.paragraph("quote")]),
             .table(headers: ["A", "B"], alignments: [.leading, .trailing], rows: [["1", "2"]]),
-            .thematicBreak
+            .thematicBreak,
         ]
         let ids = blocks.map(\.id)
         #expect(Set(ids).count == ids.count)

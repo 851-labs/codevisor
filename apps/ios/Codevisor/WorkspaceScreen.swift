@@ -43,7 +43,8 @@ final class WorkspacePaneStore {
         if let data: Data = ClientPreferences.shared.valueIfPresent(
             forKey: key(for: workspaceId)
         ),
-           let decoded = try? JSONDecoder().decode(PaneGroupState.self, from: data) {
+            let decoded = try? JSONDecoder().decode(PaneGroupState.self, from: data)
+        {
             cache[workspaceId] = decoded
             return decoded
         }
@@ -51,7 +52,8 @@ final class WorkspacePaneStore {
         // A later chat-row tap in an old build may have created a second,
         // one-chat legacy state. Prefer the richest candidate so the original
         // workspace (with its terminals and sibling chats) wins migration.
-        let legacy = legacySessionIds
+        let legacy =
+            legacySessionIds
             .filter { $0 != workspaceId }
             .compactMap { existingState(for: $0) }
             .max { $0.panes.count < $1.panes.count }
@@ -71,7 +73,7 @@ final class WorkspacePaneStore {
     func existingState(for id: UUID) -> PaneGroupState? {
         if let cached = cache[id] { return cached }
         guard let data: Data = ClientPreferences.shared.valueIfPresent(forKey: key(for: id)),
-              let decoded = try? JSONDecoder().decode(PaneGroupState.self, from: data)
+            let decoded = try? JSONDecoder().decode(PaneGroupState.self, from: data)
         else { return nil }
         cache[id] = decoded
         return decoded
@@ -276,9 +278,11 @@ final class PaneSnapshotCache {
         // Read the actual bar geometry rather than assuming the historical
         // 44pt height. Current iOS navigation chrome is taller, and even a
         // small mismatch is conspicuous when the zoom begins.
-        let navigationBottom = visibleNavigationBarBottom(in: window)
+        let navigationBottom =
+            visibleNavigationBarBottom(in: window)
             ?? window.safeAreaInsets.top + 44
-        let bottomInset = bottomChrome > 0
+        let bottomInset =
+            bottomChrome > 0
             ? bottomChrome + window.safeAreaInsets.bottom
             : 0
         return CGRect(
@@ -293,9 +297,10 @@ final class PaneSnapshotCache {
         var bottoms: [CGFloat] = []
         func visit(_ view: UIView) {
             if let bar = view as? UINavigationBar,
-               !bar.isHidden,
-               bar.alpha > 0.01,
-               let window = bar.window {
+                !bar.isHidden,
+                bar.alpha > 0.01,
+                let window = bar.window
+            {
                 let frame = bar.convert(bar.bounds, to: window)
                 if frame.height > 0, frame.intersects(window.bounds) {
                     bottoms.append(frame.maxY)
@@ -410,7 +415,7 @@ private final class WorkspaceTabZoomSurface {
         handoffDelayFactor: CGFloat = WorkspaceTabZoomTransitionContract.handoffDelayFactor
     ) -> WorkspaceTabZoomSurface? {
         guard !reduceMotion,
-              let window = activeWindow()
+            let window = activeWindow()
         else { return nil }
 
         let canvasContentView: UIView
@@ -427,16 +432,18 @@ private final class WorkspaceTabZoomSurface {
             return nil
         }
 
-        guard let plan = WorkspaceTabZoomTransitionContract.plan(
-                  direction: direction,
-                  viewportFrame: paneSnapshot.contentFrame,
-                  cardFrame: cardFrame,
-                  canvasSize: canvasSize,
-                  reduceMotion: reduceMotion
-              )
+        guard
+            let plan = WorkspaceTabZoomTransitionContract.plan(
+                direction: direction,
+                viewportFrame: paneSnapshot.contentFrame,
+                cardFrame: cardFrame,
+                canvasSize: canvasSize,
+                reduceMotion: reduceMotion
+            )
         else { return nil }
 
-        let backdropView = paneSnapshot.backdropView
+        let backdropView =
+            paneSnapshot.backdropView
             ?? window.snapshotView(afterScreenUpdates: false)
             ?? fallbackSnapshotView(of: window)
 
@@ -514,13 +521,13 @@ private final class WorkspaceTabZoomSurface {
     /// those original pane pixels.
     func retarget(cardFrame: CGRect, reduceMotion: Bool) -> Bool {
         guard direction == .paneToGrid,
-              let updatedPlan = WorkspaceTabZoomTransitionContract.plan(
-                  direction: direction,
-                  viewportFrame: plan.source.maskFrame,
-                  cardFrame: cardFrame,
-                  canvasSize: plan.canvasSize,
-                  reduceMotion: reduceMotion
-              )
+            let updatedPlan = WorkspaceTabZoomTransitionContract.plan(
+                direction: direction,
+                viewportFrame: plan.source.maskFrame,
+                cardFrame: cardFrame,
+                canvasSize: plan.canvasSize,
+                reduceMotion: reduceMotion
+            )
         else { return false }
         plan = updatedPlan
         return true
@@ -543,10 +550,11 @@ private final class WorkspaceTabZoomSurface {
         // The fixed pixels hand off only after their geometry is essentially
         // identical to the live destination. This is a late dissolve, never a
         // mid-flight re-layout.
-        animator.addAnimations({
-            self.surfaceView.alpha = 0
-            self.shadowView.alpha = 0
-        }, delayFactor: handoffDelayFactor)
+        animator.addAnimations(
+            {
+                self.surfaceView.alpha = 0
+                self.shadowView.alpha = 0
+            }, delayFactor: handoffDelayFactor)
         animator.addCompletion { [weak self] _ in
             self?.finish()
         }
@@ -673,10 +681,13 @@ struct WorkspaceScreen: View {
     /// scroll owner until Home commits the handoff.
     var transcriptPresentationRole: TranscriptPresentationRole = .foreground
     var onSendAnimationCompleted: ((UserSendAnimationRequest) -> Void)? = nil
-    var onSendAnimationStarted: ((
-        UserSendAnimationRequest,
-        TranscriptSendAnimationTarget
-    ) -> Bool)? = nil
+    var onSendAnimationStarted:
+        (
+            (
+                UserSendAnimationRequest,
+                TranscriptSendAnimationTarget
+            ) -> Bool
+        )? = nil
     var onComposerWillSend: ((String, CGRect) -> Void)? = nil
     /// The temporary promotion host supplies UIKit's missing horizontal safe
     /// area so its navigation controls use normal compact-width gutters. The
@@ -729,7 +740,7 @@ struct WorkspaceScreen: View {
 
     private let columns = [
         GridItem(.flexible(), spacing: 14),
-        GridItem(.flexible(), spacing: 14)
+        GridItem(.flexible(), spacing: 14),
     ]
 
     /// This workspace's chat: the routed one, or the one a draft's first send
@@ -744,9 +755,10 @@ struct WorkspaceScreen: View {
 
     private var resolvedWorkspace: Workspace? {
         if let workspaceId,
-           let workspace = environment.workspaces.loadAll().first(where: {
-               $0.serverId == resolvedServerId && $0.id == workspaceId
-           }) {
+            let workspace = environment.workspaces.loadAll().first(where: {
+                $0.serverId == resolvedServerId && $0.id == workspaceId
+            })
+        {
             return workspace
         }
         guard let activeSessionId else { return nil }
@@ -843,7 +855,8 @@ struct WorkspaceScreen: View {
     private func title(for pane: PaneDescriptorState) -> String {
         switch pane.kind {
         case .chat:
-            let title = (pane.chatSessionId ?? activeSessionId)
+            let title =
+                (pane.chatSessionId ?? activeSessionId)
                 .flatMap(session(for:))?.title ?? pane.name
             return title.isEmpty ? "New Chat" : title
         case .newTab:
@@ -935,7 +948,8 @@ struct WorkspaceScreen: View {
                     }
                     .accessibilityLabel("Back to selected tab")
                 } else if isNewChatPresentation,
-                          hasStarted || isFirstSendPromotionSurface {
+                    hasStarted || isFirstSendPromotionSurface
+                {
                     Button {
                         dismissNewChatPresentation()
                     } label: {
@@ -952,7 +966,7 @@ struct WorkspaceScreen: View {
                         Image(systemName: "xmark")
                     }
                     .accessibilityLabel("Cancel")
-                // Tabs belong to a workspace; an unsent draft has none yet.
+                    // Tabs belong to a workspace; an unsent draft has none yet.
                 } else if !blocksServerContent, !isDraft {
                     if showsGrid {
                         Button {
@@ -1098,7 +1112,7 @@ struct WorkspaceScreen: View {
                             },
                             onSelect: {
                                 guard gridDrag == nil,
-                                      suppressedPaneTapId != pane.id
+                                    suppressedPaneTapId != pane.id
                                 else { return }
                                 select(pane)
                             },
@@ -1177,7 +1191,7 @@ struct WorkspaceScreen: View {
             }
             .onChanged { phase in
                 guard case let .second(true, value) = phase,
-                      let value
+                    let value
                 else { return }
                 updateGridDrag(for: pane, value: value)
             }
@@ -1246,13 +1260,13 @@ struct WorkspaceScreen: View {
 
     private func reorderDraggedPane(_ paneId: UUID, nearestTo point: CGPoint) {
         guard var drag = gridDrag, drag.pane.id == paneId,
-              let targetIndex = WorkspaceTabGridReorderContract.targetIndex(
-                  currentIndex: drag.currentSlotIndex,
-                  point: point,
-                  slots: drag.slots
-              ),
-              panes.panes.indices.contains(targetIndex),
-              panes.panes[targetIndex].id != paneId
+            let targetIndex = WorkspaceTabGridReorderContract.targetIndex(
+                currentIndex: drag.currentSlotIndex,
+                point: point,
+                slots: drag.slots
+            ),
+            panes.panes.indices.contains(targetIndex),
+            panes.panes[targetIndex].id != paneId
         else { return }
 
         let targetPaneId = panes.panes[targetIndex].id
@@ -1273,9 +1287,11 @@ struct WorkspaceScreen: View {
         Task { @MainActor in
             await Task.yield()
             guard var drag = gridDrag, drag.pane.id == paneId else { return }
-            guard let target = drag.slots.first(where: {
-                $0.index == drag.currentSlotIndex
-            })?.frame else {
+            guard
+                let target = drag.slots.first(where: {
+                    $0.index == drag.currentSlotIndex
+                })?.frame
+            else {
                 clearGridDrag(paneId: paneId)
                 return
             }
@@ -1384,7 +1400,8 @@ struct WorkspaceScreen: View {
                 )
                 .onAppear {
                     guard let chatId = pane.chatSessionId ?? activeSessionId,
-                          let session = session(for: chatId) else { return }
+                        let session = session(for: chatId)
+                    else { return }
                     if !isNewChatPresentation {
                         onWorkspaceReady?(chatId)
                     }
@@ -1400,8 +1417,9 @@ struct WorkspaceScreen: View {
                 }
                 .onChange(of: transcriptPresentationRole) { _, role in
                     guard role == .foreground,
-                          let chatId = pane.chatSessionId ?? activeSessionId,
-                          let session = session(for: chatId) else { return }
+                        let chatId = pane.chatSessionId ?? activeSessionId,
+                        let session = session(for: chatId)
+                    else { return }
                     ChatControllerCache.shared.noteOpened(
                         sessionId: chatId,
                         serverId: session.serverId,
@@ -1411,7 +1429,8 @@ struct WorkspaceScreen: View {
                 }
                 .onDisappear {
                     guard let chatId = pane.chatSessionId ?? activeSessionId,
-                          let session = session(for: chatId) else { return }
+                        let session = session(for: chatId)
+                    else { return }
                     // During promotion the same cached controller is already
                     // open in the mounted parent destination. Removing the
                     // sheet must not clear that destination's open marker.
@@ -1454,18 +1473,19 @@ struct WorkspaceScreen: View {
     }
 
     private func openPaneFromGrid(_ pane: PaneDescriptorState) {
-        let bottomChrome = pane.kind == .chat
+        let bottomChrome =
+            pane.kind == .chat
             ? PaneSnapshotCache.shared.activeBottomChrome
             : 0
         guard showsGrid,
-              tabZoomSurface == nil,
-              let paneStorageId,
-              let cardFrame = paneCardFrames[pane.id],
-              let storedSnapshot = PaneSnapshotCache.shared.transitionSnapshot(
-                  for: pane.id,
-                  in: paneStorageId,
-                  bottomChrome: bottomChrome
-              )
+            tabZoomSurface == nil,
+            let paneStorageId,
+            let cardFrame = paneCardFrames[pane.id],
+            let storedSnapshot = PaneSnapshotCache.shared.transitionSnapshot(
+                for: pane.id,
+                in: paneStorageId,
+                bottomChrome: bottomChrome
+            )
         else {
             selectPaneWithoutZoom(pane)
             return
@@ -1497,15 +1517,15 @@ struct WorkspaceScreen: View {
         }
 
         guard
-              let surface = WorkspaceTabZoomSurface.make(
-                  direction: .gridToPane,
-                  paneSnapshot: paneSnapshot,
-                  cardFrame: cardFrame,
-                  reduceMotion: accessibilityReduceMotion,
-                  handoffDelayFactor: isUncached
-                      ? WorkspaceTabZoomTransitionContract.uncachedHandoffDelayFactor
-                      : WorkspaceTabZoomTransitionContract.handoffDelayFactor
-              )
+            let surface = WorkspaceTabZoomSurface.make(
+                direction: .gridToPane,
+                paneSnapshot: paneSnapshot,
+                cardFrame: cardFrame,
+                reduceMotion: accessibilityReduceMotion,
+                handoffDelayFactor: isUncached
+                    ? WorkspaceTabZoomTransitionContract.uncachedHandoffDelayFactor
+                    : WorkspaceTabZoomTransitionContract.handoffDelayFactor
+            )
         else {
             selectPaneWithoutZoom(pane)
             return
@@ -1622,21 +1642,21 @@ struct WorkspaceScreen: View {
             bottomChrome: pane.kind == .chat ? PaneSnapshotCache.shared.activeBottomChrome : 0
         )
         guard tabZoomSurface == nil,
-              !accessibilityReduceMotion,
-              let paneSnapshot,
-              let surface = WorkspaceTabZoomSurface.make(
-                  direction: .paneToGrid,
-                  paneSnapshot: paneSnapshot,
-                  // The grid has not mounted yet. A non-empty provisional
-                  // card is replaced by its measured frame before animation.
-                  cardFrame: CGRect(
-                      x: 16,
-                      y: paneSnapshot.contentFrame.minY,
-                      width: 1,
-                      height: 1
-                  ),
-                  reduceMotion: false
-              )
+            !accessibilityReduceMotion,
+            let paneSnapshot,
+            let surface = WorkspaceTabZoomSurface.make(
+                direction: .paneToGrid,
+                paneSnapshot: paneSnapshot,
+                // The grid has not mounted yet. A non-empty provisional
+                // card is replaced by its measured frame before animation.
+                cardFrame: CGRect(
+                    x: 16,
+                    y: paneSnapshot.contentFrame.minY,
+                    width: 1,
+                    height: 1
+                ),
+                reduceMotion: false
+            )
         else {
             showsGrid = true
             return
@@ -1652,7 +1672,7 @@ struct WorkspaceScreen: View {
             startPendingGridZoomIfPossible()
             try? await Task.sleep(for: .milliseconds(250))
             guard pendingGridZoomPaneId == pane.id,
-                  tabZoomSurface === surface
+                tabZoomSurface === surface
             else { return }
             // A card can be absent when a large lazy grid has it offscreen.
             // Never strand a frozen overlay waiting for impossible geometry.
@@ -1664,17 +1684,19 @@ struct WorkspaceScreen: View {
 
     private func startPendingGridZoomIfPossible() {
         guard let paneId = pendingGridZoomPaneId,
-              let frame = paneCardFrames[paneId],
-              let surface = tabZoomSurface
+            let frame = paneCardFrames[paneId],
+            let surface = tabZoomSurface
         else { return }
 
         // The full-screen source snapshot was captured before the grid
         // existed. Retarget that SAME snapshot once the real destination card
         // has a frame; recapturing here would incorrectly photograph the grid.
-        guard surface.retarget(
-            cardFrame: frame,
-            reduceMotion: accessibilityReduceMotion
-        ) else {
+        guard
+            surface.retarget(
+                cardFrame: frame,
+                reduceMotion: accessibilityReduceMotion
+            )
+        else {
             pendingGridZoomPaneId = nil
             surface.cancel()
             tabZoomSurface = nil
@@ -1693,22 +1715,22 @@ struct WorkspaceScreen: View {
     /// underneath it before the expansion begins.
     private func startPendingNewTabZoomIfPossible() {
         guard let paneId = pendingNewTabZoomPaneId,
-              tabZoomSurface == nil,
-              showsGrid,
-              let paneStorageId,
-              let pane = panes.panes.first(where: {
-                  $0.id == paneId && $0.kind == .newTab
-              }),
-              let cardFrame = paneCardFrames[paneId],
-              let geometry = PaneSnapshotCache.shared.transitionSnapshot(
-                  for: paneId,
-                  in: paneStorageId
-              ),
-              let paneImage = renderPaneCanvas(
-                  for: pane,
-                  size: geometry.contentFrame.size,
-                  sourceCardFrame: cardFrame
-              )
+            tabZoomSurface == nil,
+            showsGrid,
+            let paneStorageId,
+            let pane = panes.panes.first(where: {
+                $0.id == paneId && $0.kind == .newTab
+            }),
+            let cardFrame = paneCardFrames[paneId],
+            let geometry = PaneSnapshotCache.shared.transitionSnapshot(
+                for: paneId,
+                in: paneStorageId
+            ),
+            let paneImage = renderPaneCanvas(
+                for: pane,
+                size: geometry.contentFrame.size,
+                sourceCardFrame: cardFrame
+            )
         else { return }
 
         PaneSnapshotCache.shared.store(
@@ -1724,12 +1746,14 @@ struct WorkspaceScreen: View {
             // selection changes, preserving the inserted card underneath.
             backdropView: nil
         )
-        guard let surface = WorkspaceTabZoomSurface.make(
-            direction: .gridToPane,
-            paneSnapshot: paneSnapshot,
-            cardFrame: cardFrame,
-            reduceMotion: accessibilityReduceMotion
-        ) else {
+        guard
+            let surface = WorkspaceTabZoomSurface.make(
+                direction: .gridToPane,
+                paneSnapshot: paneSnapshot,
+                cardFrame: cardFrame,
+                reduceMotion: accessibilityReduceMotion
+            )
+        else {
             pendingNewTabZoomPaneId = nil
             setShowsGridWithoutAnimation(false)
             return
@@ -1862,9 +1886,9 @@ struct WorkspaceScreen: View {
         }
         if controllers[sessionId] == nil {
             guard let session = rootSession,
-                  let project = environment.projectList.projects.first(where: {
-                      $0.serverId == session.serverId && $0.id == session.projectId
-                  })
+                let project = environment.projectList.projects.first(where: {
+                    $0.serverId == session.serverId && $0.id == session.projectId
+                })
             else {
                 missing = true
                 IOSNavigationDiagnostics.record(
@@ -2056,9 +2080,10 @@ struct WorkspaceScreen: View {
             )
             return
         }
-        guard let project = environment.projectList.projects.first(where: {
-            $0.serverId == session.serverId && $0.id == session.projectId
-        })
+        guard
+            let project = environment.projectList.projects.first(where: {
+                $0.serverId == session.serverId && $0.id == session.projectId
+            })
         else {
             IOSNavigationDiagnostics.record(
                 "workspace.connectChat.skip",

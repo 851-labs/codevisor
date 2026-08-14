@@ -63,7 +63,8 @@ public final class ClientDatabase: @unchecked Sendable {
             nil
         )
         guard result == SQLITE_OK, let opened else {
-            let detail = opened.map { String(cString: sqlite3_errmsg($0)) }
+            let detail =
+                opened.map { String(cString: sqlite3_errmsg($0)) }
                 ?? "SQLite returned \(result)"
             if let opened { sqlite3_close(opened) }
             throw ClientDatabaseError(operation: "open", detail: detail)
@@ -110,7 +111,7 @@ public final class ClientDatabase: @unchecked Sendable {
             let applied = try appliedMigrations()
             let ordered = migrations.sorted { $0.id < $1.id }
             guard ordered.map(\.id) == migrations.map(\.id),
-                  Set(ordered.map(\.id)).count == ordered.count
+                Set(ordered.map(\.id)).count == ordered.count
             else {
                 throw ClientDatabaseError(
                     operation: "migration validation",
@@ -130,7 +131,7 @@ public final class ClientDatabase: @unchecked Sendable {
             for migration in ordered {
                 if let existing = applied[migration.id] {
                     guard existing.name == migration.name,
-                          existing.checksum == migration.checksum
+                        existing.checksum == migration.checksum
                     else {
                         throw ClientDatabaseError(
                             operation: "migration validation",
@@ -158,7 +159,7 @@ public final class ClientDatabase: @unchecked Sendable {
                             .integer(Int64(migration.id)),
                             .text(migration.name),
                             .text(migration.checksum),
-                            .text(Self.timestamp())
+                            .text(Self.timestamp()),
                         ]
                     )
                     try assertForeignKeys()
@@ -273,7 +274,7 @@ public final class ClientDatabase: @unchecked Sendable {
                     .text(relativePath),
                     .text(digest),
                     .integer(Int64(data.count)),
-                    .text(Self.timestamp())
+                    .text(Self.timestamp()),
                 ]
             )
         }
@@ -302,7 +303,7 @@ public final class ClientDatabase: @unchecked Sendable {
                         .text(UUID().uuidString),
                         .text(key),
                         .blob(value),
-                        .text(Self.timestamp())
+                        .text(Self.timestamp()),
                     ]
                 )
                 try removeValue(forKey: key)
@@ -443,7 +444,7 @@ public final class ClientDatabase: @unchecked Sendable {
                     .text(digest),
                     .integer(imported ? 1 : 0),
                     .integer(cleaned ? 1 : 0),
-                    .text(Self.timestamp())
+                    .text(Self.timestamp()),
                 ]
             )
         }
@@ -480,7 +481,7 @@ public final class ClientDatabase: @unchecked Sendable {
 
             var destinationHandle: OpaquePointer?
             guard sqlite3_open(destination.path, &destinationHandle) == SQLITE_OK,
-                  let destinationHandle
+                let destinationHandle
             else {
                 if let destinationHandle { sqlite3_close(destinationHandle) }
                 throw ClientDatabaseError(
@@ -491,7 +492,7 @@ public final class ClientDatabase: @unchecked Sendable {
             defer { sqlite3_close(destinationHandle) }
 
             guard let handle,
-                  let backup = sqlite3_backup_init(destinationHandle, "main", handle, "main")
+                let backup = sqlite3_backup_init(destinationHandle, "main", handle, "main")
             else {
                 throw makeError(operation: "backup initialization")
             }
@@ -514,7 +515,8 @@ public final class ClientDatabase: @unchecked Sendable {
         var errorMessage: UnsafeMutablePointer<CChar>?
         let result = sqlite3_exec(handle, sql, nil, nil, &errorMessage)
         guard result == SQLITE_OK else {
-            let detail = errorMessage.map { String(cString: $0) }
+            let detail =
+                errorMessage.map { String(cString: $0) }
                 ?? String(cString: sqlite3_errmsg(handle))
             sqlite3_free(errorMessage)
             throw ClientDatabaseError(operation: "execute", detail: detail)
@@ -570,7 +572,7 @@ public final class ClientDatabase: @unchecked Sendable {
         while sqlite3_step(statement) == SQLITE_ROW {
             let id = Int(sqlite3_column_int64(statement, 0))
             guard let rawName = sqlite3_column_text(statement, 1),
-                  let rawChecksum = sqlite3_column_text(statement, 2)
+                let rawChecksum = sqlite3_column_text(statement, 2)
             else {
                 throw ClientDatabaseError(
                     operation: "migration read",
@@ -588,7 +590,7 @@ public final class ClientDatabase: @unchecked Sendable {
         }
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(handle, sql, -1, &statement, nil) == SQLITE_OK,
-              let statement
+            let statement
         else {
             throw makeError(operation: "prepare")
         }
@@ -801,7 +803,8 @@ public final class ClientPersistenceStore:
         self.database = database
         self.values = SQLitePersistenceStore(database: database)
         self.fileManager = fileManager
-        self.blobDirectory = directory
+        self.blobDirectory =
+            directory
             .appendingPathComponent(Self.assetDirectoryName, isDirectory: true)
             .appendingPathComponent("DraftAttachments", isDirectory: true)
         self.blobs = FileSystemStore(

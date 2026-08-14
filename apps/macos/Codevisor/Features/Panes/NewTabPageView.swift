@@ -50,9 +50,10 @@ struct NewTabPageView: View {
         // The placeholder has no editor of its own, so whitespace clicks
         // explicitly activate the group and clear any stale terminal/editor
         // first responder. Controls still perform their normal actions.
-        .simultaneousGesture(TapGesture().onEnded {
-            group?.focusSelectedPane()
-        })
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                group?.focusSelectedPane()
+            })
     }
 
     @ViewBuilder
@@ -127,11 +128,11 @@ private struct NewTabOptionCard: View {
 }
 
 #if DEBUG
-#Preview {
-    NewTabPageView(
-        paneId: UUID(),
-        group: nil
-    )
-    .frame(width: 700, height: 480)
-}
+    #Preview {
+        NewTabPageView(
+            paneId: UUID(),
+            group: nil
+        )
+        .frame(width: 700, height: 480)
+    }
 #endif

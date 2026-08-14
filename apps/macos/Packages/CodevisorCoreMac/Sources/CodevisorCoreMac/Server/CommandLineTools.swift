@@ -15,7 +15,7 @@ public enum CommandLineTools {
     public static let launcherNames = [
         "codevisor",
         "codevisor-server",
-        "codevisor-terminal-proxy"
+        "codevisor-terminal-proxy",
     ]
 
     /// Path fragments identifying a link destination as one of ours. Only
@@ -23,7 +23,7 @@ public enum CommandLineTools {
     /// formula links, user scripts, and anything else foreign stays put.
     private static let ownedDestinationMarkers = [
         "Codevisor.app/Contents/Resources/",
-        "HerdMan.app/Contents/Resources/"
+        "HerdMan.app/Contents/Resources/",
     ]
 
     /// Ensures `~/.local/bin` symlinks for the bundled CLI launchers.

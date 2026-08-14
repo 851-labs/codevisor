@@ -4,7 +4,8 @@ import SwiftUI
 /// attributed string, or nil to keep plain text (unknown language,
 /// highlighter unavailable). Injected by the host app; the package itself
 /// ships no highlighter.
-public typealias CodeHighlighting = @Sendable (_ code: String, _ language: String?) async ->
+public typealias CodeHighlighting =
+    @Sendable (_ code: String, _ language: String?) async ->
     AttributedString?
 
 /// Visual styling for markdown rendering, injected through the environment so

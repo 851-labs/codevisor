@@ -81,9 +81,10 @@ public enum WorkspaceWorktreeSplitMigration {
                         groups[index].panes.append(pane)
                         groups[index].sessionIds.append(chatId)
                     } else {
-                        groups.append(ChatGroup(
-                            worktreeName: name, panes: [pane], sessionIds: [chatId]
-                        ))
+                        groups.append(
+                            ChatGroup(
+                                worktreeName: name, panes: [pane], sessionIds: [chatId]
+                            ))
                     }
                 }
             }
@@ -114,10 +115,11 @@ public enum WorkspaceWorktreeSplitMigration {
         // Primary group (keeps the workspace's id, name, bottom panel,
         // notes): the group already living at the workspace's root, else the
         // project-root group, else the first in reading order.
-        let primaryIndex = groups.firstIndex { group in
-            guard let root = workspace.rootDirectory else { return false }
-            return firstCwd(of: group) == root
-        } ?? groups.firstIndex { $0.worktreeName == nil } ?? 0
+        let primaryIndex =
+            groups.firstIndex { group in
+                guard let root = workspace.rootDirectory else { return false }
+                return firstCwd(of: group) == root
+            } ?? groups.firstIndex { $0.worktreeName == nil } ?? 0
         let primary = groups[primaryIndex]
 
         // Every other group becomes its own workspace: one top tab per moved
@@ -170,7 +172,8 @@ public enum WorkspaceWorktreeSplitMigration {
             guard let pruned = repaired.root.prunedEmptyGroups else { return nil }
             repaired.root = pruned
             if pruned.group(id: repaired.activeLeafId) == nil,
-               let first = pruned.allGroups.first?.id {
+                let first = pruned.allGroups.first?.id
+            {
                 repaired.activeLeafId = first
             }
             return repaired

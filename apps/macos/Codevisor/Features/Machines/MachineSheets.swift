@@ -43,7 +43,10 @@ struct RemoteMachineSheet: View {
                 TextField("100.64.0.10", text: $host)
                     .textFieldStyle(.roundedBorder)
             }
-            labeledField("Connection token", hint: "Run `codevisor token` on the machine (or copy it from its setup output) and paste it here.") {
+            labeledField(
+                "Connection token",
+                hint: "Run `codevisor token` on the machine (or copy it from its setup output) and paste it here."
+            ) {
                 TextField("hm_…", text: $token)
                     .textFieldStyle(.roundedBorder)
             }

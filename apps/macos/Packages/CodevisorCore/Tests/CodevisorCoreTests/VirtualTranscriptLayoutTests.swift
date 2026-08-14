@@ -29,11 +29,12 @@ struct VirtualTranscriptLayoutTests {
 
         // The 250pt viewport spans the end of b and beginning of c.
         let distance = layout.distanceFromBottom(viewportTop: 250, viewportHeight: 250)
-        #expect(layout.visibleRange(
-            distanceFromBottom: distance,
-            viewportHeight: 250,
-            overscanCount: 1
-        ) == 0..<4)
+        #expect(
+            layout.visibleRange(
+                distanceFromBottom: distance,
+                viewportHeight: 250,
+                overscanCount: 1
+            ) == 0..<4)
     }
 
     @Test func geometryRunwayPreparesConsistentScrollDistance() {
@@ -74,29 +75,33 @@ struct VirtualTranscriptLayoutTests {
     }
 
     @Test func heavyBoundaryStopsOverscanFromMountingItsFarSide() {
-        #expect(VirtualTranscriptLayout.overscanRange(
-            visibleRange: 1..<2,
-            overscannedRange: 0..<4,
-            stoppingAt: [2]
-        ) == 1..<3)
-        #expect(VirtualTranscriptLayout.overscanRange(
-            visibleRange: 3..<4,
-            overscannedRange: 1..<5,
-            stoppingAt: [2]
-        ) == 2..<4)
+        #expect(
+            VirtualTranscriptLayout.overscanRange(
+                visibleRange: 1..<2,
+                overscannedRange: 0..<4,
+                stoppingAt: [2]
+            ) == 1..<3)
+        #expect(
+            VirtualTranscriptLayout.overscanRange(
+                visibleRange: 3..<4,
+                overscannedRange: 1..<5,
+                stoppingAt: [2]
+            ) == 2..<4)
     }
 
     @Test func visibleHeavyBoundaryDisablesAdjacentOverscan() {
-        #expect(VirtualTranscriptLayout.overscanRange(
-            visibleRange: 2..<3,
-            overscannedRange: 0..<5,
-            stoppingAt: [2]
-        ) == 2..<3)
-        #expect(VirtualTranscriptLayout.overscanRange(
-            visibleRange: 2..<3,
-            overscannedRange: 0..<5,
-            stoppingAt: []
-        ) == 0..<5)
+        #expect(
+            VirtualTranscriptLayout.overscanRange(
+                visibleRange: 2..<3,
+                overscannedRange: 0..<5,
+                stoppingAt: [2]
+            ) == 2..<3)
+        #expect(
+            VirtualTranscriptLayout.overscanRange(
+                visibleRange: 2..<3,
+                overscannedRange: 0..<5,
+                stoppingAt: []
+            ) == 0..<5)
     }
 
     @Test func restoresRenderedWindowFromAnchorKey() {
@@ -171,17 +176,20 @@ struct VirtualTranscriptLayoutTests {
 
         let viewportHeight: CGFloat = 250
         let previousDistanceFromBottom: CGFloat = 120
-        let nextDistanceFromBottom = try #require(measured.distanceFromBottom(
-            preservingAnchor: "c",
-            previousLayout: initial,
-            previousDistanceFromBottom: previousDistanceFromBottom
-        ))
-        let previousAnchorY = initial.topOffsets[2]
+        let nextDistanceFromBottom = try #require(
+            measured.distanceFromBottom(
+                preservingAnchor: "c",
+                previousLayout: initial,
+                previousDistanceFromBottom: previousDistanceFromBottom
+            ))
+        let previousAnchorY =
+            initial.topOffsets[2]
             - initial.viewportTop(
                 distanceFromBottom: previousDistanceFromBottom,
                 viewportHeight: viewportHeight
             )
-        let nextAnchorY = measured.topOffsets[2]
+        let nextAnchorY =
+            measured.topOffsets[2]
             - measured.viewportTop(
                 distanceFromBottom: nextDistanceFromBottom,
                 viewportHeight: viewportHeight
@@ -196,14 +204,16 @@ struct VirtualTranscriptLayoutTests {
             measuredHeights: ["bottom-spacer": 120],
             spacing: 20
         )
-        #expect(placeholder.distanceFromBottom(
-            viewportTop: placeholder.viewportTop(distanceFromBottom: 0, viewportHeight: 600),
-            viewportHeight: 600
-        ) == 0)
+        #expect(
+            placeholder.distanceFromBottom(
+                viewportTop: placeholder.viewportTop(distanceFromBottom: 0, viewportHeight: 600),
+                viewportHeight: 600
+            ) == 0)
 
-        let hydratedItems = (0..<12).map {
-            VirtualTranscriptLayout.Item(key: "message:\($0)", estimatedHeight: 180)
-        } + [.init(key: "bottom-spacer", estimatedHeight: 120)]
+        let hydratedItems =
+            (0..<12).map {
+                VirtualTranscriptLayout.Item(key: "message:\($0)", estimatedHeight: 180)
+            } + [.init(key: "bottom-spacer", estimatedHeight: 120)]
         let hydrated = VirtualTranscriptLayout(
             items: hydratedItems,
             measuredHeights: ["bottom-spacer": 120],
@@ -221,10 +231,11 @@ struct VirtualTranscriptLayoutTests {
 
         for layout in [hydrated, measured] {
             let top = layout.viewportTop(distanceFromBottom: 0, viewportHeight: 600)
-            #expect(layout.distanceFromBottom(
-                viewportTop: top,
-                viewportHeight: 600
-            ) == 0)
+            #expect(
+                layout.distanceFromBottom(
+                    viewportTop: top,
+                    viewportHeight: 600
+                ) == 0)
         }
     }
 
@@ -281,8 +292,9 @@ struct VirtualTranscriptLayoutTests {
         )
 
         #expect(distance == 240)
-        #expect(initial.viewportTop(distanceFromBottom: 120, viewportHeight: 250)
-            == measured.viewportTop(distanceFromBottom: distance ?? 0, viewportHeight: 250))
+        #expect(
+            initial.viewportTop(distanceFromBottom: 120, viewportHeight: 250)
+                == measured.viewportTop(distanceFromBottom: distance ?? 0, viewportHeight: 250))
     }
 
     @Test func insetViewportPreservesUIKitTopAndBottomCoordinates() {

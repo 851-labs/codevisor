@@ -9,11 +9,12 @@ struct StreamingTextAnimationTests {
     func asciiSegmentation() {
         let segments = StreamingWordSegmenter.segments(in: "Hello, world!  Next")
         #expect(segments.map(\.text) == ["Hello, ", "world!  ", "Next"])
-        #expect(segments.map(\.range) == [
-            NSRange(location: 0, length: 7),
-            NSRange(location: 7, length: 8),
-            NSRange(location: 15, length: 4),
-        ])
+        #expect(
+            segments.map(\.range) == [
+                NSRange(location: 0, length: 7),
+                NSRange(location: 7, length: 8),
+                NSRange(location: 15, length: 4),
+            ])
     }
 
     @Test("Leading punctuation remains a segment and Unicode content is lossless")
@@ -101,11 +102,12 @@ struct StreamingTextAnimationTests {
             context: firstContext,
             now: 1
         )
-        let firstMetadata = first.text.attribute(
-            .streamMarkdownFade,
-            at: 0,
-            effectiveRange: nil
-        ) as? StreamingTextFadeMetadata
+        let firstMetadata =
+            first.text.attribute(
+                .streamMarkdownFade,
+                at: 0,
+                effectiveRange: nil
+            ) as? StreamingTextFadeMetadata
         #expect(firstMetadata?.startTime == 1)
 
         let secondContext = StreamingTextAnimationContext(
@@ -121,16 +123,18 @@ struct StreamingTextAnimationTests {
             context: secondContext,
             now: 1.02
         )
-        let oldMetadata = second.text.attribute(
-            .streamMarkdownFade,
-            at: 0,
-            effectiveRange: nil
-        ) as? StreamingTextFadeMetadata
-        let newMetadata = second.text.attribute(
-            .streamMarkdownFade,
-            at: 6,
-            effectiveRange: nil
-        ) as? StreamingTextFadeMetadata
+        let oldMetadata =
+            second.text.attribute(
+                .streamMarkdownFade,
+                at: 0,
+                effectiveRange: nil
+            ) as? StreamingTextFadeMetadata
+        let newMetadata =
+            second.text.attribute(
+                .streamMarkdownFade,
+                at: 6,
+                effectiveRange: nil
+            ) as? StreamingTextFadeMetadata
         #expect(oldMetadata?.startTime == 1)
         #expect(newMetadata?.startTime == 1.02)
     }
@@ -202,11 +206,12 @@ struct StreamingTextAnimationTests {
             now: 1.02
         )
         #expect(appended.text.attribute(.streamMarkdownFade, at: 0, effectiveRange: nil) == nil)
-        let newMetadata = appended.text.attribute(
-            .streamMarkdownFade,
-            at: 13,
-            effectiveRange: nil
-        ) as? StreamingTextFadeMetadata
+        let newMetadata =
+            appended.text.attribute(
+                .streamMarkdownFade,
+                at: 13,
+                effectiveRange: nil
+            ) as? StreamingTextFadeMetadata
         #expect(newMetadata?.startTime == 1.02)
     }
 

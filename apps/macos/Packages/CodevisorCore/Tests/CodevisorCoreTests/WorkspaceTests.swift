@@ -14,13 +14,19 @@ struct SplitTreeTests {
 
     @Test("Codable round-trips a nested tree")
     func codableRoundTrip() throws {
-        let tree = SplitNode.split(orientation: .horizontal, children: [
-            SplitChild(fraction: 0.5, node: .leaf(groupState())),
-            SplitChild(fraction: 0.5, node: .split(orientation: .vertical, children: [
-                SplitChild(fraction: 0.3, node: .leaf(groupState(2))),
-                SplitChild(fraction: 0.7, node: .leaf(groupState()))
-            ]))
-        ])
+        let tree = SplitNode.split(
+            orientation: .horizontal,
+            children: [
+                SplitChild(fraction: 0.5, node: .leaf(groupState())),
+                SplitChild(
+                    fraction: 0.5,
+                    node: .split(
+                        orientation: .vertical,
+                        children: [
+                            SplitChild(fraction: 0.3, node: .leaf(groupState(2))),
+                            SplitChild(fraction: 0.7, node: .leaf(groupState())),
+                        ])),
+            ])
         let decoded = try JSONDecoder().decode(
             SplitNode.self,
             from: JSONEncoder().encode(tree)
@@ -44,7 +50,8 @@ struct SplitTreeTests {
         #expect(children.count == 2)
         #expect(children.map(\.fraction) == [0.5, 0.5])
         guard case let .group(firstId, _) = children[0].node,
-              case let .group(secondId, _) = children[1].node else {
+            case let .group(secondId, _) = children[1].node
+        else {
             Issue.record("expected group leaves")
             return
         }
@@ -60,7 +67,8 @@ struct SplitTreeTests {
             groupId: leafId, edge: .top, newGroupId: newId, newGroupState: groupState()
         )
         guard case let .split(orientation, children) = result,
-              case let .group(firstId, _) = children[0].node else {
+            case let .group(firstId, _) = children[0].node
+        else {
             Issue.record("expected split")
             return
         }
@@ -71,10 +79,12 @@ struct SplitTreeTests {
     @Test("Same-orientation split gains a sibling instead of nesting")
     func splitSameOrientationInsertsSibling() {
         let a = UUID(), b = UUID(), c = UUID()
-        let tree = SplitNode.split(orientation: .horizontal, children: [
-            SplitChild(fraction: 0.5, node: .leaf(groupState(), id: a)),
-            SplitChild(fraction: 0.5, node: .leaf(groupState(), id: b))
-        ])
+        let tree = SplitNode.split(
+            orientation: .horizontal,
+            children: [
+                SplitChild(fraction: 0.5, node: .leaf(groupState(), id: a)),
+                SplitChild(fraction: 0.5, node: .leaf(groupState(), id: b)),
+            ])
         let result = tree.splitting(
             groupId: b, edge: .trailing, newGroupId: c, newGroupState: groupState()
         )
@@ -90,10 +100,12 @@ struct SplitTreeTests {
     @Test("Removing a group collapses single-child splits")
     func removeCollapses() {
         let a = UUID(), b = UUID()
-        let tree = SplitNode.split(orientation: .horizontal, children: [
-            SplitChild(fraction: 0.6, node: .leaf(groupState(), id: a)),
-            SplitChild(fraction: 0.4, node: .leaf(groupState(), id: b))
-        ])
+        let tree = SplitNode.split(
+            orientation: .horizontal,
+            children: [
+                SplitChild(fraction: 0.6, node: .leaf(groupState(), id: a)),
+                SplitChild(fraction: 0.4, node: .leaf(groupState(), id: b)),
+            ])
         let result = tree.removingGroup(id: b)
         guard case let .group(remaining, _)? = result else {
             Issue.record("expected collapsed leaf")
@@ -105,11 +117,13 @@ struct SplitTreeTests {
     @Test("Removing survivors renormalizes fractions")
     func removeRenormalizes() {
         let a = UUID(), b = UUID(), c = UUID()
-        let tree = SplitNode.split(orientation: .horizontal, children: [
-            SplitChild(fraction: 0.5, node: .leaf(groupState(), id: a)),
-            SplitChild(fraction: 0.25, node: .leaf(groupState(), id: b)),
-            SplitChild(fraction: 0.25, node: .leaf(groupState(), id: c))
-        ])
+        let tree = SplitNode.split(
+            orientation: .horizontal,
+            children: [
+                SplitChild(fraction: 0.5, node: .leaf(groupState(), id: a)),
+                SplitChild(fraction: 0.25, node: .leaf(groupState(), id: b)),
+                SplitChild(fraction: 0.25, node: .leaf(groupState(), id: c)),
+            ])
         guard case let .split(_, children)? = tree.removingGroup(id: a) else {
             Issue.record("expected split")
             return
@@ -127,11 +141,13 @@ struct SplitTreeTests {
     func moveGroupAmongSiblings() {
         let a = UUID(), b = UUID(), c = UUID()
         let aState = groupState(2)
-        let tree = SplitNode.split(orientation: .horizontal, children: [
-            SplitChild(fraction: 0.4, node: .leaf(aState, id: a)),
-            SplitChild(fraction: 0.3, node: .leaf(groupState(), id: b)),
-            SplitChild(fraction: 0.3, node: .leaf(groupState(), id: c))
-        ])
+        let tree = SplitNode.split(
+            orientation: .horizontal,
+            children: [
+                SplitChild(fraction: 0.4, node: .leaf(aState, id: a)),
+                SplitChild(fraction: 0.3, node: .leaf(groupState(), id: b)),
+                SplitChild(fraction: 0.3, node: .leaf(groupState(), id: c)),
+            ])
 
         let moved = tree.movingGroup(id: a, relativeTo: b, edge: .trailing)
 
@@ -149,13 +165,19 @@ struct SplitTreeTests {
     @Test("Moving a nested group collapses its old parent and inserts on the target edge")
     func moveNestedGroup() {
         let a = UUID(), b = UUID(), c = UUID()
-        let tree = SplitNode.split(orientation: .horizontal, children: [
-            SplitChild(fraction: 0.7, node: .split(orientation: .vertical, children: [
-                SplitChild(fraction: 0.5, node: .leaf(groupState(), id: a)),
-                SplitChild(fraction: 0.5, node: .leaf(groupState(), id: b))
-            ])),
-            SplitChild(fraction: 0.3, node: .leaf(groupState(), id: c))
-        ])
+        let tree = SplitNode.split(
+            orientation: .horizontal,
+            children: [
+                SplitChild(
+                    fraction: 0.7,
+                    node: .split(
+                        orientation: .vertical,
+                        children: [
+                            SplitChild(fraction: 0.5, node: .leaf(groupState(), id: a)),
+                            SplitChild(fraction: 0.5, node: .leaf(groupState(), id: b)),
+                        ])),
+                SplitChild(fraction: 0.3, node: .leaf(groupState(), id: c)),
+            ])
 
         let moved = tree.movingGroup(id: c, relativeTo: a, edge: .top)
 
@@ -171,10 +193,12 @@ struct SplitTreeTests {
     @Test("Invalid and self-targeted group moves are no-ops")
     func invalidGroupMoves() {
         let a = UUID(), b = UUID()
-        let tree = SplitNode.split(orientation: .horizontal, children: [
-            SplitChild(fraction: 0.5, node: .leaf(groupState(), id: a)),
-            SplitChild(fraction: 0.5, node: .leaf(groupState(), id: b))
-        ])
+        let tree = SplitNode.split(
+            orientation: .horizontal,
+            children: [
+                SplitChild(fraction: 0.5, node: .leaf(groupState(), id: a)),
+                SplitChild(fraction: 0.5, node: .leaf(groupState(), id: b)),
+            ])
 
         #expect(tree.movingGroup(id: a, relativeTo: a, edge: .leading) == tree)
         #expect(tree.movingGroup(id: UUID(), relativeTo: b, edge: .leading) == tree)
@@ -186,13 +210,19 @@ struct SplitTreeTests {
         let chat = UUID(), empty = UUID(), terminal = UUID()
         // horizontal[vertical[chat | EMPTY] | terminal] — the stale shape an
         // interrupted drop leaves behind.
-        let tree = SplitNode.split(orientation: .horizontal, children: [
-            SplitChild(fraction: 0.5, node: .split(orientation: .vertical, children: [
-                SplitChild(fraction: 0.75, node: .leaf(groupState(), id: chat)),
-                SplitChild(fraction: 0.25, node: .leaf(PaneGroupState(), id: empty))
-            ])),
-            SplitChild(fraction: 0.5, node: .leaf(groupState(), id: terminal))
-        ])
+        let tree = SplitNode.split(
+            orientation: .horizontal,
+            children: [
+                SplitChild(
+                    fraction: 0.5,
+                    node: .split(
+                        orientation: .vertical,
+                        children: [
+                            SplitChild(fraction: 0.75, node: .leaf(groupState(), id: chat)),
+                            SplitChild(fraction: 0.25, node: .leaf(PaneGroupState(), id: empty)),
+                        ])),
+                SplitChild(fraction: 0.5, node: .leaf(groupState(), id: terminal)),
+            ])
         let pruned = tree.prunedEmptyGroups
         #expect(pruned?.allGroups.map(\.id) == [chat, terminal])
         // The vertical split collapsed into the chat leaf.
@@ -243,10 +273,12 @@ struct SplitTreeTests {
     @Test("updatingGroup replaces only the target")
     func updateGroup() {
         let a = UUID(), b = UUID()
-        let tree = SplitNode.split(orientation: .vertical, children: [
-            SplitChild(fraction: 0.5, node: .leaf(groupState(1), id: a)),
-            SplitChild(fraction: 0.5, node: .leaf(groupState(1), id: b))
-        ])
+        let tree = SplitNode.split(
+            orientation: .vertical,
+            children: [
+                SplitChild(fraction: 0.5, node: .leaf(groupState(1), id: a)),
+                SplitChild(fraction: 0.5, node: .leaf(groupState(1), id: b)),
+            ])
         let sessionId = UUID()
         let updated = tree.updatingGroup(id: b) { state in
             var state = state
@@ -290,9 +322,10 @@ struct WorkspaceRepositoryTests {
         let repository = DefaultWorkspaceRepository(store: InMemoryStore())
         var workspace = repository.ensureWorkspace(for: seed(), legacyGroups: nil)
         // Payloads written before the field existed must load as active.
-        var withoutField = try JSONSerialization.jsonObject(
-            with: JSONEncoder().encode(workspace)
-        ) as! [String: Any]
+        var withoutField =
+            try JSONSerialization.jsonObject(
+                with: JSONEncoder().encode(workspace)
+            ) as! [String: Any]
         withoutField.removeValue(forKey: "isArchived")
         let legacyData = try JSONSerialization.data(withJSONObject: withoutField)
         let decoded = try JSONDecoder().decode(Workspace.self, from: legacyData)
@@ -338,16 +371,22 @@ struct WorkspaceRepositoryTests {
         let upperPane = upper.addChatPane(sessionId: upperChat)
         var lower = PaneGroupState()
         let lowerPane = lower.addChatPane(sessionId: lowerChat)
-        let root = SplitNode.split(orientation: .horizontal, children: [
-            SplitChild(
-                fraction: 0.5,
-                node: .leaf(.centerInitial(sessionId: leftChat), id: leftLeaf)
-            ),
-            SplitChild(fraction: 0.5, node: .split(orientation: .vertical, children: [
-                SplitChild(fraction: 0.5, node: .leaf(upper, id: upperLeaf)),
-                SplitChild(fraction: 0.5, node: .leaf(lower, id: lowerLeaf))
-            ]))
-        ])
+        let root = SplitNode.split(
+            orientation: .horizontal,
+            children: [
+                SplitChild(
+                    fraction: 0.5,
+                    node: .leaf(.centerInitial(sessionId: leftChat), id: leftLeaf)
+                ),
+                SplitChild(
+                    fraction: 0.5,
+                    node: .split(
+                        orientation: .vertical,
+                        children: [
+                            SplitChild(fraction: 0.5, node: .leaf(upper, id: upperLeaf)),
+                            SplitChild(fraction: 0.5, node: .leaf(lower, id: lowerLeaf)),
+                        ])),
+            ])
         let tab = WorkspaceTab(root: root, activeLeafId: lowerLeaf)
         let workspace = Workspace(
             name: "Nested",
@@ -386,9 +425,10 @@ struct WorkspaceRepositoryTests {
         // tab; its hidden chat is lifted into its own top tab and learns its
         // session reference during migration.
         #expect(workspace.centerTabs.count == 2)
-        #expect(workspace.centerTabs.allSatisfy {
-            $0.root.allGroups.allSatisfy { $0.state.panes.count == 1 }
-        })
+        #expect(
+            workspace.centerTabs.allSatisfy {
+                $0.root.allGroups.allSatisfy { $0.state.panes.count == 1 }
+            })
         #expect(workspace.chatSessionIds == [sessionId])
         #expect(workspace.bottomGroup.panes.count == 2)
     }
@@ -402,10 +442,12 @@ struct WorkspaceRepositoryTests {
         let firstRight = right.addTerminalPane(sessionId: chatSession)
         let selectedRight = right.addTerminalPane(sessionId: chatSession)
         let leftId = UUID(), rightId = UUID()
-        let legacyTree = SplitNode.split(orientation: .horizontal, children: [
-            SplitChild(fraction: 0.35, node: .leaf(left, id: leftId)),
-            SplitChild(fraction: 0.65, node: .leaf(right, id: rightId))
-        ])
+        let legacyTree = SplitNode.split(
+            orientation: .horizontal,
+            children: [
+                SplitChild(fraction: 0.35, node: .leaf(left, id: leftId)),
+                SplitChild(fraction: 0.65, node: .leaf(right, id: rightId)),
+            ])
 
         let fresh = Workspace(
             name: "Legacy", rootDirectory: "/tmp", serverId: "local", projectId: UUID(),
@@ -423,13 +465,15 @@ struct WorkspaceRepositoryTests {
         )
         #expect(decoded.centerTabs.count == 3)
         #expect(decoded.centerTabs[0].root.allGroups.map(\.id) == [leftId, rightId])
-        #expect(decoded.centerTabs[0].root.allGroups.map { $0.state.panes[0].id }
-            == [selectedTerminal.id, selectedRight.id])
+        #expect(
+            decoded.centerTabs[0].root.allGroups.map { $0.state.panes[0].id }
+                == [selectedTerminal.id, selectedRight.id])
         #expect(decoded.centerTabs[1].root.allGroups[0].state.panes[0].chatSessionId == chatSession)
         #expect(decoded.centerTabs[2].root.allGroups[0].state.panes[0].id == firstRight.id)
-        #expect(decoded.centerTabs.flatMap { $0.root.allGroups }.allSatisfy {
-            $0.state.panes.count == 1
-        })
+        #expect(
+            decoded.centerTabs.flatMap { $0.root.allGroups }.allSatisfy {
+                $0.state.panes.count == 1
+            })
     }
 
     @Test("A version-2 workspace with no tabs repairs to a New Tab page")

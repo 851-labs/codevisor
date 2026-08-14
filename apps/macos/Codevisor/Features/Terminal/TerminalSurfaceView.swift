@@ -58,7 +58,8 @@ struct TerminalSurfaceView: NSViewRepresentable {
         // (A fresh makeNSView container is allowed to take an ORPHANED
         // surface — superview nil — before it lands in the window.)
         if surfaceView.superview != nil,
-           container.window == nil, container.superview == nil {
+            container.window == nil, container.superview == nil
+        {
             return
         }
         surfaceView.removeFromSuperview()
@@ -69,7 +70,7 @@ struct TerminalSurfaceView: NSViewRepresentable {
             surfaceView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             surfaceView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             surfaceView.topAnchor.constraint(equalTo: container.topAnchor),
-            surfaceView.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+            surfaceView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
         ])
     }
 }

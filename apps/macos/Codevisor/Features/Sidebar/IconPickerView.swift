@@ -16,7 +16,8 @@ struct IconPickerView: View {
     private let columns = [GridItem(.adaptive(minimum: 44), spacing: 8)]
 
     private func filtered(in library: SFSymbolLibrary.Library) -> [String] {
-        let tokens = query
+        let tokens =
+            query
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
             .split(whereSeparator: { $0 == " " || $0 == "." || $0 == "_" || $0 == "-" })
@@ -30,14 +31,15 @@ struct IconPickerView: View {
     }
 
     private func typedSymbol(filtered: [String]) -> String? {
-        let symbol = query
+        let symbol =
+            query
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
             .replacingOccurrences(of: " ", with: ".")
         guard !symbol.isEmpty,
-              symbol.contains(".fill"),
-              !filtered.contains(symbol),
-              SFSymbolLibrary.isAvailable(symbol)
+            symbol.contains(".fill"),
+            !filtered.contains(symbol),
+            SFSymbolLibrary.isAvailable(symbol)
         else { return nil }
         return symbol
     }
@@ -166,7 +168,7 @@ private nonisolated enum SFSymbolLibrary {
 
     private static func loadSymbolAvailability() -> [String]? {
         guard let plist = loadPlistResource("name_availability") as? [String: Any],
-              let symbols = plist["symbols"] as? [String: Any]
+            let symbols = plist["symbols"] as? [String: Any]
         else { return nil }
         return symbols.keys.sorted()
     }
@@ -177,8 +179,8 @@ private nonisolated enum SFSymbolLibrary {
 
     private static func loadPlistResource(_ name: String) -> Any? {
         guard let bundle = Bundle(url: URL(fileURLWithPath: "/System/Library/CoreServices/CoreGlyphs.bundle")),
-              let url = bundle.url(forResource: name, withExtension: "plist"),
-              let data = try? Data(contentsOf: url)
+            let url = bundle.url(forResource: name, withExtension: "plist"),
+            let data = try? Data(contentsOf: url)
         else { return nil }
         return try? PropertyListSerialization.propertyList(from: data, options: [], format: nil)
     }
@@ -199,7 +201,7 @@ private nonisolated enum SFSymbolLibrary {
         "cart", "bag", "creditcard", "dollarsign.circle", "chart.bar", "chart.pie", "chart.line.uptrend.xyaxis",
         "person", "person.2", "person.3", "building.2", "house", "graduationcap", "briefcase",
         "flask", "atom", "function", "sum", "x.squareroot", "brain", "lightbulb",
-        "map", "location", "flag", "tag", "bookmark", "paperclip", "link", "lock", "key", "shield"
+        "map", "location", "flag", "tag", "bookmark", "paperclip", "link", "lock", "key", "shield",
     ]
 }
 

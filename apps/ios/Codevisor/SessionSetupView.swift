@@ -142,7 +142,9 @@ private struct SessionSetupPhaseView: View {
         ScrollView {
             SelectableTextView(attributedText: logText, fillsWidth: true)
                 .padding(10)
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                .onGeometryChange(for: CGFloat.self) {
+                    $0.size.height
+                } action: {
                     logContentHeight = $0
                 }
         }

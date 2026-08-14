@@ -132,8 +132,9 @@ public final class ThemeCatalog {
 
         try FileManager.default.createDirectory(
             at: customThemesDirectory, withIntermediateDirectories: true)
-        try data.write(to: customThemesDirectory.appendingPathComponent("\(slug).json"),
-                       options: .atomic)
+        try data.write(
+            to: customThemesDirectory.appendingPathComponent("\(slug).json"),
+            options: .atomic)
 
         let descriptor = ThemeDescriptor(
             id: id,
@@ -194,7 +195,8 @@ public final class ThemeCatalog {
             let files = try? FileManager.default.contentsOfDirectory(
                 at: directory, includingPropertiesForKeys: nil)
         else { return [] }
-        return files
+        return
+            files
             .filter { $0.pathExtension.lowercased() == "json" }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
             .compactMap { url in

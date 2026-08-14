@@ -72,7 +72,8 @@ public enum ColorMath {
     public static func surfacesMatch(_ a: String?, _ b: String?) -> Bool {
         guard let a, let b else { return false }
         if a.trimmingCharacters(in: .whitespaces).lowercased()
-            == b.trimmingCharacters(in: .whitespaces).lowercased() {
+            == b.trimmingCharacters(in: .whitespaces).lowercased()
+        {
             return true
         }
         guard let la = relativeLuminance(a), let lb = relativeLuminance(b) else { return false }

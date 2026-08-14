@@ -82,7 +82,9 @@ public final class LocalCodevisorServer: LocalServerControlling {
         computerUseBridge: ComputerUseBridge? = nil,
         serverEnvironmentProvider: @escaping ServerEnvironmentProvider = LocalCodevisorServer.defaultServerEnvironment,
         launcher: @escaping Launcher = LocalCodevisorServer.launchProcess,
-        staleListenerTerminator: @escaping ListenerTerminator = { await LocalCodevisorServer.terminateListeners(onPort: $0) }
+        staleListenerTerminator: @escaping ListenerTerminator = {
+            await LocalCodevisorServer.terminateListeners(onPort: $0)
+        }
     ) {
         self.client = client
         self.config = config
@@ -143,8 +145,9 @@ public final class LocalCodevisorServer: LocalServerControlling {
             }
 
             if managedService != nil,
-               health.serviceManaged == true,
-               healthMatchesBundledRuntime(health) {
+                health.serviceManaged == true,
+                healthMatchesBundledRuntime(health)
+            {
                 startUpdateRequestMonitor()
                 dataUpgradeProgress = nil
                 state = .alreadyRunning
@@ -402,11 +405,13 @@ public final class LocalCodevisorServer: LocalServerControlling {
             return false
         }
         if let expectedBuild = AppUpdateModel.bundleBuildNumber(),
-           health.buildNumber != expectedBuild {
+            health.buildNumber != expectedBuild
+        {
             return false
         }
         if let expectedRevision = AppUpdateModel.bundleSourceRevision(),
-           health.sourceRevision != expectedRevision {
+            health.sourceRevision != expectedRevision
+        {
             return false
         }
         return true
@@ -508,9 +513,8 @@ public final class LocalCodevisorServer: LocalServerControlling {
                     )
                     return state
                 }
-                guard !requiresBundledIdentity || (
-                    health.serviceManaged == true && healthMatchesBundledRuntime(health)
-                ) else {
+                guard !requiresBundledIdentity || (health.serviceManaged == true && healthMatchesBundledRuntime(health))
+                else {
                     state = .unavailable(
                         "The local server does not match this Codevisor build."
                     )
@@ -575,7 +579,8 @@ public final class LocalCodevisorServer: LocalServerControlling {
     static func processConfiguration(
         for request: LocalCodevisorServerLaunchRequest
     ) -> LocalCodevisorServerProcessConfiguration {
-        let nodeInvocation = request.nodeExecutable.lastPathComponent == "env"
+        let nodeInvocation =
+            request.nodeExecutable.lastPathComponent == "env"
             ? "node"
             : request.nodeExecutable.path
         return LocalCodevisorServerProcessConfiguration(
@@ -597,7 +602,7 @@ public final class LocalCodevisorServer: LocalServerControlling {
                 "--name", request.name,
                 "--boot-id", request.bootId,
                 "--app-owned", "1",
-                "--owner-pid", String(request.ownerPid)
+                "--owner-pid", String(request.ownerPid),
             ] + (request.dataUpgradeStatusURL.map { ["--upgrade-status", $0.path] } ?? [])
         )
     }
@@ -605,7 +610,8 @@ public final class LocalCodevisorServer: LocalServerControlling {
     public static func defaultEntrypoint() -> URL? {
         let environment = ProcessInfo.processInfo.environment
         if let override = environment["CODEVISOR_SERVER_ENTRYPOINT"]
-            ?? environment["HERDMAN_SERVER_ENTRYPOINT"], !override.isEmpty {
+            ?? environment["HERDMAN_SERVER_ENTRYPOINT"], !override.isEmpty
+        {
             return URL(fileURLWithPath: override)
         }
 
@@ -630,7 +636,8 @@ public final class LocalCodevisorServer: LocalServerControlling {
     nonisolated public static func defaultNodeExecutable() -> URL {
         let environment = ProcessInfo.processInfo.environment
         if let override = environment["CODEVISOR_NODE"]
-            ?? environment["HERDMAN_NODE"], !override.isEmpty {
+            ?? environment["HERDMAN_NODE"], !override.isEmpty
+        {
             return URL(fileURLWithPath: override)
         }
         if let bundled = bundledNodeExecutable() {
@@ -639,7 +646,7 @@ public final class LocalCodevisorServer: LocalServerControlling {
         let candidates = [
             "/opt/homebrew/bin/node",
             "/usr/local/bin/node",
-            "/usr/bin/node"
+            "/usr/bin/node",
         ]
         if let path = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) {
             return URL(fileURLWithPath: path)
@@ -659,7 +666,7 @@ public final class LocalCodevisorServer: LocalServerControlling {
             resourcesURL.appendingPathComponent("server/\(bundledServerTarget)", isDirectory: true),
             resourcesURL.appendingPathComponent("Server/\(bundledServerTarget)", isDirectory: true),
             resourcesURL.appendingPathComponent("server", isDirectory: true),
-            resourcesURL.appendingPathComponent("Server", isDirectory: true)
+            resourcesURL.appendingPathComponent("Server", isDirectory: true),
         ]
         return candidates.first { candidate in
             fileManager.fileExists(atPath: candidate.appendingPathComponent("main.js").path)
@@ -729,7 +736,7 @@ public final class LocalCodevisorServer: LocalServerControlling {
         }
         let databaseName = "codevisor-server.sqlite"
         guard fileManager.fileExists(atPath: legacyDirectory.appendingPathComponent(databaseName).path),
-              !fileManager.fileExists(atPath: dataDirectory.appendingPathComponent(databaseName).path)
+            !fileManager.fileExists(atPath: dataDirectory.appendingPathComponent(databaseName).path)
         else { return }
 
         let dataArtifacts = [
@@ -741,7 +748,7 @@ public final class LocalCodevisorServer: LocalServerControlling {
             "harness-profiles",
             "harness-secrets",
             "mcp-secret-key",
-            databaseName
+            databaseName,
         ]
         do {
             try fileManager.createDirectory(at: dataDirectory, withIntermediateDirectories: true)
@@ -749,14 +756,16 @@ public final class LocalCodevisorServer: LocalServerControlling {
             let legacyLog = legacyDirectory.appendingPathComponent("server.log")
             let log = logsDirectory.appendingPathComponent("server.log")
             if fileManager.fileExists(atPath: legacyLog.path),
-               !fileManager.fileExists(atPath: log.path) {
+                !fileManager.fileExists(atPath: log.path)
+            {
                 try fileManager.moveItem(at: legacyLog, to: log)
             }
             for artifact in dataArtifacts {
                 let source = legacyDirectory.appendingPathComponent(artifact)
                 let destination = dataDirectory.appendingPathComponent(artifact)
                 guard fileManager.fileExists(atPath: source.path),
-                      !fileManager.fileExists(atPath: destination.path) else { continue }
+                    !fileManager.fileExists(atPath: destination.path)
+                else { continue }
                 try fileManager.moveItem(at: source, to: destination)
             }
         } catch {

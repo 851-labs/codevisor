@@ -5,31 +5,35 @@ import Testing
 struct NewChatPromotionLifecycleTests {
     @Test("The handoff waits for both the canonical route and surface animation")
     func commitReadinessRequiresBothOwners() {
-        #expect(!NewChatPromotionLifecycleContract.canCommit(
-            phase: .animating,
-            canonicalWorkspaceReady: false,
-            surfaceAnimationFinished: true
-        ))
-        #expect(!NewChatPromotionLifecycleContract.canCommit(
-            phase: .animating,
-            canonicalWorkspaceReady: true,
-            surfaceAnimationFinished: false
-        ))
-        #expect(NewChatPromotionLifecycleContract.canCommit(
-            phase: .animating,
-            canonicalWorkspaceReady: true,
-            surfaceAnimationFinished: true
-        ))
+        #expect(
+            !NewChatPromotionLifecycleContract.canCommit(
+                phase: .animating,
+                canonicalWorkspaceReady: false,
+                surfaceAnimationFinished: true
+            ))
+        #expect(
+            !NewChatPromotionLifecycleContract.canCommit(
+                phase: .animating,
+                canonicalWorkspaceReady: true,
+                surfaceAnimationFinished: false
+            ))
+        #expect(
+            NewChatPromotionLifecycleContract.canCommit(
+                phase: .animating,
+                canonicalWorkspaceReady: true,
+                surfaceAnimationFinished: true
+            ))
     }
 
     @Test("A commit cannot run twice")
     func terminalPhasesAreNotCommitEligible() {
         for phase in [NewChatPromotionPhase.committing, .settled] {
-            #expect(!NewChatPromotionLifecycleContract.canCommit(
-                phase: phase,
-                canonicalWorkspaceReady: true,
-                surfaceAnimationFinished: true
-            ))
+            #expect(
+                !NewChatPromotionLifecycleContract.canCommit(
+                    phase: phase,
+                    canonicalWorkspaceReady: true,
+                    surfaceAnimationFinished: true
+                ))
         }
     }
 

@@ -162,7 +162,8 @@ public struct TranscriptDisclosureContentReveal<Content: View>: View {
         Task { @MainActor in
             try? await Task.sleep(for: Motion.revealSettleDelay)
             guard generation == animationGeneration,
-                  isExpanded == expanded else { return }
+                isExpanded == expanded
+            else { return }
             if expanded {
                 guard phase == .expanding else { return }
                 phase = .expanded
@@ -189,11 +190,12 @@ private struct DisclosureContentHeightKey: PreferenceKey {
 /// their side-bearings instead of losing them at the content's leading edge.
 private struct VerticalOnlyClipShape: Shape {
     func path(in rect: CGRect) -> Path {
-        Path(CGRect(
-            x: rect.minX - 1000,
-            y: rect.minY,
-            width: rect.width + 2000,
-            height: rect.height
-        ))
+        Path(
+            CGRect(
+                x: rect.minX - 1000,
+                y: rect.minY,
+                width: rect.width + 2000,
+                height: rect.height
+            ))
     }
 }

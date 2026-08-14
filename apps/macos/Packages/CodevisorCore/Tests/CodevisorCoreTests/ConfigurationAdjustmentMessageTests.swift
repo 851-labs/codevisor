@@ -72,7 +72,7 @@ struct ConfigurationAdjustmentMessageTests {
             currentValue: "high",
             options: [
                 SessionConfigSelectOption(value: "high", name: "High"),
-                SessionConfigSelectOption(value: "max", name: "Max")
+                SessionConfigSelectOption(value: "max", name: "Max"),
             ]
         )
         let message = SessionController.configurationAdjustmentMessage(

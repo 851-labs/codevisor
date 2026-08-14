@@ -67,7 +67,7 @@ struct CloudSettingsView: View {
                         title: "Sign in with GitHub",
                         icon: .asset("GitHubMark")
                     ) { startSignIn() }
-                        .settingsActionTint(theme)
+                    .settingsActionTint(theme)
                 }
                 if cloud.developmentAccountAvailable {
                     CloudSignInProviderButton(
@@ -130,45 +130,45 @@ struct CloudSettingsView: View {
 
     private var advancedDisclosure: some View {
         DisclosureGroup("Advanced", isExpanded: $showsAdvanced) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(currentServerDescription)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    HStack(spacing: 8) {
-                        TextField(
-                            "Server URL",
-                            text: $serverURLText,
-                            // verbatim: keeps the prompt from being styled as
-                            // a tappable link (same pattern as the MCP URL
-                            // field).
-                            prompt: Text(verbatim: "https://cloud.example.com")
-                        )
-                            .textFieldStyle(.roundedBorder)
-                        Button(isConnectingServer ? "Connecting…" : "Connect") {
-                            connectCustomServer()
-                        }
-                        .settingsActionTint(theme)
-                        .disabled(isConnectingServer)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(currentServerDescription)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    TextField(
+                        "Server URL",
+                        text: $serverURLText,
+                        // verbatim: keeps the prompt from being styled as
+                        // a tappable link (same pattern as the MCP URL
+                        // field).
+                        prompt: Text(verbatim: "https://cloud.example.com")
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    Button(isConnectingServer ? "Connecting…" : "Connect") {
+                        connectCustomServer()
                     }
-                    if cloud.customServerURL != nil {
-                        Button("Use Default Server") {
-                            Task {
-                                try? await cloud.setCustomServer(nil)
-                                serverURLText = ""
-                                serverError = nil
-                            }
-                        }
-                        .settingsActionTint(theme)
-                    }
-                    if let serverError {
-                        Text(serverError)
-                            .font(.callout)
-                            .foregroundStyle(theme.statusWarn)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                    .settingsActionTint(theme)
+                    .disabled(isConnectingServer)
                 }
-                .padding(.top, 6)
+                if cloud.customServerURL != nil {
+                    Button("Use Default Server") {
+                        Task {
+                            try? await cloud.setCustomServer(nil)
+                            serverURLText = ""
+                            serverError = nil
+                        }
+                    }
+                    .settingsActionTint(theme)
+                }
+                if let serverError {
+                    Text(serverError)
+                        .font(.callout)
+                        .foregroundStyle(theme.statusWarn)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.top, 6)
         }
         .onAppear {
             serverURLText = cloud.customServerURL?.absoluteString ?? ""
@@ -178,11 +178,13 @@ struct CloudSettingsView: View {
     private var currentServerDescription: String {
         if let custom = cloud.customServerURL {
             if let instance = cloud.customInstanceName, !instance.isEmpty {
-                return "Using self-hosted server “\(instance)” at \(custom.absoluteString). Connecting to a different server signs you out."
+                return
+                    "Using self-hosted server “\(instance)” at \(custom.absoluteString). Connecting to a different server signs you out."
             }
             return "Using self-hosted server \(custom.absoluteString). Connecting to a different server signs you out."
         }
-        return "Using the default Codevisor Cloud. Enter the URL of a self-hosted instance to use it instead — connecting signs you out of the current server."
+        return
+            "Using the default Codevisor Cloud. Enter the URL of a self-hosted instance to use it instead — connecting signs you out of the current server."
     }
 
     private func connectCustomServer() {

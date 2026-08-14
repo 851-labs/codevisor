@@ -47,7 +47,7 @@ struct IncompleteMarkdownTests {
     @Test("fenceRun returns nil for non-fence lines")
     func fenceRunNil() {
         #expect(IncompleteMarkdown.fenceRun(in: Substring("text")) == nil)
-        #expect(IncompleteMarkdown.fenceRun(in: Substring("``")) == nil) // only two backticks
+        #expect(IncompleteMarkdown.fenceRun(in: Substring("``")) == nil)  // only two backticks
         #expect(IncompleteMarkdown.fenceRun(in: Substring("")) == nil)
     }
 }

@@ -15,7 +15,9 @@ struct ProtocolCodableTests {
         try roundTrip(ContentBlock.text("hi", annotations: Annotations(audience: [.user], priority: 0.5)))
         try roundTrip(ContentBlock.image(data: "AAAA", mimeType: "image/png", uri: "file://x"))
         try roundTrip(ContentBlock.audio(data: "BBBB", mimeType: "audio/wav"))
-        try roundTrip(ContentBlock.resourceLink(ResourceLink(name: "n", uri: "u", description: "d", mimeType: "text/plain", title: "t", size: 10)))
+        try roundTrip(
+            ContentBlock.resourceLink(
+                ResourceLink(name: "n", uri: "u", description: "d", mimeType: "text/plain", title: "t", size: 10)))
         try roundTrip(ContentBlock.resource(.text(uri: "u", text: "hello", mimeType: "text/plain")))
         try roundTrip(ContentBlock.resource(.blob(uri: "u", blob: "QkJCQg==", mimeType: nil)))
     }
@@ -65,8 +67,10 @@ struct ProtocolCodableTests {
         try roundTrip(SessionUpdate.agentMessageChunk(.text("a")))
         try roundTrip(SessionUpdate.agentMessageChunk(.text("a"), messageId: "msg-1"))
         try roundTrip(SessionUpdate.agentMessageChunk(.text("a"), messageId: "msg-1", parentToolCallId: "task-1"))
-        try roundTrip(SessionUpdate.agentMessageChunk(.text("a"), messageId: "msg-1", parentToolCallId: nil, phase: .final))
-        try roundTrip(SessionUpdate.agentMessageChunk(.text(""), messageId: "msg-1", parentToolCallId: nil, phase: .commentary))
+        try roundTrip(
+            SessionUpdate.agentMessageChunk(.text("a"), messageId: "msg-1", parentToolCallId: nil, phase: .final))
+        try roundTrip(
+            SessionUpdate.agentMessageChunk(.text(""), messageId: "msg-1", parentToolCallId: nil, phase: .commentary))
         try roundTrip(SessionUpdate.agentThoughtChunk(.text("thinking")))
         try roundTrip(SessionUpdate.agentThoughtChunk(.text("thinking"), messageId: "thought-1"))
         try roundTrip(SessionUpdate.agentThoughtChunk(.text("thinking"), messageId: nil, parentToolCallId: "task-1"))
@@ -74,19 +78,22 @@ struct ProtocolCodableTests {
         try roundTrip(SessionUpdate.userMessageChunk(.text("u"), messageId: "user-1"))
         try roundTrip(SessionUpdate.toolCall(ToolCall(toolCallId: "t1", title: "Read", kind: .read, status: .pending)))
         try roundTrip(SessionUpdate.toolCallUpdate(ToolCallUpdate(toolCallId: "t1", status: .completed)))
-        try roundTrip(SessionUpdate.plan(Plan(entries: [PlanEntry(content: "step", priority: .high, status: .pending)])))
+        try roundTrip(
+            SessionUpdate.plan(Plan(entries: [PlanEntry(content: "step", priority: .high, status: .pending)])))
         try roundTrip(SessionUpdate.availableCommandsUpdate([AvailableCommand(name: "test", description: "run")]))
         try roundTrip(SessionUpdate.currentModeUpdate(currentModeId: "fast"))
-        try roundTrip(SessionUpdate.goalUpdate(SessionGoal(
-            objective: "ship goal mode",
-            status: .active,
-            activity: .verifying,
-            tokenBudget: 50_000,
-            tokensUsed: 1_200,
-            timeUsedSeconds: 42.125,
-            createdAt: "2026-07-05T00:00:00.000Z",
-            updatedAt: "2026-07-05T00:01:00.000Z"
-        )))
+        try roundTrip(
+            SessionUpdate.goalUpdate(
+                SessionGoal(
+                    objective: "ship goal mode",
+                    status: .active,
+                    activity: .verifying,
+                    tokenBudget: 50_000,
+                    tokensUsed: 1_200,
+                    timeUsedSeconds: 42.125,
+                    createdAt: "2026-07-05T00:00:00.000Z",
+                    updatedAt: "2026-07-05T00:01:00.000Z"
+                )))
         // Null budget (unbounded goal) survives the trip as nil.
         try roundTrip(SessionUpdate.goalUpdate(SessionGoal(objective: "unbounded", status: .paused)))
         try roundTrip(SessionUpdate.goalCleared)
@@ -94,55 +101,63 @@ struct ProtocolCodableTests {
         try roundTrip(SessionUpdate.contextCompaction(id: "compact-1", status: .completed))
         try roundTrip(SessionUpdate.contextCompaction(id: nil, status: .failed))
         try roundTrip(SessionUpdate.planDocument(markdown: "# The Plan\n\n1. Do it"))
-        try roundTrip(SessionUpdate.question(QuestionRequest(
-            questionId: "q-1",
-            message: "GitHub needs a few details.",
-            questions: [
-                QuestionSpec(
-                    id: "approach",
-                    header: "Approach",
-                    question: "Which approach?",
-                    options: [
-                        QuestionOption(label: "MVP first (Recommended)", description: "Fast."),
-                        QuestionOption(label: "Full design")
+        try roundTrip(
+            SessionUpdate.question(
+                QuestionRequest(
+                    questionId: "q-1",
+                    message: "GitHub needs a few details.",
+                    questions: [
+                        QuestionSpec(
+                            id: "approach",
+                            header: "Approach",
+                            question: "Which approach?",
+                            options: [
+                                QuestionOption(label: "MVP first (Recommended)", description: "Fast."),
+                                QuestionOption(label: "Full design"),
+                            ],
+                            multiSelect: false,
+                            allowsOther: true,
+                            backOptionLabel: "Back",
+                            presentation: .browserExtensionSetup
+                        )
                     ],
-                    multiSelect: false,
-                    allowsOther: true,
-                    backOptionLabel: "Back",
-                    presentation: .browserExtensionSetup
-                )
-            ],
-            autoResolutionMs: 60_000
-        )))
-        try roundTrip(SessionUpdate.questionResolved(QuestionResolution(
-            questionId: "q-1",
-            outcome: .answered,
-            questions: [QuestionSpec(id: "approach", question: "Which approach?")],
-            answers: ["approach": QuestionAnswerEntry(answers: ["MVP first"], note: "keep it lean")]
-        )))
-        try roundTrip(SessionUpdate.questionResolved(QuestionResolution(
-            questionId: "q-2",
-            outcome: .cancelled,
-            questions: []
-        )))
+                    autoResolutionMs: 60_000
+                )))
+        try roundTrip(
+            SessionUpdate.questionResolved(
+                QuestionResolution(
+                    questionId: "q-1",
+                    outcome: .answered,
+                    questions: [QuestionSpec(id: "approach", question: "Which approach?")],
+                    answers: ["approach": QuestionAnswerEntry(answers: ["MVP first"], note: "keep it lean")]
+                )))
+        try roundTrip(
+            SessionUpdate.questionResolved(
+                QuestionResolution(
+                    questionId: "q-2",
+                    outcome: .cancelled,
+                    questions: []
+                )))
     }
 
     @Test("Goal update decodes a null token budget and rejects unknown statuses")
     func goalDecoding() throws {
-        let data = Data("""
-        {"sessionUpdate":"goal_update","goal":{"objective":"o","status":"budgetLimited",\
-        "tokenBudget":null,"tokensUsed":5,"timeUsedSeconds":9.25,"createdAt":"c","updatedAt":"u"}}
-        """.utf8)
+        let data = Data(
+            """
+            {"sessionUpdate":"goal_update","goal":{"objective":"o","status":"budgetLimited",\
+            "tokenBudget":null,"tokensUsed":5,"timeUsedSeconds":9.25,"createdAt":"c","updatedAt":"u"}}
+            """.utf8)
         let update = try ACPJSON.decoder.decode(SessionUpdate.self, from: data)
         guard case .goalUpdate(let goal) = update else { Issue.record("expected goal_update"); return }
         #expect(goal.tokenBudget == nil)
         #expect(goal.status == .budgetLimited)
         #expect(goal.timeUsedSeconds == 9.25)
 
-        let unknownStatus = Data("""
-        {"sessionUpdate":"goal_update","goal":{"objective":"o","status":"someday",\
-        "tokensUsed":0,"timeUsedSeconds":0,"createdAt":"c","updatedAt":"u"}}
-        """.utf8)
+        let unknownStatus = Data(
+            """
+            {"sessionUpdate":"goal_update","goal":{"objective":"o","status":"someday",\
+            "tokensUsed":0,"timeUsedSeconds":0,"createdAt":"c","updatedAt":"u"}}
+            """.utf8)
         #expect(throws: (any Error).self) {
             _ = try ACPJSON.decoder.decode(SessionUpdate.self, from: unknownStatus)
         }
@@ -156,7 +171,9 @@ struct ProtocolCodableTests {
 
     @Test("tool_call update carries inline fields")
     func toolCallInline() throws {
-        let data = Data(#"{"sessionUpdate":"tool_call","toolCallId":"x","title":"Search","kind":"search","status":"in_progress"}"#.utf8)
+        let data = Data(
+            #"{"sessionUpdate":"tool_call","toolCallId":"x","title":"Search","kind":"search","status":"in_progress"}"#
+                .utf8)
         let update = try ACPJSON.decoder.decode(SessionUpdate.self, from: data)
         guard case .toolCall(let call) = update else { Issue.record("expected tool_call"); return }
         #expect(call.toolCallId == "x")
@@ -192,7 +209,9 @@ struct ProtocolCodableTests {
 
     @Test("McpServer variants round-trip and default to stdio")
     func mcpServers() throws {
-        try roundTrip(McpServer.stdio(name: "fs", command: "node", args: ["server.js"], env: [EnvVariable(name: "K", value: "V")]))
+        try roundTrip(
+            McpServer.stdio(name: "fs", command: "node", args: ["server.js"], env: [EnvVariable(name: "K", value: "V")])
+        )
         try roundTrip(McpServer.http(name: "h", url: "https://x", headers: [HTTPHeader(name: "A", value: "B")]))
         try roundTrip(McpServer.sse(name: "s", url: "https://y", headers: []))
         // Missing type defaults to stdio.

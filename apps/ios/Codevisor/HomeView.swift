@@ -157,10 +157,11 @@ private final class HomeSessionOrderingCache {
         priority: (ChatSession) -> Int
     ) -> [ChatSession] {
         let newInputs = values.enumerated().map { index, session in
-            let timestamp: Date = switch newOrder {
-            case .created: session.createdAt
-            case .updated, .none: session.sidebarStateChangedAt
-            }
+            let timestamp: Date =
+                switch newOrder {
+                case .created: session.createdAt
+                case .updated, .none: session.sidebarStateChangedAt
+                }
             return Input(
                 id: session.id,
                 priority: newOrder == .updated ? priority(session) : 0,
@@ -249,9 +250,9 @@ struct HomeView: View {
     /// workspace backfill or local layout mutation so the hierarchy re-reads.
     @State private var workspaceRevision = 0
     @Namespace private var newChatTransition
-#if DEBUG || NAVIGATION_DIAGNOSTICS
-    @State private var didHandleDiagnosticSessionLaunch = false
-#endif
+    #if DEBUG || NAVIGATION_DIAGNOSTICS
+        @State private var didHandleDiagnosticSessionLaunch = false
+    #endif
 
     private var organization: HomeOrganization {
         HomeOrganization(rawValue: organizationRaw) ?? .compact
@@ -336,9 +337,11 @@ struct HomeView: View {
                     (sessionRank[$0.id] ?? Int.max) < (sessionRank[$1.id] ?? Int.max)
                 }
                 let primary = sessions.first
-                let routingSession = primary ?? visibleSessions.first {
-                    environment.workspaces.workspaceId(forSession: $0.id) == workspace.id
-                }
+                let routingSession =
+                    primary
+                    ?? visibleSessions.first {
+                        environment.workspaces.workspaceId(forSession: $0.id) == workspace.id
+                    }
                 let project = projectList.projects.first {
                     $0.serverId == serverId && $0.id == workspace.projectId
                 }
@@ -410,7 +413,8 @@ struct HomeView: View {
     }
 
     private func status(for item: HomeWorkspaceListItem) -> HomeSessionStatus {
-        let sessions = item.sessions.isEmpty
+        let sessions =
+            item.sessions.isEmpty
             ? item.primarySession.map { [$0] } ?? []
             : item.sessions
         return sessions.map(status(for:)).min() ?? .idle
@@ -553,25 +557,26 @@ struct HomeView: View {
             // explicit confirmation always sits between the link and the
             // machine list (same contract as macOS).
             .onOpenURL { url in
-#if DEBUG || NAVIGATION_DIAGNOSTICS
-                // A diagnostics build can exercise a specific persisted chat
-                // without relying on desktop automation of the Simulator.
-                // Production builds do not compile this route.
-                if url.host == "diagnostic-open-session",
-                   let value = URLComponents(url: url, resolvingAgainstBaseURL: false)?
-                    .queryItems?.first(where: { $0.name == "id" })?.value,
-                   let id = UUID(uuidString: value),
-                   let session = projectList.sessions.first(where: {
-                       $0.serverId == machines.selectedMachineId && $0.id == id
-                   }) {
-                    IOSNavigationDiagnostics.record(
-                        "home.diagnosticOpenSession",
-                        "session=\(shortID(id))"
-                    )
-                    openChat(session)
-                    return
-                }
-#endif
+                #if DEBUG || NAVIGATION_DIAGNOSTICS
+                    // A diagnostics build can exercise a specific persisted chat
+                    // without relying on desktop automation of the Simulator.
+                    // Production builds do not compile this route.
+                    if url.host == "diagnostic-open-session",
+                        let value = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                            .queryItems?.first(where: { $0.name == "id" })?.value,
+                        let id = UUID(uuidString: value),
+                        let session = projectList.sessions.first(where: {
+                            $0.serverId == machines.selectedMachineId && $0.id == id
+                        })
+                    {
+                        IOSNavigationDiagnostics.record(
+                            "home.diagnosticOpenSession",
+                            "session=\(shortID(id))"
+                        )
+                        openChat(session)
+                        return
+                    }
+                #endif
                 // codevisor://cloud-auth deeplinks — the browser handoff back
                 // from a cloud sign-in. The one-time token is proof by itself
                 // (it expires within minutes and is single-use), so no
@@ -594,51 +599,53 @@ struct HomeView: View {
             .task {
                 try? await Task.sleep(for: .milliseconds(300))
                 readyForOnboarding = true
-#if DEBUG || NAVIGATION_DIAGNOSTICS
-                if !didHandleDiagnosticSessionLaunch,
-                   let value = ProcessInfo.processInfo.environment[
-                    "CODEVISOR_DIAGNOSTIC_SESSION_ID"
-                   ],
-                   let id = UUID(uuidString: value) {
-                    didHandleDiagnosticSessionLaunch = true
-                    for _ in 0..<50 {
-                        if let session = projectList.sessions.first(where: {
-                            $0.serverId == machines.selectedMachineId && $0.id == id
-                        }) {
-                            IOSNavigationDiagnostics.record(
-                                "home.diagnosticLaunchSession",
-                                "session=\(shortID(id))"
-                            )
-                            if let followupValue = ProcessInfo.processInfo.environment[
-                                "CODEVISOR_DIAGNOSTIC_FOLLOWUP_SESSION_ID"
-                            ],
-                               let followupID = UUID(uuidString: followupValue) {
-                                // Own this sequence independently of Home's
-                                // view task; pushing the first workspace
-                                // correctly cancels that view task.
-                                Task { @MainActor in
-                                    try? await Task.sleep(for: .seconds(4))
-                                    path.removeAll()
-                                    try? await Task.sleep(for: .milliseconds(750))
-                                    if let followup = projectList.sessions.first(where: {
-                                        $0.serverId == machines.selectedMachineId
-                                            && $0.id == followupID
-                                    }) {
-                                        IOSNavigationDiagnostics.record(
-                                            "home.diagnosticFollowupSession",
-                                            "session=\(shortID(followupID))"
-                                        )
-                                        openChat(followup)
+                #if DEBUG || NAVIGATION_DIAGNOSTICS
+                    if !didHandleDiagnosticSessionLaunch,
+                        let value = ProcessInfo.processInfo.environment[
+                            "CODEVISOR_DIAGNOSTIC_SESSION_ID"
+                        ],
+                        let id = UUID(uuidString: value)
+                    {
+                        didHandleDiagnosticSessionLaunch = true
+                        for _ in 0..<50 {
+                            if let session = projectList.sessions.first(where: {
+                                $0.serverId == machines.selectedMachineId && $0.id == id
+                            }) {
+                                IOSNavigationDiagnostics.record(
+                                    "home.diagnosticLaunchSession",
+                                    "session=\(shortID(id))"
+                                )
+                                if let followupValue = ProcessInfo.processInfo.environment[
+                                    "CODEVISOR_DIAGNOSTIC_FOLLOWUP_SESSION_ID"
+                                ],
+                                    let followupID = UUID(uuidString: followupValue)
+                                {
+                                    // Own this sequence independently of Home's
+                                    // view task; pushing the first workspace
+                                    // correctly cancels that view task.
+                                    Task { @MainActor in
+                                        try? await Task.sleep(for: .seconds(4))
+                                        path.removeAll()
+                                        try? await Task.sleep(for: .milliseconds(750))
+                                        if let followup = projectList.sessions.first(where: {
+                                            $0.serverId == machines.selectedMachineId
+                                                && $0.id == followupID
+                                        }) {
+                                            IOSNavigationDiagnostics.record(
+                                                "home.diagnosticFollowupSession",
+                                                "session=\(shortID(followupID))"
+                                            )
+                                            openChat(followup)
+                                        }
                                     }
                                 }
+                                openChat(session)
+                                break
                             }
-                            openChat(session)
-                            break
+                            try? await Task.sleep(for: .milliseconds(100))
                         }
-                        try? await Task.sleep(for: .milliseconds(100))
                     }
-                }
-#endif
+                #endif
             }
         }
     }
@@ -757,12 +764,12 @@ struct HomeView: View {
                             status: status(for: item),
                             showsStatus: true
                         )
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .modifier(
-                                BottomSeparatorModifier(
-                                    isHidden: item.id == projectItems.last?.id
-                                )
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .modifier(
+                            BottomSeparatorModifier(
+                                isHidden: item.id == projectItems.last?.id
                             )
+                        )
                     }
                     .onMove(perform: moveProjects)
                 case .compact:
@@ -877,8 +884,8 @@ struct HomeView: View {
                 status: status(for: item),
                 showsStatus: !isExpanded
             )
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
         .tint(isReorderingGroups ? .clear : nil)
         .modifier(
@@ -955,7 +962,7 @@ struct HomeView: View {
 
     private func beginGroupReorder(for organization: HomeOrganization) {
         guard organization == self.organization,
-              organization != .compact
+            organization != .compact
         else { return }
         switch organization {
         case .byWorkspace:
@@ -974,7 +981,7 @@ struct HomeView: View {
 
     private func cancelGroupReorder() {
         guard let organization = groupReorderOrganization,
-              let initialOrder = groupReorderInitialOrder
+            let initialOrder = groupReorderInitialOrder
         else {
             finishGroupReorder()
             return
@@ -1049,7 +1056,8 @@ struct HomeView: View {
         // Existing sessions take the O(1) index path. Only a legacy session
         // without a workspace pays the synchronous one-time backfill before
         // a routable destination id exists.
-        let workspaceId = environment.workspaces.workspaceId(forSession: session.id)
+        let workspaceId =
+            environment.workspaces.workspaceId(forSession: session.id)
             ?? ensureWorkspace(for: session).id
         IOSNavigationDiagnostics.record(
             "home.openChat",
@@ -1102,9 +1110,9 @@ struct HomeView: View {
             var seen: Set<UUID> = []
             let chatIds = state.panes.compactMap { pane -> UUID? in
                 guard pane.kind == .chat,
-                      let id = pane.chatSessionId,
-                      sessionsById[id] != nil,
-                      seen.insert(id).inserted
+                    let id = pane.chatSessionId,
+                    sessionsById[id] != nil,
+                    seen.insert(id).inserted
                 else { return nil }
                 return id
             }
@@ -1474,14 +1482,16 @@ struct HomeView: View {
 
     private func beginNewChatPromotion(_ sessionId: UUID, flow: NewChatFlow) {
         guard newChatFlow === flow, flow.sessionId == nil else { return }
-        guard let session = projectList.sessions.first(where: {
-            $0.serverId == machines.selectedMachineId && $0.id == sessionId
-        }) else { return }
+        guard
+            let session = projectList.sessions.first(where: {
+                $0.serverId == machines.selectedMachineId && $0.id == sessionId
+            })
+        else { return }
         flow.sessionId = sessionId
         let workspace = ensureWorkspace(for: session)
         guard let presentationSession = flow.presentationSession,
-              let sourceFrame = presentationSession.visibleFrameInWindow,
-              let presentationWindow = presentationSession.presentationWindow
+            let sourceFrame = presentationSession.visibleFrameInWindow,
+            let presentationWindow = presentationSession.presentationWindow
         else {
             // The resolver is installed with the first native-sheet frame, so
             // this should be unreachable in normal interaction. Keeping the
@@ -1566,8 +1576,8 @@ struct HomeView: View {
 
     private func expandPromotionSurfaceIfReady(_ flow: NewChatFlow) {
         guard newChatFlow === flow,
-              flow.didInstallPromotionSurface,
-              flow.isWorkspaceReady
+            flow.didInstallPromotionSurface,
+            flow.isWorkspaceReady
         else { return }
         flow.promotionSurface?.expand()
     }
@@ -1587,8 +1597,9 @@ struct HomeView: View {
         sessionId: UUID
     ) -> Bool {
         guard let flow = newChatFlow,
-              flow.sessionId == sessionId,
-              flow.phase == .animating else { return false }
+            flow.sessionId == sessionId,
+            flow.phase == .animating
+        else { return false }
         return flow.promotionSurface?.setOutgoingMessageTarget(target) ?? false
     }
 
@@ -1638,11 +1649,11 @@ struct HomeView: View {
 
     private func finishNewChatPromotionIfReady(_ flow: NewChatFlow) {
         guard newChatFlow === flow,
-              NewChatPromotionLifecycleContract.canCommit(
-                  phase: flow.phase,
-                  canonicalWorkspaceReady: flow.isWorkspaceReady,
-                  surfaceAnimationFinished: flow.didFinishSurfaceAnimation
-              )
+            NewChatPromotionLifecycleContract.canCommit(
+                phase: flow.phase,
+                canonicalWorkspaceReady: flow.isWorkspaceReady,
+                surfaceAnimationFinished: flow.didFinishSurfaceAnimation
+            )
         else { return }
 
         // Home's canonical destination becomes the input owner before either
@@ -1691,22 +1702,25 @@ struct HomeView: View {
 
     @ViewBuilder private func newChatPromotionContent(_ flow: NewChatFlow) -> some View {
         if let sessionId = flow.sessionId,
-           let serverId = flow.promotionServerId,
-           let workspaceId = flow.promotionWorkspaceId {
+            let serverId = flow.promotionServerId,
+            let workspaceId = flow.promotionWorkspaceId
+        {
             let controller = ChatControllerCache.shared.existingController(
                 sessionId: sessionId,
                 serverId: serverId
             )
-            NavigationStack(path: Binding(
-                get: { flow.promotionPath },
-                set: {
-                    IOSNavigationDiagnostics.record(
-                        "home.newChatPromotion.path",
-                        "old=\(flow.promotionPath.count) new=\($0.count)"
-                    )
-                    flow.promotionPath = $0
-                }
-            )) {
+            NavigationStack(
+                path: Binding(
+                    get: { flow.promotionPath },
+                    set: {
+                        IOSNavigationDiagnostics.record(
+                            "home.newChatPromotion.path",
+                            "old=\(flow.promotionPath.count) new=\($0.count)"
+                        )
+                        flow.promotionPath = $0
+                    }
+                )
+            ) {
                 promotionHomeSnapshot(flow)
                     .navigationDestination(for: NewChatPromotionRoute.self) { route in
                         switch route {
@@ -1758,11 +1772,12 @@ struct HomeView: View {
     }
 
     private func currentHomeSnapshot() -> UIImage? {
-        guard let scene = UIApplication.shared.connectedScenes
-            .compactMap({ $0 as? UIWindowScene })
-            .first(where: { $0.activationState == .foregroundActive }),
-              let window = scene.windows.first(where: \.isKeyWindow),
-              !window.bounds.isEmpty
+        guard
+            let scene = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene })
+                .first(where: { $0.activationState == .foregroundActive }),
+            let window = scene.windows.first(where: \.isKeyWindow),
+            !window.bounds.isEmpty
         else { return nil }
         let format = UIGraphicsImageRendererFormat()
         format.scale = window.screen.scale
@@ -1855,18 +1870,19 @@ struct HomeView: View {
 
     private func navigationPathSummary(_ routes: [HomeRoute]) -> String {
         guard !routes.isEmpty else { return "[]" }
-        return "[" + routes.map { route in
-            switch route {
-            case let .workspace(
-                serverId,
-                workspaceId,
-                anchorSessionId,
-                preferredChatSessionId
-            ):
-                let preferred = preferredChatSessionId.map(shortID) ?? "nil"
-                return "workspace(\(serverId)/\(shortID(workspaceId))/\(shortID(anchorSessionId))/\(preferred))"
-            }
-        }.joined(separator: ",") + "]"
+        return "["
+            + routes.map { route in
+                switch route {
+                case let .workspace(
+                    serverId,
+                    workspaceId,
+                    anchorSessionId,
+                    preferredChatSessionId
+                ):
+                    let preferred = preferredChatSessionId.map(shortID) ?? "nil"
+                    return "workspace(\(serverId)/\(shortID(workspaceId))/\(shortID(anchorSessionId))/\(preferred))"
+                }
+            }.joined(separator: ",") + "]"
     }
 
     private func routeDispositionSummary(_ disposition: WorkspaceRouteDisposition) -> String {
@@ -1928,10 +1944,10 @@ private struct WorkspaceDisclosureLabel: View {
                 workspace.name.isEmpty ? "Workspace" : workspace.name,
                 systemImage: "square.grid.2x2"
             )
-                .font(.body.weight(.semibold))
-                .foregroundStyle(.primary)
-                .textCase(nil)
-                .lineLimit(1)
+            .font(.body.weight(.semibold))
+            .foregroundStyle(.primary)
+            .textCase(nil)
+            .lineLimit(1)
             Spacer(minLength: 4)
         }
         .padding(.vertical, 4)
@@ -1983,7 +1999,8 @@ private struct SessionRow: View {
     private static let statusToHarnessSpacing: CGFloat = 5
     private static let harnessWidth: CGFloat = 38
     private static let harnessToCopySpacing: CGFloat = 10
-    private static let copyLeadingOffset = statusWidth
+    private static let copyLeadingOffset =
+        statusWidth
         + statusToHarnessSpacing
         + harnessWidth
         + harnessToCopySpacing

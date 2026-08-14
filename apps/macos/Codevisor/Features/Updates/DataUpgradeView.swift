@@ -9,17 +9,21 @@ struct DataUpgradeView: View {
 
     var body: some View {
         VStack(spacing: 18) {
-            Image(systemName: progress.state == "failed" ? "exclamationmark.triangle" : "shippingbox.and.arrow.backward")
-                .font(.system(size: 34, weight: .medium))
-                .foregroundStyle(progress.state == "failed" ? Color.orange : Color.accentColor)
+            Image(
+                systemName: progress.state == "failed" ? "exclamationmark.triangle" : "shippingbox.and.arrow.backward"
+            )
+            .font(.system(size: 34, weight: .medium))
+            .foregroundStyle(progress.state == "failed" ? Color.orange : Color.accentColor)
 
             VStack(spacing: 6) {
                 Text(progress.state == "failed" ? "Update couldn’t be applied" : "Applying update")
                     .font(.title2.weight(.semibold))
-                Text(progress.state == "failed"
-                     ? "Your data is unchanged. Try the update again."
-                     : "Codevisor will open when it’s ready.")
-                    .foregroundStyle(.secondary)
+                Text(
+                    progress.state == "failed"
+                        ? "Your data is unchanged. Try the update again."
+                        : "Codevisor will open when it’s ready."
+                )
+                .foregroundStyle(.secondary)
             }
 
             if progress.state == "failed" {

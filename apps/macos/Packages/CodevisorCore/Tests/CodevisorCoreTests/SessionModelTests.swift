@@ -20,50 +20,51 @@ struct SessionModelTests {
         let visibleId = UUID()
         let rawPage = try JSONDecoder().decode(
             ServerTranscriptPage.self,
-            from: Data("""
-            {
-              "items": [
+            from: Data(
+                """
                 {
-                  "id": "\(visibleId.uuidString)",
-                  "sessionId": "\(sessionId.uuidString)",
-                  "sequence": 0,
-                  "role": "user",
-                  "text": "visible",
-                  "createdAt": "2026-08-12T00:00:00.000Z",
-                  "updatedAt": "2026-08-12T00:00:00.000Z",
-                  "isGenerating": false,
-                  "hasDetails": false,
-                  "revision": 1
-                },
-                {
-                  "id": "\(UUID().uuidString)",
-                  "sessionId": "\(sessionId.uuidString)",
-                  "sequence": 1,
-                  "role": "user",
-                  "text": "",
-                  "createdAt": "2026-08-12T00:00:01.000Z",
-                  "updatedAt": "2026-08-12T00:00:01.000Z",
-                  "isGenerating": false,
-                  "hasDetails": false,
-                  "revision": 1
-                },
-                {
-                  "id": "\(UUID().uuidString)",
-                  "sessionId": "\(sessionId.uuidString)",
-                  "sequence": 2,
-                  "role": "assistant",
-                  "text": "",
-                  "createdAt": "2026-08-12T00:00:02.000Z",
-                  "updatedAt": "2026-08-12T00:00:02.000Z",
-                  "isGenerating": false,
-                  "hasDetails": false,
-                  "revision": 1
+                  "items": [
+                    {
+                      "id": "\(visibleId.uuidString)",
+                      "sessionId": "\(sessionId.uuidString)",
+                      "sequence": 0,
+                      "role": "user",
+                      "text": "visible",
+                      "createdAt": "2026-08-12T00:00:00.000Z",
+                      "updatedAt": "2026-08-12T00:00:00.000Z",
+                      "isGenerating": false,
+                      "hasDetails": false,
+                      "revision": 1
+                    },
+                    {
+                      "id": "\(UUID().uuidString)",
+                      "sessionId": "\(sessionId.uuidString)",
+                      "sequence": 1,
+                      "role": "user",
+                      "text": "",
+                      "createdAt": "2026-08-12T00:00:01.000Z",
+                      "updatedAt": "2026-08-12T00:00:01.000Z",
+                      "isGenerating": false,
+                      "hasDetails": false,
+                      "revision": 1
+                    },
+                    {
+                      "id": "\(UUID().uuidString)",
+                      "sessionId": "\(sessionId.uuidString)",
+                      "sequence": 2,
+                      "role": "assistant",
+                      "text": "",
+                      "createdAt": "2026-08-12T00:00:02.000Z",
+                      "updatedAt": "2026-08-12T00:00:02.000Z",
+                      "isGenerating": false,
+                      "hasDetails": false,
+                      "revision": 1
+                    }
+                  ],
+                  "hasMore": false,
+                  "eventCursor": 3
                 }
-              ],
-              "hasMore": false,
-              "eventCursor": 3
-            }
-            """.utf8)
+                """.utf8)
         )
         let client = FakeSessionServerClient(sessionId: sessionId)
         let transport = ServerSessionTransport(client: client, sessionId: sessionId)
@@ -141,26 +142,28 @@ struct SessionModelTests {
         #expect(client.promptedMessageIds == [optimisticId.uuidString.lowercased()])
         // The echo comes back with that id — EVEN with different text (the
         // server may normalize whitespace), identity wins and nothing dups.
-        client.emit(ServerEventEnvelope(
-            id: 1,
-            serverId: "local",
-            kind: "session.output",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-07-18T00:00:00.000Z",
-            payload: .object([
-                "role": .string("user"),
-                "messageId": .string(optimisticId.uuidString.lowercased()),
-                "text": .string("run  pwd")
-            ])
-        ))
-        client.emit(ServerEventEnvelope(
-            id: 2,
-            serverId: "local",
-            kind: "session.updated",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-07-18T00:00:01.000Z",
-            payload: .object(["stopReason": .string("end_turn")])
-        ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 1,
+                serverId: "local",
+                kind: "session.output",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-07-18T00:00:00.000Z",
+                payload: .object([
+                    "role": .string("user"),
+                    "messageId": .string(optimisticId.uuidString.lowercased()),
+                    "text": .string("run  pwd"),
+                ])
+            ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 2,
+                serverId: "local",
+                kind: "session.updated",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-07-18T00:00:01.000Z",
+                payload: .object(["stopReason": .string("end_turn")])
+            ))
         await settleUntil { !model.isSending }
         #expect(userMessages(model).count == 1)
         #expect(userMessages(model).first?.text == "run pwd")
@@ -181,19 +184,22 @@ struct SessionModelTests {
         await model.retryResponse(to: original)
         await settleUntil { !model.isSending }
 
-        #expect(client.promptedTexts == [
-            "finish the change",
-            "Continue from the failed attempt without repeating completed work."
-        ])
-        #expect(client.promptedMessageIds == [
-            original.id.uuidString.lowercased(),
-            original.id.uuidString.lowercased()
-        ])
+        #expect(
+            client.promptedTexts == [
+                "finish the change",
+                "Continue from the failed attempt without repeating completed work.",
+            ])
+        #expect(
+            client.promptedMessageIds == [
+                original.id.uuidString.lowercased(),
+                original.id.uuidString.lowercased(),
+            ])
         #expect(userMessages(model).map(\.text) == ["finish the change"])
-        #expect(model.conversation.filter {
-            if case .assistant = $0 { return true }
-            return false
-        }.count == 2)
+        #expect(
+            model.conversation.filter {
+                if case .assistant = $0 { return true }
+                return false
+            }.count == 2)
     }
 
     @Test("A user echo after an agent restart never duplicates the message")
@@ -208,29 +214,31 @@ struct SessionModelTests {
         await model.send("run pwd")
         // The harness dies right after the prompt (e.g. codex app-server
         // exiting on its first spawn) — the active bubble is torn down…
-        client.emit(ServerEventEnvelope(
-            id: 1,
-            serverId: "local",
-            kind: "session.error",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-07-18T00:00:00.000Z",
-            payload: .object(["message": .string("codex app-server exited")])
-        ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 1,
+                serverId: "local",
+                kind: "session.error",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-07-18T00:00:00.000Z",
+                payload: .object(["message": .string("codex app-server exited")])
+            ))
         // …and the reconnected stream then delivers the server's echo of
         // the message. It must stamp onto the optimistic append, not
         // duplicate it.
-        client.emit(ServerEventEnvelope(
-            id: 2,
-            serverId: "local",
-            kind: "session.output",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-07-18T00:00:01.000Z",
-            payload: .object([
-                "role": .string("user"),
-                "messageId": .string(UUID().uuidString),
-                "text": .string("run pwd")
-            ])
-        ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 2,
+                serverId: "local",
+                kind: "session.output",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-07-18T00:00:01.000Z",
+                payload: .object([
+                    "role": .string("user"),
+                    "messageId": .string(UUID().uuidString),
+                    "text": .string("run pwd"),
+                ])
+            ))
         await settleUntil { model.errorMessage != nil }
         #expect(userMessages(model).count == 1)
     }
@@ -387,18 +395,19 @@ struct SessionModelTests {
         // Pump chunks under the SAME phase for well past one quiet window.
         for id in 1...16 {
             try? await Task.sleep(for: .milliseconds(30))
-            client.emit(ServerEventEnvelope(
-                id: id,
-                serverId: "local",
-                kind: "session.output",
-                subjectId: sessionId.uuidString,
-                createdAt: "2026-06-30T00:00:02.000Z",
-                payload: .object([
-                    "sessionUpdate": .string("agent_message_chunk"),
-                    "messageId": .string("msg-1"),
-                    "content": .object(["type": .string("text"), "text": .string("chunk ")])
-                ])
-            ))
+            client.emit(
+                ServerEventEnvelope(
+                    id: id,
+                    serverId: "local",
+                    kind: "session.output",
+                    subjectId: sessionId.uuidString,
+                    createdAt: "2026-06-30T00:00:02.000Z",
+                    payload: .object([
+                        "sessionUpdate": .string("agent_message_chunk"),
+                        "messageId": .string("msg-1"),
+                        "content": .object(["type": .string("text"), "text": .string("chunk ")]),
+                    ])
+                ))
             // Let the buffered flush apply the chunk (the suite flushes on the
             // next main-actor turn), then check the state it produced.
             for _ in 0..<8 { await Task.yield() }
@@ -480,46 +489,51 @@ struct SessionModelTests {
         model.onQueuedPromptPromoted = { promotedMessageIDs.append($0) }
 
         await model.send("first")
-        client.emit(ServerEventEnvelope(
-            id: 1,
-            serverId: "local",
-            kind: "session.queue.updated",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-07-16T00:00:00.000Z",
-            payload: .object([
-                "queue": .array([.object([
-                    "id": .string(queueItemId.uuidString),
-                    "sessionId": .string(sessionId.uuidString),
-                    "text": .string("queued follow-up"),
-                    "createdAt": .string("2026-07-16T00:00:00.000Z"),
-                    "updatedAt": .string("2026-07-16T00:00:00.000Z")
-                ])])
-            ])
-        ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 1,
+                serverId: "local",
+                kind: "session.queue.updated",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-07-16T00:00:00.000Z",
+                payload: .object([
+                    "queue": .array([
+                        .object([
+                            "id": .string(queueItemId.uuidString),
+                            "sessionId": .string(sessionId.uuidString),
+                            "text": .string("queued follow-up"),
+                            "createdAt": .string("2026-07-16T00:00:00.000Z"),
+                            "updatedAt": .string("2026-07-16T00:00:00.000Z"),
+                        ])
+                    ])
+                ])
+            ))
         await settleUntil { model.queuedPrompts.count == 1 }
 
         // Claiming removes the item from the visible queue immediately before
         // the server materializes that same id as a user transcript message.
-        client.emit(ServerEventEnvelope(
-            id: 2,
-            serverId: "local",
-            kind: "session.queue.updated",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-07-16T00:00:01.000Z",
-            payload: .object(["queue": .array([])])
-        ))
-        client.emit(ServerEventEnvelope(
-            id: 3,
-            serverId: "local",
-            kind: "session.output",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-07-16T00:00:01.001Z",
-            payload: .object([
-                "role": .string("user"),
-                "messageId": .string(queueItemId.uuidString),
-                "text": .string("queued follow-up")
-            ])
-        ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 2,
+                serverId: "local",
+                kind: "session.queue.updated",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-07-16T00:00:01.000Z",
+                payload: .object(["queue": .array([])])
+            ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 3,
+                serverId: "local",
+                kind: "session.output",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-07-16T00:00:01.001Z",
+                payload: .object([
+                    "role": .string("user"),
+                    "messageId": .string(queueItemId.uuidString),
+                    "text": .string("queued follow-up"),
+                ])
+            ))
         await settleUntil { userMessages(model).count == 2 }
 
         #expect(promotedMessageIDs == [queueItemId])
@@ -527,43 +541,48 @@ struct SessionModelTests {
 
         // Explicit deletion creates the same queue diff, but a later remote
         // row has a different id and therefore must not look like a promotion.
-        client.emit(ServerEventEnvelope(
-            id: 4,
-            serverId: "local",
-            kind: "session.queue.updated",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-07-16T00:00:02.000Z",
-            payload: .object([
-                "queue": .array([.object([
-                    "id": .string(deletedQueueItemId.uuidString),
-                    "sessionId": .string(sessionId.uuidString),
-                    "text": .string("delete me"),
-                    "createdAt": .string("2026-07-16T00:00:02.000Z"),
-                    "updatedAt": .string("2026-07-16T00:00:02.000Z")
-                ])])
-            ])
-        ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 4,
+                serverId: "local",
+                kind: "session.queue.updated",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-07-16T00:00:02.000Z",
+                payload: .object([
+                    "queue": .array([
+                        .object([
+                            "id": .string(deletedQueueItemId.uuidString),
+                            "sessionId": .string(sessionId.uuidString),
+                            "text": .string("delete me"),
+                            "createdAt": .string("2026-07-16T00:00:02.000Z"),
+                            "updatedAt": .string("2026-07-16T00:00:02.000Z"),
+                        ])
+                    ])
+                ])
+            ))
         await settleUntil { model.queuedPrompts.count == 1 }
-        client.emit(ServerEventEnvelope(
-            id: 5,
-            serverId: "local",
-            kind: "session.queue.updated",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-07-16T00:00:03.000Z",
-            payload: .object(["queue": .array([])])
-        ))
-        client.emit(ServerEventEnvelope(
-            id: 6,
-            serverId: "local",
-            kind: "session.output",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-07-16T00:00:03.001Z",
-            payload: .object([
-                "role": .string("user"),
-                "messageId": .string(unrelatedMessageId.uuidString),
-                "text": .string("remote message")
-            ])
-        ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 5,
+                serverId: "local",
+                kind: "session.queue.updated",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-07-16T00:00:03.000Z",
+                payload: .object(["queue": .array([])])
+            ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 6,
+                serverId: "local",
+                kind: "session.output",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-07-16T00:00:03.001Z",
+                payload: .object([
+                    "role": .string("user"),
+                    "messageId": .string(unrelatedMessageId.uuidString),
+                    "text": .string("remote message"),
+                ])
+            ))
         await settleUntil { userMessages(model).count == 3 }
         #expect(promotedMessageIDs == [queueItemId])
     }
@@ -608,14 +627,15 @@ struct SessionModelTests {
         )
 
         await model.send("hello")
-        client.emit(ServerEventEnvelope(
-            id: 1,
-            serverId: "local",
-            kind: "session.authRequired",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-07-15T00:00:00.000Z",
-            payload: .object(["detail": .string("Your Codex sign-in expired.")])
-        ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 1,
+                serverId: "local",
+                kind: "session.authRequired",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-07-15T00:00:00.000Z",
+                payload: .object(["detail": .string("Your Codex sign-in expired.")])
+            ))
         for _ in 0..<40 {
             await Task.yield()
             if model.errorRequiresHarnessAuthentication { break }
@@ -635,43 +655,49 @@ struct SessionModelTests {
         let client = FakeSessionServerClient(sessionId: sessionId)
         let question = QuestionRequest(
             questionId: "question-after-reconnect",
-            questions: [QuestionSpec(
-                id: "choice",
-                question: "Continue?",
-                options: [QuestionOption(label: "Yes"), QuestionOption(label: "No")],
-                allowsOther: false
-            )]
+            questions: [
+                QuestionSpec(
+                    id: "choice",
+                    question: "Continue?",
+                    options: [QuestionOption(label: "Yes"), QuestionOption(label: "No")],
+                    allowsOther: false
+                )
+            ]
         )
         client.initialTranscriptPage = ServerTranscriptPage(
-            items: [ServerTranscriptItem(
-                id: assistantId.uuidString,
-                sessionId: sessionId.uuidString,
-                sequence: 0,
-                role: .assistant,
-                text: "",
-                createdAt: "2026-07-13T00:00:00.000Z",
-                updatedAt: "2026-07-13T00:00:01.000Z",
-                isGenerating: true,
-                hasDetails: true,
-                turnId: "turn-before-reconnect",
-                startedAt: "2026-07-13T00:00:00.000Z",
-                endedAt: nil,
-                stopReason: nil,
-                stopDetail: nil,
-                planDocument: nil,
-                attachments: nil,
-                revision: 2
-            )],
+            items: [
+                ServerTranscriptItem(
+                    id: assistantId.uuidString,
+                    sessionId: sessionId.uuidString,
+                    sequence: 0,
+                    role: .assistant,
+                    text: "",
+                    createdAt: "2026-07-13T00:00:00.000Z",
+                    updatedAt: "2026-07-13T00:00:01.000Z",
+                    isGenerating: true,
+                    hasDetails: true,
+                    turnId: "turn-before-reconnect",
+                    startedAt: "2026-07-13T00:00:00.000Z",
+                    endedAt: nil,
+                    stopReason: nil,
+                    stopDetail: nil,
+                    planDocument: nil,
+                    attachments: nil,
+                    revision: 2
+                )
+            ],
             nextBefore: nil,
             hasMore: false,
             eventCursor: 2,
             pendingQuestion: question,
-            backgroundTasks: [BackgroundTaskInfo(
-                id: "task-after-reconnect",
-                description: "Run checks",
-                status: "running",
-                taskType: "shell"
-            )]
+            backgroundTasks: [
+                BackgroundTaskInfo(
+                    id: "task-after-reconnect",
+                    description: "Run checks",
+                    status: "running",
+                    taskType: "shell"
+                )
+            ]
         )
         let model = SessionModel(
             serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
@@ -710,16 +736,17 @@ struct SessionModelTests {
         await model.send("do work")
         // The provider gave up recovering a transient failure and ends the turn
         // with a human reason attached to the turn-end event.
-        client.emit(ServerEventEnvelope(
-            id: 1, serverId: "local", kind: "session.updated",
-            subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:00.000Z",
-            payload: .object([
-                "stopReason": .string("end_turn"),
-                "stopDetail": .string("The Claude API was overloaded."),
-                "retryable": .bool(true),
-                "initiatedBy": .string("agent")
-            ])
-        ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 1, serverId: "local", kind: "session.updated",
+                subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:00.000Z",
+                payload: .object([
+                    "stopReason": .string("end_turn"),
+                    "stopDetail": .string("The Claude API was overloaded."),
+                    "retryable": .bool(true),
+                    "initiatedBy": .string("agent"),
+                ])
+            ))
         await settleUntil { model.isSending == false }
 
         guard case let .assistant(message) = model.conversation.last else {
@@ -744,14 +771,15 @@ struct SessionModelTests {
         )
 
         await model.send("do work")
-        client.emit(ServerEventEnvelope(
-            id: 1, serverId: "local", kind: "session.error",
-            subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:00.000Z",
-            payload: .object([
-                "message": .string("The provider connection failed."),
-                "retryable": .bool(true)
-            ])
-        ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 1, serverId: "local", kind: "session.error",
+                subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:00.000Z",
+                payload: .object([
+                    "message": .string("The provider connection failed."),
+                    "retryable": .bool(true),
+                ])
+            ))
         await settleUntil { model.isSending == false }
 
         guard case let .assistant(message) = model.conversation.last else {
@@ -768,18 +796,20 @@ struct SessionModelTests {
         let sessionId = UUID()
         let client = FakeSessionServerClient(sessionId: sessionId)
         client.initialTranscriptPage = ServerTranscriptPage(
-            items: [ServerTranscriptItem(
-                id: UUID().uuidString,
-                sessionId: sessionId.uuidString,
-                sequence: 0,
-                role: .user,
-                text: "Keep this message visible.",
-                createdAt: "2026-06-30T00:00:00.000Z",
-                updatedAt: "2026-06-30T00:00:00.000Z",
-                isGenerating: false,
-                hasDetails: false,
-                revision: 1
-            )],
+            items: [
+                ServerTranscriptItem(
+                    id: UUID().uuidString,
+                    sessionId: sessionId.uuidString,
+                    sequence: 0,
+                    role: .user,
+                    text: "Keep this message visible.",
+                    createdAt: "2026-06-30T00:00:00.000Z",
+                    updatedAt: "2026-06-30T00:00:00.000Z",
+                    isGenerating: false,
+                    hasDetails: false,
+                    revision: 1
+                )
+            ],
             hasMore: false,
             eventCursor: 0
         )
@@ -811,32 +841,37 @@ struct SessionModelTests {
 
         await model.send("do work")
         // The provider reports it's retrying a transient failure (attempt 2 of 3).
-        client.emit(ServerEventEnvelope(
-            id: 1, serverId: "local", kind: "session.updated",
-            subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:00.000Z",
-            payload: .object(["retrying": .object([
-                "attempt": .number(2),
-                "message": .string("Claude is overloaded, retrying"),
-                "of": .number(3),
-            ])])
-        ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 1, serverId: "local", kind: "session.updated",
+                subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:00.000Z",
+                payload: .object([
+                    "retrying": .object([
+                        "attempt": .number(2),
+                        "message": .string("Claude is overloaded, retrying"),
+                        "of": .number(3),
+                    ])
+                ])
+            ))
         await settleUntil {
             if case let .assistant(message) = model.conversation.last {
-                return message.turn.retryStatus == RetryStatus(
-                    attempt: 2,
-                    of: 3,
-                    message: "Claude is overloaded, retrying"
-                )
+                return message.turn.retryStatus
+                    == RetryStatus(
+                        attempt: 2,
+                        of: 3,
+                        message: "Claude is overloaded, retrying"
+                    )
             }
             return false
         }
 
         // The retry succeeds — new content clears the "Retrying…" status.
-        client.emit(ServerEventEnvelope(
-            id: 2, serverId: "local", kind: "session.output",
-            subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:01.000Z",
-            payload: .object(["role": .string("assistant"), "text": .string("recovered")])
-        ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 2, serverId: "local", kind: "session.output",
+                subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:01.000Z",
+                payload: .object(["role": .string("assistant"), "text": .string("recovered")])
+            ))
         await settleUntil {
             if case let .assistant(message) = model.conversation.last {
                 return message.turn.retryStatus == nil
@@ -882,7 +917,7 @@ struct SessionModelTests {
                 text: "history.",
                 createdAt: "2026-06-30T00:00:02.000Z",
                 isGenerating: false
-            )
+            ),
         ]
         let model = SessionModel(
             serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
@@ -914,18 +949,20 @@ struct SessionModelTests {
         let itemId = UUID()
         let client = FakeSessionServerClient(sessionId: sessionId)
         client.initialTranscriptPage = ServerTranscriptPage(
-            items: [ServerTranscriptItem(
-                id: itemId.uuidString,
-                sessionId: sessionId.uuidString,
-                sequence: 1,
-                role: .user,
-                text: "paint me first",
-                createdAt: "2026-08-09T00:00:00.000Z",
-                updatedAt: "2026-08-09T00:00:00.000Z",
-                isGenerating: false,
-                hasDetails: false,
-                revision: 1
-            )],
+            items: [
+                ServerTranscriptItem(
+                    id: itemId.uuidString,
+                    sessionId: sessionId.uuidString,
+                    sequence: 1,
+                    role: .user,
+                    text: "paint me first",
+                    createdAt: "2026-08-09T00:00:00.000Z",
+                    updatedAt: "2026-08-09T00:00:00.000Z",
+                    isGenerating: false,
+                    hasDetails: false,
+                    revision: 1
+                )
+            ],
             hasMore: false,
             eventCursor: 1
         )
@@ -988,20 +1025,25 @@ struct SessionModelTests {
 
         await model.loadHistoryForInitialDisplay()
         await settleUntil { client.promptQueueRequestCount == 1 }
-        client.emit(ServerEventEnvelope(
-            id: 1,
-            serverId: "local",
-            kind: "session.queue.updated",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-08-09T00:00:01.000Z",
-            payload: .object(["queue": .array([.object([
-                "id": .string(freshItem.id),
-                "sessionId": .string(freshItem.sessionId),
-                "text": .string(freshItem.text),
-                "createdAt": .string(freshItem.createdAt),
-                "updatedAt": .string(freshItem.updatedAt)
-            ])])])
-        ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 1,
+                serverId: "local",
+                kind: "session.queue.updated",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-08-09T00:00:01.000Z",
+                payload: .object([
+                    "queue": .array([
+                        .object([
+                            "id": .string(freshItem.id),
+                            "sessionId": .string(freshItem.sessionId),
+                            "text": .string(freshItem.text),
+                            "createdAt": .string(freshItem.createdAt),
+                            "updatedAt": .string(freshItem.updatedAt),
+                        ])
+                    ])
+                ])
+            ))
         await settleUntil { model.queuedPrompts == [freshItem] }
 
         releaseQueue.yield()
@@ -1040,26 +1082,28 @@ struct SessionModelTests {
         let assistantId = UUID()
         let client = FakeSessionServerClient(sessionId: sessionId)
         client.initialTranscriptPage = ServerTranscriptPage(
-            items: [ServerTranscriptItem(
-                id: assistantId.uuidString,
-                sessionId: sessionId.uuidString,
-                sequence: 0,
-                role: .assistant,
-                text: "First half",
-                createdAt: "2026-07-18T00:00:00.000Z",
-                updatedAt: "2026-07-18T00:00:01.000Z",
-                isGenerating: true,
-                hasDetails: false,
-                turnId: "turn-1",
-                startedAt: "2026-07-18T00:00:00.000Z",
-                endedAt: nil,
-                stopReason: nil,
-                stopDetail: nil,
-                planDocument: nil,
-                attachments: nil,
-                messageId: "msg-1",
-                revision: 2
-            )],
+            items: [
+                ServerTranscriptItem(
+                    id: assistantId.uuidString,
+                    sessionId: sessionId.uuidString,
+                    sequence: 0,
+                    role: .assistant,
+                    text: "First half",
+                    createdAt: "2026-07-18T00:00:00.000Z",
+                    updatedAt: "2026-07-18T00:00:01.000Z",
+                    isGenerating: true,
+                    hasDetails: false,
+                    turnId: "turn-1",
+                    startedAt: "2026-07-18T00:00:00.000Z",
+                    endedAt: nil,
+                    stopReason: nil,
+                    stopDetail: nil,
+                    planDocument: nil,
+                    attachments: nil,
+                    messageId: "msg-1",
+                    revision: 2
+                )
+            ],
             nextBefore: nil,
             hasMore: false,
             eventCursor: 2
@@ -1076,22 +1120,24 @@ struct SessionModelTests {
         }
 
         // The stream resumes the same provider message after the reopen.
-        client.emit(ServerEventEnvelope(
-            id: 3,
-            serverId: "local",
-            kind: "session.output",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-07-18T00:00:02.000Z",
-            payload: .object([
-                "sessionUpdate": .string("agent_message_chunk"),
-                "messageId": .string("msg-1"),
-                "content": .object(["type": .string("text"), "text": .string(" second half")])
-            ])
-        ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 3,
+                serverId: "local",
+                kind: "session.output",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-07-18T00:00:02.000Z",
+                payload: .object([
+                    "sessionUpdate": .string("agent_message_chunk"),
+                    "messageId": .string("msg-1"),
+                    "content": .object(["type": .string("text"), "text": .string(" second half")]),
+                ])
+            ))
 
         await settleUntil {
             if case let .assistant(message) = model.conversation.last,
-               case let .text(_, markdown) = message.turn.finalText {
+                case let .text(_, markdown) = message.turn.finalText
+            {
                 return markdown == "First half second half"
             }
             return false
@@ -1119,49 +1165,53 @@ struct SessionModelTests {
         let assistantId = UUID()
         let client = FakeSessionServerClient(sessionId: sessionId)
         client.initialTranscriptPage = ServerTranscriptPage(
-            items: [ServerTranscriptItem(
-                id: assistantId.uuidString,
-                sessionId: sessionId.uuidString,
-                sequence: 1,
-                role: .assistant,
-                text: "Summary answer",
-                createdAt: "2026-06-30T00:00:01.000Z",
-                updatedAt: "2026-06-30T00:00:02.000Z",
-                isGenerating: false,
-                hasDetails: true,
-                turnId: "turn-1",
-                startedAt: "2026-06-30T00:00:01.000Z",
-                endedAt: "2026-06-30T00:00:02.000Z",
-                stopReason: "end_turn",
-                stopDetail: nil,
-                planDocument: nil,
-                attachments: nil,
-                revision: 4
-            )],
+            items: [
+                ServerTranscriptItem(
+                    id: assistantId.uuidString,
+                    sessionId: sessionId.uuidString,
+                    sequence: 1,
+                    role: .assistant,
+                    text: "Summary answer",
+                    createdAt: "2026-06-30T00:00:01.000Z",
+                    updatedAt: "2026-06-30T00:00:02.000Z",
+                    isGenerating: false,
+                    hasDetails: true,
+                    turnId: "turn-1",
+                    startedAt: "2026-06-30T00:00:01.000Z",
+                    endedAt: "2026-06-30T00:00:02.000Z",
+                    stopReason: "end_turn",
+                    stopDetail: nil,
+                    planDocument: nil,
+                    attachments: nil,
+                    revision: 4
+                )
+            ],
             nextBefore: "1",
             hasMore: true,
             eventCursor: 12
         )
         client.olderTranscriptPage = ServerTranscriptPage(
-            items: [ServerTranscriptItem(
-                id: olderId.uuidString,
-                sessionId: sessionId.uuidString,
-                sequence: 0,
-                role: .user,
-                text: "Older question",
-                createdAt: "2026-06-30T00:00:00.000Z",
-                updatedAt: "2026-06-30T00:00:00.000Z",
-                isGenerating: false,
-                hasDetails: false,
-                turnId: nil,
-                startedAt: nil,
-                endedAt: nil,
-                stopReason: nil,
-                stopDetail: nil,
-                planDocument: nil,
-                attachments: nil,
-                revision: 1
-            )],
+            items: [
+                ServerTranscriptItem(
+                    id: olderId.uuidString,
+                    sessionId: sessionId.uuidString,
+                    sequence: 0,
+                    role: .user,
+                    text: "Older question",
+                    createdAt: "2026-06-30T00:00:00.000Z",
+                    updatedAt: "2026-06-30T00:00:00.000Z",
+                    isGenerating: false,
+                    hasDetails: false,
+                    turnId: nil,
+                    startedAt: nil,
+                    endedAt: nil,
+                    stopReason: nil,
+                    stopDetail: nil,
+                    planDocument: nil,
+                    attachments: nil,
+                    revision: 1
+                )
+            ],
             nextBefore: nil,
             hasMore: false,
             eventCursor: 12
@@ -1176,7 +1226,7 @@ struct SessionModelTests {
                     payload: .object([
                         "sessionUpdate": .string("agent_message_chunk"),
                         "messageId": .string("answer-1"),
-                        "content": .object(["type": .string("text"), "text": .string("Summary answer")])
+                        "content": .object(["type": .string("text"), "text": .string("Summary answer")]),
                     ])
                 ),
                 ServerEventEnvelope(
@@ -1185,9 +1235,9 @@ struct SessionModelTests {
                     payload: .object([
                         "sessionUpdate": .string("tool_call"),
                         "toolCallId": .string("tool-1"),
-                        "title": .string("Read file")
+                        "title": .string("Read file"),
                     ])
-                )
+                ),
             ]
         )
         let model = SessionModel(
@@ -1244,7 +1294,7 @@ struct SessionModelTests {
                 "name": .string("shot.png"),
                 "mimeType": .string("image/png"),
                 "sizeBytes": .number(3),
-                "kind": .string("image")
+                "kind": .string("image"),
             ])
         ])
         let expected = Attachment(
@@ -1254,35 +1304,37 @@ struct SessionModelTests {
         // The optimistic message has no attachments; the server echo does —
         // the echo's refs are stamped onto it instead of appending a dupe.
         await model.send("look at this")
-        client.emit(ServerEventEnvelope(
-            id: 1,
-            serverId: "local",
-            kind: "session.output",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-06-30T00:00:00.000Z",
-            payload: .object([
-                "role": .string("user"),
-                "text": .string("look at this"),
-                "attachments": refPayload
-            ])
-        ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 1,
+                serverId: "local",
+                kind: "session.output",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-06-30T00:00:00.000Z",
+                payload: .object([
+                    "role": .string("user"),
+                    "text": .string("look at this"),
+                    "attachments": refPayload,
+                ])
+            ))
         await settleUntil { userMessages(model).first?.attachments.isEmpty == false }
         #expect(userMessages(model).count == 1)
         #expect(userMessages(model).first?.attachments == [expected])
 
         // A remote user message with attachments but no text still appends.
-        client.emit(ServerEventEnvelope(
-            id: 2,
-            serverId: "local",
-            kind: "session.output",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-06-30T00:00:01.000Z",
-            payload: .object([
-                "role": .string("user"),
-                "text": .string(""),
-                "attachments": refPayload
-            ])
-        ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 2,
+                serverId: "local",
+                kind: "session.output",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-06-30T00:00:01.000Z",
+                payload: .object([
+                    "role": .string("user"),
+                    "text": .string(""),
+                    "attachments": refPayload,
+                ])
+            ))
         await settleUntil { userMessages(model).count == 2 }
         #expect(userMessages(model).last?.text == "")
         #expect(userMessages(model).last?.attachments == [expected])
@@ -1315,9 +1367,10 @@ struct SessionModelTests {
 
         await model.loadHistory()
 
-        #expect(userMessages(model).first?.attachments == [
-            Attachment(fileId: "file-3", name: "doc.pdf", mimeType: "application/pdf", sizeBytes: 9, kind: .file)
-        ])
+        #expect(
+            userMessages(model).first?.attachments == [
+                Attachment(fileId: "file-3", name: "doc.pdf", mimeType: "application/pdf", sizeBytes: 9, kind: .file)
+            ])
     }
 
     @Test("Attachment refs decode when present and stay nil for older servers")
@@ -1357,93 +1410,100 @@ struct SessionModelTests {
 
         var runtimeEdges = 0
         model.onRuntimeStateChanged = { runtimeEdges += 1 }
-        client.emit(ServerEventEnvelope(
-            id: 2,
-            serverId: "local",
-            kind: "session.updated",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-06-30T00:00:01.000Z",
-            payload: .object(["runtimeState": .string("running")])
-        ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 2,
+                serverId: "local",
+                kind: "session.updated",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-06-30T00:00:01.000Z",
+                payload: .object(["runtimeState": .string("running")])
+            ))
         await settleUntil { model.runtimeState == .running }
         #expect(model.isRuntimeIdle == false)
-        client.emit(ServerEventEnvelope(
-            id: 3,
-            serverId: "local",
-            kind: "session.updated",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-06-30T00:00:01.500Z",
-            payload: .object(["runtimeState": .string("idle")])
-        ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 3,
+                serverId: "local",
+                kind: "session.updated",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-06-30T00:00:01.500Z",
+                payload: .object(["runtimeState": .string("idle")])
+            ))
         await settleUntil { model.isRuntimeIdle }
         #expect(runtimeEdges == 2)
 
-        client.emit(ServerEventEnvelope(
-            id: 4,
-            serverId: "local",
-            kind: "session.updated",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-06-30T00:00:02.000Z",
-            payload: .object([
-                "backgroundTasks": .array([
-                    .object([
-                        "id": .string("bg-1"),
-                        "description": .string("Run npm test"),
-                        "status": .string("running"),
-                        "taskType": .string("shell")
+        client.emit(
+            ServerEventEnvelope(
+                id: 4,
+                serverId: "local",
+                kind: "session.updated",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-06-30T00:00:02.000Z",
+                payload: .object([
+                    "backgroundTasks": .array([
+                        .object([
+                            "id": .string("bg-1"),
+                            "description": .string("Run npm test"),
+                            "status": .string("running"),
+                            "taskType": .string("shell"),
+                        ])
                     ])
                 ])
-            ])
-        ))
+            ))
         await settleUntil { !model.backgroundTasks.isEmpty }
-        #expect(model.backgroundTasks == [
-            BackgroundTaskInfo(id: "bg-1", description: "Run npm test", status: "running", taskType: "shell")
-        ])
+        #expect(
+            model.backgroundTasks == [
+                BackgroundTaskInfo(id: "bg-1", description: "Run npm test", status: "running", taskType: "shell")
+            ])
         #expect(model.isWaitingOnBackgroundTasks)
         #expect(model.hasBackgroundTaskSnapshot)
 
         // A task with an attachable terminal renders as a terminal tab, not
         // the waiting indicator: it is running, not being waited on.
-        client.emit(ServerEventEnvelope(
-            id: 5,
-            serverId: "local",
-            kind: "session.updated",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-06-30T00:00:02.500Z",
-            payload: .object([
-                "backgroundTasks": .array([
-                    .object([
-                        "id": .string("bg-2"),
-                        "description": .string("npm run dev"),
-                        "status": .string("running"),
-                        "taskType": .string("shell"),
-                        "terminalKey": .string("\(sessionId.uuidString):bg:tool-1")
+        client.emit(
+            ServerEventEnvelope(
+                id: 5,
+                serverId: "local",
+                kind: "session.updated",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-06-30T00:00:02.500Z",
+                payload: .object([
+                    "backgroundTasks": .array([
+                        .object([
+                            "id": .string("bg-2"),
+                            "description": .string("npm run dev"),
+                            "status": .string("running"),
+                            "taskType": .string("shell"),
+                            "terminalKey": .string("\(sessionId.uuidString):bg:tool-1"),
+                        ])
                     ])
                 ])
-            ])
-        ))
+            ))
         await settleUntil { model.backgroundTasks.first?.id == "bg-2" }
-        #expect(model.backgroundTasks == [
-            BackgroundTaskInfo(
-                id: "bg-2",
-                description: "npm run dev",
-                status: "running",
-                taskType: "shell",
-                terminalKey: "\(sessionId.uuidString):bg:tool-1"
-            )
-        ])
+        #expect(
+            model.backgroundTasks == [
+                BackgroundTaskInfo(
+                    id: "bg-2",
+                    description: "npm run dev",
+                    status: "running",
+                    taskType: "shell",
+                    terminalKey: "\(sessionId.uuidString):bg:tool-1"
+                )
+            ])
         #expect(model.waitingBackgroundTasks.isEmpty)
         #expect(model.isWaitingOnBackgroundTasks == false)
 
         // The empty replace-on-update snapshot clears the indicator.
-        client.emit(ServerEventEnvelope(
-            id: 6,
-            serverId: "local",
-            kind: "session.updated",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-06-30T00:00:03.000Z",
-            payload: .object(["backgroundTasks": .array([])])
-        ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 6,
+                serverId: "local",
+                kind: "session.updated",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-06-30T00:00:03.000Z",
+                payload: .object(["backgroundTasks": .array([])])
+            ))
         await settleUntil { model.backgroundTasks.isEmpty }
         #expect(model.isWaitingOnBackgroundTasks == false)
     }
@@ -1459,50 +1519,55 @@ struct SessionModelTests {
         )
 
         await model.send("spawn an agent")
-        client.emit(ServerEventEnvelope(
-            id: 1, serverId: "local", kind: "session.output",
-            subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:00.000Z",
-            payload: .object([
-                "sessionUpdate": .string("tool_call"),
-                "toolCallId": .string("task-1"),
-                "title": .string("Agent: explore"),
-                "kind": .string("agent"),
-                "status": .string("in_progress")
-            ])
-        ))
-        client.emit(ServerEventEnvelope(
-            id: 2, serverId: "local", kind: "session.output",
-            subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:01.000Z",
-            payload: .object([
-                "sessionUpdate": .string("tool_call"),
-                "toolCallId": .string("sub-1"),
-                "title": .string("Read"),
-                "status": .string("in_progress"),
-                "parentToolCallId": .string("task-1")
-            ])
-        ))
-        client.emit(ServerEventEnvelope(
-            id: 3, serverId: "local", kind: "session.updated",
-            subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:02.000Z",
-            payload: .object(["stopReason": .string("end_turn")])
-        ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 1, serverId: "local", kind: "session.output",
+                subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:00.000Z",
+                payload: .object([
+                    "sessionUpdate": .string("tool_call"),
+                    "toolCallId": .string("task-1"),
+                    "title": .string("Agent: explore"),
+                    "kind": .string("agent"),
+                    "status": .string("in_progress"),
+                ])
+            ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 2, serverId: "local", kind: "session.output",
+                subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:01.000Z",
+                payload: .object([
+                    "sessionUpdate": .string("tool_call"),
+                    "toolCallId": .string("sub-1"),
+                    "title": .string("Read"),
+                    "status": .string("in_progress"),
+                    "parentToolCallId": .string("task-1"),
+                ])
+            ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 3, serverId: "local", kind: "session.updated",
+                subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:02.000Z",
+                payload: .object(["stopReason": .string("end_turn")])
+            ))
         await settleUntil { model.isSending == false }
         let countAfterFinish = model.conversation.count
 
         // The child's settle arrives after the turn ended, without parent
         // attribution — it must merge by id lookup, not open a new bubble.
-        client.emit(ServerEventEnvelope(
-            id: 4, serverId: "local", kind: "session.output",
-            subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:03.000Z",
-            payload: .object([
-                "sessionUpdate": .string("tool_call_update"),
-                "toolCallId": .string("sub-1"),
-                "status": .string("failed")
-            ])
-        ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 4, serverId: "local", kind: "session.output",
+                subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:03.000Z",
+                payload: .object([
+                    "sessionUpdate": .string("tool_call_update"),
+                    "toolCallId": .string("sub-1"),
+                    "status": .string("failed"),
+                ])
+            ))
         await settleUntil {
             if case let .assistant(message) = model.conversation.last,
-               case let .tool(child)? = message.turn.subagents["task-1"]?.entries.first {
+                case let .tool(child)? = message.turn.subagents["task-1"]?.entries.first
+            {
                 return child.status == .failed
             }
             return false
@@ -1532,48 +1597,52 @@ struct SessionModelTests {
 
         await model.send("spawn a background agent")
         // The Agent tool call returns "launched" immediately and the turn ends.
-        client.emit(ServerEventEnvelope(
-            id: 1, serverId: "local", kind: "session.output",
-            subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:00.000Z",
-            payload: .object([
-                "sessionUpdate": .string("tool_call"),
-                "toolCallId": .string("task-1"),
-                "title": .string("Agent: explore"),
-                "kind": .string("agent"),
-                "status": .string("completed")
-            ])
-        ))
-        client.emit(ServerEventEnvelope(
-            id: 2, serverId: "local", kind: "session.updated",
-            subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:01.000Z",
-            payload: .object(["stopReason": .string("end_turn")])
-        ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 1, serverId: "local", kind: "session.output",
+                subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:00.000Z",
+                payload: .object([
+                    "sessionUpdate": .string("tool_call"),
+                    "toolCallId": .string("task-1"),
+                    "title": .string("Agent: explore"),
+                    "kind": .string("agent"),
+                    "status": .string("completed"),
+                ])
+            ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 2, serverId: "local", kind: "session.updated",
+                subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:01.000Z",
+                payload: .object(["stopReason": .string("end_turn")])
+            ))
         await settleUntil { model.isSending == false }
         let bubblesAfterFinish = model.conversation.count
 
         // The subagent keeps streaming after the turn ended: prose and a
         // child tool call, both parented to the settled Agent call.
-        client.emit(ServerEventEnvelope(
-            id: 3, serverId: "local", kind: "session.output",
-            subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:02.000Z",
-            payload: .object([
-                "sessionUpdate": .string("agent_message_chunk"),
-                "content": .object(["type": .string("text"), "text": .string("Here is my report.")]),
-                "messageId": .string("msg-late"),
-                "parentToolCallId": .string("task-1")
-            ])
-        ))
-        client.emit(ServerEventEnvelope(
-            id: 4, serverId: "local", kind: "session.output",
-            subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:03.000Z",
-            payload: .object([
-                "sessionUpdate": .string("tool_call_update"),
-                "toolCallId": .string("sub-late"),
-                "title": .string("Read files"),
-                "status": .string("in_progress"),
-                "parentToolCallId": .string("task-1")
-            ])
-        ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 3, serverId: "local", kind: "session.output",
+                subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:02.000Z",
+                payload: .object([
+                    "sessionUpdate": .string("agent_message_chunk"),
+                    "content": .object(["type": .string("text"), "text": .string("Here is my report.")]),
+                    "messageId": .string("msg-late"),
+                    "parentToolCallId": .string("task-1"),
+                ])
+            ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 4, serverId: "local", kind: "session.output",
+                subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:03.000Z",
+                payload: .object([
+                    "sessionUpdate": .string("tool_call_update"),
+                    "toolCallId": .string("sub-late"),
+                    "title": .string("Read files"),
+                    "status": .string("in_progress"),
+                    "parentToolCallId": .string("task-1"),
+                ])
+            ))
         await settleUntil {
             if case let .assistant(message) = model.conversation.last {
                 return message.turn.subagents["task-1"]?.entries.count == 2
@@ -1590,15 +1659,17 @@ struct SessionModelTests {
             return
         }
         #expect(message.turn.isGenerating == false)
-        #expect(message.turn.subagents["task-1"]?.entries == [
-            .text(id: "acp:msg-late", markdown: "Here is my report."),
-            .tool(ToolCall(
-                toolCallId: "sub-late",
-                title: "Read files",
-                status: .inProgress,
-                parentToolCallId: "task-1"
-            ))
-        ])
+        #expect(
+            message.turn.subagents["task-1"]?.entries == [
+                .text(id: "acp:msg-late", markdown: "Here is my report."),
+                .tool(
+                    ToolCall(
+                        toolCallId: "sub-late",
+                        title: "Read files",
+                        status: .inProgress,
+                        parentToolCallId: "task-1"
+                    )),
+            ])
     }
 
     @Test("History replay rebuilds nested subagent transcripts and the last background snapshot wins")
@@ -1613,31 +1684,37 @@ struct SessionModelTests {
             )
         }
         client.historyEvents = [
-            envelope(1, "session.output", .object([
-                "sessionUpdate": .string("tool_call"),
-                "toolCallId": .string("task-1"),
-                "title": .string("Agent: explore"),
-                "kind": .string("agent"),
-                "status": .string("in_progress")
-            ])),
-            envelope(2, "session.output", .object([
-                "sessionUpdate": .string("agent_message_chunk"),
-                "content": .object(["type": .string("text"), "text": .string("child prose")]),
-                "messageId": .string("msg-sub"),
-                "parentToolCallId": .string("task-1")
-            ])),
+            envelope(
+                1, "session.output",
+                .object([
+                    "sessionUpdate": .string("tool_call"),
+                    "toolCallId": .string("task-1"),
+                    "title": .string("Agent: explore"),
+                    "kind": .string("agent"),
+                    "status": .string("in_progress"),
+                ])),
+            envelope(
+                2, "session.output",
+                .object([
+                    "sessionUpdate": .string("agent_message_chunk"),
+                    "content": .object(["type": .string("text"), "text": .string("child prose")]),
+                    "messageId": .string("msg-sub"),
+                    "parentToolCallId": .string("task-1"),
+                ])),
             envelope(3, "session.updated", .object(["backgroundTasks": .array([])])),
             envelope(4, "session.updated", .object(["stopReason": .string("end_turn")])),
-            envelope(5, "session.updated", .object([
-                "backgroundTasks": .array([
-                    .object([
-                        "id": .string("bg-9"),
-                        "description": .string("Long build"),
-                        "status": .string("running"),
-                        "taskType": .string("shell")
+            envelope(
+                5, "session.updated",
+                .object([
+                    "backgroundTasks": .array([
+                        .object([
+                            "id": .string("bg-9"),
+                            "description": .string("Long build"),
+                            "status": .string("running"),
+                            "taskType": .string("shell"),
+                        ])
                     ])
-                ])
-            ]))
+                ])),
         ]
 
         await model(client, sessionId: sessionId) { model in
@@ -1692,71 +1769,77 @@ struct SessionModelTests {
         )
 
         await model.loadHistory()
-        client.emit(ServerEventEnvelope(
-            id: 10,
-            serverId: "local",
-            kind: "session.output",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-06-30T00:00:10.000Z",
-            payload: .object([
-                "sessionUpdate": .string("agent_message_chunk"),
-                "messageId": .string("msg-final"),
-                "content": .object(["type": .string("text"), "text": .string("The repo is ")])
-            ])
-        ))
-        client.emit(ServerEventEnvelope(
-            id: 11,
-            serverId: "local",
-            kind: "session.output",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-06-30T00:00:11.000Z",
-            payload: .object([
-                "sessionUpdate": .string("tool_call"),
-                "toolCallId": .string("readme"),
-                "title": .string("Read README"),
-                "kind": .string("read"),
-                "status": .string("completed")
-            ])
-        ))
-        client.emit(ServerEventEnvelope(
-            id: 12,
-            serverId: "local",
-            kind: "session.output",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-06-30T00:00:12.000Z",
-            payload: .object([
-                "sessionUpdate": .string("agent_message_chunk"),
-                "messageId": .string("msg-final"),
-                "content": .object(["type": .string("text"), "text": .string("a game.")])
-            ])
-        ))
-        client.emit(ServerEventEnvelope(
-            id: 13,
-            serverId: "local",
-            kind: "session.output",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-06-30T00:00:13.000Z",
-            payload: .object([
-                "sessionUpdate": .string("tool_call"),
-                "toolCallId": .string("package"),
-                "title": .string("Read package"),
-                "kind": .string("read"),
-                "status": .string("completed")
-            ])
-        ))
-        client.emit(ServerEventEnvelope(
-            id: 14,
-            serverId: "local",
-            kind: "session.updated",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-06-30T00:00:14.000Z",
-            payload: .object(["stopReason": .string("end_turn")])
-        ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 10,
+                serverId: "local",
+                kind: "session.output",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-06-30T00:00:10.000Z",
+                payload: .object([
+                    "sessionUpdate": .string("agent_message_chunk"),
+                    "messageId": .string("msg-final"),
+                    "content": .object(["type": .string("text"), "text": .string("The repo is ")]),
+                ])
+            ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 11,
+                serverId: "local",
+                kind: "session.output",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-06-30T00:00:11.000Z",
+                payload: .object([
+                    "sessionUpdate": .string("tool_call"),
+                    "toolCallId": .string("readme"),
+                    "title": .string("Read README"),
+                    "kind": .string("read"),
+                    "status": .string("completed"),
+                ])
+            ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 12,
+                serverId: "local",
+                kind: "session.output",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-06-30T00:00:12.000Z",
+                payload: .object([
+                    "sessionUpdate": .string("agent_message_chunk"),
+                    "messageId": .string("msg-final"),
+                    "content": .object(["type": .string("text"), "text": .string("a game.")]),
+                ])
+            ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 13,
+                serverId: "local",
+                kind: "session.output",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-06-30T00:00:13.000Z",
+                payload: .object([
+                    "sessionUpdate": .string("tool_call"),
+                    "toolCallId": .string("package"),
+                    "title": .string("Read package"),
+                    "kind": .string("read"),
+                    "status": .string("completed"),
+                ])
+            ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 14,
+                serverId: "local",
+                kind: "session.updated",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-06-30T00:00:14.000Z",
+                payload: .object(["stopReason": .string("end_turn")])
+            ))
         for _ in 0..<20 {
             await Task.yield()
             if case let .assistant(assistant) = model.conversation.last,
-               assistant.turn.finalText == .text(id: "acp:msg-final", markdown: "The repo is a game."),
-               assistant.turn.workedEntries.map(\.id) == ["tool:readme", "tool:package"] {
+                assistant.turn.finalText == .text(id: "acp:msg-final", markdown: "The repo is a game."),
+                assistant.turn.workedEntries.map(\.id) == ["tool:readme", "tool:package"]
+            {
                 break
             }
         }
@@ -1782,7 +1865,7 @@ struct SessionModelTests {
             currentValue: "small",
             options: [
                 SessionConfigSelectOption(value: "small", name: "Small"),
-                SessionConfigSelectOption(value: "large", name: "Large")
+                SessionConfigSelectOption(value: "large", name: "Large"),
             ]
         )
         let model = SessionModel(
@@ -1819,7 +1902,7 @@ struct SessionModelTests {
             currentValue: "low",
             options: [
                 SessionConfigSelectOption(value: "low", name: "Low"),
-                SessionConfigSelectOption(value: "xhigh", name: "X-High")
+                SessionConfigSelectOption(value: "xhigh", name: "X-High"),
             ]
         )
         let model = SessionModel(
@@ -1944,18 +2027,19 @@ struct SessionModelTests {
         // subscribe to the event stream (goal auto-continuation turns are
         // agent-initiated).
         await model.setGoal(objective: "count to ten")
-        client.emit(ServerEventEnvelope(
-            id: 1,
-            serverId: "local",
-            kind: "session.output",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-07-05T00:00:00.000Z",
-            payload: .object([
-                "sessionUpdate": .string("agent_message_chunk"),
-                "messageId": .string("m1"),
-                "content": .object(["type": .string("text"), "text": .string("Working on it.")])
-            ])
-        ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 1,
+                serverId: "local",
+                kind: "session.output",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-07-05T00:00:00.000Z",
+                payload: .object([
+                    "sessionUpdate": .string("agent_message_chunk"),
+                    "messageId": .string("m1"),
+                    "content": .object(["type": .string("text"), "text": .string("Working on it.")]),
+                ])
+            ))
         for _ in 0..<40 {
             await Task.yield()
             if !model.conversation.isEmpty { break }
@@ -1993,24 +2077,25 @@ struct SessionModelTests {
         var goalEdges = 0
         model.onGoalChanged = { goalEdges += 1 }
 
-        client.emit(ServerEventEnvelope(
-            id: 1,
-            serverId: "local",
-            kind: "session.updated",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-07-05T00:00:00.000Z",
-            payload: .object([
-                "goal": .object([
-                    "objective": .string("long haul"),
-                    "status": .string("active"),
-                    "tokenBudget": .null,
-                    "tokensUsed": .number(1200),
-                    "timeUsedSeconds": .number(42),
-                    "createdAt": .string("2026-07-05T00:00:00.000Z"),
-                    "updatedAt": .string("2026-07-05T00:01:00.000Z")
+        client.emit(
+            ServerEventEnvelope(
+                id: 1,
+                serverId: "local",
+                kind: "session.updated",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-07-05T00:00:00.000Z",
+                payload: .object([
+                    "goal": .object([
+                        "objective": .string("long haul"),
+                        "status": .string("active"),
+                        "tokenBudget": .null,
+                        "tokensUsed": .number(1200),
+                        "timeUsedSeconds": .number(42),
+                        "createdAt": .string("2026-07-05T00:00:00.000Z"),
+                        "updatedAt": .string("2026-07-05T00:01:00.000Z"),
+                    ])
                 ])
-            ])
-        ))
+            ))
         for _ in 0..<20 {
             await Task.yield()
             if model.goal != nil { break }
@@ -2020,24 +2105,25 @@ struct SessionModelTests {
         #expect(model.goal?.tokensUsed == 1200)
 
         // Later accounting snapshot replaces, never accumulates.
-        client.emit(ServerEventEnvelope(
-            id: 2,
-            serverId: "local",
-            kind: "session.updated",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-07-05T00:02:00.000Z",
-            payload: .object([
-                "goal": .object([
-                    "objective": .string("long haul"),
-                    "status": .string("budgetLimited"),
-                    "tokenBudget": .number(10_000),
-                    "tokensUsed": .number(10_000),
-                    "timeUsedSeconds": .number(90),
-                    "createdAt": .string("2026-07-05T00:00:00.000Z"),
-                    "updatedAt": .string("2026-07-05T00:02:00.000Z")
+        client.emit(
+            ServerEventEnvelope(
+                id: 2,
+                serverId: "local",
+                kind: "session.updated",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-07-05T00:02:00.000Z",
+                payload: .object([
+                    "goal": .object([
+                        "objective": .string("long haul"),
+                        "status": .string("budgetLimited"),
+                        "tokenBudget": .number(10_000),
+                        "tokensUsed": .number(10_000),
+                        "timeUsedSeconds": .number(90),
+                        "createdAt": .string("2026-07-05T00:00:00.000Z"),
+                        "updatedAt": .string("2026-07-05T00:02:00.000Z"),
+                    ])
                 ])
-            ])
-        ))
+            ))
         for _ in 0..<20 {
             await Task.yield()
             if model.goal?.status == .budgetLimited { break }
@@ -2045,14 +2131,15 @@ struct SessionModelTests {
         #expect(model.goal?.status == .budgetLimited)
         #expect(model.goal?.tokensUsed == 10_000)
 
-        client.emit(ServerEventEnvelope(
-            id: 3,
-            serverId: "local",
-            kind: "session.updated",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-07-05T00:03:00.000Z",
-            payload: .object(["goalCleared": .bool(true)])
-        ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 3,
+                serverId: "local",
+                kind: "session.updated",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-07-05T00:03:00.000Z",
+                payload: .object(["goalCleared": .bool(true)])
+            ))
         for _ in 0..<20 {
             await Task.yield()
             if model.goal == nil { break }
@@ -2073,27 +2160,30 @@ struct SessionModelTests {
         model.onActionRequired = { actionRequiredCount += 1 }
         await model.loadHistory()
 
-        client.emit(ServerEventEnvelope(
-            id: 1,
-            serverId: "local",
-            kind: "session.output",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-07-05T00:00:00.000Z",
-            payload: .object([
-                "sessionUpdate": .string("question"),
-                "questionId": .string("q-1"),
-                "questions": .array([.object([
-                    "id": .string("approach"),
-                    "header": .string("Approach"),
-                    "question": .string("Which approach?"),
-                    "allowsOther": .bool(true),
-                    "options": .array([
-                        .object(["label": .string("MVP first"), "description": .string("Fast.")]),
-                        .object(["label": .string("Full design")])
-                    ])
-                ])])
-            ])
-        ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 1,
+                serverId: "local",
+                kind: "session.output",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-07-05T00:00:00.000Z",
+                payload: .object([
+                    "sessionUpdate": .string("question"),
+                    "questionId": .string("q-1"),
+                    "questions": .array([
+                        .object([
+                            "id": .string("approach"),
+                            "header": .string("Approach"),
+                            "question": .string("Which approach?"),
+                            "allowsOther": .bool(true),
+                            "options": .array([
+                                .object(["label": .string("MVP first"), "description": .string("Fast.")]),
+                                .object(["label": .string("Full design")]),
+                            ]),
+                        ])
+                    ]),
+                ])
+            ))
         await settleUntil { model.pendingQuestion != nil }
         #expect(model.pendingQuestion?.questionId == "q-1")
         #expect(model.pendingQuestion?.questions.first?.options.count == 2)
@@ -2107,31 +2197,37 @@ struct SessionModelTests {
         #expect(client.questionAnswers.first?.1 == "answered")
 
         // The provider's resolution event renders an inline question tool call.
-        client.emit(ServerEventEnvelope(
-            id: 2,
-            serverId: "local",
-            kind: "session.output",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-07-05T00:00:01.000Z",
-            payload: .object([
-                "sessionUpdate": .string("question_resolved"),
-                "questionId": .string("q-1"),
-                "outcome": .string("answered"),
-                "questions": .array([.object([
-                    "id": .string("approach"),
-                    "question": .string("Which approach?"),
-                    "allowsOther": .bool(true),
-                    "options": .array([])
-                ])]),
-                "answers": .object([
-                    "approach": .object(["answers": .array([.string("MVP first")])])
+        client.emit(
+            ServerEventEnvelope(
+                id: 2,
+                serverId: "local",
+                kind: "session.output",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-07-05T00:00:01.000Z",
+                payload: .object([
+                    "sessionUpdate": .string("question_resolved"),
+                    "questionId": .string("q-1"),
+                    "outcome": .string("answered"),
+                    "questions": .array([
+                        .object([
+                            "id": .string("approach"),
+                            "question": .string("Which approach?"),
+                            "allowsOther": .bool(true),
+                            "options": .array([]),
+                        ])
+                    ]),
+                    "answers": .object([
+                        "approach": .object(["answers": .array([.string("MVP first")])])
+                    ]),
                 ])
-            ])
-        ))
+            ))
         for _ in 0..<20 {
             await Task.yield()
             if case let .assistant(message) = model.conversation.last,
-               message.turn.toolCalls.contains(where: { $0.kind == .question }) { break }
+                message.turn.toolCalls.contains(where: { $0.kind == .question })
+            {
+                break
+            }
         }
         guard case let .assistant(assistant) = model.conversation.last else {
             Issue.record("expected assistant")
@@ -2155,23 +2251,26 @@ struct SessionModelTests {
         )
         await model.loadHistory()
 
-        client.emit(ServerEventEnvelope(
-            id: 1,
-            serverId: "local",
-            kind: "session.output",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-07-05T00:00:00.000Z",
-            payload: .object([
-                "sessionUpdate": .string("question"),
-                "questionId": .string("q-single-flight"),
-                "questions": .array([.object([
-                    "id": .string("choice"),
-                    "question": .string("Continue?"),
-                    "allowsOther": .bool(false),
-                    "options": .array([.object(["label": .string("Yes")])])
-                ])])
-            ])
-        ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 1,
+                serverId: "local",
+                kind: "session.output",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-07-05T00:00:00.000Z",
+                payload: .object([
+                    "sessionUpdate": .string("question"),
+                    "questionId": .string("q-single-flight"),
+                    "questions": .array([
+                        .object([
+                            "id": .string("choice"),
+                            "question": .string("Continue?"),
+                            "allowsOther": .bool(false),
+                            "options": .array([.object(["label": .string("Yes")])]),
+                        ])
+                    ]),
+                ])
+            ))
         await settleUntil { model.pendingQuestion != nil }
 
         let first = Task {
@@ -2216,12 +2315,14 @@ struct SessionModelTests {
                 payload: .object([
                     "sessionUpdate": .string("question"),
                     "questionId": .string(questionId),
-                    "questions": .array([.object([
-                        "id": .string("q"),
-                        "question": .string("Pick?"),
-                        "allowsOther": .bool(true),
-                        "options": .array([.object(["label": .string("A")])])
-                    ])])
+                    "questions": .array([
+                        .object([
+                            "id": .string("q"),
+                            "question": .string("Pick?"),
+                            "allowsOther": .bool(true),
+                            "options": .array([.object(["label": .string("A")])]),
+                        ])
+                    ]),
                 ])
             )
         }
@@ -2241,14 +2342,15 @@ struct SessionModelTests {
             await Task.yield()
             if model.pendingQuestion != nil { break }
         }
-        client.emit(ServerEventEnvelope(
-            id: 3,
-            serverId: "local",
-            kind: "session.updated",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-07-05T00:00:02.000Z",
-            payload: .object(["stopReason": .string("end_turn")])
-        ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 3,
+                serverId: "local",
+                kind: "session.updated",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-07-05T00:00:02.000Z",
+                payload: .object(["stopReason": .string("end_turn")])
+            ))
         for _ in 0..<20 {
             await Task.yield()
             if model.pendingQuestion == nil { break }
@@ -2310,18 +2412,19 @@ struct SessionModelTests {
         await model.send("kick off background work")
         let countAfterPrompt = model.conversation.count
 
-        client.emit(ServerEventEnvelope(
-            id: 20,
-            serverId: "local",
-            kind: "session.output",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-06-30T00:01:00.000Z",
-            payload: .object([
-                "sessionUpdate": .string("agent_message_chunk"),
-                "messageId": .string("bg-1"),
-                "content": .object(["type": .string("text"), "text": .string("Background task finished.")])
-            ])
-        ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 20,
+                serverId: "local",
+                kind: "session.output",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-06-30T00:01:00.000Z",
+                payload: .object([
+                    "sessionUpdate": .string("agent_message_chunk"),
+                    "messageId": .string("bg-1"),
+                    "content": .object(["type": .string("text"), "text": .string("Background task finished.")]),
+                ])
+            ))
         client.emit(stopEnvelope(id: 21, sessionId: sessionId, stopReason: "end_turn"))
         await settleYields(model) { assistant in
             assistant.turn.finalText == .text(id: "acp:bg-1", markdown: "Background task finished.")
@@ -2350,18 +2453,19 @@ struct SessionModelTests {
         await model.loadHistory()
         client.emit(toolCallEnvelope(id: 1, sessionId: sessionId, toolCallId: "edit-1", status: "in_progress"))
         client.emit(stopEnvelope(id: 2, sessionId: sessionId, stopReason: "end_turn"))
-        client.emit(ServerEventEnvelope(
-            id: 3,
-            serverId: "local",
-            kind: "session.output",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-06-30T00:00:03.000Z",
-            payload: .object([
-                "sessionUpdate": .string("tool_call_update"),
-                "toolCallId": .string("edit-1"),
-                "status": .string("failed")
-            ])
-        ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 3,
+                serverId: "local",
+                kind: "session.output",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-06-30T00:00:03.000Z",
+                payload: .object([
+                    "sessionUpdate": .string("tool_call_update"),
+                    "toolCallId": .string("edit-1"),
+                    "status": .string("failed"),
+                ])
+            ))
         await settleYields(model) { assistant in
             assistant.turn.toolCalls.first?.status == .failed
         }
@@ -2393,14 +2497,14 @@ struct SessionModelTests {
                         .object([
                             "content": .string("Explore"),
                             "priority": .string("medium"),
-                            "status": .string("completed")
+                            "status": .string("completed"),
                         ]),
                         .object([
                             "content": .string("Implement"),
                             "priority": .string("medium"),
-                            "status": .string("in_progress")
-                        ])
-                    ])
+                            "status": .string("in_progress"),
+                        ]),
+                    ]),
                 ])
             )
         ]
@@ -2413,21 +2517,24 @@ struct SessionModelTests {
         #expect(model.sessionPlan?.entries.last?.status == .inProgress)
 
         // A later snapshot replaces the session plan wholesale.
-        client.emit(ServerEventEnvelope(
-            id: 2,
-            serverId: "local",
-            kind: "session.output",
-            subjectId: sessionId.uuidString,
-            createdAt: "2026-07-05T00:01:00.000Z",
-            payload: .object([
-                "sessionUpdate": .string("plan"),
-                "entries": .array([.object([
-                    "content": .string("Ship it"),
-                    "priority": .string("medium"),
-                    "status": .string("pending")
-                ])])
-            ])
-        ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 2,
+                serverId: "local",
+                kind: "session.output",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-07-05T00:01:00.000Z",
+                payload: .object([
+                    "sessionUpdate": .string("plan"),
+                    "entries": .array([
+                        .object([
+                            "content": .string("Ship it"),
+                            "priority": .string("medium"),
+                            "status": .string("pending"),
+                        ])
+                    ]),
+                ])
+            ))
         for _ in 0..<20 {
             await Task.yield()
             if model.sessionPlan?.entries.count == 1 { break }
@@ -2448,7 +2555,7 @@ struct SessionModelTests {
                 createdAt: "2026-07-05T00:00:00.000Z",
                 payload: .object([
                     "sessionUpdate": .string("plan_document"),
-                    "markdown": .string("# The Plan\n\n1. Do it")
+                    "markdown": .string("# The Plan\n\n1. Do it"),
                 ])
             ),
             ServerEventEnvelope(
@@ -2459,11 +2566,13 @@ struct SessionModelTests {
                 createdAt: "2026-07-05T00:00:01.000Z",
                 payload: .object([
                     "sessionUpdate": .string("plan"),
-                    "entries": .array([.object([
-                        "content": .string("Do it"),
-                        "priority": .string("medium"),
-                        "status": .string("in_progress")
-                    ])])
+                    "entries": .array([
+                        .object([
+                            "content": .string("Do it"),
+                            "priority": .string("medium"),
+                            "status": .string("in_progress"),
+                        ])
+                    ]),
                 ])
             ),
             ServerEventEnvelope(
@@ -2473,7 +2582,7 @@ struct SessionModelTests {
                 subjectId: sessionId.uuidString,
                 createdAt: "2026-07-05T00:00:02.000Z",
                 payload: .object(["stopReason": .string("end_turn")])
-            )
+            ),
         ]
         let model = SessionModel(
             serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
@@ -2515,9 +2624,11 @@ struct SessionModelTests {
                     "title": .string("Edited a.txt"),
                     "kind": .string("edit"),
                     "status": .string("completed"),
-                    "diffStats": .array([.object([
-                        "path": .string("a.txt"), "added": .number(3), "removed": .number(1)
-                    ])])
+                    "diffStats": .array([
+                        .object([
+                            "path": .string("a.txt"), "added": .number(3), "removed": .number(1),
+                        ])
+                    ]),
                 ])
             ),
             ServerEventEnvelope(
@@ -2529,7 +2640,7 @@ struct SessionModelTests {
                 payload: .object([
                     "sessionUpdate": .string("agent_message_chunk"),
                     "messageId": .string("m1"),
-                    "content": .object(["type": .string("text"), "text": .string("Done.")])
+                    "content": .object(["type": .string("text"), "text": .string("Done.")]),
                 ])
             ),
             ServerEventEnvelope(
@@ -2539,7 +2650,7 @@ struct SessionModelTests {
                 subjectId: sessionId.uuidString,
                 createdAt: "2026-06-30T00:00:03.000Z",
                 payload: .object(["stopReason": .string("end_turn")])
-            )
+            ),
         ]
         let model = SessionModel(
             serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
@@ -2593,8 +2704,8 @@ struct SessionModelTests {
                             "currentValue": .string("gpt-5.5"),
                             "options": .array([
                                 .object(["value": .string("gpt-5.5"), "name": .string("GPT-5.5")]),
-                                .object(["value": .string("gpt-5.4"), "name": .string("GPT-5.4")])
-                            ])
+                                .object(["value": .string("gpt-5.4"), "name": .string("GPT-5.4")]),
+                            ]),
                         ]),
                         .object([
                             "id": .string("effort"),
@@ -2603,9 +2714,9 @@ struct SessionModelTests {
                             "currentValue": .string("xhigh"),
                             "options": .array([
                                 .object(["value": .string("low"), "name": .string("Low")]),
-                                .object(["value": .string("xhigh"), "name": .string("X-High")])
-                            ])
-                        ])
+                                .object(["value": .string("xhigh"), "name": .string("X-High")]),
+                            ]),
+                        ]),
                     ])
                 ])
             )
@@ -2619,7 +2730,7 @@ struct SessionModelTests {
                 options: [
                     SessionConfigSelectOption(value: "gpt-5.6-sol", name: "GPT-5.6-Sol"),
                     SessionConfigSelectOption(value: "gpt-5.5", name: "GPT-5.5"),
-                    SessionConfigSelectOption(value: "gpt-5.6-terra", name: "GPT-5.6-Terra")
+                    SessionConfigSelectOption(value: "gpt-5.6-terra", name: "GPT-5.6-Terra"),
                 ]
             ),
             SessionConfigOption(
@@ -2630,9 +2741,9 @@ struct SessionModelTests {
                 options: [
                     SessionConfigSelectOption(value: "low", name: "Low"),
                     SessionConfigSelectOption(value: "high", name: "High"),
-                    SessionConfigSelectOption(value: "xhigh", name: "X-High")
+                    SessionConfigSelectOption(value: "xhigh", name: "X-High"),
                 ]
-            )
+            ),
         ]
         let model = SessionModel(
             serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
@@ -2666,7 +2777,7 @@ struct SessionModelTests {
                 "toolCallId": .string(toolCallId),
                 "title": .string("Edited file"),
                 "kind": .string("edit"),
-                "status": .string(status)
+                "status": .string(status),
             ])
         )
     }
@@ -2688,25 +2799,27 @@ struct SessionModelTests {
         stopReason: String?
     ) -> ServerTranscriptPage {
         ServerTranscriptPage(
-            items: [ServerTranscriptItem(
-                id: UUID().uuidString,
-                sessionId: sessionId.uuidString,
-                sequence: 1,
-                role: .assistant,
-                text: "",
-                createdAt: "2026-07-29T00:00:00.000Z",
-                updatedAt: "2026-07-29T00:00:01.000Z",
-                isGenerating: isGenerating,
-                hasDetails: false,
-                turnId: "cancel-turn",
-                startedAt: "2026-07-29T00:00:00.000Z",
-                endedAt: isGenerating ? nil : "2026-07-29T00:00:01.000Z",
-                stopReason: stopReason,
-                stopDetail: nil,
-                planDocument: nil,
-                attachments: nil,
-                revision: 2
-            )],
+            items: [
+                ServerTranscriptItem(
+                    id: UUID().uuidString,
+                    sessionId: sessionId.uuidString,
+                    sequence: 1,
+                    role: .assistant,
+                    text: "",
+                    createdAt: "2026-07-29T00:00:00.000Z",
+                    updatedAt: "2026-07-29T00:00:01.000Z",
+                    isGenerating: isGenerating,
+                    hasDetails: false,
+                    turnId: "cancel-turn",
+                    startedAt: "2026-07-29T00:00:00.000Z",
+                    endedAt: isGenerating ? nil : "2026-07-29T00:00:01.000Z",
+                    stopReason: stopReason,
+                    stopDetail: nil,
+                    planDocument: nil,
+                    attachments: nil,
+                    revision: 2
+                )
+            ],
             hasMore: false,
             eventCursor: 2
         )
@@ -2723,7 +2836,6 @@ struct SessionModelTests {
         }
     }
 }
-
 
 /// A clock that returns scripted timestamps in order, repeating the last value.
 final class TimeBox: @unchecked Sendable {
@@ -2868,7 +2980,9 @@ private final class FakeSessionServerClient: CodevisorServerClienting, @unchecke
 
     func listHarnesses() async throws -> [ServerHarness] { [] }
     func info() async throws -> ServerInfo { fatalError("unused") }
-    func updateInfo(refresh: Bool, channel: ServerUpdateChannel) async throws -> ServerUpdateInfo { fatalError("unused") }
+    func updateInfo(refresh: Bool, channel: ServerUpdateChannel) async throws -> ServerUpdateInfo {
+        fatalError("unused")
+    }
     func issuePairingToken() async throws -> ServerPairingToken { fatalError("unused") }
     func capabilities(cwd: String) async throws -> ServerCapabilities { ServerCapabilities(harnesses: []) }
     func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness { fatalError("unused") }
@@ -2926,12 +3040,15 @@ private final class FakeSessionServerClient: CodevisorServerClienting, @unchecke
     func updateSession(_ session: ChatSession) async throws -> ServerSession { fatalError("unused") }
     func deleteSession(id: UUID) async throws {}
 
-    func promptSession(id: UUID, text: String, attachments: [ServerAttachmentRef]) async throws -> ServerPromptAccepted {
+    func promptSession(id: UUID, text: String, attachments: [ServerAttachmentRef]) async throws -> ServerPromptAccepted
+    {
         lock.withLock { _promptedAttachments.append(attachments) }
         return try await promptSession(id: id, text: text)
     }
 
-    func promptSession(id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?) async throws -> ServerPromptAccepted {
+    func promptSession(
+        id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?
+    ) async throws -> ServerPromptAccepted {
         lock.withLock { _promptedMessageIds.append(messageId) }
         return try await promptSession(id: id, text: text, attachments: attachments)
     }
@@ -2944,27 +3061,29 @@ private final class FakeSessionServerClient: CodevisorServerClienting, @unchecke
         guard echoOnPrompt else {
             return ServerPromptAccepted(accepted: true, sessionId: id.uuidString)
         }
-        continuation.yield(ServerEventEnvelope(
-            id: 1,
-            serverId: "local",
-            kind: "session.output",
-            subjectId: id.uuidString,
-            createdAt: "2026-06-30T00:00:00.000Z",
-            payload: .object([
-                "role": .string("assistant"),
-                "text": .string("Echo: \(text)")
-            ])
-        ))
-        continuation.yield(ServerEventEnvelope(
-            id: 2,
-            serverId: "local",
-            kind: "session.updated",
-            subjectId: id.uuidString,
-            createdAt: "2026-06-30T00:00:01.000Z",
-            payload: .object([
-                "stopReason": .string("end_turn")
-            ])
-        ))
+        continuation.yield(
+            ServerEventEnvelope(
+                id: 1,
+                serverId: "local",
+                kind: "session.output",
+                subjectId: id.uuidString,
+                createdAt: "2026-06-30T00:00:00.000Z",
+                payload: .object([
+                    "role": .string("assistant"),
+                    "text": .string("Echo: \(text)"),
+                ])
+            ))
+        continuation.yield(
+            ServerEventEnvelope(
+                id: 2,
+                serverId: "local",
+                kind: "session.updated",
+                subjectId: id.uuidString,
+                createdAt: "2026-06-30T00:00:01.000Z",
+                payload: .object([
+                    "stopReason": .string("end_turn")
+                ])
+            ))
         return ServerPromptAccepted(accepted: true, sessionId: id.uuidString)
     }
 

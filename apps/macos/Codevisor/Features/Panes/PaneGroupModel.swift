@@ -80,10 +80,11 @@ final class PaneGroupModel: Identifiable {
         } else {
             // Persist immediately so pane 1's legacy terminal key is pinned
             // before any surface attaches.
-            let initial: PaneGroupState = switch placement {
-            case .bottom: .initial(sessionId: sessionId)
-            case .center: .centerInitial(sessionId: sessionId)
-            }
+            let initial: PaneGroupState =
+                switch placement {
+                case .bottom: .initial(sessionId: sessionId)
+                case .center: .centerInitial(sessionId: sessionId)
+                }
             self.state = initial
             repository.save(initial, sessionId: sessionId, placement: placement)
         }
@@ -127,7 +128,7 @@ final class PaneGroupModel: Identifiable {
         // releases a terminal or another panel's controls.
         chat.onFocus = { [weak self, paneId] in
             guard let self,
-                  let descriptor = self.state.panes.first(where: { $0.id == paneId })
+                let descriptor = self.state.panes.first(where: { $0.id == paneId })
             else { return }
             switch descriptor.kind {
             case .chat:
@@ -140,8 +141,8 @@ final class PaneGroupModel: Identifiable {
         }
         chat.contentProvider = { [weak self, paneId] in
             guard let self,
-                  let current = self.state.panes.first(where: { $0.id == paneId }),
-                  let content = self.chatContent
+                let current = self.state.panes.first(where: { $0.id == paneId }),
+                let content = self.chatContent
             else { return AnyView(EmptyView()) }
             return content(current)
         }
@@ -187,7 +188,8 @@ final class PaneGroupModel: Identifiable {
         case .nextTab, .previousTab:
             let panes = state.panes
             guard panes.count > 1,
-                  let index = panes.firstIndex(where: { $0.id == state.selectedPaneId }) else { return }
+                let index = panes.firstIndex(where: { $0.id == state.selectedPaneId })
+            else { return }
             let step: Int = if case .nextTab = command { 1 } else { -1 }
             let target = panes[(index + step + panes.count) % panes.count]
             select(id: target.id)
@@ -202,7 +204,8 @@ final class PaneGroupModel: Identifiable {
             requestToggle?()
         case .closeTab:
             guard let selected = state.selectedPane,
-                  canClose(id: selected.id) else { return }
+                canClose(id: selected.id)
+            else { return }
             let wasLastTab = state.panes.count == 1
             closePane(id: selected.id)
             if wasLastTab {
@@ -266,8 +269,9 @@ final class PaneGroupModel: Identifiable {
     func renamePane(id: UUID, to name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty,
-              let index = state.panes.firstIndex(where: { $0.id == id }),
-              state.panes[index].name != trimmed else { return }
+            let index = state.panes.firstIndex(where: { $0.id == id }),
+            state.panes[index].name != trimmed
+        else { return }
         state.panes[index].name = trimmed
         persist()
     }
@@ -309,10 +313,12 @@ final class PaneGroupModel: Identifiable {
         chatSessionId: UUID? = nil,
         name: String? = nil
     ) {
-        guard let converted = state.convertNewTabPane(
-            id: id, to: kind, sessionId: sessionId,
-            chatSessionId: chatSessionId, name: name
-        ) else { return }
+        guard
+            let converted = state.convertNewTabPane(
+                id: id, to: kind, sessionId: sessionId,
+                chatSessionId: chatSessionId, name: name
+            )
+        else { return }
         // The placeholder's live host dies with the descriptor.
         live[id] = nil
         persist()
@@ -363,7 +369,8 @@ final class PaneGroupModel: Identifiable {
         for pane in state.panes
         where pane.attachOnly
             && pane.ownerChatSessionId == owner
-            && !liveKeys.contains(pane.terminalKey) {
+            && !liveKeys.contains(pane.terminalKey)
+        {
             // closePane also deletes the server-side terminal (a no-op when
             // the kill already removed it).
             closePane(id: pane.id)
@@ -376,7 +383,8 @@ final class PaneGroupModel: Identifiable {
     /// the workspace.
     func canClose(id: UUID) -> Bool {
         guard state.canClosePane(id: id),
-              let descriptor = state.panes.first(where: { $0.id == id }) else { return false }
+            let descriptor = state.panes.first(where: { $0.id == id })
+        else { return false }
         switch descriptor.kind {
         case .newTab where state.panes.count == 1:
             // A lone placeholder IS its group's empty state: closing it
@@ -392,7 +400,8 @@ final class PaneGroupModel: Identifiable {
     /// rules forbid closing (the workspace's anchoring chat).
     func closePane(id: UUID) {
         guard let descriptor = state.panes.first(where: { $0.id == id }),
-              canClose(id: id) else { return }
+            canClose(id: id)
+        else { return }
         // Instantiate if needed: a never-shown pane may still own a server
         // shell from a previous app run that willDelete must clean up.
         let closing = pane(for: descriptor)

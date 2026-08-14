@@ -72,9 +72,12 @@ struct SessionScreen: View {
             .frame(width: 0, height: 0)
         )
         .animation(Motion.panel(reduceMotion: reduceMotion), value: paneGroup.state.isVisible)
-        .focusedSceneValue(\.terminalToggle, TerminalToggleAction(sessionId: paneGroup.sessionId) {
-            togglePanes()
-        })
+        .focusedSceneValue(
+            \.terminalToggle,
+            TerminalToggleAction(sessionId: paneGroup.sessionId) {
+                togglePanes()
+            }
+        )
         // (Background-task terminal tabs are synced by the WORKSPACE
         // container across every chat's controller — a per-chat sync here
         // would prune sibling chats' tabs on chat switches.)
@@ -166,44 +169,44 @@ struct SessionScreen: View {
 }
 
 #if DEBUG
-#Preview("Conversation") {
-    SessionScreen(
-        controller: .preview(model: .preview()),
-        paneGroup: previewPaneGroup(placement: .bottom),
-        centerGroup: previewPaneGroup(placement: .center),
-    )
-    .frame(width: 900, height: 680)
-}
+    #Preview("Conversation") {
+        SessionScreen(
+            controller: .preview(model: .preview()),
+            paneGroup: previewPaneGroup(placement: .bottom),
+            centerGroup: previewPaneGroup(placement: .center),
+        )
+        .frame(width: 900, height: 680)
+    }
 
-#Preview("With terminal") {
-    let group = previewPaneGroup(placement: .bottom)
-    group.toggle()
-    return SessionScreen(
-        controller: .preview(model: .preview()),
-        paneGroup: group,
-        centerGroup: previewPaneGroup(placement: .center),
-    )
-    .frame(width: 900, height: 680)
-}
+    #Preview("With terminal") {
+        let group = previewPaneGroup(placement: .bottom)
+        group.toggle()
+        return SessionScreen(
+            controller: .preview(model: .preview()),
+            paneGroup: group,
+            centerGroup: previewPaneGroup(placement: .center),
+        )
+        .frame(width: 900, height: 680)
+    }
 
-private func previewPaneGroup(placement: PaneGroupPlacement) -> PaneGroupModel {
-    let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/shepherd"))
-    let session = ChatSession(projectId: project.id, title: "Preview")
-    return PaneGroupModel(
-        sessionId: session.id,
-        placement: placement,
-        repository: DefaultPaneGroupRepository(store: InMemoryStore()),
-        makeContext: { descriptor in
-            PaneContext(
-                paneId: descriptor.id,
-                sessionId: session.id,
-                terminalKey: descriptor.terminalKey,
-                attachOnly: descriptor.attachOnly,
-                machine: .local,
-                session: session,
-                project: project
-            )
-        }
-    )
-}
+    private func previewPaneGroup(placement: PaneGroupPlacement) -> PaneGroupModel {
+        let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/shepherd"))
+        let session = ChatSession(projectId: project.id, title: "Preview")
+        return PaneGroupModel(
+            sessionId: session.id,
+            placement: placement,
+            repository: DefaultPaneGroupRepository(store: InMemoryStore()),
+            makeContext: { descriptor in
+                PaneContext(
+                    paneId: descriptor.id,
+                    sessionId: session.id,
+                    terminalKey: descriptor.terminalKey,
+                    attachOnly: descriptor.attachOnly,
+                    machine: .local,
+                    session: session,
+                    project: project
+                )
+            }
+        )
+    }
 #endif

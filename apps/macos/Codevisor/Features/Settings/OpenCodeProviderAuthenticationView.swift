@@ -99,7 +99,8 @@ struct OpenCodeProviderAuthenticationView: View {
             Button("Rename") { Task { await renameProfile(account) } }
                 .disabled(profileNameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
-        .alert("Remove Profile?", isPresented: $showingRemoveProfileAlert, presenting: profilePendingRemoval) { account in
+        .alert("Remove Profile?", isPresented: $showingRemoveProfileAlert, presenting: profilePendingRemoval) {
+            account in
             Button("Cancel", role: .cancel) {}
             Button("Remove", role: .destructive) { Task { await removeProfile(account) } }
         } message: { account in
@@ -601,7 +602,9 @@ struct OpenCodeProviderAuthenticationView: View {
     }
 
     private func beginLogin() async {
-        guard let account = selectedAccount, let provider = selectedProvider, let method = selectedMethod else { return }
+        guard let account = selectedAccount, let provider = selectedProvider, let method = selectedMethod else {
+            return
+        }
         await perform {
             let next = try await client.startOpenCodeAuth(
                 accountId: account.id,
@@ -686,7 +689,9 @@ struct OpenCodeProviderAuthenticationView: View {
     }
 
     private func refreshHarness() async {
-        if let updated = try? await environment.refreshHarnessAuthentication(harnessId: "opencode", onServer: scopedServerId) {
+        if let updated = try? await environment.refreshHarnessAuthentication(
+            harnessId: "opencode", onServer: scopedServerId)
+        {
             accounts = updated.auth?.accounts ?? accounts
             onChange(updated)
         }
@@ -714,7 +719,8 @@ struct OpenCodeProviderAuthenticationView: View {
     private func profileName(_ account: ServerHarnessAccount) -> String {
         if account.profileKind == "default" { return "Local OpenCode" }
         if account.label.hasPrefix("OpenCode profile "),
-           let index = accounts.filter({ $0.profileKind == "managed" }).firstIndex(where: { $0.id == account.id }) {
+            let index = accounts.filter({ $0.profileKind == "managed" }).firstIndex(where: { $0.id == account.id })
+        {
             return "Profile \(index + 1)"
         }
         return account.label

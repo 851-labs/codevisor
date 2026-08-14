@@ -133,15 +133,16 @@ struct MachineControllerCloudTests {
         // status probe advertises its cloud device id like a live server.
         let remoteTransport = FakeRelayRequestTransport()
         remoteTransport.responsesByPath["/v1/info"] = """
-        {"id":"studio","name":"Studio","kind":"remote","version":"1.0.0",
-         "platform":"darwin","bindHost":"0.0.0.0","cloudDeviceId":"\(deviceId)"}
-        """
+            {"id":"studio","name":"Studio","kind":"remote","version":"1.0.0",
+             "platform":"darwin","bindHost":"0.0.0.0","cloudDeviceId":"\(deviceId)"}
+            """
         let (controller, _, provider) = makeController(clientFactory: { machine in
-            CodevisorServerClient(config: CodevisorServerConfig(
-                baseURL: machine.baseURL,
-                requestTransport: remoteTransport,
-                webSocketTransport: UnusedWebSocketTransport()
-            ))
+            CodevisorServerClient(
+                config: CodevisorServerConfig(
+                    baseURL: machine.baseURL,
+                    requestTransport: remoteTransport,
+                    webSocketTransport: UnusedWebSocketTransport()
+                ))
         })
         let remote = try controller.addRemote(host: "studio.tailnet.ts.net")
 
@@ -173,15 +174,16 @@ struct MachineControllerCloudTests {
     ) async throws -> (controller: MachineController, provider: FakeCloudProvider, remote: CodevisorMachine) {
         let remoteTransport = FakeRelayRequestTransport()
         remoteTransport.responsesByPath["/v1/info"] = """
-        {"id":"studio","name":"Studio","kind":"remote","version":"1.0.0",
-         "platform":"darwin","bindHost":"0.0.0.0","cloudDeviceId":"\(deviceId)"}
-        """
+            {"id":"studio","name":"Studio","kind":"remote","version":"1.0.0",
+             "platform":"darwin","bindHost":"0.0.0.0","cloudDeviceId":"\(deviceId)"}
+            """
         let (controller, _, provider) = makeController(clientFactory: { machine in
-            CodevisorServerClient(config: CodevisorServerConfig(
-                baseURL: machine.baseURL,
-                requestTransport: remoteTransport,
-                webSocketTransport: UnusedWebSocketTransport()
-            ))
+            CodevisorServerClient(
+                config: CodevisorServerConfig(
+                    baseURL: machine.baseURL,
+                    requestTransport: remoteTransport,
+                    webSocketTransport: UnusedWebSocketTransport()
+                ))
         })
         let remote = try controller.addRemote(host: "studio.tailnet.ts.net")
         await controller.refreshStatus(for: remote.id)
@@ -239,9 +241,9 @@ struct MachineControllerCloudTests {
         let (controller, projectList, provider) = makeController(store: store)
         provider.cloudMachines = [makeCloudMachine()]
         provider.requestTransport.responsesByPath["/v1/info"] = """
-        {"id":"m1","name":"Cloud Mac","kind":"remote","version":"2.0.0",
-         "platform":"darwin","bindHost":"127.0.0.1","cloudDeviceId":"dev-1"}
-        """
+            {"id":"m1","name":"Cloud Mac","kind":"remote","version":"2.0.0",
+             "platform":"darwin","bindHost":"127.0.0.1","cloudDeviceId":"dev-1"}
+            """
 
         controller.selectMachine("cloud:dev-1")
         #expect(controller.selectedMachineId == "cloud:dev-1")
@@ -366,8 +368,8 @@ struct MachineControllerCloudTests {
     @Test("Registries persisted before cloudAppearances decode with an empty map")
     func registryDecodeCompatibility() throws {
         let legacy = """
-        {"selectedMachineId":"local","remoteMachines":[]}
-        """
+            {"selectedMachineId":"local","remoteMachines":[]}
+            """
         let registry = try JSONDecoder().decode(MachineRegistry.self, from: Data(legacy.utf8))
         #expect(registry.cloudAppearances.isEmpty)
         #expect(registry.selectedMachineId == "local")
@@ -392,9 +394,9 @@ struct MachineControllerCloudTests {
         let store = InMemoryStore()
         let (controller, projectList, provider) = makeController(store: store)
         provider.requestTransport.responsesByPath["/v1/info"] = """
-        {"id":"m1","name":"Dev Remote","kind":"remote","version":"2.0.0",
-         "platform":"darwin","bindHost":"127.0.0.1","cloudDeviceId":"dev-1"}
-        """
+            {"id":"m1","name":"Dev Remote","kind":"remote","version":"2.0.0",
+             "platform":"darwin","bindHost":"127.0.0.1","cloudDeviceId":"dev-1"}
+            """
         // Fresh registry: local placeholder selected, no explicit choice.
         #expect(controller.selectedMachineId == "local")
         #expect(controller.registry.hasExplicitMachineSelection == false)
@@ -491,8 +493,8 @@ struct MachineControllerCloudTests {
     @Test("Registries persisted before hasExplicitMachineSelection decode to false")
     func registryDecodesExplicitFlagCompat() throws {
         let legacy = """
-        {"selectedMachineId":"local","remoteMachines":[]}
-        """
+            {"selectedMachineId":"local","remoteMachines":[]}
+            """
         let registry = try JSONDecoder().decode(MachineRegistry.self, from: Data(legacy.utf8))
         #expect(registry.hasExplicitMachineSelection == false)
     }

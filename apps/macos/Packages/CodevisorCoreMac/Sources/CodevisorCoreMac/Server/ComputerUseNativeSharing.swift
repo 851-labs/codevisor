@@ -24,13 +24,13 @@ func computerUseNativePreviewSize(
     maximumDimension: CGFloat = ComputerUseNativePreviewMetrics.maximumDimension
 ) -> CGSize {
     guard windowFrame.width.isFinite,
-          windowFrame.height.isFinite,
-          windowFrame.width > 0,
-          windowFrame.height > 0,
-          pointPixelScale.isFinite,
-          pointPixelScale > 0,
-          maximumDimension.isFinite,
-          maximumDimension >= 2
+        windowFrame.height.isFinite,
+        windowFrame.width > 0,
+        windowFrame.height > 0,
+        pointPixelScale.isFinite,
+        pointPixelScale > 0,
+        maximumDimension.isFinite,
+        maximumDimension >= 2
     else { return ComputerUseNativePreviewMetrics.fallbackSize }
 
     let nativeSize = CGSize(
@@ -294,8 +294,8 @@ final class ComputerUseNativeSharing: NSObject,
         appliedSize: CGSize
     ) {
         guard let entry = entriesByWindowID[windowID],
-              ObjectIdentifier(entry.stream) == ObjectIdentifier(stream),
-              entry.outputSize != appliedSize
+            ObjectIdentifier(entry.stream) == ObjectIdentifier(stream),
+            entry.outputSize != appliedSize
         else { return }
 
         let latestSize = entry.outputSize
@@ -319,7 +319,7 @@ final class ComputerUseNativeSharing: NSObject,
         }
 
         guard let windowID = windowIDByKey.removeValue(forKey: key),
-              var entry = entriesByWindowID[windowID]
+            var entry = entriesByWindowID[windowID]
         else { return }
         entry.keys.remove(key)
         if entry.keys.isEmpty {
@@ -376,12 +376,13 @@ final class ComputerUseNativeSharing: NSObject,
     nonisolated func stream(_ stream: SCStream, didStopWithError error: any Error) {
         let identifier = ObjectIdentifier(stream)
         let nsError = error as NSError
-        let userStopped = nsError.domain == SCStreamErrorDomain
+        let userStopped =
+            nsError.domain == SCStreamErrorDomain
             && nsError.code == SCStreamError.userStopped.rawValue
         Task { @MainActor in
             guard !intentionallyStopping.contains(identifier),
-                  let windowID = windowIDByStream.removeValue(forKey: identifier),
-                  let entry = entriesByWindowID.removeValue(forKey: windowID)
+                let windowID = windowIDByStream.removeValue(forKey: identifier),
+                let entry = entriesByWindowID.removeValue(forKey: windowID)
             else { return }
 
             entry.keys.forEach { windowIDByKey.removeValue(forKey: $0) }

@@ -43,7 +43,11 @@ struct GitCloneSheet: View {
 
             TextField(
                 "Project name",
-                text: Binding(get: { name }, set: { name = $0; nameWasEdited = true }),
+                text: Binding(
+                    get: { name },
+                    set: {
+                        name = $0; nameWasEdited = true
+                    }),
                 prompt: Text("Project name (optional)")
             )
             .textFieldStyle(.roundedBorder)

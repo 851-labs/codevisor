@@ -10,14 +10,16 @@ struct TranscriptSendAnimationTests {
         let compactTarget = CGRect(x: 250, y: 136, width: 124, height: 38)
         let multilineTarget = CGRect(x: 80, y: 136, width: 294, height: 114)
 
-        let compactPlan = try #require(TranscriptSendAnimationContract.plan(
-            sourceY: sourceFrame.midY,
-            targetY: compactTarget.minY
-        ))
-        let multilinePlan = try #require(TranscriptSendAnimationContract.plan(
-            sourceY: sourceFrame.midY,
-            targetY: multilineTarget.minY
-        ))
+        let compactPlan = try #require(
+            TranscriptSendAnimationContract.plan(
+                sourceY: sourceFrame.midY,
+                targetY: compactTarget.minY
+            ))
+        let multilinePlan = try #require(
+            TranscriptSendAnimationContract.plan(
+                sourceY: sourceFrame.midY,
+                targetY: multilineTarget.minY
+            ))
 
         #expect(compactPlan.translationY == 519)
         #expect(multilinePlan == compactPlan)
@@ -25,10 +27,11 @@ struct TranscriptSendAnimationTests {
 
     @Test("Every send uses the established timing curve")
     func usesCanonicalTiming() throws {
-        let plan = try #require(TranscriptSendAnimationContract.plan(
-            sourceY: 655,
-            targetY: 136
-        ))
+        let plan = try #require(
+            TranscriptSendAnimationContract.plan(
+                sourceY: 655,
+                targetY: 136
+            ))
 
         #expect(plan.duration == 0.46)
         #expect(plan.fadeDuration == 0.12)
@@ -38,18 +41,21 @@ struct TranscriptSendAnimationTests {
 
     @Test("Reduce Motion and non-upward travel do not create a lift")
     func skipsInapplicableMotion() {
-        #expect(TranscriptSendAnimationContract.plan(
-            sourceY: 655,
-            targetY: 136,
-            reduceMotion: true
-        ) == nil)
-        #expect(TranscriptSendAnimationContract.plan(
-            sourceY: 136,
-            targetY: 136
-        ) == nil)
-        #expect(TranscriptSendAnimationContract.plan(
-            sourceY: 120,
-            targetY: 136
-        ) == nil)
+        #expect(
+            TranscriptSendAnimationContract.plan(
+                sourceY: 655,
+                targetY: 136,
+                reduceMotion: true
+            ) == nil)
+        #expect(
+            TranscriptSendAnimationContract.plan(
+                sourceY: 136,
+                targetY: 136
+            ) == nil)
+        #expect(
+            TranscriptSendAnimationContract.plan(
+                sourceY: 120,
+                targetY: 136
+            ) == nil)
     }
 }

@@ -238,29 +238,31 @@ struct InstallCommandChip: View {
 
 #Preview {
     VStack(alignment: .leading, spacing: 12) {
-        HarnessInstallHintRow(harness: ServerHarness(
-            id: "claude-code", name: "Claude Code", symbolName: "sparkle", source: "registry",
-            launchKind: "executable", enabled: true,
-            readiness: ServerHarnessReadiness(state: "unavailable", detail: "CLI not found on PATH"),
-            installHint: "curl -fsSL https://claude.ai/install.sh | bash",
-            installMethods: [
-                ServerHarnessInstallMethod(
-                    id: "curl", kind: "curl", label: "Installer script",
-                    command: "curl -fsSL https://claude.ai/install.sh | bash",
-                    available: true, recommended: true
-                ),
-                ServerHarnessInstallMethod(
-                    id: "npm", kind: "npm", label: "npm",
-                    command: "npm install -g @anthropic-ai/claude-code",
-                    available: true, recommended: false
-                )
-            ]
-        ))
-        HarnessInstallHintRow(harness: ServerHarness(
-            id: "gemini", name: "Gemini CLI", symbolName: "diamond", source: "registry",
-            launchKind: "npx", enabled: true,
-            readiness: ServerHarnessReadiness(state: "unavailable", detail: "Requires npx")
-        ))
+        HarnessInstallHintRow(
+            harness: ServerHarness(
+                id: "claude-code", name: "Claude Code", symbolName: "sparkle", source: "registry",
+                launchKind: "executable", enabled: true,
+                readiness: ServerHarnessReadiness(state: "unavailable", detail: "CLI not found on PATH"),
+                installHint: "curl -fsSL https://claude.ai/install.sh | bash",
+                installMethods: [
+                    ServerHarnessInstallMethod(
+                        id: "curl", kind: "curl", label: "Installer script",
+                        command: "curl -fsSL https://claude.ai/install.sh | bash",
+                        available: true, recommended: true
+                    ),
+                    ServerHarnessInstallMethod(
+                        id: "npm", kind: "npm", label: "npm",
+                        command: "npm install -g @anthropic-ai/claude-code",
+                        available: true, recommended: false
+                    ),
+                ]
+            ))
+        HarnessInstallHintRow(
+            harness: ServerHarness(
+                id: "gemini", name: "Gemini CLI", symbolName: "diamond", source: "registry",
+                launchKind: "npx", enabled: true,
+                readiness: ServerHarnessReadiness(state: "unavailable", detail: "Requires npx")
+            ))
     }
     .padding()
     .frame(width: 440)

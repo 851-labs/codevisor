@@ -29,9 +29,10 @@ public struct TranscriptBottomJumpGate: Sendable, Equatable {
         hasPendingMeasurements: Bool
     ) -> Bool {
         guard isActive,
-              !requiredKeys.isEmpty,
-              !hasPendingMeasurements,
-              requiredKeys.isSubset(of: resolvedKeys) else { return false }
+            !requiredKeys.isEmpty,
+            !hasPendingMeasurements,
+            requiredKeys.isSubset(of: resolvedKeys)
+        else { return false }
         isActive = false
         return true
     }

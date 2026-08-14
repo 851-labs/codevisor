@@ -92,10 +92,12 @@ public extension AssistantTurn {
 
         func flush() {
             guard !group.isEmpty else { return }
-            items.append(.toolGroup(ToolCallGroup(
-                calls: group,
-                hasUnsettledCall: groupHasUnsettledCall
-            )))
+            items.append(
+                .toolGroup(
+                    ToolCallGroup(
+                        calls: group,
+                        hasUnsettledCall: groupHasUnsettledCall
+                    )))
             group = []
             groupHasUnsettledCall = false
         }
@@ -147,10 +149,12 @@ public extension AssistantTurn {
     /// group's auto-expansion: open while the model is working through it,
     /// collapsed once it moves on to prose.
     func isTrailingToolGroup(lastToolCallId toolCallId: String) -> Bool {
-        guard let index = entries.lastIndex(where: {
-            if case let .tool(call) = $0 { return call.toolCallId == toolCallId }
-            return false
-        }) else { return false }
+        guard
+            let index = entries.lastIndex(where: {
+                if case let .tool(call) = $0 { return call.toolCallId == toolCallId }
+                return false
+            })
+        else { return false }
         return !entries[entries.index(after: index)...].contains { entry in
             switch entry {
             case let .text(_, markdown):

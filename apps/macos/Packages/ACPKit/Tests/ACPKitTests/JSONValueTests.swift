@@ -12,7 +12,7 @@ struct JSONValueTests {
             "number": .number(3.5),
             "string": .string("hi"),
             "array": .array([1, 2, 3]),
-            "nested": .object(["a": "b"])
+            "nested": .object(["a": "b"]),
         ])
         let data = try ACPJSON.encoder.encode(value)
         let decoded = try ACPJSON.decoder.decode(JSONValue.self, from: data)

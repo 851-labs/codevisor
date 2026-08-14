@@ -225,11 +225,12 @@ public extension AssistantTurn {
     /// Every tool call in the turn, including those inside subagent threads —
     /// the membership check for routing late updates into a finished turn.
     var allToolCalls: [ToolCall] {
-        toolCalls + subagents.keys.sorted().flatMap { key in
-            (subagents[key]?.entries ?? []).compactMap {
-                if case let .tool(call) = $0 { return call } else { return nil }
+        toolCalls
+            + subagents.keys.sorted().flatMap { key in
+                (subagents[key]?.entries ?? []).compactMap {
+                    if case let .tool(call) = $0 { return call } else { return nil }
+                }
             }
-        }
     }
 
     /// Cheap change signal for streaming subagent activity, folded into the
@@ -339,13 +340,15 @@ public struct PreviewFile: Identifiable, Sendable, Equatable {
         } else {
             path = decoded
         }
-        let displayPath = path
+        let displayPath =
+            path
             .replacingOccurrences(of: #"#L\d+(?:-L?\d+)?$"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #":\d+(?::\d+)?$"#, with: "", options: .regularExpression)
         let candidateName = URL(fileURLWithPath: displayPath).lastPathComponent
         let name = candidateName.isEmpty ? "File" : candidateName
         let pathExtension = (name as NSString).pathExtension
-        let mimeType = UTType(filenameExtension: pathExtension)?.preferredMIMEType
+        let mimeType =
+            UTType(filenameExtension: pathExtension)?.preferredMIMEType
             ?? "application/octet-stream"
         self.init(
             source: .serverPath(path),

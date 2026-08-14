@@ -152,7 +152,8 @@ final class QuickLookController {
         }
 
         if (candidate as NSString).pathExtension.isEmpty,
-           let inferredExtension = UTType(mimeType: mimeType)?.preferredFilenameExtension {
+            let inferredExtension = UTType(mimeType: mimeType)?.preferredFilenameExtension
+        {
             candidate += ".\(inferredExtension)"
         }
 

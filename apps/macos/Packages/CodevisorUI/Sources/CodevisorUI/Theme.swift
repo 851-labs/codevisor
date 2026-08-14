@@ -1,7 +1,7 @@
 import CodevisorTheming
 import SwiftUI
 #if canImport(AppKit)
-import AppKit
+    import AppKit
 #endif
 
 extension Color {
@@ -200,41 +200,41 @@ extension EnvironmentValues {
 extension Color {
     static var themeWindowBackground: Color {
         #if canImport(AppKit)
-        Color(nsColor: .windowBackgroundColor)
+            Color(nsColor: .windowBackgroundColor)
         #else
-        Color(uiColor: .systemBackground)
+            Color(uiColor: .systemBackground)
         #endif
     }
 
     static var themeControlBackground: Color {
         #if canImport(AppKit)
-        Color(nsColor: .controlBackgroundColor)
+            Color(nsColor: .controlBackgroundColor)
         #else
-        Color(uiColor: .secondarySystemBackground)
+            Color(uiColor: .secondarySystemBackground)
         #endif
     }
 
     static var themeUnderPageBackground: Color {
         #if canImport(AppKit)
-        Color(nsColor: .underPageBackgroundColor)
+            Color(nsColor: .underPageBackgroundColor)
         #else
-        Color(uiColor: .secondarySystemBackground)
+            Color(uiColor: .secondarySystemBackground)
         #endif
     }
 
     static var themeTertiaryLabel: Color {
         #if canImport(AppKit)
-        Color(nsColor: .tertiaryLabelColor)
+            Color(nsColor: .tertiaryLabelColor)
         #else
-        Color(uiColor: .tertiaryLabel)
+            Color(uiColor: .tertiaryLabel)
         #endif
     }
 
     static var themeSeparator: Color {
         #if canImport(AppKit)
-        Color(nsColor: .separatorColor)
+            Color(nsColor: .separatorColor)
         #else
-        Color(uiColor: .separator)
+            Color(uiColor: .separator)
         #endif
     }
 }

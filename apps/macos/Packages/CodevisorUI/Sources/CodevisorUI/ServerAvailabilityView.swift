@@ -58,8 +58,9 @@ public struct ServerAvailabilityView: View {
                 }
 
                 if let dataUpgradeProgress,
-                   dataUpgradeProgress.state == "running",
-                   dataUpgradeProgress.total > 0 {
+                    dataUpgradeProgress.state == "running",
+                    dataUpgradeProgress.total > 0
+                {
                     VStack(spacing: 6) {
                         ProgressView(
                             value: Double(dataUpgradeProgress.completed),
@@ -87,7 +88,7 @@ public struct ServerAvailabilityView: View {
 
     private var activeMigration: LocalDataUpgradeProgress? {
         guard let dataUpgradeProgress,
-              dataUpgradeProgress.state == "running" || dataUpgradeProgress.state == "failed"
+            dataUpgradeProgress.state == "running" || dataUpgradeProgress.state == "failed"
         else { return nil }
         return dataUpgradeProgress
     }

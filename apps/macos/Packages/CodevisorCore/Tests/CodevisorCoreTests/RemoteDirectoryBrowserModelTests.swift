@@ -78,7 +78,7 @@ struct RemoteDirectoryBrowserModelTests {
                 "/home/user/src": listing("/home/user/src", children: ["alpha", "beta"], gitRepos: ["alpha"]),
                 "/home/user/src/alpha": listing("/home/user/src/alpha", children: []),
                 "/home/user/src/beta": listing("/home/user/src/beta", children: []),
-                "/home/user/docs": listing("/home/user/docs", children: [])
+                "/home/user/docs": listing("/home/user/docs", children: []),
             ]
         )
     }
@@ -224,11 +224,11 @@ struct RemoteDirectoryBrowserModelTests {
             homePath: "/home/user",
             listings: [
                 "/home/user": listing("/home/user", children: ["docs", "src"]),
-                "/home/user/src": listing("/home/user/src", children: ["alpha"])
+                "/home/user/src": listing("/home/user/src", children: ["alpha"]),
             ],
             hiddenListings: [
                 "/home/user": listing("/home/user", children: [".config", "docs", "src"]),
-                "/home/user/src": listing("/home/user/src", children: [".git", "alpha"])
+                "/home/user/src": listing("/home/user/src", children: [".git", "alpha"]),
             ]
         )
         let model = makeModel(fs)
@@ -251,7 +251,7 @@ struct RemoteDirectoryBrowserModelTests {
             // while browsing inside it must truncate back to home.
             listings: [
                 "/home/user": listing("/home/user", children: ["src"]),
-                "/home/user/.work": listing("/home/user/.work", children: [])
+                "/home/user/.work": listing("/home/user/.work", children: []),
             ],
             hiddenListings: [
                 "/home/user": listing("/home/user", children: [".work", "src"])
@@ -292,16 +292,21 @@ struct RemoteDirectoryBrowserModelTests {
     @Test("Classified errors map to actionable guidance")
     func guidanceMessages() {
         typealias Model = RemoteDirectoryBrowserModel
-        #expect(Model.guidance(code: "not_found", fallback: "x", machineName: "devbox")
-            .contains("doesn't exist on devbox"))
-        #expect(Model.guidance(code: "permission_denied", fallback: "x", machineName: "devbox")
-            .contains("isn't allowed to read"))
-        #expect(Model.guidance(code: "not_a_directory", fallback: "x", machineName: "devbox")
-            == "That path is a file, not a folder.")
-        #expect(Model.guidance(code: "invalid_path", fallback: "x", machineName: "devbox")
-            .contains("absolute path"))
-        #expect(Model.guidance(code: nil, fallback: "server said no", machineName: "devbox")
-            == "server said no")
+        #expect(
+            Model.guidance(code: "not_found", fallback: "x", machineName: "devbox")
+                .contains("doesn't exist on devbox"))
+        #expect(
+            Model.guidance(code: "permission_denied", fallback: "x", machineName: "devbox")
+                .contains("isn't allowed to read"))
+        #expect(
+            Model.guidance(code: "not_a_directory", fallback: "x", machineName: "devbox")
+                == "That path is a file, not a folder.")
+        #expect(
+            Model.guidance(code: "invalid_path", fallback: "x", machineName: "devbox")
+                .contains("absolute path"))
+        #expect(
+            Model.guidance(code: nil, fallback: "server said no", machineName: "devbox")
+                == "server said no")
     }
 }
 

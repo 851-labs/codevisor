@@ -336,16 +336,17 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
                 try container.decode([SessionConfigOption].self, forKey: .configOptions)
             )
         case "usage_update":
-            self = .usageUpdate(SessionUsage(
-                used: try container.decodeIfPresent(UInt64.self, forKey: .used),
-                size: try container.decodeIfPresent(UInt64.self, forKey: .size),
-                inputTokens: try container.decodeIfPresent(UInt64.self, forKey: .inputTokens),
-                cachedInputTokens: try container.decodeIfPresent(UInt64.self, forKey: .cachedInputTokens),
-                outputTokens: try container.decodeIfPresent(UInt64.self, forKey: .outputTokens),
-                reasoningOutputTokens: try container.decodeIfPresent(UInt64.self, forKey: .reasoningOutputTokens),
-                totalTokens: try container.decodeIfPresent(UInt64.self, forKey: .totalTokens),
-                cost: try container.decodeIfPresent(SessionCost.self, forKey: .cost)
-            ))
+            self = .usageUpdate(
+                SessionUsage(
+                    used: try container.decodeIfPresent(UInt64.self, forKey: .used),
+                    size: try container.decodeIfPresent(UInt64.self, forKey: .size),
+                    inputTokens: try container.decodeIfPresent(UInt64.self, forKey: .inputTokens),
+                    cachedInputTokens: try container.decodeIfPresent(UInt64.self, forKey: .cachedInputTokens),
+                    outputTokens: try container.decodeIfPresent(UInt64.self, forKey: .outputTokens),
+                    reasoningOutputTokens: try container.decodeIfPresent(UInt64.self, forKey: .reasoningOutputTokens),
+                    totalTokens: try container.decodeIfPresent(UInt64.self, forKey: .totalTokens),
+                    cost: try container.decodeIfPresent(SessionCost.self, forKey: .cost)
+                ))
         case "context_compaction":
             self = .contextCompaction(
                 id: try container.decodeIfPresent(String.self, forKey: .compactionId),
@@ -358,19 +359,21 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
         case "plan_document":
             self = .planDocument(markdown: try container.decode(String.self, forKey: .markdown))
         case "question":
-            self = .question(QuestionRequest(
-                questionId: try container.decode(String.self, forKey: .questionId),
-                message: try container.decodeIfPresent(String.self, forKey: .message),
-                questions: try container.decode([QuestionSpec].self, forKey: .questions),
-                autoResolutionMs: try container.decodeIfPresent(Int.self, forKey: .autoResolutionMs)
-            ))
+            self = .question(
+                QuestionRequest(
+                    questionId: try container.decode(String.self, forKey: .questionId),
+                    message: try container.decodeIfPresent(String.self, forKey: .message),
+                    questions: try container.decode([QuestionSpec].self, forKey: .questions),
+                    autoResolutionMs: try container.decodeIfPresent(Int.self, forKey: .autoResolutionMs)
+                ))
         case "question_resolved":
-            self = .questionResolved(QuestionResolution(
-                questionId: try container.decode(String.self, forKey: .questionId),
-                outcome: try container.decode(QuestionOutcome.self, forKey: .outcome),
-                questions: try container.decode([QuestionSpec].self, forKey: .questions),
-                answers: try container.decodeIfPresent([String: QuestionAnswerEntry].self, forKey: .answers)
-            ))
+            self = .questionResolved(
+                QuestionResolution(
+                    questionId: try container.decode(String.self, forKey: .questionId),
+                    outcome: try container.decode(QuestionOutcome.self, forKey: .outcome),
+                    questions: try container.decode([QuestionSpec].self, forKey: .questions),
+                    answers: try container.decodeIfPresent([String: QuestionAnswerEntry].self, forKey: .answers)
+                ))
         default:
             throw DecodingError.dataCorruptedError(
                 forKey: .sessionUpdate,

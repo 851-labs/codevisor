@@ -46,9 +46,11 @@ struct ModelPickerSheet: View {
                 } else {
                     options = environment.configCache.options(forHarness: harness.id, onServer: serverId)
                 }
-                guard let model = options.first(where: {
-                    $0.category == SessionConfigOption.Category.model && !$0.options.isEmpty
-                }) else { return nil }
+                guard
+                    let model = options.first(where: {
+                        $0.category == SessionConfigOption.Category.model && !$0.options.isEmpty
+                    })
+                else { return nil }
                 return HarnessGroup(id: harness.id, name: harness.name, modelOption: model)
             }
         }
@@ -113,8 +115,9 @@ struct ModelPickerSheet: View {
                                             .foregroundStyle(Color.primary)
                                         Spacer()
                                         if isSwitchingHarness,
-                                           pendingModelValue == value.value,
-                                           pendingModelGroupId == group.id {
+                                            pendingModelValue == value.value,
+                                            pendingModelGroupId == group.id
+                                        {
                                             // A cross-harness pick shows
                                             // progress while the harness (and
                                             // its thinking levels) loads.

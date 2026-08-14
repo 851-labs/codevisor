@@ -92,9 +92,11 @@ extension SplitNode {
         case let .group(groupId, state):
             groupId == id ? .group(id: groupId, state: transform(state)) : self
         case let .split(orientation, children):
-            .split(orientation: orientation, children: children.map {
-                SplitChild(fraction: $0.fraction, node: $0.node.updatingGroup(id: id, transform))
-            })
+            .split(
+                orientation: orientation,
+                children: children.map {
+                    SplitChild(fraction: $0.fraction, node: $0.node.updatingGroup(id: id, transform))
+                })
         }
     }
 
@@ -126,10 +128,11 @@ extension SplitNode {
             // Same-orientation parent: insert as a sibling, halving the
             // target child's share, instead of nesting another split.
             if orientation == edge.orientation,
-               let index = children.firstIndex(where: {
-                   if case let .group(id, _) = $0.node { return id == targetId }
-                   return false
-               }) {
+                let index = children.firstIndex(where: {
+                    if case let .group(id, _) = $0.node { return id == targetId }
+                    return false
+                })
+            {
                 var updated = children
                 let share = updated[index].fraction / 2
                 updated[index].fraction = share
@@ -137,15 +140,17 @@ extension SplitNode {
                 updated.insert(added, at: edge.insertsBefore ? index : index + 1)
                 return .split(orientation: orientation, children: updated)
             }
-            return .split(orientation: orientation, children: children.map {
-                SplitChild(
-                    fraction: $0.fraction,
-                    node: $0.node.splittingNode(
-                        targetId: targetId, edge: edge,
-                        newGroupId: newGroupId, newGroupState: newGroupState
+            return .split(
+                orientation: orientation,
+                children: children.map {
+                    SplitChild(
+                        fraction: $0.fraction,
+                        node: $0.node.splittingNode(
+                            targetId: targetId, edge: edge,
+                            newGroupId: newGroupId, newGroupState: newGroupState
+                        )
                     )
-                )
-            })
+                })
         }
     }
 
@@ -173,9 +178,9 @@ extension SplitNode {
     /// Invalid and self-targeted moves are no-ops.
     public func movingGroup(id sourceId: UUID, relativeTo targetId: UUID, edge: SplitEdge) -> SplitNode {
         guard sourceId != targetId,
-              let sourceState = group(id: sourceId),
-              group(id: targetId) != nil,
-              let withoutSource = removingGroup(id: sourceId)
+            let sourceState = group(id: sourceId),
+            group(id: targetId) != nil,
+            let withoutSource = removingGroup(id: sourceId)
         else { return self }
 
         return withoutSource.splitting(
@@ -254,12 +259,14 @@ extension SplitNode {
         case let .split(orientation, children):
             let total = children.map(\.fraction).reduce(0, +)
             let scale = total > 0 ? 1 / total : 0
-            return .split(orientation: orientation, children: children.map {
-                SplitChild(
-                    fraction: total > 0 ? $0.fraction * scale : 1 / Double(children.count),
-                    node: $0.node.normalized
-                )
-            })
+            return .split(
+                orientation: orientation,
+                children: children.map {
+                    SplitChild(
+                        fraction: total > 0 ? $0.fraction * scale : 1 / Double(children.count),
+                        node: $0.node.normalized
+                    )
+                })
         }
     }
 }

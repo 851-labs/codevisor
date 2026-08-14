@@ -105,7 +105,7 @@ public enum CloudChannelCrypto {
 
     private static func privateKey(_ raw: Data) throws -> Curve25519.KeyAgreement.PrivateKey {
         guard raw.count == keyLength,
-              let key = try? Curve25519.KeyAgreement.PrivateKey(rawRepresentation: raw)
+            let key = try? Curve25519.KeyAgreement.PrivateKey(rawRepresentation: raw)
         else { throw CloudChannelCryptoError.invalidKey }
         return key
     }
@@ -115,7 +115,7 @@ public enum CloudChannelCrypto {
             throw CloudChannelCryptoError.invalidBase64URL
         }
         guard raw.count == keyLength,
-              let key = try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: raw)
+            let key = try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: raw)
         else { throw CloudChannelCryptoError.invalidKey }
         return key
     }
@@ -130,10 +130,13 @@ public enum CloudChannelCrypto {
     }
 
     public static func base64URLDecode(_ encoded: String) -> Data? {
-        guard encoded.allSatisfy({ character in
-            character.isASCII && (character.isLetter || character.isNumber || character == "-" || character == "_")
-        }) else { return nil }
-        var base64 = encoded
+        guard
+            encoded.allSatisfy({ character in
+                character.isASCII && (character.isLetter || character.isNumber || character == "-" || character == "_")
+            })
+        else { return nil }
+        var base64 =
+            encoded
             .replacingOccurrences(of: "-", with: "+")
             .replacingOccurrences(of: "_", with: "/")
         let remainder = base64.count % 4
@@ -192,12 +195,14 @@ public struct CloudChannelCipher: Sendable {
         seq: UInt64
     ) throws -> String {
         let nonce = try ChaChaPoly.Nonce(data: Self.nonce(direction: direction, seq: seq))
-        guard let sealed = try? ChaChaPoly.seal(
-            plaintext,
-            using: key,
-            nonce: nonce,
-            authenticating: Self.aad(channelId: channelId, direction: direction, seq: seq)
-        ) else { throw CloudChannelCryptoError.sealFailed }
+        guard
+            let sealed = try? ChaChaPoly.seal(
+                plaintext,
+                using: key,
+                nonce: nonce,
+                authenticating: Self.aad(channelId: channelId, direction: direction, seq: seq)
+            )
+        else { throw CloudChannelCryptoError.sealFailed }
         return CloudChannelCrypto.base64URLEncode(sealed.ciphertext + sealed.tag)
     }
 
@@ -217,11 +222,13 @@ public struct CloudChannelCipher: Sendable {
             ciphertext: combined.dropLast(16),
             tag: combined.suffix(16)
         )
-        guard let plaintext = try? ChaChaPoly.open(
-            sealed,
-            using: key,
-            authenticating: Self.aad(channelId: channelId, direction: direction, seq: seq)
-        ) else { throw CloudChannelCryptoError.openFailed }
+        guard
+            let plaintext = try? ChaChaPoly.open(
+                sealed,
+                using: key,
+                authenticating: Self.aad(channelId: channelId, direction: direction, seq: seq)
+            )
+        else { throw CloudChannelCryptoError.openFailed }
         return plaintext
     }
 

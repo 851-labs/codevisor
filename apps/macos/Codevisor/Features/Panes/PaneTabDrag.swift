@@ -267,7 +267,8 @@ final class PaneTabDragCoordinator {
     /// The insertion caret a bar should render (its ref's resolved index).
     func insertionCaret(for ref: PaneGroupRef) -> Int? {
         guard let drag = active, case let .bar(target, index) = drag.resolution,
-              target == ref else { return nil }
+            target == ref
+        else { return nil }
         return index
     }
 
@@ -277,8 +278,9 @@ final class PaneTabDragCoordinator {
     /// "drop in group" signal (VS Code's modifier behavior).
     func contentPreview(for leafId: UUID) -> SplitEdge? {
         guard let drag = active,
-              case let .split(id, edge) = drag.resolution,
-              id == leafId else { return nil }
+            case let .split(id, edge) = drag.resolution,
+            id == leafId
+        else { return nil }
         return edge
     }
 

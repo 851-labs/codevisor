@@ -454,7 +454,8 @@ final public class SessionController {
         self.project = project
         self.configCache = configCache
         self.composerDefaults = composerDefaults
-        self.composerDefaultsScope = composerDefaultsScope
+        self.composerDefaultsScope =
+            composerDefaultsScope
             ?? composerDefaults.map { _ in .newWorkspace(serverId: project.serverId) }
         self.serverClient = serverClient
         self.notificationDelivery = notificationDelivery
@@ -467,7 +468,8 @@ final public class SessionController {
     /// selections over cached option definitions. The values remain
     /// provisional until the live session reconnect validates them.
     public func configureExistingSession(_ session: ChatSession) {
-        let identityChanged = serverSession?.id != session.id
+        let identityChanged =
+            serverSession?.id != session.id
             || resumeAgentSessionId != session.agentSessionId
         serverSession = session
         resumeAgentSessionId = session.agentSessionId
@@ -497,11 +499,13 @@ final public class SessionController {
     private func seedExistingSessionConfiguration(from session: ChatSession? = nil) {
         let session = session ?? serverSession
         guard model == nil,
-              let session,
-              !session.harnessId.isEmpty,
-              let selections = session.configSelections,
-              !selections.isEmpty else { return }
-        var options = configOptionsByHarness[session.harnessId]
+            let session,
+            !session.harnessId.isEmpty,
+            let selections = session.configSelections,
+            !selections.isEmpty
+        else { return }
+        var options =
+            configOptionsByHarness[session.harnessId]
             ?? configCache.options(forHarness: session.harnessId, onServer: project.serverId)
         for (configId, value) in selections {
             if let index = options.firstIndex(where: { $0.id == configId }) {
@@ -519,17 +523,19 @@ final public class SessionController {
 
     private static func provisionalConfigOption(id: String, value: String) -> SessionConfigOption {
         let normalized = id.lowercased()
-        let category: String? = if normalized == "model" {
-            SessionConfigOption.Category.model
-        } else if normalized.contains("reason")
-            || normalized.contains("effort")
-            || normalized.contains("thinking") {
-            SessionConfigOption.Category.thoughtLevel
-        } else if normalized.contains("speed") {
-            SessionConfigOption.Category.speed
-        } else {
-            SessionConfigOption.Category.modelConfig
-        }
+        let category: String? =
+            if normalized == "model" {
+                SessionConfigOption.Category.model
+            } else if normalized.contains("reason")
+                || normalized.contains("effort")
+                || normalized.contains("thinking")
+            {
+                SessionConfigOption.Category.thoughtLevel
+            } else if normalized.contains("speed") {
+                SessionConfigOption.Category.speed
+            } else {
+                SessionConfigOption.Category.modelConfig
+            }
         return SessionConfigOption(
             id: id,
             name: id.replacingOccurrences(of: "_", with: " ").capitalized,
@@ -559,10 +565,12 @@ final public class SessionController {
             return
         }
         if didLoadExistingRuntimeConfiguration
-            || (didFinishExistingRuntimeConfiguration && didLoadExistingHarnessCapabilities) {
+            || (didFinishExistingRuntimeConfiguration && didLoadExistingHarnessCapabilities)
+        {
             configurationValidationState = .ready
         } else if didFinishExistingRuntimeConfiguration,
-                  let existingConfigurationError {
+            let existingConfigurationError
+        {
             configurationValidationState = .failed(existingConfigurationError)
         } else {
             configurationValidationState = .connecting
@@ -748,7 +756,8 @@ final public class SessionController {
     public var sessionErrorMessage: String? {
         guard let error = model?.errorMessage else { return nil }
         if case let .assistant(message)? = model?.activeItem,
-           message.turn.stopDetail == error {
+            message.turn.stopDetail == error
+        {
             return nil
         }
         return error
@@ -873,7 +882,7 @@ final public class SessionController {
         isSubmitting = true
         let showsSetupPhases =
             (pendingNewChatAnalytics || (!hasSentFirst && onFirstSend != nil))
-                && resumeAgentSessionId == nil
+            && resumeAgentSessionId == nil
         // Navigate first, exactly like a first prompt send.
         if !hasSentFirst {
             hasSentFirst = true
@@ -967,7 +976,8 @@ final public class SessionController {
     /// persistent composer chrome.
     public var visibleTodos: Plan? {
         guard let todos,
-              todos.entries.contains(where: { $0.status != .completed }) else {
+            todos.entries.contains(where: { $0.status != .completed })
+        else {
             return nil
         }
         return todos
@@ -1004,7 +1014,8 @@ final public class SessionController {
         // toggle reflects the move from planning to building. Switch first, then
         // release the held tool.
         if answers[QuestionRequest.exitPlanModeId]?.answers.first == QuestionRequest.implementPlanLabel,
-           isPlanModeOn {
+            isPlanModeOn
+        {
             await togglePlanMode()
         }
         await model?.answerQuestion(answers: answers)
@@ -1084,16 +1095,19 @@ final public class SessionController {
         guard pendingPlanApproval else { return nil }
         return QuestionRequest(
             questionId: "codex-plan-approval",
-            questions: [QuestionSpec(
-                id: QuestionRequest.exitPlanModeId,
-                header: "Plan",
-                question: "Ready to implement this plan?",
-                options: [
-                    QuestionOption(label: QuestionRequest.implementPlanLabel, description: "Start building"),
-                    QuestionOption(label: QuestionRequest.keepPlanningLabel, description: "Keep refining in plan mode")
-                ],
-                allowsOther: false
-            )]
+            questions: [
+                QuestionSpec(
+                    id: QuestionRequest.exitPlanModeId,
+                    header: "Plan",
+                    question: "Ready to implement this plan?",
+                    options: [
+                        QuestionOption(label: QuestionRequest.implementPlanLabel, description: "Start building"),
+                        QuestionOption(
+                            label: QuestionRequest.keepPlanningLabel, description: "Keep refining in plan mode"),
+                    ],
+                    allowsOther: false
+                )
+            ]
         )
     }
 
@@ -1102,7 +1116,8 @@ final public class SessionController {
     private func noteTurnEndedForPlanApproval() {
         guard usesPostTurnPlanApproval, isPlanModeOn, !pendingPlanApproval else { return }
         guard case let .assistant(message) = conversation.last,
-              let plan = message.turn.planDocument, !plan.isEmpty else { return }
+            let plan = message.turn.planDocument, !plan.isEmpty
+        else { return }
         pendingPlanApproval = true
     }
 
@@ -1136,13 +1151,14 @@ final public class SessionController {
         }
         guard let harnessId = selectedHarnessId else { return [] }
         let pendingConfig = pendingConfigByHarness[harnessId] ?? [:]
-        return (configOptionsByHarness[harnessId]
+        return
+            (configOptionsByHarness[harnessId]
             ?? configCache.options(forHarness: harnessId, onServer: project.serverId)).map { option in
-            guard let pending = pendingConfig[option.id] else { return option }
-            var updated = option
-            updated.currentValue = pending
-            return updated
-        }
+                guard let pending = pendingConfig[option.id] else { return option }
+                var updated = option
+                updated.currentValue = pending
+                return updated
+            }
     }
 
     /// Categories folded into the combined model dropdown rather than shown
@@ -1150,7 +1166,7 @@ final public class SessionController {
     private static let modelMenuCategories: Set<String> = [
         SessionConfigOption.Category.model,
         SessionConfigOption.Category.thoughtLevel,
-        SessionConfigOption.Category.speed
+        SessionConfigOption.Category.speed,
     ]
 
     /// Config categories that follow the user between composers. Modes remain
@@ -1160,7 +1176,7 @@ final public class SessionController {
         SessionConfigOption.Category.model,
         SessionConfigOption.Category.thoughtLevel,
         SessionConfigOption.Category.speed,
-        SessionConfigOption.Category.modelConfig
+        SessionConfigOption.Category.modelConfig,
     ]
 
     /// The model choice shown in the combined model dropdown.
@@ -1196,7 +1212,8 @@ final public class SessionController {
         // Scoped to agent-less drafts so a connected harness that simply has
         // no model options can't spin forever on a stale preparation state.
         if serverSession?.agentSessionId?.isEmpty != false, model == nil,
-           preparationState == .loading {
+            preparationState == .loading
+        {
             return true
         }
         guard model == nil, serverSession?.agentSessionId?.isEmpty == false else { return false }
@@ -1210,7 +1227,8 @@ final public class SessionController {
     /// (everything else runs in the harness's full-access/build default).
     public var pickerOptions: [SessionConfigOption] {
         let order = [SessionConfigOption.Category.modelConfig]
-        return configOptions
+        return
+            configOptions
             .filter { option in
                 !option.options.isEmpty
                     && !Self.modelMenuCategories.contains(option.category ?? "")
@@ -1240,7 +1258,8 @@ final public class SessionController {
             // Not connected yet: remember it and apply on connect.
             if let harnessId = selectedHarnessId {
                 pendingConfigByHarness[harnessId, default: [:]][configId] = value
-                var options = configOptionsByHarness[harnessId]
+                var options =
+                    configOptionsByHarness[harnessId]
                     ?? configCache.options(forHarness: harnessId, onServer: project.serverId)
                 if let index = options.firstIndex(where: { $0.id == configId }) {
                     options[index].currentValue = value
@@ -1249,8 +1268,9 @@ final public class SessionController {
             }
         }
         if accepted,
-           optionBeforeChange?.category == SessionConfigOption.Category.model,
-           previousValue != value {
+            optionBeforeChange?.category == SessionConfigOption.Category.model,
+            previousValue != value
+        {
             captureModelSelected(modelId: value, previousModelId: previousValue)
             configurationAdjustmentMessage = nil
             // The user just chose a model, so a "we swapped your model" notice
@@ -1262,8 +1282,9 @@ final public class SessionController {
         // authoritative option set so model-dependent effort/speed resets are
         // remembered too.
         if accepted,
-           Self.rememberedConfigCategories.contains(optionBeforeChange?.category ?? ""),
-           let harnessId = connectedHarnessId ?? selectedHarnessId {
+            Self.rememberedConfigCategories.contains(optionBeforeChange?.category ?? ""),
+            let harnessId = connectedHarnessId ?? selectedHarnessId
+        {
             composerDefaults?.rememberConfigSelections(
                 in: resolvedComposerDefaultsScope,
                 harnessId: harnessId,
@@ -1300,8 +1321,9 @@ final public class SessionController {
     public func applyComposerDefaults() {
         guard let composerDefaults, acceptsNewChatDefaults else { return }
         if let harnessId = composerDefaults.lastHarnessId(for: resolvedComposerDefaultsScope),
-           !harnessId.isEmpty,
-           harnesses.isEmpty || harnesses.contains(where: { $0.id == harnessId }) {
+            !harnessId.isEmpty,
+            harnesses.isEmpty || harnesses.contains(where: { $0.id == harnessId })
+        {
             selectedHarnessId = harnessId
         }
         seedRememberedConfig()
@@ -1319,7 +1341,8 @@ final public class SessionController {
             in: resolvedComposerDefaultsScope
         )
         guard !remembered.isEmpty else { return }
-        var options = configOptionsByHarness[harnessId]
+        var options =
+            configOptionsByHarness[harnessId]
             ?? configCache.options(forHarness: harnessId, onServer: project.serverId)
         guard !options.isEmpty else {
             pendingConfigByHarness[harnessId, default: [:]].merge(remembered) { current, _ in current }
@@ -1346,7 +1369,8 @@ final public class SessionController {
     /// Remembered config categories (model, reasoning, speed, model config)
     /// as currently selected — what composer memory captures.
     private var rememberedConfigValues: [String: String] {
-        let values = configOptions
+        let values =
+            configOptions
             .filter { Self.rememberedConfigCategories.contains($0.category ?? "") }
             .map { ($0.id, $0.currentValue) }
         return Dictionary(values) { _, last in last }
@@ -1357,8 +1381,9 @@ final public class SessionController {
     /// previously focused sibling cannot leak into the next chat.
     public func rememberCurrentComposerConfiguration() {
         guard let composerDefaults,
-              let harnessId = connectedHarnessId ?? selectedHarnessId ?? serverSession?.harnessId,
-              !harnessId.isEmpty else { return }
+            let harnessId = connectedHarnessId ?? selectedHarnessId ?? serverSession?.harnessId,
+            !harnessId.isEmpty
+        else { return }
         switch resolvedComposerDefaultsScope {
         case let .newWorkspace(serverId):
             composerDefaults.rememberHarnessSelection(
@@ -1414,9 +1439,10 @@ final public class SessionController {
     /// id is the expected fallback rather than an error case.
     public var modelFallbackMessage: String? {
         guard let fallback = model?.modelFallback else { return nil }
-        let names = configOptions.first {
-            $0.category == SessionConfigOption.Category.model || $0.id == "model"
-        }?.options ?? []
+        let names =
+            configOptions.first {
+                $0.category == SessionConfigOption.Category.model || $0.id == "model"
+            }?.options ?? []
         func name(_ value: String) -> String {
             names.first { $0.value == value }?.name ?? value
         }
@@ -1515,7 +1541,8 @@ final public class SessionController {
     private func attachFileURL(_ url: URL) {
         let type = UTType(filenameExtension: url.pathExtension)
         let mimeType = type?.preferredMIMEType ?? "application/octet-stream"
-        let kind: Attachment.Kind = (type?.conforms(to: .image) ?? false) || mimeType.hasPrefix("image/")
+        let kind: Attachment.Kind =
+            (type?.conforms(to: .image) ?? false) || mimeType.hasPrefix("image/")
             ? .image
             : .file
         Task { [weak self] in
@@ -1530,11 +1557,14 @@ final public class SessionController {
             if let data = result.data {
                 self.stageAttachment(name: url.lastPathComponent, mimeType: mimeType, kind: kind, data: data)
             } else {
-                Log.attachments.error("attachment read failed for \(url.lastPathComponent, privacy: .public): \(result.readError ?? "unknown", privacy: .public)")
+                Log.attachments.error(
+                    "attachment read failed for \(url.lastPathComponent, privacy: .public): \(result.readError ?? "unknown", privacy: .public)"
+                )
                 self.stageAttachment(
                     name: url.lastPathComponent, mimeType: mimeType, kind: kind,
                     data: Data(),
-                    failureMessage: "Couldn't read “\(url.lastPathComponent)”. Check that you have permission to open it, then try again."
+                    failureMessage:
+                        "Couldn't read “\(url.lastPathComponent)”. Check that you have permission to open it, then try again."
                 )
             }
         }
@@ -1553,7 +1583,8 @@ final public class SessionController {
 
     public func retryAttachment(id: UUID) {
         guard let index = composerAttachments.firstIndex(where: { $0.id == id }),
-              case .failed = composerAttachments[index].state else { return }
+            case .failed = composerAttachments[index].state
+        else { return }
         composerAttachments[index].state = .uploading
         startUpload(composerAttachments[index])
     }
@@ -1849,7 +1880,8 @@ final public class SessionController {
                 let message = serverErrorMessage(error)
                 let elapsed = clock.now - start
                 guard message == serverUnreachableErrorMessage,
-                      elapsed < Self.serverWaitFailureThreshold else {
+                    elapsed < Self.serverWaitFailureThreshold
+                else {
                     if hasExistingAgentSession {
                         didFinishExistingRuntimeConfiguration = true
                         existingConfigurationError = message
@@ -1930,9 +1962,10 @@ final public class SessionController {
     public func send() async {
         let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !composerAttachments.isEmpty,
-              !isConnecting,
-              configurationValidationState == .ready,
-              !isSubmitting else { return }
+            !isConnecting,
+            configurationValidationState == .ready,
+            !isSubmitting
+        else { return }
         showsNewChatAfterSetupFailure = false
         status = .idle
         // Ask at the first moment notifications become useful instead of at
@@ -1969,7 +2002,7 @@ final public class SessionController {
         // resumed session's transcript shouldn't grow one retroactively.
         let showsSetupPhases =
             (pendingNewChatAnalytics || (!hasSentFirst && onFirstSend != nil))
-                && resumeAgentSessionId == nil
+            && resumeAgentSessionId == nil
         // Clear the durable draft before mounting any first-send destination.
         // The source UIKit editor keeps its already-rendered pixels until the
         // transition surface covers it, while every newly mounted composer
@@ -2063,14 +2096,18 @@ final public class SessionController {
     /// under the original user message without duplicating that message.
     public func retryTurn(_ assistantID: UUID) async {
         guard let model, !model.isSending, !isConnecting, !isSubmitting else { return }
-        guard let assistantIndex = model.conversation.firstIndex(where: { item in
-            if case let .assistant(message) = item { return message.id == assistantID }
-            return false
-        }) else { return }
-        guard let prompt = model.conversation[..<assistantIndex].reversed().compactMap({ item in
-            if case let .user(message) = item { return message }
-            return nil
-        }).first else { return }
+        guard
+            let assistantIndex = model.conversation.firstIndex(where: { item in
+                if case let .assistant(message) = item { return message.id == assistantID }
+                return false
+            })
+        else { return }
+        guard
+            let prompt = model.conversation[..<assistantIndex].reversed().compactMap({ item in
+                if case let .user(message) = item { return message }
+                return nil
+            }).first
+        else { return }
         await model.retryResponse(to: prompt)
     }
 
@@ -2097,9 +2134,11 @@ final public class SessionController {
                 for try await envelope in serverClient.eventStream(
                     since: ServerSessionTransport.liveOnlyEventCursor
                 ) {
-                    guard case let .log(stream, line) = WorktreeSetupEvent.from(
-                        envelope, worktreeId: worktreeId
-                    ) else { continue }
+                    guard
+                        case let .log(stream, line) = WorktreeSetupEvent.from(
+                            envelope, worktreeId: worktreeId
+                        )
+                    else { continue }
                     self?.mutateSetupPhase(id: SessionSetupPhase.worktreePhaseId) {
                         $0.appendLog(stream: stream, line: line)
                     }
@@ -2202,15 +2241,17 @@ final public class SessionController {
 
     private var planControl: PlanControl? {
         if let modeState,
-           let plan = modeState.availableModes.first(where: { $0.canonicalMode == .plan }),
-           let build = modeState.availableModes.first(where: { $0.canonicalMode == .fullAccess })
-               ?? modeState.availableModes.first(where: { $0.canonicalMode != .plan }) {
+            let plan = modeState.availableModes.first(where: { $0.canonicalMode == .plan }),
+            let build = modeState.availableModes.first(where: { $0.canonicalMode == .fullAccess })
+                ?? modeState.availableModes.first(where: { $0.canonicalMode != .plan })
+        {
             return .sessionMode(planId: plan.id, buildId: build.id)
         }
         if let option = modeConfigOption,
-           let plan = option.options.first(where: { Self.matches("^plan", $0.value, $0.name) }),
-           let build = option.options.first(where: { Self.matches("bypass|full[-_ ]?access|yolo", $0.value, $0.name) })
-               ?? option.options.first(where: { $0.value != plan.value }) {
+            let plan = option.options.first(where: { Self.matches("^plan", $0.value, $0.name) }),
+            let build = option.options.first(where: { Self.matches("bypass|full[-_ ]?access|yolo", $0.value, $0.name) })
+                ?? option.options.first(where: { $0.value != plan.value })
+        {
             return .configOption(optionId: option.id, planValue: plan.value, buildValue: build.value)
         }
         return nil
@@ -2230,9 +2271,10 @@ final public class SessionController {
     /// compiles a fresh regex on every call.
     private static let planPatternRegexes: [String: NSRegularExpression] = {
         let patterns = ["^plan", "bypass|full[-_ ]?access|yolo"]
-        return Dictionary(uniqueKeysWithValues: patterns.map {
-            ($0, try! NSRegularExpression(pattern: $0, options: [.caseInsensitive]))
-        })
+        return Dictionary(
+            uniqueKeysWithValues: patterns.map {
+                ($0, try! NSRegularExpression(pattern: $0, options: [.caseInsensitive]))
+            })
     }()
 
     private static func matches(_ pattern: String, _ candidates: String...) -> Bool {
@@ -2332,7 +2374,8 @@ final public class SessionController {
         let loadsExistingHistory = session.agentSessionId?.isEmpty == false
         if loadsExistingHistory {
             isLoadingInitialHistory = true
-            initialHistoryLoadStartedAt = initialHistoryLoadStartedAt
+            initialHistoryLoadStartedAt =
+                initialHistoryLoadStartedAt
                 ?? ProcessInfo.processInfo.systemUptime
         }
         defer {
@@ -2350,10 +2393,11 @@ final public class SessionController {
         // for an instant paint. Older servers lack the endpoint (nil) and
         // keep the discrete path; loadHistory then fetches the page itself.
         var preloadedTranscript: ServerTranscriptPage?
-        let workspaceId: UUID? = switch resolvedComposerDefaultsScope {
-        case let .workspace(id, _): id
-        case .newWorkspace: nil
-        }
+        let workspaceId: UUID? =
+            switch resolvedComposerDefaultsScope {
+            case let .workspace(id, _): id
+            case .newWorkspace: nil
+            }
         if let opened = try await serverClient.openSession(
             session,
             project: project,
@@ -2391,15 +2435,16 @@ final public class SessionController {
         let runtimeConnectStartedAt = ProcessInfo.processInfo.systemUptime
         let runtimeConnect: Task<ServerSessionRuntimeMetadata?, Error>? =
             session.agentSessionId?.isEmpty == false
-                ? Task { try await serverClient.connectSession(id: sessionId) }
-                : nil
+            ? Task { try await serverClient.connectSession(id: sessionId) }
+            : nil
 
         let transport = ServerSessionTransport(client: serverClient, sessionId: session.id)
         // Paint the persisted selections over cached option definitions while
         // the live runtime validates them. The runtime snapshot below remains
         // authoritative and replaces removed models/options before Send is
         // enabled.
-        let initialConfigOptions = configOptionsByHarness[harnessId]
+        let initialConfigOptions =
+            configOptionsByHarness[harnessId]
             ?? configCache.options(forHarness: harnessId, onServer: project.serverId)
         let model = SessionModel(
             serverTransport: transport,
@@ -2544,7 +2589,7 @@ final public class SessionController {
         let categoryOrder = [
             SessionConfigOption.Category.model: 0,
             SessionConfigOption.Category.thoughtLevel: 1,
-            SessionConfigOption.Category.speed: 2
+            SessionConfigOption.Category.speed: 2,
         ]
         // Cached options can disappear after an agent update or a model
         // change. Never replay a stale selection the runtime no longer
@@ -2599,7 +2644,7 @@ final public class SessionController {
         // selection could not be restored.
         let changed = saved.compactMap { configId, previousValue -> (String, SessionConfigOption)? in
             guard let option = validated.first(where: { $0.id == configId }),
-                  option.currentValue != previousValue
+                option.currentValue != previousValue
             else { return nil }
             return (previousValue, option)
         }
@@ -2628,7 +2673,8 @@ final public class SessionController {
         var restored = inspected
         for (configId, previousValue) in saved {
             guard let index = restored.firstIndex(where: { $0.id == configId }),
-                  restored[index].options.contains(where: { $0.value == previousValue }) else { continue }
+                restored[index].options.contains(where: { $0.value == previousValue })
+            else { continue }
             restored[index].currentValue = previousValue
         }
         return restored
@@ -2731,7 +2777,8 @@ final public class SessionController {
 
         if let cost = currentUsage?.cost {
             let previousCost = previousUsage?.cost
-            let amount = previousCost?.currency == cost.currency
+            let amount =
+                previousCost?.currency == cost.currency
                 ? max(0, cost.amount - (previousCost?.amount ?? 0))
                 : cost.amount
             properties["cost"] = .double(amount)
@@ -2757,17 +2804,20 @@ final public class SessionController {
             properties["chat_id"] = .string(sessionId)
         }
         if let harnessId = connectedHarnessId ?? selectedHarnessId ?? serverSession?.harnessId,
-           !harnessId.isEmpty {
+            !harnessId.isEmpty
+        {
             properties["harness_id"] = .string(harnessId)
         }
-        let modelId = model?.configOptions.first {
-            $0.category == SessionConfigOption.Category.model
-        }?.currentValue ?? modelOption?.currentValue
+        let modelId =
+            model?.configOptions.first {
+                $0.category == SessionConfigOption.Category.model
+            }?.currentValue ?? modelOption?.currentValue
         if let modelId, !modelId.isEmpty {
             properties["model_id"] = .string(modelId)
         }
         if let mode = model?.modeState?.currentModeId ?? modeState?.currentModeId,
-           !mode.isEmpty {
+            !mode.isEmpty
+        {
             properties["mode"] = .string(mode)
         }
         return properties
@@ -2831,7 +2881,8 @@ final public class SessionController {
             // authoritative: a late capability refresh must not replace a
             // resumed chat's persisted model/effort/speed with fresh-session
             // defaults (for example, changing Codex `high` back to `low`).
-            let isConnectedHarness = model != nil
+            let isConnectedHarness =
+                model != nil
                 && connectedHarnessId == capability.harness.id
             if !isConnectedHarness {
                 configOptionsByHarness[capability.harness.id] = capability.configOptions
@@ -2858,50 +2909,50 @@ public enum SessionControllerError: Error {
 }
 
 #if DEBUG
-extension SessionController {
-    /// A controller pre-populated for previews.
-    static public func preview(
-        project: Project = Project.fromFolder(URL(fileURLWithPath: "/tmp/shepherd")),
-        model: SessionModel? = nil,
-        harnesses: [ServerHarness] = SessionController.previewHarnesses
-    ) -> SessionController {
-        let controller = SessionController(
-            project: project,
-            configCache: ConfigOptionCache(store: InMemoryStore())
-        )
-        controller.harnesses = harnesses
-        controller.preparationState = .ready
-        controller.selectedHarnessId = harnesses.first?.id
-        controller.model = model
-        // Surface the plan and goal affordances in previews: goals for every
-        // sample harness, and a plan/build mode pair for the draft (no-model)
-        // composer, mirroring what capabilities discovery would report.
-        for harness in harnesses {
-            controller.supportsGoalsByHarness[harness.id] = true
-            controller.modeStateByHarness[harness.id] = SessionModeState(
-                currentModeId: "default",
-                availableModes: [
-                    SessionMode(id: "default", name: "Default", canonicalId: "fullAccess"),
-                    SessionMode(id: "plan", name: "Plan", canonicalId: "plan")
-                ]
+    extension SessionController {
+        /// A controller pre-populated for previews.
+        static public func preview(
+            project: Project = Project.fromFolder(URL(fileURLWithPath: "/tmp/shepherd")),
+            model: SessionModel? = nil,
+            harnesses: [ServerHarness] = SessionController.previewHarnesses
+        ) -> SessionController {
+            let controller = SessionController(
+                project: project,
+                configCache: ConfigOptionCache(store: InMemoryStore())
             )
+            controller.harnesses = harnesses
+            controller.preparationState = .ready
+            controller.selectedHarnessId = harnesses.first?.id
+            controller.model = model
+            // Surface the plan and goal affordances in previews: goals for every
+            // sample harness, and a plan/build mode pair for the draft (no-model)
+            // composer, mirroring what capabilities discovery would report.
+            for harness in harnesses {
+                controller.supportsGoalsByHarness[harness.id] = true
+                controller.modeStateByHarness[harness.id] = SessionModeState(
+                    currentModeId: "default",
+                    availableModes: [
+                        SessionMode(id: "default", name: "Default", canonicalId: "fullAccess"),
+                        SessionMode(id: "plan", name: "Plan", canonicalId: "plan"),
+                    ]
+                )
+            }
+            return controller
         }
-        return controller
-    }
 
-    nonisolated static public var previewHarnesses: [ServerHarness] {
-        [
-            ServerHarness(
-                id: "claude-code", name: "Claude Code", symbolName: "sparkle", source: "registry",
-                launchKind: "executable", enabled: true,
-                readiness: ServerHarnessReadiness(state: "ready")
-            ),
-            ServerHarness(
-                id: "codex", name: "Codex", symbolName: "chevron.left.forwardslash.chevron.right",
-                source: "registry", launchKind: "executable", enabled: true,
-                readiness: ServerHarnessReadiness(state: "ready")
-            )
-        ]
+        nonisolated static public var previewHarnesses: [ServerHarness] {
+            [
+                ServerHarness(
+                    id: "claude-code", name: "Claude Code", symbolName: "sparkle", source: "registry",
+                    launchKind: "executable", enabled: true,
+                    readiness: ServerHarnessReadiness(state: "ready")
+                ),
+                ServerHarness(
+                    id: "codex", name: "Codex", symbolName: "chevron.left.forwardslash.chevron.right",
+                    source: "registry", launchKind: "executable", enabled: true,
+                    readiness: ServerHarnessReadiness(state: "ready")
+                ),
+            ]
+        }
     }
-}
 #endif

@@ -46,7 +46,8 @@ public enum ProjectRecommender {
             let sessionPath = URL(fileURLWithPath: session.info.cwd).standardizedFileURL.path
             guard !sessionPath.isEmpty, sessionPath != "/" else { continue }
 
-            let isManagedWorktreePath = sessionPath == worktreesRootPath
+            let isManagedWorktreePath =
+                sessionPath == worktreesRootPath
                 || sessionPath.hasPrefix(worktreesRootPath + "/")
             let isLinkedWorktreePath = isLinkedWorktree(sessionPath)
             let resolvedRoot = linkedWorktreeRoot(sessionPath).map {
@@ -61,11 +62,11 @@ public enum ProjectRecommender {
 
             let path = resolvedRoot ?? sessionPath
             guard !path.isEmpty,
-                  path != "/",
-                  path != worktreesRootPath,
-                  !path.hasPrefix(worktreesRootPath + "/"),
-                  !isExcludedSuggestionPath(path, temporaryDirectory: temporaryDirectory),
-                  directoryExists(path)
+                path != "/",
+                path != worktreesRootPath,
+                !path.hasPrefix(worktreesRootPath + "/"),
+                !isExcludedSuggestionPath(path, temporaryDirectory: temporaryDirectory),
+                directoryExists(path)
             else { continue }
 
             let activity = session.info.updatedAt.flatMap(Self.date(from:))
@@ -76,7 +77,8 @@ public enum ProjectRecommender {
             )
         }
 
-        return grouped
+        return
+            grouped
             .map { path, info in
                 let url = URL(fileURLWithPath: path)
                 return ProjectRecommendation(
@@ -120,7 +122,7 @@ public enum ProjectRecommender {
             "/tmp",
             "/private/tmp",
             "/var/tmp",
-            "/private/var/tmp"
+            "/private/var/tmp",
         ]
         if temporaryRoots.contains(where: { isPath(standardizedPath, inside: $0) }) {
             return true
@@ -130,16 +132,17 @@ public enum ProjectRecommender {
         // process. Recognize Darwin's /var/folders/<bucket>/<token>/T layout
         // as well as the local FileManager-provided path above.
         let components = URL(fileURLWithPath: standardizedPath).pathComponents
-        let varIndex: Int? = if components.starts(with: ["/", "var", "folders"]) {
-            1
-        } else if components.starts(with: ["/", "private", "var", "folders"]) {
-            2
-        } else {
-            nil
-        }
+        let varIndex: Int? =
+            if components.starts(with: ["/", "var", "folders"]) {
+                1
+            } else if components.starts(with: ["/", "private", "var", "folders"]) {
+                2
+            } else {
+                nil
+            }
         if let varIndex,
-           components.indices.contains(varIndex + 4),
-           components[varIndex + 4] == "T"
+            components.indices.contains(varIndex + 4),
+            components[varIndex + 4] == "T"
         {
             return true
         }
@@ -173,19 +176,20 @@ public enum ProjectRecommender {
 
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: dotGitURL.path, isDirectory: &isDirectory),
-              !isDirectory.boolValue,
-              let dotGit = try? String(contentsOf: dotGitURL, encoding: .utf8),
-              let gitDirValue = metadataPath(in: dotGit, key: "gitdir")
+            !isDirectory.boolValue,
+            let dotGit = try? String(contentsOf: dotGitURL, encoding: .utf8),
+            let gitDirValue = metadataPath(in: dotGit, key: "gitdir")
         else { return nil }
 
         let gitDirURL = resolvedURL(gitDirValue, relativeTo: checkoutURL)
         let commonDirFileURL = gitDirURL.appendingPathComponent("commondir", isDirectory: false)
         guard let commonDir = try? String(contentsOf: commonDirFileURL, encoding: .utf8),
-              let commonDirValue = commonDir
+            let commonDirValue =
+                commonDir
                 .split(whereSeparator: \Character.isNewline)
                 .first?
                 .trimmingCharacters(in: .whitespacesAndNewlines),
-              !commonDirValue.isEmpty
+            !commonDirValue.isEmpty
         else { return nil }
 
         let commonDirURL = resolvedURL(commonDirValue, relativeTo: gitDirURL)
@@ -195,7 +199,7 @@ public enum ProjectRecommender {
         let rootURL = commonDirURL.deletingLastPathComponent().standardizedFileURL
         var rootIsDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: rootURL.path, isDirectory: &rootIsDirectory),
-              rootIsDirectory.boolValue
+            rootIsDirectory.boolValue
         else { return nil }
         return rootURL.path
     }
@@ -203,7 +207,7 @@ public enum ProjectRecommender {
     private static func metadataPath(in contents: String, key: String) -> String? {
         let prefix = "\(key):"
         guard let line = contents.split(whereSeparator: \Character.isNewline).first,
-              line.hasPrefix(prefix)
+            line.hasPrefix(prefix)
         else { return nil }
         let value = line.dropFirst(prefix.count).trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value

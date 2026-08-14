@@ -198,9 +198,10 @@ struct PaneGroupStateTests {
 
     @Test("Descriptors persisted before attachOnly existed decode as user shells")
     func decodeLegacyDescriptor() throws {
-        let legacy = Data("""
-        {"id":"\(UUID().uuidString)","kind":"terminal","name":"Terminal 1","terminalKey":"abc"}
-        """.utf8)
+        let legacy = Data(
+            """
+            {"id":"\(UUID().uuidString)","kind":"terminal","name":"Terminal 1","terminalKey":"abc"}
+            """.utf8)
         let decoded = try JSONDecoder().decode(PaneDescriptorState.self, from: legacy)
         #expect(decoded.attachOnly == false)
         // Pre-owner-scoping agent tabs decode ownerless (any syncer adopts).
@@ -222,9 +223,10 @@ struct PaneGroupStateTests {
         )
         #expect(decoded.panes.first { $0.id == converted?.id }?.kind == .terminal)
         // Panes persisted with the retired per-pane cwd override still decode.
-        let legacy = Data("""
-        {"id":"\(UUID().uuidString)","kind":"terminal","name":"T","terminalKey":"k","cwdOverride":"/tmp/x"}
-        """.utf8)
+        let legacy = Data(
+            """
+            {"id":"\(UUID().uuidString)","kind":"terminal","name":"T","terminalKey":"k","cwdOverride":"/tmp/x"}
+            """.utf8)
         #expect(try JSONDecoder().decode(PaneDescriptorState.self, from: legacy).kind == .terminal)
     }
 

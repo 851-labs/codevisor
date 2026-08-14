@@ -1,5 +1,5 @@
 #if canImport(AppKit)
-import AppKit
+    import AppKit
 #endif
 import CodeHighlighter
 import CodevisorCore
@@ -115,7 +115,11 @@ public struct DiffView: View {
             // still scrolls horizontally.
             .frame(minWidth: viewportWidth, alignment: .leading)
         }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { viewportWidth = $0 }
+        .onGeometryChange(for: CGFloat.self) {
+            $0.size.width
+        } action: {
+            viewportWidth = $0
+        }
         // Horizontal bounce only when the code is actually wider than the
         // card: an always-bouncing x-axis captures trackpad gestures meant
         // for the page's vertical scroll. Vertical keeps the stock feel.
@@ -160,14 +164,14 @@ public struct DiffView: View {
             // Removed lines keep full syntax colors (pierre does not dim or
             // strike them); the row tint alone marks the deletion.
             #if canImport(AppKit) || canImport(UIKit)
-            SelectableTextView(
-                attributedText: rowText(row, highlights: highlights),
-                fillsWidth: false
-            )
+                SelectableTextView(
+                    attributedText: rowText(row, highlights: highlights),
+                    fillsWidth: false
+                )
             #else
-            Text(portableRowText(row, highlights: highlights))
-                .font(.system(.caption, design: .monospaced))
-                .lineLimit(nil)
+                Text(portableRowText(row, highlights: highlights))
+                    .font(.system(.caption, design: .monospaced))
+                    .lineLimit(nil)
             #endif
             Spacer(minLength: 0)
         }
@@ -188,63 +192,63 @@ public struct DiffView: View {
     }
 
     #if !canImport(AppKit) && !canImport(UIKit)
-    /// AttributedString flavor of `rowText` for the SwiftUI fallback path.
-    private func portableRowText(
-        _ row: LineDiff.Row,
-        highlights: [Int: AttributedString]
-    ) -> AttributedString {
-        guard let highlighted = highlights[row.id], !row.text.isEmpty else {
-            var plain = AttributedString(row.text.isEmpty ? " " : row.text)
-            plain.foregroundColor = theme.textPrimary
-            return plain
-        }
-        var result = AttributedString()
-        for run in highlighted.runs {
-            var piece = AttributedString(highlighted[run.range])
-            if piece.foregroundColor == nil {
-                piece.foregroundColor = theme.textPrimary
+        /// AttributedString flavor of `rowText` for the SwiftUI fallback path.
+        private func portableRowText(
+            _ row: LineDiff.Row,
+            highlights: [Int: AttributedString]
+        ) -> AttributedString {
+            guard let highlighted = highlights[row.id], !row.text.isEmpty else {
+                var plain = AttributedString(row.text.isEmpty ? " " : row.text)
+                plain.foregroundColor = theme.textPrimary
+                return plain
             }
-            result += piece
+            var result = AttributedString()
+            for run in highlighted.runs {
+                var piece = AttributedString(highlighted[run.range])
+                if piece.foregroundColor == nil {
+                    piece.foregroundColor = theme.textPrimary
+                }
+                result += piece
+            }
+            return result
         }
-        return result
-    }
     #endif
 
     #if canImport(AppKit) || canImport(UIKit)
-    /// Row text: Shiki-highlighted when the path's language and the theme
-    /// allow it, plain otherwise. Blank lines render a space to keep height.
-    private func rowText(
-        _ row: LineDiff.Row,
-        highlights: [Int: AttributedString]
-    ) -> NSAttributedString {
-        let font = OSFont.monospacedSystemFont(
-            ofSize: OSFont.preferredFont(forTextStyle: .caption1).pointSize,
-            weight: .regular
-        )
-        guard let highlighted = highlights[row.id], !row.text.isEmpty else {
-            return NSAttributedString(
-                string: row.text.isEmpty ? " " : row.text,
-                attributes: [
-                    .font: font,
-                    .foregroundColor: OSColor(theme.textPrimary),
-                ]
+        /// Row text: Shiki-highlighted when the path's language and the theme
+        /// allow it, plain otherwise. Blank lines render a space to keep height.
+        private func rowText(
+            _ row: LineDiff.Row,
+            highlights: [Int: AttributedString]
+        ) -> NSAttributedString {
+            let font = OSFont.monospacedSystemFont(
+                ofSize: OSFont.preferredFont(forTextStyle: .caption1).pointSize,
+                weight: .regular
             )
-        }
-        let result = NSMutableAttributedString()
-        for run in highlighted.runs {
-            result.append(
-                NSAttributedString(
-                    string: String(highlighted[run.range].characters),
+            guard let highlighted = highlights[row.id], !row.text.isEmpty else {
+                return NSAttributedString(
+                    string: row.text.isEmpty ? " " : row.text,
                     attributes: [
                         .font: font,
-                        .foregroundColor: run.foregroundColor.map { OSColor($0) }
-                            ?? OSColor(theme.textPrimary),
+                        .foregroundColor: OSColor(theme.textPrimary),
                     ]
                 )
-            )
+            }
+            let result = NSMutableAttributedString()
+            for run in highlighted.runs {
+                result.append(
+                    NSAttributedString(
+                        string: String(highlighted[run.range].characters),
+                        attributes: [
+                            .font: font,
+                            .foregroundColor: run.foregroundColor.map { OSColor($0) }
+                                ?? OSColor(theme.textPrimary),
+                        ]
+                    )
+                )
+            }
+            return result
         }
-        return result
-    }
     #endif
 
     /// Recomputes the diff rows (when the content changed) and re-highlights.
@@ -382,24 +386,24 @@ public struct DiffView: View {
     DiffView(
         path: "Features/Session/BranchDiffBadge.swift",
         oldText: """
-                    var body: some View {
-                        HStack(spacing: 0) {
-                            if let totals {
-                                DiffCounter(totals: totals)
+                        var body: some View {
+                            HStack(spacing: 0) {
+                                if let totals {
+                                    DiffCounter(totals: totals)
+                                }
                             }
                         }
-                    }
-        """,
+            """,
         newText: """
-                    var body: some View {
-                        HStack(spacing: 0) {
-                            // Show the counter only once there is a real diff.
-                            if let totals, totals.added > 0 || totals.removed > 0 {
-                                DiffCounter(totals: totals)
+                        var body: some View {
+                            HStack(spacing: 0) {
+                                // Show the counter only once there is a real diff.
+                                if let totals, totals.added > 0 || totals.removed > 0 {
+                                    DiffCounter(totals: totals)
+                                }
                             }
                         }
-                    }
-        """
+            """
     )
     .padding()
     .frame(width: 520)

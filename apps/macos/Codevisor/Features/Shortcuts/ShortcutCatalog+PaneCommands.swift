@@ -76,10 +76,10 @@ extension ShortcutCatalog {
             .intersection(.deviceIndependentFlagsMask)
             .subtracting([.function, .numericPad])
         guard modifierFlags == .command,
-              let characters = event.charactersIgnoringModifiers?.lowercased(),
-              characters.count == 1,
-              let digit = Int(characters),
-              (1...9).contains(digit)
+            let characters = event.charactersIgnoringModifiers?.lowercased(),
+            characters.count == 1,
+            let digit = Int(characters),
+            (1...9).contains(digit)
         else { return nil }
         return .selectTab(digit - 1)
     }

@@ -286,7 +286,8 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
         name: String? = nil
     ) -> PaneDescriptorState? {
         guard let index = panes.firstIndex(where: { $0.id == id }),
-              panes[index].kind == .newTab else { return nil }
+            panes[index].kind == .newTab
+        else { return nil }
         let paneId = UUID()
         let pane: PaneDescriptorState
         switch kind {
@@ -320,7 +321,8 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     /// its composer stay; only the dangling reference goes.
     public mutating func unbindChatPane(paneId: UUID) {
         guard let index = panes.firstIndex(where: { $0.id == paneId }),
-              panes[index].kind == .chat else { return }
+            panes[index].kind == .chat
+        else { return }
         panes[index].chatSessionId = nil
         panes[index].name = "New Chat"
     }
@@ -331,7 +333,8 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     @discardableResult
     public mutating func resetChatPaneToPlaceholder(id: UUID) -> PaneDescriptorState? {
         guard let index = panes.firstIndex(where: { $0.id == id }),
-              panes[index].kind == .chat else { return nil }
+            panes[index].kind == .chat
+        else { return nil }
         let paneId = UUID()
         let pane = PaneDescriptorState(
             id: paneId,
@@ -349,7 +352,8 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     /// Binds a draft chat pane to its just-created session (first send).
     public mutating func assignChatSession(paneId: UUID, sessionId: UUID, name: String) {
         guard let index = panes.firstIndex(where: { $0.id == paneId }),
-              panes[index].kind == .chat else { return }
+            panes[index].kind == .chat
+        else { return }
         panes[index].chatSessionId = sessionId
         panes[index].name = name
     }
@@ -404,8 +408,9 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     /// takes the hovered tab's position). Selection follows the pane.
     public mutating func movePane(id: UUID, onto targetId: UUID) {
         guard id != targetId,
-              let from = panes.firstIndex(where: { $0.id == id }),
-              let target = panes.firstIndex(where: { $0.id == targetId }) else { return }
+            let from = panes.firstIndex(where: { $0.id == id }),
+            let target = panes.firstIndex(where: { $0.id == targetId })
+        else { return }
         let pane = panes.remove(at: from)
         // After removal the same index lands the pane after the target when
         // dragging right and before it when dragging left — both take the
@@ -425,7 +430,8 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     /// suffix (so after closing "Terminal 2" of [1, 2], the next add is
     /// "Terminal 2" again; with [1, 3] it is "Terminal 4").
     static func nextTerminalName(existing: [String]) -> String {
-        let highest = existing
+        let highest =
+            existing
             .compactMap { name -> Int? in
                 guard name.hasPrefix("Terminal ") else { return nil }
                 return Int(name.dropFirst("Terminal ".count))

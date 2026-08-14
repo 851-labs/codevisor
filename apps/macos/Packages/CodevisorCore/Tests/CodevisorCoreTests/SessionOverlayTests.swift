@@ -15,7 +15,8 @@ struct SessionOverlayTests {
 
     @Test("Old persisted sessions decode with defaults")
     func backwardCompatible() throws {
-        let json = #"{"id":"\#(UUID().uuidString)","projectId":"\#(UUID().uuidString)","title":"Legacy","createdAt":768000000}"#
+        let json =
+            #"{"id":"\#(UUID().uuidString)","projectId":"\#(UUID().uuidString)","title":"Legacy","createdAt":768000000}"#
         let session = try JSONDecoder().decode(ChatSession.self, from: Data(json.utf8))
         #expect(session.title == "Legacy")
         #expect(session.serverId == "local")
@@ -66,12 +67,14 @@ struct SessionOverlayTests {
     func importing() {
         let model = makeModel()
         let imported = [
-            ImportedSession(harnessId: "codex", info: SessionInfo(sessionId: "a", cwd: "/Users/x/proj", title: "Build")),
+            ImportedSession(
+                harnessId: "codex", info: SessionInfo(sessionId: "a", cwd: "/Users/x/proj", title: "Build")),
             ImportedSession(harnessId: "codex", info: SessionInfo(sessionId: "b", cwd: "/Users/x/proj", title: "Fix")),
-            ImportedSession(harnessId: "claude-code", info: SessionInfo(sessionId: "c", cwd: "/Users/x/other", title: "Docs"))
+            ImportedSession(
+                harnessId: "claude-code", info: SessionInfo(sessionId: "c", cwd: "/Users/x/other", title: "Docs")),
         ]
         model.importSessions(imported, serverId: "local")
-        model.importSessions(imported, serverId: "local") // second time should not duplicate
+        model.importSessions(imported, serverId: "local")  // second time should not duplicate
 
         #expect(model.projects.count == 2)
         #expect(model.sessions.count == 3)
@@ -83,14 +86,16 @@ struct SessionOverlayTests {
     @Test("Imported sessions and their projects hide when import is off")
     func gating() {
         let model = makeModel()
-        model.importSessions([
-            ImportedSession(harnessId: "codex", info: SessionInfo(sessionId: "a", cwd: "/Users/x/proj", title: "Build"))
-        ], serverId: "local")
+        model.importSessions(
+            [
+                ImportedSession(
+                    harnessId: "codex", info: SessionInfo(sessionId: "a", cwd: "/Users/x/proj", title: "Build"))
+            ], serverId: "local")
         let proj = model.projects.first!
 
         model.showsImportedSessions = false
         #expect(model.sessions(in: proj).isEmpty)
-        #expect(model.activeProjects.isEmpty) // imported-only project hidden
+        #expect(model.activeProjects.isEmpty)  // imported-only project hidden
 
         model.showsImportedSessions = true
         #expect(model.sessions(in: proj).count == 1)
@@ -157,7 +162,7 @@ struct SessionOverlayTests {
     func harnessEnablement() {
         let store = InMemoryStore()
         let model = AppSettingsModel(store: store)
-        #expect(model.isHarnessEnabled("codex")) // enabled by default
+        #expect(model.isHarnessEnabled("codex"))  // enabled by default
         model.setHarness("codex", enabled: false)
         #expect(!model.isHarnessEnabled("codex"))
         // Reload from the same store to confirm persistence.
@@ -187,11 +192,13 @@ struct SessionOverlayTests {
 /// A fake harness service that returns scripted sessions for import tests.
 private struct FakeImportService: HarnessServicing {
     func readyHarnesses() async -> [ServerHarness] {
-        [ServerHarness(
-            id: "codex", name: "Codex", symbolName: "chevron.left.forwardslash.chevron.right",
-            source: "registry", launchKind: "executable", enabled: true,
-            readiness: ServerHarnessReadiness(state: "ready")
-        )]
+        [
+            ServerHarness(
+                id: "codex", name: "Codex", symbolName: "chevron.left.forwardslash.chevron.right",
+                source: "registry", launchKind: "executable", enabled: true,
+                readiness: ServerHarnessReadiness(state: "ready")
+            )
+        ]
     }
     func allHarnesses() async -> [ServerHarness] { await readyHarnesses() }
     func listSessions(forHarnessId harnessId: String) async throws -> [SessionInfo] {

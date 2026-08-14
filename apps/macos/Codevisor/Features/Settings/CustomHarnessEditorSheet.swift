@@ -66,7 +66,7 @@ struct CustomHarnessEditorSheet: View {
                         prompt: Text("KEY=value, one per line"),
                         axis: .vertical
                     )
-                    .lineLimit(1 ... 4)
+                    .lineLimit(1...4)
                     .font(.system(.body, design: .monospaced))
                 }
                 .formStyle(.columns)
@@ -91,7 +91,9 @@ struct CustomHarnessEditorSheet: View {
                     Task { await test() }
                 } label: {
                     if isTesting {
-                        HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Testing…") }
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small); Text("Testing…")
+                        }
                     } else {
                         Text("Test Connection")
                     }
@@ -104,7 +106,9 @@ struct CustomHarnessEditorSheet: View {
                     Task { await save() }
                 } label: {
                     if isSaving {
-                        HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Saving…") }
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small); Text("Saving…")
+                        }
                     } else {
                         Text(isEditing ? "Save" : "Add")
                     }
@@ -170,7 +174,7 @@ struct CustomHarnessEditorSheet: View {
             if result.ok {
                 let identity = [
                     result.agentName,
-                    result.protocolVersion.map { "ACP v\($0)" }
+                    result.protocolVersion.map { "ACP v\($0)" },
                 ].compactMap(\.self).joined(separator: " · ")
                 Text(identity.isEmpty ? "Connected" : "Connected: \(identity)")
             } else {

@@ -221,7 +221,6 @@ private struct AttachmentThumbnailLoadID: Hashable {
 
 // PDFBadge and VideoPlayBadge are shared with the iOS app via CodevisorUI.
 
-
 /// A generic non-image attachment chip: document icon plus filename.
 struct AttachmentFileChip: View {
     @Environment(\.theme) private var theme
@@ -280,7 +279,8 @@ struct AttachmentDropModifier: ViewModifier {
             if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
                 handled = true
                 provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-                    let url = (item as? URL)
+                    let url =
+                        (item as? URL)
                         ?? (item as? Data).flatMap { URL(dataRepresentation: $0, relativeTo: nil) }
                     guard let url, url.isFileURL else { return }
                     Task { @MainActor in controller.attachFileURLs([url]) }

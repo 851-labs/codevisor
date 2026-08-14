@@ -46,10 +46,11 @@ struct AppUpdateModelTests {
         model.reportFailure("network unavailable")
 
         #expect(
-            model.phase == .failed(
-                release: AppUpdateRelease(version: "1.2.4"),
-                message: "network unavailable"
-            )
+            model.phase
+                == .failed(
+                    release: AppUpdateRelease(version: "1.2.4"),
+                    message: "network unavailable"
+                )
         )
         #expect(model.failureMessage == "network unavailable")
         #expect(model.availableRelease?.version == "1.2.4")

@@ -273,10 +273,11 @@ struct SidebarView: View {
         return Color(rgba: rgba)
     }
     private var developmentWorktreeForegroundColor: Color {
-        let foregroundHex = ColorMath.pickReadableForeground(
-            bg: CodevisorAppVariant.developmentIconColorHex,
-            candidates: ["#ffffff", "#000000"]
-        ) ?? "#ffffff"
+        let foregroundHex =
+            ColorMath.pickReadableForeground(
+                bg: CodevisorAppVariant.developmentIconColorHex,
+                candidates: ["#ffffff", "#000000"]
+            ) ?? "#ffffff"
         guard let rgba = RGBA(hex: foregroundHex) else { return .white }
         return Color(rgba: rgba)
     }
@@ -386,7 +387,8 @@ struct SidebarView: View {
         let workspaces = environment.workspaces.loadAll().filter {
             $0.serverId == serverId && !$0.isArchived
         }
-        return workspaces
+        return
+            workspaces
             .map { workspace -> (item: SidebarWorkspaceListItem, rank: Int, created: Date) in
                 let workspaceSessionItems = workspace.chatSessionIds.compactMap { id -> SidebarSessionListItem? in
                     guard environment.workspaces.workspaceId(forSession: id) == workspace.id else {
@@ -399,15 +401,19 @@ struct SidebarView: View {
                 // A legacy or draft CHAT-LESS workspace stays openable
                 // through any session still routed to it by the grow-only
                 // session index — archived ones included.
-                let routingSession = primary?.session ?? list.sessions.first(where: {
-                    $0.serverId == serverId
-                        && environment.workspaces.workspaceId(forSession: $0.id) == workspace.id
-                })
-                let routingProject = primary?.project ?? routingSession.flatMap { fallback in
-                    list.projects.first {
-                        $0.serverId == serverId && $0.id == fallback.projectId
+                let routingSession =
+                    primary?.session
+                    ?? list.sessions.first(where: {
+                        $0.serverId == serverId
+                            && environment.workspaces.workspaceId(forSession: $0.id) == workspace.id
+                    })
+                let routingProject =
+                    primary?.project
+                    ?? routingSession.flatMap { fallback in
+                        list.projects.first {
+                            $0.serverId == serverId && $0.id == fallback.projectId
+                        }
                     }
-                }
                 return (
                     SidebarWorkspaceListItem(
                         workspace: workspace,
@@ -476,7 +482,8 @@ struct SidebarView: View {
     private var sidebarContent: some View {
         VStack(spacing: 0) {
             if let release = environment.appUpdate.availableRelease,
-               release.version != skippedUpdateVersion {
+                release.version != skippedUpdateVersion
+            {
                 UpdateBannerView(
                     model: environment.appUpdate,
                     release: release,
@@ -491,10 +498,11 @@ struct SidebarView: View {
             // own machine before pushing updates to a remote one, so the two
             // banners are never shown at the same time.
             if environment.appUpdate.availableRelease == nil,
-               let serverUpdate = environment.machines.selectedServerUpdate,
-               serverUpdate.updateAvailable,
-               !environment.machines.selectedMachine.isLocal,
-               skippedServerUpdate != serverUpdateSkipKey(serverUpdate) {
+                let serverUpdate = environment.machines.selectedServerUpdate,
+                serverUpdate.updateAvailable,
+                !environment.machines.selectedMachine.isLocal,
+                skippedServerUpdate != serverUpdateSkipKey(serverUpdate)
+            {
                 ServerUpdateBannerView(
                     machines: environment.machines,
                     machine: environment.machines.selectedMachine,
@@ -557,7 +565,8 @@ struct SidebarView: View {
                         }
                     }
                     if organization == .byProject && projectSectionProjects.isEmpty
-                        && looseWorkspaceItems.isEmpty {
+                        && looseWorkspaceItems.isEmpty
+                    {
                         Text("No projects yet")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
@@ -606,185 +615,186 @@ struct SidebarView: View {
 
     private var sidebarInteractionView: some View {
         sidebarContent
-        .themedSurface(.sidebar)
-        .hoverTracking($isPointerInsideSidebar, respectsSuspension: false)
-        .onChange(of: isPointerInsideSidebar) { _, isInside in
-            setAutomaticOrderDeferred(isInside)
-        }
-        .onDisappear {
-            releaseDeferredOrder(animated: false)
-        }
-        .addProjectFlow(addProjectFlow) { project in
-            expanded.insert(project.id)
-            selection = .newChat(project.id)
-            offerSessionImport(for: project)
-        }
+            .themedSurface(.sidebar)
+            .hoverTracking($isPointerInsideSidebar, respectsSuspension: false)
+            .onChange(of: isPointerInsideSidebar) { _, isInside in
+                setAutomaticOrderDeferred(isInside)
+            }
+            .onDisappear {
+                releaseDeferredOrder(animated: false)
+            }
+            .addProjectFlow(addProjectFlow) { project in
+                expanded.insert(project.id)
+                selection = .newChat(project.id)
+                offerSessionImport(for: project)
+            }
     }
 
     private var sidebarImportAndChatRenameAlertsView: some View {
         sidebarInteractionView
-        .alert(
-            "Import Existing Chats?",
-            isPresented: Binding(
-                get: { pendingImport != nil },
-                set: { if !$0 { pendingImport = nil } }
-            ),
-            presenting: pendingImport
-        ) { pending in
-            Button("Import") {
-                environment.importSessions(pending.sessions, into: pending.project)
+            .alert(
+                "Import Existing Chats?",
+                isPresented: Binding(
+                    get: { pendingImport != nil },
+                    set: { if !$0 { pendingImport = nil } }
+                ),
+                presenting: pendingImport
+            ) { pending in
+                Button("Import") {
+                    environment.importSessions(pending.sessions, into: pending.project)
+                }
+                Button("Not Now", role: .cancel) {}
+            } message: { pending in
+                Text(importPromptMessage(for: pending))
             }
-            Button("Not Now", role: .cancel) {}
-        } message: { pending in
-            Text(importPromptMessage(for: pending))
-        }
-        .alert(
-            "Rename Chat",
-            isPresented: Binding(
-                get: { renamingSession != nil },
-                set: { if !$0 { renamingSession = nil } }
-            ),
-            presenting: renamingSession
-        ) { session in
-            TextField("Title", text: $renameTitle)
-            Button("Rename") {
-                let trimmed = renameTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { return }
-                list.renameSession(session, to: trimmed)
+            .alert(
+                "Rename Chat",
+                isPresented: Binding(
+                    get: { renamingSession != nil },
+                    set: { if !$0 { renamingSession = nil } }
+                ),
+                presenting: renamingSession
+            ) { session in
+                TextField("Title", text: $renameTitle)
+                Button("Rename") {
+                    let trimmed = renameTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { return }
+                    list.renameSession(session, to: trimmed)
+                }
+                Button("Cancel", role: .cancel) {}
             }
-            Button("Cancel", role: .cancel) {}
-        }
     }
 
     private var sidebarRemainingAlertsView: some View {
         sidebarImportAndChatRenameAlertsView
-        .alert(
-            "Rename Workspace",
-            isPresented: Binding(
-                get: { renamingWorkspace != nil },
-                set: { if !$0 { renamingWorkspace = nil } }
-            ),
-            presenting: renamingWorkspace
-        ) { workspace in
-            TextField("Name", text: $workspaceRenameTitle)
-            Button("Rename") {
-                let trimmed = workspaceRenameTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { return }
-                // An explicit rename pins the name so worktree creation does
-                // not replace it.
-                var renamed = workspace
-                renamed.name = trimmed
-                renamed.hasCustomName = true
-                environment.workspaces.save(renamed)
-                workspaceRevision += 1
+            .alert(
+                "Rename Workspace",
+                isPresented: Binding(
+                    get: { renamingWorkspace != nil },
+                    set: { if !$0 { renamingWorkspace = nil } }
+                ),
+                presenting: renamingWorkspace
+            ) { workspace in
+                TextField("Name", text: $workspaceRenameTitle)
+                Button("Rename") {
+                    let trimmed = workspaceRenameTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { return }
+                    // An explicit rename pins the name so worktree creation does
+                    // not replace it.
+                    var renamed = workspace
+                    renamed.name = trimmed
+                    renamed.hasCustomName = true
+                    environment.workspaces.save(renamed)
+                    workspaceRevision += 1
+                }
+                Button("Cancel", role: .cancel) {}
             }
-            Button("Cancel", role: .cancel) {}
-        }
-        // Archived rows are visually identical to live ones, so a click is
-        // just as likely to be exploratory as intentional. Confirm before
-        // pulling the item back into the sidebar.
-        .alert(
-            restoreAlertTitle,
-            isPresented: Binding(
-                get: { restoreRequest != nil },
-                set: { if !$0 { restoreRequest = nil } }
-            ),
-            presenting: restoreRequest
-        ) { request in
-            Button("Restore") { performRestore(request) }
-            Button("Cancel", role: .cancel) {}
-        } message: { request in
-            Text("“\(request.name)” will move back into the sidebar.")
-        }
+            // Archived rows are visually identical to live ones, so a click is
+            // just as likely to be exploratory as intentional. Confirm before
+            // pulling the item back into the sidebar.
+            .alert(
+                restoreAlertTitle,
+                isPresented: Binding(
+                    get: { restoreRequest != nil },
+                    set: { if !$0 { restoreRequest = nil } }
+                ),
+                presenting: restoreRequest
+            ) { request in
+                Button("Restore") { performRestore(request) }
+                Button("Cancel", role: .cancel) {}
+            } message: { request in
+                Text("“\(request.name)” will move back into the sidebar.")
+            }
     }
 
     private var sidebarChangeObserversView: some View {
         sidebarRemainingAlertsView
-        // Collapsing resets paging so reopening starts at the newest page
-        // instead of restoring a deep scroll the user has forgotten about.
-        .onChange(of: archivedExpanded) { _, isExpanded in
-            if !isExpanded {
-                archivedVisibleCount = archivedPageSize
-                isLoadingMoreArchived = false
+            // Collapsing resets paging so reopening starts at the newest page
+            // instead of restoring a deep scroll the user has forgotten about.
+            .onChange(of: archivedExpanded) { _, isExpanded in
+                if !isExpanded {
+                    archivedVisibleCount = archivedPageSize
+                    isLoadingMoreArchived = false
+                }
             }
-        }
-        // Entering a workspace-based mode (or sessions changing while in it)
-        // sweeps the visible chats so every one has an owning workspace.
-        .onChange(of: organizationRaw, initial: true) { _, _ in
-            backfillWorkspaces()
-        }
-        .onChange(of: chronologicalSessions.map(\.id)) { oldIDs, newIDs in
-            deferredSessionOrder.incorporate(newIDs)
-            backfillWorkspaces()
-            revealNewChatWorkspaces(Set(newIDs).subtracting(Set(oldIDs)))
-        }
-        .onChange(of: visibleProjects.map(\.id)) { _, newIDs in
-            deferredProjectOrder.incorporate(newIDs)
-        }
-        // Bursty automatic reorders (several agents changing state at once)
-        // are jarring, and each interrupts the previous reflow animation
-        // mid-flight, which reads as jitter. Watching the unheld sort lets a
-        // burst land as one clean reflow after it settles.
-        .onChange(of: desiredAutomaticOrderIDs) { _, _ in
-            scheduleReorderSettleHold()
-        }
+            // Entering a workspace-based mode (or sessions changing while in it)
+            // sweeps the visible chats so every one has an owning workspace.
+            .onChange(of: organizationRaw, initial: true) { _, _ in
+                backfillWorkspaces()
+            }
+            .onChange(of: chronologicalSessions.map(\.id)) { oldIDs, newIDs in
+                deferredSessionOrder.incorporate(newIDs)
+                backfillWorkspaces()
+                revealNewChatWorkspaces(Set(newIDs).subtracting(Set(oldIDs)))
+            }
+            .onChange(of: visibleProjects.map(\.id)) { _, newIDs in
+                deferredProjectOrder.incorporate(newIDs)
+            }
+            // Bursty automatic reorders (several agents changing state at once)
+            // are jarring, and each interrupts the previous reflow animation
+            // mid-flight, which reads as jitter. Watching the unheld sort lets a
+            // burst land as one clean reflow after it settles.
+            .onChange(of: desiredAutomaticOrderIDs) { _, _ in
+                scheduleReorderSettleHold()
+            }
     }
 
     private var sidebarSheetsView: some View {
         sidebarChangeObserversView
-        .sheet(item: $iconEditing) { project in
-            IconPickerView(currentSymbol: project.symbolName) { symbol in
-                list.setIcon(symbol, for: project)
-            }
-        }
-        .sheet(item: $workspaceIconEditing) { workspace in
-            IconPickerView(
-                currentSymbol: workspace.symbolName ?? list.projects.first {
-                    $0.id == workspace.projectId
-                }?.symbolName ?? "square.grid.2x2"
-            ) { symbol in
-                var updated = workspace
-                updated.symbolName = symbol
-                environment.workspaces.save(updated)
-                workspaceRevision += 1
-            }
-        }
-        .sheet(isPresented: $showingRemoteMachine) {
-            RemoteMachineSheet { host, name, token in
-                do {
-                    try await environment.machines.addRemoteValidating(host: host, name: name, token: token)
-                    selection = .newChat(nil)
-                    return nil
-                } catch {
-                    Log.machines.error("Adding remote machine failed: \(String(describing: error), privacy: .public)")
-                    if case CodevisorServerClientError.httpStatus(401, _) = error {
-                        return "That connection token was rejected by the machine."
-                    }
-                    return serverErrorMessage(error)
+            .sheet(item: $iconEditing) { project in
+                IconPickerView(currentSymbol: project.symbolName) { symbol in
+                    list.setIcon(symbol, for: project)
                 }
             }
-        }
+            .sheet(item: $workspaceIconEditing) { workspace in
+                IconPickerView(
+                    currentSymbol: workspace.symbolName ?? list.projects.first {
+                        $0.id == workspace.projectId
+                    }?.symbolName ?? "square.grid.2x2"
+                ) { symbol in
+                    var updated = workspace
+                    updated.symbolName = symbol
+                    environment.workspaces.save(updated)
+                    workspaceRevision += 1
+                }
+            }
+            .sheet(isPresented: $showingRemoteMachine) {
+                RemoteMachineSheet { host, name, token in
+                    do {
+                        try await environment.machines.addRemoteValidating(host: host, name: name, token: token)
+                        selection = .newChat(nil)
+                        return nil
+                    } catch {
+                        Log.machines.error(
+                            "Adding remote machine failed: \(String(describing: error), privacy: .public)")
+                        if case CodevisorServerClientError.httpStatus(401, _) = error {
+                            return "That connection token was rejected by the machine."
+                        }
+                        return serverErrorMessage(error)
+                    }
+                }
+            }
     }
 
     private var sidebarConfiguredView: some View {
         sidebarSheetsView
-        .onAppear(perform: restoreExpandedState)
-        .onChange(of: expanded) { _, newValue in
-            expandedProjectsRaw = newValue.map(\.uuidString).sorted().joined(separator: "\n")
-        }
-        .onChange(of: expandedWorkspaces) { _, newValue in
-            expandedWorkspacesRaw = newValue.map(\.uuidString).sorted().joined(separator: "\n")
-        }
-        .focusedSceneValue(
-            \.sidebarActions,
-            publishesSceneActions
-                ? SidebarActions(
-                    newChat: { selection = .newChat(nil) },
-                    newProject: { startAddProject() },
-                    addRemoteMachine: { showingRemoteMachine = true }
-                )
-                : nil
-        )
+            .onAppear(perform: restoreExpandedState)
+            .onChange(of: expanded) { _, newValue in
+                expandedProjectsRaw = newValue.map(\.uuidString).sorted().joined(separator: "\n")
+            }
+            .onChange(of: expandedWorkspaces) { _, newValue in
+                expandedWorkspacesRaw = newValue.map(\.uuidString).sorted().joined(separator: "\n")
+            }
+            .focusedSceneValue(
+                \.sidebarActions,
+                publishesSceneActions
+                    ? SidebarActions(
+                        newChat: { selection = .newChat(nil) },
+                        newProject: { startAddProject() },
+                        addRemoteMachine: { showingRemoteMachine = true }
+                    )
+                    : nil
+            )
     }
 
     private var restoreAlertTitle: String {
@@ -803,7 +813,8 @@ struct SidebarView: View {
     }
 
     private func persistedIDs(from rawValue: String) -> Set<UUID> {
-        let ids: [UUID] = rawValue
+        let ids: [UUID] =
+            rawValue
             .split(separator: "\n")
             .compactMap { UUID(uuidString: String($0)) }
         return Set(ids)
@@ -828,7 +839,8 @@ struct SidebarView: View {
     private func importPromptMessage(for pending: PendingSessionImport) -> String {
         let count = pending.sessions.count
         let chats = count == 1 ? "1 existing agent chat" : "\(count) existing agent chats"
-        return "Codevisor found \(chats) in “\(pending.project.name)”. Import them to continue those conversations here."
+        return
+            "Codevisor found \(chats) in “\(pending.project.name)”. Import them to continue those conversations here."
     }
 
     // MARK: - Header rows
@@ -877,15 +889,17 @@ struct SidebarView: View {
 
     private var projectsHeader: some View {
         HStack {
-            Text({
-                switch organization {
-                case .byWorkspace: "Workspaces"
-                case .compact: "Agents"
-                case .byProject: "Projects"
-                }
-            }())
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+            Text(
+                {
+                    switch organization {
+                    case .byWorkspace: "Workspaces"
+                    case .compact: "Agents"
+                    case .byProject: "Projects"
+                    }
+                }()
+            )
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.secondary)
             Spacer()
             Menu {
                 sidebarFilterMenuContent
@@ -908,18 +922,24 @@ struct SidebarView: View {
     /// both entry points always expose the same organization and filter state.
     @ViewBuilder
     private var sidebarFilterMenuContent: some View {
-        Picker("Organization", selection: Binding(
-            get: { organization },
-            set: { organizationRaw = $0.rawValue }
-        )) {
+        Picker(
+            "Organization",
+            selection: Binding(
+                get: { organization },
+                set: { organizationRaw = $0.rawValue }
+            )
+        ) {
             ForEach(SidebarOrganization.allCases, id: \.self) { option in
                 Text(option.title).tag(option)
             }
         }
-        Picker("Order by", selection: Binding(
-            get: { order },
-            set: { setOrder($0) }
-        )) {
+        Picker(
+            "Order by",
+            selection: Binding(
+                get: { order },
+                set: { setOrder($0) }
+            )
+        ) {
             ForEach(SidebarOrder.allCases, id: \.self) { option in
                 Text(option.title).tag(option)
             }
@@ -1103,7 +1123,9 @@ struct SidebarView: View {
             } else {
                 Button("New chat here") { selection = .newChat(project.id) }
                 Button("Change icon") { iconEditing = project }
-                Button { list.archive(project) } label: {
+                Button {
+                    list.archive(project)
+                } label: {
                     Label("Archive", systemImage: "archivebox")
                         .labelStyle(.titleAndIcon)
                 }
@@ -1153,9 +1175,9 @@ struct SidebarView: View {
         let archivedProjectIDs = Set(projects.map(\.id))
         let chats = list.archivedSessions.compactMap { session -> SidebarSessionListItem? in
             guard !archivedProjectIDs.contains(session.projectId),
-                  let project = list.projects.first(where: {
-                      $0.serverId == session.serverId && $0.id == session.projectId
-                  })
+                let project = list.projects.first(where: {
+                    $0.serverId == session.serverId && $0.id == session.projectId
+                })
             else { return nil }
             return SidebarSessionListItem(session: session, project: project)
         }
@@ -1277,8 +1299,9 @@ struct SidebarView: View {
     private func restoreChat(_ session: ChatSession) {
         list.unarchiveSession(session)
         if let workspaceId = environment.workspaces.workspaceId(forSession: session.id),
-           let workspace = environment.workspaces.workspace(id: workspaceId),
-           workspace.isArchived {
+            let workspace = environment.workspaces.workspace(id: workspaceId),
+            workspace.isArchived
+        {
             environment.unarchiveWorkspace(workspace)
         }
         workspaceRevision += 1
@@ -1303,7 +1326,8 @@ struct SidebarView: View {
         isArchivedEntry: Bool = false,
         activatesOnMouseDown: Bool = true
     ) -> some View {
-        let isSelected = !isDragPreview
+        let isSelected =
+            !isDragPreview
             && !isArchivedEntry
             && selection == .session(serverId: session.serverId, id: session.id)
         return HoverableRow(
@@ -1368,7 +1392,9 @@ struct SidebarView: View {
                     Label("Rename", systemImage: "pencil")
                         .labelStyle(.titleAndIcon)
                 }
-                Button { archiveChat(session) } label: {
+                Button {
+                    archiveChat(session)
+                } label: {
                     Label("Archive", systemImage: "archivebox")
                         .labelStyle(.titleAndIcon)
                 }
@@ -1382,7 +1408,9 @@ struct SidebarView: View {
     @ViewBuilder
     private func unreadToggleButton(_ session: ChatSession) -> some View {
         if isUnread(session) {
-            Button { store?.markRead(session) } label: {
+            Button {
+                store?.markRead(session)
+            } label: {
                 Label("Mark as read", systemImage: "message")
                     .labelStyle(.titleAndIcon)
             }
@@ -1413,7 +1441,8 @@ struct SidebarView: View {
         // owns selection instead.
         let routesSelectedSession: Bool = {
             guard case let .session(serverId, sessionId) = selection,
-                  serverId == item.workspace.serverId else { return false }
+                serverId == item.workspace.serverId
+            else { return false }
             return environment.workspaces.workspaceId(forSession: sessionId) == item.workspace.id
         }()
         let isSelected = onToggle == nil && routesSelectedSession
@@ -1467,7 +1496,7 @@ struct SidebarView: View {
                     Text(workspaceTitle(item, isNested: isNested))
                         .font(itemTitleFont)
                         .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 if onToggle == nil, let session = item.primarySession {
                     sessionStatus(
@@ -1529,8 +1558,9 @@ struct SidebarView: View {
         // index, which this lookup depends on).
         let selectionLeaves: Bool
         if case let .session(serverId, sessionId) = selection,
-           serverId == workspace.serverId,
-           environment.workspaces.workspaceId(forSession: sessionId) == workspace.id {
+            serverId == workspace.serverId,
+            environment.workspaces.workspaceId(forSession: sessionId) == workspace.id
+        {
             selectionLeaves = true
         } else {
             selectionLeaves = false
@@ -1573,10 +1603,12 @@ struct SidebarView: View {
         guard !isNested, let project = item.project else {
             return item.workspace.name
         }
-        guard let worktree = item.primarySession?.worktreeName?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-              !worktree.isEmpty,
-              worktree.localizedCaseInsensitiveCompare(project.name) != .orderedSame else {
+        guard
+            let worktree = item.primarySession?.worktreeName?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            !worktree.isEmpty,
+            worktree.localizedCaseInsensitiveCompare(project.name) != .orderedSame
+        else {
             return project.name
         }
         return "\(project.name) · \(worktree)"
@@ -1588,7 +1620,8 @@ struct SidebarView: View {
         isDragPreview: Bool = false,
         isArchivedEntry: Bool = false
     ) -> some View {
-        let isSelected = !isDragPreview
+        let isSelected =
+            !isDragPreview
             && !isArchivedEntry
             && selection == .session(serverId: session.serverId, id: session.id)
         // Manual-order chat rows attach this gesture alongside their native
@@ -1649,7 +1682,9 @@ struct SidebarView: View {
                     Label("Rename", systemImage: "pencil")
                         .labelStyle(.titleAndIcon)
                 }
-                Button { archiveChat(session) } label: {
+                Button {
+                    archiveChat(session)
+                } label: {
                     Label("Archive", systemImage: "archivebox")
                         .labelStyle(.titleAndIcon)
                 }
@@ -1705,8 +1740,9 @@ struct SidebarView: View {
         // revival reaches the server too; a bare local save left other
         // devices (and the server's cascade) believing it was still archived.
         if let workspaceId = environment.workspaces.workspaceId(forSession: session.id),
-           let workspace = environment.workspaces.workspace(id: workspaceId),
-           workspace.isArchived {
+            let workspace = environment.workspaces.workspace(id: workspaceId),
+            workspace.isArchived
+        {
             environment.unarchiveWorkspace(workspace)
             workspaceRevision += 1
         }
@@ -1984,11 +2020,13 @@ struct SidebarView: View {
         guard order == .updated else { return (.idle, project.createdAt) }
         var leadingPriority: SidebarSessionPriority?
         var leadingTimestamp = project.createdAt
-        for session in list.sessions where
+        for session in list.sessions
+        where
             session.serverId == list.selectedServerId
-                && session.projectId == project.id
-                && !session.isArchived
-                && (session.origin == .codevisor || list.showsImportedSessions) {
+            && session.projectId == project.id
+            && !session.isArchived
+            && (session.origin == .codevisor || list.showsImportedSessions)
+        {
             let priority = sessionPriority(for: session)
             guard let currentPriority = leadingPriority else {
                 leadingPriority = priority
@@ -1999,7 +2037,8 @@ struct SidebarView: View {
                 leadingPriority = priority
                 leadingTimestamp = session.sidebarStateChangedAt
             } else if priority == currentPriority,
-                      session.sidebarStateChangedAt > leadingTimestamp {
+                session.sidebarStateChangedAt > leadingTimestamp
+            {
                 leadingTimestamp = session.sidebarStateChangedAt
             }
         }
@@ -2026,19 +2065,20 @@ struct SidebarView: View {
 
     private func resetManualOrder() {
         let sessions = list.activeProjects.flatMap { list.sessions(in: $0) }
-        saveSessionOrder(sessions.sorted { left, right in
-            let leftTimestamp = left.sidebarStateChangedAt
-            let rightTimestamp = right.sidebarStateChangedAt
-            if leftTimestamp != rightTimestamp { return leftTimestamp > rightTimestamp }
-            return left.title.localizedCaseInsensitiveCompare(right.title) == .orderedAscending
-        }.map(\.id))
+        saveSessionOrder(
+            sessions.sorted { left, right in
+                let leftTimestamp = left.sidebarStateChangedAt
+                let rightTimestamp = right.sidebarStateChangedAt
+                if leftTimestamp != rightTimestamp { return leftTimestamp > rightTimestamp }
+                return left.title.localizedCaseInsensitiveCompare(right.title) == .orderedAscending
+            }.map(\.id))
     }
 
     private func moveProject(_ sourceID: UUID, before destinationID: UUID) {
         guard sourceID != destinationID else { return }
         var ids = visibleProjects.map(\.id)
         guard let sourceIndex = ids.firstIndex(of: sourceID),
-              let destinationIndex = ids.firstIndex(of: destinationID)
+            let destinationIndex = ids.firstIndex(of: destinationID)
         else { return }
         withAnimation(.snappy(duration: 0.22)) {
             let moved = ids.remove(at: sourceIndex)
@@ -2056,7 +2096,7 @@ struct SidebarView: View {
         let sessions = list.activeProjects.flatMap { list.sessions(in: $0) }
         var ids = manuallyOrderedSessions(sessions, session: \.self).map(\.id)
         guard let sourceIndex = ids.firstIndex(of: sourceID),
-              let destinationIndex = ids.firstIndex(of: destinationID)
+            let destinationIndex = ids.firstIndex(of: destinationID)
         else { return }
         withAnimation(.snappy(duration: 0.22)) {
             let moved = ids.remove(at: sourceIndex)
@@ -2184,18 +2224,18 @@ private enum BrailleSpinnerFrames {
         let pixelsWide = Int(size.width * scale)
         let pixelsHigh = Int(size.height * scale)
         guard pixelsWide > 0, pixelsHigh > 0,
-              let rep = NSBitmapImageRep(
-                  bitmapDataPlanes: nil,
-                  pixelsWide: pixelsWide,
-                  pixelsHigh: pixelsHigh,
-                  bitsPerSample: 8,
-                  samplesPerPixel: 4,
-                  hasAlpha: true,
-                  isPlanar: false,
-                  colorSpaceName: .deviceRGB,
-                  bytesPerRow: 0,
-                  bitsPerPixel: 0
-              )
+            let rep = NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: pixelsWide,
+                pixelsHigh: pixelsHigh,
+                bitsPerSample: 8,
+                samplesPerPixel: 4,
+                hasAlpha: true,
+                isPlanar: false,
+                colorSpaceName: .deviceRGB,
+                bytesPerRow: 0,
+                bitsPerPixel: 0
+            )
         else { return nil }
         rep.size = NSSize(width: size.width, height: size.height)
         NSGraphicsContext.saveGraphicsState()
@@ -2207,17 +2247,18 @@ private enum BrailleSpinnerFrames {
                 string: glyph,
                 attributes: [
                     .font: NSFont.monospacedSystemFont(ofSize: 14, weight: .regular),
-                    .foregroundColor: NSColor(color)
+                    .foregroundColor: NSColor(color),
                 ]
             )
             let bounds = text.boundingRect(
                 with: NSSize(width: size.width, height: size.height),
                 options: [.usesLineFragmentOrigin]
             )
-            text.draw(at: NSPoint(
-                x: (size.width - bounds.width) / 2,
-                y: (size.height - bounds.height) / 2
-            ))
+            text.draw(
+                at: NSPoint(
+                    x: (size.width - bounds.width) / 2,
+                    y: (size.height - bounds.height) / 2
+                ))
         }
         NSGraphicsContext.restoreGraphicsState()
         return rep.cgImage
@@ -2248,7 +2289,8 @@ private struct BrailleSpinnerLayer: NSViewRepresentable {
 
     func updateNSView(_ view: NSView, context: Context) {
         guard let layer = view.layer else { return }
-        let scale = view.window?.backingScaleFactor
+        let scale =
+            view.window?.backingScaleFactor
             ?? NSScreen.main?.backingScaleFactor
             ?? 2
         // Rebuild only when something that changes the pixels or the timing
@@ -2302,8 +2344,10 @@ private struct HoverableRow<Content: View>: View {
         content(revealsHoverContent)
             .background(
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(isSelected ? theme.rowSelectedBackground
-                        : (showsHoverBackground ? theme.rowHoverBackground : .clear))
+                    .fill(
+                        isSelected
+                            ? theme.rowSelectedBackground
+                            : (showsHoverBackground ? theme.rowHoverBackground : .clear))
             )
             .onHover { isHovered = $0 }
     }
@@ -2322,8 +2366,10 @@ private struct SidebarRowHoverModifier: ViewModifier {
         content
             .background(
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(isSelected ? theme.rowSelectedBackground
-                        : (showsHover ? theme.rowHoverBackground : .clear))
+                    .fill(
+                        isSelected
+                            ? theme.rowSelectedBackground
+                            : (showsHover ? theme.rowHoverBackground : .clear))
             )
             .onHover { isHovered = $0 }
     }

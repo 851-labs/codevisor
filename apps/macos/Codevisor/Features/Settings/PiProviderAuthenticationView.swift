@@ -259,7 +259,8 @@ struct PiProviderAuthenticationView: View {
         await perform {
             providers = try await client.listPiAuthProviders()
             if !providers.contains(where: { $0.id == selectedProviderId }) {
-                selectedProviderId = providers.first(where: { $0.credentialType == nil })?.id
+                selectedProviderId =
+                    providers.first(where: { $0.credentialType == nil })?.id
                     ?? providers.first?.id
                     ?? ""
             }
@@ -351,7 +352,9 @@ struct PiProviderAuthenticationView: View {
     }
 
     private func refreshHarness() async {
-        if let updated = try? await environment.refreshHarnessAuthentication(harnessId: harness.id, onServer: scopedServerId) {
+        if let updated = try? await environment.refreshHarnessAuthentication(
+            harnessId: harness.id, onServer: scopedServerId)
+        {
             onChange(updated)
         }
     }

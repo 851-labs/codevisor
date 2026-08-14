@@ -29,10 +29,11 @@ extension View {
         _ isHovered: Binding<Bool>,
         respectsSuspension: Bool = true
     ) -> some View {
-        background(HoverTrackingView(
-            isHovered: isHovered,
-            respectsSuspension: respectsSuspension
-        ))
+        background(
+            HoverTrackingView(
+                isHovered: isHovered,
+                respectsSuspension: respectsSuspension
+            ))
     }
 }
 
@@ -66,11 +67,12 @@ private struct HoverTrackingView: NSViewRepresentable {
             super.updateTrackingAreas()
             trackingAreas.forEach(removeTrackingArea)
             guard !isSuspended else { return }
-            addTrackingArea(NSTrackingArea(
-                rect: .zero,
-                options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
-                owner: self
-            ))
+            addTrackingArea(
+                NSTrackingArea(
+                    rect: .zero,
+                    options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+                    owner: self
+                ))
         }
 
         override func mouseEntered(with event: NSEvent) { onChange?(true) }

@@ -324,7 +324,8 @@ public struct ServerSessionTransport: Sendable {
     /// last envelope so live streaming can resume exactly after it.
     public func history() async throws -> (events: [ServerSessionStreamEvent], cursor: Int?) {
         let envelopes = try await client.sessionEvents(id: sessionId)
-        let events = envelopes
+        let events =
+            envelopes
             .filter { $0.subjectId.caseInsensitiveCompare(sessionId.uuidString) == .orderedSame }
             .flatMap { Self.sessionStreamEvents(from: $0) }
         return (events, envelopes.last?.id)
@@ -358,8 +359,10 @@ public struct ServerSessionTransport: Sendable {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    for try await event in client.eventStream(since: since) where
-                        event.subjectId.caseInsensitiveCompare(sessionId.uuidString) == .orderedSame {
+                    for try await event in client.eventStream(since: since)
+                    where
+                        event.subjectId.caseInsensitiveCompare(sessionId.uuidString) == .orderedSame
+                    {
                         for update in Self.sessionStreamEvents(from: event) {
                             continuation.yield(update)
                         }
@@ -388,16 +391,20 @@ public struct ServerSessionTransport: Sendable {
             switch item.role {
             case .user:
                 flushAssistant()
-                conversation.append(.user(UserMessage(
-                    id: uuid(from: item.id),
-                    text: item.text,
-                    attachments: (item.attachments ?? []).map(\.attachment)
-                )))
+                conversation.append(
+                    .user(
+                        UserMessage(
+                            id: uuid(from: item.id),
+                            text: item.text,
+                            attachments: (item.attachments ?? []).map(\.attachment)
+                        )))
             case .assistant:
-                var assistant = pendingAssistant ?? AssistantMessage(
-                    id: uuid(from: item.id),
-                    turn: AssistantTurn(isGenerating: item.isGenerating)
-                )
+                var assistant =
+                    pendingAssistant
+                    ?? AssistantMessage(
+                        id: uuid(from: item.id),
+                        turn: AssistantTurn(isGenerating: item.isGenerating)
+                    )
                 TranscriptReducer.apply(
                     .agentMessageChunk(.text(item.text), messageId: item.messageId),
                     to: &assistant.turn
@@ -419,11 +426,12 @@ public struct ServerSessionTransport: Sendable {
         let id = uuid(from: item.id)
         switch item.role {
         case .user:
-            return .user(UserMessage(
-                id: id,
-                text: item.text,
-                attachments: (item.attachments ?? []).map(\.attachment)
-            ))
+            return .user(
+                UserMessage(
+                    id: id,
+                    text: item.text,
+                    attachments: (item.attachments ?? []).map(\.attachment)
+                ))
         case .assistant:
             // A still-streaming item carries the provider message id of its
             // final text span. Adopting the live-delta identity (`acp:<id>`)
@@ -463,12 +471,15 @@ public struct ServerSessionTransport: Sendable {
 
     private static func sessionStreamEvents(from event: ServerEventEnvelope) -> [ServerSessionStreamEvent] {
         if event.payload["sessionUpdate"]?.stringValue == "assistant_message_finalized",
-           let markdown = event.payload["markdown"]?.stringValue {
-            return [.assistantFinalized(
-                markdown: markdown,
-                messageId: event.payload["messageId"]?.stringValue,
-                attachments: attachments(from: event.payload)
-            )]
+            let markdown = event.payload["markdown"]?.stringValue
+        {
+            return [
+                .assistantFinalized(
+                    markdown: markdown,
+                    messageId: event.payload["messageId"]?.stringValue,
+                    attachments: attachments(from: event.payload)
+                )
+            ]
         }
         if let rawUpdate = decodeRawSessionUpdate(event.payload) {
             return [.update(rawUpdate)]
@@ -476,18 +487,22 @@ public struct ServerSessionTransport: Sendable {
 
         switch event.kind {
         case "session.attention.updated":
-            return [.planApprovalRequired(
-                event.payload["pendingPlanApproval"]?.boolValue == true
-            )]
+            return [
+                .planApprovalRequired(
+                    event.payload["pendingPlanApproval"]?.boolValue == true
+                )
+            ]
         case "session.queue.updated":
             return [.queueUpdated(promptQueue(from: event.payload))]
         case "session.updateGate.updated":
-            return [.updateGate(
-                waiting: event.payload["state"]?.stringValue == "waiting",
-                harnessName: event.payload["harnessName"]?.stringValue
-                    ?? event.payload["harnessId"]?.stringValue
-                    ?? "the agent"
-            )]
+            return [
+                .updateGate(
+                    waiting: event.payload["state"]?.stringValue == "waiting",
+                    harnessName: event.payload["harnessName"]?.stringValue
+                        ?? event.payload["harnessId"]?.stringValue
+                        ?? "the agent"
+                )
+            ]
         case "session.output":
             return outputEvents(from: event.payload)
         case "session.updated":
@@ -495,13 +510,15 @@ public struct ServerSessionTransport: Sendable {
                 return [.retrying(retry)]
             }
             if let stopReason = stopReason(from: event.payload) {
-                return [.finished(
-                    stopReason,
-                    stopDetail: event.payload["stopDetail"]?.stringValue,
-                    retryable: event.payload["retryable"]?.boolValue == true,
-                    initiatedBy: event.payload["initiatedBy"]?.stringValue
-                        .flatMap(SessionTurnInitiator.init(rawValue:)) ?? .user
-                )]
+                return [
+                    .finished(
+                        stopReason,
+                        stopDetail: event.payload["stopDetail"]?.stringValue,
+                        retryable: event.payload["retryable"]?.boolValue == true,
+                        initiatedBy: event.payload["initiatedBy"]?.stringValue
+                            .flatMap(SessionTurnInitiator.init(rawValue:)) ?? .user
+                    )
+                ]
             }
             if let tasks = backgroundTasks(from: event.payload) {
                 return [.backgroundTasks(tasks)]
@@ -510,20 +527,25 @@ public struct ServerSessionTransport: Sendable {
                 return [.modelFallback(fallback)]
             }
             if let state = event.payload["runtimeState"]?.stringValue
-                .flatMap(SessionRuntimeState.init(rawValue:)) {
+                .flatMap(SessionRuntimeState.init(rawValue:))
+            {
                 return [.runtimeState(state)]
             }
             return metadataUpdates(from: event.payload).map(ServerSessionStreamEvent.update)
         case "session.error":
-            return [.failed(
-                errorMessage(from: event.payload),
-                retryable: event.payload["retryable"]?.boolValue == true
-            )]
+            return [
+                .failed(
+                    errorMessage(from: event.payload),
+                    retryable: event.payload["retryable"]?.boolValue == true
+                )
+            ]
         case "session.authRequired":
-            return [.authenticationRequired(
-                event.payload["detail"]?.stringValue
-                    ?? "Sign-in expired. Sign in again in Harness Settings to continue."
-            )]
+            return [
+                .authenticationRequired(
+                    event.payload["detail"]?.stringValue
+                        ?? "Sign-in expired. Sign in again in Harness Settings to continue."
+                )
+            ]
         default:
             return []
         }
@@ -565,7 +587,8 @@ public struct ServerSessionTransport: Sendable {
 
     private static func outputEvents(from payload: JSONValue) -> [ServerSessionStreamEvent] {
         guard let role = payload["role"]?.stringValue,
-              let text = payload["text"]?.stringValue else {
+            let text = payload["text"]?.stringValue
+        else {
             return []
         }
         switch role {
@@ -574,11 +597,13 @@ public struct ServerSessionTransport: Sendable {
         case "user":
             let attachments = attachments(from: payload)
             guard !text.isEmpty || !attachments.isEmpty else { return [] }
-            return [.userMessage(
-                id: payload["messageId"]?.stringValue,
-                text: text,
-                attachments: attachments
-            )]
+            return [
+                .userMessage(
+                    id: payload["messageId"]?.stringValue,
+                    text: text,
+                    attachments: attachments
+                )
+            ]
         default:
             return []
         }
@@ -601,8 +626,8 @@ public struct ServerSessionTransport: Sendable {
     /// for what is not worth showing, so a malformed payload is skipped.
     private static func modelFallback(from payload: JSONValue) -> SessionModelFallback? {
         guard let value = payload["modelFallback"],
-              let originalModel = value["originalModel"]?.stringValue,
-              let fallbackModel = value["fallbackModel"]?.stringValue
+            let originalModel = value["originalModel"]?.stringValue,
+            let fallbackModel = value["fallbackModel"]?.stringValue
         else { return nil }
         return SessionModelFallback(
             originalModel: originalModel,

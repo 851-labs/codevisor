@@ -45,7 +45,8 @@ public final class DefaultPaneGroupRepository: PaneGroupRepository, @unchecked S
         do {
             try store.saveData(JSONEncoder().encode(all), forKey: key)
         } catch {
-            Log.persistence.error("Failed to save \(self.key, privacy: .public): \(String(describing: error), privacy: .public)")
+            Log.persistence.error(
+                "Failed to save \(self.key, privacy: .public): \(String(describing: error), privacy: .public)")
         }
     }
 

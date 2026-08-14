@@ -35,7 +35,8 @@ enum KeychainCredentialServices {
     ) -> String {
         guard isDevelopment else { return productionService }
 
-        let scope = nonempty(developmentInstanceID)
+        let scope =
+            nonempty(developmentInstanceID)
             ?? nonempty(bundleIdentifier)
             ?? "default"
         return "\(productionService).development.\(scope)"
@@ -101,8 +102,8 @@ final class KeychainValueStore: @unchecked Sendable {
         let response = operations.copyMatching(query)
         if response.status == errSecItemNotFound { return nil }
         guard response.status == errSecSuccess,
-              let data = response.result as? Data,
-              let value = String(data: data, encoding: .utf8)
+            let data = response.result as? Data,
+            let value = String(data: data, encoding: .utf8)
         else {
             throw KeychainStorageFailure(
                 operation: "read",

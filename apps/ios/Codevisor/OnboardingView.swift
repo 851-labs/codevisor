@@ -39,7 +39,7 @@ struct OnboardingView: View {
 private struct WelcomeStep: View {
     private var title: String {
         guard CodevisorAppVariant.isDevelopment,
-              CodevisorAppVariant.developmentInstanceID != nil
+            CodevisorAppVariant.developmentInstanceID != nil
         else { return "Codevisor" }
         return "Codevisor (\(CodevisorAppVariant.developmentWorktreeName))"
     }
@@ -352,7 +352,7 @@ private struct ConnectMachineStep: View {
         ) { callbackURL in
             isSigningInToCloud = false
             guard let callbackURL,
-                  let deeplink = CloudAuthDeeplink.parse(callbackURL)
+                let deeplink = CloudAuthDeeplink.parse(callbackURL)
             else { return }
             Task { await environment.cloud.completeSignIn(ott: deeplink.ott) }
         }

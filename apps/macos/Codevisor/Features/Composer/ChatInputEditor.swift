@@ -249,11 +249,13 @@ private final class GrowingTextClipView: NSClipView {
     override func constrainBoundsRect(_ proposedBounds: NSRect) -> NSRect {
         var bounds = super.constrainBoundsRect(proposedBounds)
         guard maximumGrowingHeight > 0,
-              let documentView,
-              documentView.frame.height <= maximumGrowingHeight + 0.5 else {
+            let documentView,
+            documentView.frame.height <= maximumGrowingHeight + 0.5
+        else {
             return bounds
         }
-        bounds.origin.y = documentView.isFlipped
+        bounds.origin.y =
+            documentView.isFlipped
             ? 0
             : max(0, documentView.frame.height - bounds.height)
         return bounds
@@ -298,7 +300,7 @@ final class SubmittingTextView: NSTextView {
         NSSelectorFromString("subscript:"),
         NSSelectorFromString("unscript:"),
         #selector(NSTextView.changeFont(_:)),
-        NSSelectorFromString("changeAttributes:")
+        NSSelectorFromString("changeAttributes:"),
     ]
 
     override func alignLeft(_ sender: Any?) {}
@@ -322,9 +324,10 @@ final class SubmittingTextView: NSTextView {
             return false
         }
         if item.action == #selector(paste(_:)),
-           isEditable,
-           onPasteAttachments != nil,
-           Self.pasteboardContainsAttachments(NSPasteboard.general) {
+            isEditable,
+            onPasteAttachments != nil,
+            Self.pasteboardContainsAttachments(NSPasteboard.general)
+        {
             return true
         }
         return super.validateUserInterfaceItem(item)
@@ -392,7 +395,7 @@ final class SubmittingTextView: NSTextView {
         if event.keyCode == 36 || event.keyCode == 76 {
             guard isEditable else { return }
             if event.modifierFlags.contains(.shift) {
-                super.keyDown(with: event) // newline
+                super.keyDown(with: event)  // newline
             } else {
                 if onKeyCommand?(.acceptSelection) != true {
                     onSubmit?()

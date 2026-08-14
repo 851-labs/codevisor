@@ -21,7 +21,7 @@ public struct LegacyServerJobRetirer: Sendable {
     public static let labels = [
         "com.851labs.codevisor-recovery",
         "com.851labs.herdman-recovery",
-        "com.851labs.HerdMan-recovery"
+        "com.851labs.HerdMan-recovery",
     ]
 
     private let runner: any CommandRunner

@@ -163,8 +163,9 @@ public struct MarkdownParser: Sendable {
         var isComplete = false
         while index < lines.count {
             if let run = IncompleteMarkdown.fenceRun(in: Substring(lines[index])),
-               run.character == fence.character, run.length >= fence.length,
-               fenceInfo(lines[index])?.language == nil {
+                run.character == fence.character, run.length >= fence.length,
+                fenceInfo(lines[index])?.language == nil
+            {
                 isComplete = true
                 index += 1
                 break
@@ -172,14 +173,16 @@ public struct MarkdownParser: Sendable {
             codeLines.append(lines[index])
             index += 1
         }
-        return (.codeBlock(language: fence.language, code: codeLines.joined(separator: "\n"), isComplete: isComplete), index)
+        return (
+            .codeBlock(language: fence.language, code: codeLines.joined(separator: "\n"), isComplete: isComplete), index
+        )
     }
 
     private func parseBlockQuote(_ lines: [String], start: Int) -> (MarkdownBlock, Int) {
         var index = start
         var quoted: [String] = []
         while index < lines.count, isBlockQuote(lines[index]) {
-            let stripped = lines[index].drop(while: { $0 == " " }).dropFirst() // drop '>'
+            let stripped = lines[index].drop(while: { $0 == " " }).dropFirst()  // drop '>'
             let content = stripped.first == " " ? String(stripped.dropFirst()) : String(stripped)
             quoted.append(content)
             index += 1
@@ -263,7 +266,8 @@ public struct MarkdownParser: Sendable {
             if isBlank(line) || fenceInfo(line) != nil || parseHeading(line) != nil
                 || isThematicBreak(line) || isBlockQuote(line)
                 || bulletContent(line) != nil || orderedContent(line) != nil
-                || isTableStart(lines, index) {
+                || isTableStart(lines, index)
+            {
                 if index > start { break }
             }
             paragraph.append(line)
