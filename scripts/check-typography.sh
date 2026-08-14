@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Typography guardrail — enforces the HIG floors established in
-# apps/macos/Packages/CodevisorUI/Sources/CodevisorUI/DesignSystem/Typography.swift
+# packages/swift/CodevisorUI/Sources/CodevisorUI/DesignSystem/Typography.swift
 #
 # Blocks:
 #   1. Font size literals below the macOS 10 pt legibility floor

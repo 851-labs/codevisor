@@ -23,8 +23,8 @@ DerivedData/
 !.env.example
 apps/server/data/
 apps/macos/Frameworks/
-apps/macos/Packages/.build/
-apps/macos/Packages/.swiftpm/
+packages/swift/.build/
+packages/swift/.swiftpm/
 .wrangler/
 .playwright-mcp/
 # Colocated dev/test build & server state (see scripts/dev.mjs)

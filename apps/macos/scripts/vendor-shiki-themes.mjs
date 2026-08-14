@@ -22,7 +22,7 @@ async function findShikiThemesDist() {
 const shikiDist = await findShikiThemesDist()
 const themesDir = join(
   repoRoot,
-  "apps/macos/Packages/CodevisorTheming/Sources/CodevisorTheming/Resources/Themes"
+  "packages/swift/CodevisorTheming/Sources/CodevisorTheming/Resources/Themes"
 )
 
 // Curated Shiki presets, a spread of well-known light and dark themes.

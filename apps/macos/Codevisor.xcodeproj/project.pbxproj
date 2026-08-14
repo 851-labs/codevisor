@@ -127,7 +127,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				4A5350550000000000000002 /* XCRemoteSwiftPackageReference "Sparkle" */,
-				FC8A031D2FF3634D00689171 /* XCLocalSwiftPackageReference "Packages" */,
+				FC8A031D2FF3634D00689171 /* XCLocalSwiftPackageReference "../../packages/swift" */,
 			);
 			preferredProjectObjectVersion = 90;
 			productRefGroup = 000000000000000000000020 /* Products */;
@@ -493,9 +493,9 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		FC8A031D2FF3634D00689171 /* XCLocalSwiftPackageReference "Packages" */ = {
+		FC8A031D2FF3634D00689171 /* XCLocalSwiftPackageReference "../../packages/swift" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = Packages;
+			relativePath = ../../packages/swift;
 		};
 /* End XCLocalSwiftPackageReference section */
 
@@ -534,17 +534,17 @@
 		};
 		FCE74E8C2FF368F000B42227 /* CodevisorCore */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = FC8A031D2FF3634D00689171 /* XCLocalSwiftPackageReference "Packages" */;
+			package = FC8A031D2FF3634D00689171 /* XCLocalSwiftPackageReference "../../packages/swift" */;
 			productName = CodevisorCore;
 		};
 		FCE74E932FF368F000B42227 /* CodevisorCoreMac */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = FC8A031D2FF3634D00689171 /* XCLocalSwiftPackageReference "Packages" */;
+			package = FC8A031D2FF3634D00689171 /* XCLocalSwiftPackageReference "../../packages/swift" */;
 			productName = CodevisorCoreMac;
 		};
 		FCE74E952FF368F000B42227 /* CodevisorUI */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = FC8A031D2FF3634D00689171 /* XCLocalSwiftPackageReference "Packages" */;
+			package = FC8A031D2FF3634D00689171 /* XCLocalSwiftPackageReference "../../packages/swift" */;
 			productName = CodevisorUI;
 		};
 /* End XCSwiftPackageProductDependency section */

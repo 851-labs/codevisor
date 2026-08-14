@@ -3,6 +3,7 @@
   "ignorePatterns": [
     ".repos/**",
     "apps/macos/**",
+    "packages/swift/**",
     "coverage/**",
     "dist/**",
     "node_modules/**",

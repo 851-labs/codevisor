@@ -73,7 +73,7 @@ macOS app too.
 
 Work items:
 
-1. New `CodevisorCoreMac` target in `apps/macos/Packages` (macOS-only),
+1. New `CodevisorCoreMac` target in `packages/swift` (macOS-only),
    depending on `CodevisorCore`. Move the platform-bound files there:
    - `Server/LocalCodevisorServer.swift`, `Server/CommandRunner.swift`,
      `Server/EnvironmentProbe.swift`, `Server/TailscaleDiscovery.swift`

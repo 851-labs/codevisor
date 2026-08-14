@@ -10,7 +10,7 @@ const scriptsDir = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(scriptsDir, "../../..")
 const outfile = join(
   repoRoot,
-  "apps/macos/Packages/CodeHighlighter/Sources/CodeHighlighter/Resources/highlighter.js"
+  "packages/swift/CodeHighlighter/Sources/CodeHighlighter/Resources/highlighter.js"
 )
 
 const result = await Bun.build({

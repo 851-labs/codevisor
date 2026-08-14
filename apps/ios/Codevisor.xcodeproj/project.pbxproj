@@ -121,7 +121,7 @@
 			mainGroup = 0C0000000000000000000001;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				0C0000000000000200000000 /* XCLocalSwiftPackageReference "../macos/Packages" */,
+				0C0000000000000200000000 /* XCLocalSwiftPackageReference "../../packages/swift" */,
 				0C0000000000000200000011 /* XCRemoteSwiftPackageReference "SwiftTerm" */,
 			);
 			preferredProjectObjectVersion = 90;
@@ -360,9 +360,9 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		0C0000000000000200000000 /* XCLocalSwiftPackageReference "../macos/Packages" */ = {
+		0C0000000000000200000000 /* XCLocalSwiftPackageReference "../../packages/swift" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = ../macos/Packages;
+			relativePath = ../../packages/swift;
 		};
 /* End XCLocalSwiftPackageReference section */
 
@@ -380,22 +380,22 @@
 /* Begin XCSwiftPackageProductDependency section */
 		0C0000000000000200000001 /* ACPKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 0C0000000000000200000000 /* XCLocalSwiftPackageReference "../macos/Packages" */;
+			package = 0C0000000000000200000000 /* XCLocalSwiftPackageReference "../../packages/swift" */;
 			productName = ACPKit;
 		};
 		0C0000000000000200000003 /* CodevisorTheming */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 0C0000000000000200000000 /* XCLocalSwiftPackageReference "../macos/Packages" */;
+			package = 0C0000000000000200000000 /* XCLocalSwiftPackageReference "../../packages/swift" */;
 			productName = CodevisorTheming;
 		};
 		0C0000000000000200000005 /* CodevisorCore */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 0C0000000000000200000000 /* XCLocalSwiftPackageReference "../macos/Packages" */;
+			package = 0C0000000000000200000000 /* XCLocalSwiftPackageReference "../../packages/swift" */;
 			productName = CodevisorCore;
 		};
 		0C0000000000000200000007 /* CodevisorUI */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 0C0000000000000200000000 /* XCLocalSwiftPackageReference "../macos/Packages" */;
+			package = 0C0000000000000200000000 /* XCLocalSwiftPackageReference "../../packages/swift" */;
 			productName = CodevisorUI;
 		};
 		0C0000000000000200000009 /* SwiftTerm */ = {
