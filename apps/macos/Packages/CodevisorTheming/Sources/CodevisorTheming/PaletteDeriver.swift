@@ -17,9 +17,8 @@ public struct TerminalPalette: Equatable, Sendable {
 /// theme keys win wherever the theme provides a usable one (accent, row
 /// hover/selection, elevated widget/menu surfaces, status tints — each behind
 /// a legibility guard); derivation (fg-mix surfaces, derived muted text,
-/// luminance-picked status constants) is the fallback, not the rule. Ported
-/// from the web app's `deriveChromeTokens.ts` + `codevisorChromeMapping.ts`
-/// (themselves adapted from pierre's diffshub app). All colors are concrete
+/// luminance-picked status constants) is the fallback, not the rule. The
+/// derivation is adapted from pierre's diffshub app. All colors are concrete
 /// sRGB values; only `border` and the diff backgrounds carry alpha.
 public struct DerivedPalette: Equatable, Sendable {
     public let isDark: Bool

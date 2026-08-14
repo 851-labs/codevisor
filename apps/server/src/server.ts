@@ -176,11 +176,6 @@ export interface CodevisorServerConfig {
   readonly port: number
   readonly worktreeNameStyle: "production" | "development"
   readonly auth: CodevisorServerAuthConfig
-  /// Origins allowed to call the HTTP API from a browser context (e.g. the
-  /// Tauri desktop webview's tauri://localhost). Never a wildcard: loopback
-  /// requests skip token auth, so a wildcard would let any website drive the
-  /// server. Empty/absent disables CORS entirely (same-origin only).
-  readonly corsOrigins?: ReadonlyArray<string> | undefined
   /// Invoked after `POST /v1/shutdown` is acknowledged so the host process can
   /// exit (used by the macOS app to swap in an updated server runtime).
   readonly onShutdownRequested?: (() => void) | undefined
@@ -490,7 +485,6 @@ export const defaultServerConfig = (
     allowLocalhostWithoutAuth: true,
     requireBearerToken: false
   },
-  corsOrigins: overrides.corsOrigins,
   onShutdownRequested: overrides.onShutdownRequested,
   updater: overrides.updater,
   sessionActivity: overrides.sessionActivity,
@@ -817,19 +811,6 @@ const handleRequest = async (
 ): Promise<void> => {
   try {
     const url = parseRequestUrl(request)
-    applyCorsHeaders(config, request, response)
-    if (request.method === "OPTIONS") {
-      // Preflight for allowlisted browser origins (the CORS headers above
-      // carry the grant); auth is intentionally skipped — preflights never
-      // carry credentials, and the actual request is still authorized.
-      response.writeHead(204, {
-        "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-        "Access-Control-Allow-Headers": "Authorization, Content-Type",
-        "Access-Control-Max-Age": "86400"
-      })
-      response.end()
-      return
-    }
     if (request.method === "GET" && url.pathname === "/v1/health") {
       writeJson(response, 200, {
         ok: true,
@@ -4069,23 +4050,6 @@ const attachTerminalSocket = async (
   } catch (cause) {
     webSocket.send(JSON.stringify({ type: "error", seq: 0, message: failureMessage(cause) }))
     webSocket.close()
-  }
-}
-
-/// Echoes Access-Control-Allow-Origin for requests from an allowlisted
-/// browser origin (never a wildcard — see CodevisorServerConfig.corsOrigins).
-const applyCorsHeaders = (
-  config: CodevisorServerConfig,
-  request: IncomingMessage,
-  response: ServerResponse
-): void => {
-  const origin = request.headers.origin
-  if (origin === undefined || config.corsOrigins === undefined) {
-    return
-  }
-  if (config.corsOrigins.includes(origin)) {
-    response.setHeader("Access-Control-Allow-Origin", origin)
-    response.setHeader("Vary", "Origin")
   }
 }
 

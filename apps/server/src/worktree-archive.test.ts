@@ -383,7 +383,7 @@ describe("meaningfulIgnoredPaths", () => {
       meaningfulIgnoredPaths([
         ".env",
         "node_modules/",
-        "apps/web/dist/",
+        "apps/www/dist/",
         "src/generated.local.json",
         "target/debug/",
         "coverage/"

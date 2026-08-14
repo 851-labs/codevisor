@@ -13,7 +13,6 @@ trusted private network, put it behind a TLS-terminating reverse proxy or a priv
 - Restrict port `49361` with a host firewall or private network policy.
 - Terminate HTTPS and WSS before traffic crosses an untrusted network.
 - Keep the SQLite database and installation directory readable only by the service user.
-- Configure explicit CORS origins only for browser clients you control.
 - Store pairing tokens in a credential manager; the current API does not expose token revocation.
 
 The hosted API reference intentionally does not execute requests. This prevents server addresses and

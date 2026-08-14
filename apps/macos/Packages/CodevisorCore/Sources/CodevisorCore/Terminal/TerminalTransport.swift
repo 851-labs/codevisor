@@ -17,13 +17,12 @@ public enum TerminalEvent: Sendable {
 /// The remote-terminal wire protocol: create a server-side PTY (or attach to
 /// an existing one) and stream it over a WebSocket of JSON frames. The PTY
 /// lives in the server's TerminalManager and survives disconnects — reconnects
-/// replay every frame after `lastOutputSeq`. This is the same protocol the web
-/// client (apps/web/src/lib/terminal.ts) and the macOS terminal proxy speak;
-/// the renderer on top is platform-owned.
+/// replay every frame after `lastOutputSeq`. The macOS terminal proxy speaks
+/// the same protocol; the renderer on top is platform-owned.
 ///
 /// Auth note: the server honors the `Authorization: Bearer` handshake header
-/// (the web client's `?token=` query is ignored and only works on loopback),
-/// so this transport always authenticates via the header.
+/// and ignores query-string tokens, so this transport always authenticates via
+/// the header.
 ///
 /// Both the HTTP create call and the WebSocket go through the config's
 /// transport seams, so a cloud machine's relay-backed config makes terminals
@@ -214,7 +213,7 @@ public final class TerminalTransport {
     private func scheduleReconnect() {
         teardownSocket()
         failures += 1
-        // Same curve as the web client: 250ms · 2^n capped at 5s, plus jitter.
+        // Exponential reconnect: 250ms · 2^n capped at 5s, plus jitter.
         let base = min(5000, 250 * (1 << min(failures, 5)))
         let delay = base + Int.random(in: 0...250)
         reconnectTask = Task { [weak self] in

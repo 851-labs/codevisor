@@ -315,9 +315,8 @@ Work items:
 
 1. **Transport**: Swift client for the terminal WS protocol (`input`/`resize`/
    `close` up; `output`/`exit`/`error` down; `clientId` + `clientSeq` dedupe;
-   `Authorization` header on the handshake — not the web client's `?token=`),
-   with the same reconnect/backoff/replay semantics as
-   `apps/web/src/lib/terminal.ts`. Shared target so a future Mac refactor can
+   `Authorization` header on the handshake), with exponential reconnect,
+   backoff, and replay semantics. Shared target so a future Mac refactor can
    use it too.
 2. **Emulator surface**, two-track:
    - Track A (preferred): GhosttyKit for iOS — extend
@@ -351,10 +350,10 @@ Work items:
    connected; scope the server-side push story (APNs relay) as a follow-on —
    the socket dies in background on iOS, matching the `AppSettings.swift`
    comment about a presence coordinator choosing the receiving device.
-2. Feature-parity sweep driven by an audit doc (pattern:
-   `docs/macos-tauri-parity.md`): skills & MCP management screens, harness
-   management/update banners, session import, goal/plan surfaces, config
-   editors, remote browser recents, custom sounds, anything the sweep finds.
+2. Feature-parity sweep against the macOS feature set: skills & MCP management
+   screens, harness management/update banners, session import, goal/plan
+   surfaces, config editors, remote browser recents, custom sounds, and
+   anything else the sweep finds.
 3. iPad: `NavigationSplitView` layout (home + detail side-by-side), pointer and
    hardware-keyboard support, Stage Manager sizing.
 4. Analytics/diagnostics parity: PostHog + Sentry iOS init (deps already

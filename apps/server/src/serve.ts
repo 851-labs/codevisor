@@ -556,12 +556,6 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
     if (kind !== undefined && kind !== "local" && kind !== "remote") {
       throw new Error("--kind must be either local or remote")
     }
-    // Browser origins allowed to call the API cross-origin (comma-separated),
-    // e.g. the Tauri webview's tauri://localhost. Never pass a wildcard here.
-    const corsOrigins = (args["cors-origins"] ?? "")
-      .split(",")
-      .map((origin) => origin.trim())
-      .filter((origin) => origin.length > 0)
     // Resolve caller-provided paths before changing cwd below. This preserves
     // the CLI's relative-path semantics while ensuring every later consumer
     // sees an absolute path.
@@ -660,8 +654,7 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
               "--auth",
               authMode,
               ...(args.name === undefined ? [] : ["--name", args.name]),
-              ...(args.kind === undefined ? [] : ["--kind", args.kind]),
-              ...(corsOrigins.length === 0 ? [] : ["--cors-origins", corsOrigins.join(",")])
+              ...(args.kind === undefined ? [] : ["--kind", args.kind])
             ]
           })
     const terminal = makeTerminalManager()
@@ -841,7 +834,6 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
         serviceManaged,
         ...buildMetadata,
         ...(version === undefined ? {} : { version }),
-        ...(corsOrigins.length === 0 ? {} : { corsOrigins }),
         auth: {
           // Same-machine clients (the app that launched this server, the
           // terminal proxy) are trusted without a token; only connections

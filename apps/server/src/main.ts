@@ -12,7 +12,6 @@ Options:
   --serverId <id>          Server identifier (default: local)
   --auth <none|token>      Auth mode (default: none on 127.0.0.1, token otherwise)
   --kind <kind>            Server kind
-  --cors-origins <list>    Comma-separated allowed CORS origins
   --db <path>              Database path (default: canonical data directory)
   --upgrade-status <path>  Data-upgrade status file path
   --boot-id <id>           Unique identity for this server startup

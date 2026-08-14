@@ -3,6 +3,6 @@
 ///
 /// Everything external is injected — `fetch` for HTTP, a socket factory for
 /// WebSockets — so the logic is fully unit-testable and runs identically under
-/// Node/Bun (apps/server, dev tooling) and future web/Tauri clients.
+/// Node/Bun (apps/server and development tooling) and other future runtimes.
 export * from "./login.js"
 export * from "./machine-connection.js"

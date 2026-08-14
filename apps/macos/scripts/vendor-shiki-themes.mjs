@@ -10,8 +10,8 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..")
 
-// The script lives outside the web app's dependency tree, so resolve the
-// @shikijs/themes dist directory from the workspace store directly.
+// Resolve the @shikijs/themes dist directory from Bun's workspace store so
+// the individual theme modules can be enumerated directly.
 async function findShikiThemesDist() {
   const store = join(repoRoot, "node_modules/.bun")
   const entry = (await readdir(store)).find((name) => name.startsWith("@shikijs+themes@"))

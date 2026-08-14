@@ -54,4 +54,4 @@ This is the canonical iOS development command. It:
 - Treat every other worktree's development instance as out of scope. Never stop, restart, signal, or otherwise alter it unless the user explicitly asks you to operate on that specific worktree. A port occupied by another worktree is not permission to touch it; let the runner select another port.
 - If the current worktree already has an instance that you did not start, do not launch another one. Reuse it when appropriate or tell the user it is already running; do not stop it unless its ownership is clear or the user asks you to replace it.
 - After changing the native macOS app while an instance you started is running, restart cleanly: stop the owning `bun run dev` process, wait for the server to exit, then run `bun run dev` once to rebuild and relaunch. Never leave the old server running and start an additional development command.
-- Other targets remain separate: `bun run dev:web` runs the public website and `bun run dev:desktop` runs the Tauri parity app.
+- For website-only development, `bun run dev:web` runs the public website.
