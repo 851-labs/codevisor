@@ -125,7 +125,12 @@ struct SessionTranscriptView: View {
                     guard !Task.isCancelled,
                           transcriptProjectionRequest == request else { return }
                     projectedRows = rows
-                    isPreparingTranscript = false
+                    // The empty/loading snapshot is only a placeholder. Keep
+                    // the native transcript parked until the projection that
+                    // follows initial history hydration has arrived, otherwise
+                    // its estimated row frames can reach the first visible
+                    // paint before exact measurements collapse them.
+                    isPreparingTranscript = input.isLoadingInitialHistory
                 } catch is CancellationError {
                     return
                 } catch {
@@ -546,6 +551,7 @@ struct SessionTranscriptView: View {
                 && olderHistoryPresentation.isPresented,
             olderHistoryPresentationTarget: olderHistoryPresentation.presentationTarget,
             isLoadingInitialHistory: controller.isLoadingInitialHistory,
+            isPreparingInitialProjection: isPreparingTranscript,
             layoutFingerprint: transcriptLayoutFingerprint,
             scrollCommand: scrollCommand,
             sendAnimationRequest: controller.userSendAnimationRequest,

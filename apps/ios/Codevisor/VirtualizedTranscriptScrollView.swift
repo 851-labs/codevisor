@@ -276,6 +276,7 @@ final class TranscriptViewController: UIViewController {
         showsOlderHistoryLoadingIndicator: Bool,
         olderHistoryPresentationTarget: TranscriptPaginationPresentationTarget?,
         isLoadingInitialHistory: Bool,
+        isPreparingInitialProjection: Bool,
         layoutFingerprint: Int,
         scrollCommand: TranscriptScrollCommand,
         sendAnimationRequest: UserSendAnimationRequest?,
@@ -305,6 +306,7 @@ final class TranscriptViewController: UIViewController {
             showsOlderHistoryLoadingIndicator: showsOlderHistoryLoadingIndicator,
             olderHistoryPresentationTarget: olderHistoryPresentationTarget,
             isLoadingInitialHistory: isLoadingInitialHistory,
+            isPreparingInitialProjection: isPreparingInitialProjection,
             layoutFingerprint: layoutFingerprint,
             scrollCommand: scrollCommand,
             sendAnimationRequest: sendAnimationRequest,
@@ -404,6 +406,12 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     private var paginationHeaderLayout = TranscriptPaginationHeaderLayout()
     private var olderHistoryPresentationTarget: TranscriptPaginationPresentationTarget?
     private var isLoadingInitialHistory = false
+    /// Row projection runs off the main actor. A retained session controller can
+    /// already own exact scroll geometry while its newly mounted SwiftUI screen
+    /// still has a temporary empty row array. Do not consume that geometry or
+    /// validate its caches until the first displayable projection arrives
+    /// after any initial history hydration.
+    private var isPreparingInitialProjection = true
     private var scrollCommand = TranscriptScrollCommand()
     private var receivedSendAnimationToken: UInt64?
     private var pendingSendAnimationRequest: UserSendAnimationRequest?
@@ -507,6 +515,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         guard !isDetaching else { return }
         updateTopContentInsetIfNeeded()
         guard bounds.width > 0, bounds.height > 0 else { return }
+        guard !isPreparingInitialProjection else { return }
 
         let widthChanged = abs(lastViewportSize.width - bounds.width) > 0.5
         lastViewportSize = bounds.size
@@ -531,6 +540,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         showsOlderHistoryLoadingIndicator newShowsOlderHistoryLoadingIndicator: Bool,
         olderHistoryPresentationTarget newOlderHistoryPresentationTarget: TranscriptPaginationPresentationTarget?,
         isLoadingInitialHistory newIsLoadingInitialHistory: Bool,
+        isPreparingInitialProjection newIsPreparingInitialProjection: Bool,
         layoutFingerprint newLayoutFingerprint: Int,
         scrollCommand newScrollCommand: TranscriptScrollCommand,
         sendAnimationRequest newSendAnimationRequest: UserSendAnimationRequest?,
@@ -559,6 +569,12 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         self.onFollowStateChange = onFollowStateChange
         self.onNearTop = onNearTop
         self.onOlderHistoryPresented = onOlderHistoryPresented
+        isPreparingInitialProjection = newIsPreparingInitialProjection
+        isLoadingInitialHistory = newIsLoadingInitialHistory
+        guard !newIsPreparingInitialProjection else {
+            setNeedsLayout()
+            return
+        }
         hasOlderHistory = newHasOlderHistory
         let paginationHeaderReservationChanged = paginationHeaderLayout.reserveIfNeeded(
             hasOlderHistory: newHasOlderHistory,
@@ -568,7 +584,6 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             isPresented: newShowsOlderHistoryLoadingIndicator
         )
         olderHistoryPresentationTarget = newOlderHistoryPresentationTarget
-        isLoadingInitialHistory = newIsLoadingInitialHistory
         reduceMotion = newReduceMotion
         updateBottomScrollIndicatorInsetIfNeeded(newScrollIndicatorBottomInset)
         sendAnimationSourceFrame = newSendAnimationSourceFrame
@@ -1495,7 +1510,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             measurements[key] != nil && !measurements.isStale(key)
         })
         guard initialPresentationGate.resolve(
-            isHydrating: isLoadingInitialHistory,
+            isHydrating: isLoadingInitialHistory || isPreparingInitialProjection,
             requiredKeys: requiredKeys,
             resolvedKeys: resolvedKeys,
         ) else { return }

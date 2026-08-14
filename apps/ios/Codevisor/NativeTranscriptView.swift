@@ -102,6 +102,7 @@ struct NativeTranscriptView: UIViewControllerRepresentable {
     let showsOlderHistoryLoadingIndicator: Bool
     let olderHistoryPresentationTarget: TranscriptPaginationPresentationTarget?
     let isLoadingInitialHistory: Bool
+    let isPreparingInitialProjection: Bool
     let layoutFingerprint: Int
     let scrollCommand: TranscriptScrollCommand
     let sendAnimationRequest: UserSendAnimationRequest?
@@ -151,6 +152,7 @@ struct NativeTranscriptView: UIViewControllerRepresentable {
             showsOlderHistoryLoadingIndicator: showsOlderHistoryLoadingIndicator,
             olderHistoryPresentationTarget: olderHistoryPresentationTarget,
             isLoadingInitialHistory: isLoadingInitialHistory,
+            isPreparingInitialProjection: isPreparingInitialProjection,
             layoutFingerprint: layoutFingerprint,
             scrollCommand: scrollCommand,
             sendAnimationRequest: sendAnimationRequest,
