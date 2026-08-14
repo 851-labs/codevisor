@@ -1,6 +1,8 @@
 pre-commit:
   parallel: false
   commands:
+    typography:
+      run: scripts/check-typography.sh
     full-suite:
       run: unset $(git rev-parse --local-env-vars) && bun run check
 

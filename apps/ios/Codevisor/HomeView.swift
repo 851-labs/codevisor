@@ -2086,7 +2086,9 @@ private struct AgentActivityIndicator: View {
         TimelineView(.animation(minimumInterval: 0.125, paused: reduceMotion)) { context in
             let frame = reduceMotion ? Self.frames[0] : Self.frame(at: context.date)
             Text(frame)
-                .font(.system(size: 13, design: .monospaced))
+                // `.footnote` = 13 pt at the default size; scales with the
+                // Dynamic Type session titles beside it.
+                .font(.system(.footnote, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .contentTransition(.identity)
         }

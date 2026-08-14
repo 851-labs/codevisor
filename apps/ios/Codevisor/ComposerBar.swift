@@ -711,7 +711,10 @@ private struct ModelConfigChip: View {
                             .foregroundStyle(.secondary)
                     }
                     if let model = controller.modelOption {
+                        // Weight + color together carry the hierarchy (HIG:
+                        // don't rely on color alone to distinguish levels).
                         Text(model.currentName)
+                            .fontWeight(.medium)
                             .foregroundStyle(.primary)
                     }
                     ForEach(controller.thoughtLevelOptions) { thought in

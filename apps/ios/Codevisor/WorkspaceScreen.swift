@@ -2240,7 +2240,7 @@ private struct UncachedPanePreviewView: View {
         ZStack(alignment: .topLeading) {
             background
             Image(systemName: symbolName)
-                .font(.system(size: 28, weight: .light))
+                .font(.system(size: 28, weight: .regular))
                 .foregroundStyle(symbolColor)
                 .position(x: canvasSize.width / 2, y: symbolCenterY)
         }
@@ -2286,7 +2286,7 @@ private struct PanePreviewTile: View {
                 VStack {
                     Spacer()
                     Image(systemName: symbolName)
-                        .font(.system(size: 28, weight: .light))
+                        .font(.system(size: 28, weight: .regular))
                         .foregroundStyle(
                             pane.kind == .terminal
                                 ? Color.white.opacity(0.6)

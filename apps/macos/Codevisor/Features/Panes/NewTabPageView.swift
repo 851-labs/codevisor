@@ -91,7 +91,8 @@ private struct NewTabOptionCard: View {
         Button(action: action) {
             VStack(spacing: 12) {
                 Image(systemName: systemImage)
-                    .font(.system(size: 26, weight: .light))
+                    // HIG: avoid Light/Thin/Ultralight weights.
+                    .font(.system(size: 26, weight: .regular))
                     .foregroundStyle(theme.textPrimary)
                     .frame(height: 32)
                 VStack(spacing: 4) {
