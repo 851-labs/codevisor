@@ -42,6 +42,7 @@ struct AttachmentGeometryReadinessPreferenceKey: PreferenceKey {
 struct AttachmentThumbnailView: View {
     @Environment(\.theme) private var theme
     @Environment(\.attachmentImages) private var attachmentImages
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let file: PreviewFile
     var inline: Bool
 
@@ -64,7 +65,7 @@ struct AttachmentThumbnailView: View {
             if file.hasVisualPreview {
                 imageThumb
                     .overlay(alignment: .bottomLeading) {
-                        if file.isPDF { PDFTagBadge() }
+                        if file.isPDF { PDFBadge() }
                     }
                     .overlay {
                         if file.isVideo { VideoPlayBadge() }
@@ -172,14 +173,18 @@ struct AttachmentThumbnailView: View {
                 Image(systemName: "doc")
                     .foregroundStyle(.secondary)
                 Text(file.name)
-                    .lineLimit(1)
+                    // At accessibility sizes, let the name reflow to a second
+                    // line and the chip widen instead of clipping (HIG:
+                    // minimize truncation as font size increases).
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
                     .truncationMode(.middle)
                     .foregroundStyle(.primary)
             }
             .font(.callout)
             .padding(.horizontal, 10)
-            .frame(height: 56)
-            .frame(maxWidth: 200)
+            .padding(.vertical, 8)
+            .frame(minHeight: 56)
+            .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : 200, alignment: .leading)
             .background(theme.bubbleBackground, in: RoundedRectangle(cornerRadius: 8))
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
@@ -228,30 +233,7 @@ private struct AttachmentThumbnailLoadID: Hashable {
     }
 }
 
-struct PDFTagBadge: View {
-    var body: some View {
-        Text("PDF")
-            .font(.system(size: 8, weight: .bold))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 2)
-            .background(RoundedRectangle(cornerRadius: 4).fill(.black.opacity(0.55)))
-            .padding(4)
-            .allowsHitTesting(false)
-    }
-}
-
-struct VideoPlayBadge: View {
-    var body: some View {
-        Image(systemName: "play.fill")
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(.white)
-            .frame(width: 24, height: 24)
-            .background(Circle().fill(.black.opacity(0.6)))
-            .overlay(Circle().strokeBorder(.white.opacity(0.3), lineWidth: 1))
-            .allowsHitTesting(false)
-    }
-}
+// PDFBadge and VideoPlayBadge are shared with the macOS app via CodevisorUI.
 
 // MARK: - Quick Look
 

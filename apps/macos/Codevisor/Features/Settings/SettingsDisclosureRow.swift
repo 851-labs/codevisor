@@ -33,7 +33,7 @@ struct SettingsDisclosureRow<Label: View, Content: View>: View {
             } label: {
                 HStack(spacing: 7) {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: Typography.IconSize.disclosure, weight: .semibold))
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                         .foregroundStyle(theme.isSystem ? Color.secondary : theme.textSecondary)
                         .accessibilityHidden(true)
@@ -79,7 +79,7 @@ struct SettingsDisclosureTitle: View {
         HStack(spacing: 7) {
             if let systemImage {
                 Image(systemName: systemImage)
-                    .font(.system(size: 12))
+                    .font(.system(size: Typography.IconSize.chrome))
                     .foregroundStyle(theme.isSystem ? Color.secondary : theme.textSecondary)
                     .frame(width: 16)
                     .accessibilityHidden(true)

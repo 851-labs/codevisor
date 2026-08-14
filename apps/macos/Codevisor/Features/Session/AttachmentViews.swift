@@ -67,20 +67,7 @@ struct AttachmentGeometryReadinessPreferenceKey: PreferenceKey {
     }
 }
 
-/// The "PDF" tag shown over document previews so they read differently from
-/// plain images.
-struct PDFBadge: View {
-    var body: some View {
-        Text("PDF")
-            .font(.system(size: 8, weight: .bold))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 2)
-            .background(RoundedRectangle(cornerRadius: 4).fill(.black.opacity(0.55)))
-            .padding(4)
-            .allowsHitTesting(false)
-    }
-}
+// PDFBadge and VideoPlayBadge are shared with the iOS app via CodevisorUI.
 
 /// A small rounded thumbnail for an image, PDF, or video attachment in the
 /// transcript, or a file chip for other types. Every attachment opens with
@@ -232,17 +219,8 @@ private struct AttachmentThumbnailLoadID: Hashable {
     }
 }
 
-struct VideoPlayBadge: View {
-    var body: some View {
-        Image(systemName: "play.fill")
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(.white)
-            .frame(width: 24, height: 24)
-            .background(Circle().fill(.black.opacity(0.6)))
-            .overlay(Circle().strokeBorder(.white.opacity(0.3), lineWidth: 1))
-            .allowsHitTesting(false)
-    }
-}
+// PDFBadge and VideoPlayBadge are shared with the iOS app via CodevisorUI.
+
 
 /// A generic non-image attachment chip: document icon plus filename.
 struct AttachmentFileChip: View {

@@ -1211,7 +1211,7 @@ private struct McpServerEditorSheet: View {
 
                 if effectiveAuthType == "oauth" {
                     Section {
-                        McpDisclosureRow(
+                        SettingsDisclosureRow(
                             "Advanced OAuth",
                             isExpanded: $isOAuthAdvancedExpanded
                         ) {
@@ -1224,13 +1224,14 @@ private struct McpServerEditorSheet: View {
                                     prompt: Text("Optional client secret")
                                 )
                             }
+                            .padding(.top, 8)
                         }
                     }
                     .listRowBackground(themedFormRowBackground)
                 }
 
                 Section {
-                    McpDisclosureRow(
+                    SettingsDisclosureRow(
                         transport == "http" ? "HTTP Headers" : "Environment Variables",
                         isExpanded: $isKeyValueEditorExpanded
                     ) {
@@ -1255,6 +1256,7 @@ private struct McpServerEditorSheet: View {
                                 )
                             }
                         }
+                        .padding(.top, 8)
                     }
                 }
                 .listRowBackground(themedFormRowBackground)
@@ -1441,60 +1443,6 @@ private struct McpServerEditorSheet: View {
             errorMessage = error.localizedDescription
         } catch {
             errorMessage = ErrorReporter.userFacingMessage(for: error)
-        }
-    }
-}
-
-/// A macOS disclosure row whose full width is the trigger, preserving the
-/// familiar disclosure triangle while providing a larger pointer target.
-private struct McpDisclosureRow<Content: View>: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.theme) private var theme
-    let title: String
-    @Binding var isExpanded: Bool
-    @ViewBuilder let content: () -> Content
-
-    init(
-        _ title: String,
-        isExpanded: Binding<Bool>,
-        @ViewBuilder content: @escaping () -> Content
-    ) {
-        self.title = title
-        _isExpanded = isExpanded
-        self.content = content
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Button {
-                var transaction = Transaction()
-                transaction.animation = reduceMotion ? nil : .easeInOut(duration: 0.15)
-                withTransaction(transaction) {
-                    isExpanded.toggle()
-                }
-            } label: {
-                HStack(spacing: 7) {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .semibold))
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                        .foregroundStyle(theme.isSystem ? Color.secondary : theme.textSecondary)
-                        .accessibilityHidden(true)
-                    Text(title)
-                        .foregroundStyle(theme.isSystem ? Color.primary : theme.textPrimary)
-                    Spacer(minLength: 0)
-                }
-                .frame(maxWidth: .infinity, minHeight: 20, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(title)
-            .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
-            .accessibilityHint(isExpanded ? "Collapses this section" : "Expands this section")
-
-            if isExpanded {
-                content()
-                    .padding(.top, 8)
-            }
         }
     }
 }

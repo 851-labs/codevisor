@@ -1,4 +1,5 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 /// First-launch onboarding: a welcome page, then a cloud-first "connect"
@@ -333,7 +334,9 @@ private struct ConnectMachineStep: View {
         Text("\(number)")
             .font(.footnote.weight(.bold))
             .foregroundStyle(.tint)
-            .frame(width: 24, height: 24)
+            // Scales with Dynamic Type so the footnote digit never outgrows
+            // its circle at accessibility text sizes.
+            .scaledFrame(width: 24, height: 24, relativeTo: .footnote)
             .background(Color.accentColor.opacity(0.14), in: Circle())
     }
 
@@ -621,8 +624,10 @@ private struct CommandChip: View {
             Text(command)
                 .font(.callout.monospaced())
                 .foregroundStyle(.primary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
+                // Wraps rather than shrinking: `minimumScaleFactor` would
+                // render below the HIG 11 pt minimum and fight the user's
+                // Dynamic Type setting.
+                .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
             Button {
                 UIPasteboard.general.string = command
