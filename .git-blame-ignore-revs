@@ -1,0 +1,10 @@
+# Commits to ignore in `git blame` — mass formatting and mechanical moves only.
+#
+# Append the full 40-char SHA of any commit that is purely:
+#   - a repo-wide format pass (prettier / swift-format)
+#   - a mechanical file move or rename (package extraction, folder restructure)
+# Never add commits that mix formatting/moves with logic changes.
+#
+# Enable locally with:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+# (GitHub's blame view picks this file up automatically by name.)
