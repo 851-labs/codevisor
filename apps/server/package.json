@@ -27,6 +27,7 @@
     "@codevisor/cloud-crypto": "workspace:*",
     "@codevisor/db": "workspace:*",
     "@codevisor/harness-manager": "workspace:*",
+    "@codevisor/mcp": "workspace:*",
     "@codevisor/skills": "workspace:*",
     "@codevisor/terminal": "workspace:*",
     "@codevisor/updater": "workspace:*",
@@ -50,6 +51,7 @@
     "@types/proper-lockfile": "4.1.4",
     "@types/qrcode-terminal": "^0.12.2",
     "@types/ws": "8.5.13",
+    "better-sqlite3": "12.9.0",
     "vitest": "4.1.6"
   }
 }

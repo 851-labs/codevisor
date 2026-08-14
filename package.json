@@ -17,7 +17,7 @@
     "format:check": "prettier --check .",
     "test": "turbo run test",
     "test:coverage": "turbo run test:coverage",
-    "check:js": "bun run format:check && bun run lint && bun run typecheck && bun run test:coverage && bun run release:scripts:test",
+    "check:js": "bun run format:check && bun run lint && bun run boundaries && bun run typecheck && bun run test:coverage && bun run release:scripts:test",
     "check": "bun run check:js && bun run swift:format:check && bun run swift:lint && bun run swift:test && bun run swift:build:ios",
     "dev:web": "bun run --cwd apps/www dev",
     "release:server": "scripts/release/build-server-archive.sh",
@@ -33,7 +33,8 @@
     "xcode:list": "xcodebuild -list -project apps/macos/Codevisor.xcodeproj",
     "swift:lint": "scripts/swift-lint.sh",
     "swift:format": "scripts/swift-format.sh fix",
-    "swift:format:check": "scripts/swift-format.sh check"
+    "swift:format:check": "scripts/swift-format.sh check",
+    "boundaries": "turbo boundaries"
   },
   "devDependencies": {
     "@types/better-sqlite3": "7.6.13",

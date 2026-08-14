@@ -65,11 +65,11 @@ import { readTailnetPeers } from "./tailnet.js"
 // The tailnet route shells out to the machine's Tailscale CLI; mock the
 // reader so the route's two shapes are deterministic on any test machine.
 vi.mock("./tailnet.js", () => ({ readTailnetPeers: vi.fn() }))
-import { NativeMcpError } from "./native-mcp-manager.js"
+import { NativeMcpError } from "@codevisor/mcp"
 import { SkillsError } from "@codevisor/skills"
 import { productionFoodWorktreeNames } from "@codevisor/worktrees"
 import { foodWorktreeNames } from "@codevisor/worktrees"
-import { boundedMcpTimerDelay, makeMcpManager, NodeStreamableHttpTransport } from "./mcp-manager.js"
+import { boundedMcpTimerDelay, makeMcpManager, NodeStreamableHttpTransport } from "@codevisor/mcp"
 import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import type { Transport as McpTransport } from "@modelcontextprotocol/sdk/shared/transport.js"

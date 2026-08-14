@@ -32,7 +32,7 @@ import {
   parseWsFrame,
   sanitizeRequestHeaders,
   WS_CHANNEL_TYPE
-} from "./cloud-proxy.js"
+} from "@codevisor/cloud-client"
 
 /// Connects a running server to the user's cloud hub as a machine, serving
 /// end-to-end encrypted terminal channels. Integration boundary over `ws`,

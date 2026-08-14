@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers"
+// @boundaries-ignore intentionally resolved to package source: this app bundles @codevisor/api from src (tsconfig paths / vite alias)
 import {
   CLOUD_PROTOCOL_VERSION,
   decodeAppToHub,

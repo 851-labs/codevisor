@@ -27,12 +27,11 @@ export default defineConfig({
         // packages/cloud-client and packages/cloud-crypto, credential parsing
         // and the login flow in apps/server/src/cli/cloud-auth.ts, and the
         // hub itself in apps/cloud's workerd integration suite.
-        "apps/server/src/cloud-bridge.ts",
+        "apps/server/src/cloud-bridge.ts"
         // Browser/Computer Use is an integration boundary over Chrome CDP,
         // WebSockets, QuickJS, native desktop bridges, and long-lived MCP
         // sessions. Focused tests still run for every adapter and gateway,
         // while end-to-end automation tests exercise the external runtimes.
-        "apps/server/src/mcp-manager.ts"
       ],
       provider: "v8",
       thresholds: {

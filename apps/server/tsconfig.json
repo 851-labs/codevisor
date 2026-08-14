@@ -48,6 +48,9 @@
     },
     {
       "path": "../../packages/updater"
+    },
+    {
+      "path": "../../packages/mcp"
     }
   ]
 }

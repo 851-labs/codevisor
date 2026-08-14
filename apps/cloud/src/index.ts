@@ -1,3 +1,4 @@
+// @boundaries-ignore intentionally resolved to package source: this app bundles @codevisor/api from src (tsconfig paths / vite alias)
 import { CLOUD_PROTOCOL_VERSION } from "@codevisor/api"
 import { Hono } from "hono"
 import { createAuth } from "./auth.js"
