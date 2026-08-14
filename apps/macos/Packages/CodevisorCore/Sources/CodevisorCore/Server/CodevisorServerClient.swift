@@ -305,6 +305,9 @@ public protocol CodevisorServerClienting: Sendable {
     /// Reads a live file from this machine. Relative paths are resolved by the
     /// server against the specified session's authoritative working directory.
     func fileData(sessionId: UUID, path: String) async throws -> Data
+    /// Returns a cheap validator for a live file. Nil keeps compatibility with
+    /// servers/transports that predate HEAD metadata for filesystem previews.
+    func fileVersion(sessionId: UUID, path: String) async throws -> String?
     func updateQueuedPrompt(sessionId: UUID, queueItemId: String, text: String) async throws -> ServerPromptQueueItem
     func deleteQueuedPrompt(sessionId: UUID, queueItemId: String) async throws
     func cancelSession(id: UUID) async throws
@@ -674,6 +677,10 @@ public extension CodevisorServerClienting {
 
     func fileData(sessionId: UUID, path: String) async throws -> Data {
         throw CodevisorServerClientError.invalidResponse
+    }
+
+    func fileVersion(sessionId: UUID, path: String) async throws -> String? {
+        nil
     }
 
     /// Default for fakes/older servers: no persisted history, callers fall
@@ -3486,6 +3493,29 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
     }
 
     public func fileData(sessionId: UUID, path: String) async throws -> Data {
+        let requestPath = try liveFileRequestPath(sessionId: sessionId, path: path)
+        return try await performRaw(requestPath, method: "GET", body: nil, contentType: nil)
+    }
+
+    public func fileVersion(sessionId: UUID, path: String) async throws -> String? {
+        let requestPath = try liveFileRequestPath(sessionId: sessionId, path: path)
+        let (_, response) = try await performRawResponse(
+            requestPath,
+            method: "HEAD",
+            body: nil,
+            contentType: nil
+        )
+        if let etag = response.value(forHTTPHeaderField: "ETag"), !etag.isEmpty {
+            return etag
+        }
+        let fallback = [
+            response.value(forHTTPHeaderField: "Last-Modified"),
+            response.value(forHTTPHeaderField: "Content-Length"),
+        ].compactMap { $0 }.joined(separator: ":")
+        return fallback.isEmpty ? nil : fallback
+    }
+
+    private func liveFileRequestPath(sessionId: UUID, path: String) throws -> String {
         var components = URLComponents()
         components.path = "/v1/fs/file"
         components.queryItems = [
@@ -3495,7 +3525,7 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
         guard let requestPath = components.string else {
             throw CodevisorServerClientError.invalidURL("fs/file")
         }
-        return try await performRaw(requestPath, method: "GET", body: nil, contentType: nil)
+        return requestPath
     }
 
     public func updateQueuedPrompt(sessionId: UUID, queueItemId: String, text: String) async throws -> ServerPromptQueueItem {
@@ -3763,6 +3793,21 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
         body: Data?,
         contentType: String?
     ) async throws -> Data {
+        let (data, _) = try await performRawResponse(
+            path,
+            method: method,
+            body: body,
+            contentType: contentType
+        )
+        return data
+    }
+
+    private func performRawResponse(
+        _ path: String,
+        method: String,
+        body: Data?,
+        contentType: String?
+    ) async throws -> (Data, HTTPURLResponse) {
         try await waitForServerIfNeeded(path: path)
         var request = URLRequest(url: try url(for: path))
         request.httpMethod = method
@@ -3779,7 +3824,7 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
             let message = String(data: data, encoding: .utf8) ?? ""
             throw CodevisorServerClientError.httpStatus(httpResponse.statusCode, message)
         }
-        return data
+        return (data, httpResponse)
     }
 
     /// Lifecycle requests are what establish/re-establish readiness and must

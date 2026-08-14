@@ -97,12 +97,10 @@ struct SessionScreen: View {
             // Drop handling (bar inserts, content joins, splits) is wired by
             // the container, which owns the workspace tree.
             focus.startTypeToFocus()
-            if attachmentImages == nil {
-                attachmentImages = AttachmentImageStore { [weak controller] source in
-                    guard let controller else { throw SessionControllerError.serverUnavailable }
-                    return try await controller.fileData(for: source)
-                }
-            }
+            installAttachmentImageStoreIfNeeded()
+        }
+        .onChange(of: controller.previewCacheNamespace) {
+            installAttachmentImageStoreIfNeeded()
         }
         .onDisappear {
             focus.stopTypeToFocus()
@@ -110,6 +108,26 @@ struct SessionScreen: View {
         }
         .environment(\.attachmentImages, attachmentImages)
         .attachmentDropTarget(controller)
+    }
+
+    private func installAttachmentImageStoreIfNeeded() {
+        let namespace = controller.previewCacheNamespace
+        guard attachmentImages?.namespace != namespace else { return }
+        attachmentImages = AttachmentImageStore(
+            namespace: namespace,
+            fetch: { [weak controller] source in
+                guard let controller else {
+                    throw SessionControllerError.serverUnavailable
+                }
+                return try await controller.fileData(for: source)
+            },
+            version: { [weak controller] source in
+                guard let controller else {
+                    throw SessionControllerError.serverUnavailable
+                }
+                return try await controller.fileVersion(for: source)
+            }
+        )
     }
 
     /// The center area: one top-level workspace tab's content-only split

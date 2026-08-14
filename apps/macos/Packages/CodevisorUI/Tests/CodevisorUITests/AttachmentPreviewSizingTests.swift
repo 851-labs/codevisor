@@ -4,6 +4,27 @@ import Testing
 
 @Suite("Attachment preview sizing")
 struct AttachmentPreviewSizingTests {
+    @Test("The first resolved ratio remains authoritative")
+    func geometryLocksItsFirstResolution() {
+        var geometry = AttachmentPreviewGeometryState()
+
+        geometry.resolve(aspectRatio: 3.0 / 4.0)
+        geometry.resolve(aspectRatio: 16.0 / 9.0)
+
+        #expect(geometry.isResolved)
+        #expect(abs((geometry.aspectRatio ?? 0) - 3.0 / 4.0) < 0.001)
+    }
+
+    @Test("Invalid intrinsic geometry resolves to a stable fallback")
+    func geometryUsesFallback() {
+        var geometry = AttachmentPreviewGeometryState()
+
+        geometry.resolve(aspectRatio: .infinity, fallbackAspectRatio: 8.5 / 11.0)
+
+        #expect(geometry.isResolved)
+        #expect(abs((geometry.aspectRatio ?? 0) - 8.5 / 11.0) < 0.001)
+    }
+
     @Test("Landscape media uses the available width")
     func landscape() {
         let size = boundedAttachmentPreviewSize(

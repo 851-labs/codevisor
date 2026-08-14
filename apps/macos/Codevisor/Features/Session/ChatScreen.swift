@@ -45,6 +45,8 @@ struct ChatScreen: View {
             hasOlderHistory: controller.hasOlderHistory,
             showsOlderHistoryLoadingIndicator: olderHistoryPresentation.isPresented,
             olderHistoryPresentationTarget: olderHistoryPresentation.presentationTarget,
+            isLoadingInitialHistory: controller.isLoadingInitialHistory,
+            isPreparingInitialProjection: isPreparingTranscript,
             layoutFingerprint: dynamicTypeSize.hashValue,
             scrollCommand: scrollCommand,
             sendAnimationRequest: controller.userSendAnimationRequest,

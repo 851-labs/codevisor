@@ -4519,6 +4519,7 @@ describe("@codevisor/server", () => {
     })
     expect(head.status).toBe(200)
     expect(head.headers.get("content-length")).toBe(String(bytes.byteLength))
+    expect(head.headers.get("etag")).toMatch(/^"[0-9a-f]+-[0-9a-f]+"$/)
     expect((await head.arrayBuffer()).byteLength).toBe(0)
 
     const partial = await fetch(

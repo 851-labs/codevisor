@@ -84,15 +84,11 @@ struct SessionTranscriptView: View {
             .onAppear { [controller] in
                 followsLatest = controller.scrollState?.followMode.followsLatest ?? true
                 isAtBottom = controller.scrollState?.isAtBottom ?? true
-                if attachmentImages == nil {
-                    attachmentImages = AttachmentImageStore { [weak controller] source in
-                        guard let controller else {
-                            throw SessionControllerError.serverUnavailable
-                        }
-                        return try await controller.fileData(for: source)
-                    }
-                }
+                installAttachmentImageStoreIfNeeded()
                 updateVisibleTranscriptLifecycle(for: presentationRole)
+            }
+            .onChange(of: controller.previewCacheNamespace) {
+                installAttachmentImageStoreIfNeeded()
             }
             .onChange(of: presentationRole) { _, role in
                 updateVisibleTranscriptLifecycle(for: role)
@@ -151,6 +147,26 @@ struct SessionTranscriptView: View {
             || (controller.isLoadingInitialHistory
                 && controller.settledConversation.isEmpty
                 && !controller.hasActiveItem)
+    }
+
+    private func installAttachmentImageStoreIfNeeded() {
+        let namespace = controller.previewCacheNamespace
+        guard attachmentImages?.namespace != namespace else { return }
+        attachmentImages = AttachmentImageStore(
+            namespace: namespace,
+            fetch: { [weak controller] source in
+                guard let controller else {
+                    throw SessionControllerError.serverUnavailable
+                }
+                return try await controller.fileData(for: source)
+            },
+            version: { [weak controller] source in
+                guard let controller else {
+                    throw SessionControllerError.serverUnavailable
+                }
+                return try await controller.fileVersion(for: source)
+            }
+        )
     }
 
     private func updateVisibleTranscriptLifecycle(for role: TranscriptPresentationRole) {

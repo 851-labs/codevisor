@@ -1,62 +1,8 @@
 import SwiftUI
 import AppKit
-import AVFoundation
-import UniformTypeIdentifiers
 import CodevisorCore
 import CodevisorUI
-
-// MARK: - Image loading
-
-/// Loads and caches preview images through the session's server client, so
-/// immutable uploads and live paths share auth and remote-server routing.
-@MainActor
-@Observable
-final class AttachmentImageStore {
-    private let fetch: (PreviewFile.Source) async throws -> Data
-    private let cache = NSCache<NSString, NSImage>()
-    private var failed: Set<String> = []
-
-    init(fetch: @escaping (PreviewFile.Source) async throws -> Data) {
-        self.fetch = fetch
-    }
-
-    func cachedImage(for source: PreviewFile.Source) -> NSImage? {
-        cache.object(forKey: source.cacheKey as NSString)
-    }
-
-    func image(for file: PreviewFile) async -> NSImage? {
-        if let cached = cachedImage(for: file.source) { return cached }
-        guard !failed.contains(file.source.cacheKey) else { return nil }
-        do {
-            let data = try await fetch(file.source)
-            let name = file.name
-            let mimeType = file.mimeType
-            let isVideo = file.isVideo
-            guard let image = await Task.detached(priority: .userInitiated, operation: {
-                await attachmentPreviewImage(
-                    data: data,
-                    name: name,
-                    mimeType: mimeType,
-                    isVideo: isVideo
-                )
-            }).value else {
-                failed.insert(file.source.cacheKey)
-                return nil
-            }
-            cache.setObject(image, forKey: file.source.cacheKey as NSString)
-            return image
-        } catch {
-            // Missing files (deleted DB, cross-server session) render as a
-            // placeholder rather than erroring the transcript.
-            failed.insert(file.source.cacheKey)
-            return nil
-        }
-    }
-
-    func data(for source: PreviewFile.Source) async throws -> Data {
-        try await fetch(source)
-    }
-}
+import UniformTypeIdentifiers
 
 // MARK: - Quick Look presentation
 
@@ -110,45 +56,14 @@ extension PreviewFile {
     var hasVisualPreview: Bool { kind == .image || isPDF || isVideo }
 }
 
-// attachmentIsVideo lives in CodevisorCore (Session/SessionController.swift's
-// module) so shared attachment logic and these views agree on what "video" is.
+/// Aggregates unresolved, layout-affecting attachment geometry through a
+/// hosted transcript row. The native presentation gate consumes this before
+/// accepting the row's measured height as final.
+struct AttachmentGeometryReadinessPreferenceKey: PreferenceKey {
+    static var defaultValue = 0
 
-/// Decodes images/PDFs directly and asks AVFoundation for an early frame of a
-/// video. AVFoundation needs a file URL, so video bytes are materialized only
-/// for the duration of thumbnail generation.
-nonisolated func attachmentPreviewImage(
-    data: Data,
-    name: String,
-    mimeType: String,
-    isVideo: Bool
-) async -> NSImage? {
-    guard isVideo else { return NSImage(data: data) }
-
-    let directory = FileManager.default.temporaryDirectory
-        .appendingPathComponent("Codevisor-Video-Thumbnails", isDirectory: true)
-        .appendingPathComponent(UUID().uuidString, isDirectory: true)
-    do {
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-
-        let pathExtension = (name as NSString).pathExtension.isEmpty
-            ? (UTType(mimeType: mimeType)?.preferredFilenameExtension ?? "mp4")
-            : (name as NSString).pathExtension
-        let file = directory.appendingPathComponent("preview.\(pathExtension)")
-        try data.write(to: file, options: .atomic)
-
-        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: file))
-        generator.appliesPreferredTrackTransform = true
-        generator.maximumSize = NSSize(width: 240, height: 240)
-        let time = CMTime(seconds: 0.1, preferredTimescale: 600)
-        var frame = try? await generator.image(at: time)
-        if frame == nil {
-            frame = try? await generator.image(at: .zero)
-        }
-        guard let frame else { return nil }
-        return NSImage(cgImage: frame.image, size: .zero)
-    } catch {
-        return nil
+    static func reduce(value: inout Int, nextValue: () -> Int) {
+        value += nextValue()
     }
 }
 
@@ -178,7 +93,7 @@ struct AttachmentThumbnailView: View {
     var inline: Bool
 
     @State private var image: NSImage?
-    @State private var didLoad = false
+    @State private var geometry = AttachmentPreviewGeometryState()
 
     init(attachment: Attachment, inline: Bool = false) {
         file = PreviewFile(attachment: attachment)
@@ -210,11 +125,32 @@ struct AttachmentThumbnailView: View {
                 }
             }
         }
-        .task(id: file.id) {
-            guard file.hasVisualPreview, !didLoad else { return }
-            didLoad = true
-            image = await attachmentImages?.image(for: file)
+        .task(id: AttachmentThumbnailLoadID(file: file, store: attachmentImages)) {
+            guard file.hasVisualPreview, let attachmentImages else { return }
+            if let cached = await attachmentImages.cachedPreview(for: file) {
+                guard !Task.isCancelled else { return }
+                apply(cached)
+            }
+            let loaded = await attachmentImages.image(for: file)
+            guard !Task.isCancelled else { return }
+            if let loaded {
+                apply(loaded)
+            } else {
+                resolveFallbackGeometry()
+            }
         }
+        // A cold fetch must not keep the whole transcript invisible. Once the
+        // deadline wins, late pixels can fill the frame but cannot resize it.
+        .task(id: AttachmentThumbnailLoadID(file: file, store: attachmentImages)) {
+            guard inline, file.hasVisualPreview, attachmentImages != nil else { return }
+            try? await Task.sleep(for: .milliseconds(450))
+            guard !Task.isCancelled else { return }
+            resolveFallbackGeometry()
+        }
+        .preference(
+            key: AttachmentGeometryReadinessPreferenceKey.self,
+            value: inline && file.hasVisualPreview && !geometry.isResolved ? 1 : 0
+        )
     }
 
     private var imageThumb: some View {
@@ -251,17 +187,27 @@ struct AttachmentThumbnailView: View {
     private var thumbnailSize: CGSize {
         guard inline else { return CGSize(width: 56, height: 56) }
         return boundedAttachmentPreviewSize(
-            aspectRatio: image.flatMap { previewAspectRatio(for: $0.size) },
+            aspectRatio: geometry.aspectRatio,
             maximumSize: CGSize(width: 320, height: 280),
-            fallbackAspectRatio: file.isPDF ? 8.5 / 11.0 : 16.0 / 9.0
+            fallbackAspectRatio: fallbackAspectRatio
         )
     }
 
-    private func previewAspectRatio(for size: CGSize) -> CGFloat? {
-        guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else {
-            return nil
-        }
-        return size.width / size.height
+    private var fallbackAspectRatio: CGFloat {
+        file.isPDF ? 8.5 / 11.0 : 16.0 / 9.0
+    }
+
+    private func apply(_ preview: AttachmentPreviewImage) {
+        image = preview.image
+        geometry.resolve(
+            aspectRatio: preview.aspectRatio,
+            fallbackAspectRatio: fallbackAspectRatio
+        )
+    }
+
+    private func resolveFallbackGeometry() {
+        guard inline, file.hasVisualPreview else { return }
+        geometry.resolve(aspectRatio: nil, fallbackAspectRatio: fallbackAspectRatio)
     }
 
     private func preview() {
@@ -273,6 +219,16 @@ struct AttachmentThumbnailView: View {
             ),
             attachmentStore: attachmentImages
         )
+    }
+}
+
+private struct AttachmentThumbnailLoadID: Hashable {
+    let fileID: String
+    let storeID: ObjectIdentifier?
+
+    init(file: PreviewFile, store: AttachmentImageStore?) {
+        fileID = file.id
+        storeID = store.map { ObjectIdentifier($0) }
     }
 }
 

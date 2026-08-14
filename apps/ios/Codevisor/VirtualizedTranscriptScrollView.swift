@@ -143,6 +143,10 @@ private final class TranscriptRowHost: UIView {
 
     private(set) var representedRow: TranscriptVirtualRow?
     private(set) var isPresentationReady = false
+    // Rows without inline previews have no preference value to emit and are
+    // ready by definition. A pending preview reports a nonzero count during
+    // the same SwiftUI layout pass, before the deferred height measurement.
+    private(set) var isAttachmentGeometryReady = true
     var onMeasuredHeight: ((TranscriptRowMeasurement) -> Void)?
 
     init(parent: UIViewController) {
@@ -201,6 +205,7 @@ private final class TranscriptRowHost: UIView {
         representedRow = row
         guard needsRoot else { return }
         isPresentationReady = false
+        isAttachmentGeometryReady = true
         // An optimistic message can become settled while its lift is still in
         // flight. Preserve the wrapper animation when the stable row identity
         // is unchanged; only reused hosts may discard another row's animation.
@@ -217,6 +222,19 @@ private final class TranscriptRowHost: UIView {
     func resetReportedContentHeight() {
         isPresentationReady = false
         contentController.resetReportedHeight()
+    }
+
+    @discardableResult
+    func setAttachmentGeometryReady(_ ready: Bool) -> Bool {
+        guard isAttachmentGeometryReady != ready else { return false }
+        isAttachmentGeometryReady = ready
+        // A placeholder may already have produced a measurement. Require one
+        // fresh report after the final aspect ratio (or locked fallback) wins.
+        isPresentationReady = false
+        if ready {
+            contentController.invalidateContentSize(forceReport: true)
+        }
+        return true
     }
 
     func detachFromParent() {
@@ -1338,9 +1356,23 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
                 .environment(\.transcriptInvalidateRowMeasurement) { [weak self] in
                     self?.mountedHosts[key]?.requestContentMeasurement()
                 }
+                .onPreferenceChange(AttachmentGeometryReadinessPreferenceKey.self) {
+                    [weak self] unresolvedCount in
+                    self?.attachmentGeometryReadinessDidChange(
+                        unresolvedCount == 0,
+                        for: key
+                    )
+                }
                 .frame(maxWidth: .infinity, alignment: .topLeading)
                 .id(key),
         )
+    }
+
+    private func attachmentGeometryReadinessDidChange(_ ready: Bool, for key: String) {
+        guard let host = mountedHosts[key], host.setAttachmentGeometryReady(ready) else {
+            return
+        }
+        updateInitialPresentationReadiness()
     }
 
     private func positionMountedRows() {
@@ -1416,6 +1448,11 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
                 )
         } ?? measurements.needsCommit(measurement.height, for: measurement.key)
         guard needsCommit else {
+            // Cached settled rows can report the exact height already in the
+            // ledger. The host has still completed a fresh SwiftUI layout, so
+            // wake presentation gates even though no geometry commit follows.
+            updateInitialPresentationReadiness()
+            resolveBottomJumpIfPossible()
             startPendingSendAnimationIfPossible()
             return
         }
@@ -1480,7 +1517,11 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             return
         }
         let resolvedKeys = Set(requiredKeys.filter { key in
-            measurements[key] != nil && !measurements.isStale(key)
+            guard let host = mountedHosts[key] else { return false }
+            return measurements[key] != nil
+                && !measurements.isStale(key)
+                && host.isAttachmentGeometryReady
+                && host.isPresentationReady
         })
         _ = bottomJumpGate.resolve(
             requiredKeys: requiredKeys,
@@ -1507,7 +1548,11 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             return
         }
         let resolvedKeys = Set(requiredKeys.filter { key in
-            measurements[key] != nil && !measurements.isStale(key)
+            guard let host = mountedHosts[key] else { return false }
+            return measurements[key] != nil
+                && !measurements.isStale(key)
+                && host.isAttachmentGeometryReady
+                && host.isPresentationReady
         })
         guard initialPresentationGate.resolve(
             isHydrating: isLoadingInitialHistory || isPreparingInitialProjection,

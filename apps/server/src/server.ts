@@ -1973,11 +1973,16 @@ const routeFs = async (
       return true
     }
     const contentLength = range === undefined ? info.size : range.end - range.start + 1
+    // Size plus sub-millisecond mtime precision is a cheap stable validator
+    // for device-local preview caches. The file remains `no-store`: clients
+    // explicitly revalidate it rather than treating a path as immutable.
+    const entityTag = `"${info.size.toString(16)}-${Math.round(info.mtimeMs * 1_000).toString(16)}"`
     response.writeHead(range === undefined ? 200 : 206, {
       "Accept-Ranges": "bytes",
       "Cache-Control": "private, no-store",
       "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(basename(resolved))}`,
       "Content-Length": contentLength,
+      ETag: entityTag,
       ...(range === undefined
         ? {}
         : { "Content-Range": `bytes ${range.start}-${range.end}/${info.size}` }),

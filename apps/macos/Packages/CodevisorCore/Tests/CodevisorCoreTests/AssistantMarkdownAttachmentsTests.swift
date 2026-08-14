@@ -72,6 +72,79 @@ struct AssistantMarkdownAttachmentsTests {
         ])
     }
 
+    @Test("Links inside fenced code blocks remain literal Markdown")
+    func fencedCode() {
+        let markdown = #"""
+        Examples:
+
+        ```markdown
+        ![Image](./cat.png)
+        > ```
+        [Still code](./cat.png)
+        [Download](./cat.png)
+        ```
+
+        ~~~~
+        [Another](../other.pdf)
+        ~~~~
+        """#
+        #expect(assistantMarkdownSegments(markdown, attachments: []) == [.markdown(markdown)])
+    }
+
+    @Test("Unclosed and quoted fences protect their contents")
+    func incompleteAndQuotedFences() {
+        let quoted = #"""
+        > ```
+        > [Literal](./inside.txt)
+        > ```
+
+        [Preview](./outside.txt)
+        """#
+        #expect(assistantMarkdownSegments(quoted, attachments: []) == [
+            .markdown(#"""
+            > ```
+            > [Literal](./inside.txt)
+            > ```
+            """# + "\n\n"),
+            .file(PreviewFile(serverPath: "./outside.txt"), label: "Preview")
+        ])
+
+        let unclosed = #"""
+        ```text
+        [Literal](./inside.txt)
+        """#
+        #expect(assistantMarkdownSegments(unclosed, attachments: []) == [.markdown(unclosed)])
+    }
+
+    @Test("Inline and indented code never becomes a file preview")
+    func inlineAndIndentedCode() {
+        let markdown = #"""
+        Use `[Literal](./inline.txt)` or ``![Also literal](./inline.png)``.
+
+            [Indented](./block.txt)
+
+        Open [Preview](./outside.txt).
+        """#
+        let beforePreview = #"""
+        Use `[Literal](./inline.txt)` or ``![Also literal](./inline.png)``.
+
+            [Indented](./block.txt)
+
+        Open
+        """# + " "
+        #expect(assistantMarkdownSegments(markdown, attachments: []) == [
+            .markdown(beforePreview),
+            .file(PreviewFile(serverPath: "./outside.txt"), label: "Preview"),
+            .markdown(".")
+        ])
+    }
+
+    @Test("Escaped Markdown links remain text")
+    func escapedLinks() {
+        let markdown = #"Show \[Literal](./one.txt) and \![Image](./two.png)."#
+        #expect(assistantMarkdownSegments(markdown, attachments: []) == [.markdown(markdown)])
+    }
+
     @Test("Finalization replaces the streamed span and associates files")
     func finalization() {
         var turn = AssistantTurn(

@@ -1,62 +1,7 @@
-import AVFoundation
 import CodevisorCore
 import CodevisorUI
-import PDFKit
 import QuickLook
 import SwiftUI
-import UniformTypeIdentifiers
-
-// MARK: - Image loading
-
-/// Loads and caches preview images through the session's server client, so
-/// immutable uploads and live paths share auth and remote-server routing.
-/// The iOS twin of the macOS AttachmentImageStore.
-@MainActor
-@Observable
-final class AttachmentImageStore {
-    private let fetch: (PreviewFile.Source) async throws -> Data
-    private let cache = NSCache<NSString, UIImage>()
-    private var failed: Set<String> = []
-
-    init(fetch: @escaping (PreviewFile.Source) async throws -> Data) {
-        self.fetch = fetch
-    }
-
-    func image(for file: PreviewFile) async -> UIImage? {
-        if let cached = cache.object(forKey: file.source.cacheKey as NSString) { return cached }
-        guard !failed.contains(file.source.cacheKey) else { return nil }
-        do {
-            let data = try await fetch(file.source)
-            let name = file.name
-            let mimeType = file.mimeType
-            let isVideo = file.isVideo
-            let isPDF = file.isPDF
-            guard let image = await Task.detached(priority: .userInitiated, operation: {
-                await attachmentPreviewImage(
-                    data: data, name: name, mimeType: mimeType, isVideo: isVideo, isPDF: isPDF
-                )
-            }).value else {
-                failed.insert(file.source.cacheKey)
-                return nil
-            }
-            cache.setObject(image, forKey: file.source.cacheKey as NSString)
-            return image
-        } catch {
-            // Missing files (deleted DB, cross-server session) render as a
-            // placeholder rather than erroring the transcript.
-            failed.insert(file.source.cacheKey)
-            return nil
-        }
-    }
-
-    func data(for source: PreviewFile.Source) async throws -> Data {
-        try await fetch(source)
-    }
-}
-
-extension EnvironmentValues {
-    @Entry var attachmentImages: AttachmentImageStore? = nil
-}
 
 extension Attachment {
     /// PDFs render like images rather than as generic file chips.
@@ -79,54 +24,18 @@ extension PreviewFile {
     var hasVisualPreview: Bool { kind == .image || isPDF || isVideo }
 }
 
-/// Decodes images directly, renders the first page of a PDF, and asks
-/// AVFoundation for an early frame of a video (which needs a file URL, so
-/// video bytes are materialized only for the duration of the thumbnail).
-private nonisolated func attachmentPreviewImage(
-    data: Data,
-    name: String,
-    mimeType: String,
-    isVideo: Bool,
-    isPDF: Bool
-) async -> UIImage? {
-    if isPDF {
-        guard let page = PDFDocument(data: data)?.page(at: 0) else { return nil }
-        return page.thumbnail(of: CGSize(width: 240, height: 240), for: .cropBox)
-    }
-    guard isVideo else {
-        return UIImage(data: data)?.preparingThumbnail(of: CGSize(width: 480, height: 480))
-            ?? UIImage(data: data)
-    }
+// MARK: - Transcript thumbnails
 
-    let directory = FileManager.default.temporaryDirectory
-        .appendingPathComponent("Codevisor-Video-Thumbnails", isDirectory: true)
-        .appendingPathComponent(UUID().uuidString, isDirectory: true)
-    do {
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
+/// Aggregates unresolved, layout-affecting attachment geometry through a
+/// hosted transcript row. The native presentation gate consumes this before
+/// accepting the row's measured height as final.
+struct AttachmentGeometryReadinessPreferenceKey: PreferenceKey {
+    static var defaultValue = 0
 
-        let pathExtension = (name as NSString).pathExtension.isEmpty
-            ? (UTType(mimeType: mimeType)?.preferredFilenameExtension ?? "mp4")
-            : (name as NSString).pathExtension
-        let file = directory.appendingPathComponent("preview.\(pathExtension)")
-        try data.write(to: file, options: .atomic)
-
-        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: file))
-        generator.appliesPreferredTrackTransform = true
-        generator.maximumSize = CGSize(width: 240, height: 240)
-        let time = CMTime(seconds: 0.1, preferredTimescale: 600)
-        var frame = try? await generator.image(at: time)
-        if frame == nil {
-            frame = try? await generator.image(at: .zero)
-        }
-        guard let frame else { return nil }
-        return UIImage(cgImage: frame.image)
-    } catch {
-        return nil
+    static func reduce(value: inout Int, nextValue: () -> Int) {
+        value += nextValue()
     }
 }
-
-// MARK: - Transcript thumbnails
 
 /// A rounded thumbnail for an image, PDF, or video attachment in the
 /// transcript, or a file chip for other types. Tapping opens Quick Look.
@@ -137,6 +46,7 @@ struct AttachmentThumbnailView: View {
     var inline: Bool
 
     @State private var image: UIImage?
+    @State private var geometry = AttachmentPreviewGeometryState()
     @State private var quickLookURL: QuickLookURL?
 
     init(attachment: Attachment, inline: Bool = false) {
@@ -170,10 +80,31 @@ struct AttachmentThumbnailView: View {
         // "didLoad" latch would only recreate the original race.
         .task(id: AttachmentThumbnailLoadID(file: file, store: attachmentImages)) {
             guard file.hasVisualPreview, let attachmentImages else { return }
+            if let cached = await attachmentImages.cachedPreview(for: file) {
+                guard !Task.isCancelled else { return }
+                apply(cached)
+            }
             let loaded = await attachmentImages.image(for: file)
             guard !Task.isCancelled else { return }
-            image = loaded
+            if let loaded {
+                apply(loaded)
+            } else {
+                resolveFallbackGeometry()
+            }
         }
+        // The first cold fetch must not keep the whole transcript invisible.
+        // Once this deadline wins, lock the fallback frame for this mount;
+        // late pixels may appear inside it but can no longer move the rows.
+        .task(id: AttachmentThumbnailLoadID(file: file, store: attachmentImages)) {
+            guard inline, file.hasVisualPreview, attachmentImages != nil else { return }
+            try? await Task.sleep(for: .milliseconds(450))
+            guard !Task.isCancelled else { return }
+            resolveFallbackGeometry()
+        }
+        .preference(
+            key: AttachmentGeometryReadinessPreferenceKey.self,
+            value: inline && file.hasVisualPreview && !geometry.isResolved ? 1 : 0
+        )
         .sheet(item: $quickLookURL) { item in
             QuickLookPreview(url: item.url)
                 .ignoresSafeArea()
@@ -210,17 +141,27 @@ struct AttachmentThumbnailView: View {
     private var thumbnailSize: CGSize {
         guard inline else { return CGSize(width: 56, height: 56) }
         return boundedAttachmentPreviewSize(
-            aspectRatio: image.flatMap { previewAspectRatio(for: $0.size) },
+            aspectRatio: geometry.aspectRatio,
             maximumSize: CGSize(width: 280, height: 280),
-            fallbackAspectRatio: file.isPDF ? 8.5 / 11.0 : 16.0 / 9.0
+            fallbackAspectRatio: fallbackAspectRatio
         )
     }
 
-    private func previewAspectRatio(for size: CGSize) -> CGFloat? {
-        guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else {
-            return nil
-        }
-        return size.width / size.height
+    private var fallbackAspectRatio: CGFloat {
+        file.isPDF ? 8.5 / 11.0 : 16.0 / 9.0
+    }
+
+    private func apply(_ preview: AttachmentPreviewImage) {
+        image = preview.image
+        geometry.resolve(
+            aspectRatio: preview.aspectRatio,
+            fallbackAspectRatio: fallbackAspectRatio
+        )
+    }
+
+    private func resolveFallbackGeometry() {
+        guard inline, file.hasVisualPreview else { return }
+        geometry.resolve(aspectRatio: nil, fallbackAspectRatio: fallbackAspectRatio)
     }
 
     private var fileChip: some View {
