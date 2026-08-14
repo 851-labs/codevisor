@@ -3,9 +3,28 @@ import ACPKit
 
 /// A presentation item within the "Worked for…" section: reasoning text, a
 /// group of consecutive tool calls, or an inline lifecycle event.
+public struct ToolCallGroup: Identifiable, Sendable, Equatable {
+    public let id: String
+    public let calls: [ToolCall]
+    public let hasUnsettledCall: Bool
+
+    /// Convenience initializer for detached callers such as previews. The
+    /// transcript grouper uses the internal initializer below so it can carry
+    /// the activity bit it already accumulated while grouping.
+    public init(calls: [ToolCall]) {
+        self.init(calls: calls, hasUnsettledCall: calls.contains { !$0.isSettled })
+    }
+
+    init(calls: [ToolCall], hasUnsettledCall: Bool) {
+        id = calls.first?.toolCallId ?? ""
+        self.calls = calls
+        self.hasUnsettledCall = hasUnsettledCall
+    }
+}
+
 public enum WorkedItem: Identifiable, Sendable, Equatable {
     case text(id: String, markdown: String)
-    case toolGroup(id: String, calls: [ToolCall])
+    case toolGroup(ToolCallGroup)
     case contextCompaction(id: String, status: ContextCompactionStatus)
     /// A subagent spawn rendered as its own collapsible section with a nested
     /// transcript (`AssistantTurn.subagentItems(_:)`), never folded into a
@@ -15,7 +34,7 @@ public enum WorkedItem: Identifiable, Sendable, Equatable {
     public var id: String {
         switch self {
         case let .text(id, _): return "wtext:\(id)"
-        case let .toolGroup(id, _): return "wgroup:\(id)"
+        case let .toolGroup(group): return "wgroup:\(group.id)"
         case let .contextCompaction(id, _): return "wcompaction:\(id)"
         case let .subagent(id, _): return "wagent:\(id)"
         }
@@ -69,11 +88,16 @@ public extension AssistantTurn {
     private func groupedItems(_ source: [TranscriptEntry]) -> [WorkedItem] {
         var items: [WorkedItem] = []
         var group: [ToolCall] = []
+        var groupHasUnsettledCall = false
 
         func flush() {
-            guard let first = group.first else { return }
-            items.append(.toolGroup(id: first.toolCallId, calls: group))
+            guard !group.isEmpty else { return }
+            items.append(.toolGroup(ToolCallGroup(
+                calls: group,
+                hasUnsettledCall: groupHasUnsettledCall
+            )))
             group = []
+            groupHasUnsettledCall = false
         }
 
         for entry in source {
@@ -86,6 +110,7 @@ public extension AssistantTurn {
                 items.append(.subagent(id: call.toolCallId, call: call))
             case let .tool(call):
                 group.append(call)
+                groupHasUnsettledCall = groupHasUnsettledCall || !call.isSettled
             case let .contextCompaction(id, status):
                 flush()
                 items.append(.contextCompaction(id: id, status: status))

@@ -1327,12 +1327,15 @@ private struct TurnItemsView: View {
                     streamID: streamID(for: entryID),
                     animationPresentation: animationPresentation
                 )
-            case let .toolGroup(_, calls):
+            case let .toolGroup(group):
                 ToolGroupView(
-                    calls: calls,
+                    group: group,
                     isTurnActive: isTurnActive,
-                    autoExpanded: depth == 0 && isTurnActive
-                        && (calls.last.map { trailingToolCallIds.contains($0.toolCallId) } ?? false)
+                    followsLatestWork: depth == 0 && isTurnActive
+                        && (group.calls.last.map { trailingToolCallIds.contains($0.toolCallId) } ?? false),
+                    automaticDisclosurePolicy: depth == 0
+                        ? .followLatestWork
+                        : .remainExpandedAfterActivity
                 )
             case let .subagent(_, call):
                 if depth + 1 < Self.maxNestingDepth {

@@ -42,14 +42,15 @@ struct TranscriptItemsView: View {
                     streamID: streamID(for: entryID),
                     animationPresentation: animationPresentation
                 )
-            case let .toolGroup(_, calls):
+            case let .toolGroup(group):
                 ToolGroupView(
-                    calls: calls,
+                    group: group,
                     isTurnActive: isTurnActive,
-                    // Follow-the-work auto-expansion tracks the main thread
-                    // only; nested groups stay manual to keep sections calm.
-                    autoExpanded: depth == 0 && isTurnActive
-                        && (calls.last.map { trailingToolCallIds.contains($0.toolCallId) } ?? false)
+                    followsLatestWork: depth == 0 && isTurnActive
+                        && (group.calls.last.map { trailingToolCallIds.contains($0.toolCallId) } ?? false),
+                    automaticDisclosurePolicy: depth == 0
+                        ? .followLatestWork
+                        : .remainExpandedAfterActivity
                 )
             case let .contextCompaction(_, status):
                 switch status {

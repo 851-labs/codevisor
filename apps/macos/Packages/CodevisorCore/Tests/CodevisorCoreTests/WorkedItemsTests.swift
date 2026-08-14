@@ -24,9 +24,30 @@ struct WorkedItemsTests {
 
         #expect(result.count == 4)
         #expect(result[0] == .text(id: "t0", markdown: "thinking"))
-        if case let .toolGroup(_, calls) = result[1] { #expect(calls.count == 3) } else { Issue.record("expected group") }
+        if case let .toolGroup(group) = result[1] { #expect(group.calls.count == 3) } else { Issue.record("expected group") }
         #expect(result[2] == .text(id: "t1", markdown: "more"))
-        if case let .toolGroup(_, calls) = result[3] { #expect(calls.count == 1) } else { Issue.record("expected group") }
+        if case let .toolGroup(group) = result[3] { #expect(group.calls.count == 1) } else { Issue.record("expected group") }
+    }
+
+    @Test("Grouping carries unsettled activity metadata without a view scan")
+    func groupingActivityMetadata() {
+        let settled = ToolCall(toolCallId: "settled", title: "Done", status: .completed)
+        let running = ToolCall(toolCallId: "running", title: "Running", status: .inProgress)
+        let result = turn([
+            .tool(settled),
+            .text(id: "between", markdown: "Next"),
+            .tool(running)
+        ]).workedItems
+
+        guard case let .toolGroup(settledGroup) = result.first,
+              case let .toolGroup(runningGroup) = result.last else {
+            Issue.record("expected two groups")
+            return
+        }
+        #expect(settledGroup.id == "settled")
+        #expect(!settledGroup.hasUnsettledCall)
+        #expect(runningGroup.id == "running")
+        #expect(runningGroup.hasUnsettledCall)
     }
 
     @Test("Context compaction breaks tool groups at its arrival position")
@@ -38,12 +59,12 @@ struct WorkedItemsTests {
         ]).workedItems
 
         #expect(result.count == 3)
-        if case let .toolGroup(_, calls) = result[0] {
-            #expect(calls.map(\.toolCallId) == ["before"])
+        if case let .toolGroup(group) = result[0] {
+            #expect(group.calls.map(\.toolCallId) == ["before"])
         } else { Issue.record("expected leading tool group") }
         #expect(result[1] == .contextCompaction(id: "compact-1", status: .completed))
-        if case let .toolGroup(_, calls) = result[2] {
-            #expect(calls.map(\.toolCallId) == ["after"])
+        if case let .toolGroup(group) = result[2] {
+            #expect(group.calls.map(\.toolCallId) == ["after"])
         } else { Issue.record("expected trailing tool group") }
     }
 
@@ -66,14 +87,14 @@ struct WorkedItemsTests {
 
         let before = t.workedItemsBeforePlan
         #expect(before.count == 1)
-        if case let .toolGroup(_, calls) = before.first {
-            #expect(calls.map(\.toolCallId) == ["explore-1", "explore-2"])
+        if case let .toolGroup(group) = before.first {
+            #expect(group.calls.map(\.toolCallId) == ["explore-1", "explore-2"])
         } else { Issue.record("expected a planning tool group") }
 
         let after = t.workedItemsAfterPlan
         #expect(after.count == 1) // the final-answer text is excluded from the slice
-        if case let .toolGroup(_, calls) = after.first {
-            #expect(calls.map(\.toolCallId) == ["impl-1", "impl-2"])
+        if case let .toolGroup(group) = after.first {
+            #expect(group.calls.map(\.toolCallId) == ["impl-1", "impl-2"])
         } else { Issue.record("expected an implementation tool group") }
     }
 
@@ -93,12 +114,12 @@ struct WorkedItemsTests {
         ]).workedItems
 
         #expect(result.count == 3)
-        if case let .toolGroup(_, calls) = result[0] { #expect(calls.map(\.toolCallId) == ["a"]) } else { Issue.record("expected group") }
+        if case let .toolGroup(group) = result[0] { #expect(group.calls.map(\.toolCallId) == ["a"]) } else { Issue.record("expected group") }
         if case let .subagent(id, call) = result[1] {
             #expect(id == "task-1")
             #expect(call.kind == .agent)
         } else { Issue.record("expected subagent item") }
-        if case let .toolGroup(_, calls) = result[2] { #expect(calls.map(\.toolCallId) == ["b"]) } else { Issue.record("expected group") }
+        if case let .toolGroup(group) = result[2] { #expect(group.calls.map(\.toolCallId) == ["b"]) } else { Issue.record("expected group") }
         #expect(Set(result.map(\.id)).count == result.count)
     }
 
@@ -124,7 +145,7 @@ struct WorkedItemsTests {
         let items = base.subagentItems("task-1")
         #expect(items.count == 3)
         #expect(items[0] == .text(id: "t0", markdown: "child prose"))
-        if case let .toolGroup(_, calls) = items[1] { #expect(calls.count == 2) } else { Issue.record("expected group") }
+        if case let .toolGroup(group) = items[1] { #expect(group.calls.count == 2) } else { Issue.record("expected group") }
         if case let .subagent(id, _) = items[2] { #expect(id == "task-2") } else { Issue.record("expected nested subagent") }
         #expect(base.subagentItems("unknown").isEmpty)
     }
