@@ -23,9 +23,9 @@ private enum HomeOrganization: String, CaseIterable {
 /// deliberately absent: it is a real modal sheet until its first send creates
 /// a workspace, at which point that workspace is mounted here.
 private enum HomeRoute: Hashable {
-    /// A workspace-row tap leaves `preferredChatSessionId` nil and restores
-    /// the workspace's selected tab. An agent-row tap supplies the chat id so
-    /// that chat always wins over a previously selected terminal.
+    /// A nil `preferredChatSessionId` restores the workspace's selected tab.
+    /// Agent routes supply the chat id so that chat always wins over a
+    /// previously selected terminal.
     case workspace(
         serverId: String,
         workspaceId: UUID,
@@ -48,6 +48,29 @@ private struct HomeWorkspaceListItem: Identifiable {
     let project: Project?
 
     var id: UUID { workspace.id }
+}
+
+private struct HomeProjectListItem: Identifiable {
+    let project: Project
+    let sessions: [ChatSession]
+
+    var id: UUID { project.id }
+}
+
+/// The visible status and updated-order tier shared by agent and workspace
+/// rows. A running agent keeps its activity indicator even when it has
+/// buffered unread turns, while a separate unread agent still outranks a
+/// separate running agent when choosing a workspace's aggregate status.
+private enum HomeSessionStatus: Int, Comparable {
+    case error = 0
+    case actionRequired = 1
+    case unread = 2
+    case inProgress = 3
+    case idle = 4
+
+    static func < (left: Self, right: Self) -> Bool {
+        left.rawValue < right.rawValue
+    }
 }
 
 /// State shared across the native New Chat sheet and the workspace mounted
@@ -94,12 +117,12 @@ private struct NewChatObservedContent: View {
     }
 }
 
-/// Ordering, matching the macOS sidebar: manual (drag), priority + recency,
-/// or creation time.
+/// Agent ordering only. Project and workspace containers keep independent
+/// manual orders regardless of this selection.
 private enum HomeOrder: String, CaseIterable {
-    case none
     case updated
     case created
+    case none
 
     var title: String {
         switch self {
@@ -179,6 +202,10 @@ struct HomeView: View {
     private var organizationRaw
     @ClientPreference("sidebar.order", default: HomeOrder.updated.rawValue)
     private var orderRaw
+    @ClientPreference("sidebar.manualProjectOrder", default: "")
+    private var manualProjectOrder
+    @ClientPreference("sidebar.manualWorkspaceOrder", default: "")
+    private var manualWorkspaceOrder
     @ClientPreference("sidebar.manualSessionOrder", default: "")
     private var manualSessionOrder
     @ClientPreference("sidebar.expandedProjects", default: "")
@@ -208,6 +235,10 @@ struct HomeView: View {
     @State private var deeplinkError: String?
     @State private var isPointerInsideSidebar = false
     @GestureState private var isTouchingSidebar = false
+    /// Group reordering uses a dedicated flat List. The disclosure
+    /// preferences remain untouched so returning restores the prior layout.
+    @State private var groupReorderOrganization: HomeOrganization?
+    @State private var groupReorderInitialOrder: String?
     @State private var deferredSessionOrder = InteractionDeferredOrder<UUID>()
     @State private var orderingCache = HomeSessionOrderingCache()
     /// Non-nil while a burst of automatic reorders is settling (the deferred
@@ -255,9 +286,7 @@ struct HomeView: View {
     private var desiredVisibleSessions: [ChatSession] {
         let sessions = projectList.sessions
             .filter { $0.serverId == machines.selectedMachineId && !$0.isArchived }
-        let ordered = manualSessionOrder
-            .split(separator: "\n")
-            .compactMap { UUID(uuidString: String($0)) }
+        let ordered = preferenceIDs(from: manualSessionOrder)
         let manualRanks = Dictionary(
             uniqueKeysWithValues: ordered.enumerated().map { ($0.element, $0.offset) }
         )
@@ -276,9 +305,8 @@ struct HomeView: View {
         return deferredSessionOrder.applying(to: desired, id: \.id)
     }
 
-    /// Same workspace projection as the macOS sidebar: sessions follow their
-    /// workspace pane order, and workspaces follow their primary session's
-    /// current navigation order.
+    /// Workspace containers always follow their persisted manual order. Their
+    /// children independently follow the selected agent ordering.
     private var workspaceItems: [HomeWorkspaceListItem] {
         _ = workspaceRevision
         _ = environment.workspaceSync.revision
@@ -291,9 +319,9 @@ struct HomeView: View {
             visibleSessions.map { ($0.id, $0) },
             uniquingKeysWith: { first, _ in first }
         )
-        return environment.workspaces.loadAll()
+        let items = environment.workspaces.loadAll()
             .filter { $0.serverId == serverId && !$0.isArchived }
-            .map { workspace -> (HomeWorkspaceListItem, Int, Date) in
+            .map { workspace -> HomeWorkspaceListItem in
                 // Honor the repository's grow-only routing index when healing
                 // layouts from older iOS builds. A superseded automatic
                 // one-chat workspace can remain on disk, but must not produce
@@ -304,6 +332,9 @@ struct HomeView: View {
                     }
                     return sessionsById[id]
                 }
+                .sorted {
+                    (sessionRank[$0.id] ?? Int.max) < (sessionRank[$1.id] ?? Int.max)
+                }
                 let primary = sessions.first
                 let routingSession = primary ?? visibleSessions.first {
                     environment.workspaces.workspaceId(forSession: $0.id) == workspace.id
@@ -311,23 +342,41 @@ struct HomeView: View {
                 let project = projectList.projects.first {
                     $0.serverId == serverId && $0.id == workspace.projectId
                 }
-                return (
-                    HomeWorkspaceListItem(
-                        workspace: workspace,
-                        sessions: sessions,
-                        primarySession: routingSession,
-                        project: project
-                    ),
-                    primary.flatMap { sessionRank[$0.id] } ?? Int.max,
-                    workspace.createdAt
+                return HomeWorkspaceListItem(
+                    workspace: workspace,
+                    sessions: sessions,
+                    primarySession: routingSession,
+                    project: project
                 )
             }
-            .sorted {
-                if $0.1 != $1.1 { return $0.1 < $1.1 }
-                return $0.2 > $1.2
+            .filter { !$0.sessions.isEmpty || $0.primarySession != nil }
+        return manuallyOrdered(
+            items,
+            ids: preferenceIDs(from: manualWorkspaceOrder),
+            id: \.id
+        )
+    }
+
+    private var projectItems: [HomeProjectListItem] {
+        let items: [HomeProjectListItem] = projectList.activeProjects
+            .filter { !$0.isScratch }
+            .compactMap { project -> HomeProjectListItem? in
+                let sessions = visibleSessions.filter { $0.projectId == project.id }
+                guard !sessions.isEmpty else { return nil }
+                return HomeProjectListItem(project: project, sessions: sessions)
             }
-            .filter { !$0.0.sessions.isEmpty || $0.0.primarySession != nil }
-            .map(\.0)
+        return manuallyOrdered(
+            items,
+            ids: preferenceIDs(from: manualProjectOrder),
+            id: \.id
+        )
+    }
+
+    private var looseProjectSessions: [ChatSession] {
+        let projectIDs = Set(
+            projectList.activeProjects.lazy.filter { !$0.isScratch }.map(\.id)
+        )
+        return visibleSessions.filter { !projectIDs.contains($0.projectId) }
     }
 
     private var expandedProjects: Set<UUID> {
@@ -346,15 +395,29 @@ struct HomeView: View {
     /// unread count), opening a chat reorders the list with no visible
     /// state change.
     private func priority(for session: ChatSession) -> Int {
-        if session.hasUnreadError { return 0 }
-        if session.actionRequired || session.pendingPlanApproval { return 1 }
-        // Classification follows the icon precedence (a mid-run agent with
-        // buffered unread turns shows the spinner, so it classifies as in
-        // progress), while unread as a tier still ranks above in progress —
-        // the same split the macOS sidebar makes.
-        if ChatControllerCache.shared.isInProgress(session) { return 3 }
-        if session.unreadCount > 0 { return 2 }
-        return 4
+        status(for: session).rawValue
+    }
+
+    /// Classification follows the agent icon precedence. Raw status ordering
+    /// separately lets unread outrank loading when aggregating different
+    /// agents into one collapsed workspace indicator.
+    private func status(for session: ChatSession) -> HomeSessionStatus {
+        if session.hasUnreadError { return .error }
+        if session.actionRequired || session.pendingPlanApproval { return .actionRequired }
+        if ChatControllerCache.shared.isInProgress(session) { return .inProgress }
+        if session.unreadCount > 0 { return .unread }
+        return .idle
+    }
+
+    private func status(for item: HomeWorkspaceListItem) -> HomeSessionStatus {
+        let sessions = item.sessions.isEmpty
+            ? item.primarySession.map { [$0] } ?? []
+            : item.sessions
+        return sessions.map(status(for:)).min() ?? .idle
+    }
+
+    private func status(for item: HomeProjectListItem) -> HomeSessionStatus {
+        item.sessions.map(status(for:)).min() ?? .idle
     }
 
     var body: some View {
@@ -406,16 +469,25 @@ struct HomeView: View {
             .navigationTitle(organization.title)
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
-                // One glass group on the left: settings, then the machine
-                // picker, mirroring the macOS toolbar's machine menu.
-                ToolbarItemGroup(placement: .topBarLeading) {
-                    machineMenu
-                    settingsButton
+                if groupReorderOrganization != nil {
+                    ToolbarItem(placement: .cancellationAction) {
+                        groupReorderCancelButton
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        groupReorderConfirmButton
+                    }
+                } else {
+                    // One glass group on the left: settings, then the machine
+                    // picker, mirroring the macOS toolbar's machine menu.
+                    ToolbarItemGroup(placement: .topBarLeading) {
+                        machineMenu
+                        settingsButton
+                    }
+                    ToolbarItem(placement: .topBarTrailing) { organizeMenu }
                 }
-                ToolbarItem(placement: .topBarTrailing) { organizeMenu }
             }
             .safeAreaInset(edge: .bottom, alignment: .trailing, spacing: 0) {
-                if hasRemoteMachines {
+                if hasRemoteMachines, groupReorderOrganization == nil {
                     newChatButton
                 }
             }
@@ -593,7 +665,16 @@ struct HomeView: View {
 
     // MARK: - Lists
 
+    @ViewBuilder
     private var sessionList: some View {
+        if let groupReorderOrganization {
+            groupReorderList(for: groupReorderOrganization)
+        } else {
+            navigationList
+        }
+    }
+
+    private var navigationList: some View {
         List {
             switch organization {
             case .compact:
@@ -605,39 +686,37 @@ struct HomeView: View {
                             hidesBottomSeparator: session.id == visibleSessions.last?.id
                         )
                     }
-                    .onMove { source, destination in
-                        guard order == .none else { return }
-                        moveSessions(from: source, to: destination)
-                    }
+                    .onMove(perform: agentMoveAction(for: visibleSessions))
                 }
-                // Treat the title divider as a section edge, matching Mail.
-                // The system can then hide it while presenting the first
-                // row's swipe actions without translating it with the row.
                 .listSectionSeparator(.visible, edges: .top)
             case .byWorkspace:
                 Section {
                     ForEach(workspaceItems) { item in
-                        workspaceFolder(item, hierarchyDepth: 0)
+                        workspaceDisclosure(
+                            item,
+                            isFinalRootItem: item.id == workspaceItems.last?.id
+                        )
                     }
                 }
             case .byProject:
-                ForEach(projectList.activeProjects.filter { !$0.isScratch }) { project in
-                    let items = workspaceItems.filter { $0.workspace.projectId == project.id }
-                    if !items.isEmpty {
-                        Section {
-                            projectFolder(project, items: items)
-                        }
+                Section {
+                    ForEach(projectItems) { item in
+                        projectDisclosure(
+                            item,
+                            isFinalRootItem: looseProjectSessions.isEmpty
+                                && item.id == projectItems.last?.id
+                        )
                     }
-                }
-                // Scratch-backed workspaces are not projects; match macOS by
-                // keeping them at the root.
-                let looseItems = workspaceItems.filter { $0.project?.isScratch != false }
-                if !looseItems.isEmpty {
-                    Section {
-                        ForEach(looseItems) { item in
-                            workspaceFolder(item, hierarchyDepth: 0)
-                        }
+                    // Scratch-backed and orphaned chats do not have a real
+                    // project group; keep them as ordinary agent rows at root.
+                    ForEach(looseProjectSessions) { session in
+                        chatRow(
+                            session,
+                            projectName: projectName(for: session),
+                            hidesBottomSeparator: session.id == looseProjectSessions.last?.id
+                        )
                     }
+                    .onMove(perform: agentMoveAction(for: looseProjectSessions))
                 }
             }
         }
@@ -645,105 +724,172 @@ struct HomeView: View {
         .scrollContentBackground(.hidden)
         .background(Color(.systemBackground))
         .contentMargins(.bottom, 64, for: .scrollContent)
-    }
-
-    @ViewBuilder
-    private func projectFolder(_ project: Project, items: [HomeWorkspaceListItem]) -> some View {
-        Button {
-            toggleProject(project.id)
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: project.symbolName)
-                    .frame(width: 24)
-                    .foregroundStyle(.secondary)
-                Text(project.name)
-                    .font(.body.weight(.semibold))
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-                    .rotationEffect(.degrees(expandedProjects.contains(project.id) ? 90 : 0))
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-
-        if expandedProjects.contains(project.id) {
-            ForEach(items) { item in
-                workspaceFolder(item, hierarchyDepth: 1)
-            }
+        .onChange(of: organizationRaw) { _, _ in
+            clearGroupReorderPresentation()
         }
     }
 
-    /// The macOS hierarchy collapses a one-chat workspace directly to its
-    /// agent row. Multi-chat workspaces expose the workspace itself plus its
-    /// indented agents.
+    /// A deliberately flat edit-mode list keeps native move handles and
+    /// animations independent from the disclosure hierarchy.
     @ViewBuilder
-    private func workspaceFolder(
+    private func groupReorderList(for organization: HomeOrganization) -> some View {
+        List {
+            Section {
+                switch organization {
+                case .byWorkspace:
+                    ForEach(workspaceItems) { item in
+                        WorkspaceDisclosureLabel(
+                            workspace: item.workspace,
+                            status: status(for: item),
+                            showsStatus: true
+                        )
+                        .modifier(
+                            BottomSeparatorModifier(
+                                isHidden: item.id == workspaceItems.last?.id
+                            )
+                        )
+                    }
+                    .onMove(perform: moveWorkspaces)
+                case .byProject:
+                    ForEach(projectItems) { item in
+                        ProjectDisclosureLabel(
+                            project: item.project,
+                            status: status(for: item),
+                            showsStatus: true
+                        )
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .modifier(
+                                BottomSeparatorModifier(
+                                    isHidden: item.id == projectItems.last?.id
+                                )
+                            )
+                    }
+                    .onMove(perform: moveProjects)
+                case .compact:
+                    EmptyView()
+                }
+            }
+            .listSectionSeparator(.visible, edges: .top)
+        }
+        .environment(\.editMode, .constant(.active))
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(Color(.systemBackground))
+        .contentMargins(.bottom, 24, for: .scrollContent)
+    }
+
+    /// Workspaces use the same native grouping pattern as projects. Collapsed
+    /// labels summarize their most important child status; expanded labels
+    /// leave status ownership to their direct agent children.
+    private func workspaceDisclosure(
         _ item: HomeWorkspaceListItem,
-        hierarchyDepth: Int
+        isFinalRootItem: Bool
     ) -> some View {
-        if item.sessions.count == 1, let session = item.sessions.first {
-            chatRow(session, projectName: hierarchyDepth == 0 ? projectName(for: session) : nil)
-                .padding(.leading, CGFloat(hierarchyDepth) * 18)
-        } else {
-            HStack(spacing: 0) {
-                Button {
-                    openWorkspace(item)
-                } label: {
-                    WorkspaceRow(
-                        workspace: item.workspace,
-                        projectName: hierarchyDepth == 0 ? item.project?.name : nil
-                    )
-                    .contentShape(Rectangle())
+        let isReorderingGroups = groupReorderOrganization == .byWorkspace
+        let isExpanded = !isReorderingGroups && expandedWorkspaces.contains(item.id)
+        return DisclosureGroup(
+            isExpanded: Binding(
+                get: {
+                    groupReorderOrganization != .byWorkspace
+                        && expandedWorkspaces.contains(item.id)
+                },
+                set: { isExpanded in
+                    guard groupReorderOrganization != .byWorkspace else { return }
+                    setWorkspace(item.id, isExpanded: isExpanded)
                 }
-                .buttonStyle(.plain)
-
-                Button {
-                    toggleWorkspace(item.id)
-                } label: {
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.tertiary)
-                        .frame(width: 36, height: 36)
-                        .rotationEffect(.degrees(expandedWorkspaces.contains(item.id) ? 90 : 0))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(
-                    expandedWorkspaces.contains(item.id)
-                        ? "Collapse \(item.workspace.name)"
-                        : "Expand \(item.workspace.name)"
+            )
+        ) {
+            ForEach(item.sessions) { session in
+                chatRow(
+                    session,
+                    projectName: item.project?.name,
+                    hidesBottomSeparator: isFinalRootItem
+                        && session.id == item.sessions.last?.id
                 )
             }
-            .padding(.leading, CGFloat(hierarchyDepth) * 18)
-            .swipeActions(edge: .trailing) {
-                Button {
-                    environment.archiveWorkspace(item.workspace)
-                    workspaceRevision += 1
-                } label: {
-                    Label("Archive", systemImage: "archivebox")
-                }
-                .tint(.orange)
+            .onMove(perform: agentMoveAction(for: item.sessions))
+            if item.sessions.isEmpty {
+                Text("No tabs yet")
+                    .font(.subheadline)
+                    .foregroundStyle(.tertiary)
+                    .listRowSeparator(
+                        isFinalRootItem ? .hidden : .visible,
+                        edges: .bottom
+                    )
             }
-
-            if expandedWorkspaces.contains(item.id) {
-                ForEach(item.sessions) { session in
-                    chatRow(session, projectName: nil)
-                        .padding(.leading, CGFloat(hierarchyDepth + 1) * 18)
-                }
-                if item.sessions.isEmpty {
-                    Text("No tabs yet")
-                        .font(.subheadline)
-                        .foregroundStyle(.tertiary)
-                        .padding(.leading, CGFloat(hierarchyDepth + 1) * 18 + 48)
-                }
+        } label: {
+            WorkspaceDisclosureLabel(
+                workspace: item.workspace,
+                status: status(for: item),
+                showsStatus: !isExpanded
+            )
+            .contentShape(Rectangle())
+            .onTapGesture {
+                guard groupReorderOrganization != .byWorkspace else { return }
+                setWorkspace(item.id, isExpanded: !isExpanded)
             }
         }
+        .tint(isReorderingGroups ? .clear : nil)
+        .swipeActions(edge: .trailing) {
+            Button {
+                environment.archiveWorkspace(item.workspace)
+                workspaceRevision += 1
+            } label: {
+                Label("Archive", systemImage: "archivebox")
+            }
+            .tint(.orange)
+        }
+        .modifier(
+            BottomSeparatorModifier(isHidden: isFinalRootItem && !isExpanded)
+        )
+    }
+
+    private func projectDisclosure(
+        _ item: HomeProjectListItem,
+        isFinalRootItem: Bool
+    ) -> some View {
+        let isReorderingGroups = groupReorderOrganization == .byProject
+        let isExpanded = !isReorderingGroups && expandedProjects.contains(item.id)
+        return DisclosureGroup(
+            isExpanded: Binding(
+                get: {
+                    groupReorderOrganization != .byProject
+                        && expandedProjects.contains(item.id)
+                },
+                set: { isExpanded in
+                    guard groupReorderOrganization != .byProject else { return }
+                    setProject(item.id, isExpanded: isExpanded)
+                }
+            )
+        ) {
+            ForEach(item.sessions) { session in
+                chatRow(
+                    session,
+                    projectName: nil,
+                    hidesBottomSeparator: isFinalRootItem
+                        && session.id == item.sessions.last?.id
+                )
+            }
+            .onMove(perform: agentMoveAction(for: item.sessions))
+        } label: {
+            ProjectDisclosureLabel(
+                project: item.project,
+                status: status(for: item),
+                showsStatus: !isExpanded
+            )
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .tint(isReorderingGroups ? .clear : nil)
+        .modifier(
+            BottomSeparatorModifier(isHidden: isFinalRootItem && !isExpanded)
+        )
     }
 
     private func chatRow(
         _ session: ChatSession,
         projectName: String?,
+        showsContext: Bool = true,
         hidesBottomSeparator: Bool? = nil
     ) -> some View {
         Button {
@@ -752,7 +898,9 @@ struct HomeView: View {
             SessionRow(
                 session: session,
                 projectName: projectName,
-                harnessSymbol: harnessSymbol(for: session)
+                harnessSymbol: harnessSymbol(for: session),
+                status: status(for: session),
+                showsContext: showsContext
             )
         }
         .buttonStyle(.plain)
@@ -770,28 +918,128 @@ struct HomeView: View {
         .modifier(BottomSeparatorModifier(isHidden: hidesBottomSeparator))
     }
 
-    private func moveSessions(from source: IndexSet, to destination: Int) {
-        var ids = visibleSessions.map(\.id)
+    /// Group rows always use the same native List move interaction as agents.
+    /// Persisting only these direct ForEach IDs keeps expanded disclosure
+    /// children out of the destination model: a drop below an expanded group
+    /// moves below that group rather than into its agent rows.
+    private func moveWorkspaces(from source: IndexSet, to destination: Int) {
+        var ids = workspaceItems.map(\.id)
         ids.move(fromOffsets: source, toOffset: destination)
-        manualSessionOrder = ids.map(\.uuidString).joined(separator: "\n")
+        manualWorkspaceOrder = mergedPreferenceOrder(
+            visibleIDs: ids,
+            existingRawValue: manualWorkspaceOrder
+        )
     }
 
-    /// Entering a workspace restores its persisted selection, including a
-    /// terminal. This is intentionally different from tapping one of its chat
-    /// rows, which explicitly selects that chat before navigation.
-    private func openWorkspace(_ item: HomeWorkspaceListItem) {
-        guard let anchor = item.primarySession else { return }
-        IOSNavigationDiagnostics.record(
-            "home.openWorkspace",
-            "workspace=\(shortID(item.id)) session=\(shortID(anchor.id)) pathBefore=\(navigationPathSummary(path))"
+    private func moveProjects(from source: IndexSet, to destination: Int) {
+        var ids = projectItems.map(\.id)
+        ids.move(fromOffsets: source, toOffset: destination)
+        manualProjectOrder = mergedPreferenceOrder(
+            visibleIDs: ids,
+            existingRawValue: manualProjectOrder
         )
-        path.append(
-            .workspace(
-                serverId: anchor.serverId,
-                workspaceId: item.id,
-                anchorSessionId: anchor.id,
-                preferredChatSessionId: nil
-            )
+    }
+
+    private func groupReorderBinding(for organization: HomeOrganization) -> Binding<Bool> {
+        Binding(
+            get: { groupReorderOrganization == organization },
+            set: { isReordering in
+                if isReordering {
+                    beginGroupReorder(for: organization)
+                } else {
+                    finishGroupReorder()
+                }
+            }
+        )
+    }
+
+    private func beginGroupReorder(for organization: HomeOrganization) {
+        guard organization == self.organization,
+              organization != .compact
+        else { return }
+        switch organization {
+        case .byWorkspace:
+            groupReorderInitialOrder = manualWorkspaceOrder
+        case .byProject:
+            groupReorderInitialOrder = manualProjectOrder
+        case .compact:
+            return
+        }
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            groupReorderOrganization = organization
+        }
+    }
+
+    private func cancelGroupReorder() {
+        guard let organization = groupReorderOrganization,
+              let initialOrder = groupReorderInitialOrder
+        else {
+            finishGroupReorder()
+            return
+        }
+        withAnimation(.snappy(duration: 0.24)) {
+            switch organization {
+            case .byWorkspace:
+                manualWorkspaceOrder = initialOrder
+            case .byProject:
+                manualProjectOrder = initialOrder
+            case .compact:
+                break
+            }
+            groupReorderOrganization = nil
+        }
+        groupReorderInitialOrder = nil
+    }
+
+    private func finishGroupReorder() {
+        withAnimation(.snappy(duration: 0.24)) {
+            groupReorderOrganization = nil
+        }
+        groupReorderInitialOrder = nil
+    }
+
+    private func clearGroupReorderPresentation() {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            groupReorderOrganization = nil
+        }
+        groupReorderInitialOrder = nil
+    }
+
+    private func agentMoveAction(
+        for sessions: [ChatSession]
+    ) -> ((IndexSet, Int) -> Void)? {
+        guard order == .none, groupReorderOrganization == nil else { return nil }
+        return { source, destination in
+            moveSessions(sessions, from: source, to: destination)
+        }
+    }
+
+    /// Reorders only the agents visible in a particular group, then projects
+    /// that relative order back into the global manual agent sequence. This
+    /// keeps agents in other projects/workspaces exactly where they were.
+    private func moveSessions(
+        _ sessions: [ChatSession],
+        from source: IndexSet,
+        to destination: Int
+    ) {
+        guard order == .none else { return }
+        var movedIDs = sessions.map(\.id)
+        movedIDs.move(fromOffsets: source, toOffset: destination)
+
+        let movedIDSet = Set(movedIDs)
+        var visibleIDs = visibleSessions.map(\.id)
+        var replacements = movedIDs.makeIterator()
+        for index in visibleIDs.indices where movedIDSet.contains(visibleIDs[index]) {
+            guard let replacement = replacements.next() else { break }
+            visibleIDs[index] = replacement
+        }
+        manualSessionOrder = mergedPreferenceOrder(
+            visibleIDs: visibleIDs,
+            existingRawValue: manualSessionOrder
         )
     }
 
@@ -837,7 +1085,7 @@ struct HomeView: View {
     }
 
     private func backfillWorkspacesIfNeeded() {
-        guard organization != .compact else { return }
+        guard organization == .byWorkspace else { return }
 
         let sessionsById = Dictionary(
             visibleSessions.map { ($0.id, $0) },
@@ -883,21 +1131,66 @@ struct HomeView: View {
         workspaceRevision += 1
     }
 
-    private func persistedIDs(from rawValue: String) -> Set<UUID> {
-        Set(rawValue.split(separator: "\n").compactMap { UUID(uuidString: String($0)) })
+    private func preferenceIDs(from rawValue: String) -> [UUID] {
+        var seen: Set<UUID> = []
+        return rawValue.split(separator: "\n").compactMap { rawID in
+            guard let id = UUID(uuidString: String(rawID)), seen.insert(id).inserted else {
+                return nil
+            }
+            return id
+        }
     }
 
-    private func toggleProject(_ id: UUID) {
+    private func persistedIDs(from rawValue: String) -> Set<UUID> {
+        Set(preferenceIDs(from: rawValue))
+    }
+
+    /// Updates the selected machine's visible slice without discarding ranks
+    /// saved for archived content or other paired machines.
+    private func mergedPreferenceOrder(
+        visibleIDs: [UUID],
+        existingRawValue: String
+    ) -> String {
+        let visibleIDSet = Set(visibleIDs)
+        let preservedIDs = preferenceIDs(from: existingRawValue).filter {
+            !visibleIDSet.contains($0)
+        }
+        return (preservedIDs + visibleIDs).map(\.uuidString).joined(separator: "\n")
+    }
+
+    /// Applies a persistent manual rank while leaving newly-seen containers
+    /// in their source order at the end until the user moves them.
+    private func manuallyOrdered<Value>(
+        _ values: [Value],
+        ids: [UUID],
+        id: KeyPath<Value, UUID>
+    ) -> [Value] {
+        let ranks = Dictionary(
+            uniqueKeysWithValues: ids.enumerated().map { ($0.element, $0.offset) }
+        )
+        return values.enumerated().sorted { left, right in
+            let leftRank = ranks[left.element[keyPath: id]]
+            let rightRank = ranks[right.element[keyPath: id]]
+            switch (leftRank, rightRank) {
+            case let (leftRank?, rightRank?): return leftRank < rightRank
+            case (_?, nil): return true
+            case (nil, _?): return false
+            case (nil, nil): return left.offset < right.offset
+            }
+        }.map(\.element)
+    }
+
+    private func setProject(_ id: UUID, isExpanded: Bool) {
         var ids = expandedProjects
-        if ids.contains(id) { ids.remove(id) } else { ids.insert(id) }
+        if isExpanded { ids.insert(id) } else { ids.remove(id) }
         withAnimation(.snappy(duration: 0.28)) {
             expandedProjectsRaw = ids.map(\.uuidString).sorted().joined(separator: "\n")
         }
     }
 
-    private func toggleWorkspace(_ id: UUID) {
+    private func setWorkspace(_ id: UUID, isExpanded: Bool) {
         var ids = expandedWorkspaces
-        if ids.contains(id) { ids.remove(id) } else { ids.insert(id) }
+        if isExpanded { ids.insert(id) } else { ids.remove(id) }
         withAnimation(.snappy(duration: 0.28)) {
             expandedWorkspacesRaw = ids.map(\.uuidString).sorted().joined(separator: "\n")
         }
@@ -1056,6 +1349,22 @@ struct HomeView: View {
 
     // MARK: - Toolbar
 
+    private var groupReorderCancelButton: some View {
+        Button("Cancel") {
+            cancelGroupReorder()
+        }
+        .accessibilityLabel("Cancel reordering")
+    }
+
+    private var groupReorderConfirmButton: some View {
+        Button(role: .confirm) {
+            finishGroupReorder()
+        } label: {
+            Image(systemName: "checkmark")
+        }
+        .accessibilityLabel("Finish reordering")
+    }
+
     private var settingsButton: some View {
         Button {
             isShowingSettings = true
@@ -1093,8 +1402,7 @@ struct HomeView: View {
         .accessibilityLabel("Machine: \(machines.selectedMachine.name)")
     }
 
-    /// The macOS sidebar's organize menu: Organization and Order pickers,
-    /// plus reset when manually ordered.
+    /// Organization controls grouping; ordering applies only to agent rows.
     private var organizeMenu: some View {
         Menu {
             Picker("Organization", selection: $organizationRaw) {
@@ -1103,20 +1411,35 @@ struct HomeView: View {
                 }
             }
             .pickerStyle(.menu)
-            Picker("Order by", selection: $orderRaw) {
+            Picker("Order agents by", selection: $orderRaw) {
                 ForEach(HomeOrder.allCases, id: \.rawValue) { order in
                     Text(order.title).tag(order.rawValue)
                 }
             }
             .pickerStyle(.menu)
-            if order == .none {
+            switch organization {
+            case .compact:
+                EmptyView()
+            case .byWorkspace:
                 Divider()
-                Button("Reset manual order") { manualSessionOrder = "" }
+                Toggle(
+                    "Reorder workspaces",
+                    isOn: groupReorderBinding(for: .byWorkspace)
+                )
+            case .byProject:
+                Divider()
+                Toggle(
+                    "Reorder projects",
+                    isOn: groupReorderBinding(for: .byProject)
+                )
+            }
+            if order == .none {
+                Button("Reset agents order") { manualSessionOrder = "" }
             }
         } label: {
             Image(systemName: "line.3.horizontal.decrease")
         }
-        .accessibilityLabel("Organize workspaces")
+        .accessibilityLabel("Organize list")
     }
 
     private var newChatButton: some View {
@@ -1570,52 +1893,84 @@ struct HomeView: View {
     }
 }
 
-/// Compact mode hides only its final row's trailing divider. `nil` leaves
-/// hierarchical list rows on SwiftUI's standard separator behavior.
+/// Only the final visible row overrides SwiftUI's native separator behavior.
+/// Keeping the visible case structurally unmodified is important during a
+/// native move: an explicit row trait can otherwise travel with the reused
+/// cell that used to be last.
 private struct BottomSeparatorModifier: ViewModifier {
     let isHidden: Bool?
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if let isHidden {
-            content.listRowSeparator(isHidden ? .hidden : .visible, edges: .bottom)
+        if isHidden == true {
+            content.listRowSeparator(.hidden, edges: .bottom)
         } else {
             content
         }
     }
 }
 
-/// Workspace rows are containers, matching the macOS sidebar hierarchy. A
-/// tap opens the workspace's last-selected tab; the separate chevron expands
-/// its chat children.
-private struct WorkspaceRow: View {
+/// A single-line workspace disclosure row matching project group labels. Its
+/// fixed status gutter preserves alignment when expanded children own status.
+private struct WorkspaceDisclosureLabel: View {
+    private static let statusWidth: CGFloat = 10
+    private static let statusToLabelSpacing: CGFloat = 5
+
     let workspace: Workspace
-    let projectName: String?
+    let status: HomeSessionStatus
+    let showsStatus: Bool
 
     var body: some View {
-        HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 9)
-                .fill(Color(.tertiarySystemFill))
-                .frame(width: 38, height: 38)
-                .overlay {
-                    Image(systemName: workspace.symbolName ?? "square.grid.2x2")
-                        .font(.system(size: 18))
-                        .foregroundStyle(.secondary)
-                }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(workspace.name.isEmpty ? "Workspace" : workspace.name)
-                    .lineLimit(1)
-                if let projectName {
-                    Text(projectName)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
+        HStack(spacing: Self.statusToLabelSpacing) {
+            HomeStatusIndicator(status: showsStatus ? status : .idle)
+                .frame(width: Self.statusWidth)
+            Label(
+                workspace.name.isEmpty ? "Workspace" : workspace.name,
+                systemImage: "square.grid.2x2"
+            )
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.primary)
+                .textCase(nil)
+                .lineLimit(1)
             Spacer(minLength: 4)
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .alignmentGuide(.listRowSeparatorLeading) { _ in
+            Self.statusWidth + Self.statusToLabelSpacing
+        }
+    }
+}
+
+/// Native disclosure label for a project and its direct agent children.
+private struct ProjectDisclosureLabel: View {
+    private static let statusWidth: CGFloat = 10
+    private static let statusToLabelSpacing: CGFloat = 5
+
+    let project: Project
+    let status: HomeSessionStatus
+    let showsStatus: Bool
+
+    private var symbolName: String {
+        project.symbolName == Project.defaultSymbolName ? "folder" : project.symbolName
+    }
+
+    var body: some View {
+        HStack(spacing: Self.statusToLabelSpacing) {
+            HomeStatusIndicator(status: showsStatus ? status : .idle)
+                .frame(width: Self.statusWidth)
+            Label(project.name, systemImage: symbolName)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.primary)
+                .textCase(nil)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+        }
+        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .alignmentGuide(.listRowSeparatorLeading) { _ in
+            Self.statusWidth + Self.statusToLabelSpacing
+        }
     }
 }
 
@@ -1634,33 +1989,33 @@ private struct SessionRow: View {
     let session: ChatSession
     let projectName: String?
     let harnessSymbol: String
-
-    private var needsAttention: Bool { session.actionRequired || session.pendingPlanApproval }
-    private var hasError: Bool { session.hasUnreadError }
-    private var isUnread: Bool { session.unreadCount > 0 }
-    private var isInProgress: Bool { ChatControllerCache.shared.isInProgress(session) }
+    let status: HomeSessionStatus
+    let showsContext: Bool
 
     var body: some View {
         HStack(spacing: Self.harnessToCopySpacing) {
             HStack(spacing: Self.statusToHarnessSpacing) {
-                statusIndicator
+                HomeStatusIndicator(status: status)
+                    .frame(width: Self.statusWidth, height: Self.harnessWidth)
                 harnessIcon
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(session.title.isEmpty ? "New Chat" : session.title)
                     .lineLimit(1)
-                HStack(spacing: 4) {
-                    if let projectName {
-                        Text(projectName)
+                if showsContext {
+                    HStack(spacing: 4) {
+                        if let projectName {
+                            Text(projectName)
+                        }
+                        if let worktree = session.worktreeName, !worktree.isEmpty {
+                            if projectName != nil { Text("·") }
+                            Text(worktree)
+                        }
                     }
-                    if let worktree = session.worktreeName, !worktree.isEmpty {
-                        if projectName != nil { Text("·") }
-                        Text(worktree)
-                    }
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 }
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
             }
             Spacer(minLength: 4)
         }
@@ -1672,31 +2027,10 @@ private struct SessionRow: View {
         .contentShape(Rectangle())
         // SwiftUI otherwise infers a full-width bottom separator whenever a
         // visible status dot is the row's first child. Pin every row divider
-        // to the copy column; only the custom title divider stays full width.
+        // to the copy column; the section edge above the first row is separate.
         .alignmentGuide(.listRowSeparatorLeading) { _ in
             Self.copyLeadingOffset
         }
-    }
-
-    /// Messages-style status gutter. Error → attention → in progress → unread
-    /// is the same precedence as `ChatSessionLeadingIcon`, so a mid-run agent
-    /// shows the working glyph even while it has buffered unread turns. The
-    /// transparent idle state preserves avatar and copy alignment across rows.
-    private var statusIndicator: some View {
-        Group {
-            if hasError {
-                Circle().fill(.red).frame(width: 8, height: 8)
-            } else if needsAttention {
-                Circle().fill(.orange).frame(width: 8, height: 8)
-            } else if isInProgress {
-                AgentActivityIndicator()
-            } else if isUnread {
-                Circle().fill(.blue).frame(width: 8, height: 8)
-            } else {
-                Color.clear
-            }
-        }
-        .frame(width: Self.statusWidth, height: Self.harnessWidth)
     }
 
     private var harnessIcon: some View {
@@ -1711,6 +2045,29 @@ private struct SessionRow: View {
                 )
                 .foregroundStyle(.secondary)
             }
+    }
+}
+
+/// Messages-style status gutter shared by agent rows and collapsed workspace
+/// summaries. The transparent idle state preserves alignment in every row.
+private struct HomeStatusIndicator: View {
+    let status: HomeSessionStatus
+
+    var body: some View {
+        Group {
+            switch status {
+            case .error:
+                Circle().fill(.red).frame(width: 8, height: 8)
+            case .actionRequired:
+                Circle().fill(.orange).frame(width: 8, height: 8)
+            case .unread:
+                Circle().fill(.blue).frame(width: 8, height: 8)
+            case .inProgress:
+                AgentActivityIndicator()
+            case .idle:
+                Color.clear
+            }
+        }
     }
 }
 
