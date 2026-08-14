@@ -415,10 +415,7 @@ struct NewChatView: View {
     @ViewBuilder
     private func statusLabel(_ controller: SessionController) -> some View {
         if let waitMessage = controller.serverWaitMessage {
-            HStack(spacing: 8) {
-                Image(systemName: "arrow.triangle.2.circlepath")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+            HStack {
                 ShimmeringText(text: waitMessage)
                 Spacer(minLength: 0)
             }

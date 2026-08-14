@@ -348,7 +348,6 @@ struct SessionModelTests {
 
         #expect(model.isSending)
         #expect(model.providerActivityPhase == .modelStream)
-        #expect(model.providerActivityPhase?.prolongedStatusMessage == "Still waiting for a model response")
         guard case let .assistant(message) = model.conversation.last else {
             Issue.record("expected assistant")
             return

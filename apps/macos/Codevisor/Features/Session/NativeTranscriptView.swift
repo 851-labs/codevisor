@@ -370,7 +370,9 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private static let sendAnimationDuration: CFTimeInterval = 0.46
 
     private let transcriptDocumentView = FlippedTranscriptDocumentView()
-    private let paginationLoadingIndicator = NSProgressIndicator()
+    private let paginationLoadingIndicator = NSHostingView(
+        rootView: ShimmeringText(text: "Loading older messages...")
+    )
     private var rows: [TranscriptVirtualRow] = []
     private var rowByKey: [String: TranscriptVirtualRow] = [:]
     private var virtualLayout = VirtualTranscriptLayout(items: [], measuredHeights: [:], spacing: rowSpacing)
@@ -477,10 +479,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         automaticallyAdjustsContentInsets = false
         contentView.postsBoundsChangedNotifications = true
         documentView = transcriptDocumentView
-        paginationLoadingIndicator.style = .spinning
-        paginationLoadingIndicator.controlSize = .small
-        paginationLoadingIndicator.isIndeterminate = true
-        paginationLoadingIndicator.isDisplayedWhenStopped = false
+        paginationLoadingIndicator.isHidden = true
         paginationLoadingIndicator.setAccessibilityLabel("Loading older messages")
         transcriptDocumentView.addSubview(paginationLoadingIndicator)
 
@@ -1474,11 +1473,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     }
 
     private func updatePaginationLoadingIndicator(isPresented: Bool) {
-        if isPresented {
-            paginationLoadingIndicator.startAnimation(nil)
-        } else {
-            paginationLoadingIndicator.stopAnimation(nil)
-        }
+        paginationLoadingIndicator.isHidden = !isPresented
         positionPaginationLoadingIndicator()
     }
 
@@ -1487,8 +1482,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             paginationLoadingIndicator.frame = .zero
             return
         }
-        paginationLoadingIndicator.sizeToFit()
-        let size = paginationLoadingIndicator.frame.size
+        let size = paginationLoadingIndicator.fittingSize
         paginationLoadingIndicator.frame = CGRect(
             x: (max(1, contentView.bounds.width) - size.width) / 2,
             y: Self.topPadding

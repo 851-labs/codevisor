@@ -707,8 +707,8 @@ struct ComposerCard: View {
 /// harness menus, glass surface — back on the per-event diff; reading them
 /// here keeps that cost to this one caption row.
 ///
-/// The transcript's activity row owns the *explanation* (via the phase's
-/// `prolongedStatusMessage`); this rail owns the *action*.
+/// This rail is the sole delayed-stall surface and owns the recovery action;
+/// the transcript keeps its ordinary shimmer instead of escalating its copy.
 struct StalledTurnNoticeView: View {
     let controller: SessionController
 

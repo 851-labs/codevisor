@@ -152,13 +152,7 @@ struct AssistantTurnView: View {
             } else if postResponseGoalActivity == nil, presentation.showsResult,
                       !isWaitingOnUser, turn.showsActivityIndicator,
                       turn.contextCompactionStatus != .started {
-                if transcriptController?.isTakingLongerThanExpected == true {
-                    ChatActivityRow(
-                        transcriptController?.providerActivityPhase?.prolongedStatusMessage
-                            ?? "Still waiting for the agent",
-                        systemImage: "clock.badge.exclamationmark"
-                    )
-                } else if turn.isThinking {
+                if turn.isThinking {
                     ShimmeringText.thinking
                 } else if !hasActiveTextEntranceAnimation {
                     // Commentary is not `finalText`, but its glyph fade is
@@ -186,13 +180,7 @@ struct AssistantTurnView: View {
                 // one selectable TextKit storage.
                 assistantResponse(entryID: entryID, markdown: markdown)
                 if let waitingOnBackgroundTask {
-                    HStack(spacing: 8) {
-                        Image(systemName: "clock.arrow.circlepath")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                        ShimmeringText.waitingOnBackgroundTask(waitingOnBackgroundTask)
-                        Spacer(minLength: 0)
-                    }
+                    ShimmeringText.waitingOnBackgroundTask(waitingOnBackgroundTask)
                 }
                 if !turn.isGenerating {
                     // Copies just the final answer text, not the worked/tool
@@ -504,10 +492,7 @@ private struct DeferredTranscriptDetails: View {
         Group {
             switch state {
             case .loading:
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("Loading worked details…").foregroundStyle(.secondary)
-                }
+                ShimmeringText(text: "Loading worked details…")
                 .task { await load() }
             case .failed:
                 Button("Retry loading worked details") {

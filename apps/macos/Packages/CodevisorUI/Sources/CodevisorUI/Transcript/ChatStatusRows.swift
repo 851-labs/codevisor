@@ -2,38 +2,16 @@ import SwiftUI
 
 public struct ChatActivityRow: View {
     private let message: String
-    private let systemImage: String?
-    private let shimmers: Bool
 
-    public init(
-        _ message: String,
-        systemImage: String? = nil,
-        shimmers: Bool = false
-    ) {
+    public init(_ message: String) {
         self.message = message
-        self.systemImage = systemImage
-        self.shimmers = shimmers
     }
 
     public var body: some View {
-        HStack(spacing: 8) {
-            if let systemImage {
-                Image(systemName: systemImage)
-                    .font(.callout)
-            } else {
-                ProgressView()
-                    .controlSize(.small)
-            }
-            if shimmers {
-                ShimmeringText(text: message)
-            } else {
-                Text(message)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
+        HStack {
+            ShimmeringText(text: message)
             Spacer(minLength: 0)
         }
-        .foregroundStyle(.secondary)
         .accessibilityElement(children: .combine)
     }
 }

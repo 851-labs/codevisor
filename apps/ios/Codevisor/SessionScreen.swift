@@ -69,7 +69,7 @@ struct SessionTranscriptView: View {
     @State private var scrollCommand = TranscriptScrollCommand()
     @State private var historyLoadTask: Task<Void, Never>?
     @State private var olderHistoryPresentation = TranscriptPaginationPresentationGate()
-    @State private var showsInitialLoadingSpinner = false
+    @State private var showsInitialLoadingStatus = false
     @State private var ownsVisibleTranscriptLifecycle = false
     /// Window-space bounds of the live editor. UIKit uses this as the actual
     /// launch point for the optimistic user row instead of estimating from the
@@ -105,11 +105,11 @@ struct SessionTranscriptView: View {
             }
             .environment(\.attachmentImages, attachmentImages)
             .task(id: isLoadingEmptyConversation) {
-                showsInitialLoadingSpinner = false
+                showsInitialLoadingStatus = false
                 guard isLoadingEmptyConversation else { return }
                 try? await Task.sleep(for: .milliseconds(500))
                 guard !Task.isCancelled, isLoadingEmptyConversation else { return }
-                showsInitialLoadingSpinner = true
+                showsInitialLoadingStatus = true
             }
     }
 
@@ -397,13 +397,11 @@ struct SessionTranscriptView: View {
             // One always-mounted native transcript for every connection state.
             transcript
 
-            if showsInitialLoadingSpinner, isLoadingEmptyConversation {
-                ProgressView()
-                    .controlSize(.small)
+            if showsInitialLoadingStatus, isLoadingEmptyConversation {
+                ShimmeringText(text: "Loading conversation...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                     .padding(.bottom, composerHeight)
                     .allowsHitTesting(false)
-                    .accessibilityLabel("Loading conversation")
             }
 
             VStack(spacing: 8) {
@@ -620,25 +618,13 @@ struct SessionTranscriptView: View {
                 }
             }
         case let .backgroundTask(description):
-            ChatActivityRow(
-                "Waiting on \(description)...",
-                systemImage: "clock.arrow.circlepath",
-                shimmers: true
-            )
+            ChatActivityRow("Waiting on \(description)...")
         case let .updateGate(harnessName):
-            ChatActivityRow(
-                "Waiting for \(harnessName) to finish updating...",
-                systemImage: "arrow.down.circle",
-                shimmers: true
-            )
+            ChatActivityRow("Waiting for \(harnessName) to finish updating...")
         case let .connecting(message):
             ChatActivityRow(message)
         case let .serverWait(message):
-            ChatActivityRow(
-                message,
-                systemImage: "arrow.triangle.2.circlepath",
-                shimmers: true
-            )
+            ChatActivityRow(message)
         case let .error(message):
             if row.id == .statusError {
                 ChatErrorRow(
@@ -994,13 +980,7 @@ private struct AssistantTurnBody: View {
                           !isWaitingOnUser,
                           turn.showsActivityIndicator,
                           turn.contextCompactionStatus != .started {
-                    if transcriptController?.isTakingLongerThanExpected == true {
-                        ChatActivityRow(
-                            transcriptController?.providerActivityPhase?.prolongedStatusMessage
-                                ?? "Still waiting for the agent",
-                            systemImage: "clock.badge.exclamationmark"
-                        )
-                    } else if turn.isThinking {
+                    if turn.isThinking {
                         ShimmeringText.thinking
                     } else if !hasActiveTextEntranceAnimation {
                         // Commentary is not `finalText`, but its glyph fade is
@@ -1011,13 +991,7 @@ private struct AssistantTurnBody: View {
                 if case let .text(entryID, markdown) = finalText {
                     assistantResponse(entryID: entryID, markdown: markdown)
                     if let waitingOnBackgroundTask {
-                        HStack(spacing: 8) {
-                            Image(systemName: "clock.arrow.circlepath")
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                            ShimmeringText.waitingOnBackgroundTask(waitingOnBackgroundTask)
-                            Spacer(minLength: 0)
-                        }
+                        ShimmeringText.waitingOnBackgroundTask(waitingOnBackgroundTask)
                     }
                     if !isGenerating {
                         MessageCopyButton(text: markdown, help: "Copy response")
@@ -1470,11 +1444,7 @@ private struct DeferredWorkedDetails: View {
             if failed {
                 Button("Retry loading worked details") { failed = false }
             } else {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("Loading worked details…")
-                        .foregroundStyle(.secondary)
-                }
+                ShimmeringText(text: "Loading worked details…")
                 .task {
                     if await !controller.loadTranscriptDetails(itemId) {
                         failed = true

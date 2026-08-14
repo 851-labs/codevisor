@@ -31,7 +31,7 @@ struct ChatScreen: View {
     @State private var historyLoadTask: Task<Void, Never>?
     @State private var olderHistoryPresentation = TranscriptPaginationPresentationGate()
     @State private var composerMaskSize: CGSize = .zero
-    @State private var showsInitialLoadingSpinner = false
+    @State private var showsInitialLoadingStatus = false
     @Namespace private var composerGlassNamespace
 
     var body: some View {
@@ -144,11 +144,11 @@ struct ChatScreen: View {
             }
         }
         .task(id: isLoadingEmptyConversation) {
-            showsInitialLoadingSpinner = false
+            showsInitialLoadingStatus = false
             guard isLoadingEmptyConversation else { return }
             try? await Task.sleep(for: .milliseconds(500))
             guard !Task.isCancelled, isLoadingEmptyConversation else { return }
-            showsInitialLoadingSpinner = true
+            showsInitialLoadingStatus = true
         }
     }
 
@@ -160,12 +160,10 @@ struct ChatScreen: View {
 
     @ViewBuilder
     private var initialLoadingOverlay: some View {
-        if showsInitialLoadingSpinner, isLoadingEmptyConversation {
-            ProgressView()
-                .controlSize(.small)
+        if showsInitialLoadingStatus, isLoadingEmptyConversation {
+            ShimmeringText(text: "Loading conversation...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 .allowsHitTesting(false)
-                .accessibilityLabel("Loading conversation")
         }
     }
 
@@ -521,23 +519,11 @@ struct ChatScreen: View {
                 }
             }
         case let .backgroundTask(description):
-            ChatActivityRow(
-                "Waiting on \(description)...",
-                systemImage: "clock.arrow.circlepath",
-                shimmers: true
-            )
+            ChatActivityRow("Waiting on \(description)...")
         case let .updateGate(harnessName):
-            ChatActivityRow(
-                "Waiting for \(harnessName) to finish updating...",
-                systemImage: "arrow.down.circle",
-                shimmers: true
-            )
+            ChatActivityRow("Waiting for \(harnessName) to finish updating...")
         case let .serverWait(message):
-            ChatActivityRow(
-                message,
-                systemImage: "arrow.triangle.2.circlepath",
-                shimmers: true
-            )
+            ChatActivityRow(message)
         case let .error(message):
             errorBanner(message)
         case let .bottomSpacer(height):

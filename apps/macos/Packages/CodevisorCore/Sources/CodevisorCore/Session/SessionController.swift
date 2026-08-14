@@ -1684,9 +1684,6 @@ final public class SessionController {
         _ = await prepareFromServerCapabilities(serverClient)
     }
 
-    /// How long the eager connect quietly waits on an unreachable server
-    /// before softening the loading copy ("taking longer than usual").
-    private static let serverWaitSlowThreshold: Duration = .seconds(5)
     /// How long an unreachable server gets before the wait is treated as a
     /// real failure (error banner with the Restart remedy).
     private static let serverWaitFailureThreshold: Duration = .seconds(10)
@@ -1770,9 +1767,7 @@ final public class SessionController {
                     status = .failed(message)
                     return
                 }
-                serverWaitMessage = elapsed < Self.serverWaitSlowThreshold
-                    ? "Connecting to the server..."
-                    : "Still connecting... this is taking longer than usual."
+                serverWaitMessage = "Waiting for the server..."
                 try? await Task.sleep(for: Self.serverWaitRetryInterval)
                 guard !Task.isCancelled else {
                     if case .connecting = status { status = .idle }

@@ -353,7 +353,11 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     private static let maxMeasurementCacheCount = 3
     private static let maxParkedHostCount = 16
     private let canvasView = UIView()
-    private let paginationLoadingIndicator = UIActivityIndicatorView(style: .medium)
+    private let paginationLoadingIndicator = UIHostingConfiguration {
+        ShimmeringText(text: "Loading older messages...")
+    }
+    .margins(.all, 0)
+    .makeContentView()
     weak var hostingParent: UIViewController?
 
     private var rows: [TranscriptVirtualRow] = []
@@ -446,7 +450,9 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         backgroundColor = .clear
         canvasView.backgroundColor = .clear
         addSubview(canvasView)
-        paginationLoadingIndicator.hidesWhenStopped = true
+        paginationLoadingIndicator.backgroundColor = .clear
+        paginationLoadingIndicator.isHidden = true
+        paginationLoadingIndicator.isUserInteractionEnabled = false
         paginationLoadingIndicator.isAccessibilityElement = true
         paginationLoadingIndicator.accessibilityLabel = "Loading older messages"
         canvasView.addSubview(paginationLoadingIndicator)
@@ -1351,11 +1357,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     }
 
     private func updatePaginationLoadingIndicator(isPresented: Bool) {
-        if isPresented {
-            paginationLoadingIndicator.startAnimating()
-        } else {
-            paginationLoadingIndicator.stopAnimating()
-        }
+        paginationLoadingIndicator.isHidden = !isPresented
         positionPaginationLoadingIndicator()
     }
 
