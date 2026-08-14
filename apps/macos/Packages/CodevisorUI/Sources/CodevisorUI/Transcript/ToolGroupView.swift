@@ -30,6 +30,25 @@ public struct ToolGroupView: View {
         #endif
     }
 
+    private static var iconColumnWidth: CGFloat {
+        #if os(iOS)
+        // The terminal symbol is slightly wider than the old 16pt column.
+        // Keep its ink inside the clipped transcript-row host.
+        18
+        #else
+        16
+        #endif
+    }
+
+    private static var headerSpacing: CGFloat {
+        #if os(iOS)
+        // Preserve the existing 24pt icon-column-plus-gap label inset.
+        6
+        #else
+        8
+        #endif
+    }
+
     private var store: TranscriptDisclosureStore { disclosureStore ?? .previews }
     private var disclosureContext: ToolGroupDisclosureContext {
         ToolGroupDisclosureContext(
@@ -48,7 +67,7 @@ public struct ToolGroupView: View {
         let isExpanded = disclosure.isExpanded
 
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
+            HStack(spacing: Self.headerSpacing) {
                 // Pinned to the first call's icon — a group's icon flipping
                 // as more calls stream in reads as UI churn.
                 Image(systemName: ToolCallSummary.symbol(group.calls.first.map { [$0] } ?? []))
@@ -57,7 +76,7 @@ public struct ToolGroupView: View {
                     // label at callout 16, so the icon sits at subheadline 15.
                     .font(Self.iconFont)
                     .foregroundStyle(.secondary)
-                    .frame(width: 16)
+                    .frame(width: Self.iconColumnWidth)
                 Text(ToolCallSummary.describe(group.calls))
                     .foregroundStyle(.secondary)
                 TranscriptDisclosureChevron(expanded: isExpanded)
