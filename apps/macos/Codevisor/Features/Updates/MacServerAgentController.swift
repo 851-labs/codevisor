@@ -11,8 +11,10 @@ final class MacServerAgentController {
     static let plistName = "com.851labs.Codevisor.ServerAgent.plist"
     private let legacyJobs = LegacyServerJobRetirer()
 
-    private var service: SMAppService {
-        SMAppService.agent(plistName: Self.plistName)
+    // Constructed on demand (it is cheap) so each detached closure below can
+    // build its own instance instead of sending one across isolation domains.
+    private nonisolated static var service: SMAppService {
+        SMAppService.agent(plistName: plistName)
     }
 
     var managedService: LocalCodevisorManagedService {
@@ -28,22 +30,28 @@ final class MacServerAgentController {
     }
 
     func ensureRegistered() async throws {
-        let current = service
-        // This closure is reached only when no matching service is healthy.
-        // Re-register an enabled-but-dead job so launchd resolves BundleProgram
-        // against the app bundle that is running now, never an updater backup.
-        if current.status == .enabled {
-            try await current.unregister()
-        }
-        try current.register()
+        // SMAppService.status/register/unregister are synchronous XPC round
+        // trips to launchd/smd, so keep them off the main actor.
+        try await Task.detached {
+            let current = Self.service
+            // This closure is reached only when no matching service is healthy.
+            // Re-register an enabled-but-dead job so launchd resolves BundleProgram
+            // against the app bundle that is running now, never an updater backup.
+            if current.status == .enabled {
+                try await current.unregister()
+            }
+            try current.register()
+        }.value
     }
 
     func unregister() async throws {
-        let current = service
-        guard current.status == .enabled || current.status == .requiresApproval else {
-            return
-        }
-        try await current.unregister()
+        try await Task.detached {
+            let current = Self.service
+            guard current.status == .enabled || current.status == .requiresApproval else {
+                return
+            }
+            try await current.unregister()
+        }.value
     }
 
     func prepareForAppUpdate(localServer: (any LocalServerControlling)?) async -> Bool {

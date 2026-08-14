@@ -454,11 +454,20 @@ final class CloudSignInCoordinator: NSObject, ASWebAuthenticationPresentationCon
     }
 
     nonisolated func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        MainActor.assumeIsolated {
+        // This must return synchronously and is requested on the main thread;
+        // the `main.sync` fallback only guards against a stray off-main
+        // request trapping `MainActor.assumeIsolated`.
+        let anchor: @MainActor () -> ASPresentationAnchor = {
             UIApplication.shared.connectedScenes
                 .compactMap { $0 as? UIWindowScene }
                 .flatMap(\.windows)
                 .first(where: \.isKeyWindow) ?? ASPresentationAnchor()
+        }
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated(anchor)
+        }
+        return DispatchQueue.main.sync {
+            MainActor.assumeIsolated(anchor)
         }
     }
 }

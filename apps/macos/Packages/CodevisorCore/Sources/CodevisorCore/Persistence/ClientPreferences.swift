@@ -16,6 +16,13 @@ public final class ClientPreferences {
     private var database: ClientDatabase?
     private var fallback: [String: Data] = [:]
     private var revision: UInt64 = 0
+    /// Write-through cache of raw preference blobs, keyed by preference key.
+    /// A stored `nil` records a confirmed-absent key so misses don't re-query
+    /// SQLite. All writes go through this class after `configure(database:)`,
+    /// which resets the cache, so entries can never go stale. Ignored by
+    /// Observation: views invalidate via `revision`, and populating the cache
+    /// during a read must not mutate observed state.
+    @ObservationIgnored private var cache: [String: Data?] = [:]
 
     public init(database: ClientDatabase? = nil) {
         self.database = database
@@ -23,6 +30,7 @@ public final class ClientPreferences {
 
     public func configure(database: ClientDatabase) {
         self.database = database
+        cache.removeAll()
         revision &+= 1
     }
 
@@ -54,6 +62,7 @@ public final class ClientPreferences {
             } else {
                 fallback[key] = data
             }
+            cache[key] = data
             revision &+= 1
         } catch {
             Log.persistence.error(
@@ -69,6 +78,7 @@ public final class ClientPreferences {
             } else {
                 fallback[key] = nil
             }
+            cache.updateValue(nil, forKey: key)
             revision &+= 1
         } catch {
             Log.persistence.error(
@@ -84,6 +94,7 @@ public final class ClientPreferences {
             } else {
                 fallback.removeAll()
             }
+            cache.removeAll()
             revision &+= 1
         } catch {
             Log.persistence.error(
@@ -93,10 +104,17 @@ public final class ClientPreferences {
     }
 
     private func data(forKey key: String) -> Data? {
-        if let database {
-            return try? database.preference(forKey: key)
+        if let cached = cache[key] {
+            return cached
         }
-        return fallback[key]
+        let data: Data?
+        if let database {
+            data = try? database.preference(forKey: key)
+        } else {
+            data = fallback[key]
+        }
+        cache[key] = data
+        return data
     }
 }
 

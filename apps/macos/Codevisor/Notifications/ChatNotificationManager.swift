@@ -222,7 +222,14 @@ final class ChatNotificationManager: NSObject, ChatNotificationDelivering, UNUse
         ]
         if settings.notificationSoundsEnabled {
             let path = soundPath(for: event.kind, settings: settings)
-            content.sound = preparedNotificationSound(at: path) ?? .default
+            // The sound file preparation is FileManager work; run it off the
+            // main actor and schedule the notification once it completes.
+            let preparedName = await Task.detached { [self] in
+                prepareNotificationSoundFile(at: path)
+            }.value
+            content.sound = preparedName.map {
+                UNNotificationSound(named: UNNotificationSoundName(rawValue: $0))
+            } ?? .default
         }
 
         let identifier = isTest
@@ -263,11 +270,14 @@ final class ChatNotificationManager: NSObject, ChatNotificationDelivering, UNUse
     /// UserNotifications only resolves named sounds from the app bundle or a
     /// Library/Sounds directory. Copy the user's selected macOS sound there so
     /// the system—not the app—plays it and can honor Focus and sound settings.
-    private func preparedNotificationSound(at path: String) -> UNNotificationSound? {
+    /// Runs off the main actor (see `schedule`); returns the prepared file's
+    /// name for the caller to wrap in `UNNotificationSound`, or nil.
+    private nonisolated func prepareNotificationSoundFile(at path: String) -> String? {
+        let manager = FileManager.default
         let source = URL(fileURLWithPath: path)
         let supported = ["aif", "aiff", "caf", "wav"].contains(source.pathExtension.lowercased())
-        guard supported, FileManager.default.fileExists(atPath: source.path) else { return nil }
-        guard let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first else {
+        guard supported, manager.fileExists(atPath: source.path) else { return nil }
+        guard let library = manager.urls(for: .libraryDirectory, in: .userDomainMask).first else {
             return nil
         }
         let sounds = library.appendingPathComponent("Sounds", isDirectory: true)
@@ -275,12 +285,23 @@ final class ChatNotificationManager: NSObject, ChatNotificationDelivering, UNUse
             CustomSoundStore.preparedNotificationSoundName(for: source)
         )
         do {
-            try FileManager.default.createDirectory(at: sounds, withIntermediateDirectories: true)
-            if FileManager.default.fileExists(atPath: destination.path) {
-                try FileManager.default.removeItem(at: destination)
+            try manager.createDirectory(at: sounds, withIntermediateDirectories: true)
+            if manager.fileExists(atPath: destination.path) {
+                // copyItem preserves size and modification date, so matching
+                // values mean the prepared copy is already current — skip the
+                // per-notification delete/re-copy.
+                if let sourceAttributes = try? manager.attributesOfItem(atPath: source.path),
+                   let destinationAttributes = try? manager.attributesOfItem(atPath: destination.path),
+                   let sourceSize = sourceAttributes[.size] as? UInt64,
+                   let sourceDate = sourceAttributes[.modificationDate] as? Date,
+                   sourceSize == destinationAttributes[.size] as? UInt64,
+                   sourceDate == destinationAttributes[.modificationDate] as? Date {
+                    return destination.lastPathComponent
+                }
+                try manager.removeItem(at: destination)
             }
-            try FileManager.default.copyItem(at: source, to: destination)
-            return UNNotificationSound(named: UNNotificationSoundName(rawValue: destination.lastPathComponent))
+            try manager.copyItem(at: source, to: destination)
+            return destination.lastPathComponent
         } catch {
             log.error("Preparing notification sound failed: \(String(describing: error), privacy: .public)")
             return nil

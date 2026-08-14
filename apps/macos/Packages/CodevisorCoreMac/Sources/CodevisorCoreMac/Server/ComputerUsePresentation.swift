@@ -599,8 +599,16 @@ final class ComputerUsePresentationState: NSObject {
         presentation.idleTimer?.invalidate()
         presentation.idlePhase = 0
         let timer = Timer(timeInterval: 1 / 60, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
+            // Scheduled on RunLoop.main, so the fast path always runs; the
+            // dispatch fallback only guards against a stray off-main fire
+            // trapping `MainActor.assumeIsolated`.
+            let tick: @MainActor () -> Void = {
                 self?.tickIdleAnimation(sessionID: sessionID)
+            }
+            if Thread.isMainThread {
+                MainActor.assumeIsolated(tick)
+            } else {
+                DispatchQueue.main.async(execute: tick)
             }
         }
         RunLoop.main.add(timer, forMode: .common)

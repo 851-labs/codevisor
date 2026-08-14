@@ -11,20 +11,25 @@ struct IconPickerView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
     @State private var query = ""
+    @State private var library: SFSymbolLibrary.Library?
 
     private let columns = [GridItem(.adaptive(minimum: 44), spacing: 8)]
 
-    private var filtered: [String] {
+    private func filtered(in library: SFSymbolLibrary.Library) -> [String] {
         let tokens = query
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
             .split(whereSeparator: { $0 == " " || $0 == "." || $0 == "_" || $0 == "-" })
             .map(String.init)
-        guard !tokens.isEmpty else { return SFSymbolLibrary.symbols }
-        return SFSymbolLibrary.symbols.filter { SFSymbolLibrary.matches($0, tokens: tokens) }
+        guard !tokens.isEmpty else { return library.symbols }
+        return library.entries.compactMap { entry in
+            tokens.allSatisfy { token in
+                entry.haystack.contains { $0.contains(token) }
+            } ? entry.symbol : nil
+        }
     }
 
-    private var typedSymbol: String? {
+    private func typedSymbol(filtered: [String]) -> String? {
         let symbol = query
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
@@ -50,16 +55,13 @@ struct IconPickerView: View {
 
             Divider()
 
-            ScrollView {
-                LazyVGrid(columns: columns, spacing: 8) {
-                    if let typedSymbol {
-                        symbolButton(typedSymbol)
-                    }
-                    ForEach(filtered, id: \.self) { symbol in
-                        symbolButton(symbol)
-                    }
+            Group {
+                if let library {
+                    symbolGrid(library)
+                } else {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .padding(16)
             }
             .frame(height: 300)
 
@@ -73,6 +75,25 @@ struct IconPickerView: View {
             .padding(12)
         }
         .frame(width: 360)
+        .task {
+            library = await SFSymbolLibrary.loaded()
+        }
+    }
+
+    private func symbolGrid(_ library: SFSymbolLibrary.Library) -> some View {
+        let filtered = filtered(in: library)
+        let typedSymbol = typedSymbol(filtered: filtered)
+        return ScrollView {
+            LazyVGrid(columns: columns, spacing: 8) {
+                if let typedSymbol {
+                    symbolButton(typedSymbol)
+                }
+                ForEach(filtered, id: \.self) { symbol in
+                    symbolButton(symbol)
+                }
+            }
+            .padding(16)
+        }
     }
 
     private func symbolButton(_ symbol: String) -> some View {
@@ -98,23 +119,41 @@ struct IconPickerView: View {
     }
 }
 
-private enum SFSymbolLibrary {
-    static let symbols: [String] = {
+private nonisolated enum SFSymbolLibrary {
+    /// The symbol list plus a precomputed lowercased search index, built once
+    /// off the main thread. Parsing the multi-MB CoreGlyphs plists and probing
+    /// symbol availability for thousands of names is far too slow for `body`.
+    nonisolated struct Library: Sendable {
+        /// Curated symbols in display order.
+        let symbols: [String]
+        /// One entry per symbol, in the same order, with the lowercased
+        /// search terms (name + system search terms) precomputed so
+        /// per-keystroke filtering allocates nothing beyond the result array.
+        let entries: [(symbol: String, haystack: [String])]
+    }
+
+    /// Memoized background load: kicked off at most once, shared by every
+    /// subsequent picker presentation.
+    private static let loadTask = Task.detached(priority: .userInitiated) {
+        buildLibrary()
+    }
+
+    static func loaded() async -> Library {
+        await loadTask.value
+    }
+
+    private static func buildLibrary() -> Library {
         let loaded = loadSymbolOrder() ?? loadSymbolAvailability()
         var seen = Set<String>()
         // The sidebar sticks to filled icons, so only offer filled variants.
-        return (loaded ?? fallbackSymbols).filter { symbol in
+        let symbols = (loaded ?? fallbackSymbols).filter { symbol in
             symbol.contains(".fill") && seen.insert(symbol).inserted && isAvailable(symbol)
         }
-    }()
-
-    private static let searchTerms: [String: [String]] = loadSearchTerms() ?? [:]
-
-    static func matches(_ symbol: String, tokens: [String]) -> Bool {
-        let terms = ([symbol] + (searchTerms[symbol] ?? [])).map { $0.lowercased() }
-        return tokens.allSatisfy { token in
-            terms.contains { $0.contains(token) }
+        let searchTerms = loadSearchTerms() ?? [:]
+        let entries = symbols.map { symbol in
+            (symbol: symbol, haystack: ([symbol] + (searchTerms[symbol] ?? [])).map { $0.lowercased() })
         }
+        return Library(symbols: symbols, entries: entries)
     }
 
     static func isAvailable(_ symbol: String) -> Bool {

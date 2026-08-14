@@ -240,11 +240,19 @@ struct AttachmentThumbnailView: View {
                 .appendingPathComponent("Codevisor-QuickLook", isDirectory: true)
                 .appendingPathComponent(attachment.fileId, isDirectory: true)
             let url = directory.appendingPathComponent(attachment.name)
-            do {
-                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-                try data.write(to: url, options: .atomic)
-                quickLookURL = QuickLookURL(url: url)
-            } catch {}
+            // Materializing the file is a full-size disk write; do it off the
+            // main actor, then present on it.
+            let written = await Task.detached(priority: .userInitiated) { () -> Bool in
+                do {
+                    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                    try data.write(to: url, options: .atomic)
+                    return true
+                } catch {
+                    return false
+                }
+            }.value
+            guard written else { return }
+            quickLookURL = QuickLookURL(url: url)
         }
     }
 }

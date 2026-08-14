@@ -50,7 +50,14 @@ public struct ComputerUsePermissionProbes: Sendable {
                 ["AXTrustedCheckOptionPrompt": true] as CFDictionary
             )
         },
-        promptForScreenRecording: { _ = CGRequestScreenCaptureAccess() },
+        promptForScreenRecording: {
+            // CGRequestScreenCaptureAccess blocks its calling thread until the
+            // user resolves the TCC dialog; keep that off the main actor. The
+            // result is unused — grant state arrives via the polling probes.
+            DispatchQueue.global(qos: .userInitiated).async {
+                _ = CGRequestScreenCaptureAccess()
+            }
+        },
         openSettingsPane: { pane in
             guard let url = pane.url else { return }
             NSWorkspace.shared.open(url)

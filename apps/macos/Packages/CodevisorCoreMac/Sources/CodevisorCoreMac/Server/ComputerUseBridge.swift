@@ -1803,11 +1803,15 @@ public final class ComputerUseBridge: @unchecked Sendable {
             return AXUIElementPerformAction(element, action)
         }
         let payload = UncheckedAXPayload(value: (element, action))
+        // Wait (on this worker thread, never main) until the main queue has
+        // actually run the action before the caller snapshots. The timeout is
+        // a safety valve for actions that open a nested tracking loop.
+        let applied = DispatchSemaphore(value: 0)
         DispatchQueue.main.async {
             _ = AXUIElementPerformAction(payload.value.0, payload.value.1)
+            applied.signal()
         }
-        // Give the main thread a beat to apply it before the caller snapshots.
-        Thread.sleep(forTimeInterval: 0.1)
+        _ = applied.wait(timeout: .now() + 2)
         return .success
     }
 
@@ -1821,10 +1825,12 @@ public final class ComputerUseBridge: @unchecked Sendable {
             return AXUIElementSetAttributeValue(element, attribute, value)
         }
         let payload = UncheckedAXPayload(value: (element, attribute, value))
+        let applied = DispatchSemaphore(value: 0)
         DispatchQueue.main.async {
             _ = AXUIElementSetAttributeValue(payload.value.0, payload.value.1, payload.value.2)
+            applied.signal()
         }
-        Thread.sleep(forTimeInterval: 0.1)
+        _ = applied.wait(timeout: .now() + 2)
         return .success
     }
 

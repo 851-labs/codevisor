@@ -332,32 +332,42 @@ final class SubmittingTextView: NSTextView {
 
     /// Intercepts pastes carrying files or raw image data (e.g. copied
     /// screenshots) and routes them to the composer as attachments; plain text
-    /// falls through to the normal paste.
+    /// falls through to the normal paste. The pasteboard is read synchronously
+    /// (its contents can change once this returns), and the fall-through
+    /// decision depends only on the available types — but TIFF→PNG transcoding
+    /// (a Retina screenshot is a 20-60MB TIFF) happens off the main thread,
+    /// with the attachment delivered back on it.
     override func paste(_ sender: Any?) {
-        let attachments = Self.pasteboardAttachments(NSPasteboard.general)
-        if !attachments.isEmpty, onPasteAttachments?(attachments) == true {
-            return
-        }
-        super.paste(sender)
-    }
-
-    private static func pasteboardAttachments(_ pasteboard: NSPasteboard) -> [PastedAttachment] {
+        let pasteboard = NSPasteboard.general
         // File URLs win: a Finder copy also carries the filename as a string,
         // which must not paste as text.
         if let urls = pasteboard.readObjects(
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]
         ) as? [URL], !urls.isEmpty {
-            return urls.map { .fileURL($0) }
+            if onPasteAttachments?(urls.map { .fileURL($0) }) == true {
+                return
+            }
+            super.paste(sender)
+            return
         }
         // Raw image data (copied screenshots, images copied from a browser).
-        for type in [NSPasteboard.PasteboardType.png, .tiff] {
-            guard let data = pasteboard.data(forType: type) else { continue }
-            let png = type == .png ? data : pngData(from: data)
-            guard let png else { continue }
-            return [.image(data: png, suggestedName: nil)]
+        if let data = pasteboard.data(forType: .png) {
+            // Already PNG: nothing to transcode.
+            if onPasteAttachments?([.image(data: data, suggestedName: nil)]) == true {
+                return
+            }
+        } else if let onPasteAttachments, let tiff = pasteboard.data(forType: .tiff) {
+            Task {
+                let png = await Task.detached(priority: .userInitiated) {
+                    pngData(from: tiff)
+                }.value
+                guard let png else { return }
+                _ = onPasteAttachments([.image(data: png, suggestedName: nil)])
+            }
+            return
         }
-        return []
+        super.paste(sender)
     }
 
     /// Cheap validation path: menu validation runs frequently, so avoid

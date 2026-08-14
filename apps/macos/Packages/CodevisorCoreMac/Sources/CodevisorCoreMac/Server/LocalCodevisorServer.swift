@@ -332,8 +332,16 @@ public final class LocalCodevisorServer: LocalServerControlling {
             queue: .main
         )
         source.setEventHandler { [weak self] in
-            MainActor.assumeIsolated {
+            // Delivered on the .main queue, so the fast path always runs;
+            // the dispatch fallback only guards against a stray off-main
+            // delivery trapping `MainActor.assumeIsolated`.
+            let consume: @MainActor () -> Void = {
                 self?.consumePendingUpdateRequest(at: requestURL)
+            }
+            if Thread.isMainThread {
+                MainActor.assumeIsolated(consume)
+            } else {
+                DispatchQueue.main.async(execute: consume)
             }
         }
         source.setCancelHandler { close(descriptor) }

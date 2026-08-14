@@ -215,6 +215,12 @@ final class PaneTabDragCoordinator {
     private func startFlagsMonitor() {
         flagsMonitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged]) { [weak self] event in
             guard let self else { return event }
+            // Local event monitors run on the main thread; the monitor must
+            // return synchronously, so on the (impossible) off-main path pass
+            // the event through unchanged — same return value as the fast
+            // path, only the defensive preview re-resolve is skipped —
+            // instead of trapping in `MainActor.assumeIsolated`.
+            guard Thread.isMainThread else { return event }
             MainActor.assumeIsolated {
                 self.joinModifierHeld = event.modifierFlags.contains(.shift)
                 if var drag = self.active {

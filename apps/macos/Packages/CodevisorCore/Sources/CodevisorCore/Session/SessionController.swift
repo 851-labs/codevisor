@@ -2190,9 +2190,25 @@ final public class SessionController {
 
     /// Mirrors the server's canonical-mode patterns (agent-runtime acp.ts) so
     /// the app and server recognize the same plan/full-access spellings.
+    /// Precompiled once: `matches` runs several times per composer keystroke
+    /// via `planControl`, and `String.range(of:options:.regularExpression)`
+    /// compiles a fresh regex on every call.
+    private static let planPatternRegexes: [String: NSRegularExpression] = {
+        let patterns = ["^plan", "bypass|full[-_ ]?access|yolo"]
+        return Dictionary(uniqueKeysWithValues: patterns.map {
+            ($0, try! NSRegularExpression(pattern: $0, options: [.caseInsensitive]))
+        })
+    }()
+
     private static func matches(_ pattern: String, _ candidates: String...) -> Bool {
-        candidates.contains {
-            $0.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+        guard let regex = planPatternRegexes[pattern] else {
+            // Unknown pattern: fall back to the uncached path.
+            return candidates.contains {
+                $0.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+            }
+        }
+        return candidates.contains {
+            regex.firstMatch(in: $0, range: NSRange($0.startIndex..., in: $0)) != nil
         }
     }
 

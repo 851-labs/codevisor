@@ -136,7 +136,11 @@ enum PersistenceEncoding {
             pendingJobs.removeAll()
             return jobs
         }
-        queue.sync {
+        // `.enforceQoS` propagates the caller's QoS (user-interactive when
+        // called from the main thread) to this block and boosts any encodes
+        // already queued ahead of it, avoiding a priority inversion against
+        // the queue's background `.utility` QoS.
+        queue.sync(flags: .enforceQoS) {
             for job in jobs { job() }
         }
     }

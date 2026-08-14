@@ -137,7 +137,7 @@ public final class TerminalTransport {
         var rows: Int?
     }
 
-    private struct ServerFrame: Decodable {
+    private struct ServerFrame: Decodable, Sendable {
         var type: String
         var seq: Int
         var data: String?
@@ -179,34 +179,52 @@ public final class TerminalTransport {
         }
     }
 
-    private func receiveLoop(_ socket: any ServerWebSocketConnecting) async {
+    /// Receives and JSON-decodes frames off the main actor (frames arrive at
+    /// very high frequency during builds and can be up to 8MB), then hands
+    /// each decoded frame to the main actor in receive order — decode of the
+    /// next frame only starts after the previous one was handled.
+    nonisolated private func receiveLoop(_ socket: any ServerWebSocketConnecting) async {
+        let decoder = JSONDecoder()
         while !Task.isCancelled {
             do {
                 let message = try await socket.receive()
-                failures = 0
-                guard case let .string(text) = message,
-                      let frame = try? JSONDecoder().decode(ServerFrame.self, from: Data(text.utf8))
-                else { continue }
-                lastOutputSeq = max(lastOutputSeq, frame.seq)
-                switch frame.type {
-                case "output":
-                    if let data = frame.data { onEvent(.output(data)) }
-                case "exit":
-                    closed = true
-                    teardownSocket()
-                    onEvent(.exit(code: frame.exitCode))
-                    return
-                case "error":
-                    onEvent(.error(frame.message ?? "Terminal error"))
-                default:
-                    continue
+                var frame: ServerFrame?
+                if case let .string(text) = message {
+                    frame = try? decoder.decode(ServerFrame.self, from: Data(text.utf8))
                 }
+                if await handleReceived(frame) { return }
             } catch {
-                if self.socket === socket, !closed {
-                    scheduleReconnect()
-                }
+                await handleReceiveFailure(on: socket)
                 return
             }
+        }
+    }
+
+    /// Main-actor half of the receive loop. Returns true when the loop should
+    /// stop (terminal exited).
+    private func handleReceived(_ frame: ServerFrame?) -> Bool {
+        failures = 0
+        guard let frame else { return false }
+        lastOutputSeq = max(lastOutputSeq, frame.seq)
+        switch frame.type {
+        case "output":
+            if let data = frame.data { onEvent(.output(data)) }
+        case "exit":
+            closed = true
+            teardownSocket()
+            onEvent(.exit(code: frame.exitCode))
+            return true
+        case "error":
+            onEvent(.error(frame.message ?? "Terminal error"))
+        default:
+            break
+        }
+        return false
+    }
+
+    private func handleReceiveFailure(on socket: any ServerWebSocketConnecting) {
+        if self.socket === socket, !closed {
+            scheduleReconnect()
         }
     }
 

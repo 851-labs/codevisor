@@ -18,19 +18,26 @@ enum PastedAttachment {
 enum ComposerAttachmentStaging {
     /// Copies security-scoped picker URLs into the app's temp directory (the
     /// shared staging path reads bytes asynchronously, after the scope would
-    /// otherwise be released) and hands them to the controller.
+    /// otherwise be released) and hands them to the controller. The reads and
+    /// copies run off the main actor — reading a picked iCloud Drive file can
+    /// block on a download — and unreadable files are skipped, as before.
     static func stage(pickedURLs urls: [URL], into controller: SessionController) {
-        var staged: [URL] = []
-        for url in urls {
-            let scoped = url.startAccessingSecurityScopedResource()
-            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-            guard let data = try? Data(contentsOf: url) else { continue }
-            if let copy = writeTemporary(data: data, name: url.lastPathComponent) {
-                staged.append(copy)
-            }
+        Task {
+            let staged = await Task.detached(priority: .userInitiated) { () -> [URL] in
+                var staged: [URL] = []
+                for url in urls {
+                    let scoped = url.startAccessingSecurityScopedResource()
+                    defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                    guard let data = try? Data(contentsOf: url) else { continue }
+                    if let copy = writeTemporary(data: data, name: url.lastPathComponent) {
+                        staged.append(copy)
+                    }
+                }
+                return staged
+            }.value
+            guard !staged.isEmpty else { return }
+            controller.attachFileURLs(staged)
         }
-        guard !staged.isEmpty else { return }
-        controller.attachFileURLs(staged)
     }
 
     /// Loads PhotosPicker selections and stages them under a filename whose
@@ -43,20 +50,31 @@ enum ComposerAttachmentStaging {
             let ext = type?.preferredFilenameExtension ?? "jpg"
             let base = type?.conforms(to: .movie) == true ? "Video" : "Photo"
             let name = "\(base) \(timestamp()).\(ext)"
-            if let url = writeTemporary(data: data, name: name) {
+            let url = await Task.detached(priority: .userInitiated) {
+                writeTemporary(data: data, name: name)
+            }.value
+            if let url {
                 controller.attachFileURLs([url])
             }
         }
     }
 
     static func stage(cameraImage image: UIImage, into controller: SessionController) {
-        guard let data = image.jpegData(compressionQuality: 0.9) else { return }
-        if let url = writeTemporary(data: data, name: "Photo \(timestamp()).jpg") {
-            controller.attachFileURLs([url])
+        let name = "Photo \(timestamp()).jpg"
+        Task {
+            // JPEG-encoding a full-resolution capture and writing it out are
+            // both too heavy for the main actor.
+            let url = await Task.detached(priority: .userInitiated) { () -> URL? in
+                guard let data = image.jpegData(compressionQuality: 0.9) else { return nil }
+                return writeTemporary(data: data, name: name)
+            }.value
+            if let url {
+                controller.attachFileURLs([url])
+            }
         }
     }
 
-    private static func writeTemporary(data: Data, name: String) -> URL? {
+    private nonisolated static func writeTemporary(data: Data, name: String) -> URL? {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("ComposerAttachments", isDirectory: true)
         do {

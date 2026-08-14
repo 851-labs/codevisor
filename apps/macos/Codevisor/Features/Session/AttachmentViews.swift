@@ -378,7 +378,7 @@ struct DropToAttachOverlay: View {
 
 /// Normalizes arbitrary dropped/pasted image data (TIFF and friends) to PNG so
 /// the stored file has a well-known type.
-func pngData(from imageData: Data) -> Data? {
+nonisolated func pngData(from imageData: Data) -> Data? {
     guard let bitmap = NSBitmapImageRep(data: imageData) else { return nil }
     return bitmap.representation(using: .png, properties: [:])
 }
