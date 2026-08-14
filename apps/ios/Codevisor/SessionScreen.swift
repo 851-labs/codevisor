@@ -1405,6 +1405,7 @@ private struct TurnItemsView: View {
 /// The macOS SubagentSectionView: a wand header shimmering while the
 /// subagent runs, its transcript recursing beneath.
 private struct SubagentSection: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.theme) private var theme
     @Environment(\.transcriptDisclosure) private var disclosureStore
     @Environment(\.runningSubagentToolCallIds) private var runningSubagents
@@ -1440,7 +1441,9 @@ private struct SubagentSection: View {
                     .scaledFrame(width: 16, relativeTo: .subheadline)
                 Text(call.displayTitle)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    // Expanding reveals child items, not this title — reflow
+                    // at accessibility sizes instead of truncating.
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
                     .truncationMode(.tail)
                     .shimmering(isRunning)
                 statusGlyph

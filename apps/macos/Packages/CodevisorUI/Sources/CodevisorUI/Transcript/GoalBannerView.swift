@@ -8,6 +8,7 @@ import SwiftUI
 /// the session has a goal; hidden entirely on harnesses without goal support.
 /// Goals are created/replaced through the composer's goal-mode toggle.
 public struct GoalBannerView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Bindable var controller: SessionController
     let goal: SessionGoal
     var glassNamespace: Namespace.ID? = nil
@@ -28,7 +29,9 @@ public struct GoalBannerView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(goal.objective)
                     .font(.callout.weight(.medium))
-                    .lineLimit(2)
+                    // The full objective isn't shown anywhere else, so give
+                    // it more room at accessibility text sizes.
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 4 : 2)
                 usageLine
             }
             Spacer(minLength: 8)

@@ -1977,6 +1977,8 @@ private struct ProjectDisclosureLabel: View {
 /// One chat row: status, harness icon, then the title over
 /// "workspace · worktree". No timestamp — ordering already tells recency.
 private struct SessionRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     private static let statusWidth: CGFloat = 10
     private static let statusToHarnessSpacing: CGFloat = 5
     private static let harnessWidth: CGFloat = 38
@@ -2001,7 +2003,9 @@ private struct SessionRow: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(session.title.isEmpty ? "New Chat" : session.title)
-                    .lineLimit(1)
+                    // The destination screen repeats this same truncated
+                    // title, so reflow here at accessibility sizes.
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
                 if showsContext {
                     HStack(spacing: 4) {
                         if let projectName {

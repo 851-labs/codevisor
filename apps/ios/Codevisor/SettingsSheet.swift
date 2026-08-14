@@ -1221,10 +1221,11 @@ private struct SkillsSettingsScreen: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(skill.name)
             if let description = skill.description, !description.isEmpty {
+                // No detail screen exists, so the row is the only place this
+                // description can be read — let it wrap fully.
                 Text(description)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
             }
         }
         .contextMenu {

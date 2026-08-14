@@ -122,6 +122,7 @@ struct ComposerAttachmentStrip: View {
 }
 
 private struct ComposerAttachmentChip: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let attachment: ComposerAttachment
     let onRemove: () -> Void
     let onRetry: () -> Void
@@ -196,9 +197,14 @@ private struct ComposerAttachmentChip: View {
                 .foregroundStyle(.secondary)
             Text(attachment.name)
                 .font(.caption)
-                .lineLimit(1)
+                // At accessibility sizes, reflow to a second line and widen
+                // rather than truncating harder as text grows.
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
                 .truncationMode(.middle)
-                .frame(maxWidth: 140, alignment: .leading)
+                .frame(
+                    maxWidth: dynamicTypeSize.isAccessibilitySize ? 240 : 140,
+                    alignment: .leading
+                )
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)

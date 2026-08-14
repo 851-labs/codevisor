@@ -11,6 +11,7 @@ import SwiftUI
 /// while the call is running, and edit calls carry an animated +N/−N counter
 /// that rolls as streamed diff stats arrive.
 public struct ToolCallRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let call: ToolCall
     var isTurnActive: Bool = false
 
@@ -53,7 +54,10 @@ public struct ToolCallRow: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
                 Text(call.displayTitle(diffTotals: totals))
-                    .lineLimit(1)
+                    // The disclosure body shows output, never the full title,
+                    // so at accessibility sizes reflow instead of truncating
+                    // (HIG: minimize truncation as font size increases).
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
                     .truncationMode(.tail)
                     .foregroundStyle(.secondary)
                     .shimmering(isTurnActive && !call.isSettled)
