@@ -2290,11 +2290,14 @@ private struct HoverableRow<Content: View>: View {
     var isHoverEnabled = true
     var isHoverForced = false
     @ViewBuilder var content: (_ isHovered: Bool) -> Content
+    @Environment(\.controlActiveState) private var controlActiveState
     @Environment(\.theme) private var theme
     @State private var isHovered = false
 
     var body: some View {
-        let revealsHoverContent = isHoverEnabled && isHovered
+        // An inactive window consumes the first click only to become key. Keep
+        // the row visually inert until it can actually respond to the click.
+        let revealsHoverContent = controlActiveState == .key && isHoverEnabled && isHovered
         let showsHoverBackground = isHoverForced || revealsHoverContent
         content(revealsHoverContent)
             .background(
@@ -2310,11 +2313,12 @@ private struct HoverableRow<Content: View>: View {
 private struct SidebarRowHoverModifier: ViewModifier {
     var isSelected = false
     var isEnabled = true
+    @Environment(\.controlActiveState) private var controlActiveState
     @Environment(\.theme) private var theme
     @State private var isHovered = false
 
     func body(content: Content) -> some View {
-        let showsHover = isEnabled && isHovered
+        let showsHover = controlActiveState == .key && isEnabled && isHovered
         content
             .background(
                 RoundedRectangle(cornerRadius: 6)
