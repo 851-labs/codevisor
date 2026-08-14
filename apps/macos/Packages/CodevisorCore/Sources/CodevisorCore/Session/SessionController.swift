@@ -199,7 +199,7 @@ public struct SessionScrollState {
 @MainActor
 @Observable
 final public class SessionController {
-    public enum Status: Equatable {
+    public enum Status: Equatable, Sendable {
         case idle
         case connecting(String)
         case failed(String)
@@ -223,6 +223,11 @@ final public class SessionController {
         case failed(String)
     }
 
+    /// The controller half of the transcript's cheap projection version.
+    /// Model-backed row changes carry their own revision below.
+    public private(set) var transcriptProjectionRevision: UInt64 = 0
+    @ObservationIgnored private let transcriptProjectionID = UUID()
+
     public var composerText: String = "" { didSet { draftDidChange() } }
     public private(set) var composerAttachments: [ComposerAttachment] = [] { didSet { draftDidChange() } }
     private var uploadTasks: [UUID: Task<Void, Never>] = [:]
@@ -234,11 +239,16 @@ final public class SessionController {
     public private(set) var configurationAdjustmentMessage: String?
     /// The first transcript page has its own state so an existing empty model
     /// never presents as an unexplained blank screen.
-    public private(set) var isLoadingInitialHistory = false
+    public private(set) var isLoadingInitialHistory = false {
+        didSet {
+            if isLoadingInitialHistory != oldValue { transcriptProjectionRevision &+= 1 }
+        }
+    }
     private var initialHistoryLoadStartedAt: TimeInterval?
     public var selectedHarnessId: String? { didSet { draftDidChange() } }
     public private(set) var model: SessionModel? {
         didSet {
+            if model !== oldValue { transcriptProjectionRevision &+= 1 }
             // A model connected while its transcript is already on screen
             // must start at the visible flush cadence, not the background one.
             guard let model, model !== oldValue else { return }
@@ -249,18 +259,30 @@ final public class SessionController {
     /// its stream-flush cadence matches whether anyone can actually see it.
     /// Kept here too because views can appear before the model connects.
     @ObservationIgnored private var visibleTranscriptViews = 0
-    public private(set) var status: Status = .idle
+    public private(set) var status: Status = .idle {
+        didSet {
+            if status != oldValue { transcriptProjectionRevision &+= 1 }
+        }
+    }
     /// Calm progress message shown while the eager connect waits for an
     /// unreachable server to come back (e.g. the managed server rebooting
     /// right after an app update). Non-nil only during that wait; the
     /// transcript renders it as a shimmer row instead of an error banner.
-    public private(set) var serverWaitMessage: String?
+    public private(set) var serverWaitMessage: String? {
+        didSet {
+            if serverWaitMessage != oldValue { transcriptProjectionRevision &+= 1 }
+        }
+    }
     /// A direct prompt staged at the accepted-send boundary. Both native
     /// clients render this exact message immediately, then the model adopts
     /// its id and retires this presentation copy. Keeping it for connected
     /// models too guarantees that an animation request is never published
     /// before its target row exists.
-    public private(set) var pendingUserMessage: UserMessage?
+    public private(set) var pendingUserMessage: UserMessage? {
+        didSet {
+            if pendingUserMessage != oldValue { transcriptProjectionRevision &+= 1 }
+        }
+    }
     /// The transcript scroll position, updated on every scroll tick and read
     /// back when the session screen remounts. Observation-ignored so the
     /// high-frequency writes don't invalidate views observing the controller.
@@ -332,7 +354,11 @@ final public class SessionController {
     public var onWorktreeCreated: ((ServerWorktree) -> Void)?
     /// Pre-chat setup steps (worktree creation, agent start) shown in the
     /// transcript immediately after the optimistic first user message.
-    public private(set) var setupPhases: [SessionSetupPhase] = []
+    public private(set) var setupPhases: [SessionSetupPhase] = [] {
+        didSet {
+            if setupPhases != oldValue { transcriptProjectionRevision &+= 1 }
+        }
+    }
     /// A failed first-send setup returns to the centered New Chat treatment
     /// without deleting its durable session or workspace.
     public private(set) var showsNewChatAfterSetupFailure = false
@@ -637,6 +663,42 @@ final public class SessionController {
     public var activeItem: ConversationItem? { model?.activeItem }
     public var activeItemRevision: UInt64 { model?.activeItemRevision ?? 0 }
     public var hasActiveItem: Bool { model?.hasActiveItem ?? false }
+    public var transcriptProjectionKey: TranscriptProjectionKey {
+        TranscriptProjectionKey(
+            // Controller lifetime, rather than the durable chat id: a cache
+            // entry from an evicted controller must never match a freshly
+            // replayed controller whose counters restarted at zero.
+            sessionID: transcriptProjectionID,
+            controllerRevision: transcriptProjectionRevision,
+            modelRevision: model?.transcriptProjectionRevision ?? 0
+        )
+    }
+
+    /// Captured on `MainActor`, then consumed by `TranscriptRowProjectionCache`
+    /// on its own actor. Array/string storage is immutable copy-on-write.
+    public var transcriptProjectionInput: TranscriptProjectionInput {
+        let projectionStatus: TranscriptProjectionInput.ConnectionStatus
+        switch status {
+        case .idle:
+            projectionStatus = .idle
+        case let .connecting(message):
+            projectionStatus = .connecting(message)
+        case let .failed(message):
+            projectionStatus = .failed(message)
+        }
+        return TranscriptProjectionInput(
+            settledConversation: settledConversation,
+            pendingUserMessage: pendingUserMessage,
+            hasActiveItem: hasActiveItem,
+            setupPhases: setupPhases,
+            waitingBackgroundTaskDescription: waitingBackgroundTaskDescription,
+            waitingHarnessUpdateName: waitingHarnessUpdateName,
+            isLoadingInitialHistory: isLoadingInitialHistory,
+            serverWaitMessage: serverWaitMessage,
+            sessionErrorMessage: sessionErrorMessage,
+            status: projectionStatus
+        )
+    }
     public var hasOlderHistory: Bool { model?.hasOlderHistory ?? false }
     public var isLoadingOlderHistory: Bool { model?.isLoadingOlderHistory ?? false }
     public var queuedPrompts: [ServerPromptQueueItem] { model?.queuedPrompts ?? [] }

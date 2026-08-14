@@ -785,7 +785,6 @@ struct HomeView: View {
             "home.openWorkspace",
             "workspace=\(shortID(item.id)) session=\(shortID(anchor.id)) pathBefore=\(navigationPathSummary(path))"
         )
-        prepareController(for: anchor, workspaceId: item.id)
         path.append(
             .workspace(
                 serverId: anchor.serverId,
@@ -799,38 +798,24 @@ struct HomeView: View {
     /// Agent rows always open the agent itself, never the terminal or sibling
     /// chat that happened to be selected when the workspace was last left.
     private func openChat(_ session: ChatSession) {
-        let workspace = ensureWorkspace(for: session)
+        // Existing sessions take the O(1) index path. Only a legacy session
+        // without a workspace pays the synchronous one-time backfill before
+        // a routable destination id exists.
+        let workspaceId = environment.workspaces.workspaceId(forSession: session.id)
+            ?? ensureWorkspace(for: session).id
         IOSNavigationDiagnostics.record(
             "home.openChat",
-            "workspace=\(shortID(workspace.id)) session=\(shortID(session.id)) pathBefore=\(navigationPathSummary(path))"
+            "workspace=\(shortID(workspaceId)) session=\(shortID(session.id)) pathBefore=\(navigationPathSummary(path))"
         )
-        WorkspacePaneStore.shared.selectChat(
-            session.id,
-            in: workspace.id,
-            legacySessionIds: [session.id] + workspace.chatSessionIds.filter { $0 != session.id }
-        )
-        prepareController(for: session, workspaceId: workspace.id)
+        // Push first. Workspace pane selection, controller creation, history,
+        // and transcript projection all begin from the destination's tasks.
         path.append(
             .workspace(
                 serverId: session.serverId,
-                workspaceId: workspace.id,
+                workspaceId: workspaceId,
                 anchorSessionId: session.id,
                 preferredChatSessionId: session.id
             )
-        )
-    }
-
-    private func prepareController(for session: ChatSession, workspaceId: UUID) {
-        guard let project = projectList.projects.first(where: {
-            $0.serverId == session.serverId && $0.id == session.projectId
-        }) else {
-            return
-        }
-        _ = ChatControllerCache.shared.controller(
-            for: session,
-            project: project,
-            workspaceId: workspaceId,
-            environment: environment
         )
     }
 

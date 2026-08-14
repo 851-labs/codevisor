@@ -27,6 +27,11 @@ public enum SessionProviderActivityPhase: String, Equatable, Sendable {
 @MainActor
 @Observable
 public final class SessionModel {
+    /// Cheap boundary signal for off-main transcript projection. It advances
+    /// only when a change can alter the stable row list; streaming mutations
+    /// inside `activeItem` continue to invalidate only the active-row host.
+    public private(set) var transcriptProjectionRevision: UInt64 = 0
+
     /// Recent history should produce a fast first paint even when a chat is
     /// made of giant markdown answers. Older rows arrive in larger reverse
     /// pages as the user approaches the top; the server also enforces a text
@@ -43,7 +48,9 @@ public final class SessionModel {
     /// containers should iterate THIS (plus a dedicated child view for
     /// `activeItem`), never `conversation`: the settled list changes only at
     /// bubble boundaries, so token flushes stop invalidating every row.
-    public private(set) var settledConversation: [ConversationItem] = []
+    public private(set) var settledConversation: [ConversationItem] = [] {
+        didSet { transcriptProjectionRevision &+= 1 }
+    }
     /// The latest assistant bubble — the one token flushes mutate. Split out
     /// of the settled list so per-flush Observation invalidation is scoped to
     /// the single view that renders it; with one stored `conversation` array,
@@ -64,7 +71,11 @@ public final class SessionModel {
     /// Stored, boundary-guarded mirror of `activeItem != nil`: containers
     /// that only need existence (empty-state, setup-section placement) read
     /// this instead of `activeItem`, so they don't re-render per flush.
-    public private(set) var hasActiveItem = false
+    public private(set) var hasActiveItem = false {
+        didSet {
+            if hasActiveItem != oldValue { transcriptProjectionRevision &+= 1 }
+        }
+    }
 
     /// The full conversation in display order. Convenience for callers that
     /// want a snapshot (persistence, tests, non-body logic). Body code should
@@ -75,7 +86,11 @@ public final class SessionModel {
         }
         return settledConversation
     }
-    public private(set) var isSending = false
+    public private(set) var isSending = false {
+        didSet {
+            if isSending != oldValue { transcriptProjectionRevision &+= 1 }
+        }
+    }
     public private(set) var isCancelling = false
     /// Set when the harness reports a refusal-driven model swap. Not cleared at
     /// turn end: the swap is sticky for the session, so the notice stays true
@@ -90,7 +105,11 @@ public final class SessionModel {
     @ObservationIgnored private var promptQueueLoadTask: Task<Void, Never>?
     /// Set while the server holds this session's prompts during a harness
     /// update ("Waiting for Codex to finish updating…"); nil once released.
-    public private(set) var updateGateHarnessName: String?
+    public private(set) var updateGateHarnessName: String? {
+        didSet {
+            if updateGateHarnessName != oldValue { transcriptProjectionRevision &+= 1 }
+        }
+    }
     public var composerText: String = ""
     public private(set) var availableCommands: [AvailableCommand] = []
     public private(set) var modeState: SessionModeState?
@@ -98,7 +117,11 @@ public final class SessionModel {
     /// Monotonic per-picker revisions keep a failed, slower request from
     /// rolling back a newer optimistic selection for the same option.
     @ObservationIgnored private var configMutationRevisions: [String: UInt64] = [:]
-    public private(set) var errorMessage: String?
+    public private(set) var errorMessage: String? {
+        didSet {
+            if errorMessage != oldValue { transcriptProjectionRevision &+= 1 }
+        }
+    }
     /// The most recent harness-auth failure is retained separately so a
     /// duplicate generic failure carrying the same server message does not
     /// erase its recovery action.
@@ -118,6 +141,7 @@ public final class SessionModel {
     /// means the agent will come back on its own once the work settles.
     public private(set) var backgroundTasks: [BackgroundTaskInfo] = [] {
         didSet {
+            if backgroundTasks != oldValue { transcriptProjectionRevision &+= 1 }
             let ids = Set(backgroundTasks.compactMap { $0.taskType == "subagent" ? $0.toolUseId : nil })
             if ids != runningSubagentToolCallIds {
                 runningSubagentToolCallIds = ids

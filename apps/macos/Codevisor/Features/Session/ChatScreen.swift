@@ -31,12 +31,15 @@ struct ChatScreen: View {
     @State private var historyLoadTask: Task<Void, Never>?
     @State private var olderHistoryPresentation = TranscriptPaginationPresentationGate()
     @State private var composerMaskSize: CGSize = .zero
-    @State private var showsInitialLoadingStatus = false
+    @State private var showsInitialLoadingSpinner = false
+    @State private var projectedRows: [TranscriptVirtualRow] = []
+    @State private var projectedSessionID: UUID?
+    @State private var isPreparingTranscript = true
     @Namespace private var composerGlassNamespace
 
     var body: some View {
         NativeTranscriptView(
-            rows: transcriptRows,
+            rows: projectedRows,
             initialState: controller.scrollState,
             followsLatest: autoFollow,
             hasOlderHistory: controller.hasOlderHistory,
@@ -143,25 +146,54 @@ struct ChatScreen: View {
                 }
             }
         }
-        .task(id: isLoadingEmptyConversation) {
-            showsInitialLoadingStatus = false
-            guard isLoadingEmptyConversation else { return }
+        .task(id: transcriptProjectionRequest) {
+            let request = transcriptProjectionRequest
+            let key = request.key
+            let input = controller.transcriptProjectionInput
+            if projectedSessionID != key.sessionID {
+                projectedRows = []
+                projectedSessionID = key.sessionID
+                isPreparingTranscript = true
+            }
+            do {
+                let rows = try await TranscriptRowProjectionCache.shared.rows(
+                    for: key,
+                    input: input,
+                    options: request.options
+                )
+                guard !Task.isCancelled,
+                      transcriptProjectionRequest == request else { return }
+                projectedRows = rows
+                isPreparingTranscript = false
+            } catch is CancellationError {
+                return
+            } catch {
+                // Projection is pure and currently only throws for
+                // cancellation. Keep the existing rows if that changes.
+                isPreparingTranscript = false
+            }
+        }
+        .task(id: isLoadingTranscriptContent) {
+            showsInitialLoadingSpinner = false
+            guard isLoadingTranscriptContent else { return }
             try? await Task.sleep(for: .milliseconds(500))
-            guard !Task.isCancelled, isLoadingEmptyConversation else { return }
-            showsInitialLoadingStatus = true
+            guard !Task.isCancelled, isLoadingTranscriptContent else { return }
+            showsInitialLoadingSpinner = true
         }
     }
 
-    private var isLoadingEmptyConversation: Bool {
-        controller.isLoadingInitialHistory
-            && controller.settledConversation.isEmpty
-            && !controller.hasActiveItem
+    private var isLoadingTranscriptContent: Bool {
+        (isPreparingTranscript && projectedRows.isEmpty)
+            || (controller.isLoadingInitialHistory
+                && controller.settledConversation.isEmpty
+                && !controller.hasActiveItem)
     }
 
     @ViewBuilder
     private var initialLoadingOverlay: some View {
-        if showsInitialLoadingStatus, isLoadingEmptyConversation {
-            ShimmeringText(text: "Loading conversation...")
+        if showsInitialLoadingSpinner, isLoadingTranscriptContent {
+            ProgressView()
+                .controlSize(.small)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 .allowsHitTesting(false)
         }
@@ -219,10 +251,20 @@ struct ChatScreen: View {
                 token: token,
                 insertedItemCount: insertedItemCount,
                 oldestRowKey: insertedItemCount > 0
-                    ? transcriptRows.first?.layoutKey
+                    ? projectedRows.first?.layoutKey
                     : nil
             )
         }
+    }
+
+    private var transcriptProjectionRequest: TranscriptProjectionRequest {
+        TranscriptProjectionRequest(
+            key: controller.transcriptProjectionKey,
+            options: .init(
+                includesConnectingRow: false,
+                bottomSpacerHeight: composerHeight + 24
+            )
+        )
     }
 
     private var transcriptRows: [TranscriptVirtualRow] {
@@ -522,6 +564,8 @@ struct ChatScreen: View {
             ChatActivityRow("Waiting on \(description)...")
         case let .updateGate(harnessName):
             ChatActivityRow("Waiting for \(harnessName) to finish updating...")
+        case let .connecting(message):
+            ChatActivityRow(message)
         case let .serverWait(message):
             ChatActivityRow(message)
         case let .error(message):

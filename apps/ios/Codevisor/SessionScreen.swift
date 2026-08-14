@@ -69,7 +69,10 @@ struct SessionTranscriptView: View {
     @State private var scrollCommand = TranscriptScrollCommand()
     @State private var historyLoadTask: Task<Void, Never>?
     @State private var olderHistoryPresentation = TranscriptPaginationPresentationGate()
-    @State private var showsInitialLoadingStatus = false
+    @State private var showsInitialLoadingSpinner = false
+    @State private var projectedRows: [TranscriptVirtualRow] = []
+    @State private var projectedSessionID: UUID?
+    @State private var isPreparingTranscript = true
     @State private var ownsVisibleTranscriptLifecycle = false
     /// Window-space bounds of the live editor. UIKit uses this as the actual
     /// launch point for the optimistic user row instead of estimating from the
@@ -104,19 +107,45 @@ struct SessionTranscriptView: View {
                 }
             }
             .environment(\.attachmentImages, attachmentImages)
-            .task(id: isLoadingEmptyConversation) {
-                showsInitialLoadingStatus = false
-                guard isLoadingEmptyConversation else { return }
+            .task(id: transcriptProjectionRequest) {
+                let request = transcriptProjectionRequest
+                let key = request.key
+                let input = controller.transcriptProjectionInput
+                if projectedSessionID != key.sessionID {
+                    projectedRows = []
+                    projectedSessionID = key.sessionID
+                    isPreparingTranscript = true
+                }
+                do {
+                    let rows = try await TranscriptRowProjectionCache.shared.rows(
+                        for: key,
+                        input: input,
+                        options: request.options
+                    )
+                    guard !Task.isCancelled,
+                          transcriptProjectionRequest == request else { return }
+                    projectedRows = rows
+                    isPreparingTranscript = false
+                } catch is CancellationError {
+                    return
+                } catch {
+                    isPreparingTranscript = false
+                }
+            }
+            .task(id: isLoadingTranscriptContent) {
+                showsInitialLoadingSpinner = false
+                guard isLoadingTranscriptContent else { return }
                 try? await Task.sleep(for: .milliseconds(500))
-                guard !Task.isCancelled, isLoadingEmptyConversation else { return }
-                showsInitialLoadingStatus = true
+                guard !Task.isCancelled, isLoadingTranscriptContent else { return }
+                showsInitialLoadingSpinner = true
             }
     }
 
-    private var isLoadingEmptyConversation: Bool {
-        controller.isLoadingInitialHistory
-            && controller.settledConversation.isEmpty
-            && !controller.hasActiveItem
+    private var isLoadingTranscriptContent: Bool {
+        (isPreparingTranscript && projectedRows.isEmpty)
+            || (controller.isLoadingInitialHistory
+                && controller.settledConversation.isEmpty
+                && !controller.hasActiveItem)
     }
 
     private func updateVisibleTranscriptLifecycle(for role: TranscriptPresentationRole) {
@@ -397,8 +426,9 @@ struct SessionTranscriptView: View {
             // One always-mounted native transcript for every connection state.
             transcript
 
-            if showsInitialLoadingStatus, isLoadingEmptyConversation {
-                ShimmeringText(text: "Loading conversation...")
+            if showsInitialLoadingSpinner, isLoadingTranscriptContent {
+                ProgressView()
+                    .controlSize(.small)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                     .padding(.bottom, composerHeight)
                     .allowsHitTesting(false)
@@ -507,9 +537,8 @@ struct SessionTranscriptView: View {
     // MARK: - Native transcript
 
     private var transcript: some View {
-        let rows = transcriptRows
         return NativeTranscriptView(
-            rows: rows,
+            rows: projectedRows,
             initialState: controller.scrollState,
             followsLatest: followsLatest,
             hasOlderHistory: controller.hasOlderHistory,
@@ -578,6 +607,16 @@ struct SessionTranscriptView: View {
             followsLatest = true
             scrollCommand.token &+= 1
         }
+    }
+
+    private var transcriptProjectionRequest: TranscriptProjectionRequest {
+        TranscriptProjectionRequest(
+            key: controller.transcriptProjectionKey,
+            options: .init(
+                includesConnectingRow: true,
+                bottomSpacerHeight: composerHeight + 24
+            )
+        )
     }
 
     @ViewBuilder
@@ -676,7 +715,7 @@ struct SessionTranscriptView: View {
                 token: token,
                 insertedItemCount: insertedItemCount,
                 oldestRowKey: insertedItemCount > 0
-                    ? transcriptRows.first?.layoutKey
+                    ? projectedRows.first?.layoutKey
                     : nil
             )
         }

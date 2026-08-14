@@ -904,7 +904,12 @@ struct WorkspaceScreen: View {
                     Color.clear
                 }
             } else if resolvedProject == nil {
-                ProgressView()
+                DelayedWorkspaceLoadingView()
+            } else if preferredChatSessionId != nil, paneState == nil {
+                // An agent-row tap is an explicit route. Do not paint the
+                // workspace's previously selected terminal/chat while the
+                // destination task applies the requested pane.
+                DelayedWorkspaceLoadingView()
             } else if showsGrid {
                 grid
             } else if let pane = activePane {
@@ -1418,10 +1423,10 @@ struct WorkspaceScreen: View {
                     )
                 }
             } else if let chatId = pane.chatSessionId ?? activeSessionId {
-                ProgressView()
+                DelayedWorkspaceLoadingView()
                     .task { await connectChat(sessionId: chatId) }
             } else {
-                ProgressView()
+                DelayedWorkspaceLoadingView()
             }
         case .newTab:
             NewTabPaneView(
@@ -2095,6 +2100,28 @@ struct WorkspaceScreen: View {
         )
     }
 
+}
+
+/// Navigation and chrome mount without an indeterminate flash. If controller
+/// or workspace preparation exceeds the grace period, the wait becomes
+/// explicit while the async destination task continues.
+private struct DelayedWorkspaceLoadingView: View {
+    @State private var showsSpinner = false
+
+    var body: some View {
+        ZStack {
+            Color.clear
+            if showsSpinner {
+                ProgressView()
+                    .accessibilityLabel("Loading conversation")
+            }
+        }
+        .task {
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            showsSpinner = true
+        }
+    }
 }
 
 /// Keeps the draft-only file-browser route out of Home's typed navigation
