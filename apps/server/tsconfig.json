@@ -33,6 +33,12 @@
     },
     {
       "path": "../../packages/adapter-codex"
+    },
+    {
+      "path": "../../packages/skills"
+    },
+    {
+      "path": "../../packages/worktrees"
     }
   ]
 }

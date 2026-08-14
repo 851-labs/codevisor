@@ -66,9 +66,9 @@ import { readTailnetPeers } from "./tailnet.js"
 // reader so the route's two shapes are deterministic on any test machine.
 vi.mock("./tailnet.js", () => ({ readTailnetPeers: vi.fn() }))
 import { NativeMcpError } from "./native-mcp-manager.js"
-import { SkillsError } from "./skills-manager.js"
-import { productionFoodWorktreeNames } from "./worktree-names.js"
-import { foodWorktreeNames } from "./food-worktree-names.js"
+import { SkillsError } from "@codevisor/skills"
+import { productionFoodWorktreeNames } from "@codevisor/worktrees"
+import { foodWorktreeNames } from "@codevisor/worktrees"
 import { boundedMcpTimerDelay, makeMcpManager, NodeStreamableHttpTransport } from "./mcp-manager.js"
 import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"

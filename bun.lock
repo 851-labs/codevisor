@@ -76,7 +76,9 @@
         "@codevisor/cloud-client": "workspace:*",
         "@codevisor/cloud-crypto": "workspace:*",
         "@codevisor/db": "workspace:*",
+        "@codevisor/skills": "workspace:*",
         "@codevisor/terminal": "workspace:*",
+        "@codevisor/worktrees": "workspace:*",
         "@earendil-works/pi-ai": "0.80.9",
         "@effect/platform-node": "4.0.0-beta.92",
         "@modelcontextprotocol/sdk": "1.29.0",
@@ -220,12 +222,32 @@
         "vitest": "4.1.6",
       },
     },
+    "packages/skills": {
+      "name": "@codevisor/skills",
+      "dependencies": {
+        "@codevisor/agent-runtime": "workspace:*",
+        "@codevisor/api": "workspace:*",
+        "yaml": "2.9.0",
+      },
+      "devDependencies": {
+        "vitest": "4.1.6",
+      },
+    },
     "packages/terminal": {
       "name": "@codevisor/terminal",
       "dependencies": {
         "@codevisor/api": "workspace:*",
         "effect": "4.0.0-beta.92",
         "node-pty": "1.1.0-beta34",
+      },
+      "devDependencies": {
+        "vitest": "4.1.6",
+      },
+    },
+    "packages/worktrees": {
+      "name": "@codevisor/worktrees",
+      "dependencies": {
+        "@codevisor/api": "workspace:*",
       },
       "devDependencies": {
         "vitest": "4.1.6",
@@ -413,7 +435,11 @@
 
     "@codevisor/server": ["@codevisor/server@workspace:apps/server"],
 
+    "@codevisor/skills": ["@codevisor/skills@workspace:packages/skills"],
+
     "@codevisor/terminal": ["@codevisor/terminal@workspace:packages/terminal"],
+
+    "@codevisor/worktrees": ["@codevisor/worktrees@workspace:packages/worktrees"],
 
     "@codevisor/www": ["@codevisor/www@workspace:apps/www"],
 

@@ -1,0 +1,25 @@
+{
+  "name": "@codevisor/skills",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.json",
+    "typecheck": "tsc -b tsconfig.json --pretty false",
+    "test": "vitest run src --passWithNoTests",
+    "test:coverage": "vitest run src --coverage"
+  },
+  "dependencies": {
+    "@codevisor/agent-runtime": "workspace:*",
+    "@codevisor/api": "workspace:*",
+    "yaml": "2.9.0"
+  },
+  "devDependencies": {
+    "vitest": "4.1.6"
+  }
+}

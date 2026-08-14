@@ -68,7 +68,7 @@ import {
 import { CodeExecutionToolError, makeCodeExecutor } from "./code-executor.js"
 import { makeCodevisorProvider } from "./codevisor-provider.js"
 import { computerUseTools, makeComputerUseProvider } from "./computer-use-provider.js"
-import type { ManagedSkillSpec } from "./skills-manager.js"
+import type { ManagedSkillSpec } from "@codevisor/skills"
 import { requireServerResource, type ServerResourceOptions } from "./server-resources.js"
 
 interface StoredOAuth {

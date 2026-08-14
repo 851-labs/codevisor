@@ -56,4 +56,10 @@ describe("development food worktree names", () => {
       )
     ).toBe(`${foodWorktreeNames[1]}-0000`)
   })
+
+  it("allocates with the default random sources", () => {
+    const name = availableDevelopmentWorktreeName(new Set())
+    expect(name).toMatch(/^[a-z-]+-\d{4}$/)
+    expect(foodWorktreeNames.some((base) => name.startsWith(`${base}-`))).toBe(true)
+  })
 })

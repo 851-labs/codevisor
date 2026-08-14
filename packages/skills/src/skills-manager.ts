@@ -28,7 +28,7 @@ import {
 import { homedir, tmpdir } from "node:os"
 import { basename, dirname, join, normalize, relative, resolve, sep } from "node:path"
 import { parse as parseYaml } from "yaml"
-import { resolveNativeConfigPath } from "./native-config-files.js"
+import { resolveNativeConfigPath } from "./native-paths.js"
 
 /// Skills management over the canonical ~/.agents/skills store and each
 /// harness's own skills directory. The symlink classification in `list` is

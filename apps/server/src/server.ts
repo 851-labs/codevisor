@@ -87,7 +87,7 @@ import {
   type AttachmentStore,
   type CodevisorDatabaseService
 } from "@codevisor/db"
-import { archiveWorktreeFiles, deleteSnapshot, restoreWorktree } from "./worktree-archive.js"
+import { archiveWorktreeFiles, deleteSnapshot, restoreWorktree } from "@codevisor/worktrees"
 import type { TerminalManagerService } from "@codevisor/terminal"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import {
@@ -118,7 +118,7 @@ import {
   removeWorktree,
   rollbackFailedWorktree,
   worktreeStartPoint
-} from "./git.js"
+} from "@codevisor/worktrees"
 import { connect, type AddressInfo, type Socket } from "node:net"
 import { Context, Effect, Layer, PubSub, Schema } from "effect"
 import { WebSocket, WebSocketServer } from "ws"
@@ -131,9 +131,9 @@ import type { HarnessLifecycleManager } from "./harness-lifecycle.js"
 import { parseCustomHarnessDocument, type CustomHarnessStore } from "./custom-harnesses.js"
 import type { McpManager } from "./mcp-manager.js"
 import { NativeMcpError, type NativeMcpManager } from "./native-mcp-manager.js"
-import { SkillsError, type SkillsManager } from "./skills-manager.js"
-import { availableDevelopmentWorktreeName } from "./food-worktree-names.js"
-import { availableProductionWorktreeName } from "./worktree-names.js"
+import { SkillsError, type SkillsManager } from "@codevisor/skills"
+import { availableDevelopmentWorktreeName } from "@codevisor/worktrees"
+import { availableProductionWorktreeName } from "@codevisor/worktrees"
 
 export class ServerError extends Schema.TaggedErrorClass<ServerError>()("ServerError", {
   operation: Schema.String,

@@ -49,7 +49,7 @@ import { acquireServerLease, type ServerLease } from "./server-lease.js"
 import { makeHarnessAuthManager } from "./harness-auth.js"
 import { makeMcpManager } from "./mcp-manager.js"
 import { makeNativeMcpManager } from "./native-mcp-manager.js"
-import { makeSkillsManager } from "./skills-manager.js"
+import { makeSkillsManager } from "@codevisor/skills"
 import { migrateLegacyLayout, migrateTmpDataDir } from "./legacy-layout.js"
 import {
   DEFAULT_GITHUB_REPOSITORY,
