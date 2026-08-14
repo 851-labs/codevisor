@@ -10,13 +10,13 @@ describe("Computer Use tool contract", () => {
     const root = mkdtempSync(join(tmpdir(), "codevisor-packaged-computer-use-"))
     try {
       const runtime = join(root, "linux-x64")
-      const helper = join(runtime, "apps", "server", "resources", "computer-use-linux.py")
+      const helper = join(runtime, "packages", "automation", "resources", "computer-use-linux.py")
       mkdirSync(dirname(helper), { recursive: true })
       writeFileSync(helper, "# helper")
 
       expect(
         linuxComputerUseHelperPath({
-          moduleDirectory: runtime,
+          moduleDirectory: join(runtime, "packages", "automation", "dist"),
           workingDirectory: "/"
         })
       ).toBe(helper)

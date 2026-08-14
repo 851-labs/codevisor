@@ -58,7 +58,7 @@ import {
   sweepAttachmentTempFiles,
   type RunningCodevisorServer
 } from "./server.js"
-import type { HarnessAuthManager } from "./harness-auth.js"
+import type { HarnessAuthManager } from "@codevisor/harness-manager"
 import type { CodevisorServerConfig, CodevisorServerServices } from "./server.js"
 import { readTailnetPeers } from "./tailnet.js"
 
@@ -74,7 +74,7 @@ import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import type { Transport as McpTransport } from "@modelcontextprotocol/sdk/shared/transport.js"
 import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js"
-import { CODEVISOR_BROWSER_EXTENSION_ID } from "./browser-extension-relay.js"
+import { CODEVISOR_BROWSER_EXTENSION_ID } from "@codevisor/automation"
 
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 

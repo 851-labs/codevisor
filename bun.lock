@@ -73,11 +73,14 @@
         "@codevisor/adapter-codex": "workspace:*",
         "@codevisor/agent-runtime": "workspace:*",
         "@codevisor/api": "workspace:*",
+        "@codevisor/automation": "workspace:*",
         "@codevisor/cloud-client": "workspace:*",
         "@codevisor/cloud-crypto": "workspace:*",
         "@codevisor/db": "workspace:*",
+        "@codevisor/harness-manager": "workspace:*",
         "@codevisor/skills": "workspace:*",
         "@codevisor/terminal": "workspace:*",
+        "@codevisor/updater": "workspace:*",
         "@codevisor/worktrees": "workspace:*",
         "@earendil-works/pi-ai": "0.80.9",
         "@effect/platform-node": "4.0.0-beta.92",
@@ -188,6 +191,24 @@
         "vitest": "4.1.6",
       },
     },
+    "packages/automation": {
+      "name": "@codevisor/automation",
+      "dependencies": {
+        "@babel/parser": "7.29.7",
+        "@codevisor/agent-runtime": "workspace:*",
+        "@codevisor/api": "workspace:*",
+        "@codevisor/db": "workspace:*",
+        "@modelcontextprotocol/sdk": "1.29.0",
+        "effect": "4.0.0-beta.92",
+        "quickjs-emscripten": "0.31.0",
+        "sucrase": "3.35.1",
+        "ws": "8.18.3",
+      },
+      "devDependencies": {
+        "@types/ws": "8.5.13",
+        "vitest": "4.1.6",
+      },
+    },
     "packages/cloud-client": {
       "name": "@codevisor/cloud-client",
       "dependencies": {
@@ -222,6 +243,24 @@
         "vitest": "4.1.6",
       },
     },
+    "packages/harness-manager": {
+      "name": "@codevisor/harness-manager",
+      "dependencies": {
+        "@codevisor/adapter-codex": "workspace:*",
+        "@codevisor/agent-runtime": "workspace:*",
+        "@codevisor/api": "workspace:*",
+        "@codevisor/db": "workspace:*",
+        "@codevisor/terminal": "workspace:*",
+        "@codevisor/updater": "workspace:*",
+        "@earendil-works/pi-ai": "0.80.9",
+        "effect": "4.0.0-beta.92",
+        "proper-lockfile": "4.1.2",
+      },
+      "devDependencies": {
+        "@types/proper-lockfile": "4.1.4",
+        "vitest": "4.1.6",
+      },
+    },
     "packages/skills": {
       "name": "@codevisor/skills",
       "dependencies": {
@@ -239,6 +278,15 @@
         "@codevisor/api": "workspace:*",
         "effect": "4.0.0-beta.92",
         "node-pty": "1.1.0-beta34",
+      },
+      "devDependencies": {
+        "vitest": "4.1.6",
+      },
+    },
+    "packages/updater": {
+      "name": "@codevisor/updater",
+      "dependencies": {
+        "@codevisor/agent-runtime": "workspace:*",
       },
       "devDependencies": {
         "vitest": "4.1.6",
@@ -423,6 +471,8 @@
 
     "@codevisor/api": ["@codevisor/api@workspace:packages/api"],
 
+    "@codevisor/automation": ["@codevisor/automation@workspace:packages/automation"],
+
     "@codevisor/cloud": ["@codevisor/cloud@workspace:apps/cloud"],
 
     "@codevisor/cloud-client": ["@codevisor/cloud-client@workspace:packages/cloud-client"],
@@ -431,6 +481,8 @@
 
     "@codevisor/db": ["@codevisor/db@workspace:packages/db"],
 
+    "@codevisor/harness-manager": ["@codevisor/harness-manager@workspace:packages/harness-manager"],
+
     "@codevisor/macos": ["@codevisor/macos@workspace:apps/macos"],
 
     "@codevisor/server": ["@codevisor/server@workspace:apps/server"],
@@ -438,6 +490,8 @@
     "@codevisor/skills": ["@codevisor/skills@workspace:packages/skills"],
 
     "@codevisor/terminal": ["@codevisor/terminal@workspace:packages/terminal"],
+
+    "@codevisor/updater": ["@codevisor/updater@workspace:packages/updater"],
 
     "@codevisor/worktrees": ["@codevisor/worktrees@workspace:packages/worktrees"],
 

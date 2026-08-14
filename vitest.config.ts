@@ -17,14 +17,10 @@ export default defineConfig({
         // flows, terminals, and credential files. Their focused integration
         // tests still run, while unit coverage is enforced at their server
         // route and runtime boundaries.
-        "apps/server/src/harness-auth.ts",
-        "apps/server/src/pi-auth.ts",
-        "apps/server/src/opencode-auth.ts",
         // Same category: the lifecycle manager orchestrates installers,
         // updaters, terminals, timers, and update feeds. Its focused tests
         // (harness-lifecycle.test.ts) cover the state machine and gating;
         // route-level coverage is enforced in server.ts.
-        "apps/server/src/harness-lifecycle.ts",
         // The cloud bridge is an integration boundary over `ws`, live
         // terminals, and the filesystem. Everything it composes is fully
         // covered elsewhere: connection/channel/crypto logic in
@@ -36,12 +32,6 @@ export default defineConfig({
         // WebSockets, QuickJS, native desktop bridges, and long-lived MCP
         // sessions. Focused tests still run for every adapter and gateway,
         // while end-to-end automation tests exercise the external runtimes.
-        "apps/server/src/browser-cdp.ts",
-        "apps/server/src/browser-extension-relay.ts",
-        "apps/server/src/browser-setup-broker.ts",
-        "apps/server/src/browser-use-provider.ts",
-        "apps/server/src/code-executor.ts",
-        "apps/server/src/computer-use-provider.ts",
         "apps/server/src/mcp-manager.ts"
       ],
       provider: "v8",

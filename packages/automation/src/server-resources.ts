@@ -24,13 +24,12 @@ export const serverResourceDirectories = (
   return unique([
     options.resourceDirectory,
     process.env.CODEVISOR_SERVER_RESOURCES,
-    // Source/build layout: apps/server/dist/*.js next to apps/server/resources.
+    // Package layout, source and release alike: this module compiles to
+    // packages/automation/{src,dist}/*.js next to packages/automation/resources,
+    // and the packaged runtime preserves the same per-package shape.
     join(moduleDirectory, "..", "resources"),
-    // Release layout: compiled entrypoints live at the runtime root while
-    // resources remain under apps/server/resources.
-    join(moduleDirectory, "apps", "server", "resources"),
     // Compatibility fallbacks for direct source-tree launches.
-    join(workingDirectory, "apps", "server", "resources"),
+    join(workingDirectory, "packages", "automation", "resources"),
     join(workingDirectory, "resources")
   ])
 }

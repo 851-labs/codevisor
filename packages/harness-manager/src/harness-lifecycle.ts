@@ -19,8 +19,8 @@ import { execFile, spawn } from "node:child_process"
 import { basename, join } from "node:path"
 import { promisify } from "node:util"
 import { Effect } from "effect"
-import { applyAppBundleSwap } from "./app-bundle-swap.js"
-import { parseAppcast, selectLatestAppcastItem } from "./appcast.js"
+import { applyAppBundleSwap } from "@codevisor/updater"
+import { parseAppcast, selectLatestAppcastItem } from "@codevisor/updater"
 import {
   checkBrewLatest,
   checkGithubLatest,
@@ -30,7 +30,7 @@ import {
   isNewerVersion,
   type FetchLike,
   type LatestVersionResult
-} from "./harness-update-sources.js"
+} from "@codevisor/updater"
 
 const execFileAsync = promisify(execFile)
 

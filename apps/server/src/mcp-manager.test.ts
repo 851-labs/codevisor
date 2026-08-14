@@ -162,8 +162,8 @@ describe("MCP manager", () => {
     const runtime = join(root, "darwin-arm64")
     const browserSkill = join(
       runtime,
-      "apps",
-      "server",
+      "packages",
+      "automation",
       "resources",
       "automation-skills",
       "browser-use",
@@ -174,7 +174,7 @@ describe("MCP manager", () => {
 
     expect(
       automationSkillPath("browser", {
-        moduleDirectory: runtime,
+        moduleDirectory: join(runtime, "packages", "automation", "dist"),
         workingDirectory: "/"
       })
     ).toBe(browserSkill)

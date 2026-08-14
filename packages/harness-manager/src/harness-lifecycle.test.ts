@@ -16,7 +16,7 @@ import {
   appBundlePath,
   type LifecycleProcess
 } from "./harness-lifecycle.js"
-import type { FetchLike } from "./harness-update-sources.js"
+import type { FetchLike } from "@codevisor/updater"
 
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 

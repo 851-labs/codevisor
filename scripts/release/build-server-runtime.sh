@@ -81,11 +81,19 @@ cp "$repo_root/package.json" "$runtime_dir/package.json"
 cp "$repo_root/bun.lock" "$runtime_dir/bun.lock"
 cp "$repo_root/apps/server/package.json" "$runtime_dir/apps/server/package.json"
 cp -R "$repo_root/apps/server/dist" "$runtime_dir/apps/server/dist"
-cp -R "$repo_root/apps/server/resources" "$runtime_dir/apps/server/resources"
 
-for package_name in agent-runtime api cloud-client cloud-crypto db terminal; do
-  cp "$repo_root/packages/$package_name/package.json" "$runtime_dir/packages/$package_name/package.json"
-  cp -R "$repo_root/packages/$package_name/dist" "$runtime_dir/packages/$package_name/dist"
+# Every built workspace package ships: dist for the module graph, plus the
+# package's resources/ directory when it has one (terminal terminfo,
+# automation browser extension + skills, ...).
+for package_dir in "$repo_root"/packages/*/; do
+  package_name="$(basename "$package_dir")"
+  [[ -d "$package_dir/dist" ]] || continue
+  mkdir -p "$runtime_dir/packages/$package_name"
+  cp "$package_dir/package.json" "$runtime_dir/packages/$package_name/package.json"
+  cp -R "$package_dir/dist" "$runtime_dir/packages/$package_name/dist"
+  if [[ -d "$package_dir/resources" ]]; then
+    cp -R "$package_dir/resources" "$runtime_dir/packages/$package_name/resources"
+  fi
 done
 
 # Keep Ghostty's terminfo database next to @codevisor/terminal in both macOS
@@ -112,7 +120,7 @@ if ! cmp -s \
   echo "error: macOS and Linux terminfo entries are out of sync" >&2
   exit 1
 fi
-cp -R "$terminal_resources" "$runtime_dir/packages/terminal/resources"
+# (terminal resources ship via the generic package resources copy above)
 
 # The lockfile spans every workspace member, so bun's frozen install needs
 # each manifest present even though the runtime only ships the server code.

@@ -27,7 +27,7 @@ import {
   writeFileSync
 } from "node:fs"
 import { hostname, tmpdir } from "node:os"
-import { installRuntime, planRestart, resolveInstallRoot } from "./self-update.js"
+import { installRuntime, planRestart, resolveInstallRoot } from "@codevisor/updater"
 import { Readable } from "node:stream"
 import { pipeline } from "node:stream/promises"
 import { dirname, join, resolve } from "node:path"
@@ -42,11 +42,11 @@ import {
   saveCustomHarnesses,
   type CustomHarnessLoadResult,
   type CustomHarnessStore
-} from "./custom-harnesses.js"
-import { makeHarnessLifecycleManager } from "./harness-lifecycle.js"
+} from "@codevisor/harness-manager"
+import { makeHarnessLifecycleManager } from "@codevisor/harness-manager"
 import { defaultServerConfig, startCodevisorServer, type CodevisorServerUpdater } from "./server.js"
 import { acquireServerLease, type ServerLease } from "./server-lease.js"
-import { makeHarnessAuthManager } from "./harness-auth.js"
+import { makeHarnessAuthManager } from "@codevisor/harness-manager"
 import { makeMcpManager } from "./mcp-manager.js"
 import { makeNativeMcpManager } from "./native-mcp-manager.js"
 import { makeSkillsManager } from "@codevisor/skills"
@@ -60,7 +60,7 @@ import {
   sha256File,
   type ServerRelease,
   type ServerUpdateChannel
-} from "./release-source.js"
+} from "@codevisor/updater"
 
 const SERVER_PROCESS_TITLE = "codevisor-server"
 /// Background cache only: clients checking on the user's behalf pass

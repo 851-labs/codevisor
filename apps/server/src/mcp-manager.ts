@@ -58,18 +58,18 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { Effect } from "effect"
 import { z } from "zod"
 import type WebSocket from "ws"
-import { textToolResult, type AutomationToolProvider } from "./automation-provider.js"
-import { makeBrowserSetupBroker } from "./browser-setup-broker.js"
+import { textToolResult, type AutomationToolProvider } from "@codevisor/automation"
+import { makeBrowserSetupBroker } from "@codevisor/automation"
 import {
   browserUseTools,
   makeBrowserUseProvider,
   type BrowserUseProvider
-} from "./browser-use-provider.js"
-import { CodeExecutionToolError, makeCodeExecutor } from "./code-executor.js"
-import { makeCodevisorProvider } from "./codevisor-provider.js"
-import { computerUseTools, makeComputerUseProvider } from "./computer-use-provider.js"
+} from "@codevisor/automation"
+import { CodeExecutionToolError, makeCodeExecutor } from "@codevisor/automation"
+import { makeCodevisorProvider } from "@codevisor/automation"
+import { computerUseTools, makeComputerUseProvider } from "@codevisor/automation"
 import type { ManagedSkillSpec } from "@codevisor/skills"
-import { requireServerResource, type ServerResourceOptions } from "./server-resources.js"
+import { requireServerResource, type ServerResourceOptions } from "@codevisor/automation"
 
 interface StoredOAuth {
   readonly clientInformation?: OAuthClientInformationMixed | undefined

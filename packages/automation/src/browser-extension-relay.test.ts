@@ -26,13 +26,13 @@ describe("browser extension development installer", () => {
     const root = await mkdtemp(join(tmpdir(), "codevisor-packaged-browser-"))
     temporaryDirectories.push(root)
     const runtime = join(root, "darwin-arm64")
-    const extension = join(runtime, "apps", "server", "resources", "browser-extension")
+    const extension = join(runtime, "packages", "automation", "resources", "browser-extension")
     await mkdir(extension, { recursive: true })
     await writeFile(join(extension, "manifest.json"), "{}")
 
     expect(
       browserExtensionPath({
-        moduleDirectory: runtime,
+        moduleDirectory: join(runtime, "packages", "automation", "dist"),
         workingDirectory: "/"
       })
     ).toBe(extension)

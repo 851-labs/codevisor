@@ -88,7 +88,16 @@ describe("browser extension background connection", () => {
     const scheduledTimers = new Map<number, Listener>()
     let nextTimer = 1
     const source = await readFile(
-      join(process.cwd(), "resources", "browser-extension", "background.js"),
+      join(
+        process.cwd(),
+        "..",
+        "..",
+        "packages",
+        "automation",
+        "resources",
+        "browser-extension",
+        "background.js"
+      ),
       "utf8"
     )
 

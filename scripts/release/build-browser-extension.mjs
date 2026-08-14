@@ -47,7 +47,7 @@ if (
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(scriptDir, "../..")
-const sourceDir = join(repoRoot, "apps/server/resources/browser-extension")
+const sourceDir = join(repoRoot, "packages/automation/resources/browser-extension")
 const outputDir = resolve(args[1] ?? join(repoRoot, "dist/release"))
 const workRoot = join(repoRoot, "dist/release/work")
 const archiveName = `Codevisor-Chrome-${version}.zip`

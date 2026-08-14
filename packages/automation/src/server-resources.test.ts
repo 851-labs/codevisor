@@ -26,13 +26,13 @@ const temporaryDirectory = (): string => {
 describe("server resources", () => {
   it("resolves packaged resources independently of the working directory", () => {
     const runtime = temporaryDirectory()
-    const helper = join(runtime, "apps", "server", "resources", "computer-use-linux.py")
+    const helper = join(runtime, "resources", "computer-use-linux.py")
     mkdirSync(join(helper, ".."), { recursive: true })
     writeFileSync(helper, "# helper")
 
     expect(
       findServerResource("computer-use-linux.py", {
-        moduleDirectory: runtime,
+        moduleDirectory: join(runtime, "dist"),
         workingDirectory: "/"
       })
     ).toBe(helper)
@@ -41,7 +41,7 @@ describe("server resources", () => {
   it("prefers an explicit resource directory over layout compatibility fallbacks", () => {
     const root = temporaryDirectory()
     const explicit = join(root, "explicit")
-    const fallback = join(root, "runtime", "apps", "server", "resources")
+    const fallback = join(root, "runtime", "packages", "automation", "resources")
     mkdirSync(explicit, { recursive: true })
     mkdirSync(fallback, { recursive: true })
     writeFileSync(join(explicit, "asset.txt"), "explicit")
@@ -50,8 +50,8 @@ describe("server resources", () => {
     expect(
       findServerResource("asset.txt", {
         resourceDirectory: explicit,
-        moduleDirectory: join(root, "runtime"),
-        workingDirectory: "/"
+        moduleDirectory: join(root, "runtime", "dist"),
+        workingDirectory: join(root, "runtime")
       })
     ).toBe(join(explicit, "asset.txt"))
   })

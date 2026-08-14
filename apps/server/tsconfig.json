@@ -39,6 +39,15 @@
     },
     {
       "path": "../../packages/worktrees"
+    },
+    {
+      "path": "../../packages/automation"
+    },
+    {
+      "path": "../../packages/harness-manager"
+    },
+    {
+      "path": "../../packages/updater"
     }
   ]
 }
