@@ -17,6 +17,8 @@ let package = Package(
         .library(name: "CodeHighlighter", targets: ["CodeHighlighter"]),
         .library(name: "CodevisorProtocol", targets: ["CodevisorProtocol"]),
         .library(name: "TranscriptKit", targets: ["TranscriptKit"]),
+        .library(name: "CodevisorClient", targets: ["CodevisorClient"]),
+        .library(name: "CodevisorCloud", targets: ["CodevisorCloud"]),
         .library(name: "CodevisorCore", targets: ["CodevisorCore"]),
         .library(name: "CodevisorCoreMac", targets: ["CodevisorCoreMac"]),
         .library(name: "CodevisorUI", targets: ["CodevisorUI"]),
@@ -121,6 +123,59 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
 
+        // MARK: CodevisorClient (the Codevisor server's HTTP/WebSocket client,
+        // machine credential storage, session transport — no UI dependencies)
+        .target(
+            name: "CodevisorClient",
+            dependencies: [
+                "ACPKit",
+                "CodevisorProtocol",
+                "TranscriptKit",
+            ],
+            path: "CodevisorClient/Sources/CodevisorClient",
+            swiftSettings: [.swiftLanguageMode(.v6)],
+            linkerSettings: [
+                .linkedFramework("Security")
+            ]
+        ),
+        .testTarget(
+            name: "CodevisorClientTests",
+            dependencies: [
+                "CodevisorClient",
+                "CodevisorCloud",
+                "ACPKit",
+                "CodevisorProtocol",
+            ],
+            path: "CodevisorClient/Tests/CodevisorClientTests",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+
+        // MARK: CodevisorCloud (Codevisor Cloud account, hub connection, and
+        // end-to-end encrypted relay transports)
+        .target(
+            name: "CodevisorCloud",
+            dependencies: [
+                "ACPKit",
+                "CodevisorProtocol",
+                "CodevisorClient",
+            ],
+            path: "CodevisorCloud/Sources/CodevisorCloud",
+            swiftSettings: [.swiftLanguageMode(.v6)],
+            linkerSettings: [
+                .linkedFramework("Security")
+            ]
+        ),
+        .testTarget(
+            name: "CodevisorCloudTests",
+            dependencies: [
+                "CodevisorCloud",
+                "CodevisorClient",
+                "ACPKit",
+            ],
+            path: "CodevisorCloud/Tests/CodevisorCloudTests",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+
         // MARK: CodevisorCore (app logic: models, repositories, DI, view models)
         .target(
             name: "CodevisorCore",
@@ -128,6 +183,8 @@ let package = Package(
                 "ACPKit",
                 "CodevisorProtocol",
                 "TranscriptKit",
+                "CodevisorClient",
+                "CodevisorCloud",
                 "CodevisorTheming",
                 .product(name: "PostHog", package: "posthog-ios"),
                 .product(name: "Sentry", package: "sentry-cocoa"),

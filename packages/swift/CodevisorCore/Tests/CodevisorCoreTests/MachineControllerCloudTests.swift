@@ -32,8 +32,20 @@ private final class FakeRelayRequestTransport: ServerRequestTransport, @unchecke
 
 private final class UnusedWebSocketTransport: ServerWebSocketTransport, @unchecked Sendable {
     func connect(_ request: URLRequest, maximumMessageSize: Int) -> any ServerWebSocketConnecting {
-        FakeWebSocketConnection()
+        UnusedWebSocketConnection()
     }
+}
+
+/// Never exercised: the fake relay config's request transport answers
+/// everything, so no socket is ever opened.
+private final class UnusedWebSocketConnection: ServerWebSocketConnecting, @unchecked Sendable {
+    var closeCode: URLSessionWebSocketTask.CloseCode { .invalid }
+
+    func send(_ message: ServerWebSocketMessage) async throws {}
+    func receive() async throws -> ServerWebSocketMessage {
+        throw URLError(.cancelled)
+    }
+    func cancel(with closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {}
 }
 
 @MainActor

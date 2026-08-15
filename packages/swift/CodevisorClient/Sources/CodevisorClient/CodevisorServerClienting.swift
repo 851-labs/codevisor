@@ -1,0 +1,262 @@
+import ACPKit
+import CodevisorProtocol
+import Foundation
+
+public protocol CodevisorServerClienting: Sendable {
+    func health() async throws -> ServerHealth
+    func info() async throws -> ServerInfo
+    /// This machine's cloud registration (`GET /v1/cloud`).
+    func cloudRegistration() async throws -> ServerCloudRegistration
+    /// Registers the machine on the account behind `sessionToken` and returns
+    /// the new cloud device id (`POST /v1/cloud/connect`).
+    func connectCloud(serverURL: URL, sessionToken: String) async throws -> String
+    /// Stops the machine's cloud connection and forgets its credential
+    /// (`POST /v1/cloud/disconnect`).
+    func disconnectCloud() async throws
+    /// The machine's view of its tailnet, for clients that can't enumerate
+    /// peers themselves (iOS). `available` is false when the machine has no
+    /// running Tailscale.
+    func tailnetPeers() async throws -> ServerTailnetPeers
+    /// `refresh` bypasses the server's update-check cache; `channel` selects
+    /// which release feed the server consults (older servers ignore both).
+    func updateInfo(refresh: Bool, channel: ServerUpdateChannel) async throws -> ServerUpdateInfo
+    func issuePairingToken() async throws -> ServerPairingToken
+    /// The machine's stable connection token (unchanged across restarts and
+    /// updates until rotated). Preferred over `issuePairingToken` for showing
+    /// a token to copy, so it stays consistent.
+    func connectionToken() async throws -> ServerPairingToken
+    func capabilities(cwd: String) async throws -> ServerCapabilities
+    /// Inspects only one known harness. Existing chats use this overload so
+    /// unrelated agents never enter their loading path.
+    func capabilities(cwd: String, harnessId: String) async throws -> ServerCapabilities
+    func listHarnesses() async throws -> [ServerHarness]
+    /// The list with lifecycle decoration (update knowledge, install
+    /// methods) — for Settings and update banners. The plain `listHarnesses`
+    /// stays as light as possible for the composer's picker.
+    func listHarnessesWithLifecycle() async throws -> [ServerHarness]
+    /// Asks the server to re-resolve its PATH (login-shell probe) before
+    /// re-detecting, so CLIs installed after server start are found.
+    func rescanHarnesses() async throws -> [ServerHarness]
+    /// Sessions from the harness's own on-disk store (run before/outside
+    /// Codevisor) — the source for onboarding's workspace suggestions and
+    /// "import existing chats".
+    func listAgentSessions(harnessId: String) async throws -> [SessionInfo]
+    func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness
+    /// User-defined custom ACP harnesses (BYO): persisted server-side in a
+    /// user-editable file and merged into the harness catalog.
+    func listCustomHarnesses() async throws -> [ServerCustomHarnessSpec]
+    /// Whole-list replace; returns the refreshed full harness list.
+    func replaceCustomHarnesses(_ specs: [ServerCustomHarnessSpec]) async throws -> [ServerHarness]
+    /// One-shot ACP initialize handshake for a (possibly unsaved) spec.
+    func testCustomHarness(_ spec: ServerCustomHarnessSpec) async throws -> ServerCustomHarnessTestResult
+    /// Starts a one-click install (202-ack; progress arrives via
+    /// harness.lifecycle.updated events). Returns the output terminal id.
+    func installHarness(id: String, methodId: String?) async throws -> ServerHarnessOperationStarted
+    /// Starts a one-click update via the harness's origin-matched flow.
+    /// Returns `queued: true` when chats are mid-turn — the update runs when
+    /// they finish.
+    func updateHarness(id: String) async throws -> ServerHarnessOperationStarted
+    /// Dual-install: the bundled desktop app's version/update state (nil
+    /// when the harness has no bundled app). Computed server-side on demand.
+    func bundledAppInfo(harnessId: String) async throws -> ServerHarnessBundledApp?
+    /// Runs the verified bundle swap for the bundled desktop app.
+    func updateBundledApp(harnessId: String) async throws
+    /// "Update Now" on a queued update — skips the idle wait.
+    func applyPendingHarnessUpdate(id: String) async throws
+    /// Disarms a queued update entirely.
+    func cancelPendingHarnessUpdate(id: String) async throws
+    /// Forces a latest-version check for all harnesses, returning the
+    /// refreshed decorated list.
+    func checkHarnessUpdates() async throws -> [ServerHarness]
+    func refreshHarnessAuth() async throws -> [ServerHarness]
+    func refreshHarnessAuth(harnessId: String) async throws -> ServerHarness
+    func listHarnessAccounts(harnessId: String) async throws -> [ServerHarnessAccount]
+    func createHarnessAccount(harnessId: String, label: String?) async throws -> ServerHarnessAccount
+    func renameHarnessAccount(harnessId: String, accountId: String, label: String) async throws -> ServerHarnessAccount
+    func removeHarnessAccount(harnessId: String, accountId: String) async throws
+    func activateHarnessAccount(harnessId: String, accountId: String) async throws -> [ServerHarnessAccount]
+    func probeHarnessAccount(harnessId: String, accountId: String) async throws -> ServerHarnessAccount
+    func loginHarnessAccount(
+        harnessId: String, accountId: String, methodId: String?, apiKey: String?
+    ) async throws -> ServerHarnessAuthFlow
+    func cancelHarnessLogin(harnessId: String, accountId: String, flowId: String) async throws
+    func logoutHarnessAccount(harnessId: String, accountId: String) async throws -> ServerHarnessAccount
+    func listPiAuthProviders() async throws -> [ServerPiAuthProvider]
+    func startPiAuth(providerId: String, method: String) async throws -> ServerPiAuthFlow
+    func piAuthFlow(id: String) async throws -> ServerPiAuthFlow
+    func answerPiAuthFlow(id: String, value: String) async throws -> ServerPiAuthFlow
+    func cancelPiAuthFlow(id: String) async throws
+    func removePiAuthProvider(id: String) async throws
+    func listOpenCodeAuthProviders(accountId: String) async throws -> [ServerOpenCodeAuthProvider]
+    func startOpenCodeAuth(
+        accountId: String, providerId: String, methodId: String, inputs: [String: String]?, apiKey: String?
+    ) async throws -> ServerOpenCodeAuthFlow
+    func openCodeAuthFlow(id: String) async throws -> ServerOpenCodeAuthFlow
+    func answerOpenCodeAuthFlow(id: String, code: String) async throws -> ServerOpenCodeAuthFlow
+    func cancelOpenCodeAuthFlow(id: String) async throws
+    func removeOpenCodeAuthProvider(accountId: String, providerId: String) async throws
+    func listMcpServers() async throws -> [ServerMcpServer]
+    func browserUseConfiguration() async throws -> ServerBrowserUseConfiguration
+    func setPreferredBrowser(_ preference: String) async throws -> ServerBrowserUseConfiguration
+    func installDevelopmentBrowserExtension() async throws -> ServerBrowserUseConfiguration
+    func openBrowserExtensionFolder() async throws -> ServerBrowserUseConfiguration
+    func openBrowserExtensionsPage() async throws -> ServerBrowserUseConfiguration
+    func openBrowserExtensionWebStore() async throws -> ServerBrowserUseConfiguration
+    func browserExtensionArchive() async throws -> URL
+    func browserExtensionIcon() async throws -> URL
+    func detectMcpAuth(url: String) async throws -> ServerMcpAuthDetection
+    func createMcpServer(_ request: CreateMcpServerBody) async throws -> ServerMcpServer
+    func updateMcpServer(id: String, request: UpdateMcpServerBody) async throws -> ServerMcpServer
+    func setMcpServerEnabled(id: String, enabled: Bool) async throws -> ServerMcpServer
+    func connectMcpServer(id: String) async throws -> ServerMcpServer
+    func startMcpOAuth(id: String) async throws -> ServerMcpOAuthStart
+    func disconnectMcpOAuth(id: String) async throws -> ServerMcpServer
+    func removeMcpServer(id: String) async throws
+    func listMcpTools(id: String) async throws -> [ServerMcpTool]
+    /// MCP servers registered directly in harness config files (read-only
+    /// discovery; secret values never leave the server).
+    func listNativeMcps() async throws -> ServerNativeMcpScan
+    /// Import coalesced native candidates (by identity) into the managed
+    /// gateway; secrets are re-read server-side.
+    func importNativeMcps(identities: [String]) async throws -> ServerNativeMcpImportResult
+    /// Remove a server from a harness's own config file (backed up and
+    /// parked for undo).
+    func removeNativeMcp(harnessId: String, serverName: String) async throws -> ServerRemoveNativeMcpResult
+    func listNativeMcpRemovals() async throws -> [ServerNativeMcpRemoval]
+    /// Undo a native removal by reinserting the parked entry.
+    func restoreNativeMcpRemoval(id: String) async throws -> ServerNativeMcpScan
+    /// Toggle a harness's own per-server enable flag (only where one exists).
+    func setNativeMcpEnabled(harnessId: String, serverName: String, enabled: Bool) async throws -> ServerNativeMcpScan
+    /// Skills in the canonical ~/.agents/skills store plus each harness's own
+    /// skills directory.
+    func listSkills() async throws -> ServerSkillsScan
+    /// Create a skill in the canonical store — from a template, or from
+    /// pasted SKILL.md content.
+    func createSkill(name: String, description: String, content: String?) async throws -> ServerSkillsScan
+    /// Import a local skill folder (a path on the server's machine) into the
+    /// canonical store.
+    func importSkill(path: String) async throws -> ServerSkillsScan
+    /// List the skills a remote source offers (GitHub/GitLab repos, git
+    /// URLs, or sites publishing skills via well-known endpoints).
+    func discoverRemoteSkills(source: String) async throws -> [ServerRemoteSkillCandidate]
+    /// Import skills from a remote source into the canonical store,
+    /// optionally narrowed to a selection from discovery.
+    func importRemoteSkill(source: String, skillNames: [String]?) async throws -> ServerSkillsScan
+    /// Delete a canonical skill and sweep its links from every harness.
+    func removeSkill(directoryName: String) async throws -> ServerSkillsScan
+    /// Install (symlink) or uninstall a canonical skill for one harness.
+    func setSkillInstalled(directoryName: String, harnessId: String, installed: Bool) async throws -> ServerSkillsScan
+    /// Promote an independent harness-dir skill into the canonical store.
+    func makeSkillGlobal(harnessId: String, directoryName: String) async throws -> ServerSkillsScan
+    /// Link the named skills (or all of them) into every harness that needs
+    /// a link, bringing harnesses in sync with the shared store.
+    func syncSkills(directoryNames: [String]?) async throws -> ServerSkillsScan
+    func listProjects() async throws -> [ServerProject]
+    func upsertProject(_ project: Project) async throws -> ServerProject
+    func updateProject(_ project: Project) async throws -> ServerProject
+    func deleteProject(id: UUID) async throws
+    /// Creates the hidden backing project for a brand-new scratch workspace:
+    /// the server allocates a memorable name, creates its empty folder under
+    /// ~/codevisor/workspaces, and registers a project pointing at it. The
+    /// client-supplied id makes creation idempotent per workspace.
+    func createScratchProject(id: UUID) async throws -> ServerProject
+    /// Moves a not-yet-started session to another project (and optionally a
+    /// worktree of it). Only valid while the session's agent hasn't started;
+    /// the server re-derives the session cwd from the new project.
+    func moveSession(id: UUID, projectId: UUID, worktreeName: String?) async throws -> ServerSession
+    func listWorktrees(projectId: UUID) async throws -> [ServerWorktree]
+    /// Server-owned workspace metadata. Nil means the connected server
+    /// predates workspace snapshots; callers must preserve their local data.
+    func listWorkspaces() async throws -> [ServerWorkspace]?
+    /// Mirrors a workspace's archived flag so other devices — and the
+    /// server's own cascade to the workspace's chats — see it.
+    func setWorkspaceArchived(id: UUID, isArchived: Bool) async throws
+    func createWorktree(projectId: UUID, name: String?) async throws -> ServerWorktree
+    /// Creates a worktree with a client-supplied id so the caller can follow
+    /// the server's `worktree.setup` progress events (subjectId = worktree id)
+    /// while the request is still in flight.
+    func createWorktree(projectId: UUID, id: String?, name: String?) async throws -> ServerWorktree
+    /// Directory listing for the remote project picker (directories only).
+    /// Nil path lists the server's home directory.
+    func listDirectory(path: String?, showHidden: Bool) async throws -> ServerFsListing
+    /// Clones a git remote into the machine's managed repos directory and
+    /// registers the checkout as a project. The client-supplied id lets the
+    /// caller follow `project.setup` progress events while the clone runs.
+    func createProjectFromGit(id: UUID, url: String, name: String?) async throws -> ServerProject
+    func listSessions() async throws -> [ServerSession]
+    func sessionDetail(id: UUID) async throws -> ServerSessionDetail
+    func sessionUsageLimits(id: UUID) async throws -> ServerHarnessUsageLimits
+    /// Starts or rebinds the existing agent runtime and returns its current,
+    /// session-specific picker metadata. Nil means the server predates this
+    /// endpoint and callers should keep the capability-cache fallback.
+    func connectSession(id: UUID) async throws -> ServerSessionRuntimeMetadata?
+    /// One-round-trip chat open: ensures the project and session records
+    /// exist server-side (never overwriting an existing project) and returns
+    /// the refreshed session together with its first transcript page. Nil
+    /// means the server predates this endpoint and callers should fall back
+    /// to the discrete listProjects/upsert/transcript calls.
+    func openSession(
+        _ session: ChatSession,
+        project: Project?,
+        transcriptLimit: Int
+    ) async throws -> ServerSessionOpenResponse?
+    func transcriptPage(id: UUID, before: String?, limit: Int) async throws -> ServerTranscriptPage
+    func transcriptItemDetails(id: UUID, itemId: String) async throws -> ServerTranscriptItemDetails
+    func promptQueue(id: UUID) async throws -> [ServerPromptQueueItem]
+    func sessionEvents(id: UUID) async throws -> [ServerEventEnvelope]
+    func upsertSession(_ session: ChatSession) async throws -> ServerSession
+    func updateSession(_ session: ChatSession) async throws -> ServerSession
+    func markSessionRead(id: UUID, throughSequence: Int?) async throws -> ServerSession?
+    func markSessionUnread(id: UUID) async throws -> ServerSession?
+    func clearSessionPlanApproval(id: UUID) async throws
+    func deleteSession(id: UUID) async throws
+    func promptSession(id: UUID, text: String) async throws -> ServerPromptAccepted
+    func promptSession(id: UUID, text: String, attachments: [ServerAttachmentRef]) async throws -> ServerPromptAccepted
+    /// `messageId` is the CLIENT's id for its optimistic user message; the
+    /// server adopts it as the queue item id, so the user echo comes back
+    /// with the same id and reconciles by identity.
+    func promptSession(
+        id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?
+    ) async throws -> ServerPromptAccepted
+    func uploadFile(name: String, mimeType: String, data: Data) async throws -> ServerFileMetadata
+    func fileData(id: String) async throws -> Data
+    /// Reads a live file from this machine. Relative paths are resolved by the
+    /// server against the specified session's authoritative working directory.
+    func fileData(sessionId: UUID, path: String) async throws -> Data
+    /// Returns a cheap validator for a live file. Nil keeps compatibility with
+    /// servers/transports that predate HEAD metadata for filesystem previews.
+    func fileVersion(sessionId: UUID, path: String) async throws -> String?
+    func updateQueuedPrompt(sessionId: UUID, queueItemId: String, text: String) async throws -> ServerPromptQueueItem
+    func deleteQueuedPrompt(sessionId: UUID, queueItemId: String) async throws
+    func cancelSession(id: UUID) async throws
+    func setSessionMode(id: UUID, modeId: String) async throws
+    func setSessionConfig(id: UUID, configId: String, value: String) async throws
+    @discardableResult
+    func setSessionGoal(
+        id: UUID,
+        objective: String?,
+        status: GoalStatus?,
+        tokenBudget: TokenBudgetUpdate
+    ) async throws -> SessionGoal
+    func clearSessionGoal(id: UUID) async throws
+    func answerSessionQuestion(
+        id: UUID,
+        questionId: String,
+        outcome: String,
+        answers: [String: QuestionAnswerEntry]?
+    ) async throws
+    func requestShutdown() async throws
+    func applyServerUpdate(channel: ServerUpdateChannel) async throws -> ServerUpdateApplied
+    func eventStream(since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error>
+    /// Project/session metadata changes after a freshly loaded shell snapshot.
+    func shellEventStream() -> AsyncThrowingStream<ServerEventEnvelope, any Error>
+    /// `shellEventStream()`, but events whose kind is not in `handledKinds`
+    /// are dropped inside the stream's own (non-main) task. The global socket
+    /// carries every `session.output` token chunk of every session; without
+    /// this filter each one is fully decoded and hopped onto the consumer's
+    /// actor just to be discarded.
+    func shellEventStream(handledKinds: Set<String>) -> AsyncThrowingStream<ServerEventEnvelope, any Error>
+    /// Session-scoped sequence and replay. Unlike the machine stream, `since`
+    /// is meaningful only within this session.
+    func sessionEventStream(id: UUID, since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error>
+}

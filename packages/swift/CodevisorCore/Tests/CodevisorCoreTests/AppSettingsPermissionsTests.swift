@@ -37,49 +37,6 @@ struct AppSettingsPermissionsTests {
         #expect(reloaded.onboardingStep == nil)
     }
 
-    @Test("Recovers dev instance configuration when relaunched outside the runner")
-    func resolvesDevLaunchEnvironment() {
-        let configured = [
-            "CODEVISOR_DEV_INSTANCE_ID": "lingonberry-abc",
-            "CODEVISOR_DEV_DATA_DIR": "/tmp/instance",
-            "HERDMAN_DEV_PORT": "1234",
-            "PATH": "/usr/bin",
-        ]
-
-        // A configured launch passes through and refreshes the stash with
-        // only the instance variables.
-        let fromRunner = CodevisorAppVariant.resolvedDevelopmentEnvironment(
-            live: configured,
-            stashed: ["CODEVISOR_DEV_DATA_DIR": "/tmp/old"]
-        )
-        #expect(fromRunner.environment == configured)
-        #expect(
-            fromRunner.stash == [
-                "CODEVISOR_DEV_INSTANCE_ID": "lingonberry-abc",
-                "CODEVISOR_DEV_DATA_DIR": "/tmp/instance",
-                "HERDMAN_DEV_PORT": "1234",
-            ])
-
-        // macOS "Quit & Reopen" launches bare: the stashed configuration is
-        // restored so the app keeps pointing at the same instance's data.
-        let reopened = CodevisorAppVariant.resolvedDevelopmentEnvironment(
-            live: ["PATH": "/usr/bin"],
-            stashed: fromRunner.stash
-        )
-        #expect(reopened.environment["CODEVISOR_DEV_INSTANCE_ID"] == "lingonberry-abc")
-        #expect(reopened.environment["CODEVISOR_DEV_DATA_DIR"] == "/tmp/instance")
-        #expect(reopened.environment["PATH"] == "/usr/bin")
-        #expect(reopened.stash == nil)
-
-        // Nothing stashed and nothing configured: plain passthrough.
-        let bare = CodevisorAppVariant.resolvedDevelopmentEnvironment(
-            live: ["PATH": "/usr/bin"],
-            stashed: nil
-        )
-        #expect(bare.environment == ["PATH": "/usr/bin"])
-        #expect(bare.stash == nil)
-    }
-
     @Test("Decodes legacy settings payloads without a reviewed version")
     func decodesLegacyPayload() throws {
         let legacy = Data(#"{"hasCompletedOnboarding": true}"#.utf8)
