@@ -5,195 +5,8 @@ import CodevisorTheming
 import os
 import CodevisorUI
 
-private enum SidebarOrganization: String, CaseIterable {
-    case compact
-    case byWorkspace
-    case byProject
-
-    var title: String {
-        switch self {
-        case .compact: return "Agents"
-        case .byWorkspace: return "Workspaces"
-        case .byProject: return "Projects"
-        }
-    }
-}
-
-private enum SidebarOrder: String, CaseIterable {
-    case none
-    case updated
-    case created
-
-    var title: String {
-        switch self {
-        case .none: return "None"
-        case .updated: return "Last updated"
-        case .created: return "Created"
-        }
-    }
-}
-
-/// State groups used ahead of recency when the sidebar is ordered by last
-/// updated. Lower values appear first: unread (finished, reviewable) chats
-/// rank above in-progress (nothing to act on yet) ones. Note the tier a
-/// session is *classified* into follows the leading icon's precedence, not
-/// this rank order — see `sessionPriority(for:)`.
-private enum SidebarSessionPriority: Int {
-    case errored
-    case waitingForUser
-    case unread
-    case inProgress
-    case idle
-}
-
-private struct SidebarSessionListItem: Identifiable {
-    let session: ChatSession
-    let project: Project
-
-    var id: UUID { session.id }
-}
-
 /// How many archived chats one page reveals.
 private let archivedPageSize = 10
-
-/// A pending "restore this?" confirmation. Clicking an archived row asks
-/// before acting: the row looks exactly like a live one, so an unguarded click
-/// would silently un-archive whatever the user was only trying to read.
-private struct ArchivedRestoreRequest: Identifiable {
-    enum Target {
-        case project(Project)
-        case session(ChatSession)
-    }
-
-    let target: Target
-
-    var id: UUID {
-        switch target {
-        case let .project(project): project.id
-        case let .session(session): session.id
-        }
-    }
-
-    var name: String {
-        switch target {
-        case let .project(project): project.name
-        case let .session(session): session.title
-        }
-    }
-
-    var kind: String {
-        switch target {
-        case .project: "project"
-        case .session: "chat"
-        }
-    }
-}
-
-/// A workspace row in either workspace-based mode. Its tabs and primary
-/// session/project are resolved from the live session list so status and
-/// activation reuse the session machinery.
-private struct SidebarWorkspaceListItem: Identifiable {
-    let workspace: Workspace
-    let sessions: [ChatSession]
-    let primarySession: ChatSession?
-    let project: Project?
-
-    var id: UUID { workspace.id }
-}
-
-/// Memoizes the expensive part of navigation ordering: priority/recency
-/// sorting. SwiftUI may reevaluate the sidebar while an unrelated composer
-/// property changes; rebuilding lightweight keys is cheap, while repeatedly
-/// sorting and querying project membership is not. Current value structs are
-/// remapped onto the cached ids so row content never goes stale.
-@MainActor
-private final class SidebarOrderingCache {
-    private struct SessionInput: Equatable {
-        let id: UUID
-        let priority: Int
-        let timestamp: Date
-        let title: String
-        let sourceIndex: Int
-    }
-
-    private struct ProjectInput: Equatable {
-        let id: UUID
-        let priority: Int
-        let timestamp: Date
-        let name: String
-        let sourceIndex: Int
-    }
-
-    private var sessionInputs: [SessionInput] = []
-    private var orderedSessionIDs: [UUID] = []
-    private var projectInputs: [ProjectInput] = []
-    private var orderedProjectIDs: [UUID] = []
-
-    func sessions(
-        _ values: [ChatSession],
-        priority: (ChatSession) -> SidebarSessionPriority,
-        timestamp: (ChatSession) -> Date
-    ) -> [ChatSession] {
-        let inputs = values.enumerated().map { index, session in
-            SessionInput(
-                id: session.id,
-                priority: priority(session).rawValue,
-                timestamp: timestamp(session),
-                title: session.title,
-                sourceIndex: index
-            )
-        }
-        if inputs != sessionInputs {
-            sessionInputs = inputs
-            orderedSessionIDs = inputs.sorted { left, right in
-                if left.priority != right.priority { return left.priority < right.priority }
-                if left.timestamp != right.timestamp { return left.timestamp > right.timestamp }
-                let titleOrder = left.title.localizedCaseInsensitiveCompare(right.title)
-                if titleOrder != .orderedSame { return titleOrder == .orderedAscending }
-                return left.sourceIndex < right.sourceIndex
-            }.map(\.id)
-        }
-        let byID = Dictionary(values.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        return orderedSessionIDs.compactMap { byID[$0] }
-    }
-
-    func projects(
-        _ values: [Project],
-        orderingKey: (Project) -> (priority: SidebarSessionPriority, timestamp: Date)
-    ) -> [Project] {
-        let inputs = values.enumerated().map { index, project in
-            let key = orderingKey(project)
-            return ProjectInput(
-                id: project.id,
-                priority: key.priority.rawValue,
-                timestamp: key.timestamp,
-                name: project.name,
-                sourceIndex: index
-            )
-        }
-        if inputs != projectInputs {
-            projectInputs = inputs
-            orderedProjectIDs = inputs.sorted { left, right in
-                if left.priority != right.priority { return left.priority < right.priority }
-                if left.timestamp != right.timestamp { return left.timestamp > right.timestamp }
-                let nameOrder = left.name.localizedCaseInsensitiveCompare(right.name)
-                if nameOrder != .orderedSame { return nameOrder == .orderedAscending }
-                return left.sourceIndex < right.sourceIndex
-            }.map(\.id)
-        }
-        let byID = Dictionary(values.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        return orderedProjectIDs.compactMap { byID[$0] }
-    }
-}
-
-/// Existing harness sessions found in a just-added project folder, pending
-/// the user's decision to import them.
-private struct PendingSessionImport: Identifiable {
-    let project: Project
-    let sessions: [ImportedSession]
-
-    var id: UUID { project.id }
-}
 
 /// The sidebar: a New Chat action, an organization control, and the selected
 /// machine's workspaces or agent sessions.
@@ -268,19 +81,6 @@ struct SidebarView: View {
     private var itemTitleFont: Font { .body }
     private var hierarchyIndent: CGFloat { 8 }
     private var notificationColor: Color { theme.isSystem ? .blue : theme.accent }
-    private var developmentWorktreeColor: Color {
-        guard let rgba = RGBA(hex: CodevisorAppVariant.developmentIconColorHex) else { return .blue }
-        return Color(rgba: rgba)
-    }
-    private var developmentWorktreeForegroundColor: Color {
-        let foregroundHex =
-            ColorMath.pickReadableForeground(
-                bg: CodevisorAppVariant.developmentIconColorHex,
-                candidates: ["#ffffff", "#000000"]
-            ) ?? "#ffffff"
-        guard let rgba = RGBA(hex: foregroundHex) else { return .white }
-        return Color(rgba: rgba)
-    }
 
     private var projectOrder: [UUID] {
         manualProjectOrderRaw
@@ -481,45 +281,24 @@ struct SidebarView: View {
 
     private var sidebarContent: some View {
         VStack(spacing: 0) {
-            if let release = environment.appUpdate.availableRelease,
-                release.version != skippedUpdateVersion
-            {
-                UpdateBannerView(
-                    model: environment.appUpdate,
-                    release: release,
-                    hasRunningChats: store?.hasActiveSessions(onServer: CodevisorMachine.local.id) ?? false
-                )
-                .padding(8)
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
-            // The selected remote machine's server has a newer release. (For
-            // the local machine the app banner above covers app + server.)
-            // Gated behind the local app being current: the user updates their
-            // own machine before pushing updates to a remote one, so the two
-            // banners are never shown at the same time.
-            if environment.appUpdate.availableRelease == nil,
-                let serverUpdate = environment.machines.selectedServerUpdate,
-                serverUpdate.updateAvailable,
-                !environment.machines.selectedMachine.isLocal,
-                skippedServerUpdate != serverUpdateSkipKey(serverUpdate)
-            {
-                ServerUpdateBannerView(
-                    machines: environment.machines,
-                    machine: environment.machines.selectedMachine,
-                    update: serverUpdate,
-                    hasRunningChats: store?.hasActiveSessions(onServer: environment.machines.selectedMachineId) ?? false
-                )
-                .padding(8)
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
+            SidebarUpdateBanners(
+                environment: environment,
+                store: store,
+                skippedUpdateVersion: skippedUpdateVersion,
+                skippedServerUpdate: skippedServerUpdate
+            )
             // Development identity + New chat + the Projects header stay
             // pinned; only the project/chat list itself scrolls.
             VStack(alignment: .leading, spacing: 1) {
                 if CodevisorAppVariant.isDevelopment {
-                    developmentWorktreeRow
+                    SidebarDevelopmentWorktreeRow()
                 }
 
-                actionRow("New chat", systemImage: "square.and.pencil") {
+                SidebarActionRow(
+                    title: "New chat",
+                    systemImage: "square.and.pencil",
+                    isHoverEnabled: !isReordering
+                ) {
                     selection = .newChat(nil)
                 }
 
@@ -630,85 +409,28 @@ struct SidebarView: View {
             }
     }
 
-    private var sidebarImportAndChatRenameAlertsView: some View {
+    private var sidebarAlertsView: some View {
         sidebarInteractionView
-            .alert(
-                "Import Existing Chats?",
-                isPresented: Binding(
-                    get: { pendingImport != nil },
-                    set: { if !$0 { pendingImport = nil } }
-                ),
-                presenting: pendingImport
-            ) { pending in
-                Button("Import") {
-                    environment.importSessions(pending.sessions, into: pending.project)
-                }
-                Button("Not Now", role: .cancel) {}
-            } message: { pending in
-                Text(importPromptMessage(for: pending))
-            }
-            .alert(
-                "Rename Chat",
-                isPresented: Binding(
-                    get: { renamingSession != nil },
-                    set: { if !$0 { renamingSession = nil } }
-                ),
-                presenting: renamingSession
-            ) { session in
-                TextField("Title", text: $renameTitle)
-                Button("Rename") {
-                    let trimmed = renameTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !trimmed.isEmpty else { return }
-                    list.renameSession(session, to: trimmed)
-                }
-                Button("Cancel", role: .cancel) {}
-            }
-    }
-
-    private var sidebarRemainingAlertsView: some View {
-        sidebarImportAndChatRenameAlertsView
-            .alert(
-                "Rename Workspace",
-                isPresented: Binding(
-                    get: { renamingWorkspace != nil },
-                    set: { if !$0 { renamingWorkspace = nil } }
-                ),
-                presenting: renamingWorkspace
-            ) { workspace in
-                TextField("Name", text: $workspaceRenameTitle)
-                Button("Rename") {
-                    let trimmed = workspaceRenameTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !trimmed.isEmpty else { return }
-                    // An explicit rename pins the name so worktree creation does
-                    // not replace it.
-                    var renamed = workspace
-                    renamed.name = trimmed
-                    renamed.hasCustomName = true
-                    environment.workspaces.save(renamed)
-                    workspaceRevision += 1
-                }
-                Button("Cancel", role: .cancel) {}
-            }
-            // Archived rows are visually identical to live ones, so a click is
-            // just as likely to be exploratory as intentional. Confirm before
-            // pulling the item back into the sidebar.
-            .alert(
-                restoreAlertTitle,
-                isPresented: Binding(
-                    get: { restoreRequest != nil },
-                    set: { if !$0 { restoreRequest = nil } }
-                ),
-                presenting: restoreRequest
-            ) { request in
-                Button("Restore") { performRestore(request) }
-                Button("Cancel", role: .cancel) {}
-            } message: { request in
-                Text("“\(request.name)” will move back into the sidebar.")
-            }
+            .modifier(
+                SidebarAlertsModifier(
+                    pendingImport: $pendingImport,
+                    renamingSession: $renamingSession,
+                    renameTitle: $renameTitle,
+                    renamingWorkspace: $renamingWorkspace,
+                    workspaceRenameTitle: $workspaceRenameTitle,
+                    restoreRequest: $restoreRequest,
+                    onImport: { environment.importSessions($0.sessions, into: $0.project) },
+                    onRenameSession: { list.renameSession($0, to: $1) },
+                    onRenameWorkspace: { renamed in
+                        environment.workspaces.save(renamed)
+                        workspaceRevision += 1
+                    },
+                    onPerformRestore: { performRestore($0) }
+                ))
     }
 
     private var sidebarChangeObserversView: some View {
-        sidebarRemainingAlertsView
+        sidebarAlertsView
             // Collapsing resets paging so reopening starts at the newest page
             // instead of restoring a deep scroll the user has forgotten about.
             .onChange(of: archivedExpanded) { _, isExpanded in
@@ -741,39 +463,31 @@ struct SidebarView: View {
 
     private var sidebarSheetsView: some View {
         sidebarChangeObserversView
-            .sheet(item: $iconEditing) { project in
-                IconPickerView(currentSymbol: project.symbolName) { symbol in
-                    list.setIcon(symbol, for: project)
-                }
-            }
-            .sheet(item: $workspaceIconEditing) { workspace in
-                IconPickerView(
-                    currentSymbol: workspace.symbolName ?? list.projects.first {
-                        $0.id == workspace.projectId
-                    }?.symbolName ?? "square.grid.2x2"
-                ) { symbol in
-                    var updated = workspace
-                    updated.symbolName = symbol
-                    environment.workspaces.save(updated)
-                    workspaceRevision += 1
-                }
-            }
-            .sheet(isPresented: $showingRemoteMachine) {
-                RemoteMachineSheet { host, name, token in
-                    do {
-                        try await environment.machines.addRemoteValidating(host: host, name: name, token: token)
-                        selection = .newChat(nil)
-                        return nil
-                    } catch {
-                        Log.machines.error(
-                            "Adding remote machine failed: \(String(describing: error), privacy: .public)")
-                        if case CodevisorServerClientError.httpStatus(401, _) = error {
-                            return "That connection token was rejected by the machine."
+            .modifier(
+                SidebarSheetsModifier(
+                    iconEditing: $iconEditing,
+                    workspaceIconEditing: $workspaceIconEditing,
+                    showingRemoteMachine: $showingRemoteMachine,
+                    list: list,
+                    onSaveWorkspace: { updated in
+                        environment.workspaces.save(updated)
+                        workspaceRevision += 1
+                    },
+                    onAddRemoteMachine: { host, name, token in
+                        do {
+                            try await environment.machines.addRemoteValidating(host: host, name: name, token: token)
+                            selection = .newChat(nil)
+                            return nil
+                        } catch {
+                            Log.machines.error(
+                                "Adding remote machine failed: \(String(describing: error), privacy: .public)")
+                            if case CodevisorServerClientError.httpStatus(401, _) = error {
+                                return "That connection token was rejected by the machine."
+                            }
+                            return serverErrorMessage(error)
                         }
-                        return serverErrorMessage(error)
                     }
-                }
-            }
+                ))
     }
 
     private var sidebarConfiguredView: some View {
@@ -797,11 +511,6 @@ struct SidebarView: View {
             )
     }
 
-    private var restoreAlertTitle: String {
-        guard let restoreRequest else { return "Restore?" }
-        return "Restore \(restoreRequest.kind)?"
-    }
-
     /// One shared flow: pick a folder on the machine or clone a repository.
     private func startAddProject() {
         addProjectFlow.begin()
@@ -820,12 +529,6 @@ struct SidebarView: View {
         return Set(ids)
     }
 
-    /// One skip entry per machine + version, so dismissing one machine's
-    /// server update doesn't hide another's.
-    private func serverUpdateSkipKey(_ update: ServerUpdateInfo) -> String {
-        "\(environment.machines.selectedMachineId):\(update.latestVersion)"
-    }
-
     /// After a project is added, look for existing harness sessions in its
     /// folder and — only when some are found — offer to import them.
     private func offerSessionImport(for project: Project) {
@@ -836,56 +539,7 @@ struct SidebarView: View {
         }
     }
 
-    private func importPromptMessage(for pending: PendingSessionImport) -> String {
-        let count = pending.sessions.count
-        let chats = count == 1 ? "1 existing agent chat" : "\(count) existing agent chats"
-        return
-            "Codevisor found \(chats) in “\(pending.project.name)”. Import them to continue those conversations here."
-    }
-
     // MARK: - Header rows
-
-    private var developmentWorktreeRow: some View {
-        let worktreeName = CodevisorAppVariant.developmentWorktreeName
-        return headerRow(
-            worktreeName,
-            systemImage: "ladybug.fill",
-            foregroundColor: developmentWorktreeForegroundColor
-        )
-        .background(RoundedRectangle(cornerRadius: 6).fill(developmentWorktreeColor))
-        .accessibilityLabel("Development worktree: \(worktreeName)")
-        .help("Development worktree: \(worktreeName)")
-    }
-
-    private func actionRow(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
-        headerRow(title, systemImage: systemImage)
-            .contentShape(Rectangle())
-            .sidebarRowHover(isEnabled: !isReordering)
-            .onTapGesture(perform: action)
-    }
-
-    /// Shared geometry for the pinned sidebar items. The development identity
-    /// row is informational, while action rows add their own hover and tap
-    /// behavior on top of this label.
-    private func headerRow(
-        _ title: String,
-        systemImage: String,
-        foregroundColor: Color? = nil
-    ) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: systemImage)
-                .frame(width: 18)
-                .foregroundStyle(foregroundColor ?? Color.secondary)
-            Text(title)
-                .foregroundStyle(foregroundColor ?? Color.primary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
 
     private var projectsHeader: some View {
         HStack {
@@ -920,38 +574,15 @@ struct SidebarView: View {
 
     /// Shared by the filter button and the empty-space sidebar context menu so
     /// both entry points always expose the same organization and filter state.
-    @ViewBuilder
     private var sidebarFilterMenuContent: some View {
-        Picker(
-            "Organization",
-            selection: Binding(
-                get: { organization },
-                set: { organizationRaw = $0.rawValue }
-            )
-        ) {
-            ForEach(SidebarOrganization.allCases, id: \.self) { option in
-                Text(option.title).tag(option)
-            }
-        }
-        Picker(
-            "Order by",
-            selection: Binding(
-                get: { order },
-                set: { setOrder($0) }
-            )
-        ) {
-            ForEach(SidebarOrder.allCases, id: \.self) { option in
-                Text(option.title).tag(option)
-            }
-        }
-        Divider()
-        Toggle("Show Archived", isOn: $showArchived)
-        if order == .none {
-            Divider()
-            Button("Reset manual order") {
-                resetManualOrder()
-            }
-        }
+        SidebarFilterMenu(
+            organization: organization,
+            order: order,
+            showArchived: $showArchived,
+            onSetOrganization: { organizationRaw = $0.rawValue },
+            onSetOrder: { setOrder($0) },
+            onResetManualOrder: { resetManualOrder() }
+        )
     }
 
     // MARK: - Project rows
@@ -1048,89 +679,19 @@ struct SidebarView: View {
         isDragPreview: Bool = false,
         isArchivedEntry: Bool = false
     ) -> some View {
-        HoverableRow(
-            isHoverEnabled: !isReordering,
-            isHoverForced: isDragPreview
-        ) { isHovered in
-            HStack(spacing: 6) {
-                // The disclosure toggle is a real Button (not an onTapGesture):
-                // buttons resolve their hit target at mouse-down, so a click on
-                // the hover new-chat button can never also flip the collapse
-                // state — a row-level tap gesture used to fire for those clicks.
-                Button {
-                    // An archived project has no chats to disclose; the click
-                    // offers to bring it back instead.
-                    if isArchivedEntry {
-                        restoreRequest = ArchivedRestoreRequest(target: .project(project))
-                    } else {
-                        toggle(project.id)
-                    }
-                } label: {
-                    HStack(spacing: 6) {
-                        // On hover the project icon becomes a disclosure chevron.
-                        ZStack {
-                            Image(systemName: FilledSymbol.preferred(project.symbolName))
-                                .foregroundStyle(.secondary)
-                                .opacity(isHovered && !isArchivedEntry ? 0 : 1)
-                            Image(systemName: "chevron.right")
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                                .rotationEffect(.degrees(isProjectVisuallyExpanded(project.id) ? 90 : 0))
-                                // Archived rows keep their project icon: there
-                                // is no disclosure behind them to hint at.
-                                .opacity(isHovered && !isArchivedEntry ? 1 : 0)
-                        }
-                        .frame(width: 18)
-                        Text(project.name)
-                            .font(itemTitleFont)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                        Spacer(minLength: 6)
-                    }
-                    .padding(.vertical, 5)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-
-                // Starting a chat in an archived project would resurrect it by
-                // a side door, so that affordance is dropped here.
-                if isHovered, !isArchivedEntry {
-                    // Only open the new chat — never touch the disclosure
-                    // state; the label button owns collapse/expand.
-                    Button {
-                        selection = .newChat(project.id)
-                    } label: {
-                        Image(systemName: "square.and.pencil").font(.callout.weight(.semibold))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .help("New chat in \(project.name)")
-                    .accessibilityLabel("New chat in \(project.name)")
-                }
-            }
-            .padding(.horizontal, 8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .help(project.folderURL.path)
-        .contextMenu {
-            if isArchivedEntry {
-                Button {
-                    restoreRequest = ArchivedRestoreRequest(target: .project(project))
-                } label: {
-                    Label("Restore", systemImage: "arrow.uturn.backward")
-                        .labelStyle(.titleAndIcon)
-                }
-            } else {
-                Button("New chat here") { selection = .newChat(project.id) }
-                Button("Change icon") { iconEditing = project }
-                Button {
-                    list.archive(project)
-                } label: {
-                    Label("Archive", systemImage: "archivebox")
-                        .labelStyle(.titleAndIcon)
-                }
-            }
-        }
+        SidebarProjectRow(
+            project: project,
+            isDragPreview: isDragPreview,
+            isArchivedEntry: isArchivedEntry,
+            isReordering: isReordering,
+            isVisuallyExpanded: isProjectVisuallyExpanded(project.id),
+            titleFont: itemTitleFont,
+            onDisclosureToggle: { toggle(project.id) },
+            onRestoreRequest: { restoreRequest = ArchivedRestoreRequest(target: .project(project)) },
+            onNewChat: { selection = .newChat(project.id) },
+            onChangeIcon: { iconEditing = project },
+            onArchive: { list.archive(project) }
+        )
     }
 
     private func disclosureRow(
@@ -1202,74 +763,18 @@ struct SidebarView: View {
         }
     }
 
-    /// Reveals the next page of archived chats.
-    ///
-    /// The rows themselves are already in memory, so the spinner is not hiding
-    /// a fetch — it acknowledges the click and covers the layout pass for the
-    /// added rows, which is the part that can actually stutter on a large
-    /// archive. Keeping it on screen for a beat also stops a rapid double
-    /// click from jumping two pages before the first has drawn.
     private func showMoreArchivedRow(remaining: Int) -> some View {
-        HStack(spacing: 6) {
-            if isLoadingMoreArchived {
-                ProgressView()
-                    .controlSize(.small)
-                    .frame(width: 18)
-            } else {
-                Image(systemName: "ellipsis.circle")
-                    .frame(width: 18)
-                    .foregroundStyle(.secondary)
-            }
-            Text(isLoadingMoreArchived ? "Loading…" : "Show \(min(remaining, archivedPageSize)) more")
-                .font(itemTitleFont)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-        .sidebarRowHover(isEnabled: !isLoadingMoreArchived)
-        .onTapGesture {
-            guard !isLoadingMoreArchived else { return }
-            isLoadingMoreArchived = true
-            Task {
-                // One runloop hop so the spinner actually renders before the
-                // rows are added and SwiftUI re-lays out the list.
-                try? await Task.sleep(for: .milliseconds(180))
-                withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) {
-                    archivedVisibleCount += archivedPageSize
-                }
-                isLoadingMoreArchived = false
-            }
-        }
-        .accessibilityLabel("Show more archived chats")
-        .accessibilityAddTraits(.isButton)
+        SidebarShowMoreArchivedRow(
+            remaining: remaining,
+            pageSize: archivedPageSize,
+            titleFont: itemTitleFont,
+            archivedVisibleCount: $archivedVisibleCount,
+            isLoadingMoreArchived: $isLoadingMoreArchived
+        )
     }
 
-    /// Matches `projectsHeader` exactly — same font, color, and padding — so
-    /// "Archived" reads as a peer of the Agents/Workspaces/Projects label
-    /// rather than as another row in the list. The only addition is the
-    /// disclosure chevron, since unlike that header this one collapses.
     private var archivedHeader: some View {
-        HStack(spacing: 6) {
-            Text("Archived")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-            // The same chevron the transcript disclosures use: its rotation is
-            // scoped to Motion.indicator so it leads the content reveal rather
-            // than interpolating alongside the rows shifting beneath it.
-            TranscriptDisclosureChevron(expanded: archivedExpanded)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 10)
-        .padding(.top, 12)
-        .padding(.bottom, 4)
-        .contentShape(Rectangle())
-        .onTapGesture { archivedExpanded.toggle() }
-        .accessibilityLabel("Archived")
-        .accessibilityAddTraits(.isButton)
+        SidebarArchivedHeader(archivedExpanded: $archivedExpanded)
     }
 
     /// Archived rows deliberately reuse the live row builders rather than
@@ -1330,101 +835,33 @@ struct SidebarView: View {
             !isDragPreview
             && !isArchivedEntry
             && selection == .session(serverId: session.serverId, id: session.id)
-        return HoverableRow(
+        return SidebarSessionRow(
+            session: session,
+            store: store,
+            isDragPreview: isDragPreview,
+            hierarchyDepth: hierarchyDepth,
+            isArchivedEntry: isArchivedEntry,
+            activatesOnMouseDown: activatesOnMouseDown,
             isSelected: isSelected,
-            isHoverEnabled: !isReordering,
-            isHoverForced: isDragPreview
-        ) { isHovered in
-            HStack(spacing: 6) {
-                HStack(spacing: 6) {
-                    // Same icon slot as project rows so titles align; the row's
-                    // dimmer foreground tints the icon along with the text.
-                    sessionLeadingIcon(
-                        session,
-                        activityColor: isSelected ? Color.primary : .secondary
-                    )
-                    .frame(width: 18)
-                    Text(session.title)
-                        .font(itemTitleFont)
-                        .lineLimit(1)
-                    Spacer(minLength: 6)
-                }
-
-                // An archived chat has nothing left to archive, so the hover
-                // affordance is suppressed rather than offering a no-op.
-                sessionStatus(session, isHovered: isHovered && !isArchivedEntry)
-            }
-            .padding(.horizontal, 8)
-            .padding(.leading, CGFloat(hierarchyDepth) * hierarchyIndent)
-            .padding(.vertical, 5)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            // A zero-distance drag begins on mouse-down, unlike a tap gesture,
-            // which waits for mouse-up. Child controls (the hover archive
-            // button) retain gesture precedence over this row gesture.
-            .gesture(
-                sessionActivationGesture(session),
-                including: isArchivedEntry || isDragPreview || !activatesOnMouseDown ? .none : .all
-            )
-            .onTapGesture {
-                if isArchivedEntry {
-                    restoreRequest = ArchivedRestoreRequest(target: .session(session))
-                    return
-                }
-                guard !activatesOnMouseDown else { return }
-                activateSession(session)
-            }
-            .foregroundStyle(isSelected ? Color.primary : .secondary)
-        }
-        .contextMenu {
-            if isArchivedEntry {
-                Button {
-                    restoreRequest = ArchivedRestoreRequest(target: .session(session))
-                } label: {
-                    Label("Restore", systemImage: "arrow.uturn.backward")
-                        .labelStyle(.titleAndIcon)
-                }
-            } else {
-                Button {
-                    renameTitle = session.title
-                    renamingSession = session
-                } label: {
-                    Label("Rename", systemImage: "pencil")
-                        .labelStyle(.titleAndIcon)
-                }
-                Button {
-                    archiveChat(session)
-                } label: {
-                    Label("Archive", systemImage: "archivebox")
-                        .labelStyle(.titleAndIcon)
-                }
-                unreadToggleButton(session)
-            }
-        }
-    }
-
-    /// Flips between marking a chat unread and clearing an existing unread
-    /// badge, so the menu never offers the state the row is already in.
-    @ViewBuilder
-    private func unreadToggleButton(_ session: ChatSession) -> some View {
-        if isUnread(session) {
-            Button {
-                store?.markRead(session)
-            } label: {
-                Label("Mark as read", systemImage: "message")
-                    .labelStyle(.titleAndIcon)
-            }
-        } else {
-            Button {
+            isReordering: isReordering,
+            titleFont: itemTitleFont,
+            hierarchyIndent: hierarchyIndent,
+            isUnread: { isUnread(session) },
+            onActivate: { activateSession(session) },
+            onRestoreRequest: { restoreRequest = ArchivedRestoreRequest(target: .session(session)) },
+            onRename: {
+                renameTitle = session.title
+                renamingSession = session
+            },
+            onArchive: { archiveChat(session) },
+            onMarkRead: { store?.markRead(session) },
+            onMarkUnread: {
                 store?.markUnread(session)
                 if selection == .session(serverId: session.serverId, id: session.id) {
                     selectNextChat(excluding: [session.id], serverId: session.serverId)
                 }
-            } label: {
-                Label("Mark as unread", systemImage: "message.badge")
-                    .labelStyle(.titleAndIcon)
             }
-        }
+        )
     }
 
     /// One workspace row, either top-level or nested beneath its project.
@@ -1446,103 +883,24 @@ struct SidebarView: View {
             return environment.workspaces.workspaceId(forSession: sessionId) == item.workspace.id
         }()
         let isSelected = onToggle == nil && routesSelectedSession
-        return HoverableRow(
+        return SidebarWorkspaceRow(
+            item: item,
+            store: store,
+            isNested: isNested,
+            isExpanded: isExpanded,
+            onToggle: onToggle,
             isSelected: isSelected,
-            isHoverEnabled: !isReordering,
-            isHoverForced: false
-        ) { isHovered in
-            HStack(spacing: 7) {
-                if let onToggle {
-                    Button(action: onToggle) {
-                        HStack(spacing: 7) {
-                            ZStack {
-                                Image(systemName: FilledSymbol.preferred("square.grid.2x2"))
-                                    .foregroundStyle(.secondary)
-                                    .opacity(isHovered ? 0 : 1)
-                                Image(systemName: "chevron.right")
-                                    .font(.caption2.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-                                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                                    .opacity(isHovered ? 1 : 0)
-                            }
-                            .frame(width: 18)
-                            Text(workspaceTitle(item, isNested: isNested))
-                                .font(itemTitleFont)
-                                .lineLimit(1)
-                            Spacer(minLength: 6)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .help(isExpanded ? "Collapse workspace" : "Expand workspace")
-                    .accessibilityLabel(
-                        isExpanded
-                            ? "Collapse \(item.workspace.name)"
-                            : "Expand \(item.workspace.name)"
-                    )
-                    if let session = item.primarySession, isHovered {
-                        sessionStatus(
-                            session,
-                            isHovered: true,
-                            onArchive: { archiveWorkspace(item) }
-                        )
-                    }
-                } else {
-                    Image(systemName: workspaceSymbol(item))
-                        .frame(width: 18)
-                        .foregroundStyle(.secondary)
-                    Text(workspaceTitle(item, isNested: isNested))
-                        .font(itemTitleFont)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                if onToggle == nil, let session = item.primarySession {
-                    sessionStatus(
-                        session,
-                        isHovered: isHovered,
-                        onArchive: { archiveWorkspace(item) }
-                    )
-                }
-            }
-            .padding(.horizontal, 8)
-            .padding(.leading, isNested ? hierarchyIndent : 0)
-            .padding(.vertical, 5)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .foregroundStyle(isSelected ? Color.primary : .secondary)
-            .gesture(
-                workspaceActivationGesture(item),
-                including: onToggle == nil ? .all : .none
-            )
-            .onTapGesture {
-                guard onToggle == nil else { return }
-                guard let session = item.primarySession else { return }
-                activateSession(session)
-            }
-        }
-        .contextMenu {
-            Button {
+            isReordering: isReordering,
+            titleFont: itemTitleFont,
+            hierarchyIndent: hierarchyIndent,
+            onActivateSession: { activateSession($0) },
+            onArchive: { archiveWorkspace(item) },
+            onRename: {
                 workspaceRenameTitle = item.workspace.name
                 renamingWorkspace = item.workspace
-            } label: {
-                Label("Rename", systemImage: "pencil")
-                    .labelStyle(.titleAndIcon)
-            }
-            Button {
-                workspaceIconEditing = item.workspace
-            } label: {
-                Label("Change Icon", systemImage: "app.grid")
-                    .labelStyle(.titleAndIcon)
-            }
-            Button {
-                archiveWorkspace(item)
-            } label: {
-                Label("Archive", systemImage: "archivebox")
-                    .labelStyle(.titleAndIcon)
-            }
-        }
+            },
+            onChangeIcon: { workspaceIconEditing = item.workspace }
+        )
     }
 
     /// Archives the WORKSPACE (not just a chat): the record is flagged, its
@@ -1584,36 +942,6 @@ struct SidebarView: View {
         selection = next.map { .session(serverId: $0.serverId, id: $0.id) }
     }
 
-    /// The workspace's own icon; a workspace born before icons existed
-    /// falls back to its project's, then to a generic glyph.
-    private func workspaceSymbol(_ item: SidebarWorkspaceListItem) -> String {
-        if let symbol = item.workspace.symbolName {
-            return FilledSymbol.preferred(symbol)
-        }
-        if let project = item.project {
-            return FilledSymbol.preferred(project.symbolName)
-        }
-        return "square.grid.2x2"
-    }
-
-    private func workspaceTitle(
-        _ item: SidebarWorkspaceListItem,
-        isNested: Bool
-    ) -> String {
-        guard !isNested, let project = item.project else {
-            return item.workspace.name
-        }
-        guard
-            let worktree = item.primarySession?.worktreeName?
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-            !worktree.isEmpty,
-            worktree.localizedCaseInsensitiveCompare(project.name) != .orderedSame
-        else {
-            return project.name
-        }
-        return "\(project.name) · \(worktree)"
-    }
-
     private func chronologicalSessionRow(
         _ session: ChatSession,
         project: Project,
@@ -1627,70 +955,32 @@ struct SidebarView: View {
         // Manual-order chat rows attach this gesture alongside their native
         // drag source so activation does not prevent drag-to-reorder.
         let activatesOnMouseDown = order != .none
-        return HoverableRow(
+        return SidebarChronologicalSessionRow(
+            session: session,
+            project: project,
+            store: store,
+            isDragPreview: isDragPreview,
+            isArchivedEntry: isArchivedEntry,
             isSelected: isSelected,
-            isHoverEnabled: !isReordering,
-            isHoverForced: isDragPreview
-        ) { isHovered in
-            HStack(spacing: 7) {
-                sessionLeadingIcon(session)
-                    .frame(width: 18)
-                    .foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(session.title)
-                        .font(itemTitleFont)
-                        .lineLimit(1)
-                    Text([project.name, session.worktreeName].compactMap { $0 }.joined(separator: " · "))
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
+            activatesOnMouseDown: activatesOnMouseDown,
+            isReordering: isReordering,
+            titleFont: itemTitleFont,
+            isUnread: { isUnread(session) },
+            onActivate: { activateSession(session) },
+            onRestoreRequest: { restoreRequest = ArchivedRestoreRequest(target: .session(session)) },
+            onRename: {
+                renameTitle = session.title
+                renamingSession = session
+            },
+            onArchive: { archiveChat(session) },
+            onMarkRead: { store?.markRead(session) },
+            onMarkUnread: {
+                store?.markUnread(session)
+                if selection == .session(serverId: session.serverId, id: session.id) {
+                    selectNextChat(excluding: [session.id], serverId: session.serverId)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                sessionStatus(session, isHovered: isHovered && !isArchivedEntry)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .foregroundStyle(isSelected ? Color.primary : .secondary)
-            .gesture(
-                sessionActivationGesture(session),
-                including: !isArchivedEntry && activatesOnMouseDown ? .all : .none
-            )
-            .onTapGesture {
-                if isArchivedEntry {
-                    restoreRequest = ArchivedRestoreRequest(target: .session(session))
-                    return
-                }
-                guard !activatesOnMouseDown else { return }
-                activateSession(session)
-            }
-        }
-        .contextMenu {
-            if isArchivedEntry {
-                Button {
-                    restoreRequest = ArchivedRestoreRequest(target: .session(session))
-                } label: {
-                    Label("Restore", systemImage: "arrow.uturn.backward")
-                        .labelStyle(.titleAndIcon)
-                }
-            } else {
-                Button {
-                    renameTitle = session.title
-                    renamingSession = session
-                } label: {
-                    Label("Rename", systemImage: "pencil")
-                        .labelStyle(.titleAndIcon)
-                }
-                Button {
-                    archiveChat(session)
-                } label: {
-                    Label("Archive", systemImage: "archivebox")
-                        .labelStyle(.titleAndIcon)
-                }
-                unreadToggleButton(session)
-            }
-        }
+        )
     }
 
     private func isProjectVisuallyExpanded(_ id: UUID) -> Bool {
@@ -1719,17 +1009,6 @@ struct SidebarView: View {
     private func sessionActivationGesture(_ session: ChatSession) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { _ in
-                activateSession(session)
-            }
-    }
-
-    /// Top-level workspace rows route through their primary chat. Match chat
-    /// rows by doing that work on pointer-down; nested workspace rows remain
-    /// disclosure-only and disable this gesture at the call site.
-    private func workspaceActivationGesture(_ item: SidebarWorkspaceListItem) -> some Gesture {
-        DragGesture(minimumDistance: 0)
-            .onChanged { _ in
-                guard let session = item.primarySession else { return }
                 activateSession(session)
             }
     }
@@ -1876,41 +1155,6 @@ struct SidebarView: View {
         } else {
             deferredProjectOrder.unlock()
             deferredSessionOrder.unlock()
-        }
-    }
-
-    /// `activityColor` mirrors the foreground style the calling row applies, so
-    /// the rasterized working glyph matches the text beside it.
-    @ViewBuilder
-    private func sessionLeadingIcon(
-        _ session: ChatSession,
-        activityColor: Color = .secondary
-    ) -> some View {
-        ChatSessionLeadingIcon(session: session, store: store, activityColor: activityColor)
-    }
-
-    @ViewBuilder
-    private func sessionStatus(
-        _ session: ChatSession,
-        isHovered: Bool,
-        onArchive: (() -> Void)? = nil
-    ) -> some View {
-        if store?.hasUnreadError(session) != true, isHovered {
-            Button {
-                if let onArchive {
-                    onArchive()
-                } else {
-                    archiveChat(session)
-                }
-            } label: {
-                Image(systemName: "archivebox")
-                    .font(.caption2)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .help("Archive chat")
-            .accessibilityLabel("Archive \(session.title)")
-            .frame(width: 24, height: 14, alignment: .trailing)
         }
     }
 
@@ -2153,326 +1397,6 @@ struct SidebarView: View {
             case (nil, nil): return left.offset < right.offset
             }
         }.map(\.element)
-    }
-}
-
-/// Herdr-inspired working glyph: its ten braille frames advance at roughly
-/// eight steps per second in the harness icon's slot.
-///
-/// The frame cycle is a `CAKeyframeAnimation` on a layer's `contents`, NOT a
-/// `TimelineView(.animation)` — the same lesson already recorded on
-/// `ShimmeringText`, but with more bite here. A `TimelineView` re-evaluates its
-/// body on the main run loop, so this indicator froze solid for the duration of
-/// any main-thread hitch (notably the transcript rebuild on a tab switch),
-/// which read as a broken spinner while every render-server-driven
-/// `ProgressView` on screen kept turning. Discrete frame swapping cannot be
-/// composited in pure SwiftUI at all — a `Timer` or `PhaseAnimator` stalls
-/// exactly the same way — so the cycle is handed to CoreAnimation wholesale.
-///
-/// The trade is that the glyph must be rasterized against a known color instead
-/// of inheriting the ambient foreground style, so callers pass the color their
-/// surrounding row already uses.
-struct AgentActivityIndicator: View {
-    /// Matches what the enclosing row would have tinted the glyph.
-    var color: Color = .secondary
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        BrailleSpinnerLayer(color: color, isAnimated: !reduceMotion)
-            .frame(width: BrailleSpinnerFrames.size.width, height: BrailleSpinnerFrames.size.height)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Working")
-            .help("Chat is working")
-    }
-}
-
-/// The ten braille frames, pre-rasterized per (color, appearance, scale).
-///
-/// Bounded and tiny: at most a couple of colors per appearance, so a plain
-/// dictionary needs no eviction policy.
-@MainActor
-private enum BrailleSpinnerFrames {
-    static let glyphs = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-    static let size = CGSize(width: 14, height: 14)
-    /// Eight steps per second, as before.
-    static let cycleDuration = Double(glyphs.count) / 8
-
-    private struct Key: Hashable {
-        let color: Color
-        let appearance: String
-        let scale: CGFloat
-    }
-
-    private static var cache: [Key: [CGImage]] = [:]
-
-    static func images(color: Color, scale: CGFloat) -> [CGImage] {
-        let key = Key(
-            color: color,
-            appearance: NSApp.effectiveAppearance.name.rawValue,
-            scale: scale
-        )
-        if let cached = cache[key] { return cached }
-        let images = glyphs.compactMap { render($0, color: color, scale: scale) }
-        // A partial set would animate a short, wrong cycle; don't cache it.
-        guard images.count == glyphs.count else { return images }
-        cache[key] = images
-        return images
-    }
-
-    private static func render(_ glyph: String, color: Color, scale: CGFloat) -> CGImage? {
-        let pixelsWide = Int(size.width * scale)
-        let pixelsHigh = Int(size.height * scale)
-        guard pixelsWide > 0, pixelsHigh > 0,
-            let rep = NSBitmapImageRep(
-                bitmapDataPlanes: nil,
-                pixelsWide: pixelsWide,
-                pixelsHigh: pixelsHigh,
-                bitsPerSample: 8,
-                samplesPerPixel: 4,
-                hasAlpha: true,
-                isPlanar: false,
-                colorSpaceName: .deviceRGB,
-                bytesPerRow: 0,
-                bitsPerPixel: 0
-            )
-        else { return nil }
-        rep.size = NSSize(width: size.width, height: size.height)
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-        // `.primary`/`.secondary` resolve differently per appearance, so bake
-        // them against the app's current one (as MenuIconRasterizer does).
-        NSApp.effectiveAppearance.performAsCurrentDrawingAppearance {
-            let text = NSAttributedString(
-                string: glyph,
-                attributes: [
-                    .font: NSFont.monospacedSystemFont(ofSize: 14, weight: .regular),
-                    .foregroundColor: NSColor(color),
-                ]
-            )
-            let bounds = text.boundingRect(
-                with: NSSize(width: size.width, height: size.height),
-                options: [.usesLineFragmentOrigin]
-            )
-            text.draw(
-                at: NSPoint(
-                    x: (size.width - bounds.width) / 2,
-                    y: (size.height - bounds.height) / 2
-                ))
-        }
-        NSGraphicsContext.restoreGraphicsState()
-        return rep.cgImage
-    }
-}
-
-/// Hosts the pre-rasterized frames on a layer and cycles them in the render
-/// server, so the animation is immune to main-thread stalls.
-private struct BrailleSpinnerLayer: NSViewRepresentable {
-    let color: Color
-    let isAnimated: Bool
-
-    private static let animationKey = "brailleFrames"
-
-    @MainActor
-    final class Coordinator {
-        var appliedKey: String?
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        view.wantsLayer = true
-        view.layer?.contentsGravity = .resizeAspect
-        return view
-    }
-
-    func updateNSView(_ view: NSView, context: Context) {
-        guard let layer = view.layer else { return }
-        let scale =
-            view.window?.backingScaleFactor
-            ?? NSScreen.main?.backingScaleFactor
-            ?? 2
-        // Rebuild only when something that changes the pixels or the timing
-        // moves; this runs on every SwiftUI invalidation of the enclosing row.
-        let key = "\(color.hashValue)-\(scale)-\(isAnimated)-\(NSApp.effectiveAppearance.name.rawValue)"
-        guard context.coordinator.appliedKey != key else { return }
-        context.coordinator.appliedKey = key
-
-        let images = BrailleSpinnerFrames.images(color: color, scale: scale)
-        guard let first = images.first else { return }
-        layer.contentsScale = scale
-        layer.removeAnimation(forKey: Self.animationKey)
-        layer.contents = first
-        guard isAnimated, images.count > 1 else { return }
-
-        let animation = CAKeyframeAnimation(keyPath: "contents")
-        animation.values = images
-        animation.calculationMode = .discrete
-        animation.duration = BrailleSpinnerFrames.cycleDuration
-        animation.repeatCount = .infinity
-        // Phase-align to an absolute grid so every spinner on screen steps in
-        // lockstep regardless of when it mounted — the old absolute-time frame
-        // derivation gave that for free, and losing it would be visible with
-        // several running chats listed together.
-        let now = CACurrentMediaTime()
-        let phase = now.truncatingRemainder(dividingBy: animation.duration)
-        animation.beginTime = layer.convertTime(now, from: nil) - phase
-        layer.add(animation, forKey: Self.animationKey)
-    }
-}
-
-/// Row chrome (hover highlight + selected background) with ROW-LOCAL hover
-/// state, exposed to the content so rows can reveal hover-only controls.
-/// Hover must not live on the sidebar itself: a single shared "which id is
-/// hovered" string re-evaluated the entire sidebar body — re-sorting every
-/// project and session — on every pointer enter/leave.
-private struct HoverableRow<Content: View>: View {
-    var isSelected = false
-    var isHoverEnabled = true
-    var isHoverForced = false
-    @ViewBuilder var content: (_ isHovered: Bool) -> Content
-    @Environment(\.controlActiveState) private var controlActiveState
-    @Environment(\.theme) private var theme
-    @State private var isHovered = false
-
-    var body: some View {
-        // An inactive window consumes the first click only to become key. Keep
-        // the row visually inert until it can actually respond to the click.
-        let revealsHoverContent = controlActiveState == .key && isHoverEnabled && isHovered
-        let showsHoverBackground = isHoverForced || revealsHoverContent
-        content(revealsHoverContent)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(
-                        isSelected
-                            ? theme.rowSelectedBackground
-                            : (showsHoverBackground ? theme.rowHoverBackground : .clear))
-            )
-            .onHover { isHovered = $0 }
-    }
-}
-
-/// The background-only variant for rows without hover-revealed content.
-private struct SidebarRowHoverModifier: ViewModifier {
-    var isSelected = false
-    var isEnabled = true
-    @Environment(\.controlActiveState) private var controlActiveState
-    @Environment(\.theme) private var theme
-    @State private var isHovered = false
-
-    func body(content: Content) -> some View {
-        let showsHover = controlActiveState == .key && isEnabled && isHovered
-        content
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(
-                        isSelected
-                            ? theme.rowSelectedBackground
-                            : (showsHover ? theme.rowHoverBackground : .clear))
-            )
-            .onHover { isHovered = $0 }
-    }
-}
-
-extension View {
-    /// Sidebar row hover/selection background with row-local hover state.
-    fileprivate func sidebarRowHover(isSelected: Bool = false, isEnabled: Bool = true) -> some View {
-        modifier(SidebarRowHoverModifier(isSelected: isSelected, isEnabled: isEnabled))
-    }
-}
-
-private struct ProjectDropDelegate: DropDelegate {
-    let projectID: UUID
-    @Binding var draggingProjectID: UUID?
-    let moveProject: (UUID, UUID) -> Void
-
-    func dropEntered(info: DropInfo) {
-        guard let draggingProjectID, draggingProjectID != projectID else { return }
-        moveProject(draggingProjectID, projectID)
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        draggingProjectID = nil
-        return true
-    }
-}
-
-private struct SessionDropDelegate: DropDelegate {
-    let sessionID: UUID
-    @Binding var draggingSessionID: UUID?
-    let moveSession: (UUID, UUID) -> Void
-
-    func dropEntered(info: DropInfo) {
-        guard let draggingSessionID, draggingSessionID != sessionID else { return }
-        moveSession(draggingSessionID, sessionID)
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        draggingSessionID = nil
-        return true
-    }
-}
-
-/// A count-less notification badge for chats that changed while unopened.
-struct UnreadBadge: View {
-    let color: Color
-
-    var body: some View {
-        Circle()
-            .fill(color)
-            .frame(width: 10, height: 10)
-            .accessibilityLabel("Unread chat")
-    }
-}
-
-/// Higher-priority unread marker for an activity epoch that ended abnormally.
-struct ErrorUnreadBadge: View {
-    let color: Color
-
-    var body: some View {
-        Circle()
-            .fill(color)
-            .frame(width: 8, height: 8)
-            .accessibilityLabel("Unread chat error")
-            .help("This chat ended with an error")
-    }
-}
-
-/// Attention marker for a chat blocked on a question or plan approval.
-struct ActionRequiredIndicator: View {
-    let color: Color
-
-    var body: some View {
-        Circle()
-            .fill(color.opacity(0.18))
-            .overlay {
-                Circle().stroke(color, lineWidth: 1.25)
-            }
-            .frame(width: 10, height: 10)
-            .accessibilityLabel("Action required")
-            .help("This chat needs your response")
-    }
-}
-
-/// Compact relative time like "9h", "2d", "now".
-enum RelativeTime {
-    static func short(from date: Date, now: Date = Date()) -> String {
-        let seconds = max(0, now.timeIntervalSince(date))
-        switch seconds {
-        case ..<60: return "now"
-        case ..<3600: return "\(Int(seconds / 60))m"
-        case ..<86_400: return "\(Int(seconds / 3600))h"
-        default: return "\(Int(seconds / 86_400))d"
-        }
     }
 }
 
