@@ -48,7 +48,10 @@
       "files": [
         "apps/cloud/test/cloud.test.ts",
         "apps/server/src/cli/support.test.ts",
+        "apps/server/src/routes/harnesses.ts",
+        "apps/server/src/routes/sessions.ts",
         "apps/server/src/serve.ts",
+        "apps/server/src/server-context.ts",
         "apps/server/src/server.test.ts",
         "apps/server/src/server.ts",
         "packages/adapter-acp/src/acp.ts",

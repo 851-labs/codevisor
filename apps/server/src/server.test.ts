@@ -60,11 +60,11 @@ import {
 } from "./server.js"
 import type { HarnessAuthManager } from "@codevisor/harness-manager"
 import type { CodevisorServerConfig, CodevisorServerServices } from "./server.js"
-import { readTailnetPeers } from "./tailnet.js"
+import { readTailnetPeers } from "./infra/tailnet.js"
 
 // The tailnet route shells out to the machine's Tailscale CLI; mock the
 // reader so the route's two shapes are deterministic on any test machine.
-vi.mock("./tailnet.js", () => ({ readTailnetPeers: vi.fn() }))
+vi.mock("./infra/tailnet.js", () => ({ readTailnetPeers: vi.fn() }))
 import { NativeMcpError } from "@codevisor/mcp"
 import { SkillsError } from "@codevisor/skills"
 import { productionFoodWorktreeNames } from "@codevisor/worktrees"

@@ -32,10 +32,17 @@ import { Readable } from "node:stream"
 import { pipeline } from "node:stream/promises"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { startBackgroundTerminalHost, wrapBackgroundCommand } from "./background-terminal-host.js"
-import { makeActiveWorkSleepInhibitor } from "./active-work-sleep-inhibitor.js"
-import { connectCloudBridge, removeCloudCredentials, startCloudBridge } from "./cloud-bridge.js"
-import { canonicalDatabasePaths, codevisorRoot, defaultDatabasePath } from "./data-dir.js"
+import {
+  startBackgroundTerminalHost,
+  wrapBackgroundCommand
+} from "./infra/background-terminal-host.js"
+import { makeActiveWorkSleepInhibitor } from "./infra/active-work-sleep-inhibitor.js"
+import {
+  connectCloudBridge,
+  removeCloudCredentials,
+  startCloudBridge
+} from "./infra/cloud-bridge.js"
+import { canonicalDatabasePaths, codevisorRoot, defaultDatabasePath } from "./infra/data-dir.js"
 import {
   customHarnessDefinition,
   loadCustomHarnesses,
@@ -45,12 +52,12 @@ import {
 } from "@codevisor/harness-manager"
 import { makeHarnessLifecycleManager } from "@codevisor/harness-manager"
 import { defaultServerConfig, startCodevisorServer, type CodevisorServerUpdater } from "./server.js"
-import { acquireServerLease, type ServerLease } from "./server-lease.js"
+import { acquireServerLease, type ServerLease } from "./infra/server-lease.js"
 import { makeHarnessAuthManager } from "@codevisor/harness-manager"
 import { makeMcpManager } from "@codevisor/mcp"
 import { makeNativeMcpManager } from "@codevisor/mcp"
 import { makeSkillsManager } from "@codevisor/skills"
-import { migrateLegacyLayout, migrateTmpDataDir } from "./legacy-layout.js"
+import { migrateLegacyLayout, migrateTmpDataDir } from "./infra/legacy-layout.js"
 import {
   DEFAULT_GITHUB_REPOSITORY,
   DEFAULT_LEGACY_RELEASE_BASE_URL,

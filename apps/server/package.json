@@ -9,9 +9,9 @@
   },
   "scripts": {
     "build": "tsc -b tsconfig.json",
-    "typecheck": "tsc -b tsconfig.json --pretty false",
-    "test": "vitest run src --passWithNoTests",
-    "test:coverage": "vitest run src --coverage",
+    "typecheck": "tsc -b tsconfig.json --pretty false && tsc -p test/tsconfig.json --pretty false",
+    "test": "vitest run --passWithNoTests",
+    "test:coverage": "vitest run --coverage",
     "dev": "tsc -b tsconfig.json && node dist/main.js serve",
     "start": "node dist/main.js serve"
   },

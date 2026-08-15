@@ -3,7 +3,7 @@ import {
   initializeOptionalServerFeature,
   initializeOptionalServerFeatureAsync,
   stabilizeServerWorkingDirectory
-} from "./serve.js"
+} from "../src/serve.js"
 
 describe("optional server feature initialization", () => {
   it("keeps synchronous feature failures inside their feature boundary", () => {

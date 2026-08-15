@@ -24,7 +24,7 @@ import {
   updateCommand,
   type CliDeps
 } from "./cli/support.js"
-import { resolveDataDir, resolveLogsDir } from "./data-dir.js"
+import { resolveDataDir, resolveLogsDir } from "./infra/data-dir.js"
 import { bundledVersion, runServe } from "./serve.js"
 
 const runtimeDir = dirname(fileURLToPath(import.meta.url))

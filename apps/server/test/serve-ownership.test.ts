@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { monitorAppOwner } from "./serve.js"
+import { monitorAppOwner } from "../src/serve.js"
 
 describe("app-owned server lifecycle", () => {
   it("releases the database lease before stopping when its app exits", async () => {
