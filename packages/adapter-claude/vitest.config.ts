@@ -10,7 +10,10 @@ export default defineConfig({
     coverage: {
       all: true,
       include: ["src/**/*.ts"],
-      exclude: ["**/dist/**", "**/*.test.ts"],
+      // test-support.ts is shared test scaffolding (fake SDK query, message
+      // builders) extracted from the old monolithic claude.test.ts, not
+      // product code — same exclusion the server package uses.
+      exclude: ["**/dist/**", "**/*.test.ts", "src/test-support.ts"],
       provider: "v8",
       thresholds: { branches: 70, functions: 90, lines: 86, statements: 83 }
     }

@@ -60,8 +60,6 @@
         "apps/server/src/test-support.ts",
         "packages/adapter-acp/src/acp.ts",
         "packages/adapter-acp/src/runtime-acp.test.ts",
-        "packages/adapter-claude/src/claude.test.ts",
-        "packages/adapter-claude/src/claude.ts",
         "packages/adapter-codex/src/provider.test.ts",
         "packages/adapter-codex/src/provider.ts",
         "packages/agent-runtime/src/index.ts",
