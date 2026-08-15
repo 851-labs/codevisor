@@ -38,6 +38,8 @@ on:
         required: false
       APP_STORE_CONNECT_ISSUER_ID:
         required: false
+      SENTRY_AUTH_TOKEN:
+        required: false
 
 permissions:
   actions: read
