@@ -1,14 +1,23 @@
-import AppKit
 import AVFoundation
 import CodevisorCore
 import CryptoKit
-import Observation
+import SwiftUI
 import UniformTypeIdentifiers
 
-struct AttachmentPreviewImage {
-    let image: NSImage
-    let aspectRatio: CGFloat
-    let version: String
+#if canImport(AppKit)
+    import AppKit
+#elseif canImport(UIKit)
+    import PDFKit
+    import UIKit
+#endif
+
+// `@unchecked` for the AppKit image: both apps already hop these decoded
+// previews between the main actor and detached decode/encode tasks (UIImage
+// is Sendable; immutable NSImage use here matches that shipped behavior).
+public struct AttachmentPreviewImage: @unchecked Sendable {
+    public let image: OSImage
+    public let aspectRatio: CGFloat
+    public let version: String
 }
 
 private final class AttachmentPreviewBox {
@@ -19,14 +28,22 @@ private final class AttachmentPreviewBox {
     }
 }
 
+extension PreviewFile {
+    fileprivate var isPDF: Bool {
+        mimeType == "application/pdf" || name.lowercased().hasSuffix(".pdf")
+    }
+
+    fileprivate var isVideo: Bool { attachmentIsVideo(name: name, mimeType: mimeType) }
+}
+
 /// A per-session authenticated loader backed by one process-wide decoded
 /// image cache and one bounded on-disk thumbnail cache. The namespace keeps
 /// identical paths on different Codevisor machines isolated.
 @MainActor
 @Observable
-final class AttachmentImageStore {
-    typealias Fetch = (PreviewFile.Source) async throws -> Data
-    typealias Version = (PreviewFile.Source) async throws -> String?
+public final class AttachmentImageStore {
+    public typealias Fetch = (PreviewFile.Source) async throws -> Data
+    public typealias Version = (PreviewFile.Source) async throws -> String?
 
     private static let memory: NSCache<NSString, AttachmentPreviewBox> = {
         let cache = NSCache<NSString, AttachmentPreviewBox>()
@@ -38,12 +55,12 @@ final class AttachmentImageStore {
     private static var inFlight: [String: Task<AttachmentPreviewImage?, Never>] = [:]
     private static let disk = AttachmentPreviewDiskCache()
 
-    let namespace: String
+    public let namespace: String
     private let fetch: Fetch
     private let version: Version
     private var versions: [String: String] = [:]
 
-    init(namespace: String, fetch: @escaping Fetch, version: @escaping Version) {
+    public init(namespace: String, fetch: @escaping Fetch, version: @escaping Version) {
         self.namespace = namespace
         self.fetch = fetch
         self.version = version
@@ -52,7 +69,7 @@ final class AttachmentImageStore {
     /// Returns the most recently persisted preview without revalidation. It
     /// provides stable geometry immediately on reopen; `image(for:)` then
     /// validates live paths and replaces stale pixels without resizing them.
-    func cachedPreview(for file: PreviewFile) async -> AttachmentPreviewImage? {
+    public func cachedPreview(for file: PreviewFile) async -> AttachmentPreviewImage? {
         let key = baseKey(for: file.source)
         if let cached = Self.memory.object(forKey: key as NSString)?.value {
             return cached
@@ -66,7 +83,7 @@ final class AttachmentImageStore {
 
     /// Returns a validator-matched preview, fetching and decoding only on a
     /// true miss. Concurrent views requesting the same source share one task.
-    func image(for file: PreviewFile) async -> AttachmentPreviewImage? {
+    public func image(for file: PreviewFile) async -> AttachmentPreviewImage? {
         let key = baseKey(for: file.source)
         let resolvedVersion = await fileVersion(for: file.source)
 
@@ -92,6 +109,9 @@ final class AttachmentImageStore {
         let name = file.name
         let mimeType = file.mimeType
         let isVideo = file.isVideo
+        #if canImport(UIKit)
+            let isPDF = file.isPDF
+        #endif
         let fetch = self.fetch
         let task = Task<AttachmentPreviewImage?, Never> {
             do {
@@ -99,13 +119,23 @@ final class AttachmentImageStore {
                 guard
                     let image = await Task.detached(
                         priority: .userInitiated,
-                        operation: {
-                            await attachmentPreviewImage(
-                                data: data,
-                                name: name,
-                                mimeType: mimeType,
-                                isVideo: isVideo
-                            )
+                        operation: { () async -> OSImage? in
+                            #if canImport(AppKit)
+                                return await attachmentPreviewImage(
+                                    data: data,
+                                    name: name,
+                                    mimeType: mimeType,
+                                    isVideo: isVideo
+                                )
+                            #elseif canImport(UIKit)
+                                return await attachmentPreviewImage(
+                                    data: data,
+                                    name: name,
+                                    mimeType: mimeType,
+                                    isVideo: isVideo,
+                                    isPDF: isPDF
+                                )
+                            #endif
                         }
                     ).value, let aspectRatio = previewAspectRatio(for: image.size)
                 else { return nil }
@@ -129,8 +159,12 @@ final class AttachmentImageStore {
         Task(priority: .utility) {
             if let encoded = await Task.detached(
                 priority: .utility,
-                operation: {
-                    pngData(for: loaded.image)
+                operation: { () -> Data? in
+                    #if canImport(AppKit)
+                        return pngData(for: loaded.image)
+                    #elseif canImport(UIKit)
+                        return loaded.image.pngData()
+                    #endif
                 }
             ).value {
                 await Self.disk.store(
@@ -145,7 +179,7 @@ final class AttachmentImageStore {
         return loaded
     }
 
-    func data(for source: PreviewFile.Source) async throws -> Data {
+    public func data(for source: PreviewFile.Source) async throws -> Data {
         try await fetch(source)
     }
 
@@ -164,7 +198,7 @@ final class AttachmentImageStore {
         _ payload: AttachmentPreviewDiskCache.Payload
     ) async -> AttachmentPreviewImage? {
         let image = await Task.detached(priority: .userInitiated) {
-            NSImage(data: payload.thumbnail)
+            OSImage(data: payload.thumbnail)
         }.value
         guard let image else { return nil }
         return AttachmentPreviewImage(
@@ -175,15 +209,25 @@ final class AttachmentImageStore {
     }
 
     private func storeInMemory(_ preview: AttachmentPreviewImage, key: String) {
-        let cost = preview.image.representations.reduce(0) { result, representation in
-            result + max(1, representation.pixelsWide * representation.pixelsHigh * 4)
-        }
+        #if canImport(AppKit)
+            let cost = preview.image.representations.reduce(0) { result, representation in
+                result + max(1, representation.pixelsWide * representation.pixelsHigh * 4)
+            }
+        #elseif canImport(UIKit)
+            let cost =
+                preview.image.cgImage.map { $0.bytesPerRow * $0.height }
+                ?? Int(preview.image.size.width * preview.image.size.height * 4)
+        #endif
         Self.memory.setObject(
             AttachmentPreviewBox(preview),
             forKey: key as NSString,
             cost: max(1, cost)
         )
     }
+}
+
+extension EnvironmentValues {
+    @Entry public var attachmentImages: AttachmentImageStore? = nil
 }
 
 private actor AttachmentPreviewDiskCache {
@@ -328,49 +372,98 @@ private nonisolated func previewAspectRatio(for size: CGSize) -> CGFloat? {
     return size.width / size.height
 }
 
-private nonisolated func pngData(for image: NSImage) -> Data? {
-    guard let tiff = image.tiffRepresentation,
-        let representation = NSBitmapImageRep(data: tiff)
-    else { return nil }
-    return representation.representation(using: .png, properties: [:])
-}
-
-/// Decodes images/PDFs directly and asks AVFoundation for an early frame of a
-/// video. AVFoundation needs a file URL, so video bytes are materialized only
-/// for the duration of thumbnail generation.
-nonisolated func attachmentPreviewImage(
-    data: Data,
-    name: String,
-    mimeType: String,
-    isVideo: Bool
-) async -> NSImage? {
-    guard isVideo else { return NSImage(data: data) }
-
-    let directory = FileManager.default.temporaryDirectory
-        .appendingPathComponent("Codevisor-Video-Thumbnails", isDirectory: true)
-        .appendingPathComponent(UUID().uuidString, isDirectory: true)
-    do {
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-
-        let pathExtension =
-            (name as NSString).pathExtension.isEmpty
-            ? (UTType(mimeType: mimeType)?.preferredFilenameExtension ?? "mp4")
-            : (name as NSString).pathExtension
-        let file = directory.appendingPathComponent("preview.\(pathExtension)")
-        try data.write(to: file, options: .atomic)
-
-        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: file))
-        generator.appliesPreferredTrackTransform = true
-        generator.maximumSize = NSSize(width: 480, height: 480)
-        let time = CMTime(seconds: 0.1, preferredTimescale: 600)
-        var frame = try? await generator.image(at: time)
-        if frame == nil {
-            frame = try? await generator.image(at: .zero)
-        }
-        guard let frame else { return nil }
-        return NSImage(cgImage: frame.image, size: .zero)
-    } catch {
-        return nil
+#if canImport(AppKit)
+    private nonisolated func pngData(for image: NSImage) -> Data? {
+        guard let tiff = image.tiffRepresentation,
+            let representation = NSBitmapImageRep(data: tiff)
+        else { return nil }
+        return representation.representation(using: .png, properties: [:])
     }
-}
+
+    /// Decodes images/PDFs directly and asks AVFoundation for an early frame of a
+    /// video. AVFoundation needs a file URL, so video bytes are materialized only
+    /// for the duration of thumbnail generation.
+    public nonisolated func attachmentPreviewImage(
+        data: Data,
+        name: String,
+        mimeType: String,
+        isVideo: Bool
+    ) async -> NSImage? {
+        guard isVideo else { return NSImage(data: data) }
+
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Codevisor-Video-Thumbnails", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+
+            let pathExtension =
+                (name as NSString).pathExtension.isEmpty
+                ? (UTType(mimeType: mimeType)?.preferredFilenameExtension ?? "mp4")
+                : (name as NSString).pathExtension
+            let file = directory.appendingPathComponent("preview.\(pathExtension)")
+            try data.write(to: file, options: .atomic)
+
+            let generator = AVAssetImageGenerator(asset: AVURLAsset(url: file))
+            generator.appliesPreferredTrackTransform = true
+            generator.maximumSize = NSSize(width: 480, height: 480)
+            let time = CMTime(seconds: 0.1, preferredTimescale: 600)
+            var frame = try? await generator.image(at: time)
+            if frame == nil {
+                frame = try? await generator.image(at: .zero)
+            }
+            guard let frame else { return nil }
+            return NSImage(cgImage: frame.image, size: .zero)
+        } catch {
+            return nil
+        }
+    }
+#elseif canImport(UIKit)
+    /// Decodes images directly, renders the first page of a PDF, and asks
+    /// AVFoundation for an early frame of a video.
+    private nonisolated func attachmentPreviewImage(
+        data: Data,
+        name: String,
+        mimeType: String,
+        isVideo: Bool,
+        isPDF: Bool
+    ) async -> UIImage? {
+        if isPDF {
+            guard let page = PDFDocument(data: data)?.page(at: 0) else { return nil }
+            return page.thumbnail(of: CGSize(width: 480, height: 480), for: .cropBox)
+        }
+        guard isVideo else {
+            return UIImage(data: data)?.preparingThumbnail(of: CGSize(width: 480, height: 480))
+                ?? UIImage(data: data)
+        }
+
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Codevisor-Video-Thumbnails", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+
+            let pathExtension =
+                (name as NSString).pathExtension.isEmpty
+                ? (UTType(mimeType: mimeType)?.preferredFilenameExtension ?? "mp4")
+                : (name as NSString).pathExtension
+            let file = directory.appendingPathComponent("preview.\(pathExtension)")
+            try data.write(to: file, options: .atomic)
+
+            let generator = AVAssetImageGenerator(asset: AVURLAsset(url: file))
+            generator.appliesPreferredTrackTransform = true
+            generator.maximumSize = CGSize(width: 480, height: 480)
+            let time = CMTime(seconds: 0.1, preferredTimescale: 600)
+            var frame = try? await generator.image(at: time)
+            if frame == nil {
+                frame = try? await generator.image(at: .zero)
+            }
+            guard let frame else { return nil }
+            return UIImage(cgImage: frame.image)
+        } catch {
+            return nil
+        }
+    }
+#endif

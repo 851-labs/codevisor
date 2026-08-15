@@ -29,7 +29,6 @@ enum QuickLookItem: Equatable {
 
 extension EnvironmentValues {
     @Entry var quickLook: QuickLookController? = nil
-    @Entry var attachmentImages: AttachmentImageStore? = nil
 }
 
 // MARK: - Thumbnails

@@ -2,6 +2,7 @@ import AppKit
 import Observation
 import UniformTypeIdentifiers
 import CodevisorCore
+import CodevisorUI
 import os
 
 /// Materializes attachment bytes as local files for SwiftUI's system-owned
