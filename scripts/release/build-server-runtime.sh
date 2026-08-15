@@ -192,9 +192,14 @@ done
 # manager metadata and symlink targets.
 cp "$runtime_dir/apps/server/dist/"*.js "$runtime_dir/"
 cp "$runtime_dir/apps/server/dist/"*.d.ts "$runtime_dir/" 2>/dev/null || true
-# cli.js resolves its command implementations from ./cli/ relative to itself.
-rm -rf "$runtime_dir/cli"
-cp -R "$runtime_dir/apps/server/dist/cli" "$runtime_dir/cli"
+# The root-level entry copies resolve their relative imports from ./cli/,
+# ./routes/, and ./infra/ — mirror every server dist subdirectory so the flat
+# layout stays import-complete as the module tree evolves.
+for subdir in "$runtime_dir/apps/server/dist"/*/; do
+  subdir_name="$(basename "$subdir")"
+  rm -rf "${runtime_dir:?}/$subdir_name"
+  cp -R "$subdir" "$runtime_dir/$subdir_name"
+done
 
 # Launchers resolve symlinks before locating the runtime root: install.sh
 # links them into ~/.local/bin or /usr/local/bin, and an unresolved
@@ -236,23 +241,29 @@ printf '{"version":"%s","buildNumber":%s,"sourceRevision":"%s","target":"%s"}\n'
 # LaunchServices starts the macOS app with / as its working directory. Probe
 # resource discovery from there so a runtime layout regression cannot ship a
 # server that stays alive without ever opening its health port.
-runtime_root="$(cd "$runtime_dir" && pwd)"
+# -P: physical path — Node import resolution realpaths through symlinks (e.g.
+# macOS /tmp), and the discoverability probes compare path prefixes.
+runtime_root="$(cd "$runtime_dir" && pwd -P)"
 (
   cd /
   CODEVISOR_SMOKE_RUNTIME="$runtime_root" "$runtime_root/bin/node" --input-type=module -e '
     const { pathToFileURL } = await import("node:url")
     const runtime = process.env.CODEVISOR_SMOKE_RUNTIME
-    const relay = await import(pathToFileURL(`${runtime}/browser-extension-relay.js`))
+    const relay = await import(
+      pathToFileURL(`${runtime}/packages/automation/dist/browser-extension-relay.js`)
+    )
     if (relay.browserExtensionPath() === undefined) {
       throw new Error("Packaged browser extension is not discoverable from /")
     }
-    const mcp = await import(pathToFileURL(`${runtime}/mcp-manager.js`))
+    const mcp = await import(pathToFileURL(`${runtime}/packages/mcp/dist/mcp-manager.js`))
     for (const id of ["browser", "computer"]) {
       if (!mcp.automationSkillPath(id).startsWith(runtime)) {
         throw new Error(`Packaged ${id} skill is not discoverable from /`)
       }
     }
-    const computer = await import(pathToFileURL(`${runtime}/computer-use-provider.js`))
+    const computer = await import(
+      pathToFileURL(`${runtime}/packages/automation/dist/computer-use-provider.js`)
+    )
     if (!computer.linuxComputerUseHelperPath()?.startsWith(runtime)) {
       throw new Error("Packaged Linux Computer Use helper is not discoverable from /")
     }
