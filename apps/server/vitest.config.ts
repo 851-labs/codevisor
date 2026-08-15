@@ -9,6 +9,11 @@ export default defineConfig({
       exclude: [
         "**/dist/**",
         "**/*.test.ts",
+        // Shared test fixtures (fake agent runtime, server bootstrap, request
+        // helpers) extracted from the old monolithic server.test.ts. Test
+        // scaffolding, not product code: its defensive timeout/failure paths
+        // only execute when a test fails.
+        "src/test-support.ts",
         // Process entry points and daemon bootstrap wiring: exercised by the
         // release smoke tests, not unit tests.
         "src/main.ts",
