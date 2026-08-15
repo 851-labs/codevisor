@@ -12,16 +12,16 @@ private let assistantLinkExpression = try! NSRegularExpression(
 private let attachmentOrigin = "https://attachments.codevisor.invalid/"
 
 private struct MarkdownFence {
-    let character: Character
-    let length: Int
-    let quoteDepth: Int
-    let sourceLocation: Int
+    public let character: Character
+    public let length: Int
+    public let quoteDepth: Int
+    public let sourceLocation: Int
 }
 
 private struct MarkdownLine {
-    let content: String
-    let quoteDepth: Int
-    let sourceRange: NSRange
+    public let content: String
+    public let quoteDepth: Int
+    public let sourceRange: NSRange
 }
 
 private func markdownLines(_ markdown: NSString) -> [MarkdownLine] {

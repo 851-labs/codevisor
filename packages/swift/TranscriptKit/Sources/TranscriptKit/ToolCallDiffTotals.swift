@@ -1,11 +1,11 @@
 import Foundation
 import ACPKit
 
-public extension ToolCall {
+extension ToolCall {
     /// Header counter totals for an edit tool call: streamed `diffStats` when
     /// present, else computed from completed diff content, else nil (no
     /// counter shown).
-    var diffTotals: LineDiff.Totals? {
+    public var diffTotals: LineDiff.Totals? {
         if let diffStats, !diffStats.isEmpty {
             return LineDiff.Totals(
                 added: diffStats.map(\.added).reduce(0, +),
@@ -25,20 +25,20 @@ public extension ToolCall {
     }
 }
 
-public extension ToolCall {
+extension ToolCall {
     /// The row title, papering over adapters that report a bare tool name
     /// ("Edit") while an edit is running: without a filename or any diff data
     /// there is nothing informative to show, so use a generic progress title.
     /// Adapters that title properly (spaces ⇒ a real phrase) pass through,
     /// and the finished update's title always wins.
-    var displayTitle: String {
+    public var displayTitle: String {
         displayTitle(diffTotals: diffTotals)
     }
 
     /// `displayTitle` taking precomputed totals, so callers that already
     /// memoized `diffTotals` (a full Myers diff in the content fallback path)
     /// don't run the diff a second time per render.
-    func displayTitle(diffTotals: LineDiff.Totals?) -> String {
+    public func displayTitle(diffTotals: LineDiff.Totals?) -> String {
         if let integrationTitle = integrationDisplayTitle() {
             return integrationTitle
         }

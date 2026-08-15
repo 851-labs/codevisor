@@ -1,5 +1,5 @@
 import Testing
-@testable import CodevisorCore
+@testable import TranscriptKit
 
 @Suite("Transcript bottom-jump gate")
 struct TranscriptBottomJumpGateTests {

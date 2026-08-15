@@ -1,5 +1,5 @@
 import Testing
-@testable import CodevisorCore
+@testable import TranscriptKit
 
 struct TranscriptInitialPresentationGateTests {
     @Test func hydrationCannotRevealAnEmptyPlaceholder() {

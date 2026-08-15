@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import CodevisorCore
+@testable import TranscriptKit
 
 @Suite("LineDiff")
 struct LineDiffTests {

@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 import ACPKit
-@testable import CodevisorCore
+@testable import TranscriptKit
 
 @Suite("ToolCall diff totals")
 struct ToolCallDiffTotalsTests {

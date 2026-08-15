@@ -31,7 +31,7 @@ public struct SubagentTranscript: Sendable, Equatable {
     public var entries: [TranscriptEntry]
     public var isThinking: Bool
     /// Monotonic counter used to give each new text span a stable id.
-    var nextTextId: Int
+    public var nextTextId: Int
 
     public init(entries: [TranscriptEntry] = [], isThinking: Bool = false, nextTextId: Int = 0) {
         self.entries = entries
@@ -100,7 +100,7 @@ public struct AssistantTurn: Sendable, Equatable {
     public var hasDeferredWorkedDetails: Bool
     public var detailRevision: Int
     /// Monotonic counter used to give each new text span a stable id.
-    var nextTextId: Int
+    public var nextTextId: Int
 
     public init(
         entries: [TranscriptEntry] = [],
@@ -145,11 +145,11 @@ public struct AssistantTurn: Sendable, Equatable {
     }
 }
 
-public extension AssistantTurn {
+extension AssistantTurn {
     /// Latest ordered context-compaction lifecycle, used only to coordinate
     /// the turn-level activity indicator. The event itself renders from
     /// `entries` at its actual arrival position.
-    var contextCompactionStatus: ContextCompactionStatus? {
+    public var contextCompactionStatus: ContextCompactionStatus? {
         for entry in entries.reversed() {
             if case let .contextCompaction(_, status) = entry { return status }
         }
@@ -173,24 +173,24 @@ public extension AssistantTurn {
     /// (phase `final`, e.g. codex harmony channels) rather than optimistic.
     /// Certainty the answer is underway: the UI can settle the worked section
     /// as soon as this text starts streaming instead of waiting for turn end.
-    var finalTextIsAsserted: Bool {
+    public var finalTextIsAsserted: Bool {
         guard case let .text(id, _) = finalText else { return false }
         return textPhases[id] == .final
     }
 
     /// Everything except the final answer — intermediate text and all tool
     /// calls — collapsed into the "Worked for…" disclosure.
-    var workedEntries: [TranscriptEntry] {
+    public var workedEntries: [TranscriptEntry] {
         guard let finalTextIndex else { return entries }
         return entries.enumerated().compactMap { offset, entry in
             offset == finalTextIndex ? nil : entry
         }
     }
 
-    var hasWorkedContent: Bool { !workedEntries.isEmpty }
+    public var hasWorkedContent: Bool { !workedEntries.isEmpty }
 
     /// The tool calls within this turn, in order.
-    var toolCalls: [ToolCall] {
+    public var toolCalls: [ToolCall] {
         entries.compactMap { if case let .tool(call) = $0 { return call } else { return nil } }
     }
 
@@ -224,7 +224,7 @@ public extension AssistantTurn {
 
     /// Every tool call in the turn, including those inside subagent threads —
     /// the membership check for routing late updates into a finished turn.
-    var allToolCalls: [ToolCall] {
+    public var allToolCalls: [ToolCall] {
         toolCalls
             + subagents.keys.sorted().flatMap { key in
                 (subagents[key]?.entries ?? []).compactMap {
@@ -235,7 +235,7 @@ public extension AssistantTurn {
 
     /// Cheap change signal for streaming subagent activity, folded into the
     /// scroll-follow fingerprint so nested output keeps the view pinned.
-    var subagentActivityFingerprint: Int {
+    public var subagentActivityFingerprint: Int {
         var hasher = Hasher()
         for key in subagents.keys.sorted() {
             guard let bucket = subagents[key] else { continue }
@@ -260,7 +260,7 @@ public extension AssistantTurn {
     /// Index of the final-answer text span, excluded from the worked sections
     /// (it renders expanded below). Internal so the worked-section splitting in
     /// `WorkedItems` can drop it from either slice.
-    var finalTextIndex: Int? {
+    public var finalTextIndex: Int? {
         entries.indices.reversed().first { index in
             guard case let .text(id, _) = entries[index] else { return false }
             return textPhases[id] != .commentary

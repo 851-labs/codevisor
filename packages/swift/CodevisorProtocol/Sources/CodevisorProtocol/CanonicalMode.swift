@@ -33,21 +33,21 @@ public enum CanonicalMode: String, Sendable, CaseIterable {
     }
 }
 
-public extension SessionMode {
-    var canonicalMode: CanonicalMode? {
+extension SessionMode {
+    public var canonicalMode: CanonicalMode? {
         canonicalId.flatMap(CanonicalMode.init(rawValue:))
     }
 
     /// The canonical label when mapped, the agent's own name otherwise.
-    var displayName: String {
+    public var displayName: String {
         canonicalMode?.displayName ?? name
     }
 }
 
-public extension SessionModeState {
+extension SessionModeState {
     /// Modes mapped onto the canonical vocabulary, in the fixed canonical
     /// order (readOnly, ask, autoEdit, fullAccess, plan).
-    var canonicalModes: [SessionMode] {
+    public var canonicalModes: [SessionMode] {
         CanonicalMode.allCases.compactMap { canonical in
             availableModes.first { $0.canonicalMode == canonical }
         }
@@ -56,11 +56,11 @@ public extension SessionModeState {
     /// Agent-defined modes with no canonical mapping, rendered under an
     /// "Agent modes" divider so they stay reachable without polluting the
     /// canonical set.
-    var nativeOnlyModes: [SessionMode] {
+    public var nativeOnlyModes: [SessionMode] {
         availableModes.filter { $0.canonicalMode == nil }
     }
 
-    var currentMode: SessionMode? {
+    public var currentMode: SessionMode? {
         availableModes.first { $0.id == currentModeId }
     }
 }

@@ -1,4 +1,5 @@
 import CoreGraphics
+import CodevisorProtocol
 import Foundation
 
 /// Immutable transcript input copied from the UI actor before row projection.
@@ -189,8 +190,8 @@ public actor TranscriptRowProjectionCache {
     public static let shared = TranscriptRowProjectionCache()
 
     private struct CacheKey: Hashable {
-        let projection: TranscriptProjectionKey
-        let options: TranscriptProjectionOptions
+        public let projection: TranscriptProjectionKey
+        public let options: TranscriptProjectionOptions
     }
 
     private let capacity: Int

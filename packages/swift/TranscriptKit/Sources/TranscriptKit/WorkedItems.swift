@@ -15,7 +15,7 @@ public struct ToolCallGroup: Identifiable, Sendable, Equatable {
         self.init(calls: calls, hasUnsettledCall: calls.contains { !$0.isSettled })
     }
 
-    init(calls: [ToolCall], hasUnsettledCall: Bool) {
+    public init(calls: [ToolCall], hasUnsettledCall: Bool) {
         id = calls.first?.toolCallId ?? ""
         self.calls = calls
         self.hasUnsettledCall = hasUnsettledCall
@@ -41,18 +41,18 @@ public enum WorkedItem: Identifiable, Sendable, Equatable {
     }
 }
 
-public extension AssistantTurn {
+extension AssistantTurn {
     /// The worked-for entries grouped for display: consecutive tool calls are
     /// collapsed into a single `toolGroup`, with reasoning text in between.
     /// Excludes the final text answer — the finished-turn presentation.
-    var workedItems: [WorkedItem] {
+    public var workedItems: [WorkedItem] {
         groupedItems(workedEntries)
     }
 
     /// Worked items produced before the plan was proposed (exploration and
     /// planning). When the turn has no plan this is the whole worked section, so
     /// non-plan turns render exactly as before.
-    var workedItemsBeforePlan: [WorkedItem] {
+    public var workedItemsBeforePlan: [WorkedItem] {
         guard let boundary = planBoundary else { return workedItems }
         return groupedItems(workedSlice(0..<min(boundary, entries.count)))
     }
@@ -60,7 +60,7 @@ public extension AssistantTurn {
     /// Worked items produced after the plan was proposed — the implementation
     /// that follows approval — so they render below the plan card in their own
     /// section. Empty until work follows the plan.
-    var workedItemsAfterPlan: [WorkedItem] {
+    public var workedItemsAfterPlan: [WorkedItem] {
         guard let boundary = planBoundary else { return [] }
         return groupedItems(workedSlice(min(boundary, entries.count)..<entries.count))
     }
@@ -74,14 +74,14 @@ public extension AssistantTurn {
     /// Every entry grouped in strict arrival order, including trailing text.
     /// Used while the turn is generating so the transcript streams in place —
     /// text and tool groups must never reorder around each other mid-turn.
-    var streamingItems: [WorkedItem] {
+    public var streamingItems: [WorkedItem] {
         groupedItems(entries)
     }
 
     /// A subagent's nested thread grouped with the same rules as the top
     /// level. Because `subagents` is flat, an agent call inside this thread
     /// becomes a `.subagent` item of its own — nesting recurses by lookup.
-    func subagentItems(_ parentToolCallId: String) -> [WorkedItem] {
+    public func subagentItems(_ parentToolCallId: String) -> [WorkedItem] {
         groupedItems(subagents[parentToolCallId]?.entries ?? [])
     }
 
@@ -129,7 +129,7 @@ public extension AssistantTurn {
     /// list O(groups × entries) on every streaming flush. Semantics are
     /// identical: an id is in this set exactly when `isTrailingToolGroup`
     /// returns true for it.
-    var trailingToolCallIds: Set<String> {
+    public var trailingToolCallIds: Set<String> {
         var ids: Set<String> = []
         for entry in entries.reversed() {
             switch entry {
@@ -148,7 +148,7 @@ public extension AssistantTurn {
     /// the streamed transcript — no text has followed it yet. Drives the
     /// group's auto-expansion: open while the model is working through it,
     /// collapsed once it moves on to prose.
-    func isTrailingToolGroup(lastToolCallId toolCallId: String) -> Bool {
+    public func isTrailingToolGroup(lastToolCallId toolCallId: String) -> Bool {
         guard
             let index = entries.lastIndex(where: {
                 if case let .tool(call) = $0 { return call.toolCallId == toolCallId }
@@ -171,11 +171,11 @@ public extension AssistantTurn {
 /// Summarizes a group of tool calls into a one-line description and an icon,
 /// e.g. "Read 6 files" or "Searched code, ran 2 commands".
 public enum ToolCallSummary {
-    enum Category: Equatable {
+    public enum Category: Equatable {
         case edit, read, search, webSearch, execute, fetch, delete, move, agent, question, other
     }
 
-    static func category(_ kind: ToolKind?) -> Category {
+    public static func category(_ kind: ToolKind?) -> Category {
         switch kind {
         case .edit: return .edit
         case .read: return .read
@@ -230,7 +230,7 @@ public enum ToolCallSummary {
 
     // MARK: - Phrasing
 
-    static func phrase(_ category: Category, _ count: Int) -> String {
+    public static func phrase(_ category: Category, _ count: Int) -> String {
         let single = count == 1
         switch category {
         case .read: return single ? "read a file" : "read \(count) files"
@@ -247,7 +247,7 @@ public enum ToolCallSummary {
         }
     }
 
-    static func join(_ phrases: [String]) -> String {
+    public static func join(_ phrases: [String]) -> String {
         switch phrases.count {
         case 0: return "ran tools"
         case 1: return phrases[0]
@@ -256,7 +256,7 @@ public enum ToolCallSummary {
         }
     }
 
-    static func capitalizingFirst(_ string: String) -> String {
+    public static func capitalizingFirst(_ string: String) -> String {
         guard let first = string.first else { return string }
         return first.uppercased() + string.dropFirst()
     }

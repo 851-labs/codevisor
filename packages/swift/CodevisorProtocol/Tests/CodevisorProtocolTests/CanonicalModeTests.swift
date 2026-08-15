@@ -1,6 +1,6 @@
 import Testing
 import ACPKit
-@testable import CodevisorCore
+@testable import CodevisorProtocol
 
 @Suite("CanonicalMode")
 struct CanonicalModeTests {

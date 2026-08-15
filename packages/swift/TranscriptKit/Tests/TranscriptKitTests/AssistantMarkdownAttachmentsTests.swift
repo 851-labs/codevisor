@@ -1,5 +1,5 @@
 import Testing
-@testable import CodevisorCore
+@testable import TranscriptKit
 
 @Suite("Assistant Markdown attachments")
 struct AssistantMarkdownAttachmentsTests {

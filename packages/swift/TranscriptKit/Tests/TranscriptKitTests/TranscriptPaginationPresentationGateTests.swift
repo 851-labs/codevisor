@@ -1,5 +1,5 @@
 import Testing
-@testable import CodevisorCore
+@testable import TranscriptKit
 
 @Suite("Transcript pagination presentation gate")
 struct TranscriptPaginationPresentationGateTests {

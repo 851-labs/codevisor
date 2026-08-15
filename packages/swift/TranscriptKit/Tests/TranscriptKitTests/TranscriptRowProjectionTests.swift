@@ -1,6 +1,7 @@
 import Foundation
 import Testing
-@testable import CodevisorCore
+import CodevisorProtocol
+@testable import TranscriptKit
 
 struct TranscriptRowProjectionTests {
     @Test func pendingMessageAdoptsTheSettledRowsIdentityWithoutDuplicating() throws {

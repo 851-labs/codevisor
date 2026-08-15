@@ -1,6 +1,6 @@
 import CoreGraphics
 import Testing
-@testable import CodevisorCore
+@testable import TranscriptKit
 
 struct VirtualTranscriptLayoutTests {
     private let items = [

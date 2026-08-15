@@ -1,6 +1,6 @@
 import CoreGraphics
 import Testing
-@testable import CodevisorCore
+@testable import TranscriptKit
 
 struct TranscriptMeasurementLedgerTests {
     @Test func revisionChangePreservesMeasuredHeightForLayout() {

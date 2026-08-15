@@ -1,5 +1,5 @@
 import Testing
-@testable import CodevisorCore
+@testable import TranscriptKit
 
 struct TranscriptPaginationHeaderLayoutTests {
     @Test func remainsUnreservedWhenPaginationIsUnavailable() {

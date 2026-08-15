@@ -1,5 +1,5 @@
 import Testing
-@testable import CodevisorCore
+@testable import TranscriptKit
 
 struct TranscriptMeasurementCommitGateTests {
     @Test func blocksOnlySystemOwnedDeceleration() {

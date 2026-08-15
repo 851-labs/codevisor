@@ -15,6 +15,8 @@ let package = Package(
         .library(name: "StreamMarkdown", targets: ["StreamMarkdown"]),
         .library(name: "CodevisorTheming", targets: ["CodevisorTheming"]),
         .library(name: "CodeHighlighter", targets: ["CodeHighlighter"]),
+        .library(name: "CodevisorProtocol", targets: ["CodevisorProtocol"]),
+        .library(name: "TranscriptKit", targets: ["TranscriptKit"]),
         .library(name: "CodevisorCore", targets: ["CodevisorCore"]),
         .library(name: "CodevisorCoreMac", targets: ["CodevisorCoreMac"]),
         .library(name: "CodevisorUI", targets: ["CodevisorUI"]),
@@ -80,11 +82,52 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
 
+        // MARK: CodevisorProtocol (session/project domain models shared across
+        // targets — Foundation + ACPKit only)
+        .target(
+            name: "CodevisorProtocol",
+            dependencies: ["ACPKit"],
+            path: "CodevisorProtocol/Sources/CodevisorProtocol",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .testTarget(
+            name: "CodevisorProtocolTests",
+            dependencies: [
+                "CodevisorProtocol",
+                "ACPKit",
+            ],
+            path: "CodevisorProtocol/Tests/CodevisorProtocolTests",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+
+        // MARK: TranscriptKit (transcript reduction, row projection, virtual
+        // layout, measurement/pagination gates — no UI framework dependencies)
+        .target(
+            name: "TranscriptKit",
+            dependencies: [
+                "ACPKit",
+                "CodevisorProtocol",
+            ],
+            path: "TranscriptKit/Sources/TranscriptKit",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .testTarget(
+            name: "TranscriptKitTests",
+            dependencies: [
+                "TranscriptKit",
+                "ACPKit",
+            ],
+            path: "TranscriptKit/Tests/TranscriptKitTests",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+
         // MARK: CodevisorCore (app logic: models, repositories, DI, view models)
         .target(
             name: "CodevisorCore",
             dependencies: [
                 "ACPKit",
+                "CodevisorProtocol",
+                "TranscriptKit",
                 "CodevisorTheming",
                 .product(name: "PostHog", package: "posthog-ios"),
                 .product(name: "Sentry", package: "sentry-cocoa"),

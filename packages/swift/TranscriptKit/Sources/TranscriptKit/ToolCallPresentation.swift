@@ -5,7 +5,7 @@ import ACPKit
 /// names differently (`codevisor.search`, `mcp__codevisor__search`, or
 /// `codevisor_search`), but the transcript should describe the user's action,
 /// not the adapter's wire format.
-enum CodevisorGatewayOperation: String {
+public enum CodevisorGatewayOperation: String {
     case search
     case describe
     case execute
@@ -13,7 +13,7 @@ enum CodevisorGatewayOperation: String {
 }
 
 extension ToolCall {
-    var codevisorGatewayOperation: CodevisorGatewayOperation? {
+    public var codevisorGatewayOperation: CodevisorGatewayOperation? {
         let normalized =
             title
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -32,7 +32,7 @@ extension ToolCall {
 
     /// Codex's built-in tool discovery is part of the same integration flow
     /// when it appears beside Codevisor calls, and deserves a readable label.
-    var isToolDiscoveryCall: Bool {
+    public var isToolDiscoveryCall: Bool {
         let normalized =
             title
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -41,11 +41,11 @@ extension ToolCall {
         return normalized == "toolsearch"
     }
 
-    var isIntegrationPresentationCall: Bool {
+    public var isIntegrationPresentationCall: Bool {
         codevisorGatewayOperation != nil || isToolDiscoveryCall
     }
 
-    func integrationDisplayTitle() -> String? {
+    public func integrationDisplayTitle() -> String? {
         if isToolDiscoveryCall {
             return isSettled ? "Searched available tools" : "Searching available tools…"
         }
@@ -78,12 +78,12 @@ extension ToolCall {
 }
 
 private extension String {
-    var trimmedNonempty: String? {
+    public var trimmedNonempty: String? {
         let value = trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
     }
 
-    var humanizedToolName: String? {
+    public var humanizedToolName: String? {
         trimmedNonempty?
             .replacingOccurrences(of: "_", with: " ")
             .replacingOccurrences(of: "-", with: " ")
