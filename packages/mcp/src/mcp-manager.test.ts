@@ -267,251 +267,259 @@ describe("MCP manager", () => {
     })
   })
 
-  it("connects a working upstream and exposes its tools through every gateway surface", async () => {
-    const upstream = await workingUpstream()
-    const { db, manager } = await testManager()
-    const gatewayBase = await listen(createServer(manager.handleGatewayRequest))
-    manager.setBaseUrl(gatewayBase)
+  // Spawns a real stdio upstream plus an HTTP gateway — comfortably fast on
+  // dev machines but past the 5s default on slower CI runners.
+  it(
+    "connects a working upstream and exposes its tools through every gateway surface",
+    { timeout: 20_000 },
+    async () => {
+      const upstream = await workingUpstream()
+      const { db, manager } = await testManager()
+      const gatewayBase = await listen(createServer(manager.handleGatewayRequest))
+      manager.setBaseUrl(gatewayBase)
 
-    const created = await manager.create({
-      authType: "none",
-      enabled: true,
-      headers: { "X-Workspace": "emojis" },
-      name: "Project Tracker",
-      transport: "http",
-      url: upstream.url
-    })
-    expect(created).toMatchObject({
-      connectionState: "connected",
-      enabled: true,
-      headerNames: ["X-Workspace"],
-      toolCount: 2
-    })
-    expect(upstream.requests.some((request) => request.headers["x-workspace"] === "emojis")).toBe(
-      true
-    )
-    expect((await manager.list()).map((server) => server.id)).toEqual([
-      "browser",
-      "computer",
-      created.id
-    ])
-    expect(await manager.list()).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: "browser", kind: "browserUse", canRemove: false }),
-        expect.objectContaining({ id: "computer", kind: "computerUse", canEdit: false })
-      ])
-    )
-    expect(await manager.tools(created.id)).toHaveLength(2)
-    expect(await manager.tools()).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ serverId: "browser", name: "snapshot" }),
-        expect.objectContaining({ serverId: "computer", name: "get_app_state" }),
-        expect.objectContaining({ serverId: created.id, name: "lookup_project" })
-      ])
-    )
-
-    const project = await run(db.createProject({ folderPath: "/tmp/mcp-manager-project" }))
-    const session = await run(
-      db.createSession({ harnessId: "codex", projectId: project.id, title: "Gateway" })
-    )
-    expect((await manager.setProjectEnabled(project.id, created.id, true))[0]?.enabled).toBe(true)
-    expect(
-      (await manager.setSessionEnabled(session.id, created.id, true, project.id))[0]?.enabled
-    ).toBe(true)
-
-    const issued = await manager.issueGateway(session.id, project.id)
-    expect(
-      await fetch(`${gatewayBase}/mcp/gateway?gateway=missing`, {
-        method: "POST",
-        headers: { authorization: `Bearer ${issued.bearerToken}` }
-      }).then((response) => response.status)
-    ).toBe(404)
-    expect(
-      await fetch(`${gatewayBase}/mcp/gateway`, {
-        method: "POST",
-        headers: { authorization: `Bearer ${"x".repeat(issued.bearerToken.length)}` }
-      }).then((response) => response.status)
-    ).toBe(401)
-    const client = new Client({ name: "manager-test", version: "1" })
-    await client.connect(
-      new StreamableHTTPClientTransport(new URL(issued.url), {
-        requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
-      }) as unknown as Transport
-    )
-    try {
-      expect(client.getInstructions()).toBeUndefined()
-
-      const search = await client.callTool({
-        name: "search",
-        arguments: { query: "project", limit: 1 }
+      const created = await manager.create({
+        authType: "none",
+        enabled: true,
+        headers: { "X-Workspace": "emojis" },
+        name: "Project Tracker",
+        transport: "http",
+        url: upstream.url
       })
-      expect(JSON.stringify(search.content)).toContain("lookup_project")
-
-      const described = await client.callTool({
-        name: "describe",
-        arguments: { server: created.id, tool: "lookup_project" }
+      expect(created).toMatchObject({
+        connectionState: "connected",
+        enabled: true,
+        headerNames: ["X-Workspace"],
+        toolCount: 2
       })
-      expect(JSON.stringify(described.content)).toContain("Find a project")
+      expect(upstream.requests.some((request) => request.headers["x-workspace"] === "emojis")).toBe(
+        true
+      )
+      expect((await manager.list()).map((server) => server.id)).toEqual([
+        "browser",
+        "computer",
+        created.id
+      ])
+      expect(await manager.list()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "browser", kind: "browserUse", canRemove: false }),
+          expect.objectContaining({ id: "computer", kind: "computerUse", canEdit: false })
+        ])
+      )
+      expect(await manager.tools(created.id)).toHaveLength(2)
+      expect(await manager.tools()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ serverId: "browser", name: "snapshot" }),
+          expect.objectContaining({ serverId: "computer", name: "get_app_state" }),
+          expect.objectContaining({ serverId: created.id, name: "lookup_project" })
+        ])
+      )
+
+      const project = await run(db.createProject({ folderPath: "/tmp/mcp-manager-project" }))
+      const session = await run(
+        db.createSession({ harnessId: "codex", projectId: project.id, title: "Gateway" })
+      )
+      expect((await manager.setProjectEnabled(project.id, created.id, true))[0]?.enabled).toBe(true)
       expect(
-        (
-          await client.callTool({
-            name: "describe",
-            arguments: { server: created.id, tool: "missing_tool" }
-          })
-        ).isError
+        (await manager.setSessionEnabled(session.id, created.id, true, project.id))[0]?.enabled
       ).toBe(true)
 
-      const executed = await client.callTool({
-        name: "execute",
-        arguments: { server: created.id, tool: "lookup_project", arguments: { name: "Rails" } }
-      })
-      expect(executed.isError).not.toBe(true)
+      const issued = await manager.issueGateway(session.id, project.id)
+      expect(
+        await fetch(`${gatewayBase}/mcp/gateway?gateway=missing`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${issued.bearerToken}` }
+        }).then((response) => response.status)
+      ).toBe(404)
+      expect(
+        await fetch(`${gatewayBase}/mcp/gateway`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${"x".repeat(issued.bearerToken.length)}` }
+        }).then((response) => response.status)
+      ).toBe(401)
+      const client = new Client({ name: "manager-test", version: "1" })
+      await client.connect(
+        new StreamableHTTPClientTransport(new URL(issued.url), {
+          requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
+        }) as unknown as Transport
+      )
+      try {
+        expect(client.getInstructions()).toBeUndefined()
 
-      const codeResult = await client.callTool({
-        name: "run_code",
-        arguments: {
-          code: `async () => {
+        const search = await client.callTool({
+          name: "search",
+          arguments: { query: "project", limit: 1 }
+        })
+        expect(JSON.stringify(search.content)).toContain("lookup_project")
+
+        const described = await client.callTool({
+          name: "describe",
+          arguments: { server: created.id, tool: "lookup_project" }
+        })
+        expect(JSON.stringify(described.content)).toContain("Find a project")
+        expect(
+          (
+            await client.callTool({
+              name: "describe",
+              arguments: { server: created.id, tool: "missing_tool" }
+            })
+          ).isError
+        ).toBe(true)
+
+        const executed = await client.callTool({
+          name: "execute",
+          arguments: { server: created.id, tool: "lookup_project", arguments: { name: "Rails" } }
+        })
+        expect(executed.isError).not.toBe(true)
+
+        const codeResult = await client.callTool({
+          name: "run_code",
+          arguments: {
+            code: `async () => {
             const matches = await tools.search({ query: "issues", limit: 1 });
             const schema = await tools.describe.tool({ path: matches.items[0].path });
             const called = await tools[matches.items[0].path]({});
             return { called, schema };
           }`
-        }
-      })
-      expect(codeResult.isError).not.toBe(true)
-      expect(JSON.stringify(codeResult.content)).toContain("list_issues")
-      const binaryCodeResult = await client.callTool({
-        name: "run_code",
-        arguments: {
-          code: `async () => tools["${created.id}.lookup_project"]({ binary: true })`
-        }
-      })
-      expect(binaryCodeResult.content).toEqual(
-        expect.arrayContaining([expect.objectContaining({ type: "image", mimeType: "image/png" })])
-      )
-      const binaryContent = binaryCodeResult.content as Array<{ readonly type: string }>
-      expect(JSON.stringify(binaryContent)).toContain("artifact_ref")
-      expect(JSON.stringify(binaryContent.filter((block) => block.type === "text"))).not.toContain(
-        Buffer.from("gateway-binary-image").toString("base64")
-      )
-      for (const code of [
-        `async () => tools.describe.tool({})`,
-        `async () => tools.describe.tool("invalid")`,
-        `async () => tools.describe.tool({ path: "invalid" })`,
-        `async () => tools.describe.tool({ path: "${created.id}.missing_tool" })`,
-        `async () => tools["invalid"]({})`
-      ]) {
-        expect((await client.callTool({ name: "run_code", arguments: { code } })).isError).toBe(
-          true
+          }
+        })
+        expect(codeResult.isError).not.toBe(true)
+        expect(JSON.stringify(codeResult.content)).toContain("list_issues")
+        const binaryCodeResult = await client.callTool({
+          name: "run_code",
+          arguments: {
+            code: `async () => tools["${created.id}.lookup_project"]({ binary: true })`
+          }
+        })
+        expect(binaryCodeResult.content).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ type: "image", mimeType: "image/png" })
+          ])
         )
-      }
-      const caughtAutomationError = await client.callTool({
-        name: "run_code",
-        arguments: {
-          code: `async () => tools["computer.select_text"]({
+        const binaryContent = binaryCodeResult.content as Array<{ readonly type: string }>
+        expect(JSON.stringify(binaryContent)).toContain("artifact_ref")
+        expect(
+          JSON.stringify(binaryContent.filter((block) => block.type === "text"))
+        ).not.toContain(Buffer.from("gateway-binary-image").toString("base64"))
+        for (const code of [
+          `async () => tools.describe.tool({})`,
+          `async () => tools.describe.tool("invalid")`,
+          `async () => tools.describe.tool({ path: "invalid" })`,
+          `async () => tools.describe.tool({ path: "${created.id}.missing_tool" })`,
+          `async () => tools["invalid"]({})`
+        ]) {
+          expect((await client.callTool({ name: "run_code", arguments: { code } })).isError).toBe(
+            true
+          )
+        }
+        const caughtAutomationError = await client.callTool({
+          name: "run_code",
+          arguments: {
+            code: `async () => tools["computer.select_text"]({
             app: "com.apple.Notes",
             element_index: 1,
             text: "story",
             mode: "all"
           }).catch(error => error.message)`
-        }
-      })
-      expect(caughtAutomationError.isError).not.toBe(true)
-      expect(JSON.stringify(caughtAutomationError.content)).toContain(
-        "computer.select_text does not accept `mode`"
-      )
-      for (const code of [
-        `async () => tools.search("issues")`,
-        `async () => tools.search({ query: 42, limit: "many" })`,
-        `async () => tools["${created.id}.lookup_project"]("primitive")`
-      ]) {
-        expect((await client.callTool({ name: "run_code", arguments: { code } })).isError).not.toBe(
-          true
+          }
+        })
+        expect(caughtAutomationError.isError).not.toBe(true)
+        expect(JSON.stringify(caughtAutomationError.content)).toContain(
+          "computer.select_text does not accept `mode`"
         )
+        for (const code of [
+          `async () => tools.search("issues")`,
+          `async () => tools.search({ query: 42, limit: "many" })`,
+          `async () => tools["${created.id}.lookup_project"]("primitive")`
+        ]) {
+          expect(
+            (await client.callTool({ name: "run_code", arguments: { code } })).isError
+          ).not.toBe(true)
+        }
+
+        await manager.setSessionEnabled(session.id, created.id, false, project.id)
+        expect(
+          (
+            await client.callTool({
+              name: "describe",
+              arguments: { server: created.id, tool: "lookup_project" }
+            })
+          ).isError
+        ).toBe(true)
+        expect(
+          (
+            await client.callTool({
+              name: "run_code",
+              arguments: {
+                code: `async () => tools.describe.tool({ path: "${created.id}.lookup_project" })`
+              }
+            })
+          ).isError
+        ).toBe(true)
+        expect(
+          (
+            await client.callTool({
+              name: "execute",
+              arguments: { server: created.id, tool: "lookup_project", arguments: {} }
+            })
+          ).isError
+        ).toBe(true)
+        expect(
+          (
+            await client.callTool({
+              name: "run_code",
+              arguments: { code: `async () => tools["${created.id}.lookup_project"]({})` }
+            })
+          ).isError
+        ).toBe(true)
+      } finally {
+        await client.close()
       }
+      expect(upstream.calls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "lookup_project", arguments: { name: "Rails" } }),
+          expect.objectContaining({ name: "list_issues" })
+        ])
+      )
 
-      await manager.setSessionEnabled(session.id, created.id, false, project.id)
+      const updated = await manager.update(created.id, {
+        enabled: false,
+        headers: { Authorization: "Bearer replacement" },
+        name: "Renamed Tracker",
+        removeHeaders: ["X-Workspace"]
+      })
+      expect(updated).toMatchObject({
+        enabled: false,
+        headerNames: ["Authorization"],
+        name: "Renamed Tracker"
+      })
+      await expect(manager.tools(created.id)).rejects.toThrow("is disabled")
       expect(
         (
-          await client.callTool({
-            name: "describe",
-            arguments: { server: created.id, tool: "lookup_project" }
+          await manager.update(created.id, {
+            args: ["unused"],
+            bearerToken: "replacement-token",
+            headers: { "X-Only": "value" },
+            oauthClientId: "client-id",
+            oauthScope: "project:read"
           })
-        ).isError
-      ).toBe(true)
+        ).headerNames
+      ).toEqual(["Authorization", "X-Only"])
       expect(
         (
-          await client.callTool({
-            name: "run_code",
-            arguments: {
-              code: `async () => tools.describe.tool({ path: "${created.id}.lookup_project" })`
-            }
+          await manager.update(created.id, {
+            authType: "oauth",
+            enabled: true,
+            oauthClientSecret: "client-secret",
+            removeHeaders: ["Authorization", "X-Only"]
           })
-        ).isError
-      ).toBe(true)
-      expect(
-        (
-          await client.callTool({
-            name: "execute",
-            arguments: { server: created.id, tool: "lookup_project", arguments: {} }
-          })
-        ).isError
-      ).toBe(true)
-      expect(
-        (
-          await client.callTool({
-            name: "run_code",
-            arguments: { code: `async () => tools["${created.id}.lookup_project"]({})` }
-          })
-        ).isError
-      ).toBe(true)
-    } finally {
-      await client.close()
+        ).connectionState
+      ).toBe("needsAuthorization")
+      await manager.update(created.id, { authType: "none", enabled: false })
+      await manager.remove(created.id)
+      expect((await manager.list()).map((server) => server.id)).toEqual(["browser", "computer"])
     }
-    expect(upstream.calls).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ name: "lookup_project", arguments: { name: "Rails" } }),
-        expect.objectContaining({ name: "list_issues" })
-      ])
-    )
-
-    const updated = await manager.update(created.id, {
-      enabled: false,
-      headers: { Authorization: "Bearer replacement" },
-      name: "Renamed Tracker",
-      removeHeaders: ["X-Workspace"]
-    })
-    expect(updated).toMatchObject({
-      enabled: false,
-      headerNames: ["Authorization"],
-      name: "Renamed Tracker"
-    })
-    await expect(manager.tools(created.id)).rejects.toThrow("is disabled")
-    expect(
-      (
-        await manager.update(created.id, {
-          args: ["unused"],
-          bearerToken: "replacement-token",
-          headers: { "X-Only": "value" },
-          oauthClientId: "client-id",
-          oauthScope: "project:read"
-        })
-      ).headerNames
-    ).toEqual(["Authorization", "X-Only"])
-    expect(
-      (
-        await manager.update(created.id, {
-          authType: "oauth",
-          enabled: true,
-          oauthClientSecret: "client-secret",
-          removeHeaders: ["Authorization", "X-Only"]
-        })
-      ).connectionState
-    ).toBe("needsAuthorization")
-    await manager.update(created.id, { authType: "none", enabled: false })
-    await manager.remove(created.id)
-    expect((await manager.list()).map((server) => server.id)).toEqual(["browser", "computer"])
-  })
+  )
 
   it("keeps built-in automation providers immutable but disableable", async () => {
     const { manager } = await testManager()
