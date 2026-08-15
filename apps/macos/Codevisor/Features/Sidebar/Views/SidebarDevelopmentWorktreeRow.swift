@@ -1,5 +1,6 @@
 import CodevisorCore
 import CodevisorTheming
+import CodevisorUI
 import SwiftUI
 
 /// The pinned development-build identity row naming the active worktree.

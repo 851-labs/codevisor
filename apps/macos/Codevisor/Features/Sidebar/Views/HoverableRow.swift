@@ -1,4 +1,5 @@
 import CodevisorTheming
+import CodevisorUI
 import SwiftUI
 
 /// Row chrome (hover highlight + selected background) with ROW-LOCAL hover

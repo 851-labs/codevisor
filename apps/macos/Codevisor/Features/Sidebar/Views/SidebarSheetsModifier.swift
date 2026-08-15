@@ -11,7 +11,7 @@ struct SidebarSheetsModifier: ViewModifier {
     /// Receives the workspace with its new symbol already applied.
     let onSaveWorkspace: (Workspace) -> Void
     /// Returns an error message to show in the sheet, or nil on success.
-    let onAddRemoteMachine: (String, String, String) async -> String?
+    let onAddRemoteMachine: (String, String?, String?) async -> String?
 
     func body(content: Content) -> some View {
         content

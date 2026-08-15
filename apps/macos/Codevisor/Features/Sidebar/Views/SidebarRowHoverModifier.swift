@@ -1,4 +1,5 @@
 import CodevisorTheming
+import CodevisorUI
 import SwiftUI
 
 /// The background-only variant for rows without hover-revealed content.
