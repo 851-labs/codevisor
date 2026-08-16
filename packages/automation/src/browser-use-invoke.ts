@@ -9,6 +9,7 @@ import {
   attachTarget,
   booleanArgument,
   currentPage,
+  discardTargetState,
   evaluate,
   evaluateReadOnly,
   grantClipboardPermissions,
@@ -119,8 +120,7 @@ export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
               .send("Target.detachFromTarget", { sessionId: tabSessionId })
               .catch(() => undefined)
           }
-          active.sessions.delete(targetId)
-          active.snapshots.delete(targetId)
+          discardTargetState(active, targetId)
         }
         sessionTargets.delete(sessionKey)
         sessionDispositions.delete(sessionKey)
@@ -135,8 +135,7 @@ export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
       } else if (tabSessionId !== undefined) {
         await active.connection.send("Target.detachFromTarget", { sessionId: tabSessionId })
       }
-      active.sessions.delete(targetId)
-      active.snapshots.delete(targetId)
+      discardTargetState(active, targetId)
       sessionTargets.get(sessionKey)?.delete(targetId)
       selectedTargets.delete(sessionKey)
       return jsonResult({ finalized: true, tabsClosed: args.close === true })
@@ -197,8 +196,7 @@ export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
           if (target === undefined) throw new Error("There is no browser tab to close")
           await active.connection.send("Target.closeTarget", { targetId: target.targetId })
           if (selectedId === target.targetId) selectedTargets.delete(sessionKey)
-          active.snapshots.delete(target.targetId)
-          active.sessions.delete(target.targetId)
+          discardTargetState(active, target.targetId)
           sessionTargets.get(sessionKey)?.delete(target.targetId)
         } else if (action !== "list")
           throw new Error("tabs.action must be list, new, close, or select")
@@ -847,28 +845,47 @@ export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
               ? active.sessions.get(target.targetId)
               : page.sessionId
         const matches = () =>
-          active.eventLog.filter(
-            (event) =>
+          active.eventLog.filter((event) => {
+            const eventSessionId =
+              event.sessionId ??
+              (event.method === "Target.detachedFromTarget" &&
+              typeof event.params.sessionId === "string"
+                ? event.params.sessionId
+                : undefined)
+            return (
               event.sequence > afterSequence &&
               (methods === undefined || methods.has(event.method)) &&
-              (targetSession === undefined || event.sessionId === targetSession)
-          )
+              (targetSession === undefined || eventSessionId === targetSession)
+            )
+          })
         const timeoutMs = Math.max(0, Math.min(30_000, Number(args.timeoutMs ?? 0)))
         const deadline = Date.now() + timeoutMs
         while (matches().length === 0 && Date.now() < deadline) await delay(50)
         const all = matches()
-        const events = all.slice(0, limit).map((event) => ({
-          method: event.method,
-          params: event.params,
-          sequence: event.sequence,
-          source: {
-            ...(event.sessionId === undefined ? {} : { sessionId: event.sessionId }),
-            targetId:
-              [...active.sessions.entries()].find(
-                ([, sessionId]) => sessionId === event.sessionId
-              )?.[0] ?? page.target.targetId
+        const events = all.slice(0, limit).map((event) => {
+          const eventSessionId =
+            event.sessionId ??
+            (event.method === "Target.detachedFromTarget" &&
+            typeof event.params.sessionId === "string"
+              ? event.params.sessionId
+              : undefined)
+          return {
+            method: event.method,
+            params: event.params,
+            sequence: event.sequence,
+            source: {
+              ...(eventSessionId === undefined ? {} : { sessionId: eventSessionId }),
+              targetId:
+                [...active.sessions.entries()].find(
+                  ([, sessionId]) => sessionId === eventSessionId
+                )?.[0] ??
+                (eventSessionId === undefined
+                  ? undefined
+                  : active.staleSessions.get(eventSessionId)) ??
+                page.target.targetId
+            }
           }
-        }))
+        })
         return jsonResult({
           cursor: events.at(-1)?.sequence ?? active.eventSequence,
           events,

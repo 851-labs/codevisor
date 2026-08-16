@@ -14,12 +14,23 @@ export interface CdpEvent {
 
 type EventHandler = (params: Readonly<Record<string, unknown>>, event: CdpEvent) => void
 
+interface FailedSessionCommand {
+  readonly cause: Error
+  readonly method: string
+  readonly params: Readonly<Record<string, unknown>>
+  readonly sessionId: string
+  readonly timeoutMs: number
+}
+
+type SessionRecoveryHandler = (command: FailedSessionCommand) => Promise<string | undefined>
+
 export class CdpConnection {
   readonly #socket: WebSocket
   readonly #pending = new Map<number, PendingCommand>()
   readonly #handlers = new Map<string, Set<EventHandler>>()
   #nextId = 1
   #closed: Error | undefined
+  #sessionRecoveryHandler: SessionRecoveryHandler | undefined
 
   private constructor(socket: WebSocket) {
     this.#socket = socket
@@ -47,7 +58,30 @@ export class CdpConnection {
     return new CdpConnection(socket)
   }
 
-  send<T = Readonly<Record<string, unknown>>>(
+  async send<T = Readonly<Record<string, unknown>>>(
+    method: string,
+    params: Readonly<Record<string, unknown>> = {},
+    sessionId?: string,
+    timeoutMs = 30_000
+  ): Promise<T> {
+    try {
+      return await this.sendOnce<T>(method, params, sessionId, timeoutMs)
+    } catch (cause) {
+      const error = cause instanceof Error ? cause : new Error(String(cause))
+      if (sessionId === undefined || this.#sessionRecoveryHandler === undefined) throw error
+      const replacementSessionId = await this.#sessionRecoveryHandler({
+        cause: error,
+        method,
+        params,
+        sessionId,
+        timeoutMs
+      })
+      if (replacementSessionId === undefined) throw error
+      return await this.sendOnce<T>(method, params, replacementSessionId, timeoutMs)
+    }
+  }
+
+  sendOnce<T = Readonly<Record<string, unknown>>>(
     method: string,
     params: Readonly<Record<string, unknown>> = {},
     sessionId?: string,
@@ -73,6 +107,13 @@ export class CdpConnection {
         JSON.stringify({ id, method, params, ...(sessionId === undefined ? {} : { sessionId }) })
       )
     })
+  }
+
+  setSessionRecoveryHandler(handler: SessionRecoveryHandler): () => void {
+    this.#sessionRecoveryHandler = handler
+    return () => {
+      if (this.#sessionRecoveryHandler === handler) this.#sessionRecoveryHandler = undefined
+    }
   }
 
   on(method: string, handler: EventHandler, sessionId?: string): () => void {

@@ -6,7 +6,7 @@ import type { ChildProcess } from "node:child_process"
 import type { AutomationProviderContext, AutomationToolProvider } from "./automation-provider.js"
 import { textToolResult } from "./automation-provider.js"
 import { CdpConnection, delay } from "./browser-cdp.js"
-import { jsonResult, type BrowserRuntime } from "./browser-cdp-engine.js"
+import { discardTargetState, jsonResult, type BrowserRuntime } from "./browser-cdp-engine.js"
 import {
   downloadedChromiumPath,
   launchManagedBrowser,
@@ -32,6 +32,7 @@ import {
   type BrowserAssetInventory
 } from "./browser-use-invoke.js"
 import { browserUseTools } from "./browser-use-tools.js"
+import { handleTargetLifecycleEvent, installSessionRecovery } from "./browser-session-recovery.js"
 import type WebSocket from "ws"
 
 export { managedBrowserSandboxArguments } from "./browser-chromium.js"
@@ -173,6 +174,7 @@ export const makeBrowserUseProvider = (dataDir: string): BrowserUseProvider => {
       processHandle,
       owned,
       sessions: new Map(),
+      staleSessions: new Map(),
       snapshots: new Map(),
       eventLog: [],
       logs: new Map(),
@@ -184,6 +186,7 @@ export const makeBrowserUseProvider = (dataDir: string): BrowserUseProvider => {
       tabOrder: [],
       queue: Promise.resolve()
     }
+    installSessionRecovery(active, backend === "extension")
     active.eventDisposers.push(
       connection.on("*", (params, event) => {
         const sequence = ++active.eventSequence
@@ -195,6 +198,7 @@ export const makeBrowserUseProvider = (dataDir: string): BrowserUseProvider => {
         })
         if (active.eventLog.length > 5_000)
           active.eventLog.splice(0, active.eventLog.length - 5_000)
+        handleTargetLifecycleEvent(active, event.method, params)
         if (event.sessionId !== undefined) {
           if (
             event.method === "Runtime.consoleAPICalled" ||
@@ -463,8 +467,7 @@ export const makeBrowserUseProvider = (dataDir: string): BrowserUseProvider => {
               .send("Target.detachFromTarget", { sessionId: tabSessionId })
               .catch(() => undefined)
           }
-          resolved.sessions.delete(targetId)
-          resolved.snapshots.delete(targetId)
+          discardTargetState(resolved, targetId)
         }
       }
     },

@@ -20,6 +20,7 @@ export interface BrowserRuntime {
   readonly processHandle: ChildProcess | undefined
   readonly owned: boolean
   readonly sessions: Map<string, string>
+  readonly staleSessions: Map<string, string>
   readonly snapshots: Map<string, BrowserSnapshot>
   readonly eventLog: Array<{
     readonly method: string
@@ -110,6 +111,44 @@ export const pageTargets = async (runtime: BrowserRuntime): Promise<TargetInfo[]
   })
 }
 
+const discardSessionArtifacts = (runtime: BrowserRuntime, sessionId: string): void => {
+  runtime.logs.delete(sessionId)
+  runtime.dialogs.delete(sessionId)
+  for (const [chooserId, chooser] of runtime.fileChoosers) {
+    if (chooser.sessionId === sessionId) runtime.fileChoosers.delete(chooserId)
+  }
+}
+
+export const invalidateTargetSession = (
+  runtime: BrowserRuntime,
+  sessionId: string
+): string | undefined => {
+  const targetId =
+    [...runtime.sessions].find(([, candidate]) => candidate === sessionId)?.[0] ??
+    runtime.staleSessions.get(sessionId)
+  if (targetId === undefined) return undefined
+  if (runtime.sessions.get(targetId) === sessionId) runtime.sessions.delete(targetId)
+  for (const [staleSessionId, staleTargetId] of runtime.staleSessions) {
+    if (staleTargetId === targetId) runtime.staleSessions.delete(staleSessionId)
+  }
+  runtime.staleSessions.set(sessionId, targetId)
+  runtime.snapshots.delete(targetId)
+  discardSessionArtifacts(runtime, sessionId)
+  return targetId
+}
+
+export const discardTargetState = (runtime: BrowserRuntime, targetId: string): void => {
+  const sessionId = runtime.sessions.get(targetId)
+  runtime.sessions.delete(targetId)
+  runtime.snapshots.delete(targetId)
+  if (sessionId !== undefined) discardSessionArtifacts(runtime, sessionId)
+  for (const [staleSessionId, staleTargetId] of runtime.staleSessions) {
+    if (staleTargetId !== targetId) continue
+    runtime.staleSessions.delete(staleSessionId)
+    discardSessionArtifacts(runtime, staleSessionId)
+  }
+}
+
 export const waitForCreatedTarget = async (
   runtime: BrowserRuntime,
   targetId: string,
@@ -144,18 +183,21 @@ export const waitForCreatedTarget = async (
 export const attachTarget = async (runtime: BrowserRuntime, targetId: string): Promise<string> => {
   const existing = runtime.sessions.get(targetId)
   if (existing !== undefined) return existing
-  const attached = await runtime.connection.send<{ sessionId: string }>("Target.attachToTarget", {
-    targetId,
-    flatten: true
-  })
-  runtime.sessions.set(targetId, attached.sessionId)
+  const attached = await runtime.connection.sendOnce<{ sessionId: string }>(
+    "Target.attachToTarget",
+    {
+      targetId,
+      flatten: true
+    }
+  )
   await Promise.all([
-    runtime.connection.send("Page.enable", {}, attached.sessionId),
-    runtime.connection.send("Runtime.enable", {}, attached.sessionId),
-    runtime.connection.send("DOM.enable", {}, attached.sessionId),
-    runtime.connection.send("Accessibility.enable", {}, attached.sessionId),
-    runtime.connection.send("Log.enable", {}, attached.sessionId).catch(() => undefined)
+    runtime.connection.sendOnce("Page.enable", {}, attached.sessionId),
+    runtime.connection.sendOnce("Runtime.enable", {}, attached.sessionId),
+    runtime.connection.sendOnce("DOM.enable", {}, attached.sessionId),
+    runtime.connection.sendOnce("Accessibility.enable", {}, attached.sessionId),
+    runtime.connection.sendOnce("Log.enable", {}, attached.sessionId).catch(() => undefined)
   ])
+  runtime.sessions.set(targetId, attached.sessionId)
   return attached.sessionId
 }
 

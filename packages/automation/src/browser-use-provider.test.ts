@@ -347,6 +347,144 @@ describe("Browser Use tool contract", () => {
     }
   })
 
+  it("reattaches an extension tab after detach events and stale-session races", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "codevisor-browser-session-recovery-"))
+    directories.push(directory)
+    const provider = makeBrowserUseProvider(directory)
+    const relay = new WebSocketServer({ host: "127.0.0.1", port: 0 })
+    await once(relay, "listening")
+    const serverSocket = once(relay, "connection")
+    const client = new WebSocket(
+      `ws://127.0.0.1:${(relay.address() as AddressInfo).port.toString()}`
+    )
+    let attachCount = 0
+    let rejectNextSessionCommand: string | undefined
+    const evaluatedSessions: string[] = []
+    client.on("message", (data) => {
+      const request = JSON.parse(data.toString()) as {
+        id: number
+        method: string
+        params?: Readonly<Record<string, unknown>>
+        sessionId?: string
+      }
+      if (request.method === "Target.getTargets") {
+        client.send(
+          JSON.stringify({
+            id: request.id,
+            result: {
+              targetInfos: [
+                {
+                  targetId: "recoverable-tab",
+                  type: "page",
+                  title: "Recoverable",
+                  url: "https://example.com/"
+                }
+              ]
+            }
+          })
+        )
+        return
+      }
+      if (request.method === "Target.attachToTarget") {
+        attachCount += 1
+        client.send(
+          JSON.stringify({ id: request.id, result: { sessionId: "tab:recoverable-tab" } })
+        )
+        return
+      }
+      if (request.method === "Runtime.evaluate") {
+        evaluatedSessions.push(request.sessionId ?? "missing")
+        if (rejectNextSessionCommand !== undefined) {
+          const message = rejectNextSessionCommand
+          rejectNextSessionCommand = undefined
+          client.send(
+            JSON.stringify({
+              id: request.id,
+              error: { message }
+            })
+          )
+          return
+        }
+      }
+      client.send(JSON.stringify({ id: request.id, result: {} }))
+    })
+    await once(client, "open")
+    const [socket] = await serverSocket
+    provider.acceptExtensionConnection(socket as WebSocket)
+
+    try {
+      const context = { sessionId: "session-recovery-test", projectId: "session-recovery-test" }
+      provider.setSessionBackend(context.sessionId, "extension")
+      const claimed = await provider.invoke(context, "tabs", {
+        action: "select",
+        id: "recoverable-tab"
+      })
+      expect(claimed.isError).not.toBe(true)
+
+      const evaluate = () =>
+        provider.invoke(context, "cdp.send", {
+          method: "Runtime.evaluate",
+          params: { expression: "document.title", returnByValue: true }
+        })
+
+      expect((await evaluate()).isError).not.toBe(true)
+      expect(attachCount).toBe(1)
+
+      await new Promise<void>((resolve, reject) => {
+        client.send(
+          JSON.stringify({
+            method: "Target.detachedFromTarget",
+            params: { sessionId: "tab:recoverable-tab", reason: "replaced_with_devtools" }
+          }),
+          (cause) => (cause == null ? resolve() : reject(cause))
+        )
+      })
+      await new Promise((resolve) => setTimeout(resolve, 10))
+
+      const detachEvents = await provider.invoke(context, "cdp.readEvents", {
+        afterSequence: 0,
+        methods: ["Target.detachedFromTarget"],
+        target: { sessionId: "tab:recoverable-tab" }
+      })
+      if (detachEvents.content[0]?.type !== "text") throw new Error("Missing detach events")
+      expect(JSON.parse(detachEvents.content[0].text)).toMatchObject({
+        events: [
+          {
+            method: "Target.detachedFromTarget",
+            params: { sessionId: "tab:recoverable-tab", reason: "replaced_with_devtools" },
+            source: { sessionId: "tab:recoverable-tab", targetId: "recoverable-tab" }
+          }
+        ]
+      })
+
+      expect((await evaluate()).isError).not.toBe(true)
+      expect(attachCount).toBe(2)
+
+      rejectNextSessionCommand = "Unknown Codevisor tab session"
+      expect((await evaluate()).isError).not.toBe(true)
+      expect(attachCount).toBe(3)
+
+      rejectNextSessionCommand = "Detached while handling command."
+      const ambiguousDetach = await evaluate()
+      expect(ambiguousDetach).toMatchObject({
+        isError: true,
+        content: [{ type: "text", text: "Detached while handling command." }]
+      })
+      expect(attachCount).toBe(3)
+      expect(evaluatedSessions).toEqual([
+        "tab:recoverable-tab",
+        "tab:recoverable-tab",
+        "tab:recoverable-tab",
+        "tab:recoverable-tab",
+        "tab:recoverable-tab"
+      ])
+    } finally {
+      await provider.close()
+      client.close()
+      await new Promise<void>((resolve) => relay.close(() => resolve()))
+    }
+  })
+
   it(
     "navigates, snapshots, and clicks through the direct CDP engine",
     { timeout: 90_000 },

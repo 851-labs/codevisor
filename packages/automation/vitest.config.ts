@@ -21,6 +21,7 @@ export default defineConfig({
         "src/browser-extension-relay.ts",
         "src/browser-input.ts",
         "src/browser-locators.ts",
+        "src/browser-session-recovery.ts",
         "src/browser-setup-broker.ts",
         "src/browser-snapshot.ts",
         "src/browser-use-invoke.ts",
