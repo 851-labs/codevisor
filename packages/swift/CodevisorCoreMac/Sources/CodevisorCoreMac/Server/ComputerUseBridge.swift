@@ -285,9 +285,59 @@ func double(_ value: Any?) -> Double? {
     (value as? NSNumber)?.doubleValue ?? (value as? String).flatMap(Double.init)
 }
 
+/// Reading another process's AX tree is an IPC request, but reading our own
+/// tree calls straight back into AppKit and SwiftUI on the calling thread.
+/// Keep those self-targeted callbacks on main without moving the bridge's
+/// socket, screenshot, or encoding work there as well.
+func computerUseAccessibilityReadRequiresMainThread(
+    targetPID: pid_t?,
+    currentPID: pid_t = ProcessInfo.processInfo.processIdentifier,
+    isMainThread: Bool = Thread.isMainThread
+) -> Bool {
+    !isMainThread && (targetPID == nil || targetPID == currentPID)
+}
+
+private final class ComputerUseAccessibilityReadBox<Value>: @unchecked Sendable {
+    let operation: () -> Value
+    var value: Value?
+
+    init(operation: @escaping () -> Value) {
+        self.operation = operation
+    }
+}
+
+/// Runs one AX read on the thread that owns the target UI. Callers should wrap
+/// a whole tree traversal when possible; the lower-level attribute helpers use
+/// this too so a future read path cannot accidentally reintroduce self-target
+/// access from a bridge worker.
+func computerUsePerformAccessibilityRead<Value>(
+    targetPID: pid_t?,
+    _ operation: @escaping () -> Value
+) -> Value {
+    guard
+        computerUseAccessibilityReadRequiresMainThread(targetPID: targetPID)
+    else { return operation() }
+
+    let box = ComputerUseAccessibilityReadBox(operation: operation)
+    DispatchQueue.main.sync {
+        box.value = box.operation()
+    }
+    return box.value!
+}
+
+private func computerUseAccessibilityElementPID(_ element: AXUIElement) -> pid_t? {
+    var pid: pid_t = 0
+    return AXUIElementGetPid(element, &pid) == .success ? pid : nil
+}
+
 func copyAttribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
-    var value: CFTypeRef?
-    return AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success ? value : nil
+    let targetPID = computerUseAccessibilityElementPID(element)
+    return computerUsePerformAccessibilityRead(targetPID: targetPID) {
+        var value: CFTypeRef?
+        return AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success
+            ? value
+            : nil
+    }
 }
 
 func stringAttribute(_ element: AXUIElement, _ name: String) -> String? {

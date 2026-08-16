@@ -53,8 +53,6 @@ extension ComputerUseBridge {
             windowID: windowID
         )
         let snapshotID = UUID().uuidString
-        var records: [String: ElementRecord] = [:]
-        var lines: [String] = []
         let accessibilityWindowFrame = frame(of: window)
         // Never fronts the app: ScreenCaptureKit composites a window on
         // another Space perfectly well, so looking at an app must not steal
@@ -62,39 +60,57 @@ extension ComputerUseBridge {
         let outcome = screenshot(windowID: windowID, fallbackFrame: accessibilityWindowFrame)
         let capture = outcome.capture
         let windowFrame = capture?.windowFrame ?? frame(of: window) ?? accessibilityWindowFrame
-        // An app that publishes its content upside down would otherwise send
-        // every coordinate — tree frames, the cursor, pointer events — to the
-        // mirror image of the control that was named.
-        let contentIsFlipped =
-            windowFrame.map {
-                windowContentIsFlipped(
-                    application: application,
-                    window: window,
-                    windowID: windowID,
-                    windowFrame: $0
-                )
-            } ?? false
-        snapshotTree(
-            window,
-            depth: 0,
-            screenshotWindowFrame: windowFrame,
-            screenshotPixelSize: capture?.pixelSize,
-            correctFrame: { element, reported in
-                guard contentIsFlipped, let windowFrame else { return reported }
-                return correctedFrame(
-                    of: element,
-                    reported: reported,
-                    application: application,
-                    windowFrame: windowFrame
-                )
-            },
-            records: &records,
-            lines: &lines
-        )
+        // For another app these calls are IPC and remain on this worker. For
+        // Codevisor itself they synchronously enter AppKit/SwiftUI, so read the
+        // complete tree in one main-thread hop. Screenshot capture above stays
+        // off main because it waits on asynchronous ScreenCaptureKit work.
+        let accessibility = computerUsePerformAccessibilityRead(
+            targetPID: app.processIdentifier
+        ) {
+            var records: [String: ElementRecord] = [:]
+            var lines: [String] = []
+            // An app that publishes its content upside down would otherwise
+            // send every coordinate — tree frames, the cursor, pointer events
+            // — to the mirror image of the control that was named.
+            let contentIsFlipped =
+                windowFrame.map {
+                    self.windowContentIsFlipped(
+                        application: application,
+                        window: window,
+                        windowID: windowID,
+                        windowFrame: $0
+                    )
+                } ?? false
+            self.snapshotTree(
+                window,
+                depth: 0,
+                screenshotWindowFrame: windowFrame,
+                screenshotPixelSize: capture?.pixelSize,
+                correctFrame: { element, reported in
+                    guard contentIsFlipped, let windowFrame else { return reported }
+                    return self.correctedFrame(
+                        of: element,
+                        reported: reported,
+                        application: application,
+                        windowFrame: windowFrame
+                    )
+                },
+                records: &records,
+                lines: &lines
+            )
+            return ComputerUseAppAccessibilityState(
+                records: records,
+                text: lines.joined(separator: "\n"),
+                contentIsFlipped: contentIsFlipped,
+                hasModalSheet: !self.sheetElements(of: window).isEmpty,
+                windows: self.windowInventory(application: application, pinnedWindowID: windowID),
+                windowTitle: stringAttribute(window, kAXTitleAttribute)
+            )
+        }
         lock.withLock {
             var session = snapshots[sessionID] ?? [:]
             session[snapshotID] = SnapshotRecord(
-                elements: records,
+                elements: accessibility.records,
                 windowID: windowID,
                 windowFrame: windowFrame,
                 screenshotPixelSize: capture?.pixelSize,
@@ -108,7 +124,6 @@ extension ComputerUseBridge {
             snapshots[sessionID] = session
             latestSnapshotIDs[sessionID] = snapshotID
         }
-        let accessibilityText = lines.joined(separator: "\n")
         let screenshotMetadata: [String: Any] =
             if capture == nil {
                 ["available": false, "reason": outcome.reason ?? "No screenshot was produced."]
@@ -125,26 +140,25 @@ extension ComputerUseBridge {
                 "pid": app.processIdentifier,
                 "isRunning": true,
             ],
-            "text": accessibilityText,
-            "accessibilityTree": accessibilityText,
+            "text": accessibility.text,
+            "accessibilityTree": accessibility.text,
             "screenshot": screenshotMetadata,
         ]
         // A modal sheet blocks every other control in the window, so say so
         // rather than leaving the model to infer it from the tree.
-        if contentIsFlipped {
+        if accessibility.contentIsFlipped {
             // Say so: the coordinates here will not match the app's own
             // accessibility inspector output.
             metadata["frameOrientationCorrected"] = true
         }
-        let sheets = sheetElements(of: window)
-        if !sheets.isEmpty {
+        if accessibility.hasModalSheet {
             metadata["modalSheetPresent"] = true
             metadata["next"] = "A modal dialog is open; dismiss or complete it before using other controls."
         }
         // The session follows one window. Publishing the rest is what makes an
         // action that opened a new window (⌘N) visible instead of looking like
         // it did nothing; windowId here can be passed back as window_id.
-        let windows = windowInventory(application: application, pinnedWindowID: windowID)
+        let windows = accessibility.windows
         metadata["windows"] = windows
         if windows.count > 1,
             let focused = windows.first(where: { $0["isFocused"] as? Bool == true }),
@@ -159,7 +173,7 @@ extension ComputerUseBridge {
             metadata["windowId"] = Int(windowID)
             metadata["isOnActiveSpace"] = windowIsOnVisibleSpace(windowID)
         }
-        if let title = stringAttribute(window, kAXTitleAttribute) { metadata["windowTitle"] = title }
+        if let title = accessibility.windowTitle { metadata["windowTitle"] = title }
         if let windowFrame { metadata["screenWindowBounds"] = frameObject(windowFrame) }
         if let action { metadata["action"] = action }
         if let pixelSize = capture?.pixelSize {
@@ -295,4 +309,13 @@ extension ComputerUseBridge {
             )
         }
     }
+}
+
+private struct ComputerUseAppAccessibilityState {
+    let records: [String: ComputerUseBridge.ElementRecord]
+    let text: String
+    let contentIsFlipped: Bool
+    let hasModalSheet: Bool
+    let windows: [[String: Any]]
+    let windowTitle: String?
 }

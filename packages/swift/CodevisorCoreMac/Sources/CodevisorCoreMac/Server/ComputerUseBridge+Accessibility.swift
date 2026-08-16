@@ -133,15 +133,24 @@ extension ComputerUseBridge {
     }
 
     func actionNames(of element: AXUIElement) -> [String] {
-        var names: CFArray?
-        guard AXUIElementCopyActionNames(element, &names) == .success else { return [] }
-        return names as? [String] ?? []
+        var pid: pid_t = 0
+        let targetPID = AXUIElementGetPid(element, &pid) == .success ? pid : nil
+        return computerUsePerformAccessibilityRead(targetPID: targetPID) {
+            var names: CFArray?
+            guard AXUIElementCopyActionNames(element, &names) == .success else { return [] }
+            return names as? [String] ?? []
+        }
     }
 
     func isSettable(_ element: AXUIElement, attribute: String) -> Bool {
-        var settable = DarwinBoolean(false)
-        return AXUIElementIsAttributeSettable(element, attribute as CFString, &settable) == .success
-            && settable.boolValue
+        var pid: pid_t = 0
+        let targetPID = AXUIElementGetPid(element, &pid) == .success ? pid : nil
+        return computerUsePerformAccessibilityRead(targetPID: targetPID) {
+            var settable = DarwinBoolean(false)
+            return AXUIElementIsAttributeSettable(element, attribute as CFString, &settable)
+                == .success
+                && settable.boolValue
+        }
     }
 
     func focus(element: AXUIElement, application: AXUIElement, pid: pid_t) throws {
@@ -319,17 +328,21 @@ extension ComputerUseBridge {
         guard utf16Length > 0 else { return nil }
         var fullRange = CFRange(location: 0, length: utf16Length)
         guard let rangeValue = AXValueCreate(.cfRange, &fullRange) else { return nil }
-        var raw: CFTypeRef?
-        guard
-            AXUIElementCopyParameterizedAttributeValue(
-                element,
-                kAXAttributedStringForRangeParameterizedAttribute as CFString,
-                rangeValue,
-                &raw
-            ) == .success,
-            let raw,
-            CFGetTypeID(raw) == CFAttributedStringGetTypeID()
-        else { return nil }
+        var pid: pid_t = 0
+        let targetPID = AXUIElementGetPid(element, &pid) == .success ? pid : nil
+        let raw: CFTypeRef? = computerUsePerformAccessibilityRead(targetPID: targetPID) {
+            var value: CFTypeRef?
+            guard
+                AXUIElementCopyParameterizedAttributeValue(
+                    element,
+                    kAXAttributedStringForRangeParameterizedAttribute as CFString,
+                    rangeValue,
+                    &value
+                ) == .success
+            else { return nil }
+            return value
+        }
+        guard let raw, CFGetTypeID(raw) == CFAttributedStringGetTypeID() else { return nil }
         let attributed = raw as! NSAttributedString
         let lines = plainText.components(separatedBy: "\n")
         var location = 0

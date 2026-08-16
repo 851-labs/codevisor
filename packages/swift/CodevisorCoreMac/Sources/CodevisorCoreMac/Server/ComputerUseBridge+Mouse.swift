@@ -382,7 +382,7 @@ extension ComputerUseBridge {
             }
         }
         _ = app.activate(options: [.activateAllWindows])
-        _ = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+        _ = axPerformAction(window, kAXRaiseAction as CFString, pid: app.processIdentifier)
         for _ in 0..<8 where NSWorkspace.shared.frontmostApplication?.processIdentifier != app.processIdentifier {
             Thread.sleep(forTimeInterval: 0.05)
         }
@@ -405,7 +405,7 @@ extension ComputerUseBridge {
         }
         if let windowID {
             for _ in 0..<12 where !windowIsOnVisibleSpace(windowID) {
-                _ = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+                _ = axPerformAction(window, kAXRaiseAction as CFString, pid: app.processIdentifier)
                 Thread.sleep(forTimeInterval: 0.05)
             }
             guard windowIsOnVisibleSpace(windowID) else {

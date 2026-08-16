@@ -14,11 +14,15 @@ private func AXUIElementGetWindowID(
 ) -> AXError
 
 func computerUseWindowID(for element: AXUIElement) -> CGWindowID? {
-    var windowID: CGWindowID = 0
-    guard AXUIElementGetWindowID(element, &windowID) == .success, windowID != 0 else {
-        return nil
+    var pid: pid_t = 0
+    let targetPID = AXUIElementGetPid(element, &pid) == .success ? pid : nil
+    return computerUsePerformAccessibilityRead(targetPID: targetPID) {
+        var windowID: CGWindowID = 0
+        guard AXUIElementGetWindowID(element, &windowID) == .success, windowID != 0 else {
+            return nil
+        }
+        return windowID
     }
-    return windowID
 }
 
 func computerUseWindowIsOnVisibleSpace(
@@ -138,16 +142,20 @@ extension ComputerUseBridge {
         application: AXUIElement,
         point: CGPoint
     ) -> AXUIElement? {
-        var hit: AXUIElement?
-        guard
-            AXUIElementCopyElementAtPosition(
-                application,
-                Float(point.x),
-                Float(point.y),
-                &hit
-            ) == .success
-        else { return nil }
-        return hit
+        var pid: pid_t = 0
+        let targetPID = AXUIElementGetPid(application, &pid) == .success ? pid : nil
+        return computerUsePerformAccessibilityRead(targetPID: targetPID) {
+            var hit: AXUIElement?
+            guard
+                AXUIElementCopyElementAtPosition(
+                    application,
+                    Float(point.x),
+                    Float(point.y),
+                    &hit
+                ) == .success
+            else { return nil }
+            return hit
+        }
     }
 
     private func leafElements(
