@@ -180,13 +180,28 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     }
 
     override func layoutSubviews() {
+        let previousViewportSize = lastViewportSize
+        let previousDistanceFromBottom = lastDistanceFromBottom
+        let wasNativeScrollInteractionActive = isNativeScrollInteractionActive
         super.layoutSubviews()
         guard !isDetaching else { return }
         updateTopContentInsetIfNeeded()
         guard bounds.width > 0, bounds.height > 0 else { return }
         guard !isPreparingInitialProjection else { return }
 
-        let widthChanged = abs(lastViewportSize.width - bounds.width) > 0.5
+        let hadViewport = previousViewportSize.width > 0 && previousViewportSize.height > 0
+        let widthChanged = abs(previousViewportSize.width - bounds.width) > 0.5
+        let heightChanged =
+            hadViewport
+            && abs(previousViewportSize.height - bounds.height) > 0.5
+        let resizeAdjustment =
+            heightChanged && initialPositionApplied
+            ? TranscriptViewportResizeAdjustment.resolve(
+                previousDistanceFromBottom: previousDistanceFromBottom,
+                atBottomThreshold: Self.atBottomThreshold,
+                isUserInteracting: wasNativeScrollInteractionActive
+            )
+            : nil
         lastViewportSize = bounds.size
         if widthChanged {
             discardParkedHosts()
@@ -195,6 +210,20 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         } else {
             applyPendingInitialPositionIfPossible()
             updateMountedRows()
+        }
+        if resizeAdjustment == .pinToBottom {
+            // SwiftUI keyboard avoidance changes this view's height in the
+            // keyboard's own animation transaction. Following every layout
+            // step keeps the newest transcript pixels moving with the
+            // composer instead of jumping only after the keyboard settles.
+            setDistanceFromBottom(0, synchronizesWithActiveLayoutAnimation: true)
+            updateMountedRows()
+        } else if heightChanged, initialPositionApplied {
+            // The raw content offset deliberately stays fixed away from the
+            // bottom. Refresh the derived coordinate so a later resize does
+            // not mistake the old distance for a bottom-pinned viewport.
+            lastDistanceFromBottom = currentDistanceFromBottom()
+            publishBottomState(lastDistanceFromBottom <= Self.atBottomThreshold)
         }
         startPendingSendAnimationIfPossible()
         updateInitialPresentationReadiness()
@@ -686,25 +715,45 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         viewportGeometry.distanceFromBottom(offsetY: contentOffset.y)
     }
 
-    private func setDistanceFromBottom(_ distance: CGFloat) {
-        setViewportTop(viewportGeometry.offsetY(distanceFromBottom: distance))
+    private func setDistanceFromBottom(
+        _ distance: CGFloat,
+        synchronizesWithActiveLayoutAnimation: Bool = false
+    ) {
+        setViewportTop(
+            viewportGeometry.offsetY(distanceFromBottom: distance),
+            synchronizesWithActiveLayoutAnimation: synchronizesWithActiveLayoutAnimation
+        )
     }
 
-    private func setViewportTop(_ requestedTop: CGFloat) {
+    private func setViewportTop(
+        _ requestedTop: CGFloat,
+        synchronizesWithActiveLayoutAnimation: Bool = false
+    ) {
         let top = viewportGeometry.boundedOffsetY(requestedTop)
         guard abs(contentOffset.y - top) > 0.25 else { return }
-        applyPositionTransaction {
-            setContentOffset(CGPoint(x: 0, y: top), animated: false)
+        let mutation = {
+            self.setContentOffset(CGPoint(x: 0, y: top), animated: false)
+        }
+        if synchronizesWithActiveLayoutAnimation {
+            applyPositionMutation(mutation)
+        } else {
+            applyPositionTransaction(mutation)
         }
         lastDistanceFromBottom = currentDistanceFromBottom()
     }
 
-    private func applyPositionTransaction(_ body: () -> Void) {
+    private func applyPositionMutation(_ body: () -> Void) {
         positionApplicationDepth += 1
         defer { positionApplicationDepth -= 1 }
+        body()
+    }
+
+    private func applyPositionTransaction(_ body: () -> Void) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        UIView.performWithoutAnimation(body)
+        UIView.performWithoutAnimation {
+            applyPositionMutation(body)
+        }
         CATransaction.commit()
     }
 
