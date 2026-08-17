@@ -4,4 +4,4 @@ import os
 /// it carries its own `Logger` under the app's shared subsystem. Interpolated
 /// error strings use `privacy: .public` so release-build diagnostics stay
 /// readable; never log message bodies or file contents.
-let acpLog = Logger(subsystem: "com.851labs.codevisor", category: "acp")
+let acpLog = Logger(subsystem: "com.codevisor", category: "acp")

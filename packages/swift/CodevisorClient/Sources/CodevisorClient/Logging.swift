@@ -1,7 +1,7 @@
 import os
 
 /// Centralized handles into the unified logging system (Console.app,
-/// `log stream --predicate 'subsystem == "com.851labs.codevisor"'`).
+/// `log stream --predicate 'subsystem == "com.codevisor"'`).
 ///
 /// Every error the app absorbs — even ones that are fine to swallow from the
 /// user's point of view — must leave a trace here so failures are diagnosable
@@ -12,7 +12,7 @@ import os
 /// redaction turns release-build diagnostics into `<private>`, which defeats
 /// the purpose. Never log message bodies, tokens, or file contents.
 public enum Log {
-    public static let subsystem = "com.851labs.codevisor"
+    public static let subsystem = "com.codevisor"
 
     public static let persistence = Logger(subsystem: subsystem, category: "persistence")
     public static let server = Logger(subsystem: subsystem, category: "server")

@@ -198,7 +198,7 @@
 
     extension NSAttributedString.Key {
         static let streamMarkdownRoundedBackground = NSAttributedString.Key(
-            "com.851labs.codevisor.streamMarkdownRoundedBackground"
+            "com.codevisor.streamMarkdownRoundedBackground"
         )
     }
 
