@@ -239,13 +239,13 @@
       "ruleDescription": "Files should not span too many lines.",
       "ruleName": "File Length",
       "location": {
-        "line": 765,
+        "line": 735,
         "character": 1,
         "file": "file:///WORKTREE/apps/macos/Codevisor/ContentView.swift"
       },
       "ruleIdentifier": "file_length",
       "severity": "warning",
-      "reason": "File should contain 500 lines or less excluding comments and whitespaces: currently contains 611"
+      "reason": "File should contain 500 lines or less excluding comments and whitespaces: currently contains 588"
     }
   },
   {
@@ -501,10 +501,10 @@
       "ruleDescription": "Files should not span too many lines.",
       "location": {
         "file": "file:///WORKTREE/apps/macos/Codevisor/Features/Panes/PaneGroupView.swift",
-        "line": 1045,
+        "line": 1030,
         "character": 1
       },
-      "reason": "File should contain 500 lines or less excluding comments and whitespaces: currently contains 720",
+      "reason": "File should contain 500 lines or less excluding comments and whitespaces: currently contains 711",
       "ruleName": "File Length"
     },
     "text": "}"

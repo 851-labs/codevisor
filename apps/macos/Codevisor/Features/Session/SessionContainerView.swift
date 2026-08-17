@@ -195,11 +195,10 @@ struct SessionContainerView: View {
     /// few shades — the terminal's opaque surface can't follow that, so
     /// both sides paint the same resolved color instead.
     private var contentColumn: some View {
-        let _ = workspaceRevision
         // WorkspaceRepository is intentionally non-observable. Server pane
         // reconciliation bumps this shared token so a tab created on another
         // device materializes in the mounted macOS strip immediately.
-        let _ = environment.workspaceSync.revision
+        let _ = (workspaceRevision, environment.workspaceSync.revision)
         let workspace = store.workspace(for: session, project: project)
         return VStack(spacing: 0) {
             if workspace.centerTabs.count > 1 {
@@ -221,6 +220,7 @@ struct SessionContainerView: View {
                 centerGroup: activeCenterModel(in: workspace),
                 focus: sessionFocus,
                 centerTree: liveCenterTree ?? workspace.centerTree,
+                centerTabId: workspace.selectedCenterTabId,
                 primaryLeafId: workspace.centerTree.groupId(containingChat: session.id),
                 activeLeafId: activeLeafId ?? workspace.selectedCenterTab?.activeLeafId,
                 centerLeafModel: { leafId in configuredCenterModel(leafId: leafId) },

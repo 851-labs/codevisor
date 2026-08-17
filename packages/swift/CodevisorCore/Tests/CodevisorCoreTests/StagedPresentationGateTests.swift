@@ -26,6 +26,20 @@ struct StagedPresentationGateTests {
         #expect(gate.presentedRoute == "second")
     }
 
+    @Test func outgoingRouteRemainsPresentedUntilIncomingIsReady() {
+        var gate = StagedPresentationGate<String>()
+        let initialGeneration = gate.request("old")
+        _ = gate.commit("old", generation: initialGeneration)
+
+        let incomingGeneration = gate.request("new")
+
+        #expect(gate.requestedRoute == "new")
+        #expect(gate.presentedRoute == "old")
+        let didCommit = gate.commit("new", generation: incomingGeneration)
+        #expect(didCommit)
+        #expect(gate.presentedRoute == "new")
+    }
+
     @Test func anOptionalNilRouteIsStillACommittedRoute() {
         var gate = StagedPresentationGate<String?>()
 

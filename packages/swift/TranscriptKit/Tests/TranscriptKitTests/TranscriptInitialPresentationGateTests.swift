@@ -57,6 +57,28 @@ struct TranscriptInitialPresentationGateTests {
         #expect(finalReveal)
     }
 
+    @Test func waitsForPendingMeasurementCommit() {
+        var gate = TranscriptInitialPresentationGate()
+        let keys: Set<String> = ["row"]
+
+        let pendingReveal = gate.resolve(
+            isHydrating: false,
+            requiredKeys: keys,
+            resolvedKeys: keys,
+            hasPendingMeasurements: true
+        )
+        #expect(!pendingReveal)
+        #expect(!gate.isReady)
+        let committedReveal = gate.resolve(
+            isHydrating: false,
+            requiredKeys: keys,
+            resolvedKeys: keys,
+            hasPendingMeasurements: false
+        )
+        #expect(committedReveal)
+        #expect(gate.isReady)
+    }
+
     @Test func cachedWindowRevealsImmediatelyAndNeverHidesAgain() {
         var gate = TranscriptInitialPresentationGate()
 

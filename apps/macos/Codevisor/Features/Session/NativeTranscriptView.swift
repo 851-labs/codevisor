@@ -16,6 +16,8 @@ struct TranscriptScrollCommand: Equatable {
 /// stays inside AppKit; SwiftUI receives only boundary transitions and a tiny
 /// observation-ignored viewport snapshot.
 struct NativeTranscriptView: NSViewRepresentable {
+    @Environment(\.panePresentationReady) private var reportPresentationReady
+    @Environment(\.panePresentationIdentity) private var presentationIdentity
     let rows: [TranscriptVirtualRow]
     let initialState: SessionScrollState?
     let followsLatest: Bool
@@ -42,6 +44,7 @@ struct NativeTranscriptView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> VirtualizedTranscriptScrollView {
         let view = VirtualizedTranscriptScrollView()
+        view.onInitialPresentationReady = reportInitialPresentationReady
         onScrollViewReady?(view)
         view.configure(
             rows: rows,
@@ -68,6 +71,7 @@ struct NativeTranscriptView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: VirtualizedTranscriptScrollView, context: Context) {
+        nsView.onInitialPresentationReady = reportInitialPresentationReady
         nsView.configure(
             rows: rows,
             initialState: initialState,
@@ -89,9 +93,22 @@ struct NativeTranscriptView: NSViewRepresentable {
             onNearTop: onNearTop,
             onOlderHistoryPresented: onOlderHistoryPresented
         )
+        if nsView.isInitialPresentationReady {
+            reportInitialPresentationReady()
+        }
     }
 
     static func dismantleNSView(_ nsView: VirtualizedTranscriptScrollView, coordinator: Void) {
         nsView.persistViewport()
+    }
+
+    private func reportInitialPresentationReady() {
+        let report = reportPresentationReady
+        let event = presentationIdentity
+        // The virtualizer may resolve from inside updateNSView. Cross back to
+        // SwiftUI on the next main-loop turn, after the layout transaction.
+        DispatchQueue.main.async {
+            report(event)
+        }
     }
 }

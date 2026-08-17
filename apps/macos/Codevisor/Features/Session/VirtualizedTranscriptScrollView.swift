@@ -53,11 +53,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     /// of making AppKit wait for every intermediate SwiftUI host tree.
     private var knobDragMountTask: Task<Void, Never>?
 
-    private struct DisclosureViewportAnchor {
-        let id: UUID
-        let viewportTop: CGFloat
-    }
-    private var disclosureViewportAnchor: DisclosureViewportAnchor?
+    private var disclosureViewportAnchor: TranscriptDisclosureViewportAnchor?
     private var disclosureAnchorReleaseTask: Task<Void, Never>?
 
     private var pendingInitialState: SessionScrollState?
@@ -107,6 +103,8 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private var onFollowStateChange: ((Bool) -> Void)?
     private var onNearTop: (() -> Void)?
     private var onOlderHistoryPresented: ((UInt64) -> Void)?
+    var onInitialPresentationReady: (() -> Void)?
+    var isInitialPresentationReady: Bool { initialPresentationGate.isReady }
 
     /// The chat history itself can hold keyboard focus: a click anywhere in
     /// it (routed here by TerminalFocusController's mouse monitor) blurs a
@@ -180,6 +178,11 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         ]
     }
 
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
     /// Runs observer work on the main actor: immediately when the
     /// notification arrived on the main thread (always the case for these
     /// `.main`-queue observers), or dispatched otherwise. Guarded so a stray
@@ -190,11 +193,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         } else {
             DispatchQueue.main.async(execute: work)
         }
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
     }
 
     deinit {
@@ -1116,7 +1114,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         }
 
         disclosureAnchorReleaseTask?.cancel()
-        let anchor = DisclosureViewportAnchor(
+        let anchor = TranscriptDisclosureViewportAnchor(
             id: UUID(),
             viewportTop: contentView.bounds.minY
         )
@@ -1255,7 +1253,8 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             initialPresentationGate.resolve(
                 isHydrating: isLoadingInitialHistory || isPreparingInitialProjection,
                 requiredKeys: requiredKeys,
-                resolvedKeys: resolvedKeys
+                resolvedKeys: resolvedKeys,
+                hasPendingMeasurements: !pendingMeasuredHeights.isEmpty
             )
         else { return }
 
@@ -1264,6 +1263,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             transcriptDocumentView.setAccessibilityHidden(false)
             verticalScroller?.isEnabled = true
         }
+        onInitialPresentationReady?()
     }
 
     /// Commits one measurement into the ledger and the revision-keyed caches.

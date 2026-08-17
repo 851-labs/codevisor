@@ -23,7 +23,11 @@ final class SessionStore {
         }
     }
 
-    private var controllers: [SessionKey: SessionController] = [:]
+    /// Identity cache, not presentation state. Views resolve controllers while
+    /// constructing pane trees; tracking cache insertion would invalidate the
+    /// AttributeGraph from inside that same render pass. The controllers are
+    /// observable themselves, while `activityRevision` covers aggregate reads.
+    @ObservationIgnored private var controllers: [SessionKey: SessionController] = [:]
     /// Tiny viewport snapshots outlive controller eviction. Observation is
     /// intentionally disabled: scroll ticks must never invalidate the store's
     /// sidebar/session observers.
@@ -34,23 +38,23 @@ final class SessionStore {
     /// Bottom-panel models by WORKSPACE (the panel belongs to the
     /// workspace, and its chats share one detail container — a per-session
     /// key would mint duplicate models over the same persisted group).
-    private var bottomGroups: [UUID: PaneGroupModel] = [:]
+    @ObservationIgnored private var bottomGroups: [UUID: PaneGroupModel] = [:]
     /// Center-tree leaf groups, keyed by (workspace, leaf group) — the ONE
     /// model per leaf that both the top bar and the split view share.
     private struct CenterLeafKey: Hashable {
         let workspaceId: UUID
         let groupId: UUID
     }
-    private var centerLeafGroups: [CenterLeafKey: PaneGroupModel] = [:]
+    @ObservationIgnored private var centerLeafGroups: [CenterLeafKey: PaneGroupModel] = [:]
     /// One live unsent new-chat draft per machine, mirrored to disk by
     /// `ComposerDraftStore`. A controller permanently owns the server client
     /// it was created with, so reusing a draft after a machine switch can send
     /// the new machine's project id to the old server.
-    private var draftsByServer: [String: SessionController] = [:]
+    @ObservationIgnored private var draftsByServer: [String: SessionController] = [:]
     /// One draft controller per DRAFT CHAT PANE (the in-workspace new-chat
     /// composer), keyed by pane id. Promoted to the session cache on first
     /// send; discarded when the pane closes unsent.
-    private var paneDrafts: [UUID: SessionController] = [:]
+    @ObservationIgnored private var paneDrafts: [UUID: SessionController] = [:]
     /// One deferred attention outcome per user-created activity epoch. Agent
     /// follow-ups merge into it; only stable quiescence consumes it, preventing
     /// one alert per Claude background-task notification.

@@ -15,9 +15,11 @@ public struct TranscriptInitialPresentationGate: Sendable, Equatable {
         isHydrating: Bool,
         requiredKeys: Set<String>,
         resolvedKeys: Set<String>,
+        hasPendingMeasurements: Bool = false,
     ) -> Bool {
         guard !isReady,
             !isHydrating,
+            !hasPendingMeasurements,
             requiredKeys.isSubset(of: resolvedKeys)
         else { return false }
         isReady = true

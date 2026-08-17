@@ -205,20 +205,38 @@ private struct ClientDataStartupFailureView: View {
 /// The top-level split view: collapsible sidebar plus the active session or the
 /// new-chat page.
 struct RootView: View {
-    @Environment(AppEnvironment.self) private var environment
-    @Environment(\.theme) private var theme
+    @Environment(AppEnvironment.self) var environment
+    @Environment(\.theme) var theme
     @Environment(\.controlActiveState) private var controlActiveState
-    @State private var selection: SidebarSelection?
+    @State var selection: SidebarSelection?
     @ClientPreference("sidebar.collapsed", default: false) private var sidebarCollapsed
     @State private var store: SessionStore?
     @State private var preferredProjectId: UUID?
     @State private var preparedMachineId: String?
     @State private var quickLook = QuickLookController()
     @State private var panelLayout = AdaptivePanelLayout()
-    /// Sidebar selection is immediate; expensive destination construction is
-    /// committed one frame later so the active row and detail shell paint
-    /// before workspace/controller/transcript work starts.
-    @State private var detailPresentation = StagedPresentationGate<SidebarSelection?>()
+    /// Navigation selection is immediate, but the last presentable detail
+    /// remains above a different workspace until its routed transcript has
+    /// committed authoritative geometry.
+    @State var detailPresentation: StagedPresentationGate<DetailPresentationRoute> = {
+        var gate = StagedPresentationGate<DetailPresentationRoute>()
+        let route = DetailPresentationRoute(selection: nil, surfaceId: .bootstrap)
+        let generation = gate.request(route)
+        _ = gate.commit(route, generation: generation)
+        return gate
+    }()
+
+    struct DetailPresentationRoute: Hashable {
+        let selection: SidebarSelection?
+        let surfaceId: DetailSurfaceId
+    }
+
+    enum DetailSurfaceId: Hashable {
+        case bootstrap
+        case blocked(String)
+        case workspace(serverId: String, workspaceId: UUID)
+        case newChat(String)
+    }
 
     var body: some View {
         Group {
@@ -493,32 +511,6 @@ struct RootView: View {
         }
     }
 
-    private func stagedDetail(_ store: SessionStore) -> some View {
-        ZStack {
-            if let presentedSelection = detailPresentation.presentedRoute {
-                detail(store, selection: presentedSelection)
-            }
-            if !isSelectedDetailPresented {
-                DetailNavigationShell()
-            }
-        }
-        .task(id: selection) {
-            let requestedSelection = selection
-            let generation = detailPresentation.request(requestedSelection)
-            // A frame boundary is intentional: direct-manipulation state
-            // becomes visible before any destination initializer can occupy
-            // the main actor.
-            await Task.yield()
-            try? await Task.sleep(for: .milliseconds(16))
-            guard !Task.isCancelled else { return }
-            detailPresentation.commit(requestedSelection, generation: generation)
-        }
-    }
-
-    private var isSelectedDetailPresented: Bool {
-        detailPresentation.presentedRoute.map { $0 == selection } ?? false
-    }
-
     /// At compact widths the system sidebar remains collapsed and its normal
     /// toggle opens our transient drawer instead. Automatic collapse doesn't
     /// touch the persisted `sidebarCollapsed` preference.
@@ -538,7 +530,7 @@ struct RootView: View {
     }
 
     @ViewBuilder
-    private func detail(_ store: SessionStore, selection: SidebarSelection?) -> some View {
+    func detail(_ store: SessionStore, selection: SidebarSelection?) -> some View {
         if blocksSelectedServerContent {
             let machine = environment.machines.selectedMachine
             ServerAvailabilityView(
@@ -553,6 +545,7 @@ struct RootView: View {
             ) {
                 Task { await environment.machines.retrySelectedMachine() }
             }
+            .reportsPresentationReadyAfterLayout(.laidOut)
         } else {
             switch selection {
             case let .session(serverId, sessionId):
@@ -601,7 +594,7 @@ struct RootView: View {
         }
     }
 
-    private var blocksSelectedServerContent: Bool {
+    var blocksSelectedServerContent: Bool {
         if environment.appUpdate.isUpdating { return true }
         if environment.machines.selectedMachine.isLocal,
             let progress = environment.localServer?.dataUpgradeProgress,
@@ -627,6 +620,7 @@ struct RootView: View {
             explicitProjectId: projectId
         )
         .id(environment.machines.selectedMachineId)
+        .reportsPresentationReadyAfterLayout(.laidOut)
     }
 }
 
@@ -634,30 +628,6 @@ struct RootView: View {
 enum SidebarSelection: Hashable {
     case session(serverId: String, id: UUID)
     case newChat(UUID?)
-}
-
-/// A quiet destination surface. Fast route changes never flash a spinner;
-/// sustained preparation gets explicit feedback after the standard grace.
-private struct DetailNavigationShell: View {
-    @Environment(\.theme) private var theme
-    @State private var showsSpinner = false
-
-    var body: some View {
-        ZStack {
-            theme.windowBackground
-            if showsSpinner {
-                ProgressView()
-                    .controlSize(.small)
-                    .accessibilityLabel("Loading conversation")
-            }
-        }
-        .ignoresSafeArea()
-        .task {
-            try? await Task.sleep(for: .milliseconds(500))
-            guard !Task.isCancelled else { return }
-            showsSpinner = true
-        }
-    }
 }
 
 #Preview("Root") {

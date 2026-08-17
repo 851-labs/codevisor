@@ -1028,18 +1028,3 @@ struct PaneTab: View {
         .accessibilityLabel("Close tab")
     }
 }
-
-/// The selected pane's content, mounted only while the group is open. Panes
-/// cache their expensive backing state (the terminal caches its NSView), so
-/// switching tabs restores rather than rebuilds. The chat pane's content is
-/// NOT rendered here — SessionScreen owns it (kept alive across tab switches).
-struct PaneGroupContent: View {
-    var group: PaneGroupModel
-
-    var body: some View {
-        if let pane = group.selectedPane {
-            pane.makeView()
-                .id(pane.id)
-        }
-    }
-}

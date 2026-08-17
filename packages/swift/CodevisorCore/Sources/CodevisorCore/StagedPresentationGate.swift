@@ -1,6 +1,7 @@
-/// Coordinates two-phase navigation: the route becomes selected immediately,
-/// then expensive destination content commits after the navigation shell has
-/// had a chance to paint. Generations reject completions from cancelled taps.
+/// Coordinates two-phase presentation: a destination is requested immediately
+/// while the last committed destination remains visible, then the incoming
+/// surface commits after it reports readiness. Generations reject late
+/// acknowledgements from superseded requests.
 public struct StagedPresentationGate<Route: Hashable> {
     public private(set) var requestedRoute: Route?
     public private(set) var presentedRoute: Route?
