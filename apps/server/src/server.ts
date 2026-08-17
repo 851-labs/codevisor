@@ -461,7 +461,7 @@ const handleRequest = async (
     if (await routeProjects(services, config, fanout, request, response, url)) {
       return
     }
-    if (await routeWorkspaces(services, fanout, config, request, response, url)) {
+    if (await routeWorkspaces(services, fanout, routeState, config, request, response, url)) {
       return
     }
     if (await routeHarnesses(services, request, response, url)) {

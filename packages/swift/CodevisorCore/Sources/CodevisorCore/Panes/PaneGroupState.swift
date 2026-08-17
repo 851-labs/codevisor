@@ -139,9 +139,10 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
         )
     }
 
-    /// The state a session's bottom panel starts with: one terminal pane
-    /// whose key is the bare session UUID (migration: reattaches shells
-    /// created before the pane-group era, since the server never reaps PTYs).
+    /// Legacy pre-workspace bottom-panel state. New workspaces start with an
+    /// empty bottom group and create their first terminal when the panel is
+    /// opened. This factory remains for decoding/migration tests: its bare
+    /// session key reattaches shells created before pane identities existed.
     public static func initial(sessionId: UUID) -> PaneGroupState {
         let pane = PaneDescriptorState(
             id: UUID(),
@@ -169,6 +170,39 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
 
     public var selectedPane: PaneDescriptorState? {
         panes.first { $0.id == selectedPaneId }
+    }
+
+    /// Adopts the pane identities/content produced by workspace sync while
+    /// retaining this client's presentation state. Selection, visibility,
+    /// and height are device-local; the incoming state is authoritative only
+    /// for which shared panes exist and what each pane renders.
+    ///
+    /// The existing selection survives when its pane still exists. If sync
+    /// removed it, the repository's repaired selection is preferred before
+    /// falling back to the first remaining pane.
+    @discardableResult
+    public mutating func reconcilePaneDescriptors(from incoming: PaneGroupState) -> Bool {
+        let previousPanes = panes
+        let previousSelection = selectedPaneId
+        let selectionIsValid =
+            previousSelection.map { selected in
+                previousPanes.contains(where: { $0.id == selected })
+            } ?? previousPanes.isEmpty
+        guard previousPanes != incoming.panes || !selectionIsValid else { return false }
+
+        panes = incoming.panes
+        if let previousSelection,
+            panes.contains(where: { $0.id == previousSelection })
+        {
+            selectedPaneId = previousSelection
+        } else if let incomingSelection = incoming.selectedPaneId,
+            panes.contains(where: { $0.id == incomingSelection })
+        {
+            selectedPaneId = incomingSelection
+        } else {
+            selectedPaneId = panes.first?.id
+        }
+        return previousPanes != panes || previousSelection != selectedPaneId
     }
 
     /// Toggles content visibility and returns the area that should receive
@@ -288,7 +322,7 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
         guard let index = panes.firstIndex(where: { $0.id == id }),
             panes[index].kind == .newTab
         else { return nil }
-        let paneId = UUID()
+        let paneId = id
         let pane: PaneDescriptorState
         switch kind {
         case .terminal:
@@ -335,12 +369,20 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
         guard let index = panes.firstIndex(where: { $0.id == id }),
             panes[index].kind == .chat
         else { return nil }
-        let paneId = UUID()
+        return replacePaneWithNewTab(id: id)
+    }
+
+    /// Converts any renderer into a New Tab while preserving the server-owned
+    /// pane identity. Used for an optimistic final-pane close; the server
+    /// performs and confirms the same transition atomically.
+    @discardableResult
+    public mutating func replacePaneWithNewTab(id: UUID) -> PaneDescriptorState? {
+        guard let index = panes.firstIndex(where: { $0.id == id }) else { return nil }
         let pane = PaneDescriptorState(
-            id: paneId,
+            id: id,
             kind: .newTab,
             name: "New tab",
-            terminalKey: paneId.uuidString
+            terminalKey: id.uuidString
         )
         panes[index] = pane
         if selectedPaneId == id {

@@ -433,6 +433,37 @@ final class SessionStore {
         return group
     }
 
+    /// Pushes repository truth into pane models that are already mounted.
+    /// Workspace sync owns the repository write; these model updates are a
+    /// non-persisting presentation reconciliation so they cannot echo remote
+    /// changes back to the server.
+    @discardableResult
+    func reconcileMountedPaneGroups(in workspace: Workspace) -> Bool {
+        var changed = false
+        if let bottom = bottomGroups[workspace.id] {
+            changed = bottom.reconcileExternalState(workspace.bottomGroup) || changed
+        }
+
+        let centerStates = Dictionary(
+            uniqueKeysWithValues: workspace.centerTabs.flatMap { tab in
+                tab.root.allGroups.map { ($0.id, $0.state) }
+            }
+        )
+        var removedKeys: [CenterLeafKey] = []
+        for (key, model) in centerLeafGroups where key.workspaceId == workspace.id {
+            if let state = centerStates[key.groupId] {
+                changed = model.reconcileExternalState(state) || changed
+            } else {
+                changed = model.reconcileExternalState(PaneGroupState()) || changed
+                removedKeys.append(key)
+            }
+        }
+        for key in removedKeys {
+            centerLeafGroups[key] = nil
+        }
+        return changed
+    }
+
     private func makePaneGroup(
         for session: ChatSession,
         project: Project,
@@ -482,6 +513,34 @@ final class SessionStore {
                 )
             }
         )
+        model.onPaneChanged = { [weak environment] pane in
+            guard let environment else { return }
+            environment.workspaceSync.publishPane(
+                pane,
+                workspaceId: workspace.id,
+                client: environment.machines.client(for: session.serverId)
+            )
+        }
+        let workspaceId = workspace.id
+        model.shouldReplaceClosedPaneWithNewTab = { [weak environment] pane in
+            guard let liveWorkspace = environment?.workspaces.workspace(id: workspaceId) else {
+                return false
+            }
+            let panes =
+                liveWorkspace.centerTabs.flatMap { tab in
+                    tab.root.allGroups.flatMap(\.state.panes)
+                } + liveWorkspace.bottomGroup.panes
+            return panes.count == 1 && panes[0].id == pane.id
+        }
+        model.onPaneRemoved = { [weak environment] pane, replacement in
+            guard let environment else { return }
+            environment.workspaceSync.deletePane(
+                id: pane.id,
+                workspaceId: workspaceId,
+                optimisticReplacement: replacement,
+                client: environment.machines.client(for: session.serverId)
+            )
+        }
         // Identity for cross-group drops (bar targets, content zones).
         model.dropRef =
             placement == .bottom

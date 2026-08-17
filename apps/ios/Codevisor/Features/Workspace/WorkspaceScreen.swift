@@ -165,6 +165,9 @@ struct WorkspaceScreen: View {
 
     private var panes: PaneGroupState {
         if let paneState { return paneState }
+        if let workspace = resolvedWorkspace {
+            return compactPaneState(from: workspace)
+        }
         if let paneStorageId {
             return WorkspacePaneStore.shared.state(
                 for: paneStorageId,
@@ -307,6 +310,8 @@ struct WorkspaceScreen: View {
             } else if let pane = activePane {
                 paneContent(pane)
                     .id(pane.id)
+            } else {
+                DelayedWorkspaceLoadingView()
             }
         }
         // Native navigation back to the workspaces list: the system back
@@ -360,6 +365,9 @@ struct WorkspaceScreen: View {
         }
         .onChange(of: environment.projectList.activeProjects.map(\.id)) { _, _ in
             setUpDraftIfNeeded()
+        }
+        .onChange(of: environment.workspaceSync.revision) { _, _ in
+            synchronizePaneStateFromWorkspace()
         }
         .iosNavigationDiagnostics(navigationDiagnosticState)
     }
@@ -629,16 +637,8 @@ struct WorkspaceScreen: View {
         Binding(
             get: { panes },
             set: { newValue in
-                var state = newValue
-                // macOS behavior: a group never goes empty — closing the last
-                // pane leaves a New Tab page in its place.
-                if state.panes.isEmpty {
-                    state.addNewTabPane()
-                }
-                paneState = state
-                if let paneStorageId {
-                    WorkspacePaneStore.shared.save(state, for: paneStorageId)
-                }
+                paneState = newValue
+                persistCompactPaneState(newValue)
             }
         )
     }
@@ -759,11 +759,20 @@ struct WorkspaceScreen: View {
         setShowsGridWithoutAnimation(false)
     }
 
-    /// Any tab can close — chats included, as on macOS. The binding's setter
-    /// backfills a New Tab page if the last one goes.
+    /// Any tab can close — chats included, as on macOS. A final-pane close is
+    /// optimistic conversion of that same identity; the server atomically
+    /// confirms the conversion so two clients cannot manufacture replacements.
     private func close(_ pane: PaneDescriptorState) {
+        let owningWorkspaceId = resolvedWorkspace?.id
         var state = panes
-        guard state.closePane(id: pane.id) != nil else { return }
+        let replacement: PaneDescriptorState?
+        if state.panes.count == 1 {
+            replacement = state.replacePaneWithNewTab(id: pane.id)
+            guard replacement != nil else { return }
+        } else {
+            replacement = nil
+            guard state.closePane(id: pane.id) != nil else { return }
+        }
         withAnimation(WorkspaceTabGridMotion.removal) {
             paneBinding.wrappedValue = state
         }
@@ -771,6 +780,21 @@ struct WorkspaceScreen: View {
             PaneSnapshotCache.shared.remove(
                 paneId: pane.id,
                 from: paneStorageId
+            )
+        }
+        if pane.kind == .chat, let sessionId = pane.chatSessionId,
+            let closed = environment.projectList.sessions.first(where: {
+                $0.serverId == resolvedServerId && $0.id == sessionId
+            })
+        {
+            environment.archiveSession(closed)
+        }
+        if let workspaceId = owningWorkspaceId {
+            environment.workspaceSync.deletePane(
+                id: pane.id,
+                workspaceId: workspaceId,
+                optimisticReplacement: replacement,
+                client: environment.machines.client(for: resolvedServerId)
             )
         }
     }
@@ -814,6 +838,7 @@ struct WorkspaceScreen: View {
         var state = panes
         let newPane = state.addNewTabPane()
         paneBinding.wrappedValue = state
+        publishPane(newPane)
 
         guard showsGrid, !accessibilityReduceMotion else {
             setShowsGridWithoutAnimation(false)
@@ -1031,31 +1056,170 @@ struct WorkspaceScreen: View {
             cwd: rootSession?.cwd
         )
         var state = panes
-        state.convertNewTabPane(
+        let converted = state.convertNewTabPane(
             id: pane.id, to: .chat, sessionId: workspaceSessionId, chatSessionId: chat.id
         )
         paneBinding.wrappedValue = state
-        registerChatInWorkspace(chat)
+        if let converted {
+            promotePaneToChat(converted, session: chat)
+        }
     }
 
     private func convertToTerminal(_ pane: PaneDescriptorState) {
         guard let workspaceSessionId = activeSessionId else { return }
         var state = panes
-        state.convertNewTabPane(id: pane.id, to: .terminal, sessionId: workspaceSessionId)
+        let converted = state.convertNewTabPane(
+            id: pane.id, to: .terminal, sessionId: workspaceSessionId
+        )
         paneBinding.wrappedValue = state
+        if let converted {
+            publishPane(converted)
+        }
     }
 
-    /// Keep the shared workspace's chat index in lockstep with iOS's compact
-    /// tab state. Home reads this index to build the same workspace → chats
-    /// hierarchy as macOS.
-    private func registerChatInWorkspace(_ chat: ChatSession) {
+    /// iOS's flat tab order is the device-local layout projection of the
+    /// shared pane registry. The Workspace repository is its persistence
+    /// root; `paneState` is only the mounted view's writable cache.
+    private func persistCompactPaneState(_ state: PaneGroupState) {
         guard var workspace = resolvedWorkspace else { return }
-        if workspace.tabId(containingChat: chat.id) == nil {
-            let tab = WorkspaceTab(root: .leaf(.centerInitial(sessionId: chat.id)))
-            workspace.centerTabs.append(tab)
-            workspace.selectedCenterTabId = tab.id
-        }
+        Self.applyCompactPaneState(state, to: &workspace)
         environment.workspaces.save(workspace)
+        environment.workspaceSync.noteLocalMutation()
+    }
+
+    private static func applyCompactPaneState(
+        _ state: PaneGroupState,
+        to workspace: inout Workspace
+    ) {
+        let oldTabs = workspace.centerTabs
+        workspace.centerTabs = state.panes.map { pane in
+            if let oldTab = oldTabs.first(where: {
+                $0.root.groupId(containingPane: pane.id) != nil
+            }),
+                let oldGroup = oldTab.root.allGroups.first(where: {
+                    $0.state.panes.contains { $0.id == pane.id }
+                })
+            {
+                let groupState = PaneGroupState(
+                    panes: [pane], selectedPaneId: pane.id, isVisible: true
+                )
+                return WorkspaceTab(
+                    id: oldTab.id,
+                    customTitle: oldTab.customTitle,
+                    root: .group(id: oldGroup.id, state: groupState),
+                    activeLeafId: oldGroup.id
+                )
+            }
+            return WorkspaceTab(
+                root: .leaf(
+                    PaneGroupState(
+                        panes: [pane], selectedPaneId: pane.id, isVisible: true
+                    )
+                )
+            )
+        }
+        if workspace.centerTabs.isEmpty {
+            workspace.centerTabs = [WorkspaceTab(root: .leaf(PaneGroupState()))]
+        }
+        workspace.selectedCenterTabId =
+            state.selectedPaneId.flatMap { selectedPaneId in
+                workspace.centerTabs.first {
+                    $0.root.groupId(containingPane: selectedPaneId) != nil
+                }?.id
+            } ?? workspace.centerTabs[0].id
+        // The compact client has one placement surface. A pane imported from
+        // macOS's bottom area is a normal iOS tab; its identity remains shared
+        // even though this device chooses a different layout.
+        workspace.bottomGroup = PaneGroupState()
+    }
+
+    private func compactPaneState(from workspace: Workspace) -> PaneGroupState {
+        let candidates =
+            workspace.centerTabs.flatMap { tab in
+                tab.root.allGroups.flatMap(\.state.panes)
+            } + workspace.bottomGroup.panes
+        var seen = Set<UUID>()
+        let shared = candidates.filter { seen.insert($0.id).inserted }
+        let selected = workspace.selectedCenterTab.flatMap { tab in
+            tab.root.group(id: tab.activeLeafId)?.selectedPaneId
+        }
+        return PaneGroupState(
+            panes: shared,
+            selectedPaneId: shared.contains(where: { $0.id == selected })
+                ? selected : shared.first?.id,
+            isVisible: true
+        )
+    }
+
+    private func publishPane(_ pane: PaneDescriptorState) {
+        guard let workspaceId = resolvedWorkspace?.id else { return }
+        environment.workspaceSync.publishPane(
+            pane,
+            workspaceId: workspaceId,
+            client: environment.machines.client(for: resolvedServerId)
+        )
+    }
+
+    private func promotePaneToChat(_ pane: PaneDescriptorState, session: ChatSession) {
+        guard let workspaceId = resolvedWorkspace?.id else { return }
+        environment.workspaceSync.promotePaneToChat(
+            pane,
+            session: session,
+            workspaceId: workspaceId,
+            client: environment.machines.client(for: resolvedServerId)
+        )
+    }
+
+    /// Projects the shared pane registry into iOS's compact, single-group
+    /// layout without importing macOS tab order or split placement.
+    private func synchronizePaneStateFromWorkspace() {
+        guard let workspace = resolvedWorkspace else { return }
+        let shared =
+            workspace.centerTabs.flatMap { tab in
+                tab.root.allGroups.flatMap(\.state.panes)
+            } + workspace.bottomGroup.panes
+        guard !shared.isEmpty else {
+            guard !panes.panes.isEmpty else { return }
+            let empty = PaneGroupState()
+            paneState = empty
+            persistCompactPaneState(empty)
+            return
+        }
+
+        var state = panes
+        var remaining = shared
+        var reconciled: [PaneDescriptorState] = []
+        for local in state.panes {
+            let index = remaining.firstIndex(where: { candidate in
+                candidate.id == local.id || Self.sameResource(candidate, local)
+            })
+            guard let index else { continue }
+            reconciled.append(remaining.remove(at: index))
+        }
+        reconciled.append(contentsOf: remaining)
+        guard reconciled != state.panes else { return }
+        state.panes = reconciled
+        if !reconciled.contains(where: { $0.id == state.selectedPaneId }) {
+            state.selectedPaneId = reconciled.first?.id
+        }
+        state.isVisible = true
+        paneState = state
+        persistCompactPaneState(state)
+    }
+
+    private static func sameResource(
+        _ lhs: PaneDescriptorState,
+        _ rhs: PaneDescriptorState
+    ) -> Bool {
+        guard lhs.kind == rhs.kind else { return false }
+        switch lhs.kind {
+        case .chat:
+            return lhs.chatSessionId != nil && lhs.chatSessionId == rhs.chatSessionId
+        case .terminal:
+            return lhs.terminalKey.caseInsensitiveCompare(rhs.terminalKey) == .orderedSame
+        case .newTab:
+            return false
+        }
     }
 
     // MARK: - Connection
@@ -1076,21 +1240,28 @@ struct WorkspaceScreen: View {
             return
         }
         if paneState == nil, let paneStorageId {
-            var state = WorkspacePaneStore.shared.state(
-                for: paneStorageId,
-                legacySessionIds: legacyPaneSessionIds
-            )
+            var explicitlyOpenedPane: PaneDescriptorState?
+            var state =
+                resolvedWorkspace.map(compactPaneState(from:))
+                ?? WorkspacePaneStore.shared.state(
+                    for: paneStorageId,
+                    legacySessionIds: legacyPaneSessionIds
+                )
             if let preferredChatSessionId {
                 if let pane = state.panes.first(where: {
                     $0.kind == .chat && $0.chatSessionId == preferredChatSessionId
                 }) {
                     state.selectPane(id: pane.id)
                 } else {
-                    _ = state.addChatPane(sessionId: preferredChatSessionId)
+                    explicitlyOpenedPane = state.addChatPane(sessionId: preferredChatSessionId)
                 }
-                WorkspacePaneStore.shared.save(state, for: paneStorageId)
             }
             paneState = state
+            persistCompactPaneState(state)
+            if let explicitlyOpenedPane {
+                publishPane(explicitlyOpenedPane)
+            }
+            synchronizePaneStateFromWorkspace()
         }
         if controllers[sessionId] == nil {
             guard let session = rootSession,
@@ -1222,7 +1393,10 @@ struct WorkspaceScreen: View {
         if let index = state.panes.firstIndex(where: { $0.kind == .chat }) {
             state.panes[index].chatSessionId = session.id
         }
-        WorkspacePaneStore.shared.save(state, for: workspace.id)
+        var paneWorkspace = workspace
+        Self.applyCompactPaneState(state, to: &paneWorkspace)
+        environment.workspaces.save(paneWorkspace)
+        environment.workspaceSync.noteLocalMutation()
         if isNewChatPresentation {
             // Keep the source draft hierarchy mounted until Home has moved
             // first-responder ownership into the independent promotion

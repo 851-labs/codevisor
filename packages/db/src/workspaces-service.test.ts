@@ -189,41 +189,281 @@ describe("@codevisor/db", () => {
     await Effect.runPromise(db.close)
   })
 
-  it("binds sessions to pane workspaces at creation and afterwards", async () => {
-    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
-    const project = await run(db.createProject({ folderPath: "/tmp/workspace-sessions" }))
+  it("owns pane identity while session assignment supplies legacy chat panes", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "machine-a" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/workspace-pane-registry" }))
+    const first = await run(
+      db.upsertWorkspace({ projectId: project.id, name: "First", hasCustomName: false })
+    )
+    const second = await run(
+      db.upsertWorkspace({ projectId: project.id, name: "Second", hasCustomName: false })
+    )
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+
+    await run(db.setSessionWorkspace(session.id, first.id))
+    expect(await run(db.listWorkspacePanes)).toEqual([
+      expect.objectContaining({
+        id: session.id,
+        workspaceId: first.id,
+        providerId: "codevisor",
+        paneType: "chat",
+        resourceKind: "session",
+        resourceId: session.id
+      })
+    ])
+
+    const placeholder = await run(
+      db.upsertWorkspacePane(first.id, {
+        id: "pane-placeholder",
+        providerId: "codevisor",
+        paneType: "new-tab",
+        title: "New tab"
+      })
+    )
+    expect(placeholder).toMatchObject({ id: "pane-placeholder", workspaceId: first.id })
+
+    // Conversion preserves the placeholder id and replaces the compatibility
+    // pane that session membership had synthesized.
+    const converted = await run(
+      db.upsertWorkspacePane(first.id, {
+        id: placeholder.id,
+        providerId: "codevisor",
+        paneType: "chat",
+        title: "Chat",
+        resourceKind: "session",
+        resourceId: session.id
+      })
+    )
+    expect(converted.id).toBe("pane-placeholder")
+    expect(
+      (await run(db.listWorkspacePanes)).filter((pane) => pane.resourceId === session.id)
+    ).toHaveLength(1)
+
+    await run(db.setSessionWorkspace(session.id, second.id))
+    expect(
+      (await run(db.listWorkspacePanes)).find((pane) => pane.id === "pane-placeholder")
+    ).toMatchObject({ workspaceId: second.id })
+    expect(
+      (await run(db.listWorkspacePanes)).filter((pane) => pane.workspaceId === first.id)
+    ).toEqual([expect.objectContaining({ paneType: "new-tab" })])
+
+    const finalReplacement = await run(db.deleteWorkspacePane(second.id, "pane-placeholder"))
+    expect(finalReplacement).toMatchObject({
+      id: "pane-placeholder",
+      workspaceId: second.id,
+      paneType: "new-tab",
+      revision: 4
+    })
+    await run(db.setSessionWorkspace(session.id, second.id))
+    expect(
+      (await run(db.listWorkspacePanes)).filter((pane) => pane.workspaceId === second.id)
+    ).toHaveLength(2)
+    await run(db.deleteSession(session.id))
+    expect(
+      (await run(db.listWorkspacePanes)).filter((pane) => pane.workspaceId === second.id)
+    ).toEqual([expect.objectContaining({ id: "pane-placeholder", paneType: "new-tab" })])
+    await run(db.close)
+  })
+
+  it("promotes a placeholder and assigns its chat in one pane mutation", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "machine-a" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/atomic-pane-promotion" }))
     const workspace = await run(
-      db.upsertWorkspace({
-        id: "workspace-1",
-        projectId: project.id,
-        name: "Main",
-        hasCustomName: false
+      db.upsertWorkspace({ projectId: project.id, name: "Main", hasCustomName: false })
+    )
+    const session = await run(
+      db.createSession({ projectId: project.id, harnessId: "codex", title: "New Chat" })
+    )
+    const placeholder = await run(
+      db.upsertWorkspacePane(workspace.id, {
+        id: "stable-pane",
+        providerId: "codevisor",
+        paneType: "new-tab",
+        title: "New tab"
+      })
+    )
+    expect(placeholder.revision).toBe(1)
+
+    const promoted = await run(
+      db.promoteWorkspacePaneToSession(workspace.id, placeholder.id, session.id, "New Chat")
+    )
+
+    expect(promoted).toMatchObject({
+      id: placeholder.id,
+      paneType: "chat",
+      resourceKind: "session",
+      resourceId: session.id,
+      revision: 2
+    })
+    expect(await run(db.listWorkspacePanes)).toEqual([promoted])
+    expect((await run(db.getSessionSummary(session.id))).workspaceId).toBe(workspace.id)
+    await run(db.close)
+  })
+
+  it("validates and revision-orders every pane mutation shape", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "machine-a" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/pane-mutation-shapes" }))
+    const otherProject = await run(db.createProject({ folderPath: "/tmp/other-pane-project" }))
+    const first = await run(
+      db.upsertWorkspace({ projectId: project.id, name: "First", hasCustomName: false })
+    )
+    const second = await run(
+      db.upsertWorkspace({ projectId: project.id, name: "Second", hasCustomName: false })
+    )
+    const generated = await run(
+      db.upsertWorkspacePane(first.id, {
+        providerId: "extension.test",
+        paneType: "custom",
+        title: "Generated",
+        metadata: JSON.stringify({ value: 1 }),
+        createdAt: "2026-08-17T00:00:00.000Z"
+      })
+    )
+    expect(generated.metadata).toBe('{"value":1}')
+
+    await expect(
+      run(
+        db.upsertWorkspacePane(second.id, {
+          id: generated.id,
+          providerId: "extension.test",
+          paneType: "custom",
+          title: "Wrong workspace"
+        })
+      )
+    ).rejects.toThrow(/belongs to workspace/)
+    await expect(
+      run(
+        db.upsertWorkspacePane(first.id, {
+          providerId: "extension.test",
+          paneType: "custom",
+          title: "Partial resource",
+          resourceKind: "terminal"
+        })
+      )
+    ).rejects.toThrow(/must be provided together/)
+    await expect(run(db.updateWorkspacePane(first.id, "missing", {}))).rejects.toThrow(
+      /Workspace pane not found/
+    )
+
+    const terminal = await run(
+      db.updateWorkspacePane(first.id, generated.id, {
+        providerId: "codevisor",
+        paneType: "terminal",
+        title: "Shell",
+        resourceKind: "terminal",
+        resourceId: "terminal-key",
+        metadata: JSON.stringify({ attachOnly: true })
+      })
+    )
+    expect(terminal).toMatchObject({
+      providerId: "codevisor",
+      paneType: "terminal",
+      resourceKind: "terminal",
+      resourceId: "terminal-key",
+      revision: 2
+    })
+    expect((await run(db.updateWorkspacePane(first.id, generated.id, {}))).revision).toBe(3)
+    await expect(
+      run(db.updateWorkspacePane(first.id, generated.id, { resourceKind: null }))
+    ).rejects.toThrow(/must be provided together/)
+    await expect(
+      run(db.updateWorkspacePane(first.id, generated.id, { resourceId: null }))
+    ).rejects.toThrow(/must be provided together/)
+    const cleared = await run(
+      db.updateWorkspacePane(first.id, generated.id, {
+        resourceKind: null,
+        resourceId: null,
+        metadata: null
+      })
+    )
+    expect(cleared).toMatchObject({ revision: 4 })
+    expect(cleared.resourceKind).toBeUndefined()
+    expect(cleared.metadata).toBeUndefined()
+
+    const session = await run(
+      db.createSession({ projectId: project.id, harnessId: "codex", title: "Chat" })
+    )
+    const assigned = await run(
+      db.updateWorkspacePane(first.id, generated.id, {
+        paneType: "chat",
+        resourceKind: "session",
+        resourceId: session.id
+      })
+    )
+    expect(assigned.revision).toBe(5)
+    expect((await run(db.getSessionSummary(session.id))).workspaceId).toBe(first.id)
+
+    await expect(
+      run(db.promoteWorkspacePaneToSession(first.id, "missing", session.id, "Chat"))
+    ).rejects.toThrow(/Workspace pane not found/)
+    await expect(
+      run(db.promoteWorkspacePaneToSession(first.id, generated.id, "missing", "Chat"))
+    ).rejects.toThrow(/Session not found/)
+    const otherSession = await run(
+      db.createSession({ projectId: otherProject.id, harnessId: "codex", title: "Other" })
+    )
+    await expect(
+      run(db.promoteWorkspacePaneToSession(first.id, generated.id, otherSession.id, "Other"))
+    ).rejects.toThrow(/different projects/)
+
+    const closed = await run(db.deleteWorkspacePane(first.id, generated.id))
+    expect(closed).toMatchObject({ id: generated.id, paneType: "new-tab", revision: 6 })
+    // Retrying the same final-pane close is idempotent: same identity and no
+    // additional revision.
+    expect(await run(db.deleteWorkspacePane(first.id, generated.id))).toEqual(closed)
+
+    const emptyTitle = await run(
+      db.createSession({ projectId: project.id, harnessId: "codex", title: "" })
+    )
+    await run(db.setSessionWorkspace(emptyTitle.id, second.id))
+    expect(
+      (await run(db.listWorkspacePanes)).find((pane) => pane.resourceId === emptyTitle.id)?.title
+    ).toBe("Chat")
+    await run(db.close)
+  })
+
+  it("serializes competing closes and preserves exactly one final pane", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "machine-a" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/atomic-pane-close" }))
+    const workspace = await run(
+      db.upsertWorkspace({ projectId: project.id, name: "Main", hasCustomName: false })
+    )
+    await run(
+      db.upsertWorkspacePane(workspace.id, {
+        id: "first-pane",
+        providerId: "codevisor",
+        paneType: "terminal",
+        title: "One",
+        resourceKind: "terminal",
+        resourceId: "one"
+      })
+    )
+    await run(
+      db.upsertWorkspacePane(workspace.id, {
+        id: "second-pane",
+        providerId: "codevisor",
+        paneType: "terminal",
+        title: "Two",
+        resourceKind: "terminal",
+        resourceId: "two"
       })
     )
 
-    const attached = await run(
-      db.createSession({ projectId: project.id, harnessId: "codex", workspaceId: workspace.id })
-    )
-    expect(attached.workspaceId).toBe(workspace.id)
-    expect(
-      (await run(db.listSessions)).find((session) => session.id === attached.id)?.workspaceId
-    ).toBe(workspace.id)
+    expect(await run(db.deleteWorkspacePane(workspace.id, "first-pane"))).toBeUndefined()
+    const survivor = await run(db.deleteWorkspacePane(workspace.id, "second-pane"))
+    expect(survivor).toMatchObject({
+      id: "second-pane",
+      paneType: "new-tab",
+      title: "New tab",
+      revision: 2
+    })
+    expect(await run(db.deleteWorkspacePane(workspace.id, "first-pane"))).toBeUndefined()
+    expect(await run(db.deleteWorkspacePane(workspace.id, "second-pane"))).toEqual(survivor)
+    expect(await run(db.listWorkspacePanes)).toEqual([survivor])
 
-    const detached = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
-    expect(detached.workspaceId).toBeUndefined()
-
-    await run(db.setSessionWorkspace(detached.id, workspace.id))
-    expect((await run(db.getSessionSummary(detached.id))).workspaceId).toBe(workspace.id)
-    await run(db.setSessionWorkspace(detached.id, null))
-    expect((await run(db.getSessionSummary(detached.id))).workspaceId).toBeUndefined()
-
-    await expect(run(db.setSessionWorkspace("missing", workspace.id))).rejects.toBeInstanceOf(
-      DatabaseError
-    )
-    // A session cannot point at a workspace that does not exist.
-    await expect(
-      run(db.setSessionWorkspace(detached.id, "missing-workspace"))
-    ).rejects.toBeInstanceOf(DatabaseError)
-    await Effect.runPromise(db.close)
+    const snapshot = await run(db.getWorkspaceSnapshot)
+    expect(snapshot.workspaces.map((item) => item.id)).toContain(workspace.id)
+    expect(snapshot.panes).toEqual([survivor])
+    await run(db.close)
   })
 })

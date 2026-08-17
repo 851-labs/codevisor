@@ -111,9 +111,7 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
         projectId = try container.decode(UUID.self, forKey: .projectId)
         if let decodedTabs = try container.decodeIfPresent([WorkspaceTab].self, forKey: .centerTabs) {
             if decodedTabs.isEmpty {
-                var state = PaneGroupState()
-                _ = state.addNewTabPane()
-                let replacement = WorkspaceTab(root: .leaf(state))
+                let replacement = WorkspaceTab(root: .leaf(PaneGroupState()))
                 centerTabs = [replacement]
                 selectedCenterTabId = replacement.id
             } else {
@@ -268,6 +266,46 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
             .flatMap { $0.root.allGroups }
             .flatMap(\.state.panes)
             .first { $0.kind == .chat && $0.chatSessionId == sessionId }
+    }
+
+    /// Replaces an existing center pane without changing its tab/split slot,
+    /// or appends it as a new top tab when this device has not placed the pane
+    /// yet. New Tab promotion uses this to keep one pane identity while its
+    /// renderer changes from placeholder to chat/terminal.
+    @discardableResult
+    public mutating func upsertCenterPane(
+        _ pane: PaneDescriptorState,
+        selecting: Bool = true
+    ) -> UUID {
+        for tabIndex in centerTabs.indices {
+            for group in centerTabs[tabIndex].root.allGroups {
+                guard group.state.panes.contains(where: { $0.id == pane.id }) else { continue }
+                centerTabs[tabIndex].root = centerTabs[tabIndex].root.updatingGroup(
+                    id: group.id
+                ) { state in
+                    var state = state
+                    guard let paneIndex = state.panes.firstIndex(where: { $0.id == pane.id }) else {
+                        return state
+                    }
+                    state.panes[paneIndex] = pane
+                    if selecting { state.selectedPaneId = pane.id }
+                    return state
+                }
+                if selecting {
+                    centerTabs[tabIndex].activeLeafId = group.id
+                    selectedCenterTabId = centerTabs[tabIndex].id
+                }
+                return centerTabs[tabIndex].id
+            }
+        }
+
+        let state = PaneGroupState(
+            panes: [pane], selectedPaneId: pane.id, isVisible: true
+        )
+        let tab = WorkspaceTab(root: .leaf(state))
+        centerTabs.append(tab)
+        if selecting { selectedCenterTabId = tab.id }
+        return tab.id
     }
 
     /// Session ids of every chat pane in the workspace, reading order.

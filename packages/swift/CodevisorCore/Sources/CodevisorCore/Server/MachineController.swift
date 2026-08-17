@@ -702,6 +702,7 @@ public final class MachineController {
         "session.created", "session.updated", "session.deleted",
         "session.attention.updated", "session.archived", "session.unarchived",
         "workspace.updated", "workspace.deleted",
+        "workspace.pane.updated", "workspace.pane.deleted",
         "harness.lifecycle.updated",
     ]
 
@@ -791,7 +792,7 @@ public final class MachineController {
                 // compatibility path, but keep it off the ordinary hot path.
                 scheduleNavigationRefresh()
             }
-        case "workspace.updated":
+        case "workspace.updated", "workspace.pane.updated", "workspace.pane.deleted":
             await workspaceSync?.refreshFromServer(serverId: serverId, client: client)
         case "project.created", "project.updated", "worktree.created":
             scheduleNavigationRefresh()

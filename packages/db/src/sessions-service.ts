@@ -247,7 +247,37 @@ export const makeSessionsService = (
       }),
     deleteSession: (rawId) =>
       attempt("deleteSession", () => {
-        sqlite.prepare("delete from sessions where id = ?").run(canonicalUuid(rawId))
+        const id = canonicalUuid(rawId)
+        sqlite.transaction(() => {
+          const pane = sqlite
+            .prepare(
+              "select id, workspace_id from workspace_panes where resource_kind = 'session' and resource_id = ?"
+            )
+            .get(id) as { readonly id: string; readonly workspace_id: string } | undefined
+          if (pane !== undefined) {
+            const count = (
+              sqlite
+                .prepare("select count(*) as count from workspace_panes where workspace_id = ?")
+                .get(pane.workspace_id) as { readonly count: number }
+            ).count
+            if (count > 1) {
+              sqlite.prepare("delete from workspace_panes where id = ?").run(pane.id)
+            } else {
+              // Permanent chat deletion is another way a pane resource can
+              // disappear. Apply the same final-pane invariant as Close.
+              sqlite
+                .prepare(
+                  `update workspace_panes set
+                     provider_id = 'codevisor', pane_type = 'new-tab', title = 'New tab',
+                     resource_kind = null, resource_id = null, metadata = null,
+                     revision = revision + 1, updated_at = ?
+                   where id = ?`
+                )
+                .run(isoTimestamp(), pane.id)
+            }
+          }
+          sqlite.prepare("delete from sessions where id = ?").run(id)
+        })()
       })
   }
 }

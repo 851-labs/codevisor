@@ -716,6 +716,516 @@ struct MachineControllerTests {
         controller.stopEventSync()
     }
 
+    @Test("Server pane snapshots materialize remote tabs and apply live deletion")
+    func workspacePaneSync() async throws {
+        let projectId = UUID()
+        let workspaceId = UUID()
+        let sessionId = UUID()
+        let chatPaneId = UUID()
+        let remoteTabId = UUID()
+        let project = ServerProject(
+            id: projectId.uuidString,
+            name: "Shared",
+            isArchived: false,
+            symbolName: "folder",
+            origin: .codevisor,
+            createdAt: "2026-06-30T00:00:00.000Z",
+            locations: [
+                ServerProjectLocation(
+                    id: UUID().uuidString,
+                    projectId: projectId.uuidString,
+                    serverId: "local",
+                    folderPath: "/tmp/shared-panes",
+                    createdAt: "2026-06-30T00:00:00.000Z",
+                    isGitRepository: nil
+                )
+            ]
+        )
+        let session = ServerSession(
+            id: sessionId.uuidString,
+            projectId: projectId.uuidString,
+            serverId: "local",
+            harnessId: "codex",
+            agentSessionId: nil,
+            title: "Chat",
+            origin: .codevisor,
+            isArchived: false,
+            worktreeName: nil,
+            workspaceId: workspaceId.uuidString,
+            cwd: "/tmp/shared-panes",
+            createdAt: "2026-06-30T00:00:01.000Z",
+            updatedAt: nil,
+            usage: nil
+        )
+        let workspace = ServerWorkspace(
+            id: workspaceId.uuidString,
+            serverId: "local",
+            projectId: projectId.uuidString,
+            name: "Shared",
+            hasCustomName: false,
+            rootDirectory: "/tmp/shared-panes",
+            isArchived: false,
+            createdAt: "2026-06-30T00:00:00.000Z"
+        )
+        let chatPane = ServerWorkspacePane(
+            id: chatPaneId.uuidString,
+            workspaceId: workspaceId.uuidString,
+            providerId: "codevisor",
+            paneType: "chat",
+            title: "Chat",
+            resourceKind: "session",
+            resourceId: sessionId.uuidString,
+            createdAt: "2026-06-30T00:00:01.000Z"
+        )
+        let remoteTab = ServerWorkspacePane(
+            id: remoteTabId.uuidString,
+            workspaceId: workspaceId.uuidString,
+            providerId: "codevisor",
+            paneType: "new-tab",
+            title: "New tab",
+            createdAt: "2026-06-30T00:00:02.000Z"
+        )
+        let fake = SyncFakeServerClient(
+            projects: [project], sessions: [session], workspaces: [workspace],
+            panes: [chatPane, remoteTab]
+        )
+        let projectList = ProjectListModel(
+            projectRepository: DefaultProjectRepository(store: InMemoryStore()),
+            sessionRepository: DefaultSessionRepository(store: InMemoryStore())
+        )
+        let repository = DefaultWorkspaceRepository(store: InMemoryStore())
+        var legacyState = PaneGroupState.centerInitial(sessionId: sessionId)
+        _ = legacyState.addChatPane(sessionId: sessionId)
+        let legacyPane = legacyState.addNewTabPane()
+        repository.save(
+            Workspace(
+                id: workspaceId,
+                name: "Shared",
+                rootDirectory: "/tmp/shared-panes",
+                serverId: "local",
+                projectId: projectId,
+                centerTree: .leaf(legacyState),
+                bottomGroup: PaneGroupState(),
+                isServerSynced: false
+            )
+        )
+        let workspaceSync = WorkspaceSyncModel(repository: repository, projectList: projectList)
+        let controller = MachineController(
+            store: InMemoryStore(),
+            projectList: projectList,
+            workspaceSync: workspaceSync,
+            clientFactory: { _ in fake }
+        )
+
+        await controller.refreshSelectedNavigationState()
+        let materialized = try #require(repository.workspace(id: workspaceId))
+        #expect(materialized.tabId(containingPane: remoteTabId) != nil)
+        #expect(materialized.pane(containingChat: sessionId)?.id == chatPaneId)
+        #expect(
+            materialized.centerTabs.flatMap { $0.root.allGroups }.flatMap(\.state.panes)
+                .filter { $0.chatSessionId == sessionId }.count == 1
+        )
+        // A coherent current-server snapshot is authoritative: hydration does
+        // not upload a local-only fallback pane.
+        #expect(fake.workspacePanes?.contains(where: { $0.id == legacyPane.id.uuidString }) == false)
+
+        controller.startEventSync()
+        fake.setPanes([chatPane])
+        fake.emit(kind: "workspace.pane.deleted", subjectId: remoteTabId.uuidString)
+        try await waitForSync {
+            repository.workspace(id: workspaceId)?.tabId(containingPane: remoteTabId) == nil
+        }
+    }
+
+    @Test("Legacy workspace adoption publishes membership before its panes")
+    func legacyWorkspacePaneAdoption() async throws {
+        let projectId = UUID()
+        let workspaceId = UUID()
+        let sessionId = UUID()
+        let project = ServerProject(
+            id: projectId.uuidString,
+            name: "Legacy",
+            isArchived: false,
+            symbolName: "folder",
+            origin: .codevisor,
+            createdAt: "2026-06-30T00:00:00.000Z",
+            locations: [
+                ServerProjectLocation(
+                    id: UUID().uuidString,
+                    projectId: projectId.uuidString,
+                    serverId: "local",
+                    folderPath: "/tmp/legacy-workspace",
+                    createdAt: "2026-06-30T00:00:00.000Z",
+                    isGitRepository: nil
+                )
+            ]
+        )
+        let session = ServerSession(
+            id: sessionId.uuidString,
+            projectId: projectId.uuidString,
+            serverId: "local",
+            harnessId: "codex",
+            agentSessionId: nil,
+            title: "Legacy chat",
+            origin: .codevisor,
+            isArchived: false,
+            worktreeName: nil,
+            workspaceId: nil,
+            cwd: "/tmp/legacy-workspace",
+            createdAt: "2026-06-30T00:00:01.000Z",
+            updatedAt: nil,
+            usage: nil
+        )
+        let fake = SyncFakeServerClient(
+            projects: [project], sessions: [session], workspaces: [], panes: []
+        )
+        let projectList = ProjectListModel(
+            projectRepository: DefaultProjectRepository(store: InMemoryStore()),
+            sessionRepository: DefaultSessionRepository(store: InMemoryStore())
+        )
+        let repository = DefaultWorkspaceRepository(store: InMemoryStore())
+        var chatState = PaneGroupState.centerInitial(sessionId: sessionId)
+        let placeholder = chatState.addNewTabPane()
+        repository.save(
+            Workspace(
+                id: workspaceId,
+                name: "Legacy",
+                rootDirectory: "/tmp/legacy-workspace",
+                serverId: "local",
+                projectId: projectId,
+                centerTree: .leaf(chatState),
+                bottomGroup: PaneGroupState(),
+                isServerSynced: false
+            )
+        )
+        let workspaceSync = WorkspaceSyncModel(repository: repository, projectList: projectList)
+        let controller = MachineController(
+            store: InMemoryStore(),
+            projectList: projectList,
+            workspaceSync: workspaceSync,
+            clientFactory: { _ in fake }
+        )
+
+        await controller.refreshSelectedNavigationState()
+
+        #expect(fake.workspaces.contains { UUID(uuidString: $0.id) == workspaceId })
+        #expect(
+            fake.sessions.first { UUID(uuidString: $0.id) == sessionId }?.workspaceId
+                .flatMap(UUID.init(uuidString:)) == workspaceId
+        )
+        #expect(fake.workspacePanes?.contains { UUID(uuidString: $0.id) == placeholder.id } == false)
+        #expect(repository.workspace(id: workspaceId)?.isServerSynced == true)
+    }
+
+    @Test("A stale placeholder snapshot cannot repaint an optimistic chat promotion")
+    func staleWorkspacePaneSnapshotDoesNotRevertPromotion() async throws {
+        let projectId = UUID()
+        let workspaceId = UUID()
+        let sessionId = UUID()
+        let paneId = UUID()
+        let project = ServerProject(
+            id: projectId.uuidString,
+            name: "Shared",
+            isArchived: false,
+            symbolName: "folder",
+            origin: .codevisor,
+            createdAt: "2026-06-30T00:00:00.000Z",
+            locations: [
+                ServerProjectLocation(
+                    id: UUID().uuidString,
+                    projectId: projectId.uuidString,
+                    serverId: "local",
+                    folderPath: "/tmp/stale-pane",
+                    createdAt: "2026-06-30T00:00:00.000Z",
+                    isGitRepository: nil
+                )
+            ]
+        )
+        let session = ServerSession(
+            id: sessionId.uuidString,
+            projectId: projectId.uuidString,
+            serverId: "local",
+            harnessId: "codex",
+            agentSessionId: nil,
+            title: "New Chat",
+            origin: .codevisor,
+            isArchived: false,
+            worktreeName: nil,
+            workspaceId: workspaceId.uuidString,
+            cwd: "/tmp/stale-pane",
+            createdAt: "2026-06-30T00:00:01.000Z",
+            updatedAt: nil,
+            usage: nil
+        )
+        let workspaceRecord = ServerWorkspace(
+            id: workspaceId.uuidString,
+            serverId: "local",
+            projectId: projectId.uuidString,
+            name: "Shared",
+            hasCustomName: false,
+            rootDirectory: "/tmp/stale-pane",
+            isArchived: false,
+            createdAt: "2026-06-30T00:00:00.000Z"
+        )
+        let placeholderRecord = ServerWorkspacePane(
+            id: paneId.uuidString,
+            workspaceId: workspaceId.uuidString,
+            providerId: "codevisor",
+            paneType: "new-tab",
+            title: "New tab",
+            revision: 1,
+            createdAt: "2026-06-30T00:00:02.000Z"
+        )
+        let fake = SyncFakeServerClient(
+            projects: [project],
+            sessions: [session],
+            workspaces: [workspaceRecord],
+            panes: [placeholderRecord]
+        )
+        fake.configurePanePromotionDelay(nanoseconds: 250_000_000)
+        let projectList = ProjectListModel(
+            projectRepository: DefaultProjectRepository(store: InMemoryStore()),
+            sessionRepository: DefaultSessionRepository(store: InMemoryStore())
+        )
+        let repository = DefaultWorkspaceRepository(store: InMemoryStore())
+        let placeholder = PaneDescriptorState(
+            id: paneId,
+            kind: .newTab,
+            name: "New tab",
+            terminalKey: paneId.uuidString
+        )
+        repository.save(
+            Workspace(
+                id: workspaceId,
+                name: "Shared",
+                rootDirectory: "/tmp/stale-pane",
+                serverId: "local",
+                projectId: projectId,
+                centerTree: .leaf(
+                    PaneGroupState(
+                        panes: [placeholder], selectedPaneId: paneId, isVisible: true
+                    )
+                ),
+                bottomGroup: PaneGroupState(),
+                isServerSynced: true
+            )
+        )
+        let workspaceSync = WorkspaceSyncModel(repository: repository, projectList: projectList)
+        let controller = MachineController(
+            store: InMemoryStore(),
+            projectList: projectList,
+            workspaceSync: workspaceSync,
+            clientFactory: { _ in fake }
+        )
+        await controller.refreshSelectedNavigationState()
+        let localSession = try #require(projectList.sessions.first { $0.id == sessionId })
+        let promoted = PaneDescriptorState(
+            id: paneId,
+            kind: .chat,
+            name: "New Chat",
+            terminalKey: paneId.uuidString,
+            chatSessionId: sessionId
+        )
+        var localWorkspace = try #require(repository.workspace(id: workspaceId))
+        localWorkspace.upsertCenterPane(promoted)
+        repository.save(localWorkspace)
+
+        workspaceSync.promotePaneToChat(
+            promoted,
+            session: localSession,
+            workspaceId: workspaceId,
+            client: fake
+        )
+        // This response is deliberately captured while the server still has
+        // revision 1 / New Tab. It must not overwrite the local renderer.
+        await workspaceSync.refreshFromServer(serverId: "local", client: fake)
+        #expect(repository.workspace(id: workspaceId)?.pane(containingChat: sessionId)?.id == paneId)
+
+        try await waitForSync {
+            fake.workspacePanes?.first?.paneType == "chat"
+                && repository.workspace(id: workspaceId)?.pane(containingChat: sessionId)?.id == paneId
+        }
+    }
+
+    @Test("Optimistic pane closes reject stale snapshots and preserve the final pane id")
+    func optimisticWorkspacePaneClose() async throws {
+        let projectId = UUID()
+        let workspaceId = UUID()
+        let firstId = UUID()
+        let secondId = UUID()
+        let workspaceRecord = ServerWorkspace(
+            id: workspaceId.uuidString,
+            serverId: "local",
+            projectId: projectId.uuidString,
+            name: "Shared",
+            hasCustomName: false,
+            rootDirectory: "/tmp/optimistic-close",
+            isArchived: false,
+            createdAt: "2026-06-30T00:00:00.000Z"
+        )
+        let firstRecord = ServerWorkspacePane(
+            id: firstId.uuidString,
+            workspaceId: workspaceId.uuidString,
+            providerId: "codevisor",
+            paneType: "terminal",
+            title: "Terminal 1",
+            resourceKind: "terminal",
+            resourceId: "one",
+            revision: 1,
+            createdAt: "2026-06-30T00:00:01.000Z"
+        )
+        let secondRecord = ServerWorkspacePane(
+            id: secondId.uuidString,
+            workspaceId: workspaceId.uuidString,
+            providerId: "codevisor",
+            paneType: "terminal",
+            title: "Terminal 2",
+            resourceKind: "terminal",
+            resourceId: "two",
+            revision: 1,
+            createdAt: "2026-06-30T00:00:02.000Z"
+        )
+        let fake = SyncFakeServerClient(
+            projects: [], sessions: [], workspaces: [workspaceRecord],
+            panes: [firstRecord, secondRecord]
+        )
+        fake.configurePaneCloseDelay(nanoseconds: 250_000_000)
+        let projectList = ProjectListModel(
+            projectRepository: DefaultProjectRepository(store: InMemoryStore()),
+            sessionRepository: DefaultSessionRepository(store: InMemoryStore())
+        )
+        let repository = DefaultWorkspaceRepository(store: InMemoryStore())
+        let first = PaneDescriptorState(
+            id: firstId, kind: .terminal, name: "Terminal 1", terminalKey: "one"
+        )
+        let second = PaneDescriptorState(
+            id: secondId, kind: .terminal, name: "Terminal 2", terminalKey: "two"
+        )
+        var local = Workspace(
+            id: workspaceId,
+            name: "Shared",
+            rootDirectory: "/tmp/optimistic-close",
+            serverId: "local",
+            projectId: projectId,
+            centerTabs: [
+                WorkspaceTab(
+                    root: .leaf(
+                        PaneGroupState(panes: [first], selectedPaneId: firstId, isVisible: true)
+                    )
+                ),
+                WorkspaceTab(
+                    root: .leaf(
+                        PaneGroupState(panes: [second], selectedPaneId: secondId, isVisible: true)
+                    )
+                ),
+            ],
+            bottomGroup: PaneGroupState(),
+            isServerSynced: true
+        )
+        let sync = WorkspaceSyncModel(repository: repository, projectList: projectList)
+
+        // The UI removes the second pane immediately. A snapshot captured
+        // while Close is still in flight must not resurrect it.
+        local.centerTabs.removeLast()
+        local.selectedCenterTabId = local.centerTabs[0].id
+        repository.save(local)
+        sync.deletePane(id: secondId, workspaceId: workspaceId, client: fake)
+        await sync.refreshFromServer(serverId: "local", client: fake)
+        #expect(repository.workspace(id: workspaceId)?.tabId(containingPane: secondId) == nil)
+        try await waitForSync {
+            fake.workspacePanes?.contains(where: { UUID(uuidString: $0.id) == secondId }) == false
+        }
+
+        // Closing the remaining renderer is an in-place optimistic reset and
+        // the server confirms that exact same identity.
+        fake.configurePaneCloseDelay(nanoseconds: 0)
+        var final = try #require(repository.workspace(id: workspaceId))
+        let groupId = try #require(final.centerTabs[0].root.allGroups.first?.id)
+        var replacement: PaneDescriptorState?
+        final.centerTabs[0].root = final.centerTabs[0].root.updatingGroup(id: groupId) { state in
+            var state = state
+            replacement = state.replacePaneWithNewTab(id: firstId)
+            return state
+        }
+        repository.save(final)
+        sync.deletePane(
+            id: firstId,
+            workspaceId: workspaceId,
+            optimisticReplacement: replacement,
+            client: fake
+        )
+        #expect(repository.workspace(id: workspaceId)?.centerTree.allGroups[0].state.selectedPane?.id == firstId)
+        try await waitForSync {
+            fake.workspacePanes?.first?.id.caseInsensitiveCompare(firstId.uuidString) == .orderedSame
+                && fake.workspacePanes?.first?.paneType == "new-tab"
+                && repository.workspace(id: workspaceId)?.centerTree.allGroups[0].state.selectedPane?.kind
+                    == .newTab
+        }
+    }
+
+    @Test("An immediate pane close reaches the server after its create")
+    func immediateWorkspacePaneClosePreservesCommandOrder() async throws {
+        let projectId = UUID()
+        let workspaceId = UUID()
+        let paneId = UUID()
+        let workspaceRecord = ServerWorkspace(
+            id: workspaceId.uuidString,
+            serverId: "local",
+            projectId: projectId.uuidString,
+            name: "Shared",
+            hasCustomName: false,
+            rootDirectory: "/tmp/ordered-close",
+            isArchived: false,
+            createdAt: "2026-06-30T00:00:00.000Z"
+        )
+        let fake = SyncFakeServerClient(
+            projects: [], sessions: [], workspaces: [workspaceRecord], panes: []
+        )
+        fake.configurePaneUpsertDelay(nanoseconds: 200_000_000)
+        let projectList = ProjectListModel(
+            projectRepository: DefaultProjectRepository(store: InMemoryStore()),
+            sessionRepository: DefaultSessionRepository(store: InMemoryStore())
+        )
+        let repository = DefaultWorkspaceRepository(store: InMemoryStore())
+        let pane = PaneDescriptorState(
+            id: paneId,
+            kind: .newTab,
+            name: "New tab",
+            terminalKey: paneId.uuidString
+        )
+        repository.save(
+            Workspace(
+                id: workspaceId,
+                name: "Shared",
+                rootDirectory: "/tmp/ordered-close",
+                serverId: "local",
+                projectId: projectId,
+                centerTree: .leaf(
+                    PaneGroupState(panes: [pane], selectedPaneId: paneId, isVisible: true)
+                ),
+                bottomGroup: PaneGroupState(),
+                isServerSynced: true
+            )
+        )
+        let sync = WorkspaceSyncModel(repository: repository, projectList: projectList)
+
+        sync.publishPane(pane, workspaceId: workspaceId, client: fake)
+        sync.deletePane(
+            id: paneId,
+            workspaceId: workspaceId,
+            optimisticReplacement: pane,
+            client: fake
+        )
+
+        try await Task.sleep(nanoseconds: 30_000_000)
+        #expect(fake.paneMutationLog == ["upsert"])
+        try await waitForSync {
+            fake.paneMutationLog == ["upsert", "close"]
+                && fake.workspacePanes?.first?.id.caseInsensitiveCompare(paneId.uuidString)
+                    == .orderedSame
+        }
+    }
+
     private func waitForSync(_ predicate: () -> Bool) async throws {
         for _ in 0..<200 {
             if predicate() { return }
@@ -870,19 +1380,26 @@ private final class SyncFakeServerClient: CodevisorServerClienting, @unchecked S
     private var _projects: [ServerProject]
     private var _sessions: [ServerSession]
     private var _workspaces: [ServerWorkspace]
+    private var _panes: [ServerWorkspacePane]?
     private var continuations: [AsyncThrowingStream<ServerEventEnvelope, any Error>.Continuation] = []
     private var emittedEvents: [ServerEventEnvelope] = []
     private var nextEventId = 1
     private var _listSessionCallCount = 0
+    private var _paneUpsertDelayNanoseconds: UInt64 = 0
+    private var _panePromotionDelayNanoseconds: UInt64 = 0
+    private var _paneCloseDelayNanoseconds: UInt64 = 0
+    private var _paneMutationLog: [String] = []
 
     init(
         projects: [ServerProject],
         sessions: [ServerSession],
-        workspaces: [ServerWorkspace] = []
+        workspaces: [ServerWorkspace] = [],
+        panes: [ServerWorkspacePane]? = nil
     ) {
         _projects = projects
         _sessions = sessions
         _workspaces = workspaces
+        _panes = panes
     }
 
     func setSessions(_ sessions: [ServerSession]) {
@@ -897,7 +1414,27 @@ private final class SyncFakeServerClient: CodevisorServerClienting, @unchecked S
         lock.withLock { _workspaces = workspaces }
     }
 
+    func setPanes(_ panes: [ServerWorkspacePane]) {
+        lock.withLock { _panes = panes }
+    }
+
+    func configurePanePromotionDelay(nanoseconds: UInt64) {
+        lock.withLock { _panePromotionDelayNanoseconds = nanoseconds }
+    }
+
+    func configurePaneUpsertDelay(nanoseconds: UInt64) {
+        lock.withLock { _paneUpsertDelayNanoseconds = nanoseconds }
+    }
+
+    func configurePaneCloseDelay(nanoseconds: UInt64) {
+        lock.withLock { _paneCloseDelayNanoseconds = nanoseconds }
+    }
+
     var listSessionCallCount: Int { lock.withLock { _listSessionCallCount } }
+    var sessions: [ServerSession] { lock.withLock { _sessions } }
+    var workspaces: [ServerWorkspace] { lock.withLock { _workspaces } }
+    var workspacePanes: [ServerWorkspacePane]? { lock.withLock { _panes } }
+    var paneMutationLog: [String] { lock.withLock { _paneMutationLog } }
 
     func emit(kind: String, subjectId: String, payload: JSONValue = .null) {
         let (event, targets):
@@ -941,6 +1478,104 @@ private final class SyncFakeServerClient: CodevisorServerClienting, @unchecked S
         }
     }
     func listWorkspaces() async throws -> [ServerWorkspace]? { lock.withLock { _workspaces } }
+    func workspaceSnapshot() async throws -> ServerWorkspaceSnapshot? {
+        lock.withLock {
+            guard let panes = _panes else { return nil }
+            return ServerWorkspaceSnapshot(workspaces: _workspaces, panes: panes)
+        }
+    }
+    func upsertWorkspace(_ workspace: ServerWorkspace) async throws -> ServerWorkspace? {
+        lock.withLock {
+            _workspaces.removeAll {
+                $0.id.caseInsensitiveCompare(workspace.id) == .orderedSame
+            }
+            _workspaces.append(workspace)
+            return workspace
+        }
+    }
+    func listWorkspacePanes() async throws -> [ServerWorkspacePane]? { lock.withLock { _panes } }
+    func upsertWorkspacePane(_ pane: ServerWorkspacePane) async throws -> ServerWorkspacePane? {
+        let delay = lock.withLock {
+            _paneMutationLog.append("upsert")
+            return _paneUpsertDelayNanoseconds
+        }
+        if delay > 0 { try await Task.sleep(nanoseconds: delay) }
+        return lock.withLock { () -> ServerWorkspacePane? in
+            guard _panes != nil else { return nil }
+            _panes?.removeAll { $0.id.caseInsensitiveCompare(pane.id) == .orderedSame }
+            _panes?.append(pane)
+            return pane
+        }
+    }
+
+    func promoteWorkspacePaneToChat(
+        _ pane: ServerWorkspacePane,
+        session: ChatSession
+    ) async throws -> ServerWorkspacePanePromotion? {
+        let delay = lock.withLock { _panePromotionDelayNanoseconds }
+        if delay > 0 { try await Task.sleep(nanoseconds: delay) }
+        return lock.withLock {
+            guard
+                let paneIndex = _panes?.firstIndex(where: {
+                    $0.id.caseInsensitiveCompare(pane.id) == .orderedSame
+                }),
+                let sessionIndex = _sessions.firstIndex(where: {
+                    UUID(uuidString: $0.id) == session.id
+                })
+            else { return nil }
+            var promoted = pane
+            promoted.revision = (_panes?[paneIndex].revision ?? 0) + 1
+            _panes?[paneIndex] = promoted
+            _sessions[sessionIndex].workspaceId = pane.workspaceId
+            return ServerWorkspacePanePromotion(
+                pane: promoted,
+                session: _sessions[sessionIndex]
+            )
+        }
+    }
+
+    func deleteWorkspacePane(workspaceId _: UUID, paneId: UUID) async throws {
+        lock.withLock {
+            _panes?.removeAll {
+                $0.id.caseInsensitiveCompare(paneId.uuidString) == .orderedSame
+            }
+        }
+    }
+
+    func closeWorkspacePane(workspaceId: UUID, paneId: UUID) async throws -> ServerWorkspacePane? {
+        let delay = lock.withLock {
+            _paneMutationLog.append("close")
+            return _paneCloseDelayNanoseconds
+        }
+        if delay > 0 { try await Task.sleep(nanoseconds: delay) }
+        return lock.withLock { () -> ServerWorkspacePane? in
+            guard let panes = _panes else { return nil }
+            let workspacePaneIndices = panes.indices.filter {
+                panes[$0].workspaceId.caseInsensitiveCompare(workspaceId.uuidString) == .orderedSame
+            }
+            guard
+                let index = workspacePaneIndices.first(where: {
+                    panes[$0].id.caseInsensitiveCompare(paneId.uuidString) == .orderedSame
+                })
+            else { return nil }
+            if workspacePaneIndices.count > 1 {
+                _panes?.remove(at: index)
+                return nil
+            }
+            var replacement = panes[index]
+            if replacement.paneType != "new-tab" || replacement.resourceId != nil {
+                replacement.providerId = "codevisor"
+                replacement.paneType = "new-tab"
+                replacement.title = "New tab"
+                replacement.resourceKind = nil
+                replacement.resourceId = nil
+                replacement.metadata = nil
+                replacement.revision = (replacement.revision ?? 0) + 1
+                _panes?[index] = replacement
+            }
+            return replacement
+        }
+    }
 
     // MARK: - Simulated server versioning / self-update
 
@@ -1045,6 +1680,17 @@ private final class SyncFakeServerClient: CodevisorServerClienting, @unchecked S
     func deleteProject(id: UUID) async throws {}
     func sessionDetail(id: UUID) async throws -> ServerSessionDetail { fatalError("unused") }
     func upsertSession(_ session: ChatSession) async throws -> ServerSession { fatalError("unused") }
+    func upsertSession(_ session: ChatSession, workspaceId: UUID?) async throws -> ServerSession {
+        lock.withLock {
+            guard
+                let index = _sessions.firstIndex(where: {
+                    UUID(uuidString: $0.id) == session.id
+                })
+            else { fatalError("Missing fake session") }
+            _sessions[index].workspaceId = workspaceId?.uuidString
+            return _sessions[index]
+        }
+    }
     func updateSession(_ session: ChatSession) async throws -> ServerSession { fatalError("unused") }
     func deleteSession(id: UUID) async throws {}
     func promptSession(id: UUID, text: String) async throws -> ServerPromptAccepted {

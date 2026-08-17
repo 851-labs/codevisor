@@ -5,6 +5,7 @@ import {
   AnswerOpenCodeAuthRequest,
   BranchDiffTotals,
   CancelRequest,
+  CloseWorkspacePaneResponse,
   CreateHarnessAccountRequest,
   CreateProjectFromGitRequest,
   CreateProjectRequest,
@@ -32,6 +33,8 @@ import {
   PromptAcceptedResponse,
   PromptQueueItem,
   PromptRequest,
+  PromoteWorkspacePaneToChatRequest,
+  PromoteWorkspacePaneToChatResponse,
   ServerCapabilities,
   ServerInfo,
   SessionDetail,
@@ -57,8 +60,12 @@ import {
   UpdateProjectRequest,
   UpdateQueuedPromptRequest,
   UpdateSessionRequest,
+  UpdateWorkspacePaneRequest,
+  UpsertWorkspacePaneRequest,
   UpsertWorkspaceRequest,
   Workspace,
+  WorkspacePane,
+  WorkspaceSnapshot,
   Worktree
 } from "./index.js"
 
@@ -97,10 +104,15 @@ export const endpoints = [
   "GET /v1/projects/:id/worktrees",
   "POST /v1/projects/:id/worktrees",
   "GET /v1/workspaces",
+  "GET /v1/workspace-snapshot",
+  "GET /v1/workspace-panes",
   "PUT /v1/workspaces/:id",
   "DELETE /v1/workspaces/:id",
-  "GET /v1/workspaces/:id/notes",
-  "PUT /v1/workspaces/:id/notes",
+  "PUT /v1/workspaces/:workspaceId/panes/:paneId",
+  "PATCH /v1/workspaces/:workspaceId/panes/:paneId",
+  "POST /v1/workspaces/:workspaceId/panes/:paneId/promote-chat",
+  "POST /v1/workspaces/:workspaceId/panes/:paneId/close",
+  "DELETE /v1/workspaces/:workspaceId/panes/:paneId",
   "GET /v1/harnesses",
   "POST /v1/harnesses/rescan",
   "POST /v1/harnesses/auth/refresh",
@@ -183,6 +195,9 @@ const requestSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> => ({
   "PATCH /v1/projects/:id": UpdateProjectRequest,
   "POST /v1/projects/:id/worktrees": CreateWorktreeRequest,
   "PUT /v1/workspaces/:id": UpsertWorkspaceRequest,
+  "PUT /v1/workspaces/:workspaceId/panes/:paneId": UpsertWorkspacePaneRequest,
+  "PATCH /v1/workspaces/:workspaceId/panes/:paneId": UpdateWorkspacePaneRequest,
+  "POST /v1/workspaces/:workspaceId/panes/:paneId/promote-chat": PromoteWorkspacePaneToChatRequest,
   "PATCH /v1/harnesses/:id": UpdateHarnessRequest,
   "POST /v1/harnesses/:id/accounts": CreateHarnessAccountRequest,
   "PATCH /v1/harnesses/:id/accounts/:accountId": UpdateHarnessAccountRequest,
@@ -224,7 +239,14 @@ const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> => ({
   "GET /v1/projects/:id/worktrees": arrayOf(Worktree),
   "POST /v1/projects/:id/worktrees": Worktree,
   "GET /v1/workspaces": arrayOf(Workspace),
+  "GET /v1/workspace-snapshot": WorkspaceSnapshot,
+  "GET /v1/workspace-panes": arrayOf(WorkspacePane),
   "PUT /v1/workspaces/:id": Workspace,
+  "PUT /v1/workspaces/:workspaceId/panes/:paneId": WorkspacePane,
+  "PATCH /v1/workspaces/:workspaceId/panes/:paneId": WorkspacePane,
+  "POST /v1/workspaces/:workspaceId/panes/:paneId/promote-chat": PromoteWorkspacePaneToChatResponse,
+  "POST /v1/workspaces/:workspaceId/panes/:paneId/close": CloseWorkspacePaneResponse,
+  "DELETE /v1/workspaces/:workspaceId/panes/:paneId": CloseWorkspacePaneResponse,
   "GET /v1/harnesses": arrayOf(Harness),
   "POST /v1/harnesses/rescan": arrayOf(Harness),
   "POST /v1/harnesses/auth/refresh": arrayOf(Harness),
@@ -333,7 +355,7 @@ const websocketEndpoints = new Set<Endpoint>([
 const tagFor = (path: string): string => {
   if (path.includes("/auth/")) return "Authentication"
   if (path.includes("/projects")) return "Projects"
-  if (path.includes("/workspaces")) return "Workspaces"
+  if (path.includes("/workspace")) return "Workspaces"
   if (path.includes("/harnesses")) return "Harnesses"
   if (path.includes("/sessions")) return "Sessions"
   if (path.includes("/files")) return "Files"

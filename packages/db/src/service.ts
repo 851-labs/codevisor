@@ -20,8 +20,12 @@ import type {
   UpdateProjectRequest,
   UpdateSessionRequest,
   UpdateWorkspaceRequest,
+  UpdateWorkspacePaneRequest,
+  UpsertWorkspacePaneRequest,
   UpsertWorkspaceRequest,
   Workspace,
+  WorkspacePane,
+  WorkspaceSnapshot,
   Worktree
 } from "@codevisor/api"
 import Database from "better-sqlite3"
@@ -98,6 +102,29 @@ export interface CodevisorDatabaseService {
     request: UpdateWorkspaceRequest
   ) => Effect.Effect<Workspace, DatabaseError>
   readonly deleteWorkspace: (id: string) => Effect.Effect<void, DatabaseError>
+  readonly getWorkspaceSnapshot: Effect.Effect<WorkspaceSnapshot, DatabaseError>
+  readonly listWorkspacePanes: Effect.Effect<ReadonlyArray<WorkspacePane>, DatabaseError>
+  readonly upsertWorkspacePane: (
+    workspaceId: string,
+    request: UpsertWorkspacePaneRequest
+  ) => Effect.Effect<WorkspacePane, DatabaseError>
+  readonly updateWorkspacePane: (
+    workspaceId: string,
+    paneId: string,
+    request: UpdateWorkspacePaneRequest
+  ) => Effect.Effect<WorkspacePane, DatabaseError>
+  readonly deleteWorkspacePane: (
+    workspaceId: string,
+    paneId: string
+  ) => Effect.Effect<WorkspacePane | undefined, DatabaseError>
+  /// Atomically replaces one pane's renderer/resource and assigns the chat
+  /// session to that workspace. It never manufactures a second pane id.
+  readonly promoteWorkspacePaneToSession: (
+    workspaceId: string,
+    paneId: string,
+    sessionId: string,
+    title: string
+  ) => Effect.Effect<WorkspacePane, DatabaseError>
   readonly setSessionWorkspace: (
     sessionId: string,
     workspaceId: string | null

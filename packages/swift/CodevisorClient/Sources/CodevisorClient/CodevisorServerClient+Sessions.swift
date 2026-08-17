@@ -71,7 +71,7 @@ private struct AnswerQuestionBody: Encodable {
     var clientActionId = UUID().uuidString
 }
 
-private struct CreateSessionBody: Encodable {
+struct CreateSessionBody: Encodable {
     var id: String
     var projectId: String
     var harnessId: String

@@ -146,7 +146,7 @@ public enum WorkspaceWorktreeSplitMigration {
                 serverId: workspace.serverId,
                 projectId: workspace.projectId,
                 centerTabs: tabs,
-                bottomGroup: .initial(sessionId: group.sessionIds[0]),
+                bottomGroup: PaneGroupState(),
                 createdAt: workspace.createdAt,
                 isArchived: workspace.isArchived
             )
@@ -179,9 +179,7 @@ public enum WorkspaceWorktreeSplitMigration {
             return repaired
         }
         if workspace.centerTabs.isEmpty {
-            var state = PaneGroupState()
-            _ = state.addNewTabPane()
-            let replacement = WorkspaceTab(root: .leaf(state))
+            let replacement = WorkspaceTab(root: .leaf(PaneGroupState()))
             workspace.centerTabs = [replacement]
             workspace.selectedCenterTabId = replacement.id
         } else if !workspace.centerTabs.contains(where: { $0.id == workspace.selectedCenterTabId }) {

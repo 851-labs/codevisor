@@ -168,6 +168,26 @@ public protocol CodevisorServerClienting: Sendable {
     /// Server-owned workspace metadata. Nil means the connected server
     /// predates workspace snapshots; callers must preserve their local data.
     func listWorkspaces() async throws -> [ServerWorkspace]?
+    /// Coherent workspace and pane registry. Nil means the connected server
+    /// predates the combined snapshot endpoint.
+    func workspaceSnapshot() async throws -> ServerWorkspaceSnapshot?
+    /// Creates or updates a server-owned workspace identity. Nil means the
+    /// connected server predates workspace snapshots.
+    func upsertWorkspace(_ workspace: ServerWorkspace) async throws -> ServerWorkspace?
+    /// Nil means the connected server predates explicit pane identity.
+    func listWorkspacePanes() async throws -> [ServerWorkspacePane]?
+    /// Nil means the connected server predates explicit pane mutations.
+    func upsertWorkspacePane(_ pane: ServerWorkspacePane) async throws -> ServerWorkspacePane?
+    /// Atomically converts this exact pane to a chat and assigns the session.
+    /// Nil means the connected server predates atomic pane promotion.
+    func promoteWorkspacePaneToChat(
+        _ pane: ServerWorkspacePane,
+        session: ChatSession
+    ) async throws -> ServerWorkspacePanePromotion?
+    func deleteWorkspacePane(workspaceId: UUID, paneId: UUID) async throws
+    /// Atomically closes a pane. The returned pane is the same identity
+    /// converted to New Tab when it was the workspace's final pane.
+    func closeWorkspacePane(workspaceId: UUID, paneId: UUID) async throws -> ServerWorkspacePane?
     /// Mirrors a workspace's archived flag so other devices — and the
     /// server's own cascade to the workspace's chats — see it.
     func setWorkspaceArchived(id: UUID, isArchived: Bool) async throws
@@ -200,11 +220,22 @@ public protocol CodevisorServerClienting: Sendable {
         project: Project?,
         transcriptLimit: Int
     ) async throws -> ServerSessionOpenResponse?
+    /// Workspace-aware open used by native clients. Making this a protocol
+    /// requirement is essential: calls travel through an existential client,
+    /// where an extension-only overload would statically choose the legacy
+    /// implementation and silently discard the workspace id.
+    func openSession(
+        _ session: ChatSession,
+        project: Project?,
+        workspaceId: UUID?,
+        transcriptLimit: Int
+    ) async throws -> ServerSessionOpenResponse?
     func transcriptPage(id: UUID, before: String?, limit: Int) async throws -> ServerTranscriptPage
     func transcriptItemDetails(id: UUID, itemId: String) async throws -> ServerTranscriptItemDetails
     func promptQueue(id: UUID) async throws -> [ServerPromptQueueItem]
     func sessionEvents(id: UUID) async throws -> [ServerEventEnvelope]
     func upsertSession(_ session: ChatSession) async throws -> ServerSession
+    func upsertSession(_ session: ChatSession, workspaceId: UUID?) async throws -> ServerSession
     func updateSession(_ session: ChatSession) async throws -> ServerSession
     func markSessionRead(id: UUID, throughSequence: Int?) async throws -> ServerSession?
     func markSessionUnread(id: UUID) async throws -> ServerSession?

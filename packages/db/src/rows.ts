@@ -71,6 +71,20 @@ export interface WorkspaceRow {
   readonly updated_at: string | null
 }
 
+export interface WorkspacePaneRow {
+  readonly id: string
+  readonly workspace_id: string
+  readonly provider_id: string
+  readonly pane_type: string
+  readonly title: string
+  readonly resource_kind: string | null
+  readonly resource_id: string | null
+  readonly metadata: string | null
+  readonly revision: number
+  readonly created_at: string
+  readonly updated_at: string | null
+}
+
 export interface SessionRow {
   readonly id: string
   readonly project_id: string

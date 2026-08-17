@@ -90,6 +90,19 @@ public extension CodevisorServerClienting {
     }
 
     func listWorkspaces() async throws -> [ServerWorkspace]? { nil }
+    func workspaceSnapshot() async throws -> ServerWorkspaceSnapshot? { nil }
+    func upsertWorkspace(_ workspace: ServerWorkspace) async throws -> ServerWorkspace? { nil }
+    func listWorkspacePanes() async throws -> [ServerWorkspacePane]? { nil }
+    func upsertWorkspacePane(_ pane: ServerWorkspacePane) async throws -> ServerWorkspacePane? { nil }
+    func promoteWorkspacePaneToChat(
+        _ pane: ServerWorkspacePane,
+        session: ChatSession
+    ) async throws -> ServerWorkspacePanePromotion? { nil }
+    func deleteWorkspacePane(workspaceId: UUID, paneId: UUID) async throws {}
+    func closeWorkspacePane(workspaceId: UUID, paneId: UUID) async throws -> ServerWorkspacePane? {
+        try await deleteWorkspacePane(workspaceId: workspaceId, paneId: paneId)
+        return nil
+    }
 
     func shellEventStream() -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
         // Test doubles and old transports preserve their existing behavior.

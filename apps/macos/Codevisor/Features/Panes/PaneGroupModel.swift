@@ -46,6 +46,15 @@ final class PaneGroupModel: Identifiable {
     /// layer cleans up per-pane resources (draft controllers) and archives
     /// closed established chats' sessions.
     @ObservationIgnored var onPaneClosed: ((PaneDescriptorState) -> Void)?
+    /// Shared identity changed (create/convert/rename/bind). Layout persistence
+    /// stays local; the owning store mirrors this descriptor to the server.
+    @ObservationIgnored var onPaneChanged: ((PaneDescriptorState) -> Void)?
+    /// Separate from `onPaneClosed`, which containers replace with navigation
+    /// policy. A non-nil replacement means this was the workspace's final
+    /// pane and the same shared identity was optimistically reset to New Tab.
+    @ObservationIgnored var onPaneRemoved: ((PaneDescriptorState, PaneDescriptorState?) -> Void)?
+    /// Workspace-wide final-pane policy supplied by the owning store.
+    @ObservationIgnored var shouldReplaceClosedPaneWithNewTab: ((PaneDescriptorState) -> Bool)?
     /// Whether this group may dissolve out of the workspace (i.e. other
     /// groups exist). Gates closing a LONE New Tab placeholder — its close
     /// IS a dissolve, and in the workspace's last group it would just
@@ -78,11 +87,11 @@ final class PaneGroupModel: Identifiable {
         if let stored = repository.load(sessionId: sessionId, placement: placement) {
             self.state = stored
         } else {
-            // Persist immediately so pane 1's legacy terminal key is pinned
-            // before any surface attaches.
+            // Persist immediately so both placements have repository state.
+            // Bottom starts empty; its first terminal is created by toggle().
             let initial: PaneGroupState =
                 switch placement {
-                case .bottom: .initial(sessionId: sessionId)
+                case .bottom: PaneGroupState()
                 case .center: .centerInitial(sessionId: sessionId)
                 }
             self.state = initial
@@ -221,6 +230,52 @@ final class PaneGroupModel: Identifiable {
         state.selectedPane.map(pane(for:))
     }
 
+    /// Applies pane content reconciled from the shared workspace registry to
+    /// this mounted group without treating it as a local edit. In particular,
+    /// this does not persist or call `onPaneChanged`/`onPaneRemoved`: the
+    /// repository already contains the reconciled state and echoing it would
+    /// turn an inbound server snapshot into another outbound mutation.
+    ///
+    /// New Tab and chat share the same live host, so their in-place promotion
+    /// keeps focus and view identity. Renderer changes that need a different
+    /// host discard only that pane's live object and rebuild lazily.
+    @discardableResult
+    func reconcileExternalState(_ incoming: PaneGroupState) -> Bool {
+        let previousById = Dictionary(uniqueKeysWithValues: state.panes.map { ($0.id, $0) })
+        var reconciled = state
+        guard reconciled.reconcilePaneDescriptors(from: incoming) else { return false }
+        let nextById = Dictionary(uniqueKeysWithValues: reconciled.panes.map { ($0.id, $0) })
+        var invalidatedLiveIds = Set<UUID>()
+
+        for id in Array(live.keys) {
+            guard let previous = previousById[id], let next = nextById[id] else {
+                discardLivePane(id: id)
+                invalidatedLiveIds.insert(id)
+                continue
+            }
+            if Self.requiresNewLivePane(previous: previous, next: next) {
+                discardLivePane(id: id)
+                invalidatedLiveIds.insert(id)
+            }
+        }
+
+        let previousSelectedId = state.isVisible ? state.selectedPaneId : nil
+        state = reconciled
+        if let previousSelectedId,
+            previousSelectedId != state.selectedPaneId,
+            let previous = live[previousSelectedId]
+        {
+            previous.visibilityChanged(false)
+        }
+        if state.isVisible,
+            previousSelectedId != state.selectedPaneId
+                || state.selectedPaneId.map({ invalidatedLiveIds.contains($0) }) == true
+        {
+            selectedPane?.visibilityChanged(true)
+        }
+        return true
+    }
+
     func focusSelectedPane() {
         // Focusing an already-selected tab is still user activity in this
         // group. This is load-bearing for a selected New Tab in an inactive
@@ -239,6 +294,7 @@ final class PaneGroupModel: Identifiable {
         let previouslySelected = selectedPane
         let descriptor = state.addTerminalPane(sessionId: sessionId)
         persist()
+        onPaneChanged?(descriptor)
         onActivated?()
         previouslySelected?.visibilityChanged(false)
         let added = pane(for: descriptor)
@@ -253,6 +309,7 @@ final class PaneGroupModel: Identifiable {
         let previouslySelected = selectedPane
         let descriptor = state.addChatPane()
         persist()
+        onPaneChanged?(descriptor)
         onActivated?()
         previouslySelected?.visibilityChanged(false)
         let added = pane(for: descriptor)
@@ -264,6 +321,7 @@ final class PaneGroupModel: Identifiable {
     func assignChatSession(paneId: UUID, sessionId: UUID, name: String) {
         state.assignChatSession(paneId: paneId, sessionId: sessionId, name: name)
         persist()
+        if let pane = state.panes.first(where: { $0.id == paneId }) { onPaneChanged?(pane) }
     }
 
     func renamePane(id: UUID, to name: String) {
@@ -274,6 +332,7 @@ final class PaneGroupModel: Identifiable {
         else { return }
         state.panes[index].name = trimmed
         persist()
+        onPaneChanged?(state.panes[index])
     }
 
     /// Reverts a chat pane to an unbound draft (its session was deleted by
@@ -281,13 +340,14 @@ final class PaneGroupModel: Identifiable {
     func unbindChatPane(paneId: UUID) {
         state.unbindChatPane(paneId: paneId)
         persist()
+        if let pane = state.panes.first(where: { $0.id == paneId }) { onPaneChanged?(pane) }
     }
 
     /// Replaces a dead chat pane (session gone) with a New Tab placeholder.
     func resetChatPaneToPlaceholder(id: UUID) {
-        guard state.resetChatPaneToPlaceholder(id: id) != nil else { return }
-        live[id] = nil
+        guard let pane = state.resetChatPaneToPlaceholder(id: id) else { return }
         persist()
+        onPaneChanged?(pane)
     }
 
     /// Adds the "New tab" placeholder — spawned by the container when this
@@ -297,6 +357,7 @@ final class PaneGroupModel: Identifiable {
         let previouslySelected = selectedPane
         let descriptor = state.addNewTabPane()
         persist()
+        onPaneChanged?(descriptor)
         onActivated?()
         previouslySelected?.visibilityChanged(false)
         let added = pane(for: descriptor)
@@ -313,15 +374,17 @@ final class PaneGroupModel: Identifiable {
         chatSessionId: UUID? = nil,
         name: String? = nil
     ) {
-        guard
+        guard let previous = state.panes.first(where: { $0.id == id }),
             let converted = state.convertNewTabPane(
                 id: id, to: kind, sessionId: sessionId,
                 chatSessionId: chatSessionId, name: name
             )
         else { return }
-        // The placeholder's live host dies with the descriptor.
-        live[id] = nil
+        if Self.requiresNewLivePane(previous: previous, next: converted) {
+            discardLivePane(id: id)
+        }
         persist()
+        onPaneChanged?(converted)
         pane(for: converted).visibilityChanged(true)
         DispatchQueue.main.async { [weak self] in self?.focusSelectedPane() }
     }
@@ -359,6 +422,9 @@ final class PaneGroupModel: Identifiable {
                 terminalKey: task.terminalKey,
                 ownerChatSessionId: owner
             )
+            if let pane = state.panes.first(where: { $0.terminalKey == task.terminalKey }) {
+                onPaneChanged?(pane)
+            }
             changed = true
         }
         if changed {
@@ -406,13 +472,20 @@ final class PaneGroupModel: Identifiable {
         // shell from a previous app run that willDelete must clean up.
         let closing = pane(for: descriptor)
         live[id] = nil
-        if state.panes.count == 1 {
+        let replacement =
+            shouldReplaceClosedPaneWithNewTab?(descriptor) == true
+            ? state.replacePaneWithNewTab(id: id)
+            : nil
+        if replacement != nil {
+            paneFocusChanged(id: id, focused: false)
+            requestBackgroundFocus?()
+        } else if state.panes.count == 1 {
             // Closing the last tab also collapses the group. Suppress the
             // removal/collapse animations: the tab's exit transition would
             // otherwise replay in the already-collapsed bar (flicker).
             var transaction = Transaction()
             transaction.disablesAnimations = true
-            withTransaction(transaction) {
+            _ = withTransaction(transaction) {
                 state.closePane(id: id)
             }
         } else {
@@ -420,6 +493,7 @@ final class PaneGroupModel: Identifiable {
         }
         persist()
         Task { await closing.willDelete() }
+        onPaneRemoved?(descriptor, replacement)
         onPaneClosed?(descriptor)
         if state.isVisible, let selected = selectedPane {
             selected.visibilityChanged(true)
@@ -446,7 +520,6 @@ final class PaneGroupModel: Identifiable {
     func toggle() -> SessionFocusTarget {
         if !state.isVisible && state.panes.isEmpty {
             addTerminalPane()
-            persist()
             return .terminal
         }
         let target = state.toggle()
@@ -540,5 +613,29 @@ final class PaneGroupModel: Identifiable {
 
     private func persist() {
         repository.save(state, sessionId: sessionId, placement: placement)
+    }
+
+    private func discardLivePane(id: UUID) {
+        guard let pane = live.removeValue(forKey: id) else { return }
+        pane.visibilityChanged(false)
+        pane.detach()
+        paneFocusChanged(id: id, focused: false)
+    }
+
+    private static func requiresNewLivePane(
+        previous: PaneDescriptorState,
+        next: PaneDescriptorState
+    ) -> Bool {
+        switch (previous.kind, next.kind) {
+        case (.chat, .chat), (.chat, .newTab), (.newTab, .chat), (.newTab, .newTab):
+            // ChatPane resolves the current descriptor on every render.
+            return false
+        case (.terminal, .terminal):
+            // TerminalPane captures connection identity in its PaneContext.
+            return previous.terminalKey != next.terminalKey
+                || previous.attachOnly != next.attachOnly
+        default:
+            return true
+        }
     }
 }

@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import { CreateSessionRequest, SessionSummary } from "./sessions.js"
 
 /// A pane workspace: the server-owned identity of one working surface inside
 /// a project. It names the surface, points at the directory it works in (a
@@ -46,6 +47,81 @@ export const UpsertWorkspaceRequest = Schema.Struct({
   createdAt: Schema.optional(Schema.String)
 })
 export type UpsertWorkspaceRequest = typeof UpsertWorkspaceRequest.Type
+
+/// A server-owned pane identity. Layout deliberately does not live here:
+/// clients arrange these stable ids into their own tabs/splits, while the
+/// provider/type/resource tuple says what each pane renders on every device.
+export const WorkspacePane = Schema.Struct({
+  id: Schema.String,
+  workspaceId: Schema.String,
+  providerId: Schema.String,
+  paneType: Schema.String,
+  title: Schema.String,
+  resourceKind: Schema.optional(Schema.String),
+  resourceId: Schema.optional(Schema.String),
+  /// Opaque JSON owned by the provider. Keeping the transport opaque lets a
+  /// future extension evolve its pane contract without changing core schema.
+  metadata: Schema.optional(Schema.String),
+  /// Monotonic server-owned content revision. Clients use this to reject a
+  /// snapshot that was captured before an optimistic pane conversion landed.
+  revision: Schema.Number,
+  createdAt: Schema.String,
+  updatedAt: Schema.optional(Schema.String)
+})
+export type WorkspacePane = typeof WorkspacePane.Type
+
+/// A coherent server snapshot of the shared workspace registry. Returning
+/// workspaces and panes together prevents a client from treating the gap
+/// between two independent requests as an authoritative empty pane list.
+export const WorkspaceSnapshot = Schema.Struct({
+  workspaces: Schema.Array(Workspace),
+  panes: Schema.Array(WorkspacePane)
+})
+export type WorkspaceSnapshot = typeof WorkspaceSnapshot.Type
+
+/// Closing the final pane converts that same identity into a New Tab. Closing
+/// any other pane deletes it, in which case `pane` is absent.
+export const CloseWorkspacePaneResponse = Schema.Struct({
+  pane: Schema.optional(WorkspacePane)
+})
+export type CloseWorkspacePaneResponse = typeof CloseWorkspacePaneResponse.Type
+
+export const UpsertWorkspacePaneRequest = Schema.Struct({
+  id: Schema.optional(Schema.String),
+  providerId: Schema.String,
+  paneType: Schema.String,
+  title: Schema.String,
+  resourceKind: Schema.optional(Schema.String),
+  resourceId: Schema.optional(Schema.String),
+  metadata: Schema.optional(Schema.String),
+  createdAt: Schema.optional(Schema.String)
+})
+export type UpsertWorkspacePaneRequest = typeof UpsertWorkspacePaneRequest.Type
+
+export const UpdateWorkspacePaneRequest = Schema.Struct({
+  providerId: Schema.optional(Schema.String),
+  paneType: Schema.optional(Schema.String),
+  title: Schema.optional(Schema.String),
+  resourceKind: Schema.optional(Schema.NullOr(Schema.String)),
+  resourceId: Schema.optional(Schema.NullOr(Schema.String)),
+  metadata: Schema.optional(Schema.NullOr(Schema.String))
+})
+export type UpdateWorkspacePaneRequest = typeof UpdateWorkspacePaneRequest.Type
+
+/// Converts an existing placeholder into a chat without creating a second
+/// pane identity. The session is ensured first but remains unassigned until
+/// the pane conversion and session membership commit together.
+export const PromoteWorkspacePaneToChatRequest = Schema.Struct({
+  session: CreateSessionRequest,
+  title: Schema.optional(Schema.String)
+})
+export type PromoteWorkspacePaneToChatRequest = typeof PromoteWorkspacePaneToChatRequest.Type
+
+export const PromoteWorkspacePaneToChatResponse = Schema.Struct({
+  pane: WorkspacePane,
+  session: SessionSummary
+})
+export type PromoteWorkspacePaneToChatResponse = typeof PromoteWorkspacePaneToChatResponse.Type
 
 export const Worktree = Schema.Struct({
   id: Schema.String,

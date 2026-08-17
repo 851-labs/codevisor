@@ -75,6 +75,9 @@ struct SessionContainerView: View {
             .onChange(of: backgroundTaskFingerprint, initial: true) { _, _ in
                 syncWorkspaceBackgroundTerminals()
             }
+            .onChange(of: environment.workspaceSync.revision, initial: true) { _, _ in
+                synchronizeMountedPaneGroups()
+            }
             .task(id: session.id) {
                 splitDragCoordinator.canResolve = { sourceLeafId, resolution, canvasSize in
                     canMoveSplitLeaf(
@@ -193,6 +196,10 @@ struct SessionContainerView: View {
     /// both sides paint the same resolved color instead.
     private var contentColumn: some View {
         let _ = workspaceRevision
+        // WorkspaceRepository is intentionally non-observable. Server pane
+        // reconciliation bumps this shared token so a tab created on another
+        // device materializes in the mounted macOS strip immediately.
+        let _ = environment.workspaceSync.revision
         let workspace = store.workspace(for: session, project: project)
         return VStack(spacing: 0) {
             if workspace.centerTabs.count > 1 {
@@ -267,6 +274,30 @@ struct SessionContainerView: View {
 
     // MARK: - Workspace tabs and split commands
 
+    /// Workspace sync writes reconciled descriptors into the repository.
+    /// Mounted pane models retain live views and focus, so explicitly adopt
+    /// that content identity instead of leaving their creation-time snapshot
+    /// in front of repository truth.
+    private func synchronizeMountedPaneGroups() {
+        let workspace = store.workspace(for: session, project: project)
+        let modelsChanged = store.reconcileMountedPaneGroups(in: workspace)
+        let storedTree = workspace.centerTree
+        let storedLeafIds = Set(storedTree.allGroups.map(\.id))
+        let liveLeafIds = liveCenterTree.map { Set($0.allGroups.map(\.id)) }
+        let topologyChanged = liveLeafIds.map { $0 != storedLeafIds } ?? false
+        if topologyChanged {
+            liveCenterTree = storedTree
+        }
+
+        let activeLeafChanged = activeLeafId.map { !storedLeafIds.contains($0) } ?? false
+        if activeLeafChanged {
+            activeLeafId = workspace.selectedCenterTab?.activeLeafId
+        }
+        if modelsChanged || topologyChanged || activeLeafChanged {
+            workspaceRevision += 1
+        }
+    }
+
     private func activeCenterModel(in workspace: Workspace) -> PaneGroupModel {
         let leafId =
             activeLeafId
@@ -321,7 +352,7 @@ struct SessionContainerView: View {
             }
         }
         var state = PaneGroupState()
-        _ = state.addNewTabPane()
+        let pane = state.addNewTabPane()
         let tab = WorkspaceTab(root: .leaf(state))
         workspace.centerTabs.append(tab)
         workspace.selectedCenterTabId = tab.id
@@ -329,6 +360,7 @@ struct SessionContainerView: View {
         workspaceRevision += 1
         liveCenterTree = tab.root
         activateLeaf(tab.activeLeafId)
+        publishPane(pane, workspaceId: workspace.id)
     }
 
     private func moveCenterTab(_ sourceId: UUID, _ targetId: UUID) {
@@ -364,24 +396,37 @@ struct SessionContainerView: View {
         closingCenterTabId = tabId
         for leaf in closing.root.allGroups {
             let model = configuredCenterModel(leafId: leaf.id)
-            if let paneId = model.state.selectedPaneId {
+            for paneId in model.state.panes.map(\.id) {
                 model.closePane(id: paneId)
             }
-            store.evictCenterLeaf(workspaceId: workspace.id, leafId: leaf.id)
         }
         closingCenterTabId = nil
 
-        // Re-read after each leaf persisted its empty group, then remove the
-        // whole layout atomically from repository truth.
+        // Re-read after the models persisted their mutations. When closing
+        // this tab would close the workspace's final pane, that pane has been
+        // converted in place and the tab remains. Otherwise empty leaves and
+        // the now-empty layout tab are purely local cleanup.
         workspace = store.workspace(for: session, project: project)
         guard let refreshedIndex = workspace.centerTabs.firstIndex(where: { $0.id == tabId }) else {
             return
         }
-        workspace.centerTabs.remove(at: refreshedIndex)
+        if let pruned = workspace.centerTabs[refreshedIndex].root.prunedEmptyGroups {
+            workspace.centerTabs[refreshedIndex].root = pruned
+            if pruned.group(id: workspace.centerTabs[refreshedIndex].activeLeafId) == nil,
+                let first = pruned.allGroups.first?.id
+            {
+                workspace.centerTabs[refreshedIndex].activeLeafId = first
+            }
+            workspace.selectedCenterTabId = tabId
+        } else {
+            workspace.centerTabs.remove(at: refreshedIndex)
+        }
+        for leaf in closing.root.allGroups
+        where workspace.centerTabs.allSatisfy({ $0.root.group(id: leaf.id) == nil }) {
+            store.evictCenterLeaf(workspaceId: workspace.id, leafId: leaf.id)
+        }
         if workspace.centerTabs.isEmpty {
-            var state = PaneGroupState()
-            _ = state.addNewTabPane()
-            let replacement = WorkspaceTab(root: .leaf(state))
+            let replacement = WorkspaceTab(root: .leaf(PaneGroupState()))
             workspace.centerTabs = [replacement]
             workspace.selectedCenterTabId = replacement.id
         } else if workspace.selectedCenterTabId == tabId {
@@ -474,7 +519,7 @@ struct SessionContainerView: View {
             })
         else { return }
         var state = PaneGroupState()
-        _ = state.addNewTabPane()
+        let pane = state.addNewTabPane()
         let newLeafId = UUID()
         workspace.centerTabs[tabIndex].root = workspace.centerTabs[tabIndex].root.splitting(
             groupId: leafId,
@@ -487,6 +532,7 @@ struct SessionContainerView: View {
         workspaceRevision += 1
         liveCenterTree = workspace.centerTabs[tabIndex].root
         activateLeaf(newLeafId)
+        publishPane(pane, workspaceId: workspace.id)
     }
 
     /// Atomically relocates one whole leaf inside the selected top tab. The
@@ -788,9 +834,8 @@ struct SessionContainerView: View {
         sessionFocus.requestComposerFocus(forChat: created.id)
     }
 
-    /// Removes an emptied split leaf. If it was its tab's final leaf, the
-    /// whole top tab closes; the workspace's final tab is replaced by a New
-    /// Tab page so the working surface itself never disappears.
+    /// Removes an emptied split leaf. A layout may need an empty shell, but
+    /// that shell is not a shared pane and is never uploaded as New Tab.
     private func dissolveIfEmpty(leafId: UUID) {
         var workspace = store.workspace(for: session, project: project)
         let model = store.centerGroup(
@@ -820,9 +865,7 @@ struct SessionContainerView: View {
             let closingTabId = workspace.centerTabs[tabIndex].id
             workspace.centerTabs.remove(at: tabIndex)
             if workspace.centerTabs.isEmpty {
-                var state = PaneGroupState()
-                _ = state.addNewTabPane()
-                let replacement = WorkspaceTab(root: .leaf(state))
+                let replacement = WorkspaceTab(root: .leaf(PaneGroupState()))
                 workspace.centerTabs = [replacement]
                 workspace.selectedCenterTabId = replacement.id
             } else if workspace.selectedCenterTabId == closingTabId {
@@ -837,6 +880,14 @@ struct SessionContainerView: View {
             liveCenterTree = workspace.centerTree
             activateLeaf(workspace.selectedCenterTab?.activeLeafId)
         }
+    }
+
+    private func publishPane(_ pane: PaneDescriptorState, workspaceId: UUID) {
+        environment.workspaceSync.publishPane(
+            pane,
+            workspaceId: workspaceId,
+            client: environment.machines.client(for: session.serverId)
+        )
     }
 
     /// Makes a leaf the active group (keyboard routing + hints).

@@ -317,6 +317,36 @@ struct WorkspaceRepositoryTests {
         #expect(repository.workspaceId(forSession: seed.sessionId) == first.id)
     }
 
+    @Test("Promoting a New Tab replaces its pane in the same layout slot")
+    func newTabPromotionKeepsLayoutIdentity() {
+        var state = PaneGroupState()
+        let placeholder = state.addNewTabPane()
+        let tab = WorkspaceTab(root: .leaf(state))
+        var workspace = Workspace(
+            name: "Example",
+            rootDirectory: "/tmp/example",
+            serverId: "local",
+            projectId: UUID(),
+            centerTabs: [tab],
+            bottomGroup: PaneGroupState()
+        )
+        let sessionId = UUID()
+        let promoted = PaneDescriptorState(
+            id: placeholder.id,
+            kind: .chat,
+            name: "New Chat",
+            terminalKey: placeholder.terminalKey,
+            chatSessionId: sessionId
+        )
+
+        let selectedTabId = workspace.upsertCenterPane(promoted)
+
+        #expect(selectedTabId == tab.id)
+        #expect(workspace.centerTabs.count == 1)
+        #expect(workspace.centerTabs[0].root.allGroups[0].state.panes == [promoted])
+        #expect(workspace.tabId(containingChat: sessionId) == tab.id)
+    }
+
     @Test("isArchived round-trips and pre-field payloads decode as active")
     func isArchivedCodable() throws {
         let repository = DefaultWorkspaceRepository(store: InMemoryStore())
@@ -360,7 +390,7 @@ struct WorkspaceRepositoryTests {
         // The fresh tree is a single leaf holding the chat pane.
         #expect(workspace.centerTree.allGroups.count == 1)
         #expect(workspace.centerTree.groupId(containingChat: seed.sessionId) != nil)
-        #expect(workspace.bottomGroup.panes.count == 1)
+        #expect(workspace.bottomGroup.panes.isEmpty)
     }
 
     @Test("Nested split leaf resolves its own selected chat")
@@ -476,7 +506,7 @@ struct WorkspaceRepositoryTests {
             })
     }
 
-    @Test("A version-2 workspace with no tabs repairs to a New Tab page")
+    @Test("A version-2 workspace with no tabs repairs to a layout-only shell")
     func emptyTopTabsRepairOnDecode() throws {
         let fresh = Workspace(
             name: "Empty", rootDirectory: "/tmp/project", serverId: "local",
@@ -493,7 +523,7 @@ struct WorkspaceRepositoryTests {
         )
         #expect(decoded.centerTabs.count == 1)
         #expect(decoded.selectedCenterTabId == decoded.centerTabs[0].id)
-        #expect(decoded.centerTabs[0].root.allGroups[0].state.selectedPane?.kind == .newTab)
+        #expect(decoded.centerTabs[0].root.allGroups[0].state.panes.isEmpty)
     }
 
     @Test("Workspace tab custom titles persist and older tabs remain automatic")

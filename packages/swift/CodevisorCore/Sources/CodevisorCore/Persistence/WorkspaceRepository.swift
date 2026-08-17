@@ -62,7 +62,7 @@ public extension WorkspaceRepository {
             serverId: seed.serverId,
             projectId: seed.projectId,
             centerTree: .leaf(center),
-            bottomGroup: .initial(sessionId: seed.sessionId)
+            bottomGroup: PaneGroupState()
         )
     }
 }
@@ -235,9 +235,11 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
                 center.panes[index].chatSessionId = seed.sessionId
             }
         }
+        // A terminal is workspace content, not layout furniture. Keep the
+        // bottom placement empty until the user opens it for the first time.
         let bottom =
             legacyGroups?.load(sessionId: seed.sessionId, placement: .bottom)
-            ?? .initial(sessionId: seed.sessionId)
+            ?? PaneGroupState()
 
         let workspace = Workspace(
             name: seed.initialName.isEmpty ? "Workspace" : seed.initialName,
@@ -299,9 +301,7 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
                 return repaired
             }
             if workspace.centerTabs.isEmpty {
-                var state = PaneGroupState()
-                _ = state.addNewTabPane()
-                let tab = WorkspaceTab(root: .leaf(state))
+                let tab = WorkspaceTab(root: .leaf(PaneGroupState()))
                 workspace.centerTabs = [tab]
                 workspace.selectedCenterTabId = tab.id
             } else if !workspace.centerTabs.contains(where: { $0.id == workspace.selectedCenterTabId }) {

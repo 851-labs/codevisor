@@ -119,8 +119,8 @@ public struct ServerProject: Decodable, Equatable, Sendable {
     }
 }
 
-/// Server-owned workspace identity and navigation metadata. Pane trees remain
-/// device-local and are merged by `WorkspaceSyncModel`.
+/// Server-owned workspace identity and navigation metadata. Pane identity is
+/// fetched separately; only each device's tab/split layout remains local.
 public struct ServerWorkspace: Decodable, Equatable, Sendable {
     public var id: String
     public var serverId: String
@@ -158,6 +158,108 @@ public struct ServerWorkspace: Decodable, Equatable, Sendable {
         self.archivedAt = archivedAt
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+    }
+}
+
+/// Server-owned pane identity. Native layout stores this id in a client-local
+/// tab/split tree; provider/type/resource describe the renderer independently
+/// of where a client chooses to place it.
+public struct ServerWorkspacePane: Codable, Equatable, Sendable {
+    public var id: String
+    public var workspaceId: String
+    public var providerId: String
+    public var paneType: String
+    public var title: String
+    public var resourceKind: String?
+    public var resourceId: String?
+    public var metadata: String?
+    /// Monotonic content revision. Nil only when talking to a server that
+    /// predates revisioned pane snapshots.
+    public var revision: Int?
+    public var createdAt: String
+    public var updatedAt: String?
+
+    public init(
+        id: String,
+        workspaceId: String,
+        providerId: String,
+        paneType: String,
+        title: String,
+        resourceKind: String? = nil,
+        resourceId: String? = nil,
+        metadata: String? = nil,
+        revision: Int? = nil,
+        createdAt: String,
+        updatedAt: String? = nil
+    ) {
+        self.id = id
+        self.workspaceId = workspaceId
+        self.providerId = providerId
+        self.paneType = paneType
+        self.title = title
+        self.resourceKind = resourceKind
+        self.resourceId = resourceId
+        self.metadata = metadata
+        self.revision = revision
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+}
+
+/// Workspaces and their shared pane registry captured in one server read.
+public struct ServerWorkspaceSnapshot: Decodable, Equatable, Sendable {
+    public var workspaces: [ServerWorkspace]
+    public var panes: [ServerWorkspacePane]
+
+    public init(workspaces: [ServerWorkspace], panes: [ServerWorkspacePane]) {
+        self.workspaces = workspaces
+        self.panes = panes
+    }
+}
+
+private struct ServerWorkspacePaneClose: Decodable {
+    var pane: ServerWorkspacePane?
+}
+
+public struct ServerWorkspacePanePromotion: Decodable, Equatable, Sendable {
+    public var pane: ServerWorkspacePane
+    public var session: ServerSession
+
+    public init(pane: ServerWorkspacePane, session: ServerSession) {
+        self.pane = pane
+        self.session = session
+    }
+}
+
+private struct UpsertWorkspacePaneBody: Encodable {
+    var id: String
+    var providerId: String
+    var paneType: String
+    var title: String
+    var resourceKind: String?
+    var resourceId: String?
+    var metadata: String?
+    var createdAt: String
+
+    init(_ pane: ServerWorkspacePane) {
+        id = pane.id
+        providerId = pane.providerId
+        paneType = pane.paneType
+        title = pane.title
+        resourceKind = pane.resourceKind
+        resourceId = pane.resourceId
+        metadata = pane.metadata
+        createdAt = pane.createdAt
+    }
+}
+
+private struct PromoteWorkspacePaneToChatBody: Encodable {
+    var session: CreateSessionBody
+    var title: String
+
+    init(pane: ServerWorkspacePane, session: ChatSession) {
+        self.session = CreateSessionBody(session: session)
+        title = pane.title
     }
 }
 
@@ -227,6 +329,28 @@ private struct MoveSessionBody: Encodable {
     var worktreeName: String?
 }
 
+private struct UpsertWorkspaceBody: Encodable {
+    var id: String
+    var projectId: String
+    var name: String
+    var hasCustomName: Bool
+    var symbolName: String?
+    var rootDirectory: String?
+    var isArchived: Bool
+    var createdAt: String
+
+    init(_ workspace: ServerWorkspace) {
+        id = workspace.id
+        projectId = workspace.projectId
+        name = workspace.name
+        hasCustomName = workspace.hasCustomName
+        symbolName = workspace.symbolName
+        rootDirectory = workspace.rootDirectory
+        isArchived = workspace.isArchived
+        createdAt = workspace.createdAt
+    }
+}
+
 extension CodevisorServerClient {
     public func listProjects() async throws -> [ServerProject] {
         try await get("/v1/projects")
@@ -282,6 +406,101 @@ extension CodevisorServerClient {
         } catch CodevisorServerClientError.httpStatus(404, _) {
             return nil
         } catch CodevisorServerClientError.httpStatus(405, _) {
+            return nil
+        }
+    }
+
+    public func workspaceSnapshot() async throws -> ServerWorkspaceSnapshot? {
+        do {
+            return try await get("/v1/workspace-snapshot")
+        } catch CodevisorServerClientError.httpStatus(404, _) {
+            return nil
+        } catch CodevisorServerClientError.httpStatus(405, _) {
+            return nil
+        }
+    }
+
+    public func upsertWorkspace(_ workspace: ServerWorkspace) async throws -> ServerWorkspace? {
+        do {
+            return try await send(
+                "/v1/workspaces/\(workspace.id)",
+                method: "PUT",
+                body: UpsertWorkspaceBody(workspace)
+            )
+        } catch CodevisorServerClientError.httpStatus(404, _) {
+            return nil
+        } catch CodevisorServerClientError.httpStatus(405, _) {
+            return nil
+        }
+    }
+
+    public func listWorkspacePanes() async throws -> [ServerWorkspacePane]? {
+        do {
+            return try await get("/v1/workspace-panes")
+        } catch CodevisorServerClientError.httpStatus(404, _) {
+            return nil
+        } catch CodevisorServerClientError.httpStatus(405, _) {
+            return nil
+        }
+    }
+
+    public func upsertWorkspacePane(_ pane: ServerWorkspacePane) async throws -> ServerWorkspacePane? {
+        do {
+            return try await send(
+                "/v1/workspaces/\(pane.workspaceId)/panes/\(pane.id)",
+                method: "PUT",
+                body: UpsertWorkspacePaneBody(pane)
+            )
+        } catch CodevisorServerClientError.httpStatus(404, _) {
+            return nil
+        } catch CodevisorServerClientError.httpStatus(405, _) {
+            return nil
+        }
+    }
+
+    public func promoteWorkspacePaneToChat(
+        _ pane: ServerWorkspacePane,
+        session: ChatSession
+    ) async throws -> ServerWorkspacePanePromotion? {
+        do {
+            return try await send(
+                "/v1/workspaces/\(pane.workspaceId)/panes/\(pane.id)/promote-chat",
+                method: "POST",
+                body: PromoteWorkspacePaneToChatBody(pane: pane, session: session)
+            )
+        } catch CodevisorServerClientError.httpStatus(404, _) {
+            return nil
+        } catch CodevisorServerClientError.httpStatus(405, _) {
+            return nil
+        }
+    }
+
+    public func deleteWorkspacePane(workspaceId: UUID, paneId: UUID) async throws {
+        do {
+            try await sendNoResponse(
+                "/v1/workspaces/\(workspaceId.uuidString)/panes/\(paneId.uuidString)",
+                method: "DELETE"
+            )
+        } catch CodevisorServerClientError.httpStatus(404, _) {
+            return
+        } catch CodevisorServerClientError.httpStatus(405, _) {
+            return
+        }
+    }
+
+    public func closeWorkspacePane(workspaceId: UUID, paneId: UUID) async throws -> ServerWorkspacePane? {
+        do {
+            let response: ServerWorkspacePaneClose = try await send(
+                "/v1/workspaces/\(workspaceId.uuidString)/panes/\(paneId.uuidString)/close",
+                method: "POST",
+                body: Optional<EmptyBody>.none
+            )
+            return response.pane
+        } catch CodevisorServerClientError.httpStatus(404, _) {
+            try await deleteWorkspacePane(workspaceId: workspaceId, paneId: paneId)
+            return nil
+        } catch CodevisorServerClientError.httpStatus(405, _) {
+            try await deleteWorkspacePane(workspaceId: workspaceId, paneId: paneId)
             return nil
         }
     }

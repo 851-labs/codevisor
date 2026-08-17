@@ -9,6 +9,8 @@ export const EventKind = Schema.Literals([
   "worktree.setup",
   "workspace.updated",
   "workspace.deleted",
+  "workspace.pane.updated",
+  "workspace.pane.deleted",
   "session.created",
   "session.updated",
   "session.attention.updated",

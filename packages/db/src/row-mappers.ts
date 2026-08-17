@@ -11,6 +11,7 @@ import type {
   TranscriptItem,
   UpdateInfo,
   Workspace,
+  WorkspacePane,
   Worktree
 } from "@codevisor/api"
 import type Database from "better-sqlite3"
@@ -40,6 +41,7 @@ import type {
   SessionRow,
   UpdateRow,
   WorkspaceRow,
+  WorkspacePaneRow,
   WorktreeRow
 } from "./rows.js"
 
@@ -97,6 +99,20 @@ export const workspaceFromRow = (row: WorkspaceRow): Workspace => ({
   ...(row.root_directory === null ? {} : { rootDirectory: row.root_directory }),
   isArchived: row.is_archived === 1,
   ...(row.archived_at === null ? {} : { archivedAt: row.archived_at }),
+  createdAt: row.created_at,
+  ...(row.updated_at === null ? {} : { updatedAt: row.updated_at })
+})
+
+export const workspacePaneFromRow = (row: WorkspacePaneRow): WorkspacePane => ({
+  id: row.id,
+  workspaceId: row.workspace_id,
+  providerId: row.provider_id,
+  paneType: row.pane_type,
+  title: row.title,
+  ...(row.resource_kind === null ? {} : { resourceKind: row.resource_kind }),
+  ...(row.resource_id === null ? {} : { resourceId: row.resource_id }),
+  ...(row.metadata === null ? {} : { metadata: row.metadata }),
+  revision: row.revision,
   createdAt: row.created_at,
   ...(row.updated_at === null ? {} : { updatedAt: row.updated_at })
 })

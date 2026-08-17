@@ -74,7 +74,7 @@ const createServerSession = async (
             toolGateway
           )
         )))
-  return run(
+  const session = await run(
     services.db.createSession({
       ...payload,
       id: sessionId,
@@ -85,6 +85,14 @@ const createServerSession = async (
       agentSessionId
     })
   )
+  // Session membership predates explicit workspace panes. Route every create
+  // through the compatibility bridge so old clients still materialize the
+  // canonical shared chat pane.
+  if (payload.workspaceId !== undefined) {
+    await run(services.db.setSessionWorkspace(session.id, payload.workspaceId))
+    return run(services.db.getSessionSummary(session.id))
+  }
+  return session
 }
 
 /// Create-or-return for sessions: the existing-row and in-flight-create
@@ -96,7 +104,8 @@ export const createSessionIfMissing = async (
   fanout: EventFanout,
   routeState: RouteState,
   config: CodevisorServerConfig,
-  rawPayload: CreateSessionRequest
+  rawPayload: CreateSessionRequest,
+  publishCreated = true
 ): Promise<{ readonly session: SessionSummary; readonly created: boolean }> => {
   // Session ids are canonically lowercase; a client-supplied uppercase id
   // (Swift renders uuids uppercase) must find the existing row — and share
@@ -123,7 +132,9 @@ export const createSessionIfMissing = async (
       routeState.pendingSessionCreates.delete(payload.id)
     }
   })
-  await appendAndPublish(services.db, fanout, "session.created", session.id, session)
+  if (publishCreated) {
+    await appendAndPublish(services.db, fanout, "session.created", session.id, session)
+  }
   return { session, created: true }
 }
 

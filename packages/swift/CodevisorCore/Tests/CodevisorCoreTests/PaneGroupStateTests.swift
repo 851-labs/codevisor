@@ -53,6 +53,23 @@ struct PaneGroupStateTests {
         #expect(!state.isVisible)
     }
 
+    @Test("The first requested terminal materializes from an empty bottom group")
+    func lazyFirstTerminal() {
+        var state = PaneGroupState()
+
+        #expect(state.panes.isEmpty)
+        #expect(!state.isVisible)
+
+        let added = state.addTerminalPane(sessionId: sessionId)
+
+        #expect(added.name == "Terminal 1")
+        #expect(added.kind == .terminal)
+        #expect(added.terminalKey == "\(sessionId.uuidString):\(added.id.uuidString)")
+        #expect(state.panes == [added])
+        #expect(state.selectedPaneId == added.id)
+        #expect(state.isVisible)
+    }
+
     @Test("Adding a pane names it Terminal N, selects it, opens the group, and uses a synthetic key")
     func addPane() {
         var state = PaneGroupState.initial(sessionId: sessionId)
@@ -73,6 +90,80 @@ struct PaneGroupStateTests {
             id: placeholder.id, to: .terminal, sessionId: sessionId
         )
         #expect(converted?.kind == .terminal)
+        #expect(converted?.id == placeholder.id)
+    }
+
+    @Test("Shared reconciliation promotes a placeholder without replacing local presentation")
+    func sharedReconciliationPromotesPlaceholder() {
+        let paneId = UUID()
+        let createdSessionId = UUID()
+        let placeholder = PaneDescriptorState(
+            id: paneId,
+            kind: .newTab,
+            name: "New Tab",
+            terminalKey: paneId.uuidString
+        )
+        var local = PaneGroupState(
+            panes: [placeholder],
+            selectedPaneId: paneId,
+            isVisible: true,
+            height: 512
+        )
+        let promoted = PaneDescriptorState(
+            id: paneId,
+            kind: .chat,
+            name: "New Chat",
+            terminalKey: paneId.uuidString,
+            chatSessionId: createdSessionId
+        )
+        let incoming = PaneGroupState(
+            panes: [promoted],
+            selectedPaneId: nil,
+            isVisible: false,
+            height: 120
+        )
+
+        let didPromote = local.reconcilePaneDescriptors(from: incoming)
+        #expect(didPromote)
+        #expect(local.panes == [promoted])
+        #expect(local.panes[0].id == paneId)
+        #expect(local.panes[0].chatSessionId == createdSessionId)
+        #expect(local.selectedPaneId == paneId)
+        #expect(local.isVisible)
+        #expect(local.height == 512)
+        let didRepeat = local.reconcilePaneDescriptors(from: incoming)
+        #expect(!didRepeat)
+    }
+
+    @Test("Shared reconciliation repairs selection when its pane disappears")
+    func sharedReconciliationRepairsSelection() {
+        let removed = PaneDescriptorState(
+            id: UUID(), kind: .newTab, name: "New Tab", terminalKey: "removed"
+        )
+        let survivor = PaneDescriptorState(
+            id: UUID(), kind: .terminal, name: "Terminal 1", terminalKey: "survivor"
+        )
+        var local = PaneGroupState(
+            panes: [removed, survivor],
+            selectedPaneId: removed.id,
+            isVisible: true
+        )
+        let incoming = PaneGroupState(
+            panes: [survivor],
+            selectedPaneId: survivor.id,
+            isVisible: false
+        )
+
+        let didRemove = local.reconcilePaneDescriptors(from: incoming)
+        #expect(didRemove)
+        #expect(local.panes == [survivor])
+        #expect(local.selectedPaneId == survivor.id)
+        #expect(local.isVisible)
+
+        local.selectedPaneId = nil
+        let didRepairSelection = local.reconcilePaneDescriptors(from: incoming)
+        #expect(didRepairSelection)
+        #expect(local.selectedPaneId == survivor.id)
     }
 
     @Test("Naming is max numeric suffix + 1, including after close and re-add")
@@ -416,6 +507,15 @@ struct PaneGroupStateTests {
         #expect(dead.selectedPaneId == placeholder?.id)
         // Only chat panes reset.
         #expect(dead.resetChatPaneToPlaceholder(id: placeholder!.id) == nil)
+
+        // The server's final-pane close transition works for every renderer
+        // and preserves its stable shared identity.
+        var terminal = PaneGroupState()
+        let original = terminal.addTerminalPane(sessionId: sessionId)
+        let reset = terminal.replacePaneWithNewTab(id: original.id)
+        #expect(reset?.id == original.id)
+        #expect(reset?.kind == .newTab)
+        #expect(terminal.panes == [reset!])
     }
 
     @Test("Converting a New Tab placeholder replaces it in place")
@@ -429,6 +529,7 @@ struct PaneGroupStateTests {
             id: placeholder.id, to: .terminal, sessionId: sessionId
         )
         #expect(terminal?.kind == .terminal)
+        #expect(terminal?.id == placeholder.id)
         #expect(terminal?.name == "Terminal 2")
         #expect(state.panes.map(\.id) == [state.panes[0].id, terminal?.id])
         #expect(state.selectedPaneId == terminal?.id)
@@ -438,6 +539,7 @@ struct PaneGroupStateTests {
         let second = state.addNewTabPane()
         let draft = state.convertNewTabPane(id: second.id, to: .chat, sessionId: sessionId)
         #expect(draft?.kind == .chat)
+        #expect(draft?.id == second.id)
         #expect(draft?.chatSessionId == nil)
 
         // …and with an eagerly created session, an ESTABLISHED chat.
@@ -448,6 +550,7 @@ struct PaneGroupStateTests {
             chatSessionId: chatSession, name: "New Chat"
         )
         #expect(established?.chatSessionId == chatSession)
+        #expect(established?.id == eager.id)
         #expect(established?.name == "New Chat")
 
         // Only placeholders convert; a placeholder can't "convert" to one.

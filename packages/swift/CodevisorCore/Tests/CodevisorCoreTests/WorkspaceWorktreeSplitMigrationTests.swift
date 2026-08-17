@@ -91,6 +91,7 @@ struct WorkspaceWorktreeSplitMigrationTests {
         #expect(split?.rootDirectory == "/wt/kiwi")
         #expect(split?.chatSessionIds == [worktreeChat])
         #expect(split?.centerTabs.first?.root.allGroups.first?.state.panes.first?.id == movedPaneId)
+        #expect(split?.bottomGroup.panes.isEmpty == true)
         // The session index routes the moved chat to its new workspace.
         #expect(repository.workspaceId(forSession: worktreeChat) == split?.id)
         #expect(repository.workspaceId(forSession: rootChat) == original.id)

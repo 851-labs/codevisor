@@ -986,5 +986,53 @@ export const migrations: ReadonlyArray<Migration> = [
         end,
         sidebar_state_changed_at = coalesce(updated_at, created_at);
     `
+  },
+  {
+    id: 35,
+    name: "server owned workspace panes",
+    sql: `
+      create table workspace_panes (
+        id text primary key,
+        workspace_id text not null references workspaces(id) on delete cascade,
+        provider_id text not null,
+        pane_type text not null,
+        title text not null,
+        resource_kind text,
+        resource_id text,
+        metadata text check(metadata is null or json_valid(metadata)),
+        created_at text not null,
+        updated_at text,
+        check((resource_kind is null) = (resource_id is null))
+      );
+
+      create index workspace_panes_workspace_idx
+        on workspace_panes(workspace_id, created_at);
+      create unique index workspace_panes_resource_idx
+        on workspace_panes(workspace_id, resource_kind, resource_id)
+        where resource_kind is not null and resource_id is not null;
+      create unique index workspace_panes_session_resource_idx
+        on workspace_panes(resource_kind, resource_id)
+        where resource_kind = 'session';
+
+      -- Session membership was the old implicit chat-pane registry. Promote
+      -- every active assignment so upgraded clients see exactly the tabs an
+      -- older client had already shared.
+      insert into workspace_panes (
+        id, workspace_id, provider_id, pane_type, title,
+        resource_kind, resource_id, metadata, created_at, updated_at
+      )
+      select lower(s.id), lower(s.workspace_id), 'codevisor', 'chat',
+        case when s.title = '' then 'Chat' else s.title end,
+        'session', lower(s.id), null, s.created_at, s.updated_at
+      from sessions s
+      where s.workspace_id is not null and s.is_archived = 0;
+    `
+  },
+  {
+    id: 36,
+    name: "revisioned workspace pane content",
+    sql: `
+      alter table workspace_panes add column revision integer not null default 1;
+    `
   }
 ]
