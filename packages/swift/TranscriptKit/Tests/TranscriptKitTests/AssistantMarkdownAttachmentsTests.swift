@@ -33,9 +33,8 @@ struct AssistantMarkdownAttachmentsTests {
             ])
     }
 
-    @Test("Local file links become live server-file segments")
+    @Test("Local links stay Markdown while local images become previews")
     func localFiles() {
-        let relative = PreviewFile(serverPath: "./output/report.pdf")
         let absolute = PreviewFile(serverPath: "/tmp/screen shot.png")
         let result = assistantMarkdownSegments(
             "Made [Report](./output/report.pdf) and ![Screenshot](</tmp/screen shot.png>). [Web](https://example.com).",
@@ -43,17 +42,15 @@ struct AssistantMarkdownAttachmentsTests {
         )
         #expect(
             result == [
-                .markdown("Made "),
-                .file(relative, label: "Report"),
-                .markdown(" and "),
+                .markdown("Made [Report](./output/report.pdf) and "),
                 .file(absolute, label: "Screenshot"),
                 .markdown(". [Web](https://example.com)."),
             ])
     }
 
-    @Test("Streaming leaves live file paths in Markdown until the turn completes")
+    @Test("Streaming leaves local image syntax in Markdown until the turn completes")
     func streamingLocalFiles() {
-        let markdown = "Made [Report](./output/report.pdf)"
+        let markdown = "Made ![Report](./output/report.pdf)"
         #expect(
             assistantMarkdownSegments(
                 markdown,
@@ -62,18 +59,24 @@ struct AssistantMarkdownAttachmentsTests {
             ) == [.markdown(markdown)])
     }
 
-    @Test("Extensionless Markdown destinations are local files")
+    @Test("Extensionless Markdown destinations remain links")
     func extensionlessFiles() {
-        let readme = PreviewFile(serverPath: "README")
+        let markdown = "Open [the readme](README)."
         #expect(
             assistantMarkdownSegments(
-                "Open [the readme](README).",
+                markdown,
                 attachments: []
-            ) == [
-                .markdown("Open "),
-                .file(readme, label: "the readme"),
-                .markdown("."),
-            ])
+            ) == [.markdown(markdown)])
+    }
+
+    @Test("Local link targets are distinguished from web links and anchors")
+    func localLinkTargets() {
+        #expect(markdownLocalFilePath("README") == "README")
+        #expect(markdownLocalFilePath("../output/report.pdf") == "../output/report.pdf")
+        #expect(markdownLocalFilePath("file:///tmp/report.pdf") == "file:///tmp/report.pdf")
+        #expect(markdownLocalFilePath("https://example.com/report.pdf") == nil)
+        #expect(markdownLocalFilePath("//example.com/report.pdf") == nil)
+        #expect(markdownLocalFilePath("#results") == nil)
     }
 
     @Test("Links inside fenced code blocks remain literal Markdown")
@@ -102,7 +105,7 @@ struct AssistantMarkdownAttachmentsTests {
             > [Literal](./inside.txt)
             > ```
 
-            [Preview](./outside.txt)
+            ![Preview](./outside.txt)
             """#
         #expect(
             assistantMarkdownSegments(quoted, attachments: []) == [
@@ -129,7 +132,7 @@ struct AssistantMarkdownAttachmentsTests {
 
                 [Indented](./block.txt)
 
-            Open [Preview](./outside.txt).
+            Open ![Preview](./outside.txt).
             """#
         let beforePreview = #"""
             Use `[Literal](./inline.txt)` or ``![Also literal](./inline.png)``.

@@ -40,6 +40,8 @@ struct AssistantTurnView: View {
     @Environment(\.transcriptInvalidateRowMeasurement) private var invalidateRowMeasurement
     @Environment(\.theme) private var theme
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.quickLook) private var quickLook
+    @Environment(\.attachmentImages) private var attachmentImages
     /// Turn-scoped semantic stream ledger. Existing entries are seeded as
     /// settled when this row mounts (including a navigation remount); entries
     /// first created afterward retain their initial live entrance animation.
@@ -212,6 +214,7 @@ struct AssistantTurnView: View {
                 turnErrorRow(stopDetail)
             }
         }
+        .markdownLinkHandler(openMarkdownLink)
         .frame(maxWidth: .infinity, alignment: .leading)
         .onPreferenceChange(StreamingMarkdownEntranceAnimationPreferenceKey.self) { active in
             hasActiveTextEntranceAnimation = active
@@ -281,6 +284,16 @@ struct AssistantTurnView: View {
     private func retryLabel(_ retry: RetryStatus) -> String {
         guard let attempt = retry.attempt, let of = retry.of else { return retry.message }
         return "\(retry.message) \(attempt)/\(of)"
+    }
+
+    private func openMarkdownLink(_ url: URL) -> Bool {
+        guard let path = markdownLocalFilePath(url.relativeString) else { return false }
+        let file = PreviewFile(serverPath: path)
+        quickLook?.present(
+            .remote(source: file.source, name: file.name, mimeType: file.mimeType),
+            attachmentStore: attachmentImages
+        )
+        return true
     }
 
     @ViewBuilder

@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 /// Asynchronously turns a fenced code block into a syntax-highlighted
@@ -7,6 +8,22 @@ import SwiftUI
 public typealias CodeHighlighting =
     @Sendable (_ code: String, _ language: String?) async ->
     AttributedString?
+
+/// Lets a host intercept links rendered by StreamMarkdown's native TextKit
+/// views. Returning `true` means the host handled the URL; returning `false`
+/// preserves the platform's normal URL-opening behavior.
+public struct MarkdownLinkAction: @unchecked Sendable {
+    private let handler: @MainActor (URL) -> Bool
+
+    public init(_ handler: @escaping @MainActor (URL) -> Bool) {
+        self.handler = handler
+    }
+
+    @MainActor
+    public func callAsFunction(_ url: URL) -> Bool {
+        handler(url)
+    }
+}
 
 /// Visual styling for markdown rendering, injected through the environment so
 /// the host app can customize fonts, spacing, and colors.
@@ -115,6 +132,10 @@ private struct MarkdownTableBleedKey: EnvironmentKey {
     static let defaultValue: CGFloat = 0
 }
 
+private struct MarkdownLinkActionKey: EnvironmentKey {
+    static let defaultValue: MarkdownLinkAction? = nil
+}
+
 public extension EnvironmentValues {
     /// The horizontal padding the host lays around markdown content, which a
     /// too-wide table's horizontal scroller may bleed through (iOS): the
@@ -126,6 +147,11 @@ public extension EnvironmentValues {
     var markdownTableBleed: CGFloat {
         get { self[MarkdownTableBleedKey.self] }
         set { self[MarkdownTableBleedKey.self] = newValue }
+    }
+
+    var markdownLinkAction: MarkdownLinkAction? {
+        get { self[MarkdownLinkActionKey.self] }
+        set { self[MarkdownLinkActionKey.self] = newValue }
     }
 }
 
@@ -140,5 +166,21 @@ public extension View {
     /// Sets the markdown theme for this view hierarchy.
     func markdownTheme(_ theme: MarkdownTheme) -> some View {
         environment(\.markdownTheme, theme)
+    }
+
+    /// Handles Markdown links from both native TextKit surfaces and portable
+    /// SwiftUI text (used by iOS tables). Unhandled URLs continue to the
+    /// operating system.
+    func markdownLinkHandler(
+        _ handler: @escaping @MainActor (URL) -> Bool
+    ) -> some View {
+        let action = MarkdownLinkAction(handler)
+        return environment(\.markdownLinkAction, action)
+            .environment(
+                \.openURL,
+                OpenURLAction { url in
+                    action(url) ? .handled : .systemAction
+                }
+            )
     }
 }

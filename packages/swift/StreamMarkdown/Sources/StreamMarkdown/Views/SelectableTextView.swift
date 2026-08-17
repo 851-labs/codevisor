@@ -53,12 +53,9 @@
             streamingAnimation = nil
         }
 
-        public func makeCoordinator() -> Coordinator {
-            Coordinator()
-        }
-
         public func makeNSView(context: Context) -> SelectableTextKitView {
             let view = SelectableTextKitView()
+            context.coordinator.install(on: view, action: context.environment.markdownLinkAction)
             let prepared = context.coordinator.preparedText(
                 for: content,
                 animation: streamingAnimation
@@ -68,6 +65,7 @@
         }
 
         public func updateNSView(_ textView: SelectableTextKitView, context: Context) {
+            context.coordinator.linkAction = context.environment.markdownLinkAction
             let prepared = context.coordinator.preparedText(
                 for: content,
                 animation: streamingAnimation
@@ -97,8 +95,10 @@
         }
 
         @MainActor
-        public final class Coordinator {
+        public final class Coordinator: NSObject {
             fileprivate let measurer = TextKitTextMeasurer()
+            var linkAction: MarkdownLinkAction?
+
             private let animationState = StreamingTextAnimationState()
             private var attributedInput: NSAttributedString?
             private var stableAttributedText: NSAttributedString?

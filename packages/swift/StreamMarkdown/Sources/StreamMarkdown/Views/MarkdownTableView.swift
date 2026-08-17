@@ -92,15 +92,18 @@
     /// frame and is never disturbed by a measurement probe. `sizeThatFits` only
     /// *measures* (on a scratch text stack) — importantly, its minimum-width probe
     /// reports the table's true minimum, so the window stays freely resizable.
-    private struct SelectableTextTableView: NSViewRepresentable {
+    struct SelectableTextTableView: NSViewRepresentable {
         let model: TableModel
         let renderMemo: MarkdownTableRenderMemo
+        @Environment(\.markdownLinkAction) var linkAction
 
         /// The floor a minimum-size probe reports, so a wide table never pins the
         /// window's minimum width to its own content width.
         private static let minimumWidth: CGFloat = 180
 
-        func makeNSView(context _: Context) -> TableTextView {
+        func makeCoordinator() -> MarkdownTextViewLinkCoordinator { .init() }
+
+        func makeNSView(context: Context) -> TableTextView {
             // Build an explicit TextKit 1 stack: `NSTextTable` is a TextKit 1
             // construct and does not lay out under an NSTextView's default
             // TextKit 2 stack.
@@ -130,12 +133,9 @@
                 .foregroundColor: NSColor.linkColor,
                 .cursor: NSCursor.pointingHand,
             ]
+            context.coordinator.install(on: textView, action: linkAction)
             textView.update(model: model, renderMemo: renderMemo)
             return textView
-        }
-
-        func updateNSView(_ textView: TableTextView, context _: Context) {
-            textView.update(model: model, renderMemo: renderMemo)
         }
 
         func sizeThatFits(
@@ -176,7 +176,7 @@
         private var renderMemo: MarkdownTableRenderMemo?
         private var builtWidth: CGFloat = -1
 
-        fileprivate func update(model: TableModel, renderMemo: MarkdownTableRenderMemo) {
+        func update(model: TableModel, renderMemo: MarkdownTableRenderMemo) {
             guard self.model != model || self.renderMemo !== renderMemo else { return }
             self.model = model
             self.renderMemo = renderMemo

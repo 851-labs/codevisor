@@ -240,8 +240,14 @@ private func markdownCodeRanges(_ markdown: String) -> [NSRange] {
     )
 }
 
-private func localServerPath(_ target: String) -> String? {
+/// Returns the session-server path represented by a scheme-less or `file:`
+/// Markdown destination. Callers use this for link activation as well as image
+/// previews so both paths agree on what "local" means.
+public func markdownLocalFilePath(_ target: String) -> String? {
     guard !target.hasPrefix("#") else { return nil }
+    // A network-path reference is a web link whose scheme is inherited from
+    // its surrounding document, not an absolute filesystem path.
+    guard !target.hasPrefix("//") else { return nil }
     if target.hasPrefix("file://") { return target }
     if target.range(of: #"^[A-Za-z][A-Za-z0-9+.-]*:"#, options: .regularExpression) != nil {
         return nil
@@ -259,8 +265,10 @@ private func localServerPath(_ target: String) -> String? {
 }
 
 /// Resolves server-issued attachment URLs and, once a turn is complete, local
-/// file links. Relative paths stay relative so the server can resolve them
-/// against the session's authoritative cwd.
+/// image embeds. Ordinary Markdown links remain Markdown even when they point
+/// at local files; the UI routes those when the user activates them. Relative
+/// paths stay relative so the server can resolve them against the session's
+/// authoritative cwd.
 public func assistantMarkdownSegments(
     _ markdown: String,
     attachments: [Attachment],
@@ -283,13 +291,14 @@ public func assistantMarkdownSegments(
                 .first
         else { continue }
         let target = String(markdown[targetRange])
+        let isImage = markdown[matchRange.lowerBound] == "!"
         let file: PreviewFile
         if target.hasPrefix(attachmentOrigin),
             let attachment = byID[String(target.dropFirst(attachmentOrigin.count))]
         {
             file = PreviewFile(attachment: attachment)
             referenced.insert(attachment.fileId)
-        } else if includeServerPaths, let path = localServerPath(target) {
+        } else if includeServerPaths, isImage, let path = markdownLocalFilePath(target) {
             file = PreviewFile(serverPath: path)
         } else {
             continue

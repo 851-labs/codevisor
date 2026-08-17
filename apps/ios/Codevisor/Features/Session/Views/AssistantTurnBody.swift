@@ -13,8 +13,10 @@ struct AssistantTurnBody: View {
     private var performAnchoredDisclosureChange
     @Environment(\.transcriptInvalidateRowMeasurement)
     private var invalidateRowMeasurement
+    @Environment(\.attachmentImages) private var attachmentImages
     @State private var textAnimationPresentation = StreamingTextAnimationPresentation()
     @State private var hasAutoCollapsed: Bool
+    @State private var linkedQuickLookURL: QuickLookURL?
     let turn: AssistantTurn
     /// Stable identity for the turn's disclosure keys (the message id).
     let turnId: UUID
@@ -129,7 +131,13 @@ struct AssistantTurnBody: View {
                 }
             }
         }
+        .markdownLinkHandler(openMarkdownLink)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .sheet(item: $linkedQuickLookURL) { item in
+            QuickLookPreview(url: item.url)
+                .ignoresSafeArea()
+                .presentationDragIndicator(.visible)
+        }
         .onPreferenceChange(StreamingMarkdownEntranceAnimationPreferenceKey.self) { active in
             hasActiveTextEntranceAnimation = active
         }
@@ -209,6 +217,19 @@ struct AssistantTurnBody: View {
         } else {
             ChatErrorRow(message)
         }
+    }
+
+    private func openMarkdownLink(_ url: URL) -> Bool {
+        guard let path = markdownLocalFilePath(url.relativeString) else { return false }
+        guard let attachmentImages else { return true }
+        let file = PreviewFile(serverPath: path)
+        Task {
+            guard let url = await materializeQuickLookURL(for: file, store: attachmentImages) else {
+                return
+            }
+            linkedQuickLookURL = QuickLookURL(url: url)
+        }
+        return true
     }
 
     private func retryLabel(_ retry: RetryStatus) -> String {

@@ -201,23 +201,9 @@ struct AttachmentThumbnailView: View {
         guard let attachmentImages else { return }
         let file = self.file
         Task {
-            guard let data = try? await attachmentImages.data(for: file.source) else { return }
-            let directory = FileManager.default.temporaryDirectory
-                .appendingPathComponent("Codevisor-QuickLook", isDirectory: true)
-                .appendingPathComponent(UUID().uuidString, isDirectory: true)
-            let url = directory.appendingPathComponent(file.name)
-            // Materializing the file is a full-size disk write; do it off the
-            // main actor, then present on it.
-            let written = await Task.detached(priority: .userInitiated) { () -> Bool in
-                do {
-                    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-                    try data.write(to: url, options: .atomic)
-                    return true
-                } catch {
-                    return false
-                }
-            }.value
-            guard written else { return }
+            guard let url = await materializeQuickLookURL(for: file, store: attachmentImages) else {
+                return
+            }
             quickLookURL = QuickLookURL(url: url)
         }
     }
@@ -237,7 +223,31 @@ private struct AttachmentThumbnailLoadID: Hashable {
 
 // MARK: - Quick Look
 
-private struct QuickLookURL: Identifiable {
+/// Fetches a transcript file and writes it under its real filename because
+/// QLPreviewController presents file URLs rather than in-memory bytes.
+@MainActor
+func materializeQuickLookURL(
+    for file: PreviewFile,
+    store: AttachmentImageStore
+) async -> URL? {
+    guard let data = try? await store.data(for: file.source) else { return nil }
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("Codevisor-QuickLook", isDirectory: true)
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let url = directory.appendingPathComponent(file.name)
+    let written = await Task.detached(priority: .userInitiated) { () -> Bool in
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try data.write(to: url, options: .atomic)
+            return true
+        } catch {
+            return false
+        }
+    }.value
+    return written ? url : nil
+}
+
+struct QuickLookURL: Identifiable {
     let url: URL
     var id: String { url.path }
 }
@@ -245,7 +255,7 @@ private struct QuickLookURL: Identifiable {
 /// QLPreviewController wrapper: images, PDFs, and videos all preview (with
 /// video playback) without per-type code. Wrapped in a navigation controller
 /// so Quick Look's native Done and share chrome appears in the sheet.
-private struct QuickLookPreview: UIViewControllerRepresentable {
+struct QuickLookPreview: UIViewControllerRepresentable {
     let url: URL
     @Environment(\.dismiss) private var dismiss
 

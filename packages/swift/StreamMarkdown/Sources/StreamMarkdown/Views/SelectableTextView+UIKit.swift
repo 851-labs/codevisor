@@ -10,6 +10,7 @@
         private let attributedText: NSAttributedString
         private let fillsWidth: Bool
         private let streamingAnimation: StreamingTextAnimationContext?
+        @Environment(\.markdownLinkAction) private var linkAction
 
         public init(attributedText: NSAttributedString, fillsWidth: Bool = true) {
             self.attributedText = attributedText
@@ -33,6 +34,8 @@
 
         public func makeUIView(context: Context) -> SelectableTextKitView {
             let view = SelectableTextKitView()
+            context.coordinator.linkAction = linkAction
+            view.delegate = context.coordinator
             let prepared = context.coordinator.preparedText(
                 for: attributedText,
                 animation: streamingAnimation
@@ -42,6 +45,7 @@
         }
 
         public func updateUIView(_ textView: SelectableTextKitView, context: Context) {
+            context.coordinator.linkAction = linkAction
             let prepared = context.coordinator.preparedText(
                 for: attributedText,
                 animation: streamingAnimation
@@ -73,8 +77,9 @@
         }
 
         @MainActor
-        public final class Coordinator {
+        public final class Coordinator: NSObject, UITextViewDelegate {
             fileprivate let measurer = UIKitTextKitTextMeasurer()
+            fileprivate var linkAction: MarkdownLinkAction?
             private let animationState = StreamingTextAnimationState()
             private var attributedInput: NSAttributedString?
             private var stableAttributedText: NSAttributedString?
@@ -119,6 +124,17 @@
                 preparedReduceMotion = animation?.reduceMotion ?? false
                 prepared = value
                 return value
+            }
+
+            public func textView(
+                _: UITextView,
+                primaryActionFor textItem: UITextItem,
+                defaultAction: UIAction
+            ) -> UIAction? {
+                guard case let .link(url) = textItem.content, let linkAction else {
+                    return defaultAction
+                }
+                return linkAction(url) ? UIAction { _ in } : defaultAction
             }
         }
     }
