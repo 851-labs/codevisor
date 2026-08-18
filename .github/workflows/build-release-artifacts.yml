@@ -251,6 +251,13 @@ jobs:
         run: xcodebuild -downloadComponent MetalToolchain
       - name: Build GhosttyKit
         if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
+        # NIX_CONFIG outranks the runner's nix.conf, whose access token was
+        # written by nix-installer-action on FIRST install with that job's
+        # ephemeral GITHUB_TOKEN. On a persistent self-hosted runner the
+        # install is reused, the recorded token is long expired, and any
+        # uncached github: flake input fails with 401 Bad credentials.
+        env:
+          NIX_CONFIG: access-tokens = github.com=${{ github.token }}
         run: nix develop ./.repos/ghostty -c apps/macos/scripts/build-ghostty.sh
       - name: Save GhosttyKit cache
         if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
