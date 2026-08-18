@@ -31,6 +31,8 @@ struct ChatScreen: View {
     @State private var historyLoadTask: Task<Void, Never>?
     @State private var olderHistoryPresentation = TranscriptPaginationPresentationGate()
     @State private var composerMaskSize: CGSize = .zero
+    @State private var isTranscriptMounted = false
+    @State private var isInitialTranscriptReady = false
     @State private var showsInitialLoadingSpinner = false
     @State private var projectedRows: [TranscriptVirtualRow] = []
     @State private var projectedSessionID: UUID?
@@ -38,163 +40,180 @@ struct ChatScreen: View {
     @Namespace private var composerGlassNamespace
 
     var body: some View {
-        NativeTranscriptView(
-            rows: projectedRows,
-            initialState: controller.scrollState,
-            followsLatest: autoFollow,
-            hasOlderHistory: controller.hasOlderHistory,
-            showsOlderHistoryLoadingIndicator: olderHistoryPresentation.isPresented,
-            olderHistoryPresentationTarget: olderHistoryPresentation.presentationTarget,
-            isLoadingInitialHistory: controller.isLoadingInitialHistory,
-            isPreparingInitialProjection: isPreparingTranscript,
-            layoutFingerprint: dynamicTypeSize.hashValue,
-            scrollCommand: scrollCommand,
-            sendAnimationRequest: controller.userSendAnimationRequest,
-            reduceMotion: reduceMotion,
-            claimSendAnimation: { request in
-                controller.claimUserSendAnimation(request)
-            },
-            rowContent: { row in
-                AnyView(
-                    virtualRowContent(row)
-                        .environment(\.theme, theme)
-                        .environment(\.attachmentImages, attachmentImages)
-                        .environment(\.hoverTrackingSuspended, controller.isSending)
-                        .environment(\.transcriptDisclosure, controller.disclosure)
-                        .environment(\.transcriptController, controller)
-                        .environment(
-                            \.runningSubagentToolCallIds,
-                            controller.runningSubagentToolCallIds
-                        )
-                )
-            },
-            onViewportChange: { state in
-                controller.scrollState = state
-            },
-            onBottomStateChange: { atBottom in
-                // AppKit can publish a transient edge and its corrected final
-                // edge during one layout pass. Defer the SwiftUI mutation, but
-                // preserve every callback in order so the final geometry wins.
-                DispatchQueue.main.async {
-                    if isAtBottom != atBottom { isAtBottom = atBottom }
-                }
-            },
-            onFollowStateChange: { follows in
-                DispatchQueue.main.async {
-                    if autoFollow != follows { autoFollow = follows }
-                }
-            },
-            onNearTop: {
-                requestOlderHistoryLoad()
-            },
-            onOlderHistoryPresented: { token in
-                DispatchQueue.main.async {
-                    olderHistoryPresentation.didPresent(token: token)
-                }
-            },
-            onScrollViewReady: { scrollView in
-                focus.transcriptView = scrollView
-                // Keyed: EVERY chat's transcript is a click-to-blur zone in
-                // multi-chat workspaces (the single slot is last-mounted).
-                if let chatId = controller.serverSession?.id {
-                    focus.registerTranscript(scrollView, forChat: chatId)
+        transcriptSurface
+            .onChange(of: controller.userSendSignal) { _, _ in
+                autoFollow = true
+                scrollCommand.token &+= 1
+            }
+            .overlay { initialLoadingOverlay }
+            .overlay(alignment: .bottom) { bottomChromeOverlay }
+            .animation(Motion.quick(reduceMotion: reduceMotion), value: isAtBottom)
+            .onAppear {
+                autoFollow = controller.scrollState?.followMode.followsLatest ?? true
+                isAtBottom = controller.scrollState?.isAtBottom ?? true
+                controller.transcriptViewDidAppear()
+            }
+            .onDisappear {
+                historyLoadTask?.cancel()
+                historyLoadTask = nil
+                olderHistoryPresentation.cancel()
+                controller.transcriptViewDidDisappear()
+            }
+            // Give the new pane shell, split chrome, and composer one committed
+            // frame before constructing the AppKit virtualizer. Until then the
+            // transcript region is an opaque, correctly-sized blank surface.
+            .task(id: ObjectIdentifier(controller)) {
+                isTranscriptMounted = false
+                isInitialTranscriptReady = false
+                showsInitialLoadingSpinner = false
+                await Task.yield()
+                try? await Task.sleep(for: .milliseconds(16))
+                guard !Task.isCancelled else { return }
+                isTranscriptMounted = true
+            }
+            // Every chat pane loads its own history: only the ROUTED session's
+            // controller is prepared by the container, but a workspace can show
+            // several chats at once (splits, tabs) — without this, the others
+            // render empty transcripts.
+            .task(id: ObjectIdentifier(controller)) {
+                if controller.resumeAgentSessionId?.isEmpty == false {
+                    // Existing chats know their harness. Refresh only that one in
+                    // parallel; neither config inspection nor runtime startup may
+                    // hold the first transcript page behind them.
+                    async let capabilities: Void = controller.prepareExistingSessionCapabilities()
+                    if !AppPreview.isRunning {
+                        await controller.connectIfNeeded()
+                    }
+                    await capabilities
+                } else {
+                    if !controller.isPrepared && !controller.isConnected {
+                        await controller.prepare()
+                    }
+                    if !AppPreview.isRunning {
+                        await controller.connectIfNeeded()
+                    }
                 }
             }
-        )
-        .onChange(of: controller.userSendSignal) { _, _ in
-            autoFollow = true
-            scrollCommand.token &+= 1
-        }
-        .mask {
-            ComposerTranscriptMask(
-                composerSize: composerMaskSize,
-                bottomInset: Self.composerBottomMargin
-            )
-        }
-        .overlay { initialLoadingOverlay }
-        .overlay(alignment: .bottom) { bottomChromeOverlay }
-        .animation(Motion.quick(reduceMotion: reduceMotion), value: isAtBottom)
-        .onAppear {
-            autoFollow = controller.scrollState?.followMode.followsLatest ?? true
-            isAtBottom = controller.scrollState?.isAtBottom ?? true
-            controller.transcriptViewDidAppear()
-        }
-        .onDisappear {
-            historyLoadTask?.cancel()
-            historyLoadTask = nil
-            olderHistoryPresentation.cancel()
-            controller.transcriptViewDidDisappear()
-        }
-        // Every chat pane loads its own history: only the ROUTED session's
-        // controller is prepared by the container, but a workspace can show
-        // several chats at once (splits, tabs) — without this, the others
-        // render empty transcripts.
-        .task(id: ObjectIdentifier(controller)) {
-            if controller.resumeAgentSessionId?.isEmpty == false {
-                // Existing chats know their harness. Refresh only that one in
-                // parallel; neither config inspection nor runtime startup may
-                // hold the first transcript page behind them.
-                async let capabilities: Void = controller.prepareExistingSessionCapabilities()
-                if !AppPreview.isRunning {
-                    await controller.connectIfNeeded()
+            .task(id: transcriptProjectionRequest) {
+                let request = transcriptProjectionRequest
+                let key = request.key
+                let input = controller.transcriptProjectionInput
+                if projectedSessionID != key.sessionID {
+                    projectedRows = []
+                    projectedSessionID = key.sessionID
+                    isPreparingTranscript = true
                 }
-                await capabilities
-            } else {
-                if !controller.isPrepared && !controller.isConnected {
-                    await controller.prepare()
-                }
-                if !AppPreview.isRunning {
-                    await controller.connectIfNeeded()
+                do {
+                    let rows = try await TranscriptRowProjectionCache.shared.rows(
+                        for: key,
+                        input: input,
+                        options: request.options
+                    )
+                    guard !Task.isCancelled,
+                        transcriptProjectionRequest == request
+                    else { return }
+                    projectedRows = rows
+                    isPreparingTranscript = false
+                } catch is CancellationError {
+                    return
+                } catch {
+                    // Projection is pure and currently only throws for
+                    // cancellation. Keep the existing rows if that changes.
+                    isPreparingTranscript = false
                 }
             }
-        }
-        .task(id: transcriptProjectionRequest) {
-            let request = transcriptProjectionRequest
-            let key = request.key
-            let input = controller.transcriptProjectionInput
-            if projectedSessionID != key.sessionID {
-                projectedRows = []
-                projectedSessionID = key.sessionID
-                isPreparingTranscript = true
+            .task(id: isInitialTranscriptReady) {
+                showsInitialLoadingSpinner = false
+                guard !isInitialTranscriptReady else { return }
+                try? await Task.sleep(for: .milliseconds(500))
+                guard !Task.isCancelled, !isInitialTranscriptReady else { return }
+                showsInitialLoadingSpinner = true
             }
-            do {
-                let rows = try await TranscriptRowProjectionCache.shared.rows(
-                    for: key,
-                    input: input,
-                    options: request.options
-                )
-                guard !Task.isCancelled,
-                    transcriptProjectionRequest == request
-                else { return }
-                projectedRows = rows
-                isPreparingTranscript = false
-            } catch is CancellationError {
-                return
-            } catch {
-                // Projection is pure and currently only throws for
-                // cancellation. Keep the existing rows if that changes.
-                isPreparingTranscript = false
-            }
-        }
-        .task(id: isLoadingTranscriptContent) {
-            showsInitialLoadingSpinner = false
-            guard isLoadingTranscriptContent else { return }
-            try? await Task.sleep(for: .milliseconds(500))
-            guard !Task.isCancelled, isLoadingTranscriptContent else { return }
-            showsInitialLoadingSpinner = true
-        }
     }
 
-    private var isLoadingTranscriptContent: Bool {
-        (isPreparingTranscript && projectedRows.isEmpty)
-            || (controller.isLoadingInitialHistory
-                && controller.settledConversation.isEmpty
-                && !controller.hasActiveItem)
+    private var transcriptSurface: some View {
+        ZStack {
+            theme.windowBackground
+            if isTranscriptMounted {
+                NativeTranscriptView(
+                    rows: projectedRows,
+                    initialState: controller.scrollState,
+                    followsLatest: autoFollow,
+                    hasOlderHistory: controller.hasOlderHistory,
+                    showsOlderHistoryLoadingIndicator: olderHistoryPresentation.isPresented,
+                    olderHistoryPresentationTarget: olderHistoryPresentation.presentationTarget,
+                    isLoadingInitialHistory: controller.isLoadingInitialHistory,
+                    isPreparingInitialProjection: isPreparingTranscript,
+                    layoutFingerprint: dynamicTypeSize.hashValue,
+                    scrollCommand: scrollCommand,
+                    sendAnimationRequest: controller.userSendAnimationRequest,
+                    reduceMotion: reduceMotion,
+                    claimSendAnimation: { request in
+                        controller.claimUserSendAnimation(request)
+                    },
+                    rowContent: { row in
+                        AnyView(
+                            virtualRowContent(row)
+                                .environment(\.theme, theme)
+                                .environment(\.attachmentImages, attachmentImages)
+                                .environment(\.hoverTrackingSuspended, controller.isSending)
+                                .environment(\.transcriptDisclosure, controller.disclosure)
+                                .environment(\.transcriptController, controller)
+                                .environment(
+                                    \.runningSubagentToolCallIds,
+                                    controller.runningSubagentToolCallIds
+                                )
+                        )
+                    },
+                    onViewportChange: { state in
+                        controller.scrollState = state
+                    },
+                    onBottomStateChange: { atBottom in
+                        // AppKit can publish a transient edge and its corrected final
+                        // edge during one layout pass. Defer the SwiftUI mutation, but
+                        // preserve every callback in order so the final geometry wins.
+                        DispatchQueue.main.async {
+                            if isAtBottom != atBottom { isAtBottom = atBottom }
+                        }
+                    },
+                    onFollowStateChange: { follows in
+                        DispatchQueue.main.async {
+                            if autoFollow != follows { autoFollow = follows }
+                        }
+                    },
+                    onNearTop: {
+                        requestOlderHistoryLoad()
+                    },
+                    onOlderHistoryPresented: { token in
+                        DispatchQueue.main.async {
+                            olderHistoryPresentation.didPresent(token: token)
+                        }
+                    },
+                    onInitialPresentationReady: {
+                        isInitialTranscriptReady = true
+                    },
+                    onScrollViewReady: { scrollView in
+                        focus.transcriptView = scrollView
+                        // Keyed: EVERY chat's transcript is a click-to-blur zone in
+                        // multi-chat workspaces (the single slot is last-mounted).
+                        if let chatId = controller.serverSession?.id {
+                            focus.registerTranscript(scrollView, forChat: chatId)
+                        }
+                    }
+                )
+                .mask {
+                    ComposerTranscriptMask(
+                        composerSize: composerMaskSize,
+                        bottomInset: Self.composerBottomMargin
+                    )
+                }
+            }
+        }
     }
 
     @ViewBuilder
     private var initialLoadingOverlay: some View {
-        if showsInitialLoadingSpinner, isLoadingTranscriptContent {
+        if showsInitialLoadingSpinner, !isInitialTranscriptReady {
             ProgressView()
                 .controlSize(.small)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)

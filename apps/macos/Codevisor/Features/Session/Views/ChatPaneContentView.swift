@@ -46,16 +46,12 @@ struct ChatPaneContentView: View {
                         paneFocus: focus,
                         hostWorkspaceId: store.workspace(for: session, project: project).id
                     )
-                    .reportsPresentationReadyAfterLayout(
-                        PanePresentationReadyEvent(
-                            paneId: descriptor.id,
-                            chatSessionId: chatSession.id
-                        ))
                 } else {
                     ChatScreen(
                         controller: store.controller(for: chatSession, project: chatProject),
                         focus: focus
                     )
+                    .id(chatSession.id)
                 }
             } else {
                 // The referenced session was deleted (e.g. from another
@@ -69,11 +65,6 @@ struct ChatPaneContentView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .reportsPresentationReadyAfterLayout(
-                    PanePresentationReadyEvent(
-                        paneId: descriptor.id,
-                        chatSessionId: descriptor.chatSessionId
-                    ))
             }
         } else {
             NewChatView(
@@ -93,9 +84,6 @@ struct ChatPaneContentView: View {
                         )
                 },
                 hostWorkspaceId: store.workspace(for: session, project: project).id
-            )
-            .reportsPresentationReadyAfterLayout(
-                PanePresentationReadyEvent(paneId: descriptor.id, chatSessionId: nil)
             )
         }
     }

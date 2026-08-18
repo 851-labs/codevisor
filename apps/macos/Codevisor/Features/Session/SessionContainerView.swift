@@ -220,7 +220,6 @@ struct SessionContainerView: View {
                 centerGroup: activeCenterModel(in: workspace),
                 focus: sessionFocus,
                 centerTree: liveCenterTree ?? workspace.centerTree,
-                centerTabId: workspace.selectedCenterTabId,
                 primaryLeafId: workspace.centerTree.groupId(containingChat: session.id),
                 activeLeafId: activeLeafId ?? workspace.selectedCenterTab?.activeLeafId,
                 centerLeafModel: { leafId in configuredCenterModel(leafId: leafId) },

@@ -23,8 +23,6 @@ struct SessionScreen: View {
     /// The workspace's center split tree + leaf plumbing (nil-safe defaults
     /// keep previews on the single-group path).
     var centerTree: SplitNode? = nil
-    /// Stable identity of the selected browser-style workspace tab.
-    var centerTabId: UUID? = nil
     var primaryLeafId: UUID? = nil
     /// The active split leaf (keyboard target).
     var activeLeafId: UUID? = nil
@@ -139,35 +137,7 @@ struct SessionScreen: View {
     /// tree. A single-pane tab is just the tree's lone leaf.
     private var centerContent: some View {
         Group {
-            if let centerTree, let centerTabId, let centerLeafModel {
-                WorkspaceCenterPresentationHost(
-                    surface: WorkspaceCenterSurface(
-                        id: centerTabId,
-                        node: centerTree,
-                        activeLeafId: activeLeafId ?? primaryLeafId
-                    ),
-                    requiredPaneIds: { surface in
-                        Set(
-                            surface.node.allGroups.compactMap { leaf in
-                                centerLeafModel(leaf.id).state.selectedPaneId
-                            })
-                    }
-                ) { surface in
-                    WorkspaceSplitView(
-                        node: surface.node,
-                        activeLeafId: surface.activeLeafId,
-                        groupModel: centerLeafModel,
-                        paneTitle: centerPaneTitle ?? { $0.name },
-                        sessionStore: sessionStore,
-                        dragCoordinator: splitDragCoordinator,
-                        onSplitLeaf: { leafId, edge in onSplitLeaf?(leafId, edge) },
-                        onRenameLeaf: { leafId, name in onRenameLeaf?(leafId, name) },
-                        onCloseLeaf: { leafId in onCloseLeaf?(leafId) },
-                        onTreeChanged: { onCenterTreeChanged?($0) },
-                        onLiveTreeChanged: { onCenterTreeLiveChanged?($0) }
-                    )
-                }
-            } else if let centerTree, let centerLeafModel {
+            if let centerTree, let centerLeafModel {
                 WorkspaceSplitView(
                     node: centerTree,
                     activeLeafId: activeLeafId ?? primaryLeafId,

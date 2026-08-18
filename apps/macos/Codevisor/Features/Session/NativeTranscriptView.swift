@@ -16,8 +16,6 @@ struct TranscriptScrollCommand: Equatable {
 /// stays inside AppKit; SwiftUI receives only boundary transitions and a tiny
 /// observation-ignored viewport snapshot.
 struct NativeTranscriptView: NSViewRepresentable {
-    @Environment(\.panePresentationReady) private var reportPresentationReady
-    @Environment(\.panePresentationIdentity) private var presentationIdentity
     let rows: [TranscriptVirtualRow]
     let initialState: SessionScrollState?
     let followsLatest: Bool
@@ -37,6 +35,7 @@ struct NativeTranscriptView: NSViewRepresentable {
     let onFollowStateChange: @MainActor (Bool) -> Void
     let onNearTop: @MainActor () -> Void
     let onOlderHistoryPresented: @MainActor (UInt64) -> Void
+    var onInitialPresentationReady: (@MainActor () -> Void)? = nil
     /// Called once with the underlying scroll view so the session's focus
     /// controller can park keyboard focus on the chat history when it is
     /// clicked (mirrors the composer's `onTextViewReady`).
@@ -103,12 +102,11 @@ struct NativeTranscriptView: NSViewRepresentable {
     }
 
     private func reportInitialPresentationReady() {
-        let report = reportPresentationReady
-        let event = presentationIdentity
-        // The virtualizer may resolve from inside updateNSView. Cross back to
-        // SwiftUI on the next main-loop turn, after the layout transaction.
+        guard let onInitialPresentationReady else { return }
+        // Readiness can resolve inside updateNSView. Publish after SwiftUI's
+        // current update transaction rather than mutating view state from it.
         DispatchQueue.main.async {
-            report(event)
+            onInitialPresentationReady()
         }
     }
 }

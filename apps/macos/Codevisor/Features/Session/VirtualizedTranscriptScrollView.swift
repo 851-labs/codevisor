@@ -105,7 +105,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private var onOlderHistoryPresented: ((UInt64) -> Void)?
     var onInitialPresentationReady: (() -> Void)?
     var isInitialPresentationReady: Bool { initialPresentationGate.isReady }
-
     /// The chat history itself can hold keyboard focus: a click anywhere in
     /// it (routed here by TerminalFocusController's mouse monitor) blurs a
     /// focused terminal, the scroll keys in `keyDown(with:)` keep working,
