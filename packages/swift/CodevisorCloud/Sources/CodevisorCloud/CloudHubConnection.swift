@@ -805,6 +805,10 @@ public actor CloudHubConnection {
         var frame: CloudRelayFrame
     }
 
+    private struct MachineResetMessage: Decodable {
+        var machineId: String
+    }
+
     private struct ErrorMessage: Decodable {
         var code: String
         var message: String
@@ -855,6 +859,13 @@ public actor CloudHubConnection {
         case "relay":
             guard let relay = try? decoder.decode(InboundRelayMessage.self, from: data) else { return }
             handleRelay(relay.frame)
+        case "machine-reset":
+            guard let reset = try? decoder.decode(MachineResetMessage.self, from: data) else { return }
+            // The machine completed a fresh hello: its in-memory channel
+            // state is gone, so every channel toward it is dead even though
+            // the machine is online. Close them; consumers re-open on the
+            // machine's fresh socket (the online presence follows this frame).
+            closeChannels(for: reset.machineId)
         case "error":
             guard let failure = try? decoder.decode(ErrorMessage.self, from: data) else { return }
             Log.cloud.error(

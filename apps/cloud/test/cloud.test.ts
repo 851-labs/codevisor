@@ -542,6 +542,14 @@ describe("hub relay", () => {
     const app = await connectApp(token)
     machine.socket.close(1000, "gone")
     expect((await app.reader.next()).t).toBe("presence")
+    // The proactive broadcast: receive-only streams can never provoke the
+    // reactive error below, so the hub reports the loss unprompted.
+    const broadcast = (await app.reader.next()) as Extract<HubToApp, { t: "error" }>
+    expect(broadcast).toMatchObject({
+      t: "error",
+      code: "machine-offline",
+      machineId: machine.deviceId
+    })
 
     const frame = {
       t: "data",
@@ -556,6 +564,35 @@ describe("hub relay", () => {
     app.socket.send(encodeCloudFrame({ t: "relay", machineId: "never-existed", frame }))
     const unknown = (await app.reader.next()) as Extract<HubToApp, { t: "error" }>
     expect(unknown.code).toBe("unknown-machine")
+  })
+
+  it("resets app channels and supersedes zombie sockets when a machine re-hellos", async () => {
+    const token = await devLogin()
+    const machine = await connectMachine(token, "reconnect-vps")
+    const app = await connectApp(token)
+
+    const superseded = new Promise<number>((resolve) =>
+      machine.socket.addEventListener("close", (event) => resolve(event.code))
+    )
+    // The same device reconnects while its previous socket lingers half-open.
+    const reborn = await connectMachine(token, "reconnect-vps", machine.deviceId)
+
+    // The zombie is closed with the non-fatal supersede code so it cannot
+    // black-hole routed frames or suppress a later offline broadcast.
+    expect(await superseded).toBe(4003)
+    // Apps are told to drop dead channels before the machine turns online, so
+    // re-opens park briefly and then dispatch to the fresh socket.
+    const reset = (await app.reader.next()) as Extract<HubToApp, { t: "machine-reset" }>
+    expect(reset).toMatchObject({ t: "machine-reset", machineId: machine.deviceId })
+    const presence = (await app.reader.next()) as Extract<HubToApp, { t: "presence" }>
+    expect(presence.machine).toMatchObject({ deviceId: machine.deviceId, online: true })
+
+    // The superseded socket's close is not an outage: relaying through the
+    // fresh socket works immediately, with no offline error in between.
+    const frame = { t: "data", channelId: "ch-fresh", seq: 0, sealed: { box: "Ym94" } } as const
+    app.socket.send(encodeCloudFrame({ t: "relay", machineId: machine.deviceId, frame }))
+    const relayed = (await reborn.reader.next()) as Extract<HubToMachine, { t: "relay" }>
+    expect(relayed).toMatchObject({ t: "relay", frame: { channelId: "ch-fresh" } })
   })
 
   it("notifies machines when an app peer disconnects", async () => {
@@ -577,6 +614,7 @@ describe("hub relay", () => {
     // the liveness contract that lets a machine detect a half-open socket
     // without periodically waking the account's Durable Object.
     const machine = await connectMachine(token, "heartbeat-vps")
+    expect((await app.reader.next()).t).toBe("machine-reset")
     expect((await app.reader.next()).t).toBe("presence")
     machine.socket.send(encodeCloudFrame({ t: "ping" }))
     expect((await machine.reader.next()).t).toBe("pong")

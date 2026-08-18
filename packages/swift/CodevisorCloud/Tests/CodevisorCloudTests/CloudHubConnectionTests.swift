@@ -244,6 +244,44 @@ struct CloudHubConnectionTests {
         await hub.shutdown()
     }
 
+    @Test("A machine-reset closes that machine's channels without marking it offline")
+    func machineResetClosesChannels() async throws {
+        let machine = ScriptedRelayMachine()
+        let scripted = ScriptedCloudHub(machines: [machine.presence])
+        let (hub, _) = makeHub(scripted)
+        let recorder = Recorder()
+
+        _ = try await hub.openChannel(
+            machineDeviceId: machine.deviceId,
+            machinePublicKey: machine.publicKey,
+            channelType: "test",
+            params: nil,
+            onMessage: { _ in },
+            onClosed: { recorder.recordClose($0) }
+        )
+        #expect(await waitUntil { scripted.relayEnvelopes.count == 1 })
+
+        // The machine re-hello'd: its channel state is fresh, so existing
+        // channels are dead even though the machine stays online.
+        scripted.machineResetToApp(machineId: machine.deviceId)
+
+        #expect(await waitUntil { recorder.closes == [nil] })
+        #expect(await hub.machines.first?.online == true)
+
+        // The machine is still online, so a fresh open dispatches immediately
+        // instead of parking for a presence flip.
+        _ = try await hub.openChannel(
+            machineDeviceId: machine.deviceId,
+            machinePublicKey: machine.publicKey,
+            channelType: "test",
+            params: nil,
+            onMessage: { _ in },
+            onClosed: { _ in }
+        )
+        #expect(await waitUntil { scripted.relayEnvelopes.count == 2 })
+        await hub.shutdown()
+    }
+
     @Test("A machine-offline hub error updates presence and parks later channel opens")
     func machineOfflineErrorParksChannelOpen() async throws {
         let machine = ScriptedRelayMachine()

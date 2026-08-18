@@ -175,10 +175,23 @@ export const HubError = Schema.Struct({
 
 export const HubPong = Schema.Struct({ t: Schema.Literal("pong") })
 
+/// Sent to apps when a machine completes a (re)hello. Machine channel state
+/// is in-memory and does not survive a socket replacement, so every channel
+/// an app holds toward that machine is dead — even though the machine is
+/// online. `presence` covers machines that visibly go offline; this covers
+/// the reconnect race where the machine returns before (or without) its old
+/// socket being seen to close. Apps predating this frame ignore unknown
+/// kinds and fall back to presence/error-driven teardown.
+export const HubMachineReset = Schema.Struct({
+  t: Schema.Literal("machine-reset"),
+  machineId: Schema.String
+})
+
 export const HubToApp = Schema.Union([
   HubWelcome,
   HubPresence,
   HubRelayFromMachine,
+  HubMachineReset,
   HubError,
   HubPong
 ])

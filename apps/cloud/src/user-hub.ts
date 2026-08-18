@@ -38,6 +38,11 @@ export const CLOSE_INVALID_FRAME = 4000
 export const CLOSE_UNSUPPORTED_PROTOCOL = 4200
 export const CLOSE_REVOKED = 4201
 export const CLOSE_HELLO_TIMEOUT = 4002
+/// A newer socket completed hello for the same machine device id. The older
+/// socket is a zombie (half-open, or a superseded process) — routing to it
+/// would black-hole relay traffic. Non-fatal: a legitimately superseded
+/// process may reconnect and take over again.
+export const CLOSE_SUPERSEDED = 4003
 
 /// Refuse relay frames larger than this many UTF-16 code units (~2 MiB of
 /// JSON): far above coalesced terminal output, far below DO message limits.
@@ -249,7 +254,19 @@ export class UserHub extends DurableObject<CloudEnv> {
         ? { peerPublicKey: attachment.publicKey }
         : {})
     }
-    machineSocket.send(encodeCloudFrame(relayed))
+    if (!this.#send(machineSocket, encodeCloudFrame(relayed))) {
+      // The chosen machine socket is dead but its close event has not fired
+      // yet. Report it like any other offline machine instead of dropping
+      // the frame silently.
+      console.warn("relay to machine failed: socket dead before close event", {
+        machineId: frame.machineId,
+        channelId: frame.frame.channelId
+      })
+      this.#error(socket, "machine-offline", "machine relay socket failed", {
+        machineId: frame.machineId,
+        channelId: frame.frame.channelId
+      })
+    }
   }
 
   #onMachineFrame(socket: WebSocket, attachment: SocketAttachment, message: string): void {
@@ -291,6 +308,20 @@ export class UserHub extends DurableObject<CloudEnv> {
           connectionId: attachment.connectionId
         })
       )
+      // One live socket per machine device. Older sockets are zombies
+      // (half-open TCP, or a superseded process): app→machine routing picks
+      // an arbitrary socket, so a lingering zombie would black-hole traffic —
+      // and its continued presence would suppress the offline broadcast when
+      // the socket that actually carries traffic dies. Closing them here also
+      // keeps their #onGone from flapping presence (this socket is live).
+      for (const stale of this.#machineSockets(deviceId)) {
+        if (stale !== socket) stale.close(CLOSE_SUPERSEDED, "superseded by a newer connection")
+      }
+      // Channel state on the machine is in-memory and did not survive the
+      // (re)connect: tell apps to reset their channels toward this machine
+      // *before* announcing it online, so re-opens park briefly and then
+      // dispatch to the fresh socket instead of racing the teardown.
+      this.#broadcastToApps({ t: "machine-reset", machineId: deviceId })
       const row = this.#machineRow(deviceId)
       if (row !== undefined)
         this.#broadcastToApps({ t: "presence", machine: this.#presence(row, true) })
@@ -314,7 +345,15 @@ export class UserHub extends DurableObject<CloudEnv> {
       machineId: attachment.deviceId!,
       frame: frame.frame
     }
-    peer.send(encodeCloudFrame(relayed))
+    if (!this.#send(peer, encodeCloudFrame(relayed))) {
+      // The app socket is dead but its close event has not fired yet: tell
+      // the machine now, exactly as if the peer were already known-gone.
+      console.warn("relay to app failed: socket dead before close event", {
+        peerId: frame.peerId,
+        channelId: frame.frame.channelId
+      })
+      this.#send(socket, encodeCloudFrame({ t: "peer-gone", peerId: frame.peerId }))
+    }
   }
 
   #onGone(socket: WebSocket): void {
@@ -336,6 +375,16 @@ export class UserHub extends DurableObject<CloudEnv> {
         if (row !== undefined) {
           this.#broadcastToApps({ t: "presence", machine: this.#presence(row, false) })
         }
+        // Also broadcast the machine-offline error apps already understand
+        // from failed relay attempts: their channels toward this machine are
+        // dead, and a receive-only stream would otherwise never find out
+        // (it sends nothing, so it can never provoke the reactive error).
+        this.#broadcastToApps({
+          t: "error",
+          code: "machine-offline",
+          message: "machine disconnected from the relay",
+          machineId: deviceId
+        })
       }
       return
     }
@@ -389,7 +438,21 @@ export class UserHub extends DurableObject<CloudEnv> {
   #broadcastToApps(frame: HubToApp): void {
     const encoded = encodeCloudFrame(frame)
     for (const socket of this.#sockets("app")) {
-      if (this.#attachment(socket)?.helloDone === true) socket.send(encoded)
+      // A dead socket must not abort the broadcast for the remaining apps;
+      // its own close event will clean it up.
+      if (this.#attachment(socket)?.helloDone === true) this.#send(socket, encoded)
+    }
+  }
+
+  /// send() that reports failure instead of throwing: a socket can be dead
+  /// before its close event has fired, and callers must be able to react
+  /// (report machine-offline / peer-gone) rather than crash frame handling.
+  #send(socket: WebSocket, encoded: string): boolean {
+    try {
+      socket.send(encoded)
+      return true
+    } catch {
+      return false
     }
   }
 

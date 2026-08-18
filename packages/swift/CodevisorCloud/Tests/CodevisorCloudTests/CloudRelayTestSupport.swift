@@ -144,6 +144,15 @@ final class ScriptedCloudHub: @unchecked Sendable {
         socket.push(.string(String(decoding: data, as: UTF8.self)))
     }
 
+    func machineResetToApp(machineId: String) {
+        struct Envelope: Encodable {
+            var t = "machine-reset"
+            var machineId: String
+        }
+        let data = try! JSONEncoder().encode(Envelope(machineId: machineId))
+        socket.push(.string(String(decoding: data, as: UTF8.self)))
+    }
+
     func errorToApp(
         code: String,
         message: String,
