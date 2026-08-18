@@ -66,10 +66,7 @@ extension SessionModelTests {
 
         #expect(model.goal?.objective == "ship goal mode")
         #expect(model.goal?.activity == .verifying)
-        for _ in 0..<20 {
-            if !client.sessionEventSinceValues.isEmpty { break }
-            await Task.yield()
-        }
+        await settleUntil { !client.sessionEventSinceValues.isEmpty }
         #expect(client.sessionEventSinceValues == [12])
     }
 
@@ -99,10 +96,7 @@ extension SessionModelTests {
                     "content": .object(["type": .string("text"), "text": .string("Working on it.")]),
                 ])
             ))
-        for _ in 0..<40 {
-            await Task.yield()
-            if !model.conversation.isEmpty { break }
-        }
+        await settleUntil { !model.conversation.isEmpty }
         guard case let .assistant(assistant) = model.conversation.last else {
             Issue.record("expected the streamed turn to render")
             return
@@ -155,10 +149,7 @@ extension SessionModelTests {
                     ])
                 ])
             ))
-        for _ in 0..<20 {
-            await Task.yield()
-            if model.goal != nil { break }
-        }
+        await settleUntil { model.goal != nil }
         #expect(model.goal?.objective == "long haul")
         #expect(model.goal?.tokenBudget == nil)
         #expect(model.goal?.tokensUsed == 1200)
@@ -183,10 +174,7 @@ extension SessionModelTests {
                     ])
                 ])
             ))
-        for _ in 0..<20 {
-            await Task.yield()
-            if model.goal?.status == .budgetLimited { break }
-        }
+        await settleUntil { model.goal?.status == .budgetLimited }
         #expect(model.goal?.status == .budgetLimited)
         #expect(model.goal?.tokensUsed == 10_000)
 
@@ -199,10 +187,7 @@ extension SessionModelTests {
                 createdAt: "2026-07-05T00:03:00.000Z",
                 payload: .object(["goalCleared": .bool(true)])
             ))
-        for _ in 0..<20 {
-            await Task.yield()
-            if model.goal == nil { break }
-        }
+        await settleUntil { model.goal == nil }
         #expect(model.goal == nil)
         #expect(goalEdges == 3)
     }
@@ -280,13 +265,8 @@ extension SessionModelTests {
                     ]),
                 ])
             ))
-        for _ in 0..<20 {
-            await Task.yield()
-            if case let .assistant(message) = model.conversation.last,
-                message.turn.toolCalls.contains(where: { $0.kind == .question })
-            {
-                break
-            }
+        await settleAssistant(model) { message in
+            message.turn.toolCalls.contains(where: { $0.kind == .question })
         }
         guard case let .assistant(assistant) = model.conversation.last else {
             Issue.record("expected assistant")
@@ -386,10 +366,7 @@ extension SessionModelTests {
             )
         }
         client.emit(questionEnvelope(1, "q-cancel"))
-        for _ in 0..<20 {
-            await Task.yield()
-            if model.pendingQuestion != nil { break }
-        }
+        await settleUntil { model.pendingQuestion != nil }
         await model.cancelQuestion()
         #expect(model.pendingQuestion == nil)
         #expect(client.questionAnswers.first?.1 == "cancelled")
@@ -397,10 +374,7 @@ extension SessionModelTests {
         // A stale question is dropped when the turn finishes, even if the
         // resolution event was lost.
         client.emit(questionEnvelope(2, "q-stale"))
-        for _ in 0..<20 {
-            await Task.yield()
-            if model.pendingQuestion != nil { break }
-        }
+        await settleUntil { model.pendingQuestion != nil }
         client.emit(
             ServerEventEnvelope(
                 id: 3,
@@ -410,10 +384,7 @@ extension SessionModelTests {
                 createdAt: "2026-07-05T00:00:02.000Z",
                 payload: .object(["stopReason": .string("end_turn")])
             ))
-        for _ in 0..<20 {
-            await Task.yield()
-            if model.pendingQuestion == nil { break }
-        }
+        await settleUntil { model.pendingQuestion == nil }
         #expect(model.pendingQuestion == nil)
     }
 }

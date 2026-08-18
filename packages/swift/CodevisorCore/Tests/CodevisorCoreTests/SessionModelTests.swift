@@ -8,8 +8,8 @@ import ACPKit
 struct SessionModelTests {
     init() {
         // Production coalesces stream events into per-frame batches; these
-        // tests settle with `Task.yield()` loops that never advance the wall
-        // clock, so flush on the next main-actor turn instead.
+        // tests should not wait on the production frame cadence, so flush on
+        // the next main-actor turn instead.
         SessionModel.eventFlushInterval = .zero
         SessionModel.cancellationTerminalEventWaitDelay = .zero
     }
@@ -221,10 +221,7 @@ struct SessionModelTests {
         #expect(model.isSending)
 
         async let first: Void = model.cancel()
-        for _ in 0..<100 {
-            await Task.yield()
-            if client.cancelCount == 1 { break }
-        }
+        await settleUntil { client.cancelCount == 1 }
         async let duplicate: Void = model.cancel()
         client.emit(stopEnvelope(id: 9, sessionId: sessionId, stopReason: "cancelled"))
         _ = await (first, duplicate)
@@ -406,6 +403,7 @@ struct SessionModelTests {
         // Pump chunks under the SAME phase for well past one quiet window.
         for id in 1...16 {
             try? await Task.sleep(for: .milliseconds(30))
+            let previousUpdateCount = model.appliedUpdateCount
             client.emit(
                 ServerEventEnvelope(
                     id: id,
@@ -419,9 +417,7 @@ struct SessionModelTests {
                         "content": .object(["type": .string("text"), "text": .string("chunk ")]),
                     ])
                 ))
-            // Let the buffered flush apply the chunk (the suite flushes on the
-            // next main-actor turn), then check the state it produced.
-            for _ in 0..<8 { await Task.yield() }
+            await settleUntil { model.appliedUpdateCount > previousUpdateCount }
             #expect(
                 model.isTakingLongerThanExpected == false,
                 "a steadily streaming turn must never report itself stalled (chunk \(id))"

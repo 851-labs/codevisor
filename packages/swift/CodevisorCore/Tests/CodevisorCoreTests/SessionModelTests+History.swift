@@ -104,7 +104,7 @@ extension SessionModelTests {
         )
 
         await model.loadHistory()
-        await Task.yield()
+        await settleUntil { !client.eventSinceValues.isEmpty }
 
         #expect(client.eventSinceValues == [42])
         #expect(model.conversation.count == 2)
@@ -227,7 +227,7 @@ extension SessionModelTests {
 
         releaseQueue.yield()
         releaseQueue.finish()
-        for _ in 0..<20 { await Task.yield() }
+        await settleUntil { model.promptQueueLoadTask == nil }
 
         #expect(model.queuedPrompts == [freshItem])
     }
@@ -324,10 +324,7 @@ extension SessionModelTests {
         #expect(model.hasOlderHistory)
         #expect(client.transcriptPageRequests.first?.before == nil)
         #expect(client.transcriptPageRequests.first?.limit == 8)
-        for _ in 0..<200 {
-            await Task.yield()
-            if !client.sessionEventSinceValues.isEmpty { break }
-        }
+        await settleUntil { !client.sessionEventSinceValues.isEmpty }
         #expect(client.sessionEventSinceValues == [12])
         #expect(client.eventSinceValues.isEmpty)
 

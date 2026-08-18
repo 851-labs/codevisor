@@ -180,7 +180,7 @@ extension SessionModelTests {
         await model.loadHistory()
         client.emit(toolCallEnvelope(id: 1, sessionId: sessionId, toolCallId: "edit-1", status: "in_progress"))
         client.emit(stopEnvelope(id: 2, sessionId: sessionId, stopReason: "cancelled"))
-        await settleYields(model) { assistant in
+        await settleAssistant(model) { assistant in
             assistant.turn.toolCalls.first?.status == .cancelled
         }
         guard case let .assistant(assistant) = model.conversation.last else {
@@ -218,7 +218,7 @@ extension SessionModelTests {
                 ])
             ))
         client.emit(stopEnvelope(id: 21, sessionId: sessionId, stopReason: "end_turn"))
-        await settleYields(model) { assistant in
+        await settleAssistant(model) { assistant in
             assistant.turn.finalText == .text(id: "acp:bg-1", markdown: "Background task finished.")
                 && !assistant.turn.isGenerating
         }
@@ -258,7 +258,7 @@ extension SessionModelTests {
                     "status": .string("failed"),
                 ])
             ))
-        await settleYields(model) { assistant in
+        await settleAssistant(model) { assistant in
             assistant.turn.toolCalls.first?.status == .failed
         }
 
@@ -327,10 +327,7 @@ extension SessionModelTests {
                     ]),
                 ])
             ))
-        for _ in 0..<20 {
-            await Task.yield()
-            if model.sessionPlan?.entries.count == 1 { break }
-        }
+        await settleUntil { model.sessionPlan?.entries.count == 1 }
         #expect(model.sessionPlan?.entries.first?.content == "Ship it")
     }
 

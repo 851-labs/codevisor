@@ -28,10 +28,7 @@ extension SessionModelTests {
         )
 
         let update = Task { await model.setConfigOption(configId: "model", value: "large") }
-        for _ in 0..<20 {
-            await Task.yield()
-            if !client.configUpdates.isEmpty { break }
-        }
+        await settleUntil { !client.configUpdates.isEmpty }
 
         #expect(client.configUpdates.count == 1)
         #expect(client.configUpdates.first?.0 == "model")
@@ -178,10 +175,7 @@ extension SessionModelTests {
         #expect(model.isSending == false)
         // Live streaming resumes after the last replayed envelope, not the
         // snapshot cursor. The consumer task connects asynchronously.
-        for _ in 0..<200 {
-            await Task.yield()
-            if !client.eventSinceValues.isEmpty { break }
-        }
+        await settleUntil { !client.eventSinceValues.isEmpty }
         #expect(client.eventSinceValues == [4])
     }
 

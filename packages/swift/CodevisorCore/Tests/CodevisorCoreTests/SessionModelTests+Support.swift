@@ -17,11 +17,21 @@ extension SessionModelTests {
         await body(model)
     }
 
-    func settleUntil(_ predicate: () -> Bool) async {
-        for _ in 0..<200 {
+    func settleUntil(
+        timeout: Duration = .seconds(5),
+        _ predicate: () -> Bool
+    ) async {
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
             if predicate() { return }
-            await Task.yield()
+            // A real delay gives the main-actor event consumer a fair chance
+            // to run even when the full Swift suite starts hundreds of tests
+            // concurrently. Counting bare yields made the effective timeout
+            // depend on runner load and could expire before one actor turn.
+            try? await Task.sleep(for: .milliseconds(1))
         }
+        guard !predicate() else { return }
+        Issue.record("Timed out waiting for SessionModel to settle")
     }
 
     func userMessages(_ model: SessionModel) -> [UserMessage] {
@@ -93,14 +103,14 @@ extension SessionModelTests {
         )
     }
 
-    /// Yields until the model's last assistant turn satisfies the predicate
-    /// (bounded), so emitted stream events land before assertions run.
-    func settleYields(_ model: SessionModel, until predicate: (AssistantMessage) -> Bool) async {
-        for _ in 0..<200 {
-            await Task.yield()
-            if case let .assistant(assistant) = model.conversation.last, predicate(assistant) {
-                return
+    /// Waits until the model's last assistant turn satisfies the predicate,
+    /// so emitted stream events land before assertions run.
+    func settleAssistant(_ model: SessionModel, until predicate: (AssistantMessage) -> Bool) async {
+        await settleUntil {
+            guard case let .assistant(assistant) = model.conversation.last else {
+                return false
             }
+            return predicate(assistant)
         }
     }
 }

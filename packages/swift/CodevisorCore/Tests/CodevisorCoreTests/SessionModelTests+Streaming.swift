@@ -216,10 +216,7 @@ extension SessionModelTests {
                 createdAt: "2026-07-15T00:00:00.000Z",
                 payload: .object(["detail": .string("Your Codex sign-in expired.")])
             ))
-        for _ in 0..<40 {
-            await Task.yield()
-            if model.errorRequiresHarnessAuthentication { break }
-        }
+        await settleUntil { model.errorRequiresHarnessAuthentication }
 
         #expect(model.errorMessage == "Your Codex sign-in expired.")
         #expect(model.errorRequiresHarnessAuthentication)
@@ -290,10 +287,7 @@ extension SessionModelTests {
         #expect(model.isSending)
         #expect(model.backgroundTasks.map(\.id) == ["task-after-reconnect"])
         #expect(model.hasBackgroundTaskSnapshot)
-        for _ in 0..<20 {
-            if !client.sessionEventSinceValues.isEmpty { break }
-            await Task.yield()
-        }
+        await settleUntil { !client.sessionEventSinceValues.isEmpty }
         #expect(client.sessionEventSinceValues == [2])
         await model.answerQuestion(
             answers: ["choice": QuestionAnswerEntry(answers: ["Yes"])]
@@ -341,10 +335,7 @@ extension SessionModelTests {
         )
 
         await model.loadHistory()
-        for _ in 0..<200 {
-            if !client.sessionEventSinceValues.isEmpty { break }
-            await Task.yield()
-        }
+        await settleUntil { !client.sessionEventSinceValues.isEmpty }
 
         // The stream resumes the same provider message after the reopen.
         client.emit(
@@ -461,14 +452,9 @@ extension SessionModelTests {
                 createdAt: "2026-06-30T00:00:14.000Z",
                 payload: .object(["stopReason": .string("end_turn")])
             ))
-        for _ in 0..<20 {
-            await Task.yield()
-            if case let .assistant(assistant) = model.conversation.last,
-                assistant.turn.finalText == .text(id: "acp:msg-final", markdown: "The repo is a game."),
-                assistant.turn.workedEntries.map(\.id) == ["tool:readme", "tool:package"]
-            {
-                break
-            }
+        await settleAssistant(model) { assistant in
+            assistant.turn.finalText == .text(id: "acp:msg-final", markdown: "The repo is a game.")
+                && assistant.turn.workedEntries.map(\.id) == ["tool:readme", "tool:package"]
         }
 
         guard case let .assistant(assistant) = model.conversation.last else {
