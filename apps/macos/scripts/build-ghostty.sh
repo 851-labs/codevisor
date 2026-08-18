@@ -58,13 +58,23 @@ if [[ $# -gt 0 ]]; then
   exit 2
 fi
 
-if [[ ! -f "$GHOSTTY_DIR/build.zig" ]]; then
+# Fetch by ref, not by presence: persistent checkouts (self-hosted CI
+# runners, developer machines) otherwise keep whatever ref they fetched
+# last, and a pin bump turns the guard below into a permanent failure the
+# fetch step never repairs. `--force` also discards leftover build-only
+# patch state from a previous run that died before reversing it.
+CURRENT_GHOSTTY_REF="$(git -C "$GHOSTTY_DIR" rev-parse HEAD 2>/dev/null || true)"
+if [[ ! -f "$GHOSTTY_DIR/build.zig" || "$CURRENT_GHOSTTY_REF" != "$GHOSTTY_REF" ]]; then
   echo "Fetching Ghostty source $GHOSTTY_REF from $GHOSTTY_REPOSITORY"
-  mkdir -p "$(dirname "$GHOSTTY_DIR")"
-  rm -rf "$GHOSTTY_DIR"
-  git clone --filter=blob:none --no-checkout "$GHOSTTY_REPOSITORY" "$GHOSTTY_DIR"
+  # `.git` is a file (not a directory) in submodule checkouts — either form
+  # is a live repo that can fetch in place.
+  if [[ ! -e "$GHOSTTY_DIR/.git" ]]; then
+    mkdir -p "$(dirname "$GHOSTTY_DIR")"
+    rm -rf "$GHOSTTY_DIR"
+    git clone --filter=blob:none --no-checkout "$GHOSTTY_REPOSITORY" "$GHOSTTY_DIR"
+  fi
   git -C "$GHOSTTY_DIR" fetch --depth 1 origin "$GHOSTTY_REF"
-  git -C "$GHOSTTY_DIR" checkout --detach FETCH_HEAD
+  git -C "$GHOSTTY_DIR" checkout --force --detach FETCH_HEAD
 fi
 
 if [[ "$FETCH_ONLY" == 1 ]]; then
