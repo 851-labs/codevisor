@@ -1,28 +1,24 @@
 #if canImport(AppKit)
     import AppKit
 
-    @MainActor
-    final class MarkdownTextViewLinkCoordinator: NSObject, NSTextViewDelegate {
-        var linkAction: MarkdownLinkAction?
-
-        func install(on textView: NSTextView, action: MarkdownLinkAction?) {
-            linkAction = action
-            textView.delegate = self
-        }
-
-        func textView(_: NSTextView, clickedOnLink link: Any, at _: Int) -> Bool {
-            handleMarkdownLink(link, action: linkAction)
-        }
+    extension NSAttributedString.Key {
+        /// A session-server file reference that looks like a link but remains
+        /// owned by the host instead of AppKit's URL-opening machinery.
+        static let streamMarkdownServerFileLink = NSAttributedString.Key(
+            "com.codevisor.streamMarkdownServerFileLink"
+        )
     }
 
-    extension SelectableTextView.Coordinator: NSTextViewDelegate {
-        func install(on textView: NSTextView, action: MarkdownLinkAction?) {
-            linkAction = action
-            textView.delegate = self
-        }
+    func markdownUsesServerFileLinkAttribute(_ url: URL) -> Bool {
+        let target = url.relativeString
+        guard !target.hasPrefix("#"), !target.hasPrefix("//") else { return false }
+        return url.isFileURL || url.scheme == nil
+    }
 
-        public func textView(_: NSTextView, clickedOnLink link: Any, at _: Int) -> Bool {
-            handleMarkdownLink(link, action: linkAction)
+    @MainActor
+    final class MarkdownTextViewLinkCoordinator: NSObject {
+        func install(on textView: TranscriptSelectableTextView, action: MarkdownLinkAction?) {
+            textView.linkAction = action
         }
     }
 
@@ -34,13 +30,13 @@
 
     extension SelectableTextTableView {
         func updateNSView(_ textView: TableTextView, context: Context) {
-            context.coordinator.linkAction = linkAction
+            textView.linkAction = linkAction
             textView.update(model: model, renderMemo: renderMemo)
         }
     }
 
     @MainActor
-    private func handleMarkdownLink(_ link: Any, action: MarkdownLinkAction?) -> Bool {
+    func handleMarkdownLink(_ link: Any, action: MarkdownLinkAction?) -> Bool {
         let url: URL?
         switch link {
         case let value as URL:

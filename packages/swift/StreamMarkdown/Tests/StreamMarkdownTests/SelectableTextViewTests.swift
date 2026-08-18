@@ -43,26 +43,33 @@ struct SelectableTextViewTests {
         let rendered = MarkdownTextRunRenderer.attributedString(
             for: [
                 .heading(level: 2, text: "Heading"),
-                .paragraph("Use **strong** text, [a link](https://example.com), and `code`."),
+                .paragraph(
+                    "Use **strong** text, [the web](https://example.com), [a file](</tmp/cat.png>), and `code`."
+                ),
             ],
             theme: .default,
             foregroundColor: .primary
         )
         let fullRange = NSRange(location: 0, length: rendered.length)
         var sawLink = false
+        var sawServerFileLink = false
         var sawChip = false
         var sawBold = false
         rendered.enumerateAttributes(in: fullRange) { attributes, _, _ in
             sawLink = sawLink || attributes[.link] != nil
+            sawServerFileLink =
+                sawServerFileLink || attributes[.streamMarkdownServerFileLink] != nil
             sawChip = sawChip || attributes[.streamMarkdownRoundedBackground] != nil
             if let font = attributes[.font] as? NSFont {
                 sawBold = sawBold || font.fontDescriptor.symbolicTraits.contains(.bold)
             }
         }
 
-        #expect(rendered.string.contains("a link"))
+        #expect(rendered.string.contains("the web"))
+        #expect(rendered.string.contains("a file"))
         #expect(rendered.string.contains("\u{202F}code\u{202F}"))
         #expect(sawLink)
+        #expect(sawServerFileLink)
         #expect(sawChip)
         #expect(sawBold)
     }
@@ -85,7 +92,7 @@ struct SelectableTextViewTests {
         text.addAttributes(
             [
                 .font: NSFont.preferredFont(forTextStyle: .body),
-                .link: URL(string: "https://example.com/docs")!,
+                .streamMarkdownServerFileLink: URL(string: "/tmp/docs")!,
             ],
             range: linkRange
         )
@@ -133,6 +140,21 @@ struct SelectableTextViewTests {
                 effectiveRange: nil
             ) == nil
         )
+    }
+
+    @Test("Host-owned links use the host link action")
+    func hostOwnedLinkUsesHostAction() {
+        let destination = URL(string: "/Users/example/workspace/cat.png")!
+        let view = SelectableTextKitView()
+        var clickedURL: URL?
+        view.linkAction = MarkdownLinkAction { url in
+            clickedURL = url
+            return true
+        }
+
+        #expect(view.activateServerFileLink(destination))
+
+        #expect(clickedURL == destination)
     }
 
     @Test("Selection clears for every transcript TextKit surface on focus loss")
@@ -223,4 +245,5 @@ struct SelectableTextViewTests {
         #expect(view.characterIndexForInsertion(at: point) == rendered.length)
         #expect(view.logicalBoundaryOutsideVisualLine(at: point, anchor: 0) == rendered.length)
     }
+
 }

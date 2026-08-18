@@ -862,7 +862,12 @@
                     )
                 }
                 if let link = run.link {
-                    attributes[.link] = link
+                    if markdownUsesServerFileLinkAttribute(link) {
+                        attributes[.streamMarkdownServerFileLink] = link
+                        attributes[.cursor] = NSCursor.pointingHand
+                    } else {
+                        attributes[.link] = link
+                    }
                     attributes[.foregroundColor] = NSColor.linkColor
                 }
                 output.append(NSAttributedString(string: substring, attributes: attributes))

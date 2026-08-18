@@ -188,7 +188,12 @@
                     lineSpacing: theme.lineSpacing
                 )
                 if let link = run.link {
-                    attributes[.link] = link
+                    if markdownUsesServerFileLinkAttribute(link) {
+                        attributes[.streamMarkdownServerFileLink] = link
+                        attributes[.cursor] = NSCursor.pointingHand
+                    } else {
+                        attributes[.link] = link
+                    }
                 }
                 if isCode {
                     attributes[.streamMarkdownRoundedBackground] = chipBackground

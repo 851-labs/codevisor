@@ -223,6 +223,28 @@ struct MarkdownTableRendererTests {
         #expect(fullTSV(attributed) == "Call\nfoo()")
     }
 
+    @Test("Server files and web URLs keep distinct link attributes")
+    func linkAttributes() {
+        let attributed = MarkdownTableRenderer.make(
+            headers: ["Links"], alignments: [],
+            rows: [["[Web](https://example.com) [File](</tmp/cat.png>)"]],
+            theme: .default
+        )
+        let text = attributed.string as NSString
+        let web = text.range(of: "Web")
+        let file = text.range(of: "File")
+
+        #expect(attributed.attribute(.link, at: web.location, effectiveRange: nil) != nil)
+        #expect(
+            attributed.attribute(
+                .streamMarkdownServerFileLink,
+                at: file.location,
+                effectiveRange: nil
+            ) != nil
+        )
+        #expect(attributed.attribute(.link, at: file.location, effectiveRange: nil) == nil)
+    }
+
     @Test("A range with no table cells copies as nil (defers to default)")
     func tsvNoCells() {
         let plain = NSAttributedString(string: "not a table")

@@ -2,6 +2,7 @@
 // implementation in `SelectableTextView+UIKit.swift`.
 #if canImport(AppKit)
     import AppKit
+    import QuickLookUI
     import QuartzCore
     import SwiftUI
 
@@ -55,7 +56,7 @@
 
         public func makeNSView(context: Context) -> SelectableTextKitView {
             let view = SelectableTextKitView()
-            context.coordinator.install(on: view, action: context.environment.markdownLinkAction)
+            view.linkAction = context.environment.markdownLinkAction
             let prepared = context.coordinator.preparedText(
                 for: content,
                 animation: streamingAnimation
@@ -65,7 +66,7 @@
         }
 
         public func updateNSView(_ textView: SelectableTextKitView, context: Context) {
-            context.coordinator.linkAction = context.environment.markdownLinkAction
+            textView.linkAction = context.environment.markdownLinkAction
             let prepared = context.coordinator.preparedText(
                 for: content,
                 animation: streamingAnimation
@@ -97,7 +98,6 @@
         @MainActor
         public final class Coordinator: NSObject {
             fileprivate let measurer = TextKitTextMeasurer()
-            var linkAction: MarkdownLinkAction?
 
             private let animationState = StreamingTextAnimationState()
             private var attributedInput: NSAttributedString?
@@ -446,11 +446,39 @@
     /// makes old selections appear to accumulate as the user clicks around.
     @MainActor
     public class TranscriptSelectableTextView: NSTextView {
+        private struct LinkHit {
+            let value: Any
+            let range: NSRange
+            let isServerFile: Bool
+        }
+
+        private struct PendingServerFileLinkClick {
+            let value: Any
+            let range: NSRange
+            let origin: NSPoint
+        }
+
         private var mouseSelectionAnchor: Int?
         private var selectionRepaintTracker = SelectionRepaintTracker()
         private var isTrackingMouseSelection = false
         private var linkHoverTrackingArea: NSTrackingArea?
+        private var pendingServerFileLinkClick: PendingServerFileLinkClick?
         private(set) var hoveredLinkRange: NSRange?
+        var linkAction: MarkdownLinkAction?
+
+        /// `NSTextView` normally claims the shared Quick Look panel so it can
+        /// preview its own selected content. Transcript links are presented by
+        /// the host's SwiftUI preview controller instead; declining here lets
+        /// that controller remain the panel's data source after a link click
+        /// makes this text view first responder.
+        public override func acceptsPreviewPanelControl(_: QLPreviewPanel!) -> Bool {
+            false
+        }
+
+        public override func clicked(onLink link: Any, at charIndex: Int) {
+            guard !handleMarkdownLink(link, action: linkAction) else { return }
+            super.clicked(onLink: link, at: charIndex)
+        }
 
         public override func updateTrackingAreas() {
             super.updateTrackingAreas()
@@ -485,12 +513,13 @@
         private var textStorageContainsLinks: Bool {
             guard let textStorage, textStorage.length > 0 else { return false }
             var found = false
-            textStorage.enumerateAttribute(
-                .link,
+            textStorage.enumerateAttributes(
                 in: NSRange(location: 0, length: textStorage.length),
                 options: [.longestEffectiveRangeNotRequired]
-            ) { value, _, stop in
-                if value != nil {
+            ) { attributes, _, stop in
+                if attributes[.link] != nil
+                    || attributes[.streamMarkdownServerFileLink] != nil
+                {
                     found = true
                     stop.pointee = true
                 }
@@ -514,14 +543,26 @@
         }
 
         public override func mouseDown(with event: NSEvent) {
+            let point = convert(event.locationInWindow, from: nil)
+            if event.clickCount == 1,
+                event.modifierFlags.intersection([.shift, .command, .option, .control]).isEmpty,
+                let hit = linkHit(at: point), hit.isServerFile
+            {
+                pendingServerFileLinkClick = PendingServerFileLinkClick(
+                    value: hit.value,
+                    range: hit.range,
+                    origin: point
+                )
+            } else {
+                pendingServerFileLinkClick = nil
+            }
+
             selectionRepaintTracker.begin(with: selectedRange())
             isTrackingMouseSelection = true
             if event.clickCount == 1,
                 event.modifierFlags.intersection([.shift, .command, .option]).isEmpty
             {
-                mouseSelectionAnchor = characterIndexForInsertion(
-                    at: convert(event.locationInWindow, from: nil)
-                )
+                mouseSelectionAnchor = characterIndexForInsertion(at: point)
             } else {
                 mouseSelectionAnchor = nil
             }
@@ -535,19 +576,24 @@
             if NSEvent.pressedMouseButtons & 1 == 0 {
                 finishMouseSelectionRepaint()
                 mouseSelectionAnchor = nil
+                activatePendingServerFileLink(at: currentMouseLocation)
             }
         }
 
         public override func mouseDragged(with event: NSEvent) {
             super.mouseDragged(with: event)
-            correctVisualLineEndSelection(at: convert(event.locationInWindow, from: nil))
+            let point = convert(event.locationInWindow, from: nil)
+            correctVisualLineEndSelection(at: point)
+            cancelPendingServerFileLinkIfDragged(to: point)
         }
 
         public override func mouseUp(with event: NSEvent) {
             super.mouseUp(with: event)
-            correctVisualLineEndSelection(at: convert(event.locationInWindow, from: nil))
+            let point = convert(event.locationInWindow, from: nil)
+            correctVisualLineEndSelection(at: point)
             finishMouseSelectionRepaint()
             mouseSelectionAnchor = nil
+            activatePendingServerFileLink(at: point)
         }
 
         public override func setSelectedRange(
@@ -612,6 +658,10 @@
         }
 
         private func linkRange(at viewPoint: NSPoint) -> NSRange? {
+            linkHit(at: viewPoint)?.range
+        }
+
+        private func linkHit(at viewPoint: NSPoint) -> LinkHit? {
             guard let layoutManager, let textContainer, let textStorage,
                 textStorage.length > 0, layoutManager.numberOfGlyphs > 0
             else { return nil }
@@ -633,14 +683,47 @@
             let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
             guard characterIndex < textStorage.length else { return nil }
             var effectiveRange = NSRange()
+            if let value = textStorage.attribute(
+                .streamMarkdownServerFileLink,
+                at: characterIndex,
+                effectiveRange: &effectiveRange
+            ) {
+                return LinkHit(value: value, range: effectiveRange, isServerFile: true)
+            }
             guard
-                textStorage.attribute(
+                let value = textStorage.attribute(
                     .link,
                     at: characterIndex,
                     effectiveRange: &effectiveRange
-                ) != nil
+                )
             else { return nil }
-            return effectiveRange
+            return LinkHit(value: value, range: effectiveRange, isServerFile: false)
+        }
+
+        private func cancelPendingServerFileLinkIfDragged(to point: NSPoint) {
+            guard let pendingServerFileLinkClick else { return }
+            let delta = NSPoint(
+                x: point.x - pendingServerFileLinkClick.origin.x,
+                y: point.y - pendingServerFileLinkClick.origin.y
+            )
+            if delta.x * delta.x + delta.y * delta.y > 16 {
+                self.pendingServerFileLinkClick = nil
+            }
+        }
+
+        private func activatePendingServerFileLink(at point: NSPoint) {
+            cancelPendingServerFileLinkIfDragged(to: point)
+            guard let pending = pendingServerFileLinkClick else { return }
+            pendingServerFileLinkClick = nil
+            guard let hit = linkHit(at: point), hit.isServerFile, hit.range == pending.range else {
+                return
+            }
+            _ = activateServerFileLink(pending.value)
+        }
+
+        @discardableResult
+        func activateServerFileLink(_ value: Any) -> Bool {
+            handleMarkdownLink(value, action: linkAction)
         }
 
         private var currentMouseLocation: NSPoint {

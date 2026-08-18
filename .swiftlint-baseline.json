@@ -1898,10 +1898,10 @@
       "location": {
         "character": 1,
         "file": "file:///WORKTREE/packages/swift/StreamMarkdown/Sources/StreamMarkdown/Views/MarkdownTableView.swift",
-        "line": 905
+        "line": 910
       },
       "ruleDescription": "Files should not span too many lines.",
-      "reason": "File should contain 500 lines or less excluding comments and whitespaces: currently contains 707",
+      "reason": "File should contain 500 lines or less excluding comments and whitespaces: currently contains 712",
       "severity": "warning"
     },
     "text": "#endif"
@@ -1923,12 +1923,12 @@
   {
     "violation": {
       "ruleDescription": "Files should not span too many lines.",
-      "reason": "File should contain 500 lines or less excluding comments and whitespaces: currently contains 724",
+      "reason": "File should contain 500 lines or less excluding comments and whitespaces: currently contains 793",
       "ruleIdentifier": "file_length",
       "ruleName": "File Length",
       "location": {
         "file": "file:///WORKTREE/packages/swift/StreamMarkdown/Sources/StreamMarkdown/Views/SelectableTextView.swift",
-        "line": 880,
+        "line": 963,
         "character": 1
       },
       "severity": "warning"
