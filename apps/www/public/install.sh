@@ -101,9 +101,6 @@ install_macos() {
   fi
   [ -d "$app_src" ] || fail "Codevisor.app not found in downloaded archive"
 
-  # Quit whichever identity is running: com.851labs.HerdMan predates the
-  # Codevisor, LLC migration.
-  osascript -e 'tell application id "com.codevisor.macos" to quit' >/dev/null 2>&1 || true
   osascript -e 'tell application id "com.851labs.HerdMan" to quit' >/dev/null 2>&1 || true
   [ ! -d "$app_dest" ] || { say "Replacing existing $app_dest"; rm -rf "$app_dest"; }
   [ ! -d "$legacy_app_dest" ] || { say "Removing former $legacy_app_dest"; rm -rf "$legacy_app_dest"; }

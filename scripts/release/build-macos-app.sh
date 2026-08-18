@@ -239,20 +239,14 @@ for target in darwin-arm64 darwin-x64; do
 done
 agent_source="$repo_root/apps/macos/Codevisor/Resources/codevisor-server-agent"
 agent_destination="$app_path/Contents/Resources/codevisor-server-agent"
-launch_agents_dir="$app_path/Contents/Library/LaunchAgents"
-mkdir -p "$launch_agents_dir"
+launch_agent_source="$repo_root/apps/macos/Codevisor/LaunchAgents/com.851labs.Codevisor.ServerAgent.plist"
+launch_agent_destination="$app_path/Contents/Library/LaunchAgents/com.851labs.Codevisor.ServerAgent.plist"
+mkdir -p "$(dirname "$launch_agent_destination")"
 cp "$agent_source" "$agent_destination"
-# Current agent plus the pre-team-migration (851labs) plist: SMAppService can
-# only unregister the legacy registration while its definition still ships.
-for launch_agent_plist in \
-  "com.codevisor.macos.ServerAgent.plist" \
-  "com.851labs.Codevisor.ServerAgent.plist"; do
-  cp "$repo_root/apps/macos/Codevisor/LaunchAgents/$launch_agent_plist" \
-    "$launch_agents_dir/$launch_agent_plist"
-  # The synchronized Xcode group also sees the source plist as a resource.
-  # SMAppService requires it only in Contents/Library/LaunchAgents.
-  rm -f "$app_path/Contents/Resources/$launch_agent_plist"
-done
+cp "$launch_agent_source" "$launch_agent_destination"
+# The synchronized Xcode group also sees the source plist as a resource.
+# SMAppService requires it only in Contents/Library/LaunchAgents.
+rm -f "$app_path/Contents/Resources/$(basename "$launch_agent_source")"
 chmod +x "$agent_destination"
 find "$app_path" -name "._*" -delete
 

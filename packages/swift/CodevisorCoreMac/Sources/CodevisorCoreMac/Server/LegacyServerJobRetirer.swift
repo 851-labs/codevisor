@@ -22,11 +22,6 @@ public struct LegacyServerJobRetirer: Sendable {
         "com.851labs.codevisor-recovery",
         "com.851labs.herdman-recovery",
         "com.851labs.HerdMan-recovery",
-        // Pre-team-migration SMAppService agent (851labs identity). Booted
-        // out here so the renamed com.codevisor.macos.ServerAgent can claim
-        // the port; its BTM registration is unregistered separately by
-        // MacServerAgentController using the legacy plist.
-        "com.851labs.Codevisor.ServerAgent",
     ]
 
     private let runner: any CommandRunner

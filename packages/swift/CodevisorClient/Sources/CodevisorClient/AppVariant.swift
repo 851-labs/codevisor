@@ -203,9 +203,8 @@ public enum CodevisorAppVariant: Sendable {
         )
     }
 
-    /// One-time rescue for the HerdMan → Codevisor rename: the app updated in
-    /// place (the bundle id stayed `com.851labs.HerdMan` until the Codevisor,
-    /// LLC identity migration to `com.codevisor.macos`) but the Application
+    /// One-time rescue for the HerdMan → Codevisor rename: the app updates in
+    /// place (the bundle id stayed `com.851labs.HerdMan`) but the Application
     /// Support folder name changed, orphaning every file-backed preference in
     /// the old folder. Copies legacy files that don't exist at the new
     /// location yet; never overwrites, and leaves the old folder as a backup.

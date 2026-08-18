@@ -90,29 +90,22 @@ writeFileSync(
   # both would collide in \$HOMEBREW_PREFIX/bin.
   conflicts_with formula: "851-labs/tap/codevisor-server"
 
-  # Quit a running app before the bundle is swapped. Both identities: the
-  # 851labs bundle id covers installs that predate the Codevisor, LLC
-  # migration. The preflight covers upgrades from cask versions that predate
-  # the uninstall stanza; the guard keeps AppleScript from launching the app
-  # on a fresh install.
+  # Quit a running app before the bundle is swapped. The preflight covers
+  # upgrades from cask versions that predate the uninstall stanza; the guard
+  # keeps AppleScript from launching the app on a fresh install.
   preflight do
-    ["com.codevisor.macos", "com.851labs.HerdMan"].each do |bundle_id|
-      system_command "/usr/bin/osascript",
-                     args: [
-                       "-e",
-                       "if application id \\"#{bundle_id}\\" is running then " \\
-                       "tell application id \\"#{bundle_id}\\" to quit"
-                     ],
-                     must_succeed: false
-    end
+    system_command "/usr/bin/osascript",
+                   args: [
+                     "-e",
+                     'if application id "com.851labs.HerdMan" is running then ' \\
+                     'tell application id "com.851labs.HerdMan" to quit'
+                   ],
+                   must_succeed: false
     system_command "/bin/rm",
                    args: ["-rf", "#{appdir}/HerdMan.app"]
   end
 
-  uninstall quit: [
-    "com.codevisor.macos",
-    "com.851labs.HerdMan",
-  ]
+  uninstall quit: "com.851labs.HerdMan"
 
   # Relaunch after install/upgrade so \`brew upgrade\` hands back a running,
   # current app (which in turn restarts an outdated local server on launch).

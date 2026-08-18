@@ -28,7 +28,7 @@ const developmentIconColor = colorFromHash(worktreeHash)
 const appDisplayName = `Codevisor (${worktreeName})`
 // Per-worktree bundle id so several worktrees' dev builds coexist on one
 // simulator/device, mirroring the macOS dev instance identifiers.
-const bundleIdentifier = `com.codevisor.ios.${instanceHash}`
+const bundleIdentifier = `com.dylanplayer.codevisor.ios.${instanceHash}`
 const simulatorName = process.env.CODEVISOR_IOS_SIMULATOR ?? "iPhone 17 Pro"
 
 const preferredPort = 51_000 + (Number.parseInt(instanceHash.slice(0, 8), 16) % 10_000)

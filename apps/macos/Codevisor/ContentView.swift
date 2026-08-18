@@ -14,10 +14,6 @@ struct CodevisorApp: App {
     @State private var startupInProgress = false
 
     init() {
-        // Before anything reads defaults (Sparkle, window restoration):
-        // adopt the com.851labs.HerdMan domain left behind by pre-rename
-        // installs. One-time, marker-guarded.
-        LegacyDefaultsMigration.migrateIfNeeded()
         let serverAgent = MacServerAgentController()
         _environment = State(initialValue: nil)
         _serverAgent = State(initialValue: serverAgent)

@@ -6,5 +6,5 @@ import Foundation
 /// the TextKit layout manager paints behind the selectable glyphs.
 enum InlineCodeChipAttribute: AttributedStringKey {
     typealias Value = Bool
-    static let name = "com.codevisor.inlineCodeChip"
+    static let name = "com.851labs.codevisor.inlineCodeChip"
 }

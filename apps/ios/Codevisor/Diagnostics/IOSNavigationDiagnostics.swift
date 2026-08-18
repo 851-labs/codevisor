@@ -43,7 +43,7 @@ struct IOSNavigationDiagnosticState: Equatable {
 enum IOSNavigationDiagnostics {
     #if DEBUG || NAVIGATION_DIAGNOSTICS
         private static let logger = Logger(
-            subsystem: "com.codevisor",
+            subsystem: "com.851labs.codevisor",
             category: "ios-navigation"
         )
         private static var sequence: UInt64 = 0
