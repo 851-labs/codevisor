@@ -386,8 +386,18 @@ submit_for_notarization_to_file() {
 
 wait_for_notarization() {
   local id="$1" label="$2" response status
-  response="$(xcrun notarytool wait "$id" "${notary_args[@]}" --output-format json)" || true
+  # Bounded wait: healthy notarizations return in minutes; a stuck Apple-side
+  # queue (e.g. a new team's first-submission review) must fail this build
+  # fast instead of holding the CI job until its own 6-hour timeout. The job
+  # stays red — never publish unstapled artifacts — and simply passes on a
+  # later run once Apple's queue clears.
+  response="$(xcrun notarytool wait "$id" "${notary_args[@]}" \
+    --timeout "${CODEVISOR_NOTARY_WAIT_TIMEOUT:-30m}" --output-format json)" || true
   status="$(printf '%s' "$response" | sed -n 's/.*"status"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+  if [[ "$status" == "In Progress" ]]; then
+    echo "error: notarization of $label still in progress after ${CODEVISOR_NOTARY_WAIT_TIMEOUT:-30m} (submission $id); Apple's queue is slow — retry this job later" >&2
+    exit 1
+  fi
   if [[ "$status" != "Accepted" ]]; then
     echo "error: notarization of $label finished with status '${status:-unknown}' (submission $id)" >&2
     xcrun notarytool log "$id" "${notary_args[@]}" >&2 || true
