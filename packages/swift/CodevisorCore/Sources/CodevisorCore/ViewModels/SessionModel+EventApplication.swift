@@ -276,6 +276,20 @@ extension SessionModel {
             try? await Task.sleep(for: quietInterval)
             guard let self, !Task.isCancelled, self.isSending else { return }
             self.isTakingLongerThanExpected = true
+            // A turn this quiet may be dead in a way no transport signal
+            // caught, or its terminal event may have been lost. Re-derive the
+            // truth from durable history: a genuinely finished turn clears
+            // its spinner here (snapshot + cursor resume), while a live-but-
+            // quiet turn reloads to the same state. Without this, a missed
+            // terminal event spins forever on platforms that render no stall
+            // affordance.
+            await self.reconcileFromServer()
+            // Reloading notes synthetic activity, which clears the flag,
+            // re-arms the quiet window, and cancels this task — deliberately
+            // not guarded on cancellation here. A turn still live after the
+            // reload is still stalled: keep the notice up instead of blinking
+            // it off for a full window each cycle. Real activity clears it.
+            if self.isSending { self.isTakingLongerThanExpected = true }
         }
     }
 

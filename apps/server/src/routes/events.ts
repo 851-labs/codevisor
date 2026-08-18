@@ -73,7 +73,8 @@ export const handleUpgrade = async (
           services.db,
           fanout,
           numberSearchParam(url, "since"),
-          webSocket
+          webSocket,
+          config.id
         ).catch(
           /* v8 ignore next -- defensive: socket setup failures close the just-upgraded connection. */
           () => webSocket.close()
@@ -90,6 +91,7 @@ export const handleUpgrade = async (
           fanout,
           numberSearchParam(url, "since"),
           webSocket,
+          config.id,
           sessionEventId
         ).catch(
           /* v8 ignore next -- defensive: socket setup failures close the just-upgraded connection. */
@@ -122,12 +124,23 @@ export const handleUpgrade = async (
   }
 }
 
-const attachEventSocket = async (
+/// Keepalive cadence for session event sockets. Clients arm a receive
+/// deadline (a few multiples of this) once they see the first keepalive, so
+/// "no frames" reliably means "dead path" instead of "quiet turn" — the
+/// difference between a subway-stalled stream reconnecting in seconds and
+/// hanging forever. Session sockets only: old live-only *global* subscribers
+/// replace their cursor with the first received id, which a keepalive must
+/// never influence.
+const EVENT_SOCKET_KEEPALIVE_MS = 25_000
+
+export const attachEventSocket = async (
   db: CodevisorDatabaseService,
   fanout: EventFanout,
   since: number,
   webSocket: WebSocket,
-  subjectId?: string
+  serverId: string,
+  subjectId?: string,
+  keepaliveMs: number = EVENT_SOCKET_KEEPALIVE_MS
 ): Promise<void> => {
   const liveOnly = since >= Number.MAX_SAFE_INTEGER
   let cursor = liveOnly ? 0 : since
@@ -158,6 +171,27 @@ const attachEventSocket = async (
     sendEvent(event)
   })
   webSocket.on("close", unsubscribe)
+  if (subjectId !== undefined) {
+    const keepalive = setInterval(() => {
+      /* v8 ignore next -- the close handler clears the interval before the socket normally leaves OPEN. */
+      if (webSocket.readyState !== WebSocket.OPEN) return
+      // A full envelope so every client decodes it. `id` is the socket's own
+      // cursor: existing clients advance via max(cursor, id), so this can
+      // never move a cursor — it only proves the path is alive.
+      webSocket.send(
+        JSON.stringify({
+          id: cursor,
+          serverId,
+          kind: "keepalive",
+          subjectId,
+          createdAt: new Date().toISOString(),
+          payload: {}
+        })
+      )
+    }, keepaliveMs)
+    keepalive.unref()
+    webSocket.on("close", () => clearInterval(keepalive))
+  }
   try {
     if (!liveOnly) {
       const replay =

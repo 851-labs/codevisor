@@ -95,11 +95,27 @@ extension CodevisorServerClient {
                         )
                         defer { socket.cancel(with: .goingAway, reason: nil) }
 
+                        // Armed by the first keepalive: a server that has
+                        // proven it sends them makes prolonged silence mean
+                        // "dead path", not "quiet turn". Per-connection, so an
+                        // old server (no keepalives) keeps unbounded receives.
+                        var expectsKeepalives = false
                         while !Task.isCancelled {
-                            let message = try await socket.receive()
+                            let message =
+                                expectsKeepalives
+                                ? try await Self.withReceiveDeadline { try await socket.receive() }
+                                : try await socket.receive()
                             guard let data = Self.data(from: message) else { continue }
                             if let handledKinds {
                                 let probe = try decoder.decode(ServerEventKindProbe.self, from: data)
+                                // Keepalives prove liveness; they are not
+                                // events. Skip before the cursor advance: a
+                                // live-only sentinel must never adopt one.
+                                if probe.kind == Self.keepaliveEventKind {
+                                    expectsKeepalives = true
+                                    failures = 0
+                                    continue
+                                }
                                 // Filtered events still advance the cursor so a
                                 // reconnect never replays the skipped volume.
                                 cursor = Self.advanceEventCursor(cursor, to: probe.id)
@@ -107,6 +123,11 @@ extension CodevisorServerClient {
                                 guard handledKinds.contains(probe.kind) else { continue }
                             }
                             let event = try decoder.decode(ServerEventEnvelope.self, from: data)
+                            if event.kind == Self.keepaliveEventKind {
+                                expectsKeepalives = true
+                                failures = 0
+                                continue
+                            }
                             // A live-only sentinel cursor means "no real cursor
                             // yet". Once the first event arrives, retain its real
                             // cursor so a reconnect can replay anything missed
@@ -137,6 +158,37 @@ extension CodevisorServerClient {
                 continuation.finish()
             }
             continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    /// Liveness frames the server interleaves on session event sockets
+    /// (~every 25s). Never yielded and never cursor-advancing — their only
+    /// job is to make silence measurable.
+    static let keepaliveEventKind = "keepalive"
+
+    /// How long a keepalive-bearing socket may stay silent before the path is
+    /// declared dead and the stream reconnects from its cursor. A few
+    /// multiples of the server cadence, so ordinary jitter never trips it.
+    /// Mutable only so tests can compress the wait; production never writes.
+    nonisolated(unsafe) static var eventReceiveDeadline: Duration = .seconds(90)
+
+    struct EventStreamStalledError: Error {}
+
+    /// Races `operation` against the receive deadline. On timeout the thrown
+    /// error unwinds through the reconnect path exactly like a socket failure:
+    /// the connection's `defer` cancels the socket (tearing down a relayed
+    /// channel with it) and the stream re-dials from its cursor.
+    private static func withReceiveDeadline<T: Sendable>(
+        _ operation: @escaping @Sendable () async throws -> T
+    ) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask { try await operation() }
+            group.addTask {
+                try await Task.sleep(for: eventReceiveDeadline)
+                throw EventStreamStalledError()
+            }
+            defer { group.cancelAll() }
+            return try await group.next()!
         }
     }
 

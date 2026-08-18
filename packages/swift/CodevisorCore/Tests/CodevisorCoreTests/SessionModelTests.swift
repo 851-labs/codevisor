@@ -285,6 +285,16 @@ struct SessionModelTests {
         let sessionId = UUID()
         let client = FakeSessionServerClient(sessionId: sessionId)
         client.echoOnPrompt = false
+        // The stall's automatic reconcile re-reads durable history; a page
+        // still reporting a live turn must leave the stalled state intact.
+        // Non-empty text so the reloaded item is streaming, not "thinking",
+        // matching the placeholder it replaces.
+        client.initialTranscriptPage = cancellationTranscriptPage(
+            sessionId: sessionId,
+            isGenerating: true,
+            stopReason: nil,
+            text: "partial answer"
+        )
         let model = SessionModel(
             serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
             sessionId: sessionId.uuidString,
@@ -293,6 +303,8 @@ struct SessionModelTests {
 
         await model.send("wait quietly")
         await settleUntil { model.isTakingLongerThanExpected }
+        // The stall consulted durable history instead of only flagging.
+        #expect(client.transcriptPageRequests.count >= 1)
 
         #expect(model.isSending)
         #expect(model.providerActivityPhase == .modelStream)
@@ -323,6 +335,15 @@ struct SessionModelTests {
         let sessionId = UUID()
         let client = FakeSessionServerClient(sessionId: sessionId)
         client.echoOnPrompt = false
+        // Durable history for the stall's automatic reconcile: still live, so
+        // the stalled state must survive the reload. The cursor covers every
+        // chunk pumped below, exactly as a freshly fetched page would.
+        client.initialTranscriptPage = cancellationTranscriptPage(
+            sessionId: sessionId,
+            isGenerating: true,
+            stopReason: nil,
+            eventCursor: 16
+        )
         let quietInterval = Duration.milliseconds(200)
         let model = SessionModel(
             serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),

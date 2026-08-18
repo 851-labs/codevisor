@@ -62,7 +62,9 @@ extension SessionModelTests {
     func cancellationTranscriptPage(
         sessionId: UUID,
         isGenerating: Bool,
-        stopReason: String?
+        stopReason: String?,
+        eventCursor: Int = 2,
+        text: String = ""
     ) -> ServerTranscriptPage {
         ServerTranscriptPage(
             items: [
@@ -71,7 +73,7 @@ extension SessionModelTests {
                     sessionId: sessionId.uuidString,
                     sequence: 1,
                     role: .assistant,
-                    text: "",
+                    text: text,
                     createdAt: "2026-07-29T00:00:00.000Z",
                     updatedAt: "2026-07-29T00:00:01.000Z",
                     isGenerating: isGenerating,
@@ -87,7 +89,7 @@ extension SessionModelTests {
                 )
             ],
             hasMore: false,
-            eventCursor: 2
+            eventCursor: eventCursor
         )
     }
 
@@ -121,8 +123,14 @@ final class TimeBox: @unchecked Sendable {
 final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendable {
     private let sessionId: UUID
     private let projectId = UUID()
-    private let stream: AsyncThrowingStream<ServerEventEnvelope, any Error>
-    private let continuation: AsyncThrowingStream<ServerEventEnvelope, any Error>.Continuation
+    // Multi-subscription event plumbing: each `sessionEventStream` /
+    // `eventStream` call gets its own stream, seeded with every event emitted
+    // so far — mirroring the real server's replay-from-history semantics.
+    // First subscriptions behave exactly as the old single shared stream did
+    // (pre-subscription emits are buffered); re-subscriptions after a
+    // reconcile keep receiving live events instead of a dead stream.
+    private var _eventBuffer: [ServerEventEnvelope] = []
+    private var _eventContinuations: [AsyncThrowingStream<ServerEventEnvelope, any Error>.Continuation] = []
     private let lock = NSLock()
 
     private var _promptedTexts: [String] = []
@@ -157,7 +165,37 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
 
     init(sessionId: UUID) {
         self.sessionId = sessionId
-        (stream, continuation) = AsyncThrowingStream.makeStream(of: ServerEventEnvelope.self)
+    }
+
+    private func yieldEvent(_ event: ServerEventEnvelope) {
+        let continuations = lock.withLock {
+            _eventBuffer.append(event)
+            return _eventContinuations
+        }
+        for continuation in continuations {
+            continuation.yield(event)
+        }
+    }
+
+    private func subscribeEvents(
+        since: Int
+    ) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
+        let (stream, continuation) = AsyncThrowingStream.makeStream(of: ServerEventEnvelope.self)
+        // Replay and registration are one atomic step against `emit`, so a
+        // concurrent live yield can never overtake the replayed prefix —
+        // the server's replay-then-live ordering guarantee.
+        lock.withLock {
+            // Mirror the server's replay semantics: live-only sentinels replay
+            // nothing, cursors replay strictly newer events. Without this, a
+            // resubscription after reconcile re-applies history the transcript
+            // page already covers — which the real server never does.
+            let liveOnly = since >= ServerSessionTransport.liveOnlyEventCursor
+            for event in _eventBuffer where !liveOnly && event.id > since {
+                continuation.yield(event)
+            }
+            _eventContinuations.append(continuation)
+        }
+        return stream
     }
 
     var promptedTexts: [String] {
@@ -237,7 +275,7 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
     }
 
     func emit(_ event: ServerEventEnvelope) {
-        continuation.yield(event)
+        yieldEvent(event)
     }
 
     func health() async throws -> ServerHealth {
@@ -327,7 +365,7 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
         guard echoOnPrompt else {
             return ServerPromptAccepted(accepted: true, sessionId: id.uuidString)
         }
-        continuation.yield(
+        yieldEvent(
             ServerEventEnvelope(
                 id: 1,
                 serverId: "local",
@@ -339,7 +377,7 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
                     "text": .string("Echo: \(text)"),
                 ])
             ))
-        continuation.yield(
+        yieldEvent(
             ServerEventEnvelope(
                 id: 2,
                 serverId: "local",
@@ -428,7 +466,7 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
 
     func eventStream(since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
         lock.withLock { _eventSinceValues.append(since) }
-        return stream
+        return subscribeEvents(since: since)
     }
 
     func sessionEventStream(
@@ -436,6 +474,6 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
         since: Int
     ) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
         lock.withLock { _sessionEventSinceValues.append(since) }
-        return stream
+        return subscribeEvents(since: since)
     }
 }

@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
+import { attachEventSocket } from "./events.js"
 import { CodevisorServer, makeEventFanout } from "../server.js"
 import {
   jsonRequest,
@@ -186,6 +187,91 @@ describe("event routes", () => {
     const globalSseEvent = { ...afterSnapshot, id: 9, subjectId: "global-sse" }
     await run(fanout.publish(globalSseEvent))
     expect(await sseFiltered).toEqual([globalSseEvent])
+  })
+
+  it("interleaves keepalives on session sockets so silence is measurable", async () => {
+    const { services } = await makeServices("server-a")
+    const fanout = await run(makeEventFanout)
+    const makeFakeSocket = () => {
+      const sent: string[] = []
+      const closers: Array<() => void> = []
+      return {
+        sent,
+        readyState: 1, // WebSocket.OPEN
+        send: (raw: string) => sent.push(raw),
+        on: (event: string, handler: () => void) => {
+          if (event === "close") closers.push(handler)
+        },
+        close: () => closers.forEach((handler) => handler())
+      }
+    }
+    const parse = (raw: string): { kind: string; id: number } =>
+      JSON.parse(raw) as { kind: string; id: number }
+
+    // Session sockets carry keepalives, stamped with the socket's own cursor
+    // so no client cursor logic can ever be moved by one.
+    const scoped = makeFakeSocket()
+    await attachEventSocket(
+      services.db,
+      fanout,
+      Number.MAX_SAFE_INTEGER,
+      scoped as never,
+      "server-a",
+      "session-keepalive",
+      5
+    )
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    const keepalives = scoped.sent.map(parse).filter((event) => event.kind === "keepalive")
+    expect(keepalives.length).toBeGreaterThan(0)
+    expect(keepalives[0]).toMatchObject({ id: 0, kind: "keepalive" })
+    expect(JSON.parse(scoped.sent[0]!)).toMatchObject({
+      serverId: "server-a",
+      subjectId: "session-keepalive",
+      payload: {}
+    })
+
+    // After real traffic, keepalives carry the advanced cursor.
+    await run(
+      fanout.publish({
+        createdAt: "2026-06-30T00:00:00.000Z",
+        id: 41,
+        kind: "session.output",
+        payload: {},
+        serverId: "server-a",
+        subjectId: "session-keepalive",
+        subjectRevision: 7
+      })
+    )
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    expect(
+      scoped.sent
+        .map(parse)
+        .filter((event) => event.kind === "keepalive")
+        .at(-1)?.id
+    ).toBe(7)
+
+    // Close stops the timer.
+    scoped.close()
+    const sentAtClose = scoped.sent.length
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    expect(scoped.sent.length).toBe(sentAtClose)
+
+    // The global socket stays keepalive-free: old live-only subscribers adopt
+    // the first received id as their cursor, which a keepalive must never
+    // influence.
+    const global = makeFakeSocket()
+    await attachEventSocket(
+      services.db,
+      fanout,
+      Number.MAX_SAFE_INTEGER,
+      global as never,
+      "server-a",
+      undefined,
+      5
+    )
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    expect(global.sent).toEqual([])
+    global.close()
   })
 
   it("exposes an Effect service layer and EventFanout subscription", async () => {
