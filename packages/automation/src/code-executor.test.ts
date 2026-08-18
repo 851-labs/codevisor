@@ -184,18 +184,24 @@ describe.sequential("Codevisor code executor", () => {
   })
 
   it("does not charge time waiting for a host tool against the active execution budget", async () => {
+    // The host wait (1750ms) far exceeds the active budget (1000ms), so this
+    // passes only if the budget clock stops while execution is suspended on
+    // the host tool. The generous absolute numbers are deliberate: the budget
+    // measures wall-clock time across synchronous sandbox slices, and loaded
+    // CI runners can preempt the process mid-slice for ~100ms — a tight
+    // budget then exhausts legitimately and fails this test spuriously.
     const startedAt = performance.now()
-    const result = await makeCodeExecutor({ activeTimeoutMs: 100 }).execute(
+    const result = await makeCodeExecutor({ activeTimeoutMs: 1000 }).execute(
       `async () => (await tools.browser.choose({})).answer`,
       {
         invoke: async () => {
-          await new Promise((resolve) => setTimeout(resolve, 175))
+          await new Promise((resolve) => setTimeout(resolve, 1750))
           return { answer: "chrome" }
         }
       }
     )
 
-    expect(performance.now() - startedAt).toBeGreaterThanOrEqual(150)
+    expect(performance.now() - startedAt).toBeGreaterThanOrEqual(1500)
     expect(result).toMatchObject({ result: "chrome" })
     expect(result.error).toBeUndefined()
   })
