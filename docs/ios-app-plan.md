@@ -22,7 +22,7 @@ Guiding principles:
   platform blocks merge.
 
 Status note: scaffolding is already done — `apps/ios/Codevisor.xcodeproj`
-(bundle id `com.dylanplayer.codevisor.ios`, temp until the Codevisor LLC
+(bundle id `com.codevisor.ios` under the Codevisor LLC
 developer account exists), shared package linkage proven (ACPKit +
 CodevisorTheming), `bun run dev:ios` starts the Dev Remote server and boots the
 app in the simulator, and the Xcode MCP tooling loop (build/run/tap/logs) is
@@ -183,7 +183,7 @@ Work items:
    - Machine picker affordance + settings entry point.
 3. **Worktree dev-experience parity** (`scripts/dev-ios.mjs`)
    - Per-worktree display name `Codevisor (worktree)` and bundle id suffix
-     `com.dylanplayer.codevisor.ios.<instanceHash>` so multiple worktree builds
+     `com.codevisor.ios.<instanceHash>` so multiple worktree builds
      coexist on one simulator/device.
    - Generated worktree-colored app icon: port `createDevelopmentAppIcon()` to
      produce an iOS asset catalog icon (same hash→hue derivation, same

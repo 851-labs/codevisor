@@ -203,7 +203,7 @@ try {
     derivedDataPath,
     `CODEVISOR_DEV_PRODUCT_NAME=${appName}`,
     `CODEVISOR_DEV_DISPLAY_NAME=${appName}`,
-    `CODEVISOR_DEV_BUNDLE_IDENTIFIER=com.851labs.Codevisor.Development.${instanceHash}`,
+    `CODEVISOR_DEV_BUNDLE_IDENTIFIER=com.codevisor.macos.dev.${instanceHash}`,
     "ASSETCATALOG_COMPILER_APPICON_NAME=AppIconDevGenerated",
     "INFOPLIST_KEY_CFBundleIconFile=AppIconDevGenerated",
     "INFOPLIST_KEY_CFBundleIconName=AppIconDevGenerated",

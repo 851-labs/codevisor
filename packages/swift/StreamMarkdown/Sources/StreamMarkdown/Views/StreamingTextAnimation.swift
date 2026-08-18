@@ -204,7 +204,7 @@ final class StreamingTextFadeMetadata: NSObject, NSCopying {
 
 extension NSAttributedString.Key {
     static let streamMarkdownFade = NSAttributedString.Key(
-        "com.851labs.codevisor.streamMarkdownFade"
+        "com.codevisor.streamMarkdownFade"
     )
 }
 
