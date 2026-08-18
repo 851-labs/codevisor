@@ -302,7 +302,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
-				CODEVISOR_DEV_BUNDLE_IDENTIFIER = com.851labs.Codevisor.Development;
+				CODEVISOR_DEV_BUNDLE_IDENTIFIER = com.codevisor.macos.dev;
 				CODEVISOR_URL_SCHEME = "codevisor-dev";
 				CODEVISOR_DEV_DISPLAY_NAME = "Codevisor Dev";
 				CODEVISOR_DEV_PRODUCT_NAME = "Codevisor Dev";
@@ -454,8 +454,12 @@
 					"-framework",
 					Combine,
 				);
-				// Keep the shipping identity stable so HerdMan installs update in place.
-				PRODUCT_BUNDLE_IDENTIFIER = com.851labs.HerdMan;
+				// Codevisor LLC identity. Sparkle carries existing installs across the
+				// rename from com.851labs.HerdMan: trust rides the EdDSA feed signature
+				// (SUPublicEDKey), and SUInstaller matches the update by app filename.
+				// First launch after the rename runs the legacy-identity migration
+				// (defaults domain, launch agent) in CodevisorClient/CodevisorCoreMac.
+				PRODUCT_BUNDLE_IDENTIFIER = com.codevisor.macos;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = macosx;

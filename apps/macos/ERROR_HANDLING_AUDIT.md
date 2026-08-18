@@ -2,7 +2,7 @@
 
 Audit date: 2026-07-11. Scope: `apps/macos/` excluding `Vendor/` (Ghostty) and tests.
 Raw counts: ~141 `try?` sites, ~57 bare `catch {` blocks. Only one `os.Logger` exists in
-non-vendor code (`ScratchpadModel`, subsystem `com.851labs.codevisor`, category `scratchpad`).
+non-vendor code (`ScratchpadModel`, subsystem `com.codevisor`, category `scratchpad`).
 
 Legend: **(a)** must surface a human-readable error to the user · **(b)** log-only is fine
 (best-effort/cosmetic) · **(c)** judgment call.
@@ -110,7 +110,7 @@ Persistence and sync failures that lose state invisibly:
 import os
 
 public enum Log {
-    public static let subsystem = "com.851labs.codevisor"  // matches ScratchpadModel's existing subsystem
+    public static let subsystem = "com.codevisor"  // matches ScratchpadModel's existing subsystem
     public static let persistence = Logger(subsystem: subsystem, category: "persistence")
     public static let server      = Logger(subsystem: subsystem, category: "server")
     public static let session     = Logger(subsystem: subsystem, category: "session")
@@ -124,8 +124,8 @@ public enum Log {
 ```
 
 - Viewing: Console.app filtered on subsystem, or
-  `log show --predicate 'subsystem == "com.851labs.codevisor"' --last 1h --info --debug`
-  `log stream --predicate 'subsystem == "com.851labs.codevisor"' --level debug`
+  `log show --predicate 'subsystem == "com.codevisor"' --last 1h --info --debug`
+  `log stream --predicate 'subsystem == "com.codevisor"' --level debug`
 - Use `.error` for swallowed failures, `privacy: .public` on error descriptions so release builds aren't `<private>`.
 - Optional "Export Logs" (Help menu) via `OSLogStore(scope: .currentProcessIdentifier)` → save to file for bug reports.
 - Small packages (ACPKit/StreamMarkdown/CodeHighlighter/CodevisorTheming) that shouldn't depend on CodevisorCore: give each a private `Logger` with the same subsystem string.

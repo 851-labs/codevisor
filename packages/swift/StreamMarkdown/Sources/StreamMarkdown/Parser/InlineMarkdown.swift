@@ -5,7 +5,7 @@ import os
 /// Package-private logging handle: StreamMarkdown must not depend on
 /// CodevisorCore, so it carries its own `Logger` under the app's shared
 /// subsystem. `.debug` only — this file is on the per-render hot path.
-private let log = Logger(subsystem: "com.851labs.codevisor", category: "markdown")
+private let log = Logger(subsystem: "com.codevisor", category: "markdown")
 
 /// Renders inline markdown spans (emphasis, code, links) to `AttributedString`.
 ///
