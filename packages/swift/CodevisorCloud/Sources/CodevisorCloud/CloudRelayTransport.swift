@@ -215,6 +215,30 @@ final class CloudRelayWebSocketConnection: ServerWebSocketConnecting, @unchecked
         var data: String
     }
 
+    /// Accumulates chunked-message byte slices between `part` frames and the
+    /// typed end frame. Accessed only from the hub actor's onMessage calls;
+    /// @unchecked Sendable covers the closure capture, not concurrent use.
+    private final class PartAccumulator: @unchecked Sendable {
+        private var bytes = Data()
+
+        func append(base64URL piece: String) -> Bool {
+            guard let decoded = CloudChannelCrypto.base64URLDecode(piece) else { return false }
+            bytes.append(decoded)
+            return true
+        }
+
+        func finish(base64URL piece: String) -> Data? {
+            guard let decoded = CloudChannelCrypto.base64URLDecode(piece) else {
+                bytes.removeAll()
+                return nil
+            }
+            var message = bytes
+            message.append(decoded)
+            bytes.removeAll()
+            return message
+        }
+    }
+
     private let lock = NSLock()
     private let openTask: Task<CloudRelayChannel, any Error>
     private var iterator: AsyncThrowingStream<ServerWebSocketMessage, any Error>.Iterator
@@ -234,6 +258,13 @@ final class CloudRelayWebSocketConnection: ServerWebSocketConnecting, @unchecked
             }
         }
         let decoder = JSONDecoder()
+        // Reassembly buffer for chunked messages: `part` frames accumulate
+        // byte slices until a typed end frame closes the message. Machines
+        // split anything above the chunk cap so a single huge event cannot
+        // exceed the hub's relay frame limit (whose dropped-frame seq gap
+        // would abort the channel and livelock cursor replay). Calls arrive
+        // serialized through the hub actor, so plain state suffices.
+        let pendingParts = PartAccumulator()
         openTask = Task {
             let channel = try await endpoint.hub.openChannel(
                 machineDeviceId: endpoint.machineDeviceId,
@@ -251,6 +282,22 @@ final class CloudRelayWebSocketConnection: ServerWebSocketConnecting, @unchecked
                     case "binary":
                         if let decoded = CloudChannelCrypto.base64URLDecode(frame.data) {
                             continuation.yield(.data(decoded))
+                        } else {
+                            continuation.finish(throwing: CloudRelayTransportError.invalidFrame)
+                        }
+                    case "part":
+                        if !pendingParts.append(base64URL: frame.data) {
+                            continuation.finish(throwing: CloudRelayTransportError.invalidFrame)
+                        }
+                    case "text-end":
+                        if let message = pendingParts.finish(base64URL: frame.data) {
+                            continuation.yield(.string(String(decoding: message, as: UTF8.self)))
+                        } else {
+                            continuation.finish(throwing: CloudRelayTransportError.invalidFrame)
+                        }
+                    case "binary-end":
+                        if let message = pendingParts.finish(base64URL: frame.data) {
+                            continuation.yield(.data(message))
                         } else {
                             continuation.finish(throwing: CloudRelayTransportError.invalidFrame)
                         }

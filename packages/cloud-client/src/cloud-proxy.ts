@@ -181,10 +181,38 @@ export const parseWsFrame = (value: unknown): WsFrame | undefined => {
   }
 }
 
+/// `text`/`binary` carry one whole message. Messages above the chunk cap are
+/// split into `part` frames (base64url byte slices) closed by a typed
+/// `text-end`/`binary-end` frame carrying the final slice — the receiver
+/// concatenates and yields one message. Backward compatibility is deliberate:
+/// apps that predate chunking ignore unknown kinds entirely, so an oversized
+/// message degrades to one skipped message on old apps instead of tripping
+/// the hub's frame cap and livelocking cursor replay for the whole channel.
 export interface WsWireFrame {
-  readonly kind: "text" | "binary"
+  readonly kind: "text" | "binary" | "part" | "text-end" | "binary-end"
   readonly data: string
 }
 
 export const encodeWsFrame = (data: string | Uint8Array): WsWireFrame =>
   typeof data === "string" ? { kind: "text", data } : { kind: "binary", data: toBase64Url(data) }
+
+/// Encodes one outbound WS message as one frame, or — above `cap` raw bytes —
+/// as `part` frames closed by a typed end frame. Splitting works on UTF-8
+/// bytes; parts may cut mid code point, which is safe because the receiver
+/// decodes text only after reassembling the whole byte sequence.
+export const encodeWsFrames = (data: string | Uint8Array, cap = MAX_CHUNK_BYTES): WsWireFrame[] => {
+  const isText = typeof data === "string"
+  const bytes = isText ? new TextEncoder().encode(data) : data
+  if (bytes.byteLength <= cap) return [encodeWsFrame(data)]
+  const frames: WsWireFrame[] = []
+  for (let offset = 0; offset < bytes.byteLength; offset += cap) {
+    const piece = toBase64Url(bytes.subarray(offset, offset + cap))
+    const isLast = offset + cap >= bytes.byteLength
+    frames.push(
+      isLast
+        ? { kind: isText ? "text-end" : "binary-end", data: piece }
+        : { kind: "part", data: piece }
+    )
+  }
+  return frames
+}

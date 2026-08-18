@@ -144,6 +144,91 @@ struct CloudRelayTransportTests {
         return (endpoint, hub)
     }
 
+    /// Scripts the machine end of "ws" channels: remembers accepted opens and
+    /// lets the test push sealed frames toward the app.
+    private final class ScriptedWsMachine: @unchecked Sendable {
+        let machine = ScriptedRelayMachine()
+        let scripted: ScriptedCloudHub
+        private let lock = NSLock()
+        private var _openChannelIds: [String] = []
+
+        init() {
+            scripted = ScriptedCloudHub(machines: [machine.presence])
+            scripted.onRelay = { [weak self] envelope in
+                guard let self, let appKey = self.scripted.appPublicKey else { return }
+                guard (try? self.machine.receive(envelope.frame, appPublicKey: appKey)) != nil
+                else { return }
+                if case .open = envelope.frame {
+                    self.lock.withLock { self._openChannelIds.append(envelope.frame.channelId) }
+                }
+            }
+        }
+
+        var openChannelId: String? { lock.withLock { _openChannelIds.first } }
+
+        func push(_ json: String) {
+            guard let channelId = openChannelId,
+                let frame = try? machine.sealData(channelId: channelId, payload: Data(json.utf8))
+            else { return }
+            scripted.relayToApp(machineId: machine.deviceId, frame: frame)
+        }
+    }
+
+    private static func text(_ message: ServerWebSocketMessage) -> String? {
+        if case let .string(value) = message { return value }
+        return nil
+    }
+
+    private static func binary(_ message: ServerWebSocketMessage) -> Data? {
+        if case let .data(value) = message { return value }
+        return nil
+    }
+
+    @Test("Chunked ws frames reassemble into one message; unknown kinds are skipped")
+    func wsChunkReassembly() async throws {
+        let scriptedMachine = ScriptedWsMachine()
+        let hub = CloudHubConnection(
+            serverURL: URL(string: "https://cloud.example.com")!,
+            credentialStore: InMemoryCloudCredentialStore(token: "session-token"),
+            deviceName: "Test App",
+            deviceOS: "macOS",
+            webSocketTransport: FakeWebSocketTransport { _ in scriptedMachine.scripted.socket },
+            readyTimeout: .seconds(2)
+        )
+        let endpoint = CloudRelayEndpoint(
+            hub: hub,
+            machineDeviceId: scriptedMachine.machine.deviceId,
+            machinePublicKey: scriptedMachine.machine.publicKey
+        )
+        let socket = CloudRelayWebSocketTransport(endpoint: endpoint).connect(
+            URLRequest(url: URL(string: "https://relay.invalid/v1/sessions/x/events/socket")!),
+            maximumMessageSize: 1 << 20
+        )
+        let base64 = { (piece: String) in CloudChannelCrypto.base64URLEncode(Data(piece.utf8)) }
+
+        let first = Task { try await socket.receive() }
+        #expect(await waitUntil { scriptedMachine.openChannelId != nil })
+        scriptedMachine.push(#"{"kind":"part","data":"\#(base64("hello, "))"}"#)
+        // Unknown future kinds are skipped, never spliced into a message.
+        scriptedMachine.push(#"{"kind":"future-frame","data":"ignored"}"#)
+        scriptedMachine.push(#"{"kind":"text-end","data":"\#(base64("chunked world"))"}"#)
+        #expect(Self.text(try await first.value) == "hello, chunked world")
+
+        // Plain frames pass through untouched after a chunked message.
+        let second = Task { try await socket.receive() }
+        scriptedMachine.push(#"{"kind":"text","data":"plain"}"#)
+        #expect(Self.text(try await second.value) == "plain")
+
+        // Binary messages reassemble the same way.
+        let third = Task { try await socket.receive() }
+        scriptedMachine.push(#"{"kind":"part","data":"\#(base64("01"))"}"#)
+        scriptedMachine.push(#"{"kind":"binary-end","data":"\#(base64("23"))"}"#)
+        #expect(Self.binary(try await third.value) == Data("0123".utf8))
+
+        socket.cancel(with: .goingAway, reason: nil)
+        await hub.shutdown()
+    }
+
     @Test("HTTP requests round-trip: method, path+query, headers, chunked bodies")
     func httpRoundTrip() async throws {
         let scriptedMachine = ScriptedHttpMachine()

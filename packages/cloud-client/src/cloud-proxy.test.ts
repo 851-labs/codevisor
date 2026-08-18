@@ -1,4 +1,4 @@
-import { toBase64Url } from "@codevisor/cloud-crypto"
+import { fromBase64Url, toBase64Url } from "@codevisor/cloud-crypto"
 import { describe, expect, it } from "vitest"
 import {
   appendBodyChunk,
@@ -6,6 +6,7 @@ import {
   concatBodyBuffer,
   emptyBodyBuffer,
   encodeWsFrame,
+  encodeWsFrames,
   headFrame,
   MAX_CHUNK_BYTES,
   MAX_REQUEST_BODY_BYTES,
@@ -177,5 +178,35 @@ describe("ws frames", () => {
   it("encodes outgoing messages by payload type", () => {
     expect(encodeWsFrame("hi")).toEqual({ kind: "text", data: "hi" })
     expect(encodeWsFrame(bytes(1, 2))).toEqual({ kind: "binary", data: toBase64Url(bytes(1, 2)) })
+  })
+
+  it("keeps small messages as single frames", () => {
+    expect(encodeWsFrames("hi")).toEqual([{ kind: "text", data: "hi" }])
+    expect(encodeWsFrames(bytes(1, 2, 3))).toEqual([
+      { kind: "binary", data: toBase64Url(bytes(1, 2, 3)) }
+    ])
+  })
+
+  it("splits oversized messages into parts closed by a typed end frame", () => {
+    const textFrames = encodeWsFrames("abcdefgh", 3)
+    expect(textFrames.map((frame) => frame.kind)).toEqual(["part", "part", "text-end"])
+    const reassembled = textFrames.flatMap((frame) => [...fromBase64Url(frame.data)])
+    expect(new TextDecoder().decode(Uint8Array.from(reassembled))).toBe("abcdefgh")
+
+    const binaryFrames = encodeWsFrames(bytes(0, 1, 2, 3, 4, 5, 6), 3)
+    expect(binaryFrames.map((frame) => frame.kind)).toEqual(["part", "part", "binary-end"])
+    expect(binaryFrames.flatMap((frame) => [...fromBase64Url(frame.data)])).toEqual([
+      0, 1, 2, 3, 4, 5, 6
+    ])
+  })
+
+  it("survives split boundaries inside multi-byte code points", () => {
+    // Three-byte characters with a 4-byte cap: every part boundary lands mid
+    // code point; only the reassembled whole decodes correctly.
+    const text = "€€€"
+    const frames = encodeWsFrames(text, 4)
+    expect(frames.length).toBeGreaterThan(1)
+    const reassembled = frames.flatMap((frame) => [...fromBase64Url(frame.data)])
+    expect(new TextDecoder().decode(Uint8Array.from(reassembled))).toBe(text)
   })
 })

@@ -23,7 +23,7 @@ import {
   chunkFrames,
   concatBodyBuffer,
   emptyBodyBuffer,
-  encodeWsFrame,
+  encodeWsFrames,
   headFrame,
   HTTP_CHANNEL_TYPE,
   parseHttpChannelParams,
@@ -264,7 +264,13 @@ const wsChannelHandler =
     })
     socket.on("message", (data, isBinary) => {
       const bytes = Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as ArrayBuffer)
-      channel.send(isBinary ? encodeWsFrame(new Uint8Array(bytes)) : encodeWsFrame(String(data)))
+      // Chunked: an oversized message (a huge tool-call event) would exceed
+      // the hub's relay frame cap, and the dropped frame's seq gap would
+      // abort the channel — with cursor replay resending the same oversized
+      // event forever. Split frames reassemble on the app side instead.
+      for (const frame of encodeWsFrames(isBinary ? new Uint8Array(bytes) : String(data))) {
+        channel.send(frame)
+      }
     })
     socket.on("close", () => channel.close("done"))
     socket.on("error", () => {
