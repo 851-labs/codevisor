@@ -41,7 +41,11 @@ import {
   sessionHistoryEventsWithSetup
 } from "./session-workspace.js"
 
-export { drainPromptQueue, reconcileOrphanedSessionTurns } from "./prompt-queue.js"
+export {
+  drainPromptQueue,
+  reconcileOrphanedSessionTurns,
+  reconcileStaleStreamingTurns
+} from "./prompt-queue.js"
 
 const MAX_PROMPT_ATTACHMENTS = 10
 

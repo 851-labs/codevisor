@@ -844,6 +844,13 @@ public actor CloudHubConnection {
             }
             if presence.machine.online {
                 resumeMachineWaiters(for: presence.machine.deviceId)
+            } else {
+                // The machine's hub socket is gone, and its channel state is
+                // in-memory only — existing channels cannot survive its
+                // reconnect. Close them now so relayed streams fail fast and
+                // resume from their cursors instead of hanging forever on a
+                // channel the machine no longer knows about.
+                closeChannels(for: presence.machine.deviceId)
             }
         case "relay":
             guard let relay = try? decoder.decode(InboundRelayMessage.self, from: data) else { return }

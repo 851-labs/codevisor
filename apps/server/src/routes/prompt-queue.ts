@@ -133,6 +133,79 @@ export const reconcileOrphanedSessionTurns = async (
   }
 }
 
+/// How long a session's event log must be quiet before a still-streaming
+/// assistant row with no in-process owner counts as orphaned. Long silent
+/// tool runs are protected by the `activePromptSessions` check (their prompt
+/// drain is still awaiting the provider), so this window only has to absorb
+/// projection/event races. It deliberately matches the clients' 300s
+/// stalled-turn threshold.
+const staleStreamingTurnQuietMs = 5 * 60 * 1000
+
+const staleStreamingTurnDetail =
+  "This response stopped streaming and was closed after a period of inactivity. Send a message to continue."
+
+/// The runtime counterpart of `reconcileOrphanedSessionTurns`: that pass heals
+/// rows stranded by a dead *process* at startup, this one heals rows stranded
+/// by a dead *turn* while the server keeps running (harness crash, lost
+/// terminal event). Without it, a stuck `streaming` row renders as an endless
+/// in-progress turn to every client — including freshly relaunched ones —
+/// until the next server restart. Returns the number of repaired rows.
+export const reconcileStaleStreamingTurns = async (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  routeState: RouteState,
+  serverId: string
+): Promise<number> => {
+  const cutoff = new Date(Date.now() - staleStreamingTurnQuietMs).toISOString()
+  const staleSessions = await run(services.db.listQuietStreamingSessions(cutoff))
+  let repaired = 0
+  for (const sessionId of staleSessions) {
+    // A prompt drain in this process still owns the turn: `agents.prompt` is
+    // awaited for the turn's full duration, and quiet stretches are normal
+    // during long tool runs. Leave it alone — it can still finish normally.
+    if (routeState.activePromptSessions.has(sessionId)) continue
+    const page = await run(services.db.getTranscriptPage(sessionId, undefined, 1))
+    const active = page.items.at(-1)
+    const hasOrphanedTurn = active?.role === "assistant" && active.isGenerating
+
+    // Pair a persisted question before ending the turn so event replay never
+    // leaves an apparently answerable request behind (mirrors startup
+    // reconciliation — the resolver died with the turn).
+    if (hasOrphanedTurn && page.pendingQuestion !== undefined) {
+      await appendAndPublish(services.db, fanout, "session.output", sessionId, {
+        outcome: "cancelled",
+        questionId: page.pendingQuestion.questionId,
+        questions: page.pendingQuestion.questions,
+        sessionUpdate: "question_resolved",
+        serverId
+      })
+    }
+
+    repaired += await run(
+      services.db.failStaleAssistantChatItems(
+        sessionId,
+        staleStreamingTurnDetail,
+        hasOrphanedTurn ? active.id : undefined
+      )
+    )
+    if (!hasOrphanedTurn) continue
+
+    // End the newest turn through the normal event pipeline so connected
+    // clients receive the terminal event live instead of discovering the
+    // repaired row on their next full reload.
+    await appendAndPublish(services.db, fanout, "session.updated", sessionId, {
+      ...(active.turnId === undefined
+        ? {}
+        : { initiatedBy: "user", turnId: active.turnId, turnState: "ended" }),
+      serverId,
+      stopDetail: staleStreamingTurnDetail,
+      stopReason: "interrupted"
+    })
+    repaired += 1
+  }
+  return repaired
+}
+
 export const publishPromptQueue = async (
   db: CodevisorDatabaseService,
   fanout: EventFanout,

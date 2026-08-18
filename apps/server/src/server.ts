@@ -37,6 +37,7 @@ import { routeProjects } from "./routes/projects.js"
 import {
   drainPromptQueue,
   reconcileOrphanedSessionTurns,
+  reconcileStaleStreamingTurns,
   routeSessions
 } from "./routes/sessions.js"
 import { routeSkills } from "./routes/skills.js"
@@ -44,7 +45,7 @@ import { routeTerminals } from "./routes/terminals.js"
 import { routeWorkspaces } from "./routes/workspaces.js"
 
 export * from "./server-context.js"
-export { reconcileOrphanedSessionTurns }
+export { reconcileOrphanedSessionTurns, reconcileStaleStreamingTurns }
 
 export const defaultServerConfig = (
   overrides: Partial<CodevisorServerConfig> = {}
@@ -85,6 +86,15 @@ export const makeCodevisorServerApp = (
     pendingPromptActions: new Set(),
     pendingSessionCreates: new Map()
   }
+  // Startup reconciliation only heals rows stranded by a dead process. Rows
+  // stranded while this process keeps running (harness crash, lost terminal
+  // event) would otherwise render as an endless in-progress turn to every
+  // client until the next restart — sweep for them periodically.
+  /* v8 ignore next 3 -- timer-driven: the sweep itself is tested directly. */
+  const staleTurnSweep = setInterval(() => {
+    void reconcileStaleStreamingTurns(services, fanout, routeState, config.id).catch(swallowError)
+  }, 60_000)
+  staleTurnSweep.unref()
   const activeSessionIds = new Set<string>()
   const unsubscribeSessionActivity = config.sessionActivity
     ? fanout.subscribe((event) => {
@@ -146,6 +156,7 @@ export const makeCodevisorServerApp = (
       void handleUpgrade(services, config, fanout, request, socket, head, webSocketServer)
     },
     close: serverAttempt("closeApp", () => {
+      clearInterval(staleTurnSweep)
       unsubscribeSessionActivity?.()
       activeSessionIds.clear()
       config.sessionActivity?.stop()

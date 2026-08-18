@@ -57,6 +57,7 @@ export const makeTranscriptService = (
   | "hasConversationMessage"
   | "hasTerminalAssistantAfterMessage"
   | "failStaleAssistantChatItems"
+  | "listQuietStreamingSessions"
   | "getSessionActionResult"
   | "saveSessionActionResult"
 > => {
@@ -262,6 +263,25 @@ export const makeTranscriptService = (
             )
             .get(canonicalUuid(sessionId), messageId)
         )
+      ),
+    listQuietStreamingSessions: (quietSinceIso) =>
+      attempt("listQuietStreamingSessions", () =>
+        (
+          sqlite
+            .prepare(
+              // ISO-8601 UTC timestamps compare correctly as text. A session
+              // qualifies only when its entire event log has been quiet since
+              // the cutoff: any recent event means the turn may still be live.
+              `select distinct session_id from chat_items as item
+               where item.role = 'assistant' and item.status = 'streaming'
+                 and not exists (
+                   select 1 from session_events as event
+                   where event.session_id = item.session_id
+                     and event.created_at > ?
+                 )`
+            )
+            .all(quietSinceIso) as Array<{ session_id: string }>
+        ).map((row) => row.session_id)
       ),
     failStaleAssistantChatItems: (rawSessionId, stopDetail, excludeItemId) =>
       attempt("failStaleAssistantChatItems", () => {

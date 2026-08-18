@@ -216,6 +216,34 @@ struct CloudHubConnectionTests {
         await hub.shutdown()
     }
 
+    @Test("An offline presence closes that machine's channels")
+    func offlinePresenceClosesChannels() async throws {
+        let machine = ScriptedRelayMachine()
+        let scripted = ScriptedCloudHub(machines: [machine.presence])
+        let (hub, _) = makeHub(scripted)
+        let recorder = Recorder()
+
+        _ = try await hub.openChannel(
+            machineDeviceId: machine.deviceId,
+            machinePublicKey: machine.publicKey,
+            channelType: "test",
+            params: nil,
+            onMessage: { _ in },
+            onClosed: { recorder.recordClose($0) }
+        )
+        #expect(await waitUntil { scripted.relayEnvelopes.count == 1 })
+
+        // The machine's hub socket dropped: its in-memory channel state is
+        // gone, so the app must tear down its side rather than wait forever.
+        var offlinePresence = machine.presence
+        offlinePresence.online = false
+        scripted.presenceToApp(offlinePresence)
+
+        #expect(await waitUntil { recorder.closes == [nil] })
+        #expect(await hub.machines.first?.online == false)
+        await hub.shutdown()
+    }
+
     @Test("A machine-offline hub error updates presence and parks later channel opens")
     func machineOfflineErrorParksChannelOpen() async throws {
         let machine = ScriptedRelayMachine()

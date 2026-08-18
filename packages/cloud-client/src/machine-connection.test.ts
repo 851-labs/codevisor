@@ -497,6 +497,46 @@ describe("incoming channels", () => {
     expect(closeFrames).toHaveLength(1)
   })
 
+  it("answers frames for unknown channels with a peer-disconnected close", () => {
+    const h = harness()
+    const socket = connect(h)
+    const closeFrames = () =>
+      socket.sent
+        .filter((f): f is Extract<MachineToHub, { t: "relay" }> => f.t === "relay")
+        .map((f) => f.frame)
+        .filter((f): f is Extract<RelayFrame, { t: "close" }> => f.t === "close")
+
+    // The app kept this channel alive across a machine reconnect: we never saw
+    // its open, so its frames must be answered with a close — not dropped —
+    // or the app waits forever on a channel we no longer know about.
+    socket.receive({
+      t: "relay",
+      peerId: "peer-1",
+      frame: { t: "credit", channelId: "ch-lost", seq: 7, bytes: 1024 }
+    })
+    expect(closeFrames()).toHaveLength(1)
+    expect(closeFrames()[0]!.channelId).toBe("ch-lost")
+    expect(closeFrames()[0]!.reason).toBe("peer-disconnected")
+
+    // Data frames get the same treatment (the check precedes decryption).
+    socket.receive({
+      t: "relay",
+      peerId: "peer-1",
+      frame: { t: "data", channelId: "ch-lost-2", seq: 3, sealed: { box: "AAAA" } }
+    })
+    expect(closeFrames()).toHaveLength(2)
+    expect(closeFrames()[1]!.channelId).toBe("ch-lost-2")
+    expect(closeFrames()[1]!.reason).toBe("peer-disconnected")
+
+    // A close for an unknown channel is ignored — no close-for-close loops.
+    socket.receive({
+      t: "relay",
+      peerId: "peer-1",
+      frame: { t: "close", channelId: "ch-lost-3", seq: 0, reason: "done" }
+    })
+    expect(closeFrames()).toHaveLength(2)
+  })
+
   it("refuses malformed opens", () => {
     const h = harness({
       handlers: { echo: () => undefined }

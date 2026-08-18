@@ -382,7 +382,17 @@ export class CloudMachineConnection {
       return
     }
     const live = this.#channels.get(key)
-    if (live === undefined) return
+    if (live === undefined) {
+      // A frame for a channel we don't know about — typically the app kept a
+      // channel alive across our socket reconnect (channel state is in-memory
+      // and did not survive it). Answer with a close instead of dropping the
+      // frame silently, so the app tears down its side and resumes from its
+      // cursor rather than waiting forever on a dead channel.
+      if (frame.t !== "close") {
+        this.#refuse(socket, peerId, frame.channelId, "peer-disconnected")
+      }
+      return
+    }
     if (frame.t === "close") {
       this.#channels.delete(key)
       live.channel.onClosed?.(frame.reason)

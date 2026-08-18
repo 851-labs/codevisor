@@ -254,6 +254,13 @@ export interface CodevisorDatabaseService {
     stopDetail: string,
     excludeItemId?: string
   ) => Effect.Effect<number, DatabaseError>
+  /// Session ids with at least one still-streaming assistant chat item whose
+  /// session has appended no event since `quietSinceIso`. These are stuck-turn
+  /// candidates: a genuinely live turn either streams events or is owned by an
+  /// in-process prompt drain (which the caller must additionally check).
+  readonly listQuietStreamingSessions: (
+    quietSinceIso: string
+  ) => Effect.Effect<ReadonlyArray<string>, DatabaseError>
   readonly getSessionActionResult: (
     sessionId: string,
     clientActionId: string

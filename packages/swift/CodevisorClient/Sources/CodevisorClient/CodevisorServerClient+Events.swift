@@ -51,11 +51,15 @@ extension CodevisorServerClient {
     public func shellEventStream() -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
         // listProjects/listSessions is the snapshot; only events after the
         // socket attaches are needed here.
-        makeEventStream(path: "/v1/events/socket", since: Int.max)
+        makeEventStream(path: "/v1/events/socket", since: ServerSessionTransport.liveOnlyEventCursor)
     }
 
     public func shellEventStream(handledKinds: Set<String>) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
-        makeEventStream(path: "/v1/events/socket", since: Int.max, handledKinds: handledKinds)
+        makeEventStream(
+            path: "/v1/events/socket",
+            since: ServerSessionTransport.liveOnlyEventCursor,
+            handledKinds: handledKinds
+        )
     }
 
     public func sessionEventStream(id: UUID, since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
@@ -98,15 +102,16 @@ extension CodevisorServerClient {
                                 let probe = try decoder.decode(ServerEventKindProbe.self, from: data)
                                 // Filtered events still advance the cursor so a
                                 // reconnect never replays the skipped volume.
-                                cursor = cursor == Int.max ? probe.id : max(cursor, probe.id)
+                                cursor = Self.advanceEventCursor(cursor, to: probe.id)
                                 failures = 0
                                 guard handledKinds.contains(probe.kind) else { continue }
                             }
                             let event = try decoder.decode(ServerEventEnvelope.self, from: data)
-                            // Int.max requests a live-only subscription. Once the
-                            // first event arrives, retain its real cursor so a
-                            // reconnect can replay anything missed afterward.
-                            cursor = cursor == Int.max ? event.id : max(cursor, event.id)
+                            // A live-only sentinel cursor means "no real cursor
+                            // yet". Once the first event arrives, retain its real
+                            // cursor so a reconnect can replay anything missed
+                            // afterward.
+                            cursor = Self.advanceEventCursor(cursor, to: event.id)
                             failures = 0
                             continuation.yield(event)
                         }
@@ -133,6 +138,16 @@ extension CodevisorServerClient {
             }
             continuation.onTermination = { _ in task.cancel() }
         }
+    }
+
+    /// Advances the reconnect-replay cursor past a received event id. Cursors
+    /// at or above `ServerSessionTransport.liveOnlyEventCursor` are live-only
+    /// sentinels, not positions (the server treats any `since` >= JS
+    /// `Number.MAX_SAFE_INTEGER` as a live-only subscription) — adopt the
+    /// first real event id outright so later reconnects replay missed events
+    /// instead of resubscribing live-only forever.
+    static func advanceEventCursor(_ cursor: Int, to id: Int) -> Int {
+        cursor >= ServerSessionTransport.liveOnlyEventCursor ? id : max(cursor, id)
     }
 
     private static func eventReconnectDelay(failures: Int) -> Duration {

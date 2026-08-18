@@ -271,6 +271,42 @@ describe("@codevisor/db", () => {
     await run(db.close)
   })
 
+  it("lists sessions with streaming items only once their event log is quiet", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/quiet-streaming" }))
+    const streaming = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+    const finished = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+
+    await run(
+      db.appendEvent("session.output", streaming.id, {
+        content: { type: "text", text: "half-finished answer" },
+        messageId: "quiet-msg",
+        sessionUpdate: "agent_message_chunk"
+      })
+    )
+    await run(
+      db.appendEvent("session.output", finished.id, {
+        content: { type: "text", text: "done answer" },
+        messageId: "finished-msg",
+        sessionUpdate: "agent_message_chunk"
+      })
+    )
+    await run(db.appendEvent("session.updated", finished.id, { turnState: "ended" }))
+
+    const beforeEvents = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+    const afterEvents = new Date(Date.now() + 60 * 60 * 1000).toISOString()
+
+    // Events since the cutoff: the turn may still be live.
+    expect(await run(db.listQuietStreamingSessions(beforeEvents))).toEqual([])
+    // Quiet log + streaming row = stuck-turn candidate; sessions whose items
+    // all completed never qualify no matter how quiet they are.
+    expect(await run(db.listQuietStreamingSessions(afterEvents))).toEqual([streaming.id])
+    // Once repaired, the session drops out.
+    await run(db.failStaleAssistantChatItems(streaming.id, "closed by sweep"))
+    expect(await run(db.listQuietStreamingSessions(afterEvents))).toEqual([])
+    await run(db.close)
+  })
+
   it("omits completed transcript shells without renderable content", async () => {
     const filename = tempDatabase()
     const db = await run(makeDatabase({ filename, serverId: "local" }))
