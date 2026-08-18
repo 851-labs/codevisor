@@ -163,6 +163,26 @@ extension SessionModel {
         harnessAuthenticationErrorMessage = requiresHarnessAuthentication ? message : nil
     }
 
+    /// Foreground/network-recovery backstop: re-verifies an in-flight turn
+    /// against durable server history. Cursor replay heals a reconnected
+    /// stream on its own; this covers what replay cannot — a reconcile that
+    /// failed while the machine was unreachable, or a stuck durable row the
+    /// server repaired while the app was suspended. No-op while idle.
+    public func reconcileIfInFlight() async {
+        guard isSending else { return }
+        await reconcileFromServer()
+    }
+
+    /// Re-entry backstop for cached mid-turn models: a chat re-binds without
+    /// reconnecting, so a turn already quiet past the stall window re-checks
+    /// durable history immediately instead of waiting out the next stall
+    /// cycle. Deliberately narrower than `reconcileIfInFlight` — a healthy
+    /// streaming turn must not restart its consumer on every navigation.
+    public func reconcileIfStalled() async {
+        guard isSending, isTakingLongerThanExpected else { return }
+        await reconcileFromServer()
+    }
+
     func reconcileFromServer() async {
         let wasSending = isSending
         consumerTask?.cancel()
@@ -171,6 +191,14 @@ extension SessionModel {
         isFlushScheduled = false
         await loadHistory()
         if wasSending, !isSending {
+            // The reload ended the turn without a terminal stream event, so
+            // the event path's `endTurn` cleanup never runs — settle the
+            // stall/activity state here or a healed turn keeps its stalled
+            // flag (and quiet-turn timer) forever.
+            stalledTurnTask?.cancel()
+            stalledTurnTask = nil
+            isTakingLongerThanExpected = false
+            providerActivityPhase = nil
             lastTurnInitiator = .user
             lastTurnEndedWithError = errorMessage != nil
             onTurnEnded?()

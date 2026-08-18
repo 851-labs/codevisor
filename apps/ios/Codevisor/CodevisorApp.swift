@@ -157,6 +157,11 @@ struct CodevisorApp: App {
         defer { recoveryInProgress = false }
         await environment.cloud.reconnectHub()
         await environment.prepareSelectedMachine()
+        // With transport restored, re-verify every in-flight chat against
+        // durable history. Stream replay heals missed events on its own, but
+        // not a turn whose state moved while the app was suspended in a way
+        // the replaced sockets never saw.
+        await ChatControllerCache.shared.reconcileInFlightControllers()
     }
 }
 

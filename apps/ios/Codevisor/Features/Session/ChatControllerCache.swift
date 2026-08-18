@@ -204,6 +204,17 @@ final class ChatControllerCache {
             || controller.isWaitingOnBackgroundTasks
     }
 
+    /// Foreground/network-recovery sweep: every cached chat with a turn in
+    /// flight re-verifies against durable server history. Suspension can
+    /// strand a turn in ways stream replay alone cannot fix (a reconcile
+    /// that failed while unreachable, a server-side repair missed while
+    /// asleep); idle chats are a no-op.
+    func reconcileInFlightControllers() async {
+        for controller in controllers.values where controller.isSending {
+            await controller.reconcileInFlightTurn()
+        }
+    }
+
     func noteClosed(sessionId: UUID, serverId: String) {
         let key = Key(serverId: serverId, id: sessionId)
         if openKey == key { openKey = nil }
@@ -222,11 +233,16 @@ final class ChatControllerCache {
     }
 
     /// Drops the least-recently-used idle controllers; anything mid-send or
-    /// mid-connect stays put regardless of age.
+    /// mid-connect stays put regardless of age — except a turn that has been
+    /// quiet past the stall window. Treating a stalled send as pinned kept a
+    /// stuck controller resident for the app's lifetime, so "navigate away
+    /// and back" could never rebuild it; a re-opened chat reconstructs from
+    /// durable history (and its stream cursor) losing nothing.
     private func evictIfNeeded() {
         var idle = accessOrder.filter { key in
             guard let controller = controllers[key] else { return false }
-            return !controller.isSending && !controller.isConnecting
+            if controller.isConnecting { return false }
+            return !controller.isSending || controller.isTakingLongerThanExpected
         }
         while idle.count > Self.maxIdleControllers {
             let key = idle.removeFirst()

@@ -53,6 +53,14 @@ extension SessionController {
             await attempt.value
             return
         }
+        if let model {
+            // A cached chat re-binds without reconnecting. If its turn has
+            // been quiet past the stall window, re-verify against durable
+            // history on re-entry — "navigate away and back" then heals a
+            // stuck view instead of waiting out the next stall cycle.
+            await model.reconcileIfStalled()
+            return
+        }
         guard model == nil, !isConnecting, let serverSession else { return }
         // A worktree draft has no cwd until the worktree is created on first
         // send; connecting now would pin the agent to the project folder.
@@ -64,6 +72,14 @@ extension SessionController {
         let attempt = Task { await self.runConnectAttempt(harnessId: harnessId, harnessName: harnessName) }
         connectAttempt = attempt
         await attempt.value
+    }
+
+    /// Foreground/network-recovery hook: re-verifies this chat's in-flight
+    /// turn against durable server history (see
+    /// `SessionModel.reconcileIfInFlight`). Safe to call broadly — idle
+    /// chats are a no-op.
+    public func reconcileInFlightTurn() async {
+        await model?.reconcileIfInFlight()
     }
 
     private func runConnectAttempt(harnessId: String, harnessName: String) async {

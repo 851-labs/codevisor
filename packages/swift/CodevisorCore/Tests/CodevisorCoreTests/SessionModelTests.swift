@@ -280,6 +280,55 @@ struct SessionModelTests {
         #expect(model.errorMessage?.contains("server still reports this turn as running") == true)
     }
 
+    @Test("Recovery reconciles only the turns that need it")
+    func recoveryReconcileGuards() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.echoOnPrompt = false
+        client.initialTranscriptPage = cancellationTranscriptPage(
+            sessionId: sessionId,
+            isGenerating: true,
+            stopReason: nil,
+            text: "partial answer"
+        )
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+
+        // Idle: neither recovery hook touches the server.
+        await model.reconcileIfInFlight()
+        await model.reconcileIfStalled()
+        #expect(client.transcriptPageRequests.isEmpty)
+
+        await model.send("keep working")
+        #expect(model.isSending)
+        let baseline = client.transcriptPageRequests.count
+
+        // Streaming healthily (not stalled): re-entry must not restart the
+        // consumer on every navigation.
+        await model.reconcileIfStalled()
+        #expect(client.transcriptPageRequests.count == baseline)
+
+        // Foreground recovery re-verifies any in-flight turn; durable history
+        // still reports it live, so the reload is non-destructive.
+        await model.reconcileIfInFlight()
+        #expect(client.transcriptPageRequests.count == baseline + 1)
+        #expect(model.isSending)
+
+        // Once stalled, re-entry heals a turn that finished on the server.
+        model.isTakingLongerThanExpected = true
+        client.initialTranscriptPage = cancellationTranscriptPage(
+            sessionId: sessionId,
+            isGenerating: false,
+            stopReason: "interrupted",
+            text: "partial answer"
+        )
+        await model.reconcileIfStalled()
+        #expect(model.isSending == false)
+        #expect(model.isTakingLongerThanExpected == false)
+    }
+
     @Test("Quiet turns surface a non-destructive stalled state")
     func quietTurnSurfacesStalledState() async {
         let sessionId = UUID()
