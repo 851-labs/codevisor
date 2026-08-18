@@ -17,7 +17,8 @@ REPO_ROOT="$(cd "$MACOS_ROOT/../.." && pwd)"
 GHOSTTY_DIR="$REPO_ROOT/.repos/ghostty"
 DEST_DIR="$MACOS_ROOT/Frameworks"
 GHOSTTY_REPOSITORY="${GHOSTTY_REPOSITORY:-https://github.com/ghostty-org/ghostty.git}"
-GHOSTTY_REF="${GHOSTTY_REF:-b5d14da0977ff19ef639629304328d8062f7bf04}"
+GHOSTTY_REF="${GHOSTTY_REF:-951a03b58bf60e73d2d361ac8848cb9423c8be26}"
+GHOSTTY_COMPAT_PATCH="$MACOS_ROOT/patches/ghostty-libcpp-availability.patch"
 FETCH_ONLY=0
 
 # -Dsentry=false: libghostty's sentry-native init races ghostty_init's
@@ -38,7 +39,11 @@ BUILD_FLAGS=(
 # xcframework on install; `dev.mjs` refuses to reuse or copy a framework
 # whose stamp doesn't match, so a build-script change (new ref, new flags)
 # invalidates every prebuilt copy instead of silently shipping stale ones.
-STAMP="${GHOSTTY_REF}-$(printf '%s\n' "${BUILD_FLAGS[@]}" | /usr/bin/shasum -a 256 | cut -c1-16)"
+BUILD_FINGERPRINT="$({
+  printf '%s\n' "${BUILD_FLAGS[@]}"
+  /usr/bin/shasum -a 256 "$GHOSTTY_COMPAT_PATCH"
+} | /usr/bin/shasum -a 256 | cut -c1-16)"
+STAMP="${GHOSTTY_REF}-${BUILD_FINGERPRINT}"
 
 if [[ "${1:-}" == "--print-stamp" ]]; then
   echo "$STAMP"
@@ -66,6 +71,17 @@ if [[ "$FETCH_ONLY" == 1 ]]; then
   exit 0
 fi
 
+ACTUAL_GHOSTTY_REF="$(git -C "$GHOSTTY_DIR" rev-parse HEAD)"
+if [[ "$ACTUAL_GHOSTTY_REF" != "$GHOSTTY_REF" ]]; then
+  echo "error: Ghostty source is at $ACTUAL_GHOSTTY_REF; expected pinned ref $GHOSTTY_REF." >&2
+  exit 1
+fi
+
+if [[ ! -f "$GHOSTTY_COMPAT_PATCH" ]]; then
+  echo "error: Ghostty compatibility patch not found at $GHOSTTY_COMPAT_PATCH." >&2
+  exit 1
+fi
+
 if ! command -v zig >/dev/null 2>&1; then
   echo "error: zig not found on PATH. Install Zig 0.16.0 (https://ziglang.org/download/)." >&2
   exit 1
@@ -79,10 +95,30 @@ fi
 echo "Building GhosttyKit.xcframework (this takes a while)…"
 cd "$GHOSTTY_DIR"
 rm -rf "$GHOSTTY_DIR/macos/GhosttyKit.xcframework" "$GHOSTTY_DIR/zig-out"
+
+# Keep the vendored reference checkout pristine: apply the small build-only
+# compatibility patch for this invocation, then reverse it even if Zig fails.
+PATCH_APPLIED=0
+restore_ghostty_sources() {
+  if [[ "$PATCH_APPLIED" == 1 ]]; then
+    git -C "$GHOSTTY_DIR" apply --reverse "$GHOSTTY_COMPAT_PATCH"
+    PATCH_APPLIED=0
+  fi
+}
+trap restore_ghostty_sources EXIT INT TERM
+if ! git -C "$GHOSTTY_DIR" apply --check "$GHOSTTY_COMPAT_PATCH"; then
+  echo "error: Ghostty compatibility patch does not apply cleanly to $GHOSTTY_REF." >&2
+  exit 1
+fi
+git -C "$GHOSTTY_DIR" apply "$GHOSTTY_COMPAT_PATCH"
+PATCH_APPLIED=1
+
 set +e
 zig build "${BUILD_FLAGS[@]}"
 BUILD_STATUS=$?
 set -e
+restore_ghostty_sources
+trap - EXIT INT TERM
 
 # Ghostty installs the framework under macos/ for its own Xcode project.
 SRC="$GHOSTTY_DIR/macos/GhosttyKit.xcframework"
@@ -117,6 +153,15 @@ for REQUIRED_ARCH in arm64 x86_64; do
 done
 if [[ "$BUILD_STATUS" -ne 0 ]]; then
   echo "warning: Ghostty's aggregate build exited $BUILD_STATUS after producing a valid GhosttyKit.xcframework." >&2
+fi
+
+# A libc++ header newer than the deployment runtime can otherwise introduce
+# this unresolved LLVM 21 symbol. macOS 26.2's libc++.1.dylib does not export
+# it, so dyld would abort before Codevisor reaches main.
+LIBCPP_HASH_MEMORY_SYMBOL="__ZNSt3__113__hash_memoryEPKvm"
+if /usr/bin/nm -u "$MACOS_LIBRARY" | grep -F "$LIBCPP_HASH_MEMORY_SYMBOL" >/dev/null; then
+  echo "error: generated GhosttyKit imports libc++ __hash_memory and will not launch on macOS 26.2." >&2
+  exit 1
 fi
 
 # -Dsentry=false must actually hold in the produced binary: a framework with

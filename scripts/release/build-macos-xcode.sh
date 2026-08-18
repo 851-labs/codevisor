@@ -112,3 +112,14 @@ if [[ ! -d "$app_path" ]]; then
   echo "error: Codevisor.app was not produced at $app_path" >&2
   exit 1
 fi
+
+app_executable="$app_path/Contents/MacOS/Codevisor"
+libcpp_hash_memory_symbol="__ZNSt3__113__hash_memoryEPKvm"
+if [[ ! -f "$app_executable" ]]; then
+  echo "error: Codevisor executable was not produced at $app_executable" >&2
+  exit 1
+fi
+if /usr/bin/nm -u "$app_executable" | grep -F "$libcpp_hash_memory_symbol" >/dev/null; then
+  echo "error: Codevisor imports libc++ __hash_memory and will not launch on macOS 26.2." >&2
+  exit 1
+fi

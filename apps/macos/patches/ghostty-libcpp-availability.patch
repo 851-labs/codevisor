@@ -1,0 +1,23 @@
+diff --git a/pkg/glslang/build.zig b/pkg/glslang/build.zig
+--- a/pkg/glslang/build.zig
++++ b/pkg/glslang/build.zig
+@@ -71,6 +71,18 @@ fn buildGlslang(
+     // guarded behind _HAS_CXX17.
+     try flags.append(b.allocator, "-std=c++17");
+-
++
++    // Zig's bundled upstream libc++ disables Apple's availability model by
++    // default. With libc++ 21 headers that makes std::hash call the external
++    // __hash_memory symbol, even when targeting a macOS runtime that does not
++    // export it. Enable the vendor availability model so libc++ selects its
++    // inline compatibility implementation for older deployment targets.
++    if (target.result.os.tag.isDarwin()) {
++        try flags.appendSlice(b.allocator, &.{
++            "-U_LIBCPP_HAS_VENDOR_AVAILABILITY_ANNOTATIONS",
++            "-D_LIBCPP_HAS_VENDOR_AVAILABILITY_ANNOTATIONS=1",
++        });
++    }
++
+     if (target.result.os.tag == .freebsd or target.result.abi == .musl) {
+         try flags.append(b.allocator, "-fPIC");
+     }
