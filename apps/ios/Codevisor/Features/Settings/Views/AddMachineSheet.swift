@@ -8,11 +8,10 @@ import os
 
 /// Manual pairing: address + token, validated against the server before the
 /// machine is saved (the iOS mirror of the macOS Add Remote Machine form).
-/// Styled like the system "Join Wi-Fi Network" sheet: circular close/confirm
-/// buttons, a centered tinted glyph, a leading large title, and label-led
-/// form rows. The QR/deeplink flow covers the common path; this is the
-/// fallback for typing coordinates from `codevisor setup`. Shared with
-/// onboarding.
+/// Styled like the system "Join Wi-Fi Network" sheet: native sheet actions,
+/// a centered tinted glyph, a leading large title, and label-led form rows.
+/// The QR/deeplink flow covers the common path; this is the fallback for
+/// typing coordinates from `codevisor setup`. Shared with onboarding.
 struct AddMachineSheet: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.dismiss) private var dismiss
@@ -31,81 +30,66 @@ struct AddMachineSheet: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Form {
-                Section {
-                    labeledField("Address") {
-                        TextField("Host or host:port", text: $host)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .keyboardType(.URL)
-                    }
-                }
-                Section {
-                    labeledField("Name") {
-                        TextField("Optional", text: $name)
-                    }
-                    labeledField("Token") {
-                        SecureField("Connection token", text: $token)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                    }
-                } footer: {
-                    InlineCodeText(
-                        "Run `codevisor token` on the machine, or copy it from the `codevisor setup` output.")
-                }
-                if let errorMessage {
+        NavigationStack {
+            VStack(spacing: 0) {
+                header
+                Form {
                     Section {
-                        Text(errorMessage)
-                            .foregroundStyle(.red)
-                    }
-                }
-            }
-            .scrollContentBackground(.hidden)
-        }
-        .background(Color(.systemGroupedBackground))
-    }
-
-    /// The Join-Wi-Fi-style top area: X and ✓ in circles, a centered tinted
-    /// glyph, and the leading large title.
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.title3.weight(.semibold))
-                        .scaledFrame(width: 22, height: 22, relativeTo: .title3)
-                }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
-                .accessibilityLabel("Cancel")
-                Spacer()
-                Button {
-                    add()
-                } label: {
-                    Group {
-                        if isAdding {
-                            ProgressView()
-                        } else {
-                            Image(systemName: "checkmark")
-                                .font(.title3.weight(.semibold))
+                        labeledField("Address") {
+                            TextField("Host or host:port", text: $host)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .keyboardType(.URL)
                         }
                     }
-                    .scaledFrame(width: 22, height: 22, relativeTo: .title3)
+                    Section {
+                        labeledField("Name") {
+                            TextField("Optional", text: $name)
+                        }
+                        labeledField("Token") {
+                            SecureField("Connection token", text: $token)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                        }
+                    } footer: {
+                        InlineCodeText(
+                            "Run `codevisor token` on the machine, or copy it from the `codevisor setup` output.")
+                    }
+                    if let errorMessage {
+                        Section {
+                            Text(errorMessage)
+                                .foregroundStyle(.red)
+                        }
+                    }
                 }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
-                .disabled(host.isEmpty || isAdding)
-                .accessibilityLabel("Add")
+                .scrollContentBackground(.hidden)
             }
+            .background(Color(.systemGroupedBackground))
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(role: .confirm) {
+                        add()
+                    } label: {
+                        Image(systemName: "checkmark")
+                    }
+                    .disabled(host.isEmpty || isAdding)
+                    .accessibilityLabel("Add")
+                }
+            }
+        }
+    }
+
+    /// The Join-Wi-Fi-style top area beneath the native sheet actions.
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 0) {
             Image(systemName: "desktopcomputer")
                 .font(.system(size: 52))
                 .foregroundStyle(.tint)
                 .frame(maxWidth: .infinity)
-                .padding(.top, 36)
+                .padding(.top, 28)
             Text("Add Machine")
                 .font(.title.bold())
                 .padding(.top, 28)
