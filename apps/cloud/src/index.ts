@@ -4,6 +4,7 @@ import { Hono } from "hono"
 import { createAuth } from "./auth.js"
 import { DEV_USER, isDevAuthEnabled, type CloudEnv } from "./env.js"
 import { devLoginPage, devicePage, handoffPage, homePage, loginPage } from "./pages/pages.js"
+import { PLUGIN_INDEX_KEY, pluginEntryKey, refreshPluginIndex } from "./plugin-registry.js"
 import { HUB_DEVICE_ID_HEADER, HUB_KIND_HEADER, UserHub } from "./user-hub.js"
 import { CLOUD_VERSION } from "./version.js"
 
@@ -147,6 +148,55 @@ app.get("/api/machine/credential", async (c) => {
   return verified.valid ? c.json({ ok: true }) : c.json({ error: "invalid credential" }, 401)
 })
 
+// -- Plugin registry (public read; guarded refresh; cron-refreshed) -----------
+
+/// The index rebuilds every ~15 minutes (wrangler.jsonc `triggers.crons`), so
+/// edge/client caches may serve it for a fraction of that and revalidate lazily.
+const PLUGIN_CACHE_CONTROL = "public, max-age=300, stale-while-revalidate=900"
+
+const pluginJson = (body: string): Response =>
+  new Response(body, {
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": PLUGIN_CACHE_CONTROL
+    }
+  })
+
+app.get("/plugins/index.json", async (c) => {
+  const raw = await c.env.PLUGIN_INDEX.get(PLUGIN_INDEX_KEY)
+  // Before the first poll completes, serve an honest empty index.
+  return pluginJson(raw ?? JSON.stringify({ generatedAt: null, entries: [], rejected: [] }))
+})
+
+// Plugin ids are always `owner.name`, so the two-dot filename can never
+// collide with /plugins/index.json.
+app.get("/plugins/:file{[a-z0-9-]+\\.[a-z0-9-]+\\.json}", async (c) => {
+  const id = c.req.param("file").slice(0, -".json".length)
+  const raw = await c.env.PLUGIN_INDEX.get(pluginEntryKey(id))
+  if (raw === null) return c.json({ error: "unknown plugin" }, 404)
+  return pluginJson(raw)
+})
+
+/// Rebuilds the index outside the cron cadence (testing, ops). Guarded like
+/// the other non-user surfaces: dev-auth instances are open, deployed
+/// instances require the PLUGINS_REFRESH_TOKEN secret as a bearer token, and
+/// without that secret the route does not exist (mirrors /dev/login gating).
+app.post("/plugins/refresh", async (c) => {
+  if (!isDevAuthEnabled(c.env)) {
+    const expected = c.env.PLUGINS_REFRESH_TOKEN
+    if (expected === undefined) return c.notFound()
+    if (c.req.header("authorization") !== `Bearer ${expected}`) {
+      return c.json({ error: "unauthorized" }, 401)
+    }
+  }
+  try {
+    return c.json(await refreshPluginIndex(c.env))
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause)
+    return c.json({ error: message }, 502)
+  }
+})
+
 // -- Relay connection ---------------------------------------------------------
 
 app.get("/connect", async (c) => {
@@ -184,4 +234,15 @@ app.get("/dev-login", (c) => devLoginPage(c))
 app.get("/device", async (c) => devicePage(c))
 app.get("/auth/handoff", async (c) => handoffPage(c))
 
-export default app
+// -- Worker entry ---------------------------------------------------------------
+
+/// Modules-format handler: HTTP through the Hono app, plus the cron trigger
+/// that keeps the plugin index fresh (wrangler.jsonc `triggers.crons`).
+const worker = {
+  fetch: app.fetch,
+  scheduled: (_controller: ScheduledController, env: CloudEnv, ctx: ExecutionContext): void => {
+    ctx.waitUntil(refreshPluginIndex(env))
+  }
+} satisfies ExportedHandler<CloudEnv>
+
+export default worker

@@ -14,6 +14,17 @@
   "durable_objects": {
     "bindings": [{ "name": "USER_HUB", "class_name": "UserHub" }]
   },
+  // Plugin registry poll (src/plugin-registry.ts): GitHub topic search →
+  // manifest validation → KV index served at /plugins/index.json.
+  "triggers": { "crons": ["*/15 * * * *"] },
+  "kv_namespaces": [
+    {
+      "binding": "PLUGIN_INDEX",
+      // Self-hosters: replace with the id from `wrangler kv namespace create
+      // PLUGIN_INDEX` on your account. The id is unused in dev and tests.
+      "id": "f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1"
+    }
+  ],
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UserHub"] }],
   "d1_databases": [
     {

@@ -6,6 +6,16 @@ export interface CloudEnv extends Env {
   BETTER_AUTH_SECRET?: string
   GITHUB_CLIENT_ID?: string
   GITHUB_CLIENT_SECRET?: string
+  /// GitHub API token for the plugin-index poller (public-repo read access is
+  /// enough). Optional: without it the search runs unauthenticated and hits
+  /// GitHub's much lower anonymous rate limit.
+  GITHUB_TOKEN?: string
+  /// Bearer token authorizing POST /plugins/refresh on deployed instances.
+  /// Absent (and outside dev auth) the route does not exist.
+  PLUGINS_REFRESH_TOKEN?: string
+  /// Test seam: fetch used for all GitHub traffic by the plugin indexer, so
+  /// tests never touch the network. Never set on a deployed instance.
+  GITHUB_FETCH?: (input: string, init?: RequestInit) => Promise<Response>
   /// "1" only on local dev instances; never present in deployed config.
   DEV_AUTH?: string
 }

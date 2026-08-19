@@ -18,6 +18,12 @@ One Cloudflare Worker contains the whole plane:
   sees ciphertext and envelope addressing. Even `channelType` is encrypted.
 - **Pages** — three tiny server-rendered pages (`/`, `/login`, `/device`,
   `/auth/handoff`); everything else is native-app UI.
+- **Plugin registry** — a cron trigger (every 15 min, or `POST
+/plugins/refresh`) searches GitHub for public repos tagged
+  `codevisor-plugin`, validates each repo's `codevisor-plugin.json` (manifest
+  schema + the id must be namespaced under the repo owner), and serves the
+  KV-backed index at `GET /plugins/index.json` / `GET /plugins/:id.json`.
+  Rejected repos are published with diagnostics so authors can fix them.
 
 ## Development
 
@@ -59,9 +65,12 @@ account:
 cd apps/cloud
 wrangler d1 create codevisor-cloud        # put the id in wrangler.jsonc
 wrangler d1 migrations apply codevisor-cloud --remote
+wrangler kv namespace create PLUGIN_INDEX # put the id in wrangler.jsonc
 wrangler secret put BETTER_AUTH_SECRET    # openssl rand -base64 32
 wrangler secret put GITHUB_CLIENT_ID      # your own GitHub OAuth app
 wrangler secret put GITHUB_CLIENT_SECRET  # callback: <your-url>/api/auth/callback/github
+wrangler secret put GITHUB_TOKEN          # plugin-index poller (public repo read)
+wrangler secret put PLUGINS_REFRESH_TOKEN # optional: enables POST /plugins/refresh
 wrangler deploy
 ```
 

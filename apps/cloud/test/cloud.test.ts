@@ -645,15 +645,14 @@ describe("machine credential probe", () => {
 
 describe("direct GitHub sign-in", () => {
   it("redirects straight to GitHub with state cookies when configured", async () => {
-    const { default: app } = await import("../src/index.js")
+    const { default: worker } = await import("../src/index.js")
     const githubEnv = {
       ...env,
       GITHUB_CLIENT_ID: "Iv23test",
       GITHUB_CLIENT_SECRET: "secret"
     }
-    const response = await app.request(
-      "/login/github?redirect=%2Fauth%2Fhandoff%3Fapp%3Dcodevisor-dev",
-      { redirect: "manual" },
+    const response = await worker.fetch(
+      new Request(`${BASE}/login/github?redirect=%2Fauth%2Fhandoff%3Fapp%3Dcodevisor-dev`),
       githubEnv
     )
     expect(response.status).toBe(302)
@@ -682,11 +681,14 @@ describe("direct GitHub sign-in", () => {
 
 describe("dev auth gating", () => {
   it("hides dev login when DEV_AUTH is not enabled", async () => {
-    const { default: app } = await import("../src/index.js")
+    const { default: worker } = await import("../src/index.js")
     const { DEV_AUTH: _devAuth, ...prodEnv } = { ...env, BETTER_AUTH_SECRET: "x".repeat(40) }
-    const response = await app.request("/dev/login", { method: "POST" }, prodEnv)
+    const response = await worker.fetch(
+      new Request(`${BASE}/dev/login`, { method: "POST" }),
+      prodEnv
+    )
     expect(response.status).toBe(404)
-    const discovery = await app.request("/.well-known/codevisor", {}, prodEnv)
+    const discovery = await worker.fetch(new Request(`${BASE}/.well-known/codevisor`), prodEnv)
     const body = (await discovery.json()) as { authProviders: string[] }
     expect(body.authProviders).not.toContain("dev")
   })
