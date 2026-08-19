@@ -69,11 +69,23 @@ struct CodevisorServerClientPluginsTests {
         let token = Data(
             """
             {"token":"abc","path":"/v1/plugins/codevisor.git-diff/app/panes/diff/?paneId=p&codevisorPaneToken=abc",
+            "url":"http://127.0.0.1:49871/v1/plugins/codevisor.git-diff/app/panes/diff/?paneId=p&codevisorPaneToken=abc",
             "expiresAt":"2026-08-18T00:00:00.000Z"}
             """.utf8)
         let tokenResponse = try JSONDecoder().decode(ServerPluginPaneTokenResponse.self, from: token)
         #expect(tokenResponse.token == "abc")
         #expect(tokenResponse.path.hasPrefix("/v1/plugins/codevisor.git-diff/app/panes/diff/"))
+        #expect(tokenResponse.url == "http://127.0.0.1:49871\(tokenResponse.path)")
+
+        // The absolute URL is route-layer enrichment; older servers omit it.
+        let bareToken = Data(
+            """
+            {"token":"abc","path":"/v1/plugins/a.b/app/panes/main/?codevisorPaneToken=abc",
+            "expiresAt":"2026-08-18T00:00:00.000Z"}
+            """.utf8)
+        let bareTokenResponse = try JSONDecoder().decode(
+            ServerPluginPaneTokenResponse.self, from: bareToken)
+        #expect(bareTokenResponse.url == nil)
     }
 
     @Test("Install request bodies carry the raw source and path strings")

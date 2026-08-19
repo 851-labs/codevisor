@@ -143,12 +143,16 @@ export const routePlugins = async (
   const tokenRoute = matchRouteParams(url.pathname, "/v1/plugins/:pluginId/panes/:paneId/token")
   if (tokenRoute !== undefined && request.method === "POST") {
     const payload = await readSchema(request, PluginPaneTokenRequestSchema)
-    writeJson(
-      response,
-      201,
-      /* v8 ignore next -- both pattern captures are guaranteed by the matched route. */
-      await manager.issuePaneToken(tokenRoute.pluginId ?? "", tokenRoute.paneId ?? "", payload)
+    /* v8 ignore next 5 -- both pattern captures are guaranteed by the matched route. */
+    const issued = await manager.issuePaneToken(
+      tokenRoute.pluginId ?? "",
+      tokenRoute.paneId ?? "",
+      payload
     )
+    // The manager only knows server-relative paths; the route layer knows the
+    // origin the caller actually reached (Host header), so it adds the
+    // absolute URL browser tooling can open directly.
+    writeJson(response, 201, { ...issued, url: `${url.origin}${issued.path}` })
     return true
   }
 

@@ -226,7 +226,11 @@ describe("plugin routes", () => {
       method: "POST"
     })
     expect(token.status).toBe(201)
-    expect((token.body as { token: string }).token).toBe("tok")
+    const issued = token.body as { token: string; path: string; url: string }
+    expect(issued.token).toBe("tok")
+    // The route enriches the manager's server-relative path with an absolute
+    // URL against the origin the caller reached (Host header).
+    expect(issued.url).toBe(`${server.url}${issued.path}`)
     expect(calls).toContainEqual([
       "issuePaneToken",
       "owner.example",

@@ -111,7 +111,8 @@ http
   clobber each other's "per-pane" state. Your plugin IS a server:
   `fetch("api/state")` costs the same to write and is correct everywhere.
 - The in-page bridge: `window.codevisor.getContext()`, `.openUrl(url)`,
-  `.setTitle(title)`; theme changes fire a `codevisor:themechange` event.
+  `.setTitle(title)`; theme changes fire a `codevisor:themechange` event
+  (feature-detect it — the bridge only exists inside the app's webviews).
 - WebSockets work (relative URLs). Prefer fetch for bulk data, WS for
   "something changed" signals. An open WS keeps the process alive.
 
@@ -123,6 +124,19 @@ http
 - The server must accept connections on `$PORT` within 15s of spawn.
 - Pane shows an error card? Check `plugins.list` state, then the output
   terminal. 502 = process unreachable (crashed?), 504 = request hung >30s.
+
+## Seeing your pane
+
+`plugins.open_pane_url` returns a URL you can open with the browser tools:
+it renders the same pane the user sees — an independent view backed by the
+same plugin server, so state and interactions are shared both ways. Good
+for screenshotting a pane after a change or driving its UI end to end.
+
+A pane opened this way runs without the native clients' injections — no
+`window.codevisor` bridge, no `--codevisor-*` CSS variables (those come
+from the app's webview, not the proxy). This is why every `var()` carries
+a fallback and why bridge use is feature-detected (`if (window.codevisor)`):
+a pane written that way renders correctly anywhere it can be opened.
 
 ## Publishing (when the user asks)
 

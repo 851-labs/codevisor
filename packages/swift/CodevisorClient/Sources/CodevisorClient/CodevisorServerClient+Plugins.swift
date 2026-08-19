@@ -104,11 +104,16 @@ public struct ServerPluginRemoteDiscovery: Codable, Equatable, Sendable {
 public struct ServerPluginPaneTokenResponse: Codable, Equatable, Sendable {
     public var token: String
     public var path: String
+    /// Absolute pane URL against the origin the caller reached the server on —
+    /// for browser tooling. Native clients keep composing `path` against their
+    /// machine base URL. Absent from older servers.
+    public var url: String?
     public var expiresAt: String
 
-    public init(token: String, path: String, expiresAt: String) {
+    public init(token: String, path: String, url: String? = nil, expiresAt: String) {
         self.token = token
         self.path = path
+        self.url = url
         self.expiresAt = expiresAt
     }
 }

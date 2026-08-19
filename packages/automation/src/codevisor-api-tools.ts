@@ -21,6 +21,7 @@ import {
   MakeSkillGlobalRequest,
   MarkSessionReadRequest,
   OpenSessionRequest,
+  PluginPaneTokenRequest,
   PromptRequest,
   RemoveNativeMcpRequest,
   SetConfigRequest,
@@ -728,6 +729,18 @@ export const CODEVISOR_API_TOOLS: ReadonlyArray<CodevisorApiToolSpec> = [
     "Restart a plugin's server process, clearing a failed state.",
     "POST",
     "/v1/plugins/:pluginId/restart"
+  ),
+  apiTool(
+    "plugins.open_pane_url",
+    "Issue a pane URL for a plugin pane, then open it with the browser tools to view and " +
+      "interact with it. The browser view is an independent view of the same pane: it shares " +
+      "live server state with the user's open panes. Use the workspace pane's id as paneId " +
+      "when one exists, otherwise any unique id. Pass the workspace root as cwd.",
+    "POST",
+    "/v1/plugins/:pluginId/panes/:paneId/token",
+    {
+      body: PluginPaneTokenRequest
+    }
   ),
 
   apiTool("harnesses.list", "List agent harnesses and readiness state.", "GET", "/v1/harnesses", {

@@ -114,6 +114,10 @@ export const PluginPaneTokenResponse = Schema.Struct({
   /// Server-relative pane URL (path + query) ready to load in a webview
   /// against the machine's base URL.
   path: Schema.String,
+  /// Absolute pane URL against the origin the caller reached the server on —
+  /// for opening the pane in browser tooling. Native clients keep composing
+  /// `path` against their machine base URL.
+  url: Schema.optional(Schema.String),
   expiresAt: Schema.String
 })
 export type PluginPaneTokenResponse = typeof PluginPaneTokenResponse.Type
