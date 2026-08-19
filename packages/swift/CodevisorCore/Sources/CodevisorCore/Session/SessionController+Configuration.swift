@@ -2,6 +2,19 @@ import Foundation
 import ACPKit
 
 extension SessionController {
+    /// Adopts server changes that affect this controller's runtime while
+    /// ignoring presentation-only metadata (title, attention, unread state,
+    /// and timestamps). Session list events replace the complete
+    /// `ChatSession`, so comparing the whole value would re-publish this
+    /// observed property for every remote attention update.
+    @discardableResult
+    public func reconcileExistingSession(_ session: ChatSession) -> Bool {
+        guard serverSession.map(ExistingSessionRuntimeState.init) != ExistingSessionRuntimeState(session)
+        else { return false }
+        configureExistingSession(session)
+        return true
+    }
+
     /// Binds a persisted chat to this controller and paints its last accepted
     /// selections over cached option definitions. The values remain
     /// provisional until the live session reconnect validates them.
@@ -271,5 +284,32 @@ extension SessionController {
 
     public func dismissConfigurationAdjustment() {
         configurationAdjustmentMessage = nil
+    }
+}
+
+/// The subset of a server session consumed by `SessionController`. Sidebar
+/// and attention metadata is rendered from `ProjectListModel`, not from the
+/// controller's retained session snapshot.
+private struct ExistingSessionRuntimeState: Equatable {
+    let id: UUID
+    let projectId: UUID
+    let serverId: String
+    let harnessId: String
+    let harnessAccountId: String?
+    let agentSessionId: String?
+    let worktreeName: String?
+    let cwd: String?
+    let configSelections: [String: String]?
+
+    init(_ session: ChatSession) {
+        id = session.id
+        projectId = session.projectId
+        serverId = session.serverId
+        harnessId = session.harnessId
+        harnessAccountId = session.harnessAccountId
+        agentSessionId = session.agentSessionId
+        worktreeName = session.worktreeName
+        cwd = session.cwd
+        configSelections = session.configSelections
     }
 }

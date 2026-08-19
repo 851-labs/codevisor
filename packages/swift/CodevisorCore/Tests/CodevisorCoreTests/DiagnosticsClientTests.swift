@@ -36,6 +36,8 @@ struct DiagnosticsClientTests {
         event.tags = [
             "component": "sync",
             "diagnostic_issue": "bulk_sync_failed",
+            "machine_kind": "remote",
+            "sync_event_kind": "session.attention.updated",
             "private_project": "secret",
         ]
         event.context = [
@@ -77,6 +79,8 @@ struct DiagnosticsClientTests {
             sanitized.tags == [
                 "component": "sync",
                 "diagnostic_issue": "bulk_sync_failed",
+                "machine_kind": "remote",
+                "sync_event_kind": "session.attention.updated",
             ])
         #expect(
             sanitized.context?["app"]?.keys.sorted() == [

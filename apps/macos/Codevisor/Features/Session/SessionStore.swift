@@ -106,15 +106,9 @@ final class SessionStore {
         // agent id later forces lookup back through this cache.
         if let existing = controllers[key] {
             noteAccess(key)
-            // Only write on change: this runs during view bodies (chat panes
-            // resolve their controllers there), and unconditional writes to
-            // observed properties re-invalidate the views that read them.
-            if existing.project != project {
-                existing.project = project
-            }
-            if existing.serverSession != session {
-                existing.configureExistingSession(session)
-            }
+            // Cached lookup runs during view construction and must remain a
+            // pure identity read. Observed controller state is reconciled by
+            // explicit post-render lifecycle callbacks below.
             return existing
         }
 
@@ -173,6 +167,21 @@ final class SessionStore {
         controller.onActionRequired = { [weak self] in self?.noteActionRequired(for: key) }
         controllers[key] = controller
         return controller
+    }
+
+    /// Reconciles a controller after view construction (or from an explicit
+    /// event callback). The identity guard prevents a stale view from writing
+    /// into a controller that has since been replaced or evicted.
+    func reconcile(
+        _ controller: SessionController,
+        for session: ChatSession,
+        project: Project
+    ) {
+        guard activeController(for: session) === controller else { return }
+        if controller.project != project {
+            controller.project = project
+        }
+        controller.reconcileExistingSession(session)
     }
 
     /// Returns the retained draft controller for the new-chat page, restoring

@@ -939,6 +939,11 @@ struct SessionContainerView: View {
             })
         else { return }
         if let live = store.activeController(for: chat) {
+            if let chatProject = environment.projectList.projects.first(where: {
+                $0.serverId == chat.serverId && $0.id == chat.projectId
+            }) {
+                store.reconcile(live, for: chat, project: chatProject)
+            }
             live.rememberCurrentComposerConfiguration()
             return
         }
@@ -947,8 +952,9 @@ struct SessionContainerView: View {
                 $0.serverId == chat.serverId && $0.id == chat.projectId
             })
         else { return }
-        store.controller(for: chat, project: chatProject)
-            .rememberCurrentComposerConfiguration()
+        let controller = store.controller(for: chat, project: chatProject)
+        store.reconcile(controller, for: chat, project: chatProject)
+        controller.rememberCurrentComposerConfiguration()
     }
 
     /// A chat pane's display title: its referenced session's LIVE title

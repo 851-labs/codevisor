@@ -47,11 +47,18 @@ struct ChatPaneContentView: View {
                         hostWorkspaceId: store.workspace(for: session, project: project).id
                     )
                 } else {
+                    let controller = store.controller(for: chatSession, project: chatProject)
                     ChatScreen(
-                        controller: store.controller(for: chatSession, project: chatProject),
+                        controller: controller,
                         focus: focus
                     )
                     .id(chatSession.id)
+                    .onChange(of: chatSession, initial: true) { _, updatedSession in
+                        store.reconcile(controller, for: updatedSession, project: chatProject)
+                    }
+                    .onChange(of: chatProject) { _, updatedProject in
+                        store.reconcile(controller, for: chatSession, project: updatedProject)
+                    }
                 }
             } else {
                 // The referenced session was deleted (e.g. from another

@@ -39,6 +39,15 @@ public final class DiagnosticsClient {
     public static let shared = DiagnosticsClient()
 
     private static let dsnKey = "CodevisorSentryDSN"
+    private static let allowedSyncEventKinds: Set<String> = [
+        "project.created", "project.updated", "project.deleted",
+        "worktree.created",
+        "session.created", "session.updated", "session.deleted",
+        "session.attention.updated", "session.archived", "session.unarchived",
+        "workspace.updated", "workspace.deleted",
+        "workspace.pane.updated", "workspace.pane.deleted",
+        "harness.lifecycle.updated",
+    ]
     private let consentGate = DiagnosticsConsentGate()
     private var dsn: String?
     private var sdkIsSetUp = false
@@ -95,6 +104,17 @@ public final class DiagnosticsClient {
             scope.setTag(value: issue.rawValue, key: "diagnostic_issue")
             scope.setTag(value: issue.component, key: "component")
             scope.setFingerprint([issue.rawValue, "{{ default }}"])
+        }
+    }
+
+    /// Keeps only coarse, allowlisted sync context on the crash scope. Event
+    /// payloads, machine ids, hostnames, and breadcrumbs remain excluded.
+    func noteSyncEvent(machineIsLocal: Bool, kind: String) {
+        guard consentGate.isEnabled, sdkIsSetUp, Self.allowedSyncEventKinds.contains(kind)
+        else { return }
+        SentrySDK.configureScope { scope in
+            scope.setTag(value: machineIsLocal ? "local" : "remote", key: "machine_kind")
+            scope.setTag(value: kind, key: "sync_event_kind")
         }
     }
 
@@ -205,7 +225,9 @@ private final class DiagnosticsConsentGate: @unchecked Sendable {
 
 enum DiagnosticsPrivacyFilter {
     private static let allowedMessages = Set(DiagnosticIssueName.allCases.map(\.rawValue))
-    private static let allowedTags = Set(["component", "diagnostic_issue"])
+    private static let allowedTags = Set([
+        "component", "diagnostic_issue", "machine_kind", "sync_event_kind",
+    ])
 
     static func sanitize(_ event: Event) -> Event {
         event.user = nil

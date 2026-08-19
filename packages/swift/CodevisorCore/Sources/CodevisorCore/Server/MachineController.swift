@@ -755,6 +755,10 @@ public final class MachineController {
         client: any CodevisorServerClienting
     ) async {
         guard serverId == selectedMachine.id else { return }
+        DiagnosticsClient.shared.noteSyncEvent(
+            machineIsLocal: selectedMachine.isLocal,
+            kind: event.kind
+        )
         switch event.kind {
         case "project.deleted":
             if let id = UUID(uuidString: event.subjectId) {

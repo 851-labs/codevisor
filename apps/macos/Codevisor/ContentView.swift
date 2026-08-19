@@ -553,6 +553,12 @@ struct RootView: View {
                     .id(
                         "\(session.serverId):\((environment.workspaces.workspaceId(forSession: session.id) ?? session.id).uuidString)"
                     )
+                    .onChange(of: session, initial: true) { _, updatedSession in
+                        store.reconcile(controller, for: updatedSession, project: project)
+                    }
+                    .onChange(of: project) { _, updatedProject in
+                        store.reconcile(controller, for: session, project: updatedProject)
+                    }
                     .onAppear { preferredProjectId = project.id }
                 } else {
                     // The routed session can't be resolved (machine switch,

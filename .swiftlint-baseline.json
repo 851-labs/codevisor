@@ -237,12 +237,12 @@
     "text": "}",
     "violation": {
       "severity": "warning",
-      "reason": "File should contain 500 lines or less excluding comments and whitespaces: currently contains 568",
+      "reason": "File should contain 500 lines or less excluding comments and whitespaces: currently contains 574",
       "ruleIdentifier": "file_length",
       "location": {
         "file": "file:///WORKTREE/apps/macos/Codevisor/ContentView.swift",
         "character": 1,
-        "line": 707
+        "line": 713
       },
       "ruleDescription": "Files should not span too many lines.",
       "ruleName": "File Length"
@@ -657,7 +657,7 @@
   {
     "text": "struct SessionContainerView: View {",
     "violation": {
-      "reason": "Struct body should span 800 lines or less excluding comments and whitespace: currently spans 814 lines",
+      "reason": "Struct body should span 800 lines or less excluding comments and whitespace: currently spans 820 lines",
       "ruleDescription": "Type bodies should not span too many lines",
       "ruleName": "Type Body Length",
       "location": {
@@ -673,11 +673,11 @@
     "text": "}",
     "violation": {
       "severity": "warning",
-      "reason": "File should contain 500 lines or less excluding comments and whitespaces: currently contains 819",
+      "reason": "File should contain 500 lines or less excluding comments and whitespaces: currently contains 825",
       "ruleDescription": "Files should not span too many lines.",
       "location": {
         "file": "file:///WORKTREE/apps/macos/Codevisor/Features/Session/SessionContainerView.swift",
-        "line": 1023,
+        "line": 1029,
         "character": 1
       },
       "ruleName": "File Length",
@@ -690,7 +690,7 @@
       "ruleName": "Type Body Length",
       "severity": "warning",
       "ruleDescription": "Type bodies should not span too many lines",
-      "reason": "Class body should span 400 lines or less excluding comments and whitespace: currently spans 595 lines",
+      "reason": "Class body should span 400 lines or less excluding comments and whitespace: currently spans 600 lines",
       "ruleIdentifier": "type_body_length",
       "location": {
         "file": "file:///WORKTREE/apps/macos/Codevisor/Features/Session/SessionStore.swift",
@@ -706,10 +706,10 @@
       "location": {
         "character": 1,
         "file": "file:///WORKTREE/apps/macos/Codevisor/Features/Session/SessionStore.swift",
-        "line": 864
+        "line": 873
       },
       "ruleIdentifier": "file_length",
-      "reason": "File should contain 500 lines or less excluding comments and whitespaces: currently contains 603",
+      "reason": "File should contain 500 lines or less excluding comments and whitespaces: currently contains 608",
       "ruleName": "File Length",
       "severity": "warning"
     }
@@ -1313,7 +1313,7 @@
   },
   {
     "violation": {
-      "reason": "Class body should span 400 lines or less excluding comments and whitespace: currently spans 769 lines",
+      "reason": "Class body should span 400 lines or less excluding comments and whitespace: currently spans 773 lines",
       "ruleIdentifier": "type_body_length",
       "ruleDescription": "Type bodies should not span too many lines",
       "ruleName": "Type Body Length",
@@ -1334,10 +1334,10 @@
       "severity": "warning",
       "location": {
         "file": "file:///WORKTREE/packages/swift/CodevisorCore/Sources/CodevisorCore/Server/MachineController.swift",
-        "line": 1108,
+        "line": 1112,
         "character": 1
       },
-      "reason": "File should contain 500 lines or less excluding comments and whitespaces: currently contains 857"
+      "reason": "File should contain 500 lines or less excluding comments and whitespaces: currently contains 861"
     },
     "text": "}"
   },
