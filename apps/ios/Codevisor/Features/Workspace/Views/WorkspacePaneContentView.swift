@@ -37,8 +37,16 @@ struct WorkspacePaneContentView: View {
     let newTabProjectName: String
     let onConvertToChat: () -> Void
     let onConvertToTerminal: () -> Void
+    let onConvertToPlugin: (PluginNewTabOption) -> Void
     let serverConfig: CodevisorServerConfig?
     let workspaceCwd: String
+    /// The machine's API client, for the New Tab page's plugin pane rows.
+    let machineClient: any CodevisorServerClienting
+    /// The pane's cached plugin model (webview + load state), resolved by
+    /// WorkspaceScreen so the cache sees every visibility change.
+    let pluginPaneModel: (PaneDescriptorState) -> PluginPaneModel
+    /// `codevisor.setTitle` from a plugin pane: rename that pane's tab.
+    let onRenamePane: (PaneDescriptorState, String) -> Void
 
     var body: some View {
         switch pane.kind {
@@ -86,7 +94,14 @@ struct WorkspacePaneContentView: View {
             NewTabPaneView(
                 projectName: newTabProjectName,
                 onNewChat: onConvertToChat,
-                onNewTerminal: onConvertToTerminal
+                onNewTerminal: onConvertToTerminal,
+                client: machineClient,
+                onOpenPlugin: onConvertToPlugin
+            )
+        case .plugin:
+            PluginPaneView(
+                model: pluginPaneModel(pane),
+                onRename: { onRenamePane(pane, $0) }
             )
         case .terminal:
             if let serverConfig {

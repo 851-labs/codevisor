@@ -470,6 +470,7 @@ struct PaneTabDragGhost: View {
         case .chat: "text.bubble"
         case .terminal: isAgentOwned ? "server.rack" : "terminal"
         case .newTab: "square.dashed"
+        case .plugin: "puzzlepiece.extension"
         }
     }
 

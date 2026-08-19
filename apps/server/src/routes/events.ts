@@ -66,6 +66,16 @@ export const handleUpgrade = async (
       })
       return
     }
+    // Plugin pane WebSockets authenticate inside the proxy (pane token,
+    // session cookie, or loopback for relayed traffic) — never with the
+    // machine bearer token, which webviews cannot attach.
+    if (
+      url.pathname.startsWith("/v1/plugins/") &&
+      services.plugins !== undefined &&
+      (await services.plugins.handleUpgrade(request, socket, head))
+    ) {
+      return
+    }
     await authorize(services.db, config, request)
     if (request.method === "GET" && url.pathname === "/v1/events/socket") {
       webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {

@@ -35,6 +35,15 @@ export const EventKind = Schema.Literals([
   /// session id). Payload: { state: "waiting" | "released", harnessId,
   /// harnessName }. Replaceable: the latest event wins.
   "session.updateGate.updated",
+  /// Plugin runtime state transition (subjectId = plugin id). Payload:
+  /// PluginSummary. Replaceable: the latest event wins.
+  "plugin.state.updated",
+  /// The plugin's code/install changed (restart, re-import, link) — clients
+  /// reload the plugin's open panes (subjectId = plugin id). Payload:
+  /// PluginSummary. Deliberately distinct from `plugin.state.updated`:
+  /// runtime state transitions include idle shutdown, and reloading on those
+  /// would wake the plugin in an endless idle-stop → reload loop.
+  "plugin.updated",
   "terminal.output",
   "terminal.exit",
   "update.changed"

@@ -28,6 +28,7 @@
     "@codevisor/db": "workspace:*",
     "@codevisor/harness-manager": "workspace:*",
     "@codevisor/mcp": "workspace:*",
+    "@codevisor/plugins": "workspace:*",
     "@codevisor/skills": "workspace:*",
     "@codevisor/terminal": "workspace:*",
     "@codevisor/updater": "workspace:*",

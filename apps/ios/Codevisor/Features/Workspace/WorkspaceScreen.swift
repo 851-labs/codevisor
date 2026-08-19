@@ -243,7 +243,7 @@ struct WorkspaceScreen: View {
             return title.isEmpty ? "New Chat" : title
         case .newTab:
             return "New Tab"
-        case .terminal:
+        case .terminal, .plugin:
             return pane.name
         }
     }
@@ -669,9 +669,49 @@ struct WorkspaceScreen: View {
             newTabProjectName: resolvedProject?.name ?? "",
             onConvertToChat: { convertToChat(pane) },
             onConvertToTerminal: { convertToTerminal(pane) },
+            onConvertToPlugin: { convertToPlugin(pane, option: $0) },
             serverConfig: serverConfig,
-            workspaceCwd: workspaceCwd
+            workspaceCwd: workspaceCwd,
+            machineClient: environment.machines.client(for: resolvedServerId),
+            pluginPaneModel: { pluginPaneModel(for: $0) },
+            onRenamePane: { renamePane($0, to: $1) }
         )
+    }
+
+    /// The pane's cached plugin model — the webview and its load state
+    /// survive tab switches; the cache tears down webviews for panes that
+    /// leave the active canvas.
+    private func pluginPaneModel(for pane: PaneDescriptorState) -> PluginPaneModel {
+        let serverId = resolvedServerId
+        let machines = environment.machines
+        return PluginPaneCache.shared.model(for: pane.id) {
+            PluginPaneModel(
+                paneId: pane.id,
+                serverId: serverId,
+                pluginId: pane.pluginId ?? "",
+                paneType: pane.pluginPaneType ?? "",
+                workspaceId: resolvedWorkspace?.id,
+                cwd: workspaceCwd,
+                client: machines.client(for: serverId),
+                resolveBaseURL: { [weak machines] in
+                    await machines?.effectiveHTTPBaseURL(forMachineId: serverId)
+                }
+            )
+        }
+    }
+
+    /// `codevisor.setTitle` from a plugin pane: rename the tab like a manual
+    /// rename would (persisted + published), matching macOS.
+    private func renamePane(_ pane: PaneDescriptorState, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        var state = panes
+        guard !trimmed.isEmpty,
+            let index = state.panes.firstIndex(where: { $0.id == pane.id }),
+            state.panes[index].name != trimmed
+        else { return }
+        state.panes[index].name = trimmed
+        paneBinding.wrappedValue = state
+        publishPane(state.panes[index])
     }
 
     // MARK: - Tab actions
@@ -782,6 +822,12 @@ struct WorkspaceScreen: View {
                 from: paneStorageId
             )
         }
+        if pane.kind == .plugin {
+            // Closing the tab drops the webview (and its web-content
+            // process) now; the plugin server's idle timer reaps the
+            // machine-side process once no panes are connected.
+            PluginPaneCache.shared.remove(paneId: pane.id)
+        }
         if pane.kind == .chat, let sessionId = pane.chatSessionId,
             let closed = environment.projectList.sessions.first(where: {
                 $0.serverId == resolvedServerId && $0.id == sessionId
@@ -874,6 +920,15 @@ struct WorkspaceScreen: View {
             in: paneStorageId,
             bottomChrome: pane.kind == .chat ? PaneSnapshotCache.shared.activeBottomChrome : 0
         )
+        if pane.kind == .plugin {
+            // The window capture can't see web content reliably
+            // (drawHierarchy renders WKWebView blank on some OS versions);
+            // WKWebView's own snapshotter can. It answers async — the stored
+            // image upgrades the grid card as soon as it lands.
+            PluginPaneCache.shared.capturePreview(paneId: pane.id) { image in
+                PaneSnapshotCache.shared.store(image, for: pane.id, in: paneStorageId)
+            }
+        }
         guard tabZoomSurface == nil,
             !accessibilityReduceMotion,
             let paneSnapshot,
@@ -1077,6 +1132,26 @@ struct WorkspaceScreen: View {
         }
     }
 
+    /// The New Tab placeholder becomes a plugin pane in place, mirroring
+    /// macOS's New Tab plugin cards.
+    private func convertToPlugin(_ pane: PaneDescriptorState, option: PluginNewTabOption) {
+        guard let workspaceSessionId = activeSessionId else { return }
+        var state = panes
+        let converted = state.convertNewTabPane(
+            id: pane.id,
+            to: .plugin,
+            sessionId: workspaceSessionId,
+            name: option.title,
+            pluginId: option.pluginId,
+            pluginPaneType: option.paneType,
+            pluginIcon: option.icon
+        )
+        paneBinding.wrappedValue = state
+        if let converted {
+            publishPane(converted)
+        }
+    }
+
     /// iOS's flat tab order is the device-local layout projection of the
     /// shared pane registry. The Workspace repository is its persistence
     /// root; `paneState` is only the mounted view's writable cache.
@@ -1217,7 +1292,7 @@ struct WorkspaceScreen: View {
             return lhs.chatSessionId != nil && lhs.chatSessionId == rhs.chatSessionId
         case .terminal:
             return lhs.terminalKey.caseInsensitiveCompare(rhs.terminalKey) == .orderedSame
-        case .newTab:
+        case .newTab, .plugin:
             return false
         }
     }

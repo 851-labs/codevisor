@@ -501,11 +501,17 @@ final class SessionStore {
             groupId: resolvedLeafId,
             repository: environment.workspaces
         )
+        let client = environment.machines.client(for: session.serverId)
+        let workspaceIdForPanes = workspace.id
         let model = PaneGroupModel(
             sessionId: session.id,
             placement: placement,
             repository: repository,
-            makeContext: { [weak projectList = environment.projectList] descriptor in
+            makeContext: {
+                [
+                    weak projectList = environment.projectList,
+                    weak machines = environment.machines
+                ] descriptor in
                 // Panes are built lazily, so this cached closure can outlive
                 // the snapshot passed in above: a fresh worktree session may
                 // not have synced its cwd yet. Resolve the live session at
@@ -522,7 +528,12 @@ final class SessionStore {
                     attachOnly: descriptor.attachOnly,
                     machine: machine,
                     session: liveSession,
-                    project: project
+                    project: project,
+                    workspaceId: workspaceIdForPanes,
+                    client: client,
+                    resolveHTTPBaseURL: {
+                        await machines?.effectiveHTTPBaseURL(forMachineId: session.serverId)
+                    }
                 )
             }
         )

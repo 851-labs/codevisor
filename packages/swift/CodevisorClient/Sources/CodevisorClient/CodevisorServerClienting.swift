@@ -151,6 +151,35 @@ public protocol CodevisorServerClienting: Sendable {
     /// Link the named skills (or all of them) into every harness that needs
     /// a link, bringing harnesses in sync with the shared store.
     func syncSkills(directoryNames: [String]?) async throws -> ServerSkillsScan
+    /// Plugins installed on this machine (`GET /v1/plugins`). Empty on
+    /// servers without the plugins feature.
+    func listPlugins() async throws -> [ServerPluginSummary]
+    /// Issues a short-lived pane token and returns the server-relative pane
+    /// URL to load in a webview
+    /// (`POST /v1/plugins/:pluginId/panes/:paneId/token`).
+    func issuePluginPaneToken(
+        pluginId: String,
+        paneId: String,
+        paneType: String,
+        workspaceId: String?,
+        cwd: String?,
+        themeMode: String?
+    ) async throws -> ServerPluginPaneTokenResponse
+    /// Stage a plugin source and describe what installing it would run —
+    /// the consent step's data (`POST /v1/plugins/discover-remote`).
+    func discoverRemotePlugin(source: String) async throws -> ServerPluginRemoteDiscovery
+    /// Install (or update a managed install of) the plugin the source
+    /// provides (`POST /v1/plugins/import-remote`).
+    func importRemotePlugin(source: String) async throws -> ServerPluginSummary
+    /// Dev mode: symlink a local plugin directory on the server's machine
+    /// into the plugins root (`POST /v1/plugins/link`).
+    func linkPlugin(path: String) async throws -> ServerPluginSummary
+    /// Uninstall a managed plugin and return the updated list
+    /// (`DELETE /v1/plugins/:pluginId`).
+    func removePlugin(pluginId: String) async throws -> [ServerPluginSummary]
+    /// Stop the plugin's process and clear its crash state; the next pane
+    /// request relaunches it (`POST /v1/plugins/:pluginId/restart`).
+    func restartPlugin(pluginId: String) async throws -> ServerPluginSummary
     func listProjects() async throws -> [ServerProject]
     func upsertProject(_ project: Project) async throws -> ServerProject
     func updateProject(_ project: Project) async throws -> ServerProject

@@ -19,6 +19,10 @@ public enum PaneKind: String, Codable, Sendable {
     /// open), and its page offers what to create. It leaves by conversion —
     /// picking New Chat/New Terminal replaces it in place.
     case newTab
+    /// A plugin-contributed webview pane. The descriptor's plugin fields
+    /// identify the plugin server and pane type; the app layer renders it
+    /// through the server's plugin proxy.
+    case plugin
 }
 
 /// Which of a session's pane groups a state belongs to: the center group
@@ -53,6 +57,14 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
     /// pruning must be owner-scoped — chat B's empty snapshot must never
     /// tear down chat A's dev server.
     public var ownerChatSessionId: UUID?
+    /// Plugin panes only: the owner-namespaced plugin id ("owner.name").
+    public var pluginId: String?
+    /// Plugin panes only: which of the plugin's pane types this renders.
+    public var pluginPaneType: String?
+    /// Plugin panes only: the opaque metadata JSON synced with the server's
+    /// pane record (`{pluginId, paneType, icon?}` — see
+    /// `PaneDescriptorState.pluginMetadataJSON`).
+    public var pluginMetadata: String?
     /// Every pane moves between groups alike — tabs are tabs (the only
     /// rule with real stakes is the CLOSE rule: a lone placeholder only
     /// closes when its group can dissolve — see `canClosePane` + the
@@ -66,7 +78,10 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
         terminalKey: String,
         attachOnly: Bool = false,
         chatSessionId: UUID? = nil,
-        ownerChatSessionId: UUID? = nil
+        ownerChatSessionId: UUID? = nil,
+        pluginId: String? = nil,
+        pluginPaneType: String? = nil,
+        pluginMetadata: String? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -75,6 +90,9 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
         self.attachOnly = attachOnly
         self.chatSessionId = chatSessionId
         self.ownerChatSessionId = ownerChatSessionId
+        self.pluginId = pluginId
+        self.pluginPaneType = pluginPaneType
+        self.pluginMetadata = pluginMetadata
     }
 
     public init(from decoder: Decoder) throws {
@@ -91,7 +109,12 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
             chatSessionId: try container.decodeIfPresent(UUID.self, forKey: .chatSessionId),
             // Agent tabs persisted before owner scoping have no owner; any
             // syncer may manage them.
-            ownerChatSessionId: try container.decodeIfPresent(UUID.self, forKey: .ownerChatSessionId)
+            ownerChatSessionId: try container.decodeIfPresent(UUID.self, forKey: .ownerChatSessionId),
+            // Panes persisted before plugin panes existed carry no plugin
+            // payload.
+            pluginId: try container.decodeIfPresent(String.self, forKey: .pluginId),
+            pluginPaneType: try container.decodeIfPresent(String.self, forKey: .pluginPaneType),
+            pluginMetadata: try container.decodeIfPresent(String.self, forKey: .pluginMetadata)
         )
     }
 }
@@ -128,7 +151,11 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let panes = try container.decode([PaneDescriptorState].self, forKey: .panes)
+        // Element-lenient: a pane persisted by a NEWER build (an unknown
+        // future kind) drops alone instead of failing the whole group —
+        // the server registry re-materializes anything a downgrade loses.
+        let panes = try container.decode([LenientPaneDescriptorState].self, forKey: .panes)
+            .compactMap(\.pane)
         let selected = try container.decodeIfPresent(UUID.self, forKey: .selectedPaneId)
         self.init(
             panes: panes,
@@ -317,7 +344,10 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
         to kind: PaneKind,
         sessionId: UUID,
         chatSessionId: UUID? = nil,
-        name: String? = nil
+        name: String? = nil,
+        pluginId: String? = nil,
+        pluginPaneType: String? = nil,
+        pluginIcon: String? = nil
     ) -> PaneDescriptorState? {
         guard let index = panes.firstIndex(where: { $0.id == id }),
             panes[index].kind == .newTab
@@ -340,6 +370,14 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
                 terminalKey: paneId.uuidString,
                 chatSessionId: chatSessionId
             )
+        case .plugin:
+            guard
+                let converted = Self.pluginPane(
+                    id: paneId, name: name, pluginId: pluginId,
+                    pluginPaneType: pluginPaneType, pluginIcon: pluginIcon
+                )
+            else { return nil }
+            pane = converted
         case .newTab:
             return nil
         }

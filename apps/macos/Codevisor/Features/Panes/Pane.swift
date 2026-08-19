@@ -28,6 +28,19 @@ struct PaneContext {
     /// (the workspace's one working directory), else the project folder.
     let session: ChatSession
     let project: Project
+    /// The owning workspace's identity, for panes whose server resources are
+    /// workspace-scoped (plugin pane tokens). Nil in previews.
+    var workspaceId: UUID? = nil
+    /// The machine's API client (relay-aware for cloud machines). Nil
+    /// (previews, legacy call sites) falls back to a direct client built
+    /// from `machine`.
+    var client: (any CodevisorServerClienting)? = nil
+    /// Resolves the machine's effective HTTP origin for panes that dial a
+    /// real socket (plugin webviews): direct machines answer their baseURL,
+    /// cloud machines start the relay loopback bridge on demand and answer
+    /// its 127.0.0.1 address (MachineController.effectiveHTTPBaseURL). Nil
+    /// (previews) falls back to `machine.baseURL`.
+    var resolveHTTPBaseURL: (@MainActor () async -> URL?)? = nil
 }
 
 /// Group-level commands a focused pane can emit from keyboard shortcuts

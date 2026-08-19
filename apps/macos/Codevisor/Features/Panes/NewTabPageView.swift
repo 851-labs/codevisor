@@ -8,6 +8,18 @@ import SwiftUI
 import CodevisorCore
 import CodevisorUI
 
+/// One plugin pane the New Tab page can open: a card per (plugin, pane type)
+/// offered by the machine's installed plugins.
+private struct PluginPaneOption: Identifiable, Equatable {
+    var pluginId: String
+    var pluginName: String
+    var paneType: String
+    var title: String
+    var icon: String?
+
+    var id: String { "\(pluginId)|\(paneType)" }
+}
+
 struct NewTabPageView: View {
     @Environment(\.theme) private var theme
     /// The placeholder pane this page belongs to.
@@ -18,6 +30,11 @@ struct NewTabPageView: View {
     /// an established chat pane (wired by the container, which owns session
     /// creation). Nil (previews) falls back to a draft conversion.
     var onNewChat: (() -> Void)? = nil
+    /// The machine's API client, for the machine-scoped plugin pane cards.
+    /// Nil (previews, machineless groups) shows no plugin cards.
+    var client: (any CodevisorServerClienting)? = nil
+
+    @State private var pluginOptions: [PluginPaneOption] = []
 
     var body: some View {
         // Scrolls when the pane is too short for the (possibly stacked)
@@ -53,7 +70,30 @@ struct NewTabPageView: View {
         .simultaneousGesture(
             TapGesture().onEnded {
                 group?.focusSelectedPane()
-            })
+            }
+        )
+        .task {
+            await loadPluginOptions()
+        }
+    }
+
+    /// Machine-scoped plugin pane cards. Errors (older servers without the
+    /// plugins feature, unreachable machines) just leave the cards hidden —
+    /// the page's built-in options never depend on the request.
+    private func loadPluginOptions() async {
+        guard let client else { return }
+        guard let plugins = try? await client.listPlugins() else { return }
+        pluginOptions = plugins.flatMap { plugin in
+            plugin.panes.map { pane in
+                PluginPaneOption(
+                    pluginId: plugin.id,
+                    pluginName: plugin.name,
+                    paneType: pane.type,
+                    title: pane.title,
+                    icon: pane.icon
+                )
+            }
+        }
     }
 
     @ViewBuilder
@@ -75,6 +115,22 @@ struct NewTabPageView: View {
             systemImage: "terminal"
         ) {
             group?.convertNewTabPane(id: paneId, to: .terminal)
+        }
+        ForEach(pluginOptions) { option in
+            NewTabOptionCard(
+                title: option.title,
+                subtitle: option.pluginName,
+                systemImage: option.icon ?? "puzzlepiece.extension"
+            ) {
+                group?.convertNewTabPane(
+                    id: paneId,
+                    to: .plugin,
+                    name: option.title,
+                    pluginId: option.pluginId,
+                    pluginPaneType: option.paneType,
+                    pluginIcon: option.icon
+                )
+            }
         }
     }
 }

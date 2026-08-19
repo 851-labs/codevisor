@@ -12,8 +12,10 @@ import {
   CreateWorktreeRequest,
   CustomHarnessSpec,
   DetectMcpAuthRequest,
+  DiscoverRemotePluginRequest,
   DiscoverRemoteSkillsRequest,
   ImportNativeMcpsRequest,
+  ImportRemotePluginRequest,
   ImportRemoteSkillRequest,
   ImportSkillRequest,
   MakeSkillGlobalRequest,
@@ -40,6 +42,7 @@ import {
   UpdateQueuedPromptRequest,
   UpdateSessionRequest,
   UpdateWorkspaceRequest,
+  UpsertWorkspacePaneRequest,
   UpsertWorkspaceRequest
 } from "@codevisor/api"
 import { Schema } from "effect"
@@ -62,6 +65,12 @@ export interface CodevisorApiToolSpec {
   readonly wrappedBody?: boolean | undefined
   readonly query?: ReadonlyArray<QueryParameter> | undefined
   readonly response?: "binary" | undefined
+  /// Consent gate: the tool grows a required boolean `confirm` argument that
+  /// is never forwarded to the server, and the provider refuses to send the
+  /// request unless it is exactly `true`. Used where an agent action runs
+  /// commands on the user's machine (e.g. plugin install) and the agent must
+  /// first show the user what will happen and receive explicit approval.
+  readonly confirm?: boolean | undefined
 }
 
 const stringQuery = (name: string, description?: string): QueryParameter => ({
@@ -290,6 +299,21 @@ export const CODEVISOR_API_TOOLS: ReadonlyArray<CodevisorApiToolSpec> = [
     "Delete an empty workspace identity.",
     "DELETE",
     "/v1/workspaces/:id"
+  ),
+  apiTool(
+    "workspaces.open_plugin_pane",
+    "Open a plugin pane in a workspace by upserting a workspace pane record. " +
+      "Set providerId to `plugin:<pluginId>` (e.g. plugin:codevisor.git-diff), paneType to the " +
+      "pane type from the plugin's manifest (see plugins.list), and metadata to the JSON string " +
+      '`{"icon":"<icon>","paneType":"<paneType>","pluginId":"<pluginId>"}` with keys in exactly ' +
+      "that order, omitting icon when the manifest pane has none — clients compare this string " +
+      "byte-for-byte. paneId is the stable pane identity: pass a new lowercase UUID to open a " +
+      "new pane, or an existing pane's id to replace it.",
+    "PUT",
+    "/v1/workspaces/:workspaceId/panes/:paneId",
+    {
+      body: UpsertWorkspacePaneRequest
+    }
   ),
 
   apiTool("sessions.list", "List Codevisor sessions on this server.", "GET", "/v1/sessions"),
@@ -661,6 +685,50 @@ export const CODEVISOR_API_TOOLS: ReadonlyArray<CodevisorApiToolSpec> = [
     }
   ),
   apiTool("skills.delete", "Delete a global skill.", "DELETE", "/v1/skills/:name"),
+
+  apiTool(
+    "plugins.list",
+    "List installed Codevisor plugins with their panes and runtime state.",
+    "GET",
+    "/v1/plugins"
+  ),
+  apiTool(
+    "plugins.discover_remote",
+    "Preview a plugin source without installing it: returns the manifest summary and the exact " +
+      "install/run commands installation would execute on this machine. ALWAYS call this before " +
+      "plugins.install and show the user the result.",
+    "POST",
+    "/v1/plugins/discover-remote",
+    {
+      body: DiscoverRemotePluginRequest
+    }
+  ),
+  apiTool(
+    "plugins.install",
+    "Install (or update) a plugin from a remote source, running its install command on the " +
+      "user's machine. Mandatory first step: call plugins.discover_remote and show the user the " +
+      "discovered manifest and verbatim commands. Only set confirm=true after the user " +
+      "explicitly approves.",
+    "POST",
+    "/v1/plugins/import-remote",
+    {
+      body: ImportRemotePluginRequest,
+      confirm: true
+    }
+  ),
+  apiTool(
+    "plugins.remove",
+    "Uninstall a managed plugin: stop its process and delete its directory. Linked (dev-mode) " +
+      "plugins are never deleted this way.",
+    "DELETE",
+    "/v1/plugins/:pluginId"
+  ),
+  apiTool(
+    "plugins.restart",
+    "Restart a plugin's server process, clearing a failed state.",
+    "POST",
+    "/v1/plugins/:pluginId/restart"
+  ),
 
   apiTool("harnesses.list", "List agent harnesses and readiness state.", "GET", "/v1/harnesses", {
     query: [{ name: "include", schema: { type: "string", enum: ["lifecycle"] } }]

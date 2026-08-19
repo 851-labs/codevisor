@@ -72,6 +72,9 @@ struct MachineSettingsDetailView: View {
                 NavigationLink(value: MachineSettingsRoute.skills(machineId)) {
                     Label("Skills", systemImage: "book.closed")
                 }
+                NavigationLink(value: MachineSettingsRoute.plugins(machineId)) {
+                    Label("Plugins", systemImage: "puzzlepiece")
+                }
             }
 
             Section {

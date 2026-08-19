@@ -218,6 +218,7 @@ private struct SplitLeafHeader: View {
         switch pane?.kind {
         case .chat: "text.bubble"
         case .terminal: pane?.attachOnly == true ? "server.rack" : "terminal"
+        case .plugin: pane?.pluginIcon ?? "puzzlepiece.extension"
         case .newTab, .none: "square.dashed"
         }
     }
@@ -270,7 +271,7 @@ private struct SplitLeafHeader: View {
         switch pane?.kind {
         case .chat: "Rename Chat"
         case .terminal: "Rename Terminal"
-        case .newTab, .none: "Rename Pane"
+        case .newTab, .plugin, .none: "Rename Pane"
         }
     }
 

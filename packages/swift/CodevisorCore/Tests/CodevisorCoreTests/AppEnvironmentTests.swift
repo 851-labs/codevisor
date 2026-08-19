@@ -56,6 +56,26 @@ struct AppEnvironmentTests {
         #expect(environment.harnessCatalogRevision(for: "remote") == 0)
     }
 
+    @Test("Plugin update revisions are isolated per machine and per plugin")
+    func pluginUpdateRevisionInvalidation() {
+        let environment = AppEnvironment.preview()
+
+        #expect(environment.pluginUpdateRevision(forServer: "local", pluginId: "owner.a") == 0)
+
+        environment.pluginDidUpdate(onServer: "local", pluginId: "owner.a")
+        environment.pluginDidUpdate(onServer: "local", pluginId: "owner.a")
+
+        // Only the restarted/re-imported plugin's panes reload; a different
+        // plugin (or the same plugin on another machine) stays put.
+        #expect(environment.pluginUpdateRevision(forServer: "local", pluginId: "owner.a") == 2)
+        #expect(environment.pluginUpdateRevision(forServer: "local", pluginId: "owner.b") == 0)
+        #expect(environment.pluginUpdateRevision(forServer: "remote", pluginId: "owner.a") == 0)
+
+        // The machine-scoped plugin-state revision is a separate channel:
+        // idle stop / crash chips must never trigger pane reloads.
+        #expect(environment.pluginStateRevision(for: "local") == 0)
+    }
+
     @Test("Harness operation response closes the lifecycle handoff gap")
     func harnessLifecycleHandoff() async {
         let environment = AppEnvironment.preview()

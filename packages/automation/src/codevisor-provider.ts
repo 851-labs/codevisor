@@ -95,6 +95,16 @@ const toolInputSchema = (spec: CodevisorApiToolSpec): JsonSchema => {
     }
   }
 
+  if (spec.confirm === true) {
+    properties.confirm = {
+      type: "boolean",
+      description:
+        "Must only be set true after showing the user exactly what this call will do " +
+        "(the discovered manifest and verbatim commands) and receiving their explicit approval."
+    }
+    required.add("confirm")
+  }
+
   return {
     type: "object",
     properties,
@@ -151,6 +161,14 @@ const invokeApiTool = async (
   context: AutomationProviderContext,
   args: Readonly<Record<string, unknown>>
 ): Promise<CallToolResult> => {
+  // The consent gate never reaches the server: `confirm` is not a body or
+  // query property, so it is dropped from the request after this check.
+  if (spec.confirm === true && args.confirm !== true) {
+    throw new Error(
+      `${spec.name} requires confirm: true — show the user what this call will run ` +
+        "(via the matching discover tool) and get their explicit approval first"
+    )
+  }
   let path = spec.path
   for (const parameterName of pathParameterNames(spec.path)) {
     const argumentName = pathArgumentName(spec, parameterName)

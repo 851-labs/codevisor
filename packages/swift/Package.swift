@@ -228,6 +228,7 @@ let package = Package(
                 "CodeHighlighter",
             ],
             path: "CodevisorUI/Sources/CodevisorUI",
+            resources: [.copy("Resources/plugin-bridge.js")],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(

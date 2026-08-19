@@ -1,0 +1,19 @@
+{
+  "protocolVersion": 1,
+  "id": "codevisor.git-diff",
+  "name": "Git Diff",
+  "description": "Live git diff viewer for the workspace working directory",
+  "version": "0.1.0",
+  "panes": [
+    {
+      "type": "diff",
+      "title": "Git Diff",
+      "path": "/panes/diff/",
+      "icon": "plus.forwardslash.minus"
+    }
+  ],
+  "run": { "command": "bun run server.ts" },
+  "platforms": ["darwin", "linux"],
+  "idleTimeoutSeconds": 300,
+  "healthPath": "/health"
+}

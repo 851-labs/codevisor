@@ -35,6 +35,7 @@ import type { CustomHarnessStore } from "@codevisor/harness-manager"
 import type { McpManager } from "@codevisor/mcp"
 import { NativeMcpError, type NativeMcpManager } from "@codevisor/mcp"
 import { SkillsError, type SkillsManager } from "@codevisor/skills"
+import { PluginsError, type PluginsManager } from "@codevisor/plugins"
 
 export class ServerError extends Schema.TaggedErrorClass<ServerError>()("ServerError", {
   operation: Schema.String,
@@ -130,6 +131,10 @@ export interface CodevisorServerServices {
   /// Skills discovery over the canonical store and harness skills dirs.
   /// Absent on hosts that don't support it — routes 501.
   readonly skills?: SkillsManager
+  /// Plugin runtime: supervised local plugin servers whose panes are proxied
+  /// under /v1/plugins/:id/app/*. Absent on hosts that don't support it —
+  /// routes 501.
+  readonly plugins?: PluginsManager
 }
 
 export interface RunningCodevisorServer {
@@ -716,6 +721,18 @@ export const writeFailure = (response: ServerResponse, cause: unknown): void => 
   }
   if (cause instanceof SkillsError) {
     const status = cause.code === "invalid" ? 400 : cause.code === "notFound" ? 404 : 409
+    writeJson(response, status, { code: cause.code, error: cause.message })
+    return
+  }
+  if (cause instanceof PluginsError) {
+    const status =
+      cause.code === "invalid"
+        ? 400
+        : cause.code === "notFound"
+          ? 404
+          : cause.code === "unavailable"
+            ? 503
+            : 409
     writeJson(response, status, { code: cause.code, error: cause.message })
     return
   }

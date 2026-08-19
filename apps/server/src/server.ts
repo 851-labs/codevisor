@@ -40,6 +40,7 @@ import {
   reconcileStaleStreamingTurns,
   routeSessions
 } from "./routes/sessions.js"
+import { routePluginProxy, routePlugins } from "./routes/plugins.js"
 import { routeSkills } from "./routes/skills.js"
 import { routeTerminals } from "./routes/terminals.js"
 import { routeWorkspaces } from "./routes/workspaces.js"
@@ -130,6 +131,13 @@ export const makeCodevisorServerApp = (
       () => undefined
     )
   })
+  // Plugin runtime transitions ride the same fanout so Settings chips and
+  // pane error cards update live on every client.
+  const unsubscribePlugins = services.plugins?.subscribe((event) => {
+    void appendAndPublish(services.db, fanout, event.kind, event.subjectId, event.payload).catch(
+      swallowError
+    )
+  })
   // Gate release → tell every held session and re-drain its durable queue.
   const unsubscribeGate = services.lifecycle?.onGateReleased((harnessId) => {
     const catalogName = services.agents.catalog.find(
@@ -162,8 +170,10 @@ export const makeCodevisorServerApp = (
       config.sessionActivity?.stop()
       unsubscribeAuth?.()
       unsubscribeLifecycle?.()
+      unsubscribePlugins?.()
       unsubscribeGate?.()
       webSocketServer.close()
+      services.plugins?.close()
       void services.mcp?.close().catch(swallowError)
     })
   }
@@ -322,6 +332,15 @@ const handleRequest = async (
       return
     }
 
+    // Pane webviews cannot attach the machine bearer token to subresource
+    // loads (and the relay strips Authorization), so plugin pane traffic
+    // authenticates with per-pane tokens/cookies inside the proxy itself.
+    if (url.pathname.startsWith("/v1/plugins/")) {
+      if (await routePluginProxy(services, request, response, url)) {
+        return
+      }
+    }
+
     // OAuth providers redirect a browser without the Codevisor API token. The
     // high-entropy, single-installation state value is validated by the manager.
     if (request.method === "GET" && url.pathname === "/v1/mcps/oauth/callback") {
@@ -382,7 +401,12 @@ const handleRequest = async (
         version: config.version,
         platform: process.platform,
         bindHost: config.host,
-        features: ["canonical-chat-v1", "session-event-stream-v1", "transcript-pagination-v1"],
+        features: [
+          "canonical-chat-v1",
+          "session-event-stream-v1",
+          "transcript-pagination-v1",
+          ...(services.plugins === undefined ? [] : ["plugins-v1"])
+        ],
         machineId: await run(services.db.getOrCreateInstanceId),
         arch: process.arch,
         hostname: hostname(),
@@ -496,6 +520,9 @@ const handleRequest = async (
       return
     }
     if (await routeSkills(services, request, response, url)) {
+      return
+    }
+    if (await routePlugins(services, fanout, request, response, url)) {
       return
     }
     if (await routeSessions(services, fanout, routeState, request, response, url, config)) {

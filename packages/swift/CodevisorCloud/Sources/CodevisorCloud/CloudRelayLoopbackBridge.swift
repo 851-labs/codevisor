@@ -22,9 +22,12 @@ import Network
 /// origin, which is exempt from machine-token auth — so machine-token auth is
 /// unaffected. Cloud-synthesized machines carry no token anyway.
 ///
-/// v1 connection semantics: one HTTP request per connection (responses carry
-/// `Connection: close`); WebSocket upgrades hold the connection open and
-/// bridge RFC 6455 frames both ways until either side closes.
+/// Connection semantics: plain HTTP speaks HTTP/1.1 keep-alive — the
+/// connection serves sequential requests (one relay channel each) until the
+/// peer sends `Connection: close`, an HTTP/1.0 request without keep-alive, or
+/// a request whose framing the bridge can't parse past (then it answers and
+/// closes). WebSocket upgrades hold the connection open and bridge RFC 6455
+/// frames both ways until either side closes.
 public final class CloudRelayLoopbackBridge: @unchecked Sendable {
     public enum BridgeError: Error, Sendable {
         case alreadyStarted
@@ -181,11 +184,16 @@ private final class LoopbackConnection: @unchecked Sendable {
         connection.start(queue: queue)
         defer { connection.cancel() }
         do {
-            guard let head = try await readHead() else { return }
-            if head.isWebSocketUpgrade {
-                try await serveWebSocket(head)
-            } else {
-                try await serveHTTP(head)
+            // HTTP/1.1 keep-alive: sequential requests share this connection
+            // (each still rides its own relay channel) until the peer asks to
+            // close, framing becomes unparseable, or the socket ends.
+            while true {
+                guard let head = try await readHead() else { return }
+                if head.isWebSocketUpgrade {
+                    try await serveWebSocket(head)
+                    return
+                }
+                guard try await serveHTTP(head) else { return }
             }
         } catch {
             // The connection is torn down either way; a broken peer or a dead
@@ -233,6 +241,8 @@ private final class LoopbackConnection: @unchecked Sendable {
         var method: String
         /// Path + query exactly as sent ("/v1/terminals?x=1").
         var target: String
+        /// "HTTP/1.0" or "HTTP/1.1", from the request line.
+        var version: String
         /// In arrival order with original casing, forwarded verbatim.
         var headers: [(name: String, value: String)]
 
@@ -243,6 +253,18 @@ private final class LoopbackConnection: @unchecked Sendable {
         var isWebSocketUpgrade: Bool {
             guard let upgrade = value("Upgrade") else { return false }
             return upgrade.lowercased().contains("websocket")
+        }
+
+        /// HTTP/1.1 defaults to keep-alive unless the peer says `close`;
+        /// HTTP/1.0 defaults to close unless it says `keep-alive`.
+        var wantsKeepAlive: Bool {
+            let tokens = (value("Connection") ?? "")
+                .lowercased()
+                .split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+            if tokens.contains("close") { return false }
+            if version == "HTTP/1.0" { return tokens.contains("keep-alive") }
+            return true
         }
     }
 
@@ -287,32 +309,49 @@ private final class LoopbackConnection: @unchecked Sendable {
                 .trimmingCharacters(in: .whitespaces)
             headers.append((name, value))
         }
-        return RequestHead(method: String(parts[0]), target: String(parts[1]), headers: headers)
+        return RequestHead(
+            method: String(parts[0]),
+            target: String(parts[1]),
+            version: String(parts[2]),
+            headers: headers
+        )
     }
 
     // MARK: Plain HTTP
 
-    private func serveHTTP(_ head: RequestHead) async throws {
+    /// Serves one request; returns whether the connection may carry another
+    /// (the peer wants keep-alive AND this request's framing was fully
+    /// consumed, so the next head starts at a known byte).
+    private func serveHTTP(_ head: RequestHead) async throws -> Bool {
         if head.value("Transfer-Encoding") != nil {
+            // A chunked body can't be skipped, so the stream position after
+            // this request is unknown — answer and close.
             try await send(
                 Self.encodeResponse(
-                    status: 501, headers: [:], body: Data("chunked request bodies are not supported\n".utf8)))
-            return
+                    status: 501, headers: [:],
+                    body: Data("chunked request bodies are not supported\n".utf8),
+                    keepAlive: false))
+            return false
         }
         let contentLength = head.value("Content-Length").flatMap(Int.init) ?? 0
         guard contentLength >= 0, contentLength <= Self.maxBodyBytes else {
-            try await send(Self.encodeResponse(status: 413, headers: [:], body: Data()))
-            return
+            // The oversized body is never read; the connection can't recover.
+            try await send(Self.encodeResponse(status: 413, headers: [:], body: Data(), keepAlive: false))
+            return false
         }
         while buffer.count < contentLength {
             guard let chunk = try await receiveChunk() else { throw HTTPParseError.malformedHead }
             buffer.append(chunk)
         }
         let body = buffer.prefix(contentLength)
+        // Consume the body so a keep-alive follow-up head parses from the
+        // right offset.
+        buffer = buffer.subdata(in: buffer.startIndex.advanced(by: contentLength)..<buffer.endIndex)
+        let keepAlive = head.wantsKeepAlive
 
         guard let url = URL(string: "http://127.0.0.1\(head.target)") else {
-            try await send(Self.encodeResponse(status: 400, headers: [:], body: Data()))
-            return
+            try await send(Self.encodeResponse(status: 400, headers: [:], body: Data(), keepAlive: keepAlive))
+            return keepAlive
         }
         var request = URLRequest(url: url)
         request.httpMethod = head.method
@@ -337,12 +376,15 @@ private final class LoopbackConnection: @unchecked Sendable {
                 Self.encodeResponse(
                     status: response.statusCode,
                     headers: Dictionary(headers, uniquingKeysWith: { first, _ in first }),
-                    body: responseBody
+                    body: responseBody,
+                    keepAlive: keepAlive
                 ))
         } catch {
             let message = "cloud relay error: \(error.localizedDescription)\n"
-            try await send(Self.encodeResponse(status: 502, headers: [:], body: Data(message.utf8)))
+            try await send(
+                Self.encodeResponse(status: 502, headers: [:], body: Data(message.utf8), keepAlive: keepAlive))
         }
+        return keepAlive
     }
 
     /// Headers the bridge owns on the loopback hop; relayed values for these
@@ -351,12 +393,17 @@ private final class LoopbackConnection: @unchecked Sendable {
         "connection", "content-length", "transfer-encoding", "keep-alive", "upgrade",
     ]
 
-    private static func encodeResponse(status: Int, headers: [String: String], body: Data) -> Data {
+    private static func encodeResponse(
+        status: Int,
+        headers: [String: String],
+        body: Data,
+        keepAlive: Bool = false
+    ) -> Data {
         var head = "HTTP/1.1 \(status) \(reasonPhrase(status))\r\n"
         for (name, value) in headers where !ownedResponseHeaders.contains(name.lowercased()) {
             head += "\(name): \(value)\r\n"
         }
-        head += "Content-Length: \(body.count)\r\nConnection: close\r\n\r\n"
+        head += "Content-Length: \(body.count)\r\nConnection: \(keepAlive ? "keep-alive" : "close")\r\n\r\n"
         var response = Data(head.utf8)
         response.append(body)
         return response

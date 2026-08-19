@@ -225,6 +225,10 @@ const sharedEnvironment = {
   CODEVISOR_DEV_WWW_PORT: String(wwwPort),
   CODEVISOR_DEV_DATA_DIR: dataDirectory,
   CODEVISOR_WORKTREES_ROOT: worktreesDirectory,
+  // Installed plugins are dev-instance state like everything else here:
+  // worktree-local, cleaned up with the worktree, never the production
+  // ~/.codevisor/plugins.
+  CODEVISOR_PLUGINS_ROOT: join(dataDirectory, "plugins"),
   // The dev remote's details, so the app can offer a one-click "add the test
   // remote" in Settings → Machines (the token is filled in once it's read).
   CODEVISOR_DEV_REMOTE_HOST: "127.0.0.1",
@@ -303,6 +307,7 @@ const remoteServer = spawn(
       CODEVISOR_DATA_DIR: remoteDataDirectory,
       CODEVISOR_WORKTREES_ROOT: join(remoteDataDirectory, "worktrees"),
       CODEVISOR_REPOS_ROOT: join(remoteDataDirectory, "repos"),
+      CODEVISOR_PLUGINS_ROOT: join(remoteDataDirectory, "plugins"),
       // The Dev Remote joins the dev cloud too — a realistic second machine
       // in the hub's machine list.
       CODEVISOR_DEV_CLOUD_URL: cloudUrl,

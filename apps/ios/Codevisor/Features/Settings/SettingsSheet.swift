@@ -47,7 +47,9 @@ struct SettingsSheet: View {
                         Label("Machines", systemImage: "desktopcomputer")
                     }
                 } footer: {
-                    Text("Harnesses, MCPs, and skills live on each machine — open a machine to manage them.")
+                    Text(
+                        "Harnesses, MCPs, skills, and plugins live on each machine — open a machine to manage them."
+                    )
                 }
             }
             .navigationTitle("Settings")

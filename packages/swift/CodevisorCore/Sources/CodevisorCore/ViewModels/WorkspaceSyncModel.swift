@@ -925,7 +925,7 @@ public final class WorkspaceSyncModel {
         )
     }
 
-    private static func serverPane(
+    static func serverPane(
         from pane: PaneDescriptorState,
         workspaceId: UUID,
         createdAt: Date
@@ -954,6 +954,23 @@ public final class WorkspaceSyncModel {
             paneType = "new-tab"
             resourceKind = nil
             resourceId = nil
+        case .plugin:
+            // Plugin panes publish under a plugin-scoped provider so old
+            // clients (which only accept "codevisor") drop them silently
+            // instead of misrendering. Metadata carries the plugin identity
+            // redundantly, so future providers can evolve the id scheme.
+            let pluginId = pane.pluginId ?? "unknown"
+            let type = pane.pluginPaneType ?? "pane"
+            return ServerWorkspacePane(
+                id: pane.id.uuidString,
+                workspaceId: workspaceId.uuidString,
+                providerId: "plugin:\(pluginId)",
+                paneType: type,
+                title: pane.name,
+                metadata: pane.pluginMetadata
+                    ?? PaneDescriptorState.pluginMetadataJSON(pluginId: pluginId, paneType: type),
+                createdAt: ServerDateCoding.string(from: createdAt)
+            )
         }
         return ServerWorkspacePane(
             id: pane.id.uuidString,
@@ -968,10 +985,24 @@ public final class WorkspaceSyncModel {
         )
     }
 
-    private static func descriptor(from record: ServerWorkspacePane) -> PaneDescriptorState? {
-        guard record.providerId == "codevisor", let id = UUID(uuidString: record.id) else {
-            return nil
+    static func descriptor(from record: ServerWorkspacePane) -> PaneDescriptorState? {
+        guard let id = UUID(uuidString: record.id) else { return nil }
+        if record.providerId.hasPrefix("plugin:") {
+            let pluginId = String(record.providerId.dropFirst("plugin:".count))
+            guard !pluginId.isEmpty else { return nil }
+            return PaneDescriptorState(
+                id: id,
+                kind: .plugin,
+                name: record.title,
+                terminalKey: id.uuidString,
+                pluginId: pluginId,
+                pluginPaneType: record.paneType,
+                pluginMetadata: record.metadata
+            )
         }
+        // Unknown providers still drop silently: the registry remains
+        // forward-compatible; renderer support is a client capability.
+        guard record.providerId == "codevisor" else { return nil }
         switch record.paneType {
         case "chat":
             let sessionId =
@@ -1070,7 +1101,7 @@ public final class WorkspaceSyncModel {
             pane.chatSessionId.map { "session:\($0.uuidString.lowercased())" }
         case .terminal:
             "terminal:\(pane.terminalKey.lowercased())"
-        case .newTab:
+        case .newTab, .plugin:
             nil
         }
     }

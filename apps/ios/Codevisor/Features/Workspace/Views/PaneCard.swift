@@ -18,6 +18,7 @@ struct PaneCard: View {
         case .terminal: "terminal"
         case .chat: "bubble.left.and.bubble.right"
         case .newTab: "plus.square.on.square"
+        case .plugin: pane.pluginIcon ?? "puzzlepiece.extension"
         }
     }
 

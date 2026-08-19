@@ -19,10 +19,16 @@ export interface CliDeps {
   /// resolves with the child pid.
   readonly spawnDetachedServer: (args: ReadonlyArray<string>, logPath: string) => Promise<number>
   /// JSON request against the loopback API. `undefined` when the server is
-  /// unreachable (connection refused / timeout).
+  /// unreachable (connection refused / timeout). `body` is JSON-encoded;
+  /// `timeoutMs` covers slow operations (plugin installs clone and build)
+  /// that outlive the default 5s.
   readonly fetchJson: (
     url: string,
-    init?: { readonly method?: string }
+    init?: {
+      readonly method?: string
+      readonly body?: unknown
+      readonly timeoutMs?: number
+    }
   ) => Promise<{ readonly status: number; readonly body: unknown } | undefined>
   readonly readTextFile: (path: string) => string | undefined
   readonly writeTextFile: (path: string, contents: string) => void

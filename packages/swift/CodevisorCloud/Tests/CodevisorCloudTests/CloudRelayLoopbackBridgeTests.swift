@@ -1,8 +1,148 @@
 import Foundation
+import Network
 import Testing
 import CodevisorClient
 import CodevisorProtocol
 @testable import CodevisorCloud
+
+/// A hand-rolled TCP client for exercising the bridge's HTTP/1.1 connection
+/// semantics directly — URLSession hides connection reuse, so keep-alive
+/// assertions need the raw socket.
+private final class RawHTTPClient: @unchecked Sendable {
+    private let connection: NWConnection
+    private let queue = DispatchQueue(label: "raw-http-client")
+    private var buffer = Data()
+
+    init(port: UInt16) {
+        connection = NWConnection(
+            host: .ipv4(.loopback),
+            port: NWEndpoint.Port(rawValue: port)!,
+            using: .tcp
+        )
+    }
+
+    /// A claim-once flag for the connect continuation (state callbacks can
+    /// fire again after `.ready`).
+    private final class OnceFlag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var claimed = false
+
+        func claim() -> Bool {
+            lock.withLock {
+                let first = !claimed
+                claimed = true
+                return first
+            }
+        }
+    }
+
+    func connect() async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+            let once = OnceFlag()
+            connection.stateUpdateHandler = { state in
+                let result: Result<Void, any Error>
+                switch state {
+                case .ready: result = .success(())
+                case let .failed(error): result = .failure(error)
+                case .cancelled: result = .failure(URLError(.cancelled))
+                default: return
+                }
+                guard once.claim() else { return }
+                continuation.resume(with: result)
+            }
+            connection.start(queue: queue)
+        }
+    }
+
+    func send(_ text: String) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+            connection.send(
+                content: Data(text.utf8),
+                completion: .contentProcessed { error in
+                    if let error {
+                        continuation.resume(throwing: error)
+                    } else {
+                        continuation.resume()
+                    }
+                })
+        }
+    }
+
+    /// One received chunk, nil at EOF.
+    private func receiveChunk() async throws -> Data? {
+        try await withCheckedThrowingContinuation { continuation in
+            connection.receive(minimumIncompleteLength: 1, maximumLength: 1 << 16) { data, _, isComplete, error in
+                if let data, !data.isEmpty {
+                    continuation.resume(returning: data)
+                } else if let error {
+                    continuation.resume(throwing: error)
+                } else if isComplete {
+                    continuation.resume(returning: nil)
+                } else {
+                    continuation.resume(returning: Data())
+                }
+            }
+        }
+    }
+
+    struct Response {
+        var status: Int
+        /// Lowercased header names.
+        var headers: [String: String]
+        var body: Data
+    }
+
+    /// Reads exactly one HTTP response (head + Content-Length body), leaving
+    /// any following bytes buffered for the next read.
+    func readResponse() async throws -> Response {
+        let terminator = Data("\r\n\r\n".utf8)
+        while buffer.firstRange(of: terminator) == nil {
+            guard let chunk = try await receiveChunk() else { throw URLError(.badServerResponse) }
+            buffer.append(chunk)
+        }
+        let range = buffer.firstRange(of: terminator)!
+        let headText = String(decoding: buffer.subdata(in: buffer.startIndex..<range.lowerBound), as: UTF8.self)
+        buffer = buffer.subdata(in: range.upperBound..<buffer.endIndex)
+        var lines = headText.components(separatedBy: "\r\n")
+        let statusLine = lines.removeFirst()
+        let status = Int(statusLine.split(separator: " ")[1]) ?? 0
+        var headers: [String: String] = [:]
+        for line in lines where !line.isEmpty {
+            guard let colon = line.firstIndex(of: ":") else { continue }
+            headers[String(line[..<colon]).lowercased()] =
+                String(line[line.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+        }
+        let contentLength = headers["content-length"].flatMap(Int.init) ?? 0
+        while buffer.count < contentLength {
+            guard let chunk = try await receiveChunk() else { throw URLError(.badServerResponse) }
+            buffer.append(chunk)
+        }
+        let body = buffer.prefix(contentLength)
+        buffer = buffer.subdata(in: buffer.startIndex.advanced(by: contentLength)..<buffer.endIndex)
+        return Response(status: status, headers: headers, body: Data(body))
+    }
+
+    /// True when the server closes the connection (EOF) within the timeout.
+    func waitForEOF(timeout: Duration = .seconds(5)) async -> Bool {
+        let read = Task { () -> Bool in
+            while true {
+                guard let chunk = try await self.receiveChunk() else { return true }
+                self.buffer.append(chunk)
+            }
+        }
+        defer { read.cancel() }
+        let deadline = Task {
+            try await Task.sleep(for: timeout)
+            read.cancel()
+        }
+        defer { deadline.cancel() }
+        return (try? await read.value) ?? false
+    }
+
+    func cancel() {
+        connection.cancel()
+    }
+}
 
 @Suite("CloudRelayLoopbackBridge")
 struct CloudRelayLoopbackBridgeTests {
@@ -322,5 +462,111 @@ struct CloudRelayLoopbackBridgeTests {
         }
         #expect(closed)
         #expect(scriptedMachine.wsClosedChannels == [.done])
+    }
+
+    @Test("Keep-alive serves sequential requests on one TCP connection")
+    func keepAliveSequentialRequests() async throws {
+        let scriptedMachine = ScriptedLoopbackMachine()
+        scriptedMachine.respond = { request in
+            ScriptedLoopbackMachine.ScriptedResponse(
+                status: 200,
+                headers: ["Content-Type": "text/plain"],
+                bodyChunks: [Data("answer for \(request.path)".utf8)]
+            )
+        }
+        let (bridge, hub) = makeBridge(scriptedMachine)
+        let port = try await bridge.start()
+        let client = RawHTTPClient(port: port)
+        defer {
+            client.cancel()
+            bridge.stop()
+            Task { await hub.shutdown() }
+        }
+        try await client.connect()
+
+        // First request carries a body — the keep-alive loop must consume it
+        // exactly so the second head parses from the right byte.
+        try await client.send(
+            "POST /v1/first HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 5\r\n\r\nhello"
+        )
+        let first = try await client.readResponse()
+        #expect(first.status == 200)
+        #expect(first.headers["connection"] == "keep-alive")
+        #expect(first.body == Data("answer for /v1/first".utf8))
+
+        try await client.send("GET /v1/second HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+        let second = try await client.readResponse()
+        #expect(second.status == 200)
+        #expect(second.headers["connection"] == "keep-alive")
+        #expect(second.body == Data("answer for /v1/second".utf8))
+
+        #expect(scriptedMachine.completedRequests.map(\.path) == ["/v1/first", "/v1/second"])
+        #expect(scriptedMachine.completedRequests.first?.body == Data("hello".utf8))
+    }
+
+    @Test("Connection: close is honored — respond once, then EOF")
+    func connectionCloseHonored() async throws {
+        let scriptedMachine = ScriptedLoopbackMachine()
+        scriptedMachine.respond = { _ in
+            ScriptedLoopbackMachine.ScriptedResponse(
+                status: 200, headers: [:], bodyChunks: [Data("bye".utf8)]
+            )
+        }
+        let (bridge, hub) = makeBridge(scriptedMachine)
+        let port = try await bridge.start()
+        let client = RawHTTPClient(port: port)
+        defer {
+            client.cancel()
+            bridge.stop()
+            Task { await hub.shutdown() }
+        }
+        try await client.connect()
+
+        try await client.send(
+            "GET /v1/info HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n"
+        )
+        let response = try await client.readResponse()
+        #expect(response.status == 200)
+        #expect(response.headers["connection"] == "close")
+        #expect(response.body == Data("bye".utf8))
+        let closed = await client.waitForEOF()
+        #expect(closed)
+    }
+
+    @Test("A WebSocket upgrade still works after HTTP requests on other connections")
+    func webSocketAfterHTTPTraffic() async throws {
+        let scriptedMachine = ScriptedLoopbackMachine()
+        scriptedMachine.respond = { _ in
+            ScriptedLoopbackMachine.ScriptedResponse(
+                status: 204, headers: [:], bodyChunks: []
+            )
+        }
+        let (bridge, hub) = makeBridge(scriptedMachine)
+        let port = try await bridge.start()
+        defer {
+            bridge.stop()
+            Task { await hub.shutdown() }
+        }
+
+        // Plain HTTP traffic first (its own connections)…
+        for path in ["/v1/one", "/v1/two"] {
+            let (_, response) = try await URLSession.shared.data(
+                from: URL(string: "http://127.0.0.1:\(port)\(path)")!
+            )
+            #expect((response as? HTTPURLResponse)?.statusCode == 204)
+        }
+
+        // …then a WebSocket upgrade on a fresh connection still bridges.
+        let task = URLSession.shared.webSocketTask(
+            with: URL(string: "ws://127.0.0.1:\(port)/v1/terminals/t9/ws")!
+        )
+        task.resume()
+        try await task.send(.string("still-alive"))
+        guard case let .string(text) = try await task.receive() else {
+            Issue.record("Expected a text echo frame")
+            return
+        }
+        #expect(text == "echo:still-alive")
+        task.cancel(with: .normalClosure, reason: nil)
     }
 }

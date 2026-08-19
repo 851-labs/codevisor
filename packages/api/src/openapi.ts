@@ -26,6 +26,14 @@ import {
   PairingTokenResponse,
   PiAuthProvider,
   PiAuthProviderFlow,
+  DiscoverRemotePluginRequest,
+  DiscoverRemotePluginResult,
+  ImportRemotePluginRequest,
+  LinkPluginRequest,
+  PluginListResponse,
+  PluginPaneTokenRequest,
+  PluginPaneTokenResponse,
+  PluginSummary,
   OpenCodeAuthFlow,
   OpenCodeAuthProvider,
   OpenSessionRequest,
@@ -140,6 +148,14 @@ export const endpoints = [
   "POST /v1/harnesses/:id/accounts/:accountId/login",
   "DELETE /v1/harnesses/:id/accounts/:accountId/login/:flowId",
   "POST /v1/harnesses/:id/accounts/:accountId/logout",
+  "GET /v1/plugins",
+  "POST /v1/plugins/discover-remote",
+  "POST /v1/plugins/import-remote",
+  "POST /v1/plugins/link",
+  "GET /v1/plugins/:pluginId",
+  "DELETE /v1/plugins/:pluginId",
+  "POST /v1/plugins/:pluginId/restart",
+  "POST /v1/plugins/:pluginId/panes/:paneId/token",
   "GET /v1/sessions",
   "POST /v1/sessions",
   "GET /v1/sessions/:id",
@@ -209,6 +225,10 @@ const requestSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> => ({
   "POST /v1/harnesses/opencode/accounts/:accountId/providers/:providerId/login":
     StartOpenCodeAuthRequest,
   "POST /v1/harnesses/opencode/auth-flows/:flowId/answer": AnswerOpenCodeAuthRequest,
+  "POST /v1/plugins/discover-remote": DiscoverRemotePluginRequest,
+  "POST /v1/plugins/import-remote": ImportRemotePluginRequest,
+  "POST /v1/plugins/link": LinkPluginRequest,
+  "POST /v1/plugins/:pluginId/panes/:paneId/token": PluginPaneTokenRequest,
   "POST /v1/sessions": CreateSessionRequest,
   "POST /v1/sessions/:id/open": OpenSessionRequest,
   "PATCH /v1/sessions/:id": UpdateSessionRequest,
@@ -269,6 +289,14 @@ const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> => ({
   "POST /v1/harnesses/:id/accounts/:accountId/auth/probe": HarnessAccount,
   "POST /v1/harnesses/:id/accounts/:accountId/login": HarnessAuthFlow,
   "POST /v1/harnesses/:id/accounts/:accountId/logout": HarnessAccount,
+  "GET /v1/plugins": PluginListResponse,
+  "POST /v1/plugins/discover-remote": DiscoverRemotePluginResult,
+  "POST /v1/plugins/import-remote": PluginSummary,
+  "POST /v1/plugins/link": PluginSummary,
+  "GET /v1/plugins/:pluginId": PluginSummary,
+  "DELETE /v1/plugins/:pluginId": PluginListResponse,
+  "POST /v1/plugins/:pluginId/restart": PluginSummary,
+  "POST /v1/plugins/:pluginId/panes/:paneId/token": PluginPaneTokenResponse,
   "GET /v1/sessions": arrayOf(SessionSummary),
   "POST /v1/sessions": SessionSummary,
   "GET /v1/sessions/:id": SessionDetail,
@@ -334,6 +362,9 @@ const created = new Set<Endpoint>([
   "POST /v1/projects/:id/worktrees",
   "POST /v1/harnesses/:id/accounts",
   "POST /v1/harnesses/:id/accounts/:accountId/login",
+  "POST /v1/plugins/import-remote",
+  "POST /v1/plugins/link",
+  "POST /v1/plugins/:pluginId/panes/:paneId/token",
   "POST /v1/sessions",
   "POST /v1/files",
   "POST /v1/terminals"
@@ -361,6 +392,7 @@ const tagFor = (path: string): string => {
   if (path.includes("/projects")) return "Projects"
   if (path.includes("/workspace")) return "Workspaces"
   if (path.includes("/harnesses")) return "Harnesses"
+  if (path.includes("/plugins")) return "Plugins"
   if (path.includes("/sessions")) return "Sessions"
   if (path.includes("/files")) return "Files"
   if (path.includes("/events")) return "Events"
@@ -546,6 +578,7 @@ export const makeOpenApiDocument = (version: string): CodevisorOpenApi => {
       "Projects",
       "Workspaces",
       "Harnesses",
+      "Plugins",
       "Sessions",
       "Files",
       "Events",

@@ -422,6 +422,7 @@ struct PaneGroupBar: View {
                     name: pane.kind == .chat ? (chatTitle?(pane) ?? pane.name) : pane.name,
                     kind: pane.kind,
                     isAgentOwned: pane.attachOnly,
+                    pluginIcon: pane.pluginIcon,
                     isSelected: pane.id == group.state.selectedPaneId,
                     isDragging: draggingPaneId == pane.id,
                     width: slot.width,
@@ -847,6 +848,8 @@ struct PaneTab: View {
     /// Agent-owned background terminals get a server-rack glyph so ownership
     /// is obvious next to the user's own shells (which get a terminal glyph).
     let isAgentOwned: Bool
+    /// Plugin panes: the manifest's SF Symbol, else the puzzle-piece fallback.
+    var pluginIcon: String? = nil
     let isSelected: Bool
     let isDragging: Bool
     let width: CGFloat
@@ -898,6 +901,7 @@ struct PaneTab: View {
         case .chat: "text.bubble"
         case .terminal: isAgentOwned ? "server.rack" : "terminal"
         case .newTab: "square.dashed"
+        case .plugin: pluginIcon ?? "puzzlepiece.extension"
         }
     }
 
@@ -906,6 +910,7 @@ struct PaneTab: View {
         case .chat: "Chat"
         case .terminal: isAgentOwned ? "Agent background process" : "Terminal"
         case .newTab: "New tab"
+        case .plugin: "Plugin pane"
         }
     }
 

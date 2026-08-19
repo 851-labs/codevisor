@@ -135,6 +135,15 @@ public final class MachineController {
     /// — the AppEnvironment bridges it to its harness-catalog revision so
     /// mounted pickers and settings panes refetch.
     @ObservationIgnored public var onHarnessLifecycleChanged: ((String) -> Void)?
+    /// Invoked when a `plugin.state.updated` event arrives for a machine —
+    /// the AppEnvironment bridges it to its plugin-state revision so mounted
+    /// settings panes and New Tab cards refetch.
+    @ObservationIgnored public var onPluginStateChanged: ((String) -> Void)?
+    /// Invoked when a `plugin.updated` event arrives (the plugin's code or
+    /// install changed: restart, re-import, re-link) — the AppEnvironment
+    /// bridges it to a per-plugin revision so that plugin's open panes
+    /// re-run their token→load flow. Arguments: (serverId, pluginId).
+    @ObservationIgnored public var onPluginUpdated: ((String, String) -> Void)?
 
     public init(
         store: any PersistenceStore,
@@ -357,6 +366,31 @@ public final class MachineController {
     private func relayServerConfig(forMachineId machineId: String) -> CodevisorServerConfig? {
         guard let cloud = cloudMachine(forMachineId: machineId) else { return nil }
         return cloudProvider?.relayServerConfig(for: cloud)
+    }
+
+    /// The machine's effective HTTP origin for consumers that must dial a
+    /// real socket instead of the in-process relay transports (plugin pane
+    /// webviews, external helper processes): direct machines answer their
+    /// configured baseURL; cloud machines lazily start the in-app loopback
+    /// bridge and answer its `http://127.0.0.1:<port>` address, waiting
+    /// (bounded) for the listener to come up. Nil when the machine is gone or
+    /// the relay bridge can't start (signed out, relay down).
+    public func effectiveHTTPBaseURL(
+        forMachineId machineId: String,
+        timeout: Duration = .seconds(10)
+    ) async -> URL? {
+        guard let cloud = cloudMachine(forMachineId: machineId) else {
+            return machine(for: machineId)?.baseURL
+        }
+        guard let cloudProvider else { return nil }
+        // The first call kicks the bridge off; poll for the published port —
+        // it appears via an observable the synchronous accessor can't await.
+        let deadline = ContinuousClock.now + timeout
+        while true {
+            if let url = cloudProvider.loopbackBaseURL(for: cloud) { return url }
+            guard ContinuousClock.now < deadline, !Task.isCancelled else { return nil }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
     }
 
     public func selectMachine(_ id: String) {
@@ -707,6 +741,8 @@ public final class MachineController {
         "workspace.updated", "workspace.deleted",
         "workspace.pane.updated", "workspace.pane.deleted",
         "harness.lifecycle.updated",
+        "plugin.state.updated",
+        "plugin.updated",
     ]
 
     /// Follows the selected server's event stream so projects and sessions
@@ -810,6 +846,17 @@ public final class MachineController {
             // Update detection / install progress changed a harness — bump
             // the catalog revision so mounted pickers and settings refetch.
             onHarnessLifecycleChanged?(serverId)
+        case "plugin.state.updated":
+            // A plugin started, stopped, crashed, or the installed list
+            // changed — bump the revision so state chips and cards refetch.
+            onPluginStateChanged?(serverId)
+        case "plugin.updated":
+            // The plugin's code/install changed (restart, re-import, link) —
+            // open panes reload. Deliberately NOT driven off
+            // plugin.state.updated: idle shutdown also transitions to
+            // `stopped`, and reloading on that would wake the plugin in an
+            // endless idle-stop → reload loop.
+            onPluginUpdated?(serverId, event.subjectId)
         default:
             // Prompt/queue/error events are handled by the session transports.
             break

@@ -36,7 +36,7 @@ afterEach(() => {
 describe("Codevisor MCP provider", () => {
   it("publishes a unique, resource-oriented tool contract", async () => {
     const names = codevisorTools.map((tool) => tool.name)
-    expect(names).toHaveLength(122)
+    expect(names).toHaveLength(128)
     expect(new Set(names).size).toBe(names.length)
     expect(names).toEqual(
       expect.arrayContaining([
@@ -44,10 +44,13 @@ describe("Codevisor MCP provider", () => {
         "projects.create",
         "worktrees.create",
         "workspaces.upsert",
+        "workspaces.open_plugin_pane",
         "sessions.prompt",
         "files.upload",
         "mcps.create",
         "skills.create",
+        "plugins.discover_remote",
+        "plugins.install",
         "harnesses.accounts_login",
         "machines.cloud_connect",
         "server.shutdown"
@@ -204,6 +207,40 @@ describe("Codevisor MCP provider", () => {
     await expect(provider.invoke(callingContext, "files.upload", {})).rejects.toThrow(
       "files.upload requires dataBase64"
     )
+  })
+
+  it("gates consent-marked tools on an explicit confirm argument", async () => {
+    const install = codevisorTools.find((tool) => tool.name === "plugins.install")!
+    expect(install.inputSchema.required).toContain("confirm")
+    expect(install.inputSchema).toMatchObject({
+      properties: { source: { type: "string" }, confirm: { type: "boolean" } }
+    })
+
+    const requests: Array<{ url: URL; init: RequestInit }> = []
+    stubFetch((url, init) => {
+      requests.push({ url, init })
+      return jsonResponse({ id: "codevisor.git-diff" })
+    })
+    const provider = makeCodevisorProvider(
+      () => "http://localhost:43210",
+      async () => "stable-token"
+    )
+
+    await expect(
+      provider.invoke(callingContext, "plugins.install", { source: "owner/repo" })
+    ).rejects.toThrow("plugins.install requires confirm: true")
+    await expect(
+      provider.invoke(callingContext, "plugins.install", { source: "owner/repo", confirm: false })
+    ).rejects.toThrow("explicit approval")
+    expect(requests).toHaveLength(0)
+
+    await provider.invoke(callingContext, "plugins.install", {
+      source: "owner/repo",
+      confirm: true
+    })
+    expect(requests[0]!.url.pathname).toBe("/v1/plugins/import-remote")
+    // The consent argument is local to the tool; the server never sees it.
+    expect(JSON.parse(requests[0]!.init.body as string)).toEqual({ source: "owner/repo" })
   })
 
   it("returns binary, empty, JSON, and plain-text API responses", async () => {

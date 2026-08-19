@@ -89,6 +89,42 @@ public extension CodevisorServerClienting {
         try await upsertSession(session)
     }
 
+    /// Compatibility fallback for test doubles and servers without the
+    /// plugins feature: no plugins, and no pane tokens. The HTTP client
+    /// overrides both with the real requests.
+    func listPlugins() async throws -> [ServerPluginSummary] { [] }
+
+    func issuePluginPaneToken(
+        pluginId: String,
+        paneId: String,
+        paneType: String,
+        workspaceId: String?,
+        cwd: String?,
+        themeMode: String?
+    ) async throws -> ServerPluginPaneTokenResponse {
+        throw CodevisorServerClientError.invalidResponse
+    }
+
+    func discoverRemotePlugin(source: String) async throws -> ServerPluginRemoteDiscovery {
+        throw CodevisorServerClientError.invalidResponse
+    }
+
+    func importRemotePlugin(source: String) async throws -> ServerPluginSummary {
+        throw CodevisorServerClientError.invalidResponse
+    }
+
+    func linkPlugin(path: String) async throws -> ServerPluginSummary {
+        throw CodevisorServerClientError.invalidResponse
+    }
+
+    func removePlugin(pluginId: String) async throws -> [ServerPluginSummary] {
+        throw CodevisorServerClientError.invalidResponse
+    }
+
+    func restartPlugin(pluginId: String) async throws -> ServerPluginSummary {
+        throw CodevisorServerClientError.invalidResponse
+    }
+
     func listWorkspaces() async throws -> [ServerWorkspace]? { nil }
     func workspaceSnapshot() async throws -> ServerWorkspaceSnapshot? { nil }
     func upsertWorkspace(_ workspace: ServerWorkspace) async throws -> ServerWorkspace? { nil }

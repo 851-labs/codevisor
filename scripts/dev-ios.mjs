@@ -159,6 +159,7 @@ const server = spawn(
       CODEVISOR_DATA_DIR: remoteDataDirectory,
       CODEVISOR_WORKTREES_ROOT: join(remoteDataDirectory, "worktrees"),
       CODEVISOR_REPOS_ROOT: join(remoteDataDirectory, "repos"),
+      CODEVISOR_PLUGINS_ROOT: join(remoteDataDirectory, "plugins"),
       ...(cloudSession === undefined
         ? {}
         : {

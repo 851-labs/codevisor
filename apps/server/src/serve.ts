@@ -56,6 +56,7 @@ import { acquireServerLease, type ServerLease } from "./infra/server-lease.js"
 import { makeHarnessAuthManager } from "@codevisor/harness-manager"
 import { makeMcpManager } from "@codevisor/mcp"
 import { makeNativeMcpManager } from "@codevisor/mcp"
+import { makePluginsManager, managedPluginSkill } from "@codevisor/plugins"
 import { makeSkillsManager } from "@codevisor/skills"
 import { migrateLegacyLayout, migrateTmpDataDir } from "./infra/legacy-layout.js"
 import {
@@ -754,6 +755,28 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
       })
     )
     const skills = initializeOptionalServerFeature("Skills", () => makeSkillsManager({ agents }))
+    const plugins = initializeOptionalServerFeature("Plugins", () =>
+      makePluginsManager({
+        dataDir: dirname(databasePath),
+        log: (message) => console.log(message),
+        // Plugin process output streams into an attachable external terminal
+        // (sessionId `plugin:{id}`) so clients can offer "Show Output".
+        registerExternalTerminal: (config, process) =>
+          terminal.registerExternalTerminal(config, process),
+        resolveEnv: () => resolveShellEnv()
+      })
+    )
+    // Keep the plugin-authoring skill in every harness's skills directory in
+    // step with feature availability, so agents can author plugins without
+    // rediscovering the contract. Fire-and-forget: skill sync must never
+    // block or fail server boot.
+    if (skills !== undefined) {
+      void Promise.resolve()
+        .then(() => skills.syncManaged([managedPluginSkill(plugins !== undefined)]))
+        .catch((cause: unknown) =>
+          console.log(`Plugin authoring skill sync unavailable: ${failureMessage(cause)}`)
+        )
+    }
     const mcp = initializeOptionalServerFeature("MCP", () =>
       makeMcpManager({
         db,
@@ -824,6 +847,7 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
         ...(lifecycle === undefined ? {} : { lifecycle }),
         ...(mcp === undefined ? {} : { mcp }),
         ...(nativeMcp === undefined ? {} : { nativeMcp }),
+        ...(plugins === undefined ? {} : { plugins }),
         ...(skills === undefined ? {} : { skills })
       },
       defaultServerConfig({

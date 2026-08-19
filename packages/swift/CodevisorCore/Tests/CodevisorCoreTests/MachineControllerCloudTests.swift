@@ -537,6 +537,43 @@ struct MachineControllerCloudTests {
         #expect(second.selectedMachine.isCloud)
         #expect(projectList.selectedServerId == "cloud:dev-1")
     }
+
+    @Test("effectiveHTTPBaseURL answers a direct machine's configured baseURL")
+    func effectiveBaseURLDirectMachine() async throws {
+        let (controller, _, _) = makeController()
+        let machine = try controller.addRemote(host: "http://10.0.0.5:4152")
+
+        let url = await controller.effectiveHTTPBaseURL(forMachineId: machine.id)
+        #expect(url == machine.baseURL)
+    }
+
+    @Test("effectiveHTTPBaseURL waits for a cloud machine's loopback bridge")
+    func effectiveBaseURLCloudMachineWaitsForBridge() async {
+        let (controller, _, provider) = makeController()
+        let cloud = makeCloudMachine()
+        provider.cloudMachines = [cloud]
+
+        // The bridge publishes its port a beat after the first touch, like
+        // CloudAccountController does once the listener is up.
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(50))
+            provider.loopbackURLsByDeviceId[cloud.deviceId] = URL(string: "http://127.0.0.1:50505")!
+        }
+        let url = await controller.effectiveHTTPBaseURL(forMachineId: "cloud:dev-1")
+        #expect(url == URL(string: "http://127.0.0.1:50505"))
+    }
+
+    @Test("effectiveHTTPBaseURL gives up when the bridge never comes up")
+    func effectiveBaseURLCloudMachineTimesOut() async {
+        let (controller, _, provider) = makeController()
+        provider.cloudMachines = [makeCloudMachine()]
+
+        let url = await controller.effectiveHTTPBaseURL(
+            forMachineId: "cloud:dev-1",
+            timeout: .milliseconds(150)
+        )
+        #expect(url == nil)
+    }
 }
 
 @MainActor

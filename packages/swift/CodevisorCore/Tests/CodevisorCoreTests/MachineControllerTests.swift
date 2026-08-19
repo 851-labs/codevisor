@@ -346,6 +346,35 @@ struct MachineControllerTests {
         controller.stopEventSync()
     }
 
+    @Test("Plugin events bridge list invalidation and per-plugin reloads")
+    func pluginEventBridging() async throws {
+        let fake = SyncFakeServerClient(projects: [], sessions: [])
+        let projectList = ProjectListModel(
+            projectRepository: DefaultProjectRepository(store: InMemoryStore()),
+            sessionRepository: DefaultSessionRepository(store: InMemoryStore())
+        )
+        let controller = MachineController(
+            store: InMemoryStore(),
+            projectList: projectList,
+            clientFactory: { _ in fake }
+        )
+        var stateChanges: [String] = []
+        var updates: [[String]] = []
+        controller.onPluginStateChanged = { stateChanges.append($0) }
+        controller.onPluginUpdated = { updates.append([$0, $1]) }
+
+        controller.startEventSync()
+        // Runtime transitions invalidate the machine's plugin list…
+        fake.emit(kind: "plugin.state.updated", subjectId: "owner.example")
+        // …while only plugin.updated (code/install changed) triggers pane
+        // reloads, carrying the plugin id so unrelated panes stay put.
+        fake.emit(kind: "plugin.updated", subjectId: "owner.example")
+        try await waitForSync { updates == [["local", "owner.example"]] }
+        #expect(stateChanges == ["local"])
+
+        controller.stopEventSync()
+    }
+
     @Test("Workspace and unarchive events drive shared navigation state")
     func workspaceEventSync() async throws {
         let projectId = UUID()

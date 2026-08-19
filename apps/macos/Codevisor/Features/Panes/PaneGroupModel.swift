@@ -109,6 +109,14 @@ final class PaneGroupModel: Identifiable {
         switch descriptor.kind {
         case .terminal:
             pane = TerminalPane(context: makeContext(descriptor))
+        case .plugin:
+            let plugin = PluginPane(context: makeContext(descriptor), descriptor: descriptor)
+            // `codevisor.setTitle` renames the pane's tab like a manual
+            // rename would (persisted + published).
+            plugin.onTitleChange = { [weak self] title in
+                self?.renamePane(id: descriptor.id, to: title)
+            }
+            pane = plugin
         // The New Tab placeholder rides the chat pane's plumbing: an
         // AnyView host resolving content from the live descriptor via
         // `chatContent` (the container branches on kind there).
@@ -144,7 +152,7 @@ final class PaneGroupModel: Identifiable {
                 self.requestComposerFocus?()
             case .newTab:
                 self.requestBackgroundFocus?()
-            case .terminal:
+            case .terminal, .plugin:
                 break
             }
         }
@@ -372,12 +380,17 @@ final class PaneGroupModel: Identifiable {
         id: UUID,
         to kind: PaneKind,
         chatSessionId: UUID? = nil,
-        name: String? = nil
+        name: String? = nil,
+        pluginId: String? = nil,
+        pluginPaneType: String? = nil,
+        pluginIcon: String? = nil
     ) {
         guard let previous = state.panes.first(where: { $0.id == id }),
             let converted = state.convertNewTabPane(
                 id: id, to: kind, sessionId: sessionId,
-                chatSessionId: chatSessionId, name: name
+                chatSessionId: chatSessionId, name: name,
+                pluginId: pluginId, pluginPaneType: pluginPaneType,
+                pluginIcon: pluginIcon
             )
         else { return }
         if Self.requiresNewLivePane(previous: previous, next: converted) {
@@ -634,6 +647,11 @@ final class PaneGroupModel: Identifiable {
             // TerminalPane captures connection identity in its PaneContext.
             return previous.terminalKey != next.terminalKey
                 || previous.attachOnly != next.attachOnly
+        case (.plugin, .plugin):
+            // PluginPane captures the plugin identity at creation; a pane
+            // re-pointed at another plugin/pane type needs a fresh webview.
+            return previous.pluginId != next.pluginId
+                || previous.pluginPaneType != next.pluginPaneType
         default:
             return true
         }

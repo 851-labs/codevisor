@@ -6,13 +6,20 @@
 /// command tree.
 import { NodeRuntime, NodeServices } from "@effect/platform-node"
 import { Effect, Option } from "effect"
-import { Command, Flag, Prompt } from "effect/unstable/cli"
+import { Argument, Command, Flag, Prompt } from "effect/unstable/cli"
 import { execFile, spawn } from "node:child_process"
 import { mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { hostname } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { authLoginCommand, authLogoutCommand, authStatusCommand } from "./cli/cloud-auth.js"
+import {
+  pluginInstallCommand,
+  pluginLinkCommand,
+  pluginListCommand,
+  pluginRemoveCommand,
+  type PluginsCliDeps
+} from "./cli/plugins.js"
 import { qrCommand, setupCommand, type SetupDeps } from "./cli/setup.js"
 import {
   logsCommand,
@@ -58,7 +65,13 @@ const makeDeps = (): CliDeps => ({
     try {
       const response = await fetch(url, {
         method: init?.method ?? "GET",
-        signal: AbortSignal.timeout(5000)
+        signal: AbortSignal.timeout(init?.timeoutMs ?? 5000),
+        ...(init?.body === undefined
+          ? {}
+          : {
+              body: JSON.stringify(init.body),
+              headers: { "content-type": "application/json" }
+            })
       })
       const body: unknown = await response.json().catch(() => undefined)
       return { status: response.status, body }
@@ -275,6 +288,80 @@ const qr = Command.make(
     )
 ).pipe(Command.withDescription("Print the pairing QR code for the Codevisor phone app"))
 
+/// Plugin commands talk to the running server over the loopback API; the
+/// consent prompt is the only interactive piece.
+const makePluginsDeps = (): PluginsCliDeps => ({
+  ...makeDeps(),
+  confirm: (message) => runPrompt(Prompt.confirm({ message }))
+})
+
+const pluginInstall = Command.make(
+  "install",
+  {
+    source: Argument.string("source").pipe(
+      Argument.withDescription("owner/repo, owner/repo/path, a git URL, or a local path")
+    ),
+    port: portFlag,
+    yes: Flag.boolean("yes").pipe(
+      Flag.withAlias("y"),
+      Flag.withDescription("Skip the install confirmation prompt")
+    )
+  },
+  ({ port, source, yes }) =>
+    Effect.promise(async () => {
+      process.exitCode = await pluginInstallCommand(makePluginsDeps(), {
+        port: Option.getOrUndefined(port),
+        source,
+        yes
+      })
+    })
+).pipe(Command.withDescription("Install a plugin after showing the commands it will run"))
+
+const pluginLink = Command.make(
+  "link",
+  {
+    path: Argument.string("path").pipe(
+      Argument.withDescription("Local plugin directory to symlink into the plugins root")
+    ),
+    port: portFlag
+  },
+  ({ path, port }) =>
+    runCli((deps) =>
+      pluginLinkCommand(
+        { ...deps, confirm: async () => true },
+        { path, port: Option.getOrUndefined(port) }
+      )
+    )
+).pipe(Command.withDescription("Link a local plugin directory for development"))
+
+const pluginList = Command.make("list", { port: portFlag }, ({ port }) =>
+  runCli((deps) =>
+    pluginListCommand({ ...deps, confirm: async () => true }, { port: Option.getOrUndefined(port) })
+  )
+).pipe(Command.withDescription("List installed plugins with their runtime state"))
+
+const pluginRemove = Command.make(
+  "remove",
+  {
+    pluginId: Argument.string("id").pipe(
+      Argument.withDescription("Plugin id to uninstall (managed installs only)")
+    ),
+    port: portFlag
+  },
+  ({ pluginId, port }) =>
+    runCli((deps) =>
+      pluginRemoveCommand(
+        { ...deps, confirm: async () => true },
+        { pluginId, port: Option.getOrUndefined(port) }
+      )
+    )
+).pipe(Command.withDescription("Uninstall a managed plugin"))
+
+const plugin = Command.make("plugin").pipe(
+  Command.withDescription("Manage this machine's Codevisor plugins"),
+  Command.withSubcommands([pluginInstall, pluginLink, pluginList, pluginRemove])
+)
+
 const authLogin = Command.make(
   "login",
   {
@@ -315,6 +402,7 @@ const root = Command.make("codevisor").pipe(
     setup,
     qr,
     auth,
+    plugin,
     start,
     stop,
     restart,

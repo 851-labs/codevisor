@@ -45,6 +45,7 @@ enum MachineSettingsRoute: Hashable {
     case harnesses(String)
     case mcps(String)
     case skills(String)
+    case plugins(String)
 }
 
 /// A place in Settings: the sidebar section plus any machine pages pushed
@@ -302,6 +303,10 @@ struct SettingsView: View {
             case let .skills(id):
                 SkillsSettingsView()
                     .navigationTitle("Skills")
+                    .environment(\.settingsMachineId, id)
+            case let .plugins(id):
+                PluginsSettingsView()
+                    .navigationTitle("Plugins")
                     .environment(\.settingsMachineId, id)
             }
         }

@@ -30,11 +30,11 @@
 
 ---
 
-![Codevisor showing active coding-agent chats across several projects with a detailed response in the main workspace.](docs/images/codevisor-workspace-2026-07-17-v2.png)
+![Codevisor showing active coding-agent chats across several projects with a detailed response in the main workspace.](.github/images/codevisor-workspace-2026-07-17-v2.png)
 
 **Run Claude Code, Codex, Pi, and any ACP-compatible coding agent on your machines in one native macOS app.**
 
-- **lightweight and fast** — no electron bloat, no webviews, pure Swift.
+- **lightweight and fast** — no electron bloat, no webviews, pure Swift. (the one deliberate exception: plugin panes render plugin-served content in a contained webview.)
 - **remote machines** — connect your Mac Mini, VPS, or any remote server.
 - **a real terminal** — embedded [Ghostty](https://github.com/ghostty-org/ghostty) with all the bells and whistles.
 

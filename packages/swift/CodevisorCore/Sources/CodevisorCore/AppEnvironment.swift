@@ -37,6 +37,16 @@ public final class AppEnvironment {
     /// Monotonic, per-machine invalidation tokens for consumers that keep a
     /// harness catalog alive (most notably an already-mounted new-chat page).
     private var harnessCatalogRevisions: [String: UInt64] = [:]
+    /// Monotonic, per-machine invalidation tokens bumped by
+    /// `plugin.state.updated` events; the Plugins settings pane and New Tab
+    /// cards observe these and refetch the list. Accessors live in
+    /// AppEnvironment+Plugins.swift.
+    var pluginStateRevisions: [String: UInt64] = [:]
+    /// Monotonic, per-plugin reload tokens (keyed "serverId|pluginId") bumped
+    /// by `plugin.updated` events; open plugin panes observe their plugin's
+    /// token and re-run the full token→load flow when it moves. Accessors
+    /// live in AppEnvironment+Plugins.swift.
+    var pluginUpdateRevisions: [String: UInt64] = [:]
     private var harnessLifecycleByServer: [String: [ServerHarness]] = [:]
     private let clientDataResetter: (any ClientDataResetting)?
 
@@ -140,9 +150,9 @@ public final class AppEnvironment {
         }
         projectList.showsImportedSessions = settings.importExternalSessions
         machines.serverUpdateChannel = settings.alphaUpdatesEnabled ? .alpha : .stable
-        machines.onHarnessLifecycleChanged = { [weak self] serverId in
-            self?.harnessCatalogDidChange(onServer: serverId)
-        }
+        machines.onHarnessLifecycleChanged = { [weak self] in self?.harnessCatalogDidChange(onServer: $0) }
+        machines.onPluginStateChanged = { [weak self] in self?.pluginStateDidChange(onServer: $0) }
+        machines.onPluginUpdated = { [weak self] in self?.pluginDidUpdate(onServer: $0, pluginId: $1) }
         // One-time split of pre-"1 workspace == 1 directory" workspaces whose
         // chats live in different worktrees. Runs before any window renders
         // (no workspace models are cached yet); sessions load synchronously

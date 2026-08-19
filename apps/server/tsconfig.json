@@ -38,6 +38,9 @@
       "path": "../../packages/skills"
     },
     {
+      "path": "../../packages/plugins"
+    },
+    {
       "path": "../../packages/worktrees"
     },
     {
