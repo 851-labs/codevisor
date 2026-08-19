@@ -157,21 +157,21 @@
         "character": 7
       },
       "severity": "error",
-      "reason": "Class body should span 800 lines or less excluding comments and whitespace: currently spans 1363 lines"
+      "reason": "Class body should span 800 lines or less excluding comments and whitespace: currently spans 1368 lines"
     }
   },
   {
     "text": "}",
     "violation": {
       "location": {
-        "line": 1544,
+        "line": 1552,
         "character": 1,
         "file": "file:///WORKTREE/apps/ios/Codevisor/Features/Session/VirtualizedTranscriptScrollView.swift"
       },
       "ruleIdentifier": "file_length",
       "ruleName": "File Length",
       "severity": "error",
-      "reason": "File should contain 1000 lines or less excluding comments and whitespaces: currently contains 1371",
+      "reason": "File should contain 1000 lines or less excluding comments and whitespaces: currently contains 1376",
       "ruleDescription": "Files should not span too many lines."
     }
   },
@@ -731,7 +731,7 @@
   {
     "text": "final class VirtualizedTranscriptScrollView: NSScrollView {",
     "violation": {
-      "reason": "Class body should span 800 lines or less excluding comments and whitespace: currently spans 1099 lines",
+      "reason": "Class body should span 800 lines or less excluding comments and whitespace: currently spans 1104 lines",
       "ruleIdentifier": "type_body_length",
       "ruleDescription": "Type bodies should not span too many lines",
       "severity": "error",
@@ -752,10 +752,10 @@
       "ruleDescription": "Files should not span too many lines.",
       "location": {
         "character": 1,
-        "line": 1386,
+        "line": 1394,
         "file": "file:///WORKTREE/apps/macos/Codevisor/Features/Session/VirtualizedTranscriptScrollView.swift"
       },
-      "reason": "File should contain 1000 lines or less excluding comments and whitespaces: currently contains 1107"
+      "reason": "File should contain 1000 lines or less excluding comments and whitespaces: currently contains 1112"
     }
   },
   {

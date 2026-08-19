@@ -431,7 +431,14 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             }
             _ = activateMeasurementCacheIfNeeded()
             installExactSpacerMeasurements()
-            refreshMountedRootViews()
+            // Row-set changes mount and recycle only the affected hosts below.
+            // Preserve every other hosting tree so an insertion/removal cannot
+            // blank the whole visible transcript for a SwiftUI commit.
+            if layoutFingerprintChanged {
+                refreshMountedRootViews()
+            } else {
+                refreshChangedMountedRootViews(previousRowsByKey: previousRowsByKey)
+            }
             rebuildDocumentGeometry()
             return true
         } else {
@@ -1064,8 +1071,9 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         previousRowsByKey: [String: TranscriptVirtualRow],
     ) {
         for (key, host) in mountedHosts {
-            guard let row = rowByKey[key],
-                previousRowsByKey[key]?.content != row.content
+            guard let row = rowByKey[key], let previous = previousRowsByKey[key],
+                previous.content != row.content
+                    || previous.measurementRevision != row.measurementRevision
             else { continue }
             host.install(row: row, rootView: measuredRootView(for: row), force: true)
         }

@@ -375,7 +375,14 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                     measurements.setExact(height, for: row.layoutKey)
                 }
             }
-            refreshMountedRootViews()
+            // Row-set changes mount and recycle only the affected hosts below.
+            // Preserve every other hosting tree so an insertion/removal cannot
+            // blank the whole visible transcript for a SwiftUI commit.
+            if layoutFingerprintChanged {
+                refreshMountedRootViews()
+            } else {
+                refreshChangedMountedRootViews(previousRowsByKey: previousRowsByKey)
+            }
             rebuildDocumentGeometry()
         } else {
             rows = newRows
@@ -1060,8 +1067,9 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         previousRowsByKey: [String: TranscriptVirtualRow]
     ) {
         for (key, host) in mountedHosts {
-            guard let row = rowByKey[key],
-                previousRowsByKey[key]?.content != row.content
+            guard let row = rowByKey[key], let previous = previousRowsByKey[key],
+                previous.content != row.content
+                    || previous.measurementRevision != row.measurementRevision
             else { continue }
             host.rootView = measuredRootView(for: row)
         }
