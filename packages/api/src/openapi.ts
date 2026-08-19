@@ -34,6 +34,7 @@ import {
   PluginListResponse,
   PluginPaneTokenRequest,
   PluginPaneTokenResponse,
+  PluginRegistryIndex,
   PluginSummary,
   OpenCodeAuthFlow,
   OpenCodeAuthProvider,
@@ -150,6 +151,7 @@ export const endpoints = [
   "DELETE /v1/harnesses/:id/accounts/:accountId/login/:flowId",
   "POST /v1/harnesses/:id/accounts/:accountId/logout",
   "GET /v1/plugins",
+  "GET /v1/plugins/registry",
   "POST /v1/plugins/discover-remote",
   "POST /v1/plugins/import-remote",
   "POST /v1/plugins/link",
@@ -293,6 +295,7 @@ const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> => ({
   "POST /v1/harnesses/:id/accounts/:accountId/login": HarnessAuthFlow,
   "POST /v1/harnesses/:id/accounts/:accountId/logout": HarnessAccount,
   "GET /v1/plugins": PluginListResponse,
+  "GET /v1/plugins/registry": PluginRegistryIndex,
   "POST /v1/plugins/discover-remote": DiscoverRemotePluginResult,
   "POST /v1/plugins/import-remote": PluginSummary,
   "POST /v1/plugins/link": PluginSummary,
@@ -438,6 +441,9 @@ const queryParameters = (endpoint: Endpoint): ReadonlyArray<JsonObject> => {
       { name: "cwd", in: "query", schema: { type: "string" } },
       { name: "harnessId", in: "query", schema: { type: "string" } }
     ]
+  }
+  if (endpoint === "GET /v1/plugins/registry") {
+    return [{ name: "q", in: "query", schema: { type: "string" } }]
   }
   if (endpoint === "GET /v1/sessions/:id/transcript") {
     return [

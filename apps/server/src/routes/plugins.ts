@@ -1,4 +1,5 @@
 import type { PluginSummary, WorkspacePane } from "@codevisor/api"
+import { filterPluginRegistryIndex } from "@codevisor/plugins"
 import {
   DiscoverRemotePluginRequest as DiscoverRemotePluginRequestSchema,
   ImportRemotePluginRequest as ImportRemotePluginRequestSchema,
@@ -99,6 +100,21 @@ export const routePlugins = async (
   if (!url.pathname.startsWith("/v1/plugins")) {
     return false
   }
+
+  // Registry passthrough: the machine (not the client) talks to the hosted
+  // index, so apps browse plugins with no cloud connectivity of their own.
+  // Independent of the runtime manager — handled before its 501 gate.
+  if (url.pathname === "/v1/plugins/registry" && request.method === "GET") {
+    const registry = services.pluginRegistry
+    if (registry === undefined) {
+      throw new HttpFailure(501, "The plugin registry is unavailable")
+    }
+    const index = await registry.fetchIndex()
+    const query = url.searchParams.get("q")
+    writeJson(response, 200, query === null ? index : filterPluginRegistryIndex(index, query))
+    return true
+  }
+
   const manager = services.plugins
   if (manager === undefined) {
     throw new HttpFailure(501, "Plugins are unavailable")

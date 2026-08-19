@@ -165,6 +165,10 @@ public protocol CodevisorServerClienting: Sendable {
         cwd: String?,
         themeMode: String?
     ) async throws -> ServerPluginPaneTokenResponse
+    /// The public plugin registry index, fetched and cached by the machine so
+    /// clients never talk to the cloud themselves
+    /// (`GET /v1/plugins/registry`). `query` filters entries server-side.
+    func fetchPluginRegistry(query: String?) async throws -> ServerPluginRegistryIndex
     /// Stage a plugin source and describe what installing it would run —
     /// the consent step's data (`POST /v1/plugins/discover-remote`).
     func discoverRemotePlugin(source: String) async throws -> ServerPluginRemoteDiscovery

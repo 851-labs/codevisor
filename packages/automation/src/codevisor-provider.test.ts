@@ -36,7 +36,7 @@ afterEach(() => {
 describe("Codevisor MCP provider", () => {
   it("publishes a unique, resource-oriented tool contract", async () => {
     const names = codevisorTools.map((tool) => tool.name)
-    expect(names).toHaveLength(129)
+    expect(names).toHaveLength(130)
     expect(new Set(names).size).toBe(names.length)
     expect(names).toEqual(
       expect.arrayContaining([
@@ -49,6 +49,7 @@ describe("Codevisor MCP provider", () => {
         "files.upload",
         "mcps.create",
         "skills.create",
+        "plugins.registry_search",
         "plugins.discover_remote",
         "plugins.install",
         "plugins.open_pane_url",

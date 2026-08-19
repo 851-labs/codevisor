@@ -694,6 +694,20 @@ export const CODEVISOR_API_TOOLS: ReadonlyArray<CodevisorApiToolSpec> = [
     "/v1/plugins"
   ),
   apiTool(
+    "plugins.registry_search",
+    "Search the public Codevisor plugin registry for installable plugins. Entries carry the " +
+      "plugin's name, description, panes, declared agent tools, GitHub repo (owner/name), and " +
+      "star count. To install a result, pass its repo to plugins.discover_remote, show the user " +
+      "what it would run, then call plugins.install.",
+    "GET",
+    "/v1/plugins/registry",
+    {
+      query: [
+        stringQuery("q", "Case-insensitive filter over plugin id, name, description, and repo.")
+      ]
+    }
+  ),
+  apiTool(
     "plugins.discover_remote",
     "Preview a plugin source without installing it: returns the manifest summary (panes and any " +
       "declared agent tools) and the exact install/run commands installation would execute on " +

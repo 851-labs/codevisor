@@ -105,6 +105,10 @@ public extension CodevisorServerClienting {
         throw CodevisorServerClientError.invalidResponse
     }
 
+    func fetchPluginRegistry(query: String?) async throws -> ServerPluginRegistryIndex {
+        throw CodevisorServerClientError.invalidResponse
+    }
+
     func discoverRemotePlugin(source: String) async throws -> ServerPluginRemoteDiscovery {
         throw CodevisorServerClientError.invalidResponse
     }

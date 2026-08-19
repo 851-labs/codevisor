@@ -56,7 +56,12 @@ import { acquireServerLease, type ServerLease } from "./infra/server-lease.js"
 import { makeHarnessAuthManager } from "@codevisor/harness-manager"
 import { makeMcpManager } from "@codevisor/mcp"
 import { makeNativeMcpManager } from "@codevisor/mcp"
-import { makePluginsManager, managedPluginSkill } from "@codevisor/plugins"
+import {
+  makePluginRegistryClient,
+  makePluginsManager,
+  managedPluginSkill,
+  resolvePluginRegistryUrl
+} from "@codevisor/plugins"
 import { makeSkillsManager } from "@codevisor/skills"
 import { migrateLegacyLayout, migrateTmpDataDir } from "./infra/legacy-layout.js"
 import {
@@ -766,6 +771,15 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
         resolveEnv: () => resolveShellEnv()
       })
     )
+    // Registry browsing only makes sense where the install pipeline exists,
+    // so the read-through cache over the hosted index follows the manager's
+    // availability. Env overrides (or the dev cloud) rewire the base URL.
+    const pluginRegistry =
+      plugins === undefined
+        ? undefined
+        : initializeOptionalServerFeature("Plugin registry", () =>
+            makePluginRegistryClient({ baseUrl: resolvePluginRegistryUrl(process.env) })
+          )
     // Keep the plugin-authoring skill in every harness's skills directory in
     // step with feature availability, so agents can author plugins without
     // rediscovering the contract. Fire-and-forget: skill sync must never
@@ -852,6 +866,7 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
         ...(mcp === undefined ? {} : { mcp }),
         ...(nativeMcp === undefined ? {} : { nativeMcp }),
         ...(plugins === undefined ? {} : { plugins }),
+        ...(pluginRegistry === undefined ? {} : { pluginRegistry }),
         ...(skills === undefined ? {} : { skills })
       },
       defaultServerConfig({

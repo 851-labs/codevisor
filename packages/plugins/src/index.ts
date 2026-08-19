@@ -17,6 +17,16 @@ export {
 } from "./plugin-install.js"
 export { PANE_TOKEN_QUERY_PARAM } from "./plugin-pane-auth.js"
 export {
+  DEFAULT_PLUGIN_REGISTRY_URL,
+  filterPluginRegistryIndex,
+  makePluginRegistryClient,
+  PLUGIN_REGISTRY_CACHE_TTL_MS,
+  resolvePluginRegistryUrl,
+  type PluginRegistryClient,
+  type PluginRegistryClientConfig,
+  type PluginRegistryFetch
+} from "./plugin-registry.js"
+export {
   makePluginsManager,
   type PluginsManager,
   type PluginsManagerConfig,

@@ -35,7 +35,7 @@ import type { CustomHarnessStore } from "@codevisor/harness-manager"
 import type { McpManager } from "@codevisor/mcp"
 import { NativeMcpError, type NativeMcpManager } from "@codevisor/mcp"
 import { SkillsError, type SkillsManager } from "@codevisor/skills"
-import { PluginsError, type PluginsManager } from "@codevisor/plugins"
+import { PluginsError, type PluginRegistryClient, type PluginsManager } from "@codevisor/plugins"
 
 export class ServerError extends Schema.TaggedErrorClass<ServerError>()("ServerError", {
   operation: Schema.String,
@@ -135,6 +135,10 @@ export interface CodevisorServerServices {
   /// under /v1/plugins/:id/app/*. Absent on hosts that don't support it —
   /// routes 501.
   readonly plugins?: PluginsManager
+  /// Read-through cache over the hosted plugin registry index, so clients
+  /// browse plugins through their machine instead of the cloud. Absent on
+  /// hosts that don't support it — the registry route 501s.
+  readonly pluginRegistry?: PluginRegistryClient
 }
 
 export interface RunningCodevisorServer {

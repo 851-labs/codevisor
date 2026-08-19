@@ -128,6 +128,60 @@ public struct ServerPluginRemoteDiscovery: Codable, Equatable, Sendable {
     }
 }
 
+/// One plugin in the public registry index (mirrors `PluginRegistryEntry` in
+/// packages/api): manifest metadata renderable without running anything, plus
+/// the GitHub facts (repo, stars, push time) that anchor it to a real owner.
+public struct ServerPluginRegistryEntry: Codable, Equatable, Identifiable, Sendable {
+    /// Owner-namespaced plugin id, lowercase `owner.name`.
+    public var id: String
+    public var name: String
+    public var version: String
+    public var description: String?
+    public var panes: [ServerPluginPaneDescriptor]
+    public var tools: [ServerPluginToolDescriptor]?
+    /// GitHub "owner/name" — the directory always shows the real repo owner.
+    /// Feed this to the discover→consent→install flow as the plugin source.
+    public var repo: String
+    public var stars: Int
+    public var pushedAt: String
+
+    public init(
+        id: String,
+        name: String,
+        version: String,
+        description: String? = nil,
+        panes: [ServerPluginPaneDescriptor] = [],
+        tools: [ServerPluginToolDescriptor]? = nil,
+        repo: String,
+        stars: Int,
+        pushedAt: String
+    ) {
+        self.id = id
+        self.name = name
+        self.version = version
+        self.description = description
+        self.panes = panes
+        self.tools = tools
+        self.repo = repo
+        self.stars = stars
+        self.pushedAt = pushedAt
+    }
+}
+
+/// The registry index served by `GET /v1/plugins/registry` (mirrors
+/// `PluginRegistryIndex` in packages/api). The wire document also carries
+/// `rejected` diagnostics for plugin authors; clients don't render them, so
+/// decoding simply ignores that key.
+public struct ServerPluginRegistryIndex: Codable, Equatable, Sendable {
+    public var generatedAt: String
+    public var entries: [ServerPluginRegistryEntry]
+
+    public init(generatedAt: String, entries: [ServerPluginRegistryEntry]) {
+        self.generatedAt = generatedAt
+        self.entries = entries
+    }
+}
+
 /// A short-lived pane token plus the server-relative pane URL it unlocks
 /// (mirrors `PluginPaneTokenResponse` in packages/api). Append `path` to the
 /// machine's base URL and load it in a webview; the proxy exchanges the token
@@ -172,6 +226,15 @@ extension CodevisorServerClient {
     public func listPlugins() async throws -> [ServerPluginSummary] {
         let response: PluginListResponse = try await get("/v1/plugins")
         return response.plugins
+    }
+
+    public func fetchPluginRegistry(query: String? = nil) async throws -> ServerPluginRegistryIndex {
+        var path = "/v1/plugins/registry"
+        if let query, !query.isEmpty {
+            let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+            path += "?q=\(encoded)"
+        }
+        return try await get(path)
     }
 
     public func discoverRemotePlugin(source: String) async throws -> ServerPluginRemoteDiscovery {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  PluginRegistryIndex,
   PromptRequest,
   CreateProjectRequest,
   CreateSessionRequest,
@@ -380,6 +381,43 @@ describe("@codevisor/api", () => {
     const set = decode(SetGoalRequest)({ objective: "focus", tokenBudget: 50000 })
     expect(set.tokenBudget).toBe(50000)
     expect(() => decode(SetGoalRequest)({ status: "later" })).toThrow()
+  })
+
+  it("decodes plugin registry indexes, keeping GitHub facts and diagnostics", () => {
+    const index = decode(PluginRegistryIndex)({
+      generatedAt: "2026-08-18T00:00:00.000Z",
+      entries: [
+        {
+          id: "acme.git-diff",
+          name: "Git Diff",
+          version: "0.1.0",
+          description: "Live git diff viewer",
+          panes: [{ type: "diff", title: "Git Diff", path: "/panes/diff/" }],
+          tools: [
+            { name: "diff_summary", description: "Summarize the diff", path: "/tools/summary" }
+          ],
+          repo: "acme/git-diff",
+          stars: 12,
+          pushedAt: "2026-08-17T00:00:00Z"
+        },
+        // Manifest description and tools stay optional, as in PluginSummary.
+        {
+          id: "beta.notes",
+          name: "Notes",
+          version: "1.0.0",
+          panes: [],
+          repo: "beta/notes",
+          stars: 0,
+          pushedAt: "2026-08-16T00:00:00Z"
+        }
+      ],
+      rejected: [{ repo: "x/y", reason: "codevisor-plugin.json not found" }]
+    })
+    expect(index.entries).toHaveLength(2)
+    expect(index.entries[0]?.repo).toBe("acme/git-diff")
+    expect(index.entries[1]?.description).toBeUndefined()
+    expect(index.rejected[0]?.reason).toContain("not found")
+    expect(() => decode(PluginRegistryIndex)({ entries: [] })).toThrow()
   })
 
   it("exports the complete server endpoint inventory as OpenAPI operations", () => {

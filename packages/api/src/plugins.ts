@@ -193,6 +193,43 @@ export const LinkPluginRequest = Schema.Struct({
 })
 export type LinkPluginRequest = typeof LinkPluginRequest.Type
 
+/// One plugin in the public registry index: manifest metadata the app can
+/// render without running anything, plus the GitHub facts (repo, stars, push
+/// time) that anchor it to a real owner. Mirrors the entries the cloud
+/// registry serves at /plugins/index.json (apps/cloud/src/plugin-registry.ts).
+export const PluginRegistryEntry = Schema.Struct({
+  /// Owner-namespaced plugin id, lowercase `owner.name`.
+  id: Schema.String,
+  name: Schema.String,
+  version: Schema.String,
+  description: Schema.optional(Schema.String),
+  panes: Schema.Array(PluginPaneDescriptor),
+  tools: Schema.optional(Schema.Array(PluginToolDescriptor)),
+  /// GitHub "owner/name" — the directory always shows the real repo owner.
+  /// Feed this to the discover→consent→install flow as the plugin source.
+  repo: Schema.String,
+  stars: Schema.Number,
+  pushedAt: Schema.String
+})
+export type PluginRegistryEntry = typeof PluginRegistryEntry.Type
+
+/// Why a tagged repo was left out of the index — published alongside the
+/// entries so plugin authors can see exactly what disqualified them.
+export const PluginRegistryRejection = Schema.Struct({
+  repo: Schema.String,
+  reason: Schema.String
+})
+export type PluginRegistryRejection = typeof PluginRegistryRejection.Type
+
+/// The whole registry index (`GET /v1/plugins/registry`): the machine fetches
+/// and caches the hosted index so clients only ever talk to their machine.
+export const PluginRegistryIndex = Schema.Struct({
+  generatedAt: Schema.String,
+  entries: Schema.Array(PluginRegistryEntry),
+  rejected: Schema.Array(PluginRegistryRejection)
+})
+export type PluginRegistryIndex = typeof PluginRegistryIndex.Type
+
 /// Invoke one plugin-declared agent tool. `args` should match the tool's
 /// declared inputSchema — the server passes them through verbatim and the
 /// plugin validates. The response body is whatever the tool returns.

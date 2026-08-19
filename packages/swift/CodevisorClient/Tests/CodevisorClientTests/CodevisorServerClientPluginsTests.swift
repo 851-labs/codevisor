@@ -91,6 +91,34 @@ struct CodevisorServerClientPluginsTests {
         #expect(bareTokenResponse.url == nil)
     }
 
+    @Test("Registry indexes decode entries and skip author-facing diagnostics")
+    func registryDecoding() throws {
+        let wire = Data(
+            """
+            {"generatedAt":"2026-08-18T00:00:00.000Z",
+            "entries":[{"id":"acme.git-diff","name":"Git Diff","version":"0.1.0",
+            "description":"Live git diff viewer",
+            "panes":[{"type":"diff","title":"Git Diff","path":"/panes/diff/"}],
+            "tools":[{"name":"diff_summary","description":"Summarize the diff","path":"/tools/summary"}],
+            "repo":"acme/git-diff","stars":12,"pushedAt":"2026-08-17T00:00:00Z"},
+            {"id":"beta.notes","name":"Notes","version":"1.0.0","panes":[],
+            "repo":"beta/notes","stars":0,"pushedAt":"2026-08-16T00:00:00Z"}],
+            "rejected":[{"repo":"x/y","reason":"codevisor-plugin.json not found"}]}
+            """.utf8)
+        let index = try JSONDecoder().decode(ServerPluginRegistryIndex.self, from: wire)
+        #expect(index.generatedAt == "2026-08-18T00:00:00.000Z")
+        #expect(index.entries.count == 2)
+        let entry = try #require(index.entries.first)
+        #expect(entry.id == "acme.git-diff")
+        #expect(entry.repo == "acme/git-diff")
+        #expect(entry.stars == 12)
+        #expect(entry.tools?.first?.name == "diff_summary")
+        // Description/tools stay optional, exactly like installed summaries.
+        let bare = try #require(index.entries.last)
+        #expect(bare.description == nil)
+        #expect(bare.tools == nil)
+    }
+
     @Test("Install request bodies carry the raw source and path strings")
     func installBodyEncoding() throws {
         let source = String(
