@@ -151,6 +151,9 @@ extension SessionController {
     public var providerActivityPhase: SessionProviderActivityPhase? {
         model?.providerActivityPhase
     }
+    public var connectionRecoveryMessage: String? {
+        model?.connectionRecoveryMessage
+    }
 
     /// User-facing text for a refusal-driven model swap, with both model ids
     /// resolved to display names where the live model option still lists them.

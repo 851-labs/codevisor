@@ -1,6 +1,12 @@
 import Foundation
 import ACPKit
 
+enum SessionHistoryLoadOutcome {
+    case loaded
+    case cancelled
+    case failed(message: String, retryable: Bool)
+}
+
 extension SessionModel {
     // MARK: - History
 
@@ -10,20 +16,31 @@ extension SessionModel {
     /// resumes from the page's own event cursor, so nothing between the
     /// page's snapshot and "now" is skipped.
     public func loadHistory(preloaded: TranscriptHistoryPage? = nil) async {
-        await loadHistory(preloaded: preloaded, defersPromptQueue: false)
+        surfaceHistoryLoadFailure(
+            await loadHistoryOnce(preloaded: preloaded, defersPromptQueue: false)
+        )
     }
 
     /// Initial navigation only needs the transcript page to paint. Queue state
     /// is auxiliary composer chrome, so fetch it after streaming has started
     /// without extending selection-to-transcript latency.
     func loadHistoryForInitialDisplay(preloaded: TranscriptHistoryPage? = nil) async {
-        await loadHistory(preloaded: preloaded, defersPromptQueue: true)
+        surfaceHistoryLoadFailure(
+            await loadHistoryOnce(preloaded: preloaded, defersPromptQueue: true)
+        )
     }
 
-    private func loadHistory(
+    /// One non-presenting snapshot attempt for connection recovery. The
+    /// recovery loop owns retry timing and decides when a failure becomes
+    /// user-visible; ordinary history loads keep their immediate error UI.
+    func loadHistoryForConnectionRecovery() async -> SessionHistoryLoadOutcome {
+        await loadHistoryOnce(preloaded: nil, defersPromptQueue: false)
+    }
+
+    private func loadHistoryOnce(
         preloaded: TranscriptHistoryPage?,
         defersPromptQueue: Bool
-    ) async {
+    ) async -> SessionHistoryLoadOutcome {
         promptQueueLoadTask?.cancel()
         promptQueueLoadTask = nil
         do {
@@ -58,7 +75,7 @@ extension SessionModel {
                 await loadPromptQueue(ifUnchangedSince: promptQueueRevision)
                 await startConsumer()
             }
-            return
+            return .loaded
         } catch let CodevisorServerClientError.httpStatus(status, _) where status == 404 {
             // Additive protocol compatibility: older remote servers keep using
             // the legacy path until they are updated.
@@ -67,13 +84,33 @@ extension SessionModel {
             // switched), not a failure — the remounted view reloads history
             // itself. Surfacing it painted "cancelled" errors into every chat
             // whenever the workspace layout churned during a reload.
-            if !isTaskCancellation(error) {
-                errorMessage = serverErrorMessage(error)
-            }
-            return
+            return historyLoadOutcome(for: error)
         }
 
-        await loadLegacyHistory()
+        return await loadLegacyHistory()
+    }
+
+    private func surfaceHistoryLoadFailure(_ outcome: SessionHistoryLoadOutcome) {
+        guard case let .failed(message, _) = outcome else { return }
+        errorMessage = message
+    }
+
+    private func historyLoadOutcome(for error: any Error) -> SessionHistoryLoadOutcome {
+        if isTaskCancellation(error) { return .cancelled }
+        let retryable: Bool
+        if let serverError = error as? CodevisorServerClientError {
+            switch serverError {
+            case let .httpStatus(status, _):
+                retryable = status == 408 || status == 425 || status == 429 || status >= 500
+            case .invalidURL, .invalidResponse, .invalidDate, .invalidUUID:
+                retryable = false
+            }
+        } else {
+            // Transport failures (including cloud relay channel loss) are
+            // transient unless the server supplied a terminal HTTP response.
+            retryable = true
+        }
+        return .failed(message: serverErrorMessage(error), retryable: retryable)
     }
 
     private func schedulePromptQueueLoad() {
@@ -120,7 +157,7 @@ extension SessionModel {
     }
     */
 
-    private func loadLegacyHistory() async {
+    private func loadLegacyHistory() async -> SessionHistoryLoadOutcome {
         do {
             let snapshot = try await transport.snapshot()
             queuedPrompts = snapshot.promptQueue
@@ -170,11 +207,10 @@ extension SessionModel {
             }
             transcriptStreamBytes = TranscriptReducer.transcriptByteEstimate(of: conversation)
             await startConsumer()
+            return .loaded
         } catch {
             isReplayingHistory = false
-            if !isTaskCancellation(error) {
-                errorMessage = serverErrorMessage(error)
-            }
+            return historyLoadOutcome(for: error)
         }
     }
 

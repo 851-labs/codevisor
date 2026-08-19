@@ -143,6 +143,7 @@ extension SessionModel {
     /// reopen builds a fresh model that replays history and resumes the
     /// stream from its cursor.
     public func shutdown() {
+        stopConnectionRecovery()
         consumerTask?.cancel()
         consumerTask = nil
         promptQueueLoadTask?.cancel()

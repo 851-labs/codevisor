@@ -154,6 +154,7 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
     private var _eventSinceValues: [Int] = []
     private var _sessionEventSinceValues: [Int] = []
     private var _transcriptPageRequests: [(before: String?, limit: Int)] = []
+    private var _transcriptPageFailuresRemaining = 0
     private var _promptQueueResponse: [ServerPromptQueueItem] = []
     private var _promptQueueGate: AsyncStream<Void>?
     private var _promptQueueRequestCount = 0
@@ -252,6 +253,14 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
         lock.withLock { _transcriptPageRequests }
     }
 
+    func failNextTranscriptPages(_ count: Int) {
+        lock.withLock { _transcriptPageFailuresRemaining = count }
+    }
+
+    func clearTranscriptPageFailures() {
+        lock.withLock { _transcriptPageFailuresRemaining = 0 }
+    }
+
     var promptQueueRequestCount: Int {
         lock.withLock { _promptQueueRequestCount }
     }
@@ -326,7 +335,13 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
     }
 
     func transcriptPage(id: UUID, before: String?, limit: Int) async throws -> ServerTranscriptPage {
-        lock.withLock { _transcriptPageRequests.append((before, limit)) }
+        let shouldFail = lock.withLock {
+            _transcriptPageRequests.append((before, limit))
+            guard _transcriptPageFailuresRemaining > 0 else { return false }
+            _transcriptPageFailuresRemaining -= 1
+            return true
+        }
+        if shouldFail { throw URLError(.networkConnectionLost) }
         if before == nil, let initialTranscriptPage { return initialTranscriptPage }
         if before != nil, let olderTranscriptPage { return olderTranscriptPage }
         throw CodevisorServerClientError.httpStatus(404, "")

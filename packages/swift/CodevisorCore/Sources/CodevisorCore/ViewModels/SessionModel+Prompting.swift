@@ -146,6 +146,12 @@ extension SessionModel {
     }
 
     public func retrySessionFailure() async {
+        if let recovery = connectionRecoveryTask {
+            recovery.cancel()
+            await recovery.value
+            connectionRecoveryTask = nil
+        }
+        clearConnectionRecoveryPresentation()
         errorMessage = nil
         harnessAuthenticationErrorMessage = nil
         await reconcileFromServer()
@@ -184,12 +190,38 @@ extension SessionModel {
     }
 
     func reconcileFromServer() async {
+        // The existing loop already retries and owns presentation timing.
+        // Foreground, stall, and re-entry hooks can safely converge here.
+        guard connectionRecoveryTask == nil else { return }
+        let outcome = await performReconciliationAttempt()
+        switch outcome {
+        case .loaded:
+            completeConnectionRecovery()
+        case .cancelled:
+            return
+        case let .failed(message, retryable):
+            if retryable {
+                beginConnectionRecovery(after: message)
+            } else {
+                surfaceConnectionRecoveryFailure(message)
+            }
+        }
+    }
+
+    private func performReconciliationAttempt() async -> SessionHistoryLoadOutcome {
         let wasSending = isSending
         consumerTask?.cancel()
         consumerTask = nil
         pendingEvents.removeAll(keepingCapacity: true)
         isFlushScheduled = false
-        await loadHistory()
+        let outcome = await loadHistoryForConnectionRecovery()
+        guard case .loaded = outcome else {
+            // The cursor-backed socket is independently self-healing. Keep it
+            // alive between snapshot retries so a failed GET never strands the
+            // chat or hides events that resume meanwhile.
+            await startConsumer()
+            return outcome
+        }
         if wasSending, !isSending {
             // The reload ended the turn without a terminal stream event, so
             // the event path's `endTurn` cleanup never runs — settle the
@@ -203,6 +235,118 @@ extension SessionModel {
             lastTurnEndedWithError = errorMessage != nil
             onTurnEnded?()
         }
+        return outcome
+    }
+
+    private func beginConnectionRecovery(after firstFailureMessage: String) {
+        guard connectionRecoveryTask == nil else { return }
+        connectionRecoveryTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.runConnectionRecovery(firstFailureMessage: firstFailureMessage)
+        }
+    }
+
+    private func runConnectionRecovery(firstFailureMessage: String) async {
+        defer { connectionRecoveryTask = nil }
+        let clock = ContinuousClock()
+        let startedAt = clock.now
+        var failures = 1
+        var latestMessage = firstFailureMessage
+        var nextAttemptAt = clock.now.advanced(by: connectionRecoveryRetryDelay(failures: failures))
+
+        while !Task.isCancelled {
+            let now = clock.now
+            let elapsed = now - startedAt
+            updateConnectionRecoveryPresentation(elapsed: elapsed, message: latestMessage)
+
+            if now < nextAttemptAt {
+                var wait = now.duration(to: nextAttemptAt)
+                if connectionRecoveryMessage == nil,
+                    surfacedConnectionRecoveryError == nil,
+                    elapsed < connectionRecoveryStatusDelay
+                {
+                    wait = min(wait, connectionRecoveryStatusDelay - elapsed)
+                }
+                if surfacedConnectionRecoveryError == nil,
+                    elapsed < connectionRecoveryFailureDelay
+                {
+                    wait = min(wait, connectionRecoveryFailureDelay - elapsed)
+                }
+                do {
+                    try await Task.sleep(for: wait)
+                } catch {
+                    return
+                }
+                continue
+            }
+
+            let outcome = await performReconciliationAttempt()
+            guard !Task.isCancelled else { return }
+            switch outcome {
+            case .loaded:
+                completeConnectionRecovery()
+                return
+            case .cancelled:
+                return
+            case let .failed(message, retryable):
+                latestMessage = message
+                guard retryable else {
+                    surfaceConnectionRecoveryFailure(message)
+                    return
+                }
+                failures += 1
+                nextAttemptAt = clock.now.advanced(
+                    by: connectionRecoveryRetryDelay(failures: failures)
+                )
+            }
+        }
+    }
+
+    private func connectionRecoveryRetryDelay(failures: Int) -> Duration {
+        let multiplier = 1 << min(max(failures - 1, 0), 5)
+        return min(
+            connectionRecoveryRetryMaximumDelay,
+            connectionRecoveryRetryBaseDelay * multiplier
+        )
+    }
+
+    private func updateConnectionRecoveryPresentation(elapsed: Duration, message: String) {
+        if elapsed >= connectionRecoveryFailureDelay {
+            surfaceConnectionRecoveryFailure(message)
+        } else if elapsed >= connectionRecoveryStatusDelay,
+            connectionRecoveryMessage == nil
+        {
+            connectionRecoveryMessage = "Reconnecting…"
+        }
+    }
+
+    private func surfaceConnectionRecoveryFailure(_ message: String) {
+        connectionRecoveryMessage = nil
+        let previous = surfacedConnectionRecoveryError
+        surfacedConnectionRecoveryError = message
+        if errorMessage == nil || errorMessage == previous {
+            errorMessage = message
+        }
+    }
+
+    private func completeConnectionRecovery() {
+        clearConnectionRecoveryPresentation()
+    }
+
+    func stopConnectionRecovery() {
+        connectionRecoveryTask?.cancel()
+        connectionRecoveryTask = nil
+        clearConnectionRecoveryPresentation()
+    }
+
+    private func clearConnectionRecoveryPresentation() {
+        connectionRecoveryMessage = nil
+        if let surfacedConnectionRecoveryError,
+            errorMessage == surfacedConnectionRecoveryError
+        {
+            errorMessage = nil
+        }
+        surfacedConnectionRecoveryError = nil
     }
 
     /// Switches the session mode. The optimistic local update only applies

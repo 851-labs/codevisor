@@ -125,6 +125,12 @@ extension SessionModel {
     }
 
     func apply(_ event: ServerSessionStreamEvent) {
+        // Any real session event proves the cursor-backed transport recovered.
+        // Keep snapshot reconciliation as a backstop only while the stream is
+        // actually quiet; never leave Reconnecting/error UI over live output.
+        if !isReplayingHistory, connectionRecoveryTask != nil {
+            stopConnectionRecovery()
+        }
         if !isReplayingHistory, let phase = providerActivityPhase(for: event) {
             noteProviderActivity(phase)
         }
@@ -249,6 +255,7 @@ extension SessionModel {
     func endTurn() {
         let wasSending = isSending
         isSending = false
+        stopConnectionRecovery()
         stalledTurnTask?.cancel()
         stalledTurnTask = nil
         isTakingLongerThanExpected = false

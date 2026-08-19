@@ -98,6 +98,10 @@ struct AssistantTurnBody: View {
                 )
                 if !isWaitingOnUser, isGenerating, let retry = turn.retryStatus {
                     ChatActivityRow(retryLabel(retry))
+                } else if !isWaitingOnUser, isGenerating,
+                    let message = transcriptController?.connectionRecoveryMessage
+                {
+                    ShimmeringText(text: message)
                 } else if postResponseGoalActivity == nil,
                     !isWaitingOnUser,
                     turn.showsActivityIndicator,

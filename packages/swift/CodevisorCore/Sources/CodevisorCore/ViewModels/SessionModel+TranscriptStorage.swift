@@ -28,6 +28,7 @@ extension SessionModel {
 
     /// Starts a fresh generating assistant bubble as the active item.
     func startActiveBubble() {
+        stopConnectionRecovery()
         // A new turn (user- or agent-initiated) clears any lingering session-
         // level error banner so it can't outlive the failure it described —
         // including a stale one replayed from history on reconnect.

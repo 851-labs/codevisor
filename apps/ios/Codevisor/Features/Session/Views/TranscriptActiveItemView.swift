@@ -13,6 +13,7 @@ struct TranscriptActiveItemView: View {
     var body: some View {
         let revision = controller.activeItemRevision
         let waitingOnBackgroundTask = controller.waitingBackgroundTaskDescription
+        let connectionRecoveryMessage = controller.connectionRecoveryMessage
         let goal = controller.model?.goal
         let goalActivity = goal?.status == .active ? goal?.activity : nil
         if let item = controller.activeItem {
@@ -31,6 +32,9 @@ struct TranscriptActiveItemView: View {
                 invalidateRowMeasurement?()
             }
             .onChange(of: waitingOnBackgroundTask) { _, _ in
+                invalidateRowMeasurement?()
+            }
+            .onChange(of: connectionRecoveryMessage) { _, _ in
                 invalidateRowMeasurement?()
             }
             .onChange(of: goalActivity) { _, _ in

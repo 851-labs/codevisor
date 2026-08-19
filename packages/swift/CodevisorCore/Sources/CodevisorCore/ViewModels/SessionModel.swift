@@ -98,6 +98,14 @@ public final class SessionModel {
     public internal(set) var modelFallback: SessionModelFallback?
     public internal(set) var isTakingLongerThanExpected = false
     public internal(set) var providerActivityPhase: SessionProviderActivityPhase?
+    /// Delayed, non-blocking transport recovery status for the active turn.
+    /// Brief relay handoffs leave this nil so the existing Thinking/Waiting
+    /// presentation remains stable instead of flashing connection plumbing.
+    public internal(set) var connectionRecoveryMessage: String? {
+        didSet {
+            if connectionRecoveryMessage != oldValue { activeItemRevision &+= 1 }
+        }
+    }
     public internal(set) var queuedPrompts: [ServerPromptQueueItem] = []
     /// A deferred initial queue fetch must not overwrite a newer queue event
     /// that arrived after the transcript stream started.
@@ -264,6 +272,15 @@ public final class SessionModel {
     /// prompt in flight — so one consumer runs for the model's lifetime.
     var consumerTask: Task<Void, Never>?
     @ObservationIgnored var stalledTurnTask: Task<Void, Never>?
+    @ObservationIgnored var connectionRecoveryTask: Task<Void, Never>?
+    @ObservationIgnored var surfacedConnectionRecoveryError: String?
+
+    /// Recovery timing is injected per model so tests can exercise the full
+    /// state ladder without mutating process-global clocks.
+    let connectionRecoveryStatusDelay: Duration
+    let connectionRecoveryFailureDelay: Duration
+    let connectionRecoveryRetryBaseDelay: Duration
+    let connectionRecoveryRetryMaximumDelay: Duration
 
     /// Stream events waiting for the next per-frame flush. Deliberately not
     /// observable: buffering must not invalidate views — only applying does.
@@ -303,7 +320,11 @@ public final class SessionModel {
         modeState: SessionModeState? = nil,
         configOptions: [SessionConfigOption] = [],
         now: @escaping @Sendable () -> Date = { Date() },
-        stalledTurnQuietInterval: Duration = .seconds(300)
+        stalledTurnQuietInterval: Duration = .seconds(300),
+        connectionRecoveryStatusDelay: Duration = .seconds(5),
+        connectionRecoveryFailureDelay: Duration = .seconds(30),
+        connectionRecoveryRetryBaseDelay: Duration = .milliseconds(500),
+        connectionRecoveryRetryMaximumDelay: Duration = .seconds(5)
     ) {
         self.transport = serverTransport
         self.sessionId = sessionId
@@ -311,6 +332,10 @@ public final class SessionModel {
         self.configOptions = configOptions
         self.now = now
         self.stalledTurnQuietInterval = stalledTurnQuietInterval
+        self.connectionRecoveryStatusDelay = connectionRecoveryStatusDelay
+        self.connectionRecoveryFailureDelay = connectionRecoveryFailureDelay
+        self.connectionRecoveryRetryBaseDelay = connectionRecoveryRetryBaseDelay
+        self.connectionRecoveryRetryMaximumDelay = connectionRecoveryRetryMaximumDelay
     }
 
     @ObservationIgnored var appliedUpdateCount = 0
