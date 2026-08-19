@@ -250,8 +250,8 @@ struct RootView: View {
         } action: { width in
             panelLayout.updateWindowWidth(width)
         }
-        // Track which session is on screen so finished turns only badge the
-        // sidebar rows of chats the user hasn't opened.
+        // Keep the selected route out of the controller LRU. Read state is
+        // acknowledged separately by the transcript viewport.
         .onChange(of: selection) { _, newValue in
             panelLayout.dismissDrawer(.leading)
             guard let store else { return }

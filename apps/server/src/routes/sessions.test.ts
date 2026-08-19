@@ -1646,6 +1646,14 @@ describe("sessions routes", () => {
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}/read`, {
+          body: JSON.stringify({}),
+          method: "POST"
+        })
+      ).status
+    ).toBe(400)
+    expect(
+      (
+        await jsonRequest(server, `/v1/sessions/${session.id}/read`, {
           body: JSON.stringify({ throughSequence: 1 }),
           method: "POST"
         })

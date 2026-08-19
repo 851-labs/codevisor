@@ -88,6 +88,23 @@ export const createServiceContext = (
           ), 0)
       ) as attention_has_unread_error,
       coalesce((
+        select json_group_array(json_object(
+          'sequence', unread.sequence,
+          'kind', unread.kind,
+          'chatItemId', unread.chat_item_id
+        ))
+        from (
+          select ae.sequence, ae.kind, ae.chat_item_id
+          from session_attention_events ae
+          where ae.session_id = sessions.id
+            and ae.sequence > coalesce((
+              select last_seen_sequence from session_read_state rs
+              where rs.session_id = sessions.id and rs.reader_id = 'owner'
+            ), 0)
+          order by ae.sequence
+        ) unread
+      ), '[]') as attention_unread_targets,
+      coalesce((
         select pending_plan_approval from session_attention_state ast
         where ast.session_id = sessions.id
       ), 0) as pending_plan_approval

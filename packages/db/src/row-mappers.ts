@@ -15,7 +15,7 @@ import type {
   Worktree
 } from "@codevisor/api"
 import type Database from "better-sqlite3"
-import { sessionConfigSelectionsFromRaw } from "./event-payloads.js"
+import { sessionConfigSelectionsFromRaw, withChatItemId } from "./event-payloads.js"
 import { resolveSessionCwd, worktreePath } from "./paths.js"
 import type {
   ArchivedWorktreeRow,
@@ -120,6 +120,11 @@ export const workspacePaneFromRow = (row: WorkspacePaneRow): WorkspacePane => ({
 export const sessionFromRow = (row: SessionRow, folderPath: string | undefined): SessionSummary => {
   const cwd = resolveSessionCwd(folderPath, row.project_id, row.worktree_name ?? undefined)
   const configSelections = sessionConfigSelectionsFromRaw(row.config_selections)
+  const unreadAttentionTargets = JSON.parse(row.attention_unread_targets) as ReadonlyArray<{
+    readonly sequence: number
+    readonly kind: "finished" | "action_required"
+    readonly chatItemId: string | null
+  }>
   return {
     id: row.id,
     projectId: row.project_id,
@@ -143,6 +148,11 @@ export const sessionFromRow = (row: SessionRow, folderPath: string | undefined):
     lastSeenAttentionSequence: row.attention_last_seen_sequence,
     unreadCount: row.attention_unread_count,
     hasUnreadError: row.attention_has_unread_error === 1,
+    unreadAttentionTargets: unreadAttentionTargets.map((target) => ({
+      sequence: target.sequence,
+      kind: target.kind,
+      ...(target.chatItemId === null ? {} : { chatItemId: target.chatItemId })
+    })),
     actionRequired: row.pending_question !== null || row.pending_plan_approval === 1,
     ...(row.pending_question !== null
       ? { actionRequiredKind: "question" as const }
@@ -304,7 +314,7 @@ export const sessionEventFromRow = (row: SessionEventRow): EventEnvelope => ({
   kind: row.kind,
   subjectId: row.session_id,
   createdAt: row.created_at,
-  payload: JSON.parse(row.payload) as unknown
+  payload: withChatItemId(JSON.parse(row.payload) as unknown, row.chat_item_id)
 })
 
 export const harnessPendingUpdateFromRow = (

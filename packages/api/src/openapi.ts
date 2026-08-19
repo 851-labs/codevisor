@@ -11,6 +11,7 @@ import {
   CreateProjectRequest,
   CreateSessionRequest,
   CreateWorktreeRequest,
+  EventCursorResponse,
   EventEnvelope,
   FileMetadata,
   FsListResponse,
@@ -169,6 +170,7 @@ export const endpoints = [
   "GET /v1/files/:id",
   "GET /v1/fs/list",
   "GET /v1/events",
+  "GET /v1/events/cursor",
   "GET /v1/events/socket",
   "POST /v1/terminals",
   "DELETE /v1/terminals/session/:sessionId",
@@ -293,6 +295,7 @@ const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> => ({
   }),
   "POST /v1/files": FileMetadata,
   "GET /v1/events": EventEnvelope,
+  "GET /v1/events/cursor": EventCursorResponse,
   "POST /v1/terminals": TerminalCreateResponse,
   "DELETE /v1/terminals/session/:sessionId": Schema.Struct({ closed: Schema.Boolean })
 })
@@ -307,6 +310,7 @@ const summaries: Partial<Record<Endpoint, string>> = {
   "GET /v1/auth/connection-token": "Get the machine's stable connection token",
   "POST /v1/auth/connection-token/rotate": "Rotate the machine's connection token",
   "GET /v1/events": "Stream global events with SSE",
+  "GET /v1/events/cursor": "Get the durable global event cursor",
   "GET /v1/events/socket": "Open the global event WebSocket",
   "GET /v1/sessions/:id/events/socket": "Open a session event WebSocket",
   "GET /v1/terminals/:id/socket": "Attach to a terminal WebSocket"

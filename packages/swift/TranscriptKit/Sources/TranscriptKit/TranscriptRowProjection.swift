@@ -15,6 +15,10 @@ public struct TranscriptProjectionInput: Sendable {
     public let settledConversation: [ConversationItem]
     public let pendingUserMessage: UserMessage?
     public let hasActiveItem: Bool
+    /// Canonical identity of the active assistant slot once that turn has
+    /// finished. The slot deliberately survives completion to preserve its
+    /// native view identity, so `hasActiveItem` alone does not mean generating.
+    public let activeFinishedResponseItemId: UUID?
     public let setupPhases: [SessionSetupPhase]
     public let waitingBackgroundTaskDescription: String?
     public let waitingHarnessUpdateName: String?
@@ -27,6 +31,7 @@ public struct TranscriptProjectionInput: Sendable {
         settledConversation: [ConversationItem],
         pendingUserMessage: UserMessage?,
         hasActiveItem: Bool,
+        activeFinishedResponseItemId: UUID? = nil,
         setupPhases: [SessionSetupPhase],
         waitingBackgroundTaskDescription: String?,
         waitingHarnessUpdateName: String?,
@@ -38,6 +43,7 @@ public struct TranscriptProjectionInput: Sendable {
         self.settledConversation = settledConversation
         self.pendingUserMessage = pendingUserMessage
         self.hasActiveItem = hasActiveItem
+        self.activeFinishedResponseItemId = activeFinishedResponseItemId
         self.setupPhases = setupPhases
         self.waitingBackgroundTaskDescription = waitingBackgroundTaskDescription
         self.waitingHarnessUpdateName = waitingHarnessUpdateName
@@ -156,6 +162,10 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     public let estimatedHeight: CGFloat
     public let measurementRevision: Int
     public let layoutKey: String
+    /// The completed assistant item represented by this visible slice. The
+    /// active slot can carry this after generation ends without changing its
+    /// stable row identity.
+    public let finishedResponseItemId: UUID?
 
     public var isUserMessage: Bool {
         switch content {
@@ -173,13 +183,27 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         id: ID,
         content: Content,
         estimatedHeight: CGFloat,
-        measurementRevision: Int = 0
+        measurementRevision: Int = 0,
+        finishedResponseItemId: UUID? = nil
     ) {
         self.id = id
         self.content = content
         self.estimatedHeight = estimatedHeight
         self.measurementRevision = measurementRevision
         layoutKey = id.layoutKey
+        if let finishedResponseItemId {
+            self.finishedResponseItemId = finishedResponseItemId
+        } else {
+            self.finishedResponseItemId =
+                switch content {
+                case let .message(item, waitingOnBackgroundTask: _):
+                    if case let .assistant(message) = item { message.id } else { nil }
+                case let .assistantResult(message, waitingOnBackgroundTask: _):
+                    message.id
+                default:
+                    nil
+                }
+        }
     }
 }
 
@@ -332,7 +356,13 @@ public actor TranscriptRowProjectionCache {
                 ))
         }
         if input.hasActiveItem {
-            rows.append(.init(id: .active, content: .active, estimatedHeight: 320))
+            rows.append(
+                .init(
+                    id: .active,
+                    content: .active,
+                    estimatedHeight: 320,
+                    finishedResponseItemId: input.activeFinishedResponseItemId
+                ))
         }
         if !pendingIsOpeningRow, let message = pendingMessage {
             rows.append(

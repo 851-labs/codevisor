@@ -18,6 +18,22 @@ import {
 } from "../test-support.js"
 
 describe("event routes", () => {
+  it("exposes a durable cursor for gapless shell snapshots", async () => {
+    const { server, services } = await start()
+    expect(await jsonRequest(server, "/v1/events/cursor")).toMatchObject({
+      body: { cursor: 0 },
+      status: 200
+    })
+
+    const project = await run(services.db.createProject({ folderPath: "/tmp/event-cursor" }))
+    await run(services.db.appendEvent("project.updated", project.id, { title: "Updated" }))
+
+    expect(await jsonRequest(server, "/v1/events/cursor")).toMatchObject({
+      body: { cursor: 1 },
+      status: 200
+    })
+  })
+
   it("persists and fans out agent-initiated events with no prompt in flight", async () => {
     const { agents, server, services } = await start()
     const workspaceRoot = mkdtempSync(join(tmpdir(), "codevisor-server-background-"))
@@ -71,19 +87,34 @@ describe("event routes", () => {
     })
 
     const sessionEvents = await run(services.db.listSubjectEvents(session.id))
+    const assistantItemId = (
+      await run(services.db.getTranscriptPage(session.id, undefined, 8))
+    ).items.find((item) => item.role === "assistant")?.id
+    expect(assistantItemId).toBeDefined()
     expect(sessionEvents).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           kind: "session.updated",
-          payload: expect.objectContaining({ initiatedBy: "agent", turnState: "started" })
+          payload: expect.objectContaining({
+            chatItemId: assistantItemId,
+            initiatedBy: "agent",
+            turnState: "started"
+          })
         }),
         expect.objectContaining({
           kind: "session.output",
-          payload: expect.objectContaining({ messageId: "assistant-bg" })
+          payload: expect.objectContaining({
+            chatItemId: assistantItemId,
+            messageId: "assistant-bg"
+          })
         }),
         expect.objectContaining({
           kind: "session.updated",
-          payload: expect.objectContaining({ stopReason: "end_turn", turnState: "ended" })
+          payload: expect.objectContaining({
+            chatItemId: assistantItemId,
+            stopReason: "end_turn",
+            turnState: "ended"
+          })
         })
       ])
     )

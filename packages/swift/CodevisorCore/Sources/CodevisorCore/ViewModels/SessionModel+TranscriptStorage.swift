@@ -4,6 +4,15 @@ import ACPKit
 extension SessionModel {
     // MARK: - Settled/active storage
 
+    /// The active slot remains mounted after completion for stable rendering.
+    /// It becomes receipt-eligible only once the assistant turn has stopped.
+    var activeFinishedResponseItemId: UUID? {
+        guard case let .assistant(message)? = activeItem,
+            !message.turn.isGenerating
+        else { return nil }
+        return message.id
+    }
+
     /// Moves the active bubble into the settled list. Called only at bubble
     /// boundaries, so `settledConversation` (and the boundary-guarded
     /// `hasActiveItem`) never change on a token flush.
@@ -41,6 +50,21 @@ extension SessionModel {
                 turn: AssistantTurn(isGenerating: true, isThinking: false, startedAt: now())
             ))
         if !hasActiveItem { hasActiveItem = true }
+    }
+
+    /// Reconciles the optimistic/live bubble with the canonical semantic item
+    /// created by the server for this turn. Tool ownership is re-keyed too so
+    /// late background updates continue routing into the same settled bubble.
+    func adoptActiveAssistantItemIdentity(_ id: UUID) {
+        guard case let .assistant(message) = activeItem, message.id != id else { return }
+        let previousId = message.id
+        activeItem = .assistant(AssistantMessage(id: id, turn: message.turn))
+        let ownedRoutes = toolOwnerItemIds.compactMap { route, owner in
+            owner == previousId ? route : nil
+        }
+        for route in ownedRoutes {
+            toolOwnerItemIds[route] = id
+        }
     }
 
     /// Replaces conversation state wholesale (history load, previews). The

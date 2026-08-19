@@ -1034,5 +1034,38 @@ export const migrations: ReadonlyArray<Migration> = [
     sql: `
       alter table workspace_panes add column revision integer not null default 1;
     `
+  },
+  {
+    id: 37,
+    name: "attention transcript receipt targets",
+    sql: `
+      alter table session_attention_events add column chat_item_id text
+        references chat_items(id) on delete set null;
+
+      update session_attention_events as ae
+      set chat_item_id = coalesce(
+        (
+          select se.chat_item_id from session_events se
+          where se.session_id = ae.session_id
+            and se.revision = ae.source_revision
+        ),
+        case when ae.kind = 'finished' then (
+          select se.chat_item_id
+          from session_events se
+          join chat_items ci on ci.id = se.chat_item_id and ci.role = 'assistant'
+          where se.session_id = ae.session_id
+            and se.revision <= ae.source_revision
+            and json_extract(se.payload, '$.turnState') = 'started'
+            and se.revision > coalesce((
+              select max(previous.source_revision)
+              from session_attention_events previous
+              where previous.session_id = ae.session_id
+                and previous.sequence < ae.sequence
+            ), 0)
+          order by se.revision desc
+          limit 1
+        ) end
+      );
+    `
   }
 ]

@@ -62,46 +62,19 @@ struct WorkspacePaneContentView: View {
                 )
                 .onAppear {
                     guard let chatId = pane.chatSessionId ?? activeSessionId,
-                        let session = session(chatId)
+                        session(chatId) != nil
                     else { return }
                     if !isNewChatPresentation {
                         onWorkspaceReady?(chatId)
                     }
-                    guard transcriptPresentationRole == .foreground else { return }
-                    // Attention: only the visible chat is open. A workspace
-                    // prewarmed beneath New Chat must not mutate read state.
-                    ChatControllerCache.shared.noteOpened(
-                        sessionId: chatId,
-                        serverId: session.serverId,
-                        projectList: projectList
-                    )
-                    controller.rememberCurrentComposerConfiguration()
+                    if transcriptPresentationRole == .foreground {
+                        controller.rememberCurrentComposerConfiguration()
+                    }
                 }
                 .onChange(of: transcriptPresentationRole) { _, role in
-                    guard role == .foreground,
-                        let chatId = pane.chatSessionId ?? activeSessionId,
-                        let session = session(chatId)
-                    else { return }
-                    ChatControllerCache.shared.noteOpened(
-                        sessionId: chatId,
-                        serverId: session.serverId,
-                        projectList: projectList
-                    )
-                    controller.rememberCurrentComposerConfiguration()
-                }
-                .onDisappear {
-                    guard let chatId = pane.chatSessionId ?? activeSessionId,
-                        let session = session(chatId)
-                    else { return }
-                    // During promotion the same cached controller is already
-                    // open in the mounted parent destination. Removing the
-                    // sheet must not clear that destination's open marker.
-                    guard !(isNewChatPresentation && hasStarted) else { return }
-                    guard transcriptPresentationRole == .foreground else { return }
-                    ChatControllerCache.shared.noteClosed(
-                        sessionId: chatId,
-                        serverId: session.serverId
-                    )
+                    if role == .foreground {
+                        controller.rememberCurrentComposerConfiguration()
+                    }
                 }
             } else if let chatId = pane.chatSessionId ?? activeSessionId {
                 DelayedWorkspaceLoadingView()
@@ -127,4 +100,5 @@ struct WorkspacePaneContentView: View {
             }
         }
     }
+
 }

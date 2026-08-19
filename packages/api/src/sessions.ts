@@ -72,6 +72,15 @@ export const SessionSidebarState = Schema.Literals([
 ])
 export type SessionSidebarState = typeof SessionSidebarState.Type
 
+/** One unread attention event and the transcript item that can prove it was
+ * actually presented. Older/error-only events may not have a chat item. */
+export const SessionAttentionTarget = Schema.Struct({
+  sequence: Schema.Number,
+  kind: Schema.Literals(["finished", "action_required"]),
+  chatItemId: Schema.optional(Schema.String)
+})
+export type SessionAttentionTarget = typeof SessionAttentionTarget.Type
+
 export const SessionSummary = Schema.Struct({
   id: Schema.String,
   projectId: Schema.String,
@@ -106,6 +115,9 @@ export const SessionSummary = Schema.Struct({
   lastSeenAttentionSequence: Schema.optional(Schema.Number),
   unreadCount: Schema.optional(Schema.Number),
   hasUnreadError: Schema.optional(Schema.Boolean),
+  /** Exact unread transcript targets. Native clients acknowledge a finished
+   * response only after its row intersects the real viewport. */
+  unreadAttentionTargets: Schema.optional(Schema.Array(SessionAttentionTarget)),
   /** Intrinsic blocking state; reading the session does not clear it. */
   actionRequired: Schema.optional(Schema.Boolean),
   actionRequiredKind: Schema.optional(Schema.Literals(["question", "planApproval"])),
@@ -294,9 +306,9 @@ export const UpdateSessionRequest = Schema.Struct({
 export type UpdateSessionRequest = typeof UpdateSessionRequest.Type
 
 export const MarkSessionReadRequest = Schema.Struct({
-  /** Advance through exactly the state the client rendered. Omit only when a
-   * client is actively viewing the session and wants the current server tip. */
-  throughSequence: Schema.optional(Schema.Number)
+  /** Advance through exactly the state the client rendered. Required so a
+   * delayed request can never consume attention created after the view closed. */
+  throughSequence: Schema.Number
 })
 export type MarkSessionReadRequest = typeof MarkSessionReadRequest.Type
 

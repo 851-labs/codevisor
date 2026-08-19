@@ -14,6 +14,11 @@ extension SessionController {
     public var activeItem: ConversationItem? { model?.activeItem }
     public var activeItemRevision: UInt64 { model?.activeItemRevision ?? 0 }
     public var hasActiveItem: Bool { model?.hasActiveItem ?? false }
+    /// The active slot remains mounted after completion for stable rendering.
+    /// Expose its canonical identity only once it represents a finished turn.
+    public var activeFinishedResponseItemId: UUID? {
+        model?.activeFinishedResponseItemId
+    }
     public var transcriptProjectionKey: TranscriptProjectionKey {
         TranscriptProjectionKey(
             // Controller lifetime, rather than the durable chat id: a cache
@@ -41,6 +46,7 @@ extension SessionController {
             settledConversation: settledConversation,
             pendingUserMessage: pendingUserMessage,
             hasActiveItem: hasActiveItem,
+            activeFinishedResponseItemId: activeFinishedResponseItemId,
             setupPhases: setupPhases,
             waitingBackgroundTaskDescription: waitingBackgroundTaskDescription,
             waitingHarnessUpdateName: waitingHarnessUpdateName,

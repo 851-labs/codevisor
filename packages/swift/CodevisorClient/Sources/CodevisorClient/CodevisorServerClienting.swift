@@ -237,7 +237,7 @@ public protocol CodevisorServerClienting: Sendable {
     func upsertSession(_ session: ChatSession) async throws -> ServerSession
     func upsertSession(_ session: ChatSession, workspaceId: UUID?) async throws -> ServerSession
     func updateSession(_ session: ChatSession) async throws -> ServerSession
-    func markSessionRead(id: UUID, throughSequence: Int?) async throws -> ServerSession?
+    func markSessionRead(id: UUID, throughSequence: Int) async throws -> ServerSession?
     func markSessionUnread(id: UUID) async throws -> ServerSession?
     func clearSessionPlanApproval(id: UUID) async throws
     func deleteSession(id: UUID) async throws
@@ -287,6 +287,11 @@ public protocol CodevisorServerClienting: Sendable {
     /// this filter each one is fully decoded and hopped onto the consumer's
     /// actor just to be discarded.
     func shellEventStream(handledKinds: Set<String>) -> AsyncThrowingStream<ServerEventEnvelope, any Error>
+    func latestShellEventCursor() async throws -> Int
+    func shellEventStream(
+        since: Int,
+        handledKinds: Set<String>
+    ) -> AsyncThrowingStream<ServerEventEnvelope, any Error>
     /// Session-scoped sequence and replay. Unlike the machine stream, `since`
     /// is meaningful only within this session.
     func sessionEventStream(id: UUID, since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error>

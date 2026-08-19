@@ -131,8 +131,8 @@ struct ProjectListModelTests {
         }
     }
 
-    @Test("Visible-session read advances through a newer server tip than the sidebar cache")
-    func visibleSessionReadUsesServerTip() async throws {
+    @Test("Delayed visible-session read cannot consume a newer server tip")
+    func delayedVisibleSessionReadPreservesNewerTip() async throws {
         let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/visible-read"))
         let session = ChatSession(
             id: UUID(),
@@ -171,13 +171,13 @@ struct ProjectListModelTests {
                 return false
             }
             return updated.latestAttentionSequence == 1
-                && updated.lastSeenAttentionSequence == 1
-                && updated.unreadCount == 0
+                && updated.lastSeenAttentionSequence == 0
+                && updated.unreadCount == 1
         }
 
         let request = await fakeServer.snapshot().readRequests.first
         #expect(request?.sessionId == session.id)
-        #expect(request?.throughSequence == nil)
+        #expect(request?.throughSequence == 0)
     }
 
     @Test("Server refresh replaces stale local records without pushing them back")
@@ -894,7 +894,7 @@ struct ProjectListModelTests {
 }
 
 /// A reusable gate: `wait()` suspends callers until `open()` is called.
-private actor Latch {
+actor Latch {
     private var isOpen = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
 
@@ -911,7 +911,7 @@ private actor Latch {
 }
 
 @MainActor
-private func waitUntil(_ predicate: () -> Bool) async throws {
+func waitUntil(_ predicate: () -> Bool) async throws {
     for _ in 0..<50 {
         if predicate() { return }
         try await Task.sleep(nanoseconds: 10_000_000)
@@ -920,7 +920,7 @@ private func waitUntil(_ predicate: () -> Bool) async throws {
 }
 
 @MainActor
-private func waitUntilAsync(_ predicate: () async -> Bool) async throws {
+func waitUntilAsync(_ predicate: () async -> Bool) async throws {
     for _ in 0..<50 {
         if await predicate() { return }
         try await Task.sleep(nanoseconds: 10_000_000)
@@ -928,7 +928,7 @@ private func waitUntilAsync(_ predicate: () async -> Bool) async throws {
     Issue.record("Timed out waiting for condition")
 }
 
-private struct FakeServerSnapshot: Sendable {
+struct FakeServerSnapshot: Sendable {
     var upsertedProjectIDs: [String]
     var upsertedSessionIDs: [String]
     var deletedProjectIDs: [String]
@@ -936,12 +936,12 @@ private struct FakeServerSnapshot: Sendable {
     var readRequests: [FakeReadRequest]
 }
 
-private struct FakeReadRequest: Equatable, Sendable {
+struct FakeReadRequest: Equatable, Sendable {
     var sessionId: UUID
-    var throughSequence: Int?
+    var throughSequence: Int
 }
 
-private actor FakeServerClient: CodevisorServerClienting {
+actor FakeServerClient: CodevisorServerClienting {
     private var projects: [ServerProject]
     private var sessions: [ServerSession]
     private var upsertedProjectIDs: [String] = []
@@ -956,6 +956,7 @@ private actor FakeServerClient: CodevisorServerClienting {
     /// When set, deleteProject/deleteSession suspend on this first — lets
     /// tests hold the server DELETE in flight while refreshes race it.
     private var deleteDelay: (@Sendable () async -> Void)?
+    private var readResponseDelay: (@Sendable () async -> Void)?
 
     init(projects: [ServerProject] = [], sessions: [ServerSession] = []) {
         self.projects = projects
@@ -1037,7 +1038,8 @@ private actor FakeServerClient: CodevisorServerClienting {
     func setSessionAttention(
         id: UUID,
         latestSequence: Int,
-        lastSeenSequence: Int
+        lastSeenSequence: Int,
+        finishedChatItemId: UUID? = nil
     ) {
         guard let index = sessions.firstIndex(where: { $0.id == id.uuidString }) else {
             return
@@ -1045,15 +1047,29 @@ private actor FakeServerClient: CodevisorServerClienting {
         sessions[index].latestAttentionSequence = latestSequence
         sessions[index].lastSeenAttentionSequence = lastSeenSequence
         sessions[index].unreadCount = max(0, latestSequence - lastSeenSequence)
+        sessions[index].unreadAttentionTargets =
+            latestSequence > lastSeenSequence
+            ? [
+                ServerSessionAttentionTarget(
+                    sequence: latestSequence,
+                    kind: .finished,
+                    chatItemId: finishedChatItemId?.uuidString
+                )
+            ]
+            : []
     }
 
-    func markSessionRead(id: UUID, throughSequence: Int?) async throws -> ServerSession? {
+    func setReadResponseDelay(_ delay: (@Sendable () async -> Void)?) {
+        readResponseDelay = delay
+    }
+
+    func markSessionRead(id: UUID, throughSequence: Int) async throws -> ServerSession? {
         readRequests.append(FakeReadRequest(sessionId: id, throughSequence: throughSequence))
         guard let index = sessions.firstIndex(where: { $0.id == id.uuidString }) else {
             return nil
         }
         let latest = sessions[index].latestAttentionSequence ?? 0
-        let requested = min(latest, max(0, throughSequence ?? latest))
+        let requested = min(latest, max(0, throughSequence))
         sessions[index].lastSeenAttentionSequence = max(
             sessions[index].lastSeenAttentionSequence ?? 0,
             requested
@@ -1062,7 +1078,10 @@ private actor FakeServerClient: CodevisorServerClienting {
             0,
             latest - (sessions[index].lastSeenAttentionSequence ?? 0)
         )
-        return sessions[index]
+        sessions[index].unreadAttentionTargets?.removeAll { $0.sequence <= requested }
+        let response = sessions[index]
+        if let readResponseDelay { await readResponseDelay() }
+        return response
     }
 
     func deleteSession(id: UUID) async throws {
@@ -1098,7 +1117,7 @@ private actor FakeServerClient: CodevisorServerClienting {
     }
 }
 
-private func serverProject(from project: Project) -> ServerProject {
+func serverProject(from project: Project) -> ServerProject {
     ServerProject(
         id: project.id.uuidString,
         name: project.name,
@@ -1119,7 +1138,7 @@ private func serverProject(from project: Project) -> ServerProject {
     )
 }
 
-private func serverSession(from session: ChatSession) -> ServerSession {
+func serverSession(from session: ChatSession) -> ServerSession {
     ServerSession(
         id: session.id.uuidString,
         projectId: session.projectId.uuidString,
@@ -1135,11 +1154,22 @@ private func serverSession(from session: ChatSession) -> ServerSession {
         updatedAt: session.updatedAt.map(serverDateString),
         sidebarState: session.sidebarState,
         sidebarStateChangedAt: serverDateString(from: session.sidebarStateChangedAt),
-        usage: nil
+        usage: nil,
+        latestAttentionSequence: session.latestAttentionSequence,
+        lastSeenAttentionSequence: session.lastSeenAttentionSequence,
+        unreadCount: session.unreadCount,
+        hasUnreadError: session.hasUnreadError,
+        unreadAttentionTargets: session.unreadAttentionTargets.map { target in
+            ServerSessionAttentionTarget(
+                sequence: target.sequence,
+                kind: target.kind,
+                chatItemId: target.chatItemId?.uuidString
+            )
+        }
     )
 }
 
-private func serverDateString(from date: Date) -> String {
+func serverDateString(from date: Date) -> String {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     return formatter.string(from: date)

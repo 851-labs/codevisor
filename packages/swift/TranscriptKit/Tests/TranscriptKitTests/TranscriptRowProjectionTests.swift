@@ -4,6 +4,48 @@ import CodevisorProtocol
 @testable import TranscriptKit
 
 struct TranscriptRowProjectionTests {
+    @Test func finalResponseReceiptMapsOnlyToAssistantPresentationRows() throws {
+        let ordinary = AssistantMessage(
+            turn: AssistantTurn(entries: [.text(id: "answer", markdown: "Done")])
+        )
+        let plan = AssistantMessage(
+            turn: AssistantTurn(
+                entries: [.text(id: "result", markdown: "Implemented")],
+                planDocument: "# Plan"
+            )
+        )
+
+        let rows = try TranscriptRowProjectionCache.project(
+            makeInput(settled: [.assistant(ordinary), .assistant(plan)]),
+            options: .init(includesConnectingRow: true)
+        )
+
+        #expect(rows.first(where: { $0.id == .message(ordinary.id) })?.finishedResponseItemId == ordinary.id)
+        #expect(rows.first(where: { $0.id == .plan(plan.id) })?.finishedResponseItemId == nil)
+        #expect(rows.first(where: { $0.id == .assistantResult(plan.id) })?.finishedResponseItemId == plan.id)
+    }
+
+    @Test func completedActiveRowCarriesItsFinishedResponseIdentity() throws {
+        let responseItemId = UUID()
+        let completedRows = try TranscriptRowProjectionCache.project(
+            makeInput(
+                hasActiveItem: true,
+                activeFinishedResponseItemId: responseItemId
+            ),
+            options: .init(includesConnectingRow: true)
+        )
+        let generatingRows = try TranscriptRowProjectionCache.project(
+            makeInput(hasActiveItem: true),
+            options: .init(includesConnectingRow: true)
+        )
+
+        #expect(
+            completedRows.first(where: { $0.id == .active })?.finishedResponseItemId
+                == responseItemId
+        )
+        #expect(generatingRows.first(where: { $0.id == .active })?.finishedResponseItemId == nil)
+    }
+
     @Test func pendingMessageAdoptsTheSettledRowsIdentityWithoutDuplicating() throws {
         let message = UserMessage(text: "Hello")
         let phase = SessionSetupPhase.startingAgent(named: "Codex")
@@ -86,6 +128,7 @@ struct TranscriptRowProjectionTests {
         settled: [ConversationItem] = [],
         pending: UserMessage? = nil,
         hasActiveItem: Bool = false,
+        activeFinishedResponseItemId: UUID? = nil,
         setup: [SessionSetupPhase] = [],
         isLoadingInitialHistory: Bool = false,
         sessionError: String? = nil,
@@ -95,6 +138,7 @@ struct TranscriptRowProjectionTests {
             settledConversation: settled,
             pendingUserMessage: pending,
             hasActiveItem: hasActiveItem,
+            activeFinishedResponseItemId: activeFinishedResponseItemId,
             setupPhases: setup,
             waitingBackgroundTaskDescription: nil,
             waitingHarnessUpdateName: nil,

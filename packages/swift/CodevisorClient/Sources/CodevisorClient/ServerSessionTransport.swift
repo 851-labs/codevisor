@@ -41,6 +41,10 @@ public enum ServerSessionStreamEvent: Equatable, Sendable {
     /// A persisted user message. Carried outside `SessionUpdate` because the
     /// ACP update type cannot carry attachments.
     case userMessage(id: String?, text: String, attachments: [Attachment])
+    /// The server-owned identity of the assistant transcript item for a newly
+    /// started turn. Live rows adopt this before they settle so their identity
+    /// matches snapshots and unread attention targets.
+    case assistantItemStarted(UUID)
     /// Server-finalized assistant Markdown plus immutable promoted artifacts.
     case assistantFinalized(markdown: String, messageId: String?, attachments: [Attachment])
     case queueUpdated([ServerPromptQueueItem])
@@ -508,11 +512,18 @@ public struct ServerSessionTransport: Sendable {
         case "session.output":
             return outputEvents(from: event.payload)
         case "session.updated":
+            var updates: [ServerSessionStreamEvent] = []
+            if event.payload["turnState"]?.stringValue == "started",
+                let rawItemId = event.payload["chatItemId"]?.stringValue,
+                let itemId = UUID(uuidString: rawItemId)
+            {
+                updates.append(.assistantItemStarted(itemId))
+            }
             if let retry = retryStatus(from: event.payload) {
-                return [.retrying(retry)]
+                return updates + [.retrying(retry)]
             }
             if let stopReason = stopReason(from: event.payload) {
-                return [
+                return updates + [
                     .finished(
                         stopReason,
                         stopDetail: event.payload["stopDetail"]?.stringValue,
@@ -523,17 +534,18 @@ public struct ServerSessionTransport: Sendable {
                 ]
             }
             if let tasks = backgroundTasks(from: event.payload) {
-                return [.backgroundTasks(tasks)]
+                return updates + [.backgroundTasks(tasks)]
             }
             if let fallback = modelFallback(from: event.payload) {
-                return [.modelFallback(fallback)]
+                return updates + [.modelFallback(fallback)]
             }
             if let state = event.payload["runtimeState"]?.stringValue
                 .flatMap(SessionRuntimeState.init(rawValue:))
             {
-                return [.runtimeState(state)]
+                return updates + [.runtimeState(state)]
             }
-            return metadataUpdates(from: event.payload).map(ServerSessionStreamEvent.update)
+            return updates
+                + metadataUpdates(from: event.payload).map(ServerSessionStreamEvent.update)
         case "session.error":
             return [
                 .failed(

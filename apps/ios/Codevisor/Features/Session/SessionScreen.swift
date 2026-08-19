@@ -52,6 +52,7 @@ struct SessionTranscriptView: View {
     @Environment(\.displayScale) private var displayScale
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.theme) private var theme
+    @Environment(AppEnvironment.self) private var environment
     @State private var disclosure = TranscriptDisclosureStore()
     /// The composer's resting height, used to size the transcript's bottom
     /// spacer and the mask that sits under the card.
@@ -349,6 +350,7 @@ struct SessionTranscriptView: View {
     private var transcript: some View {
         return NativeTranscriptView(
             rows: projectedRows,
+            unreadAttentionTargets: unreadAttentionTargets,
             initialState: controller.scrollState,
             followsLatest: followsLatest,
             hasOlderHistory: controller.hasOlderHistory,
@@ -408,6 +410,9 @@ struct SessionTranscriptView: View {
                 DispatchQueue.main.async {
                     olderHistoryPresentation.didPresent(token: token)
                 }
+            },
+            onAttentionPresented: { target in
+                acknowledgePresentedAttention(target)
             }
         )
         // Match SwiftUI.ScrollView's navigation behavior: the scroll surface
@@ -418,6 +423,22 @@ struct SessionTranscriptView: View {
             followsLatest = true
             scrollCommand.token &+= 1
         }
+    }
+
+    private var unreadAttentionTargets: [SessionAttentionTarget] {
+        guard let session = controller.serverSession else { return [] }
+        return environment.projectList.sessions.first(where: {
+            $0.id == session.id && $0.serverId == session.serverId
+        })?.unreadAttentionTargets ?? []
+    }
+
+    private func acknowledgePresentedAttention(_ target: SessionAttentionTarget) {
+        guard let session = controller.serverSession else { return }
+        environment.projectList.acknowledgePresentedAttention(
+            session.id,
+            serverId: session.serverId,
+            target: target
+        )
     }
 
     private var transcriptProjectionRequest: TranscriptProjectionRequest {

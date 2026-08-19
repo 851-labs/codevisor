@@ -22,7 +22,7 @@ describe("@codevisor/db", () => {
       drop table session_read_state;
       drop table session_attention_events;
       drop table session_attention_state;
-      delete from schema_migrations where id = 31;
+      delete from schema_migrations where id in (31, 37);
     `)
     legacy.close()
 

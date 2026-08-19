@@ -163,6 +163,18 @@ public struct ServerHarnessUsageLimits: Decodable, Equatable, Sendable {
     public var fetchedAt: String
 }
 
+public struct ServerSessionAttentionTarget: Decodable, Equatable, Sendable {
+    public var sequence: Int
+    public var kind: SessionAttentionKind
+    public var chatItemId: String?
+
+    public init(sequence: Int, kind: SessionAttentionKind, chatItemId: String?) {
+        self.sequence = sequence
+        self.kind = kind
+        self.chatItemId = chatItemId
+    }
+}
+
 public struct ServerSession: Decodable, Equatable, Sendable {
     public var id: String
     public var projectId: String
@@ -188,11 +200,19 @@ public struct ServerSession: Decodable, Equatable, Sendable {
     public var lastSeenAttentionSequence: Int? = nil
     public var unreadCount: Int? = nil
     public var hasUnreadError: Bool? = nil
+    public var unreadAttentionTargets: [ServerSessionAttentionTarget]? = nil
     public var actionRequired: Bool? = nil
     public var actionRequiredKind: String? = nil
     public var pendingPlanApproval: Bool? = nil
 
-    public func chatSession(serverId scopedServerId: String? = nil) throws -> ChatSession {
+    /// Maps a server-owned record into the client's machine namespace.
+    ///
+    /// A remote server commonly reports its own internal id (for example,
+    /// `"local"`), while the client addresses that same machine through a
+    /// connection-scoped id such as `"cloud:<machine-id>"`. Requiring the
+    /// scope here prevents a response from silently moving a live session into
+    /// the wrong client namespace.
+    public func chatSession(serverId scopedServerId: String) throws -> ChatSession {
         guard let uuid = UUID(uuidString: id) else {
             throw CodevisorServerClientError.invalidUUID(id)
         }
@@ -202,7 +222,7 @@ public struct ServerSession: Decodable, Equatable, Sendable {
         return ChatSession(
             id: uuid,
             projectId: projectUUID,
-            serverId: scopedServerId ?? serverId,
+            serverId: scopedServerId,
             harnessId: harnessId,
             harnessAccountId: harnessAccountId,
             // The server stores "" for a deferred (not-yet-created) agent;
@@ -231,6 +251,13 @@ public struct ServerSession: Decodable, Equatable, Sendable {
             lastSeenAttentionSequence: lastSeenAttentionSequence ?? 0,
             unreadCount: unreadCount ?? 0,
             hasUnreadError: hasUnreadError ?? false,
+            unreadAttentionTargets: (unreadAttentionTargets ?? []).map { target in
+                SessionAttentionTarget(
+                    sequence: target.sequence,
+                    kind: target.kind,
+                    chatItemId: target.chatItemId.flatMap(UUID.init(uuidString:))
+                )
+            },
             actionRequired: actionRequired ?? false,
             actionRequiredKind: actionRequiredKind,
             pendingPlanApproval: pendingPlanApproval ?? false
@@ -261,6 +288,7 @@ public struct ServerSession: Decodable, Equatable, Sendable {
         lastSeenAttentionSequence: Int? = nil,
         unreadCount: Int? = nil,
         hasUnreadError: Bool? = nil,
+        unreadAttentionTargets: [ServerSessionAttentionTarget]? = nil,
         actionRequired: Bool? = nil,
         actionRequiredKind: String? = nil,
         pendingPlanApproval: Bool? = nil
@@ -288,6 +316,7 @@ public struct ServerSession: Decodable, Equatable, Sendable {
         self.lastSeenAttentionSequence = lastSeenAttentionSequence
         self.unreadCount = unreadCount
         self.hasUnreadError = hasUnreadError
+        self.unreadAttentionTargets = unreadAttentionTargets
         self.actionRequired = actionRequired
         self.actionRequiredKind = actionRequiredKind
         self.pendingPlanApproval = pendingPlanApproval

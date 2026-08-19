@@ -2,7 +2,7 @@ import type { EventKind } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 import { Effect } from "effect"
 import { attempt } from "./errors.js"
-import { isSessionShellEvent } from "./event-payloads.js"
+import { isSessionShellEvent, withChatItemId } from "./event-payloads.js"
 import { insertSessionEvent, projectChatEvent } from "./event-projection.js"
 import { canonicalUuid } from "./ids.js"
 import { eventFromRow, sessionEventFromRow } from "./row-mappers.js"
@@ -13,7 +13,10 @@ import { projectSessionAttention, projectSessionSidebarState } from "./session-a
 
 export const makeEventsService = (
   context: ServiceContext
-): Pick<CodevisorDatabaseService, "appendEvent" | "listEvents" | "listSubjectEvents"> => {
+): Pick<
+  CodevisorDatabaseService,
+  "appendEvent" | "latestEventCursor" | "listEvents" | "listSubjectEvents"
+> => {
   const { sqlite, config } = context
 
   const appendEvent = Effect.fn("CodevisorDatabase.appendEvent")(function* (
@@ -41,6 +44,7 @@ export const makeEventsService = (
             )
           : undefined
         let subjectRevision: number | undefined
+        let chatItemId: string | undefined
         if (sessionExists) {
           const sessionEvent = insertSessionEvent(sqlite, {
             session_id: subjectId,
@@ -51,7 +55,7 @@ export const makeEventsService = (
             payload: encoded
           })
           subjectRevision = sessionEvent.revision
-          projectChatEvent(sqlite, sessionEvent)
+          chatItemId = projectChatEvent(sqlite, sessionEvent)
           projectSessionAttention(sqlite, sessionEvent)
           projectSessionSidebarState(sqlite, subjectId, createdAt)
           if (kind === "session.output") {
@@ -68,7 +72,7 @@ export const makeEventsService = (
           kind,
           subjectId,
           createdAt,
-          payload
+          payload: withChatItemId(payload, chatItemId ?? null)
         }
       })()
     })
@@ -76,6 +80,12 @@ export const makeEventsService = (
 
   return {
     appendEvent,
+    latestEventCursor: attempt("latestEventCursor", () => {
+      const row = sqlite.prepare("select coalesce(max(id), 0) as cursor from events").get() as {
+        readonly cursor: number
+      }
+      return row.cursor
+    }),
     listEvents: (since) =>
       attempt("listEvents", () =>
         sqlite

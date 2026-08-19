@@ -17,6 +17,30 @@ const appendSessionAttention = (
   kind: "finished" | "action_required",
   hasError: boolean
 ): void => {
+  const directTarget = sqlite
+    .prepare("select chat_item_id from session_events where session_id = ? and revision = ?")
+    .get(event.session_id, event.revision) as { readonly chat_item_id: string | null }
+  const chatItemId =
+    directTarget.chat_item_id ??
+    (
+      sqlite
+        .prepare(
+          `select se.chat_item_id
+           from session_events se
+           join chat_items ci on ci.id = se.chat_item_id and ci.role = 'assistant'
+           where se.session_id = ? and se.revision <= ?
+             and json_extract(se.payload, '$.turnState') = 'started'
+             and se.revision > coalesce((
+               select max(previous.source_revision)
+               from session_attention_events previous
+               where previous.session_id = ?
+             ), 0)
+           order by se.revision desc limit 1`
+        )
+        .get(event.session_id, event.revision, event.session_id) as
+        | { readonly chat_item_id: string }
+        | undefined
+    )?.chat_item_id
   const next = sqlite
     .prepare(
       "select coalesce(max(sequence), 0) + 1 as sequence from session_attention_events where session_id = ?"
@@ -25,11 +49,19 @@ const appendSessionAttention = (
   sqlite
     .prepare(
       `insert into session_attention_events (
-         session_id, sequence, source_revision, kind, has_error, created_at
-       ) values (?, ?, ?, ?, ?, ?)
+         session_id, sequence, source_revision, kind, has_error, created_at, chat_item_id
+       ) values (?, ?, ?, ?, ?, ?, ?)
        on conflict(session_id, source_revision, kind) do nothing`
     )
-    .run(event.session_id, next.sequence, event.revision, kind, hasError ? 1 : 0, event.created_at)
+    .run(
+      event.session_id,
+      next.sequence,
+      event.revision,
+      kind,
+      hasError ? 1 : 0,
+      event.created_at,
+      chatItemId ?? null
+    )
 }
 
 const sessionHasActiveGoal = (sqlite: Database.Database, sessionId: string): boolean =>

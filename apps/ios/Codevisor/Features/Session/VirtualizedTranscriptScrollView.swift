@@ -32,6 +32,8 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
 
     private var rows: [TranscriptVirtualRow] = []
     private var rowByKey: [String: TranscriptVirtualRow] = [:]
+    private var unreadFinishedTargetByItemId: [UUID: SessionAttentionTarget] = [:]
+    private var lastPresentedAttentionTarget: SessionAttentionTarget?
     private var virtualLayout = VirtualTranscriptLayout(
         items: [],
         measuredHeights: [:],
@@ -116,6 +118,8 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     private var onFollowStateChange: ((Bool) -> Void)?
     private var onNearTop: (() -> Void)?
     private var onOlderHistoryPresented: ((UInt64) -> Void)?
+    private var onAttentionPresented: ((SessionAttentionTarget) -> Void)?
+    private var presentationObservers: [NSObjectProtocol] = []
 
     private var isNativeScrollInteractionActive: Bool {
         isTracking || isDragging || isDecelerating || isExplicitUserScroll
@@ -148,6 +152,22 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         canvasView.alpha = 0
         canvasView.accessibilityElementsHidden = true
         isScrollEnabled = false
+        presentationObservers = [
+            NotificationCenter.default.addObserver(
+                forName: UIApplication.didBecomeActiveNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.evaluatePresentedAttention() }
+            },
+            NotificationCenter.default.addObserver(
+                forName: UIApplication.willResignActiveNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.evaluatePresentedAttention() }
+            },
+        ]
     }
 
     convenience init() {
@@ -162,6 +182,9 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     deinit {
         measurementCommitTask?.cancel()
         disclosureAnchorReleaseTask?.cancel()
+        for observer in presentationObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
 
     override func safeAreaInsetsDidChange() {
@@ -177,6 +200,9 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             isDetaching = false
         }
         super.didMoveToWindow()
+        DispatchQueue.main.async { [weak self] in
+            self?.evaluatePresentedAttention()
+        }
     }
 
     override func layoutSubviews() {
@@ -232,6 +258,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
 
     func configure(
         rows newRows: [TranscriptVirtualRow],
+        unreadAttentionTargets newUnreadAttentionTargets: [SessionAttentionTarget],
         initialState: SessionScrollState?,
         followsLatest newFollowsLatest: Bool,
         hasOlderHistory newHasOlderHistory: Bool,
@@ -263,6 +290,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         onFollowStateChange: @escaping (Bool) -> Void,
         onNearTop: @escaping () -> Void,
         onOlderHistoryPresented: @escaping (UInt64) -> Void,
+        onAttentionPresented: @escaping (SessionAttentionTarget) -> Void,
     ) {
         rowContent = newRowContent
         self.onViewportChange = onViewportChange
@@ -270,6 +298,16 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         self.onFollowStateChange = onFollowStateChange
         self.onNearTop = onNearTop
         self.onOlderHistoryPresented = onOlderHistoryPresented
+        self.onAttentionPresented = onAttentionPresented
+        unreadFinishedTargetByItemId = Dictionary(
+            newUnreadAttentionTargets.compactMap { target in
+                guard target.kind == .finished, let itemId = target.chatItemId else { return nil }
+                return (itemId, target)
+            },
+            uniquingKeysWith: { current, next in
+                current.sequence >= next.sequence ? current : next
+            }
+        )
         isPreparingInitialProjection = newIsPreparingInitialProjection
         isLoadingInitialHistory = newIsLoadingInitialHistory
         guard !newIsPreparingInitialProjection else {
@@ -369,6 +407,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         }
         checkForHistoryPrefetch()
         acknowledgeOlderHistoryPresentationIfPossible()
+        evaluatePresentedAttention()
         setNeedsLayout()
     }
 
@@ -868,6 +907,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         if initialPositionApplied {
             updateMountedRows()
         }
+        evaluatePresentedAttention()
 
         let atBottom = distance <= Self.atBottomThreshold
         publishBottomState(atBottom)
@@ -1189,6 +1229,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             updateInitialPresentationReadiness()
             resolveBottomJumpIfPossible()
             startPendingSendAnimationIfPossible()
+            evaluatePresentedAttention()
             return
         }
         pendingMeasurements[measurement.key] = measurement
@@ -1234,6 +1275,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         updateInitialPresentationReadiness()
         resolveBottomJumpIfPossible()
         startPendingSendAnimationIfPossible()
+        evaluatePresentedAttention()
     }
 
     /// An explicit bottom jump spans more than one layout transaction. Keep
@@ -1309,6 +1351,59 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             canvasView.accessibilityElementsHidden = false
         }
         isScrollEnabled = true
+        evaluatePresentedAttention()
+    }
+
+    /// Emits a receipt only from the sole foreground transcript when a
+    /// completed assistant row has committed and intersects the real viewport.
+    private func evaluatePresentedAttention() {
+        let candidate: SessionAttentionTarget? = {
+            guard initialPresentationGate.isReady,
+                !isDetaching,
+                presentationRole == .foreground,
+                canvasView.alpha > 0,
+                UIApplication.shared.applicationState == .active,
+                let window,
+                window.windowScene?.activationState == .foregroundActive,
+                isActuallyVisible,
+                !unreadFinishedTargetByItemId.isEmpty
+            else { return nil }
+
+            let viewport = convert(bounds, to: canvasView)
+            guard viewport.width > 0, viewport.height > 0 else { return nil }
+            let range = virtualLayout.visibleRange(
+                distanceFromBottom: currentDistanceFromBottom(),
+                viewportHeight: viewportHeight,
+                overscanCount: 0
+            )
+            return range.compactMap { index -> SessionAttentionTarget? in
+                guard rows.indices.contains(index),
+                    let itemId = rows[index].finishedResponseItemId,
+                    let target = unreadFinishedTargetByItemId[itemId],
+                    let host = mountedHosts[rows[index].layoutKey],
+                    !host.isHidden,
+                    host.alpha > 0,
+                    host.isPresentationReady,
+                    host.frame.intersects(viewport)
+                else { return nil }
+                return target
+            }.max(by: { $0.sequence < $1.sequence })
+        }()
+
+        guard candidate != lastPresentedAttentionTarget else { return }
+        lastPresentedAttentionTarget = candidate
+        if let candidate {
+            onAttentionPresented?(candidate)
+        }
+    }
+
+    private var isActuallyVisible: Bool {
+        var view: UIView? = self
+        while let current = view {
+            if current.isHidden || current.alpha <= 0.01 { return false }
+            view = current.superview
+        }
+        return true
     }
 
     private func accepts(_ measurement: TranscriptRowMeasurement) -> Bool {

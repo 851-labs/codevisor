@@ -142,7 +142,7 @@
       },
       "severity": "warning",
       "ruleName": "Type Body Length",
-      "reason": "Struct body should span 400 lines or less excluding comments and whitespace: currently spans 426 lines"
+      "reason": "Struct body should span 400 lines or less excluding comments and whitespace: currently spans 445 lines"
     }
   },
   {
@@ -157,21 +157,21 @@
         "character": 7
       },
       "severity": "error",
-      "reason": "Class body should span 800 lines or less excluding comments and whitespace: currently spans 1368 lines"
+      "reason": "Class body should span 800 lines or less excluding comments and whitespace: currently spans 1457 lines"
     }
   },
   {
     "text": "}",
     "violation": {
       "location": {
-        "line": 1552,
+        "line": 1647,
         "character": 1,
         "file": "file:///WORKTREE/apps/ios/Codevisor/Features/Session/VirtualizedTranscriptScrollView.swift"
       },
       "ruleIdentifier": "file_length",
       "ruleName": "File Length",
       "severity": "error",
-      "reason": "File should contain 1000 lines or less excluding comments and whitespaces: currently contains 1376",
+      "reason": "File should contain 1000 lines or less excluding comments and whitespaces: currently contains 1465",
       "ruleDescription": "Files should not span too many lines."
     }
   },
@@ -606,19 +606,19 @@
         "line": 15
       },
       "ruleIdentifier": "type_body_length",
-      "reason": "Struct body should span 400 lines or less excluding comments and whitespace: currently spans 684 lines"
+      "reason": "Struct body should span 400 lines or less excluding comments and whitespace: currently spans 709 lines"
     }
   },
   {
     "text": "}",
     "violation": {
-      "reason": "File should contain 500 lines or less excluding comments and whitespaces: currently contains 878",
+      "reason": "File should contain 500 lines or less excluding comments and whitespaces: currently contains 903",
       "ruleDescription": "Files should not span too many lines.",
       "severity": "warning",
       "ruleName": "File Length",
       "location": {
         "file": "file:///WORKTREE/apps/macos/Codevisor/Features/Session/ChatScreen.swift",
-        "line": 1004,
+        "line": 1031,
         "character": 1
       },
       "ruleIdentifier": "file_length"
@@ -690,7 +690,7 @@
       "ruleName": "Type Body Length",
       "severity": "warning",
       "ruleDescription": "Type bodies should not span too many lines",
-      "reason": "Class body should span 400 lines or less excluding comments and whitespace: currently spans 600 lines",
+      "reason": "Class body should span 400 lines or less excluding comments and whitespace: currently spans 592 lines",
       "ruleIdentifier": "type_body_length",
       "location": {
         "file": "file:///WORKTREE/apps/macos/Codevisor/Features/Session/SessionStore.swift",
@@ -706,10 +706,10 @@
       "location": {
         "character": 1,
         "file": "file:///WORKTREE/apps/macos/Codevisor/Features/Session/SessionStore.swift",
-        "line": 873
+        "line": 862
       },
       "ruleIdentifier": "file_length",
-      "reason": "File should contain 500 lines or less excluding comments and whitespaces: currently contains 608",
+      "reason": "File should contain 500 lines or less excluding comments and whitespaces: currently contains 600",
       "ruleName": "File Length",
       "severity": "warning"
     }
@@ -731,7 +731,7 @@
   {
     "text": "final class VirtualizedTranscriptScrollView: NSScrollView {",
     "violation": {
-      "reason": "Class body should span 800 lines or less excluding comments and whitespace: currently spans 1104 lines",
+      "reason": "Class body should span 800 lines or less excluding comments and whitespace: currently spans 1192 lines",
       "ruleIdentifier": "type_body_length",
       "ruleDescription": "Type bodies should not span too many lines",
       "severity": "error",
@@ -752,10 +752,10 @@
       "ruleDescription": "Files should not span too many lines.",
       "location": {
         "character": 1,
-        "line": 1394,
+        "line": 1487,
         "file": "file:///WORKTREE/apps/macos/Codevisor/Features/Session/VirtualizedTranscriptScrollView.swift"
       },
-      "reason": "File should contain 1000 lines or less excluding comments and whitespaces: currently contains 1112"
+      "reason": "File should contain 1000 lines or less excluding comments and whitespaces: currently contains 1200"
     }
   },
   {
@@ -1069,12 +1069,12 @@
       "ruleName": "Type Body Length",
       "ruleDescription": "Type bodies should not span too many lines",
       "severity": "warning",
-      "reason": "Struct body should span 400 lines or less excluding comments and whitespace: currently spans 477 lines",
+      "reason": "Struct body should span 400 lines or less excluding comments and whitespace: currently spans 485 lines",
       "ruleIdentifier": "type_body_length",
       "location": {
         "file": "file:///WORKTREE/packages/swift/CodevisorClient/Sources/CodevisorClient/ServerSessionTransport.swift",
         "character": 8,
-        "line": 160
+        "line": 164
       }
     }
   },
@@ -1083,11 +1083,11 @@
     "violation": {
       "ruleIdentifier": "file_length",
       "location": {
-        "line": 715,
+        "line": 727,
         "character": 1,
         "file": "file:///WORKTREE/packages/swift/CodevisorClient/Sources/CodevisorClient/ServerSessionTransport.swift"
       },
-      "reason": "File should contain 500 lines or less excluding comments and whitespaces: currently contains 590",
+      "reason": "File should contain 500 lines or less excluding comments and whitespaces: currently contains 599",
       "ruleDescription": "Files should not span too many lines.",
       "ruleName": "File Length",
       "severity": "warning"
@@ -1313,7 +1313,7 @@
   },
   {
     "violation": {
-      "reason": "Class body should span 400 lines or less excluding comments and whitespace: currently spans 773 lines",
+      "reason": "Class body should span 400 lines or less excluding comments and whitespace: currently spans 780 lines",
       "ruleIdentifier": "type_body_length",
       "ruleDescription": "Type bodies should not span too many lines",
       "ruleName": "Type Body Length",
@@ -1334,10 +1334,10 @@
       "severity": "warning",
       "location": {
         "file": "file:///WORKTREE/packages/swift/CodevisorCore/Sources/CodevisorCore/Server/MachineController.swift",
-        "line": 1112,
+        "line": 1118,
         "character": 1
       },
-      "reason": "File should contain 500 lines or less excluding comments and whitespaces: currently contains 861"
+      "reason": "File should contain 500 lines or less excluding comments and whitespaces: currently contains 868"
     },
     "text": "}"
   },
@@ -1352,7 +1352,7 @@
       },
       "ruleDescription": "Type bodies should not span too many lines",
       "severity": "error",
-      "reason": "Class body should span 800 lines or less excluding comments and whitespace: currently spans 995 lines"
+      "reason": "Class body should span 800 lines or less excluding comments and whitespace: currently spans 1039 lines"
     },
     "text": "public final class ProjectListModel {"
   },
@@ -1362,12 +1362,12 @@
       "ruleIdentifier": "file_length",
       "severity": "error",
       "location": {
-        "line": 1336,
+        "line": 1379,
         "file": "file:///WORKTREE/packages/swift/CodevisorCore/Sources/CodevisorCore/ViewModels/ProjectListModel.swift",
         "character": 1
       },
       "ruleName": "File Length",
-      "reason": "File should contain 1000 lines or less excluding comments and whitespaces: currently contains 1085"
+      "reason": "File should contain 1000 lines or less excluding comments and whitespaces: currently contains 1129"
     },
     "text": "}"
   },
@@ -1465,11 +1465,11 @@
     "violation": {
       "severity": "warning",
       "location": {
-        "line": 1146,
+        "line": 1176,
         "character": 1,
         "file": "file:///WORKTREE/packages/swift/CodevisorCore/Tests/CodevisorCoreTests/ProjectListModelTests.swift"
       },
-      "reason": "File should contain 500 lines or less excluding comments and whitespaces: currently contains 965",
+      "reason": "File should contain 500 lines or less excluding comments and whitespaces: currently contains 994",
       "ruleIdentifier": "file_length",
       "ruleDescription": "Files should not span too many lines.",
       "ruleName": "File Length"
@@ -2060,6 +2060,36 @@
       "ruleIdentifier": "file_length",
       "severity": "warning",
       "ruleDescription": "Files should not span too many lines."
+    },
+    "text": "}"
+  },
+  {
+    "violation": {
+      "ruleDescription": "Files should not span too many lines.",
+      "ruleIdentifier": "file_length",
+      "location": {
+        "file": "file:///WORKTREE/packages/swift/CodevisorClient/Sources/CodevisorClient/ServerSession.swift",
+        "character": 1,
+        "line": 568
+      },
+      "ruleName": "File Length",
+      "severity": "warning",
+      "reason": "File should contain 500 lines or less excluding comments and whitespaces: currently contains 503"
+    },
+    "text": "}"
+  },
+  {
+    "violation": {
+      "ruleName": "File Length",
+      "ruleDescription": "Files should not span too many lines.",
+      "severity": "warning",
+      "reason": "File should contain 500 lines or less excluding comments and whitespaces: currently contains 536",
+      "ruleIdentifier": "file_length",
+      "location": {
+        "character": 1,
+        "file": "file:///WORKTREE/packages/swift/CodevisorCore/Tests/CodevisorCoreTests/SessionModelTests+Streaming.swift",
+        "line": 577
+      }
     },
     "text": "}"
   }

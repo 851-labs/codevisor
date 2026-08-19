@@ -136,7 +136,7 @@ export interface CodevisorDatabaseService {
   readonly getSessionSummary: (id: string) => Effect.Effect<SessionSummary, DatabaseError>
   readonly markSessionRead: (
     id: string,
-    throughSequence?: number
+    throughSequence: number
   ) => Effect.Effect<SessionSummary, DatabaseError>
   readonly markSessionUnread: (id: string) => Effect.Effect<SessionSummary, DatabaseError>
   readonly clearSessionPlanApproval: (id: string) => Effect.Effect<SessionSummary, DatabaseError>
@@ -180,6 +180,7 @@ export interface CodevisorDatabaseService {
     subjectId: string,
     payload: unknown
   ) => Effect.Effect<EventEnvelope, DatabaseError>
+  readonly latestEventCursor: Effect.Effect<number, DatabaseError>
   readonly listEvents: (since: number) => Effect.Effect<ReadonlyArray<EventEnvelope>, DatabaseError>
   readonly listSubjectEvents: (
     subjectId: string,

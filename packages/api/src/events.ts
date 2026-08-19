@@ -58,6 +58,14 @@ export const EventEnvelope = Schema.Struct({
 })
 export type EventEnvelope = typeof EventEnvelope.Type
 
+/** Durable cursor for the global shell event log. Capture this before a
+ * navigation snapshot, then replay events after it to close the snapshot-to-
+ * stream race without replaying the entire log. */
+export const EventCursorResponse = Schema.Struct({
+  cursor: Schema.Number
+})
+export type EventCursorResponse = typeof EventCursorResponse.Type
+
 export const DataUpgradeProgress = Schema.Struct({
   state: Schema.Literals(["running", "completed", "failed"]),
   id: Schema.String,

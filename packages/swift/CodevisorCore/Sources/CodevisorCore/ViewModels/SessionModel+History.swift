@@ -330,6 +330,8 @@ extension SessionModel {
                 case let .authenticationRequired(message):
                     turn.stopDetail = message
                     turn.isGenerating = false
+                case .assistantItemStarted:
+                    break
                 // `modelFallback` is session-level state, not per-turn detail:
                 // replaying history must not resurrect a dismissed notice.
                 case .userMessage, .queueUpdated, .retrying, .backgroundTasks, .runtimeState,

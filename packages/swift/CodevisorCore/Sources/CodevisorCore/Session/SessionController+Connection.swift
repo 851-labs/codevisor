@@ -222,6 +222,11 @@ extension SessionController {
         serverClient: any CodevisorServerClienting,
         session: inout ChatSession
     ) async throws -> SessionModel {
+        // `ServerSession.serverId` belongs to the remote server's namespace
+        // (often simply "local"). Preserve the connection scope already held
+        // by this controller so attention, navigation, and cache lookups keep
+        // addressing the same client-visible machine after open/upsert.
+        let scopedServerId = session.serverId
         if session.harnessId.isEmpty {
             session.harnessId = harnessId
         }
@@ -261,7 +266,7 @@ extension SessionController {
             workspaceId: workspaceId,
             transcriptLimit: SessionModel.initialTranscriptPageSize
         ) {
-            session = try opened.session.chatSession()
+            session = try opened.session.chatSession(serverId: scopedServerId)
             preloadedTranscript = opened.transcript
         } else {
             let remoteProjects = try await serverClient.listProjects()
@@ -272,7 +277,7 @@ extension SessionController {
                 session,
                 workspaceId: workspaceId
             )
-            session = try remoteSession.chatSession()
+            session = try remoteSession.chatSession(serverId: scopedServerId)
         }
         self.serverSession = session
 

@@ -27,10 +27,6 @@ final class ChatControllerCache {
     /// macOS's SessionStore: opening enough chats may discard a transcript
     /// model, but it must not forget where the user was reading.
     @ObservationIgnored private var scrollStates: [Key: SessionScrollState] = [:]
-    /// The chat currently on screen; its finished turns re-mark as read the
-    /// moment they land (the server writes the attention event before the
-    /// client sees the turn end — same dance as the macOS store).
-    @ObservationIgnored private var openKey: Key?
     /// Access order, most recent last — LRU eviction so browsing many chats
     /// doesn't retain every transcript ever opened.
     @ObservationIgnored private var accessOrder: [Key] = []
@@ -73,15 +69,6 @@ final class ChatControllerCache {
                 serverId: session.serverId
             )
         }
-        // Attention: a turn finishing (or a question arriving) while this
-        // chat is the open one immediately re-marks it read, so the unread
-        // dot never lights for the conversation you're looking at.
-        let markReadIfOpen = { [weak self, weak projectList = environment.projectList] in
-            guard let self, self.openKey == key else { return }
-            projectList?.markSessionRead(key.id, serverId: key.serverId)
-        }
-        controller.onTurnEnded = markReadIfOpen
-        controller.onActionRequired = markReadIfOpen
         bindScrollState(controller, to: key)
         controllers[key] = controller
         evictIfNeeded()
@@ -157,12 +144,6 @@ final class ChatControllerCache {
         let key = Key(serverId: session.serverId, id: session.id)
         noteAccess(key)
         controllers[key] = controller
-        let markReadIfOpen = { [weak self, weak projectList = environment.projectList] in
-            guard let self, self.openKey == key else { return }
-            projectList?.markSessionRead(key.id, serverId: key.serverId)
-        }
-        controller.onTurnEnded = markReadIfOpen
-        controller.onActionRequired = markReadIfOpen
         bindScrollState(controller, to: key)
         if draftsByServer[session.serverId] === controller {
             draftsByServer[session.serverId] = nil
@@ -170,14 +151,6 @@ final class ChatControllerCache {
         controller.onDraftChange = nil
         environment.composerDrafts.clearDraft(forServer: session.serverId)
         evictIfNeeded()
-    }
-
-    /// Marks a chat as the open one and clears its unread state — the iOS
-    /// counterpart of the macOS store's markOpened.
-    func noteOpened(sessionId: UUID, serverId: String, projectList: ProjectListModel) {
-        let key = Key(serverId: serverId, id: sessionId)
-        openKey = key
-        projectList.markSessionRead(sessionId, serverId: serverId)
     }
 
     /// The live controller for a chat if one is already cached, without
@@ -213,11 +186,6 @@ final class ChatControllerCache {
         for controller in controllers.values where controller.isSending {
             await controller.reconcileInFlightTurn()
         }
-    }
-
-    func noteClosed(sessionId: UUID, serverId: String) {
-        let key = Key(serverId: serverId, id: sessionId)
-        if openKey == key { openKey = nil }
     }
 
     private func noteAccess(_ key: Key) {

@@ -96,10 +96,7 @@ export const makeSessionsService = (
             )
             .get(id) as { readonly sequence: number }
         ).sequence
-        const requested =
-          throughSequence === undefined || !Number.isFinite(throughSequence)
-            ? latest
-            : Math.max(0, Math.min(latest, Math.trunc(throughSequence)))
+        const requested = Math.max(0, Math.min(latest, Math.trunc(throughSequence)))
         const changedAt = isoTimestamp()
         sqlite.transaction(() => {
           sqlite

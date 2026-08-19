@@ -5,6 +5,116 @@ import ACPKit
 @testable import CodevisorCore
 
 extension SessionModelTests {
+    @Test("A live question turn adopts the server transcript item identity")
+    func liveQuestionTurnAdoptsCanonicalItemIdentity() async {
+        let sessionId = UUID()
+        let assistantItemId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.initialTranscriptPage = ServerTranscriptPage(
+            items: [],
+            hasMore: false,
+            eventCursor: 0
+        )
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+        await model.loadHistory()
+        await settleUntil { !client.sessionEventSinceValues.isEmpty }
+
+        client.emit(
+            ServerEventEnvelope(
+                id: 1,
+                serverId: "local",
+                kind: "session.updated",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-08-19T00:00:00.000Z",
+                payload: .object([
+                    "chatItemId": .string(assistantItemId.uuidString),
+                    "turnId": .string("turn-question"),
+                    "turnState": .string("started"),
+                ])
+            ))
+        await settleUntil { model.activeItem?.id == assistantItemId }
+        #expect(model.activeFinishedResponseItemId == nil)
+
+        client.emit(
+            ServerEventEnvelope(
+                id: 2,
+                serverId: "local",
+                kind: "session.output",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-08-19T00:00:01.000Z",
+                payload: .object([
+                    "sessionUpdate": .string("question"),
+                    "questionId": .string("q-identity"),
+                    "questions": .array([
+                        .object([
+                            "id": .string("choice"),
+                            "question": .string("Continue?"),
+                            "allowsOther": .bool(false),
+                            "options": .array([.object(["label": .string("Yes")])]),
+                        ])
+                    ]),
+                ])
+            ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 3,
+                serverId: "local",
+                kind: "session.output",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-08-19T00:00:02.000Z",
+                payload: .object([
+                    "sessionUpdate": .string("question_resolved"),
+                    "questionId": .string("q-identity"),
+                    "outcome": .string("answered"),
+                    "questions": .array([]),
+                    "answers": .object([:]),
+                ])
+            ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 4,
+                serverId: "local",
+                kind: "session.output",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-08-19T00:00:03.000Z",
+                payload: .object([
+                    "sessionUpdate": .string("agent_message_chunk"),
+                    "messageId": .string("answer-identity"),
+                    "content": .object(["type": .string("text"), "text": .string("Done")]),
+                ])
+            ))
+        client.emit(
+            ServerEventEnvelope(
+                id: 5,
+                serverId: "local",
+                kind: "session.updated",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-08-19T00:00:04.000Z",
+                payload: .object([
+                    "chatItemId": .string(assistantItemId.uuidString),
+                    "stopReason": .string("end_turn"),
+                    "turnId": .string("turn-question"),
+                    "turnState": .string("ended"),
+                ])
+            ))
+
+        await settleAssistant(model) { !$0.turn.isGenerating }
+        guard case let .assistant(assistant) = model.conversation.last else {
+            Issue.record("expected assistant")
+            return
+        }
+        #expect(assistant.id == assistantItemId)
+        #expect(model.activeFinishedResponseItemId == assistantItemId)
+        guard case let .text(_, markdown) = assistant.turn.finalText else {
+            Issue.record("expected final text")
+            return
+        }
+        #expect(markdown == "Done")
+    }
+
     @Test("Server-backed sessions prompt through the server and consume event stream output")
     func serverBackedSendStreams() async {
         let sessionId = UUID()

@@ -24,6 +24,13 @@ describe("@codevisor/db", () => {
       })
     )
     await run(
+      db.appendEvent("session.output", session.id, {
+        role: "assistant",
+        text: "The completed response",
+        turnId: "turn-1"
+      })
+    )
+    await run(
       db.appendEvent("session.updated", session.id, {
         initiatedBy: "user",
         stopReason: "end_turn",
@@ -31,16 +38,29 @@ describe("@codevisor/db", () => {
         turnState: "ended"
       })
     )
-    expect(await run(db.getSessionSummary(session.id))).toMatchObject({
+    const firstUnread = await run(db.getSessionSummary(session.id))
+    const firstAssistant = (await run(db.getSessionDetail(session.id))).conversation.find(
+      (item) => item.role === "assistant"
+    )
+    expect(firstAssistant).toBeDefined()
+    expect(firstUnread).toMatchObject({
       latestAttentionSequence: 1,
       lastSeenAttentionSequence: 0,
-      unreadCount: 1
+      unreadCount: 1,
+      unreadAttentionTargets: [
+        {
+          sequence: 1,
+          kind: "finished",
+          chatItemId: firstAssistant?.id
+        }
+      ]
     })
 
     await run(db.markSessionRead(session.id, 1))
     expect(await run(db.getSessionSummary(session.id))).toMatchObject({
       lastSeenAttentionSequence: 1,
-      unreadCount: 0
+      unreadCount: 0,
+      unreadAttentionTargets: []
     })
 
     // A stale client may acknowledge only what it rendered. That must not
@@ -66,9 +86,8 @@ describe("@codevisor/db", () => {
       lastSeenAttentionSequence: 1,
       unreadCount: 1
     })
-    // A client actively viewing the session can omit the cursor to
-    // atomically acknowledge the server's current tip.
-    await run(db.markSessionRead(session.id))
+    // A client acknowledges the exact cursor it rendered.
+    await run(db.markSessionRead(session.id, 2))
     expect(await run(db.getSessionSummary(session.id))).toMatchObject({
       latestAttentionSequence: 2,
       lastSeenAttentionSequence: 2,
@@ -179,8 +198,18 @@ describe("@codevisor/db", () => {
     await new Promise((resolve) => setTimeout(resolve, 2))
     await run(db.appendEvent("session.updated", session.id, { backgroundTasks: [] }))
     const unread = await run(db.getSessionSummary(session.id))
+    const completedAssistant = (await run(db.getSessionDetail(session.id))).conversation.find(
+      (item) => item.role === "assistant"
+    )
     expect(unread.sidebarState).toBe("unread")
     expect(unread.sidebarStateChangedAt).not.toBe(started.sidebarStateChangedAt)
+    expect(unread.unreadAttentionTargets).toEqual([
+      {
+        sequence: 1,
+        kind: "finished",
+        chatItemId: completedAssistant?.id
+      }
+    ])
 
     await run(
       db.appendEvent("session.output", session.id, {
@@ -193,7 +222,7 @@ describe("@codevisor/db", () => {
     )
 
     await new Promise((resolve) => setTimeout(resolve, 2))
-    await run(db.markSessionRead(session.id))
+    await run(db.markSessionRead(session.id, unread.latestAttentionSequence ?? 0))
     const idle = await run(db.getSessionSummary(session.id))
     expect(idle.sidebarState).toBe("idle")
     expect(idle.sidebarStateChangedAt).not.toBe(unread.sidebarStateChangedAt)
@@ -267,8 +296,15 @@ describe("@codevisor/db", () => {
     )
     expect(await run(db.getSessionSummary(session.id))).toMatchObject({
       latestAttentionSequence: 2,
-      unreadCount: 2
+      unreadCount: 2,
+      unreadAttentionTargets: [
+        { sequence: 1, kind: "finished" },
+        { sequence: 2, kind: "finished" }
+      ]
     })
+    expect(
+      (await run(db.getSessionSummary(session.id))).unreadAttentionTargets?.[1]
+    ).not.toHaveProperty("chatItemId")
 
     await Effect.runPromise(db.close)
   })
@@ -362,7 +398,6 @@ describe("@codevisor/db", () => {
     })
     await Effect.runPromise(db.close)
   })
-
   it("snapshots a pending question with the session cursor and clears it terminally", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     const project = await run(db.createProject({ folderPath: "/tmp/pending-question" }))
@@ -394,7 +429,6 @@ describe("@codevisor/db", () => {
       pendingQuestion: question
     })
     expect((await run(db.getSessionDetail(session.id))).pendingQuestion).toEqual(question)
-
     const backgroundTasks = [
       {
         id: "task-1",
@@ -409,7 +443,6 @@ describe("@codevisor/db", () => {
       backgroundTasks
     })
     expect((await run(db.getSessionDetail(session.id))).backgroundTasks).toEqual(backgroundTasks)
-
     // A stale resolution must not release a newer pending continuation.
     await run(
       db.appendEvent("session.output", session.id, {

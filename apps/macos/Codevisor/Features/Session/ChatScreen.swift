@@ -20,6 +20,7 @@ struct ChatScreen: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.openSettings) private var openSettings
     @Environment(\.attachmentImages) private var attachmentImages
+    @Environment(AppEnvironment.self) private var environment
     @Bindable var controller: SessionController
     /// The session screen's focus coordinator (shared with the terminals).
     let focus: TerminalFocusController
@@ -137,6 +138,7 @@ struct ChatScreen: View {
             if isTranscriptMounted {
                 NativeTranscriptView(
                     rows: projectedRows,
+                    unreadAttentionTargets: unreadAttentionTargets,
                     initialState: controller.scrollState,
                     followsLatest: autoFollow,
                     hasOlderHistory: controller.hasOlderHistory,
@@ -189,6 +191,9 @@ struct ChatScreen: View {
                             olderHistoryPresentation.didPresent(token: token)
                         }
                     },
+                    onAttentionPresented: { target in
+                        acknowledgePresentedAttention(target)
+                    },
                     onInitialPresentationReady: {
                         isInitialTranscriptReady = true
                     },
@@ -209,6 +214,22 @@ struct ChatScreen: View {
                 }
             }
         }
+    }
+
+    private var unreadAttentionTargets: [SessionAttentionTarget] {
+        guard let session = controller.serverSession else { return [] }
+        return environment.projectList.sessions.first(where: {
+            $0.id == session.id && $0.serverId == session.serverId
+        })?.unreadAttentionTargets ?? []
+    }
+
+    private func acknowledgePresentedAttention(_ target: SessionAttentionTarget) {
+        guard let session = controller.serverSession else { return }
+        environment.projectList.acknowledgePresentedAttention(
+            session.id,
+            serverId: session.serverId,
+            target: target
+        )
     }
 
     @ViewBuilder
@@ -429,7 +450,13 @@ struct ChatScreen: View {
                 ))
         }
         if controller.hasActiveItem {
-            result.append(.init(id: .active, content: .active, estimatedHeight: 320))
+            result.append(
+                .init(
+                    id: .active,
+                    content: .active,
+                    estimatedHeight: 320,
+                    finishedResponseItemId: controller.activeFinishedResponseItemId
+                ))
         }
         if !pendingIsOpeningRow, let message = pendingMessage {
             result.append(

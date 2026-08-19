@@ -44,6 +44,24 @@ extension ServerEventEnvelope {
 }
 
 extension CodevisorServerClient {
+    private struct ShellEventCursorResponse: Decodable {
+        let cursor: Int
+    }
+
+    /// Captures the durable global-log tip before navigation snapshots are
+    /// fetched. Subscribing from this cursor afterward replays every event that
+    /// raced those snapshots without replaying the server's lifetime log.
+    public func latestShellEventCursor() async throws -> Int {
+        do {
+            let response: ShellEventCursorResponse = try await get("/v1/events/cursor")
+            return response.cursor
+        } catch CodevisorServerClientError.httpStatus(404, _) {
+            // Compatibility with older servers: replaying from zero is more
+            // expensive, but it is gapless and therefore safe.
+            return 0
+        }
+    }
+
     public func eventStream(since: Int = 0) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
         makeEventStream(path: "/v1/events/socket", since: since)
     }
@@ -58,6 +76,17 @@ extension CodevisorServerClient {
         makeEventStream(
             path: "/v1/events/socket",
             since: ServerSessionTransport.liveOnlyEventCursor,
+            handledKinds: handledKinds
+        )
+    }
+
+    public func shellEventStream(
+        since: Int,
+        handledKinds: Set<String>
+    ) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
+        makeEventStream(
+            path: "/v1/events/socket",
+            since: since,
             handledKinds: handledKinds
         )
     }

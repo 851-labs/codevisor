@@ -129,6 +129,28 @@ public extension CodevisorServerClienting {
         }
     }
 
+    func latestShellEventCursor() async throws -> Int { 0 }
+
+    func shellEventStream(
+        since: Int,
+        handledKinds: Set<String>
+    ) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
+        let source = eventStream(since: since)
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    for try await event in source where handledKinds.contains(event.kind) {
+                        continuation.yield(event)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
     func sessionEventStream(id: UUID, since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
         let source = eventStream(since: since)
         return AsyncThrowingStream { continuation in
@@ -151,7 +173,7 @@ public extension CodevisorServerClienting {
 
     func promptQueue(id: UUID) async throws -> [ServerPromptQueueItem] { [] }
 
-    func markSessionRead(id: UUID, throughSequence: Int?) async throws -> ServerSession? { nil }
+    func markSessionRead(id: UUID, throughSequence: Int) async throws -> ServerSession? { nil }
     func markSessionUnread(id: UUID) async throws -> ServerSession? { nil }
     func clearSessionPlanApproval(id: UUID) async throws {}
 

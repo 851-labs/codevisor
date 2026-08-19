@@ -18,7 +18,10 @@ import {
 import { serializeAttachments } from "./row-mappers.js"
 import type { SessionEventRow } from "./rows.js"
 
-export const projectChatEvent = (sqlite: Database.Database, event: SessionEventRow): void => {
+export const projectChatEvent = (
+  sqlite: Database.Database,
+  event: SessionEventRow
+): string | undefined => {
   const payload = jsonRecord(JSON.parse(event.payload))
   if (payload === undefined) return
   const sessionId = event.session_id
@@ -235,6 +238,7 @@ export const projectChatEvent = (sqlite: Database.Database, event: SessionEventR
         sessionId
       )
   }
+  return itemId
 }
 
 export const insertSessionEvent = (

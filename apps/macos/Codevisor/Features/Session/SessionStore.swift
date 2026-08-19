@@ -65,8 +65,8 @@ final class SessionStore {
     /// observation alone can leave cross-session UI such as update banners
     /// holding onto its previous value.
     private var activityRevision = 0
-    /// The session currently shown in the detail column; its finished turns
-    /// never count as unread.
+    /// The session selected by navigation. It is used for controller retention
+    /// and notification suppression, never as proof that content was read.
     private var openSessionKey: SessionKey?
     /// Whether this store's window is key. A selected chat behind Settings or
     /// another Codevisor window is not the focused chat for sound suppression.
@@ -639,7 +639,7 @@ final class SessionStore {
 
     // MARK: - Unread badges
 
-    /// Finished-and-not-yet-opened turns for a session — the sidebar badge count.
+    /// Finished-and-not-yet-acknowledged turns — the sidebar badge count.
     func unreadCount(_ session: ChatSession) -> Int {
         session.unreadCount
     }
@@ -661,12 +661,10 @@ final class SessionStore {
         notificationDelivery.clearNotifications(for: session.id)
     }
 
-    /// Marks a session as the one on screen and clears its unread badge.
+    /// Tracks the selected session so its live controller stays in the cache.
     func markOpened(_ sessionId: UUID, serverId: String) {
         let key = SessionKey(serverId: serverId, sessionId: sessionId)
         openSessionKey = key
-        environment.projectList.markSessionRead(sessionId, serverId: serverId)
-        notificationDelivery.clearNotifications(for: sessionId)
     }
 
     /// Called when navigation leaves the session detail (new chat, nothing
@@ -733,12 +731,6 @@ final class SessionStore {
         pendingAttentionErrors[key] = nil
         let kind: ChatAttentionKind = isWaitingOnUser(key) ? .actionRequired : .finished
         deliverNotification(for: key, kind: kind)
-        if key == openSessionKey {
-            // The server creates the durable attention event before this
-            // terminal event reaches the client. Keep a currently visible
-            // chat read across every device.
-            environment.projectList.markSessionRead(key.sessionId, serverId: key.serverId)
-        }
     }
 
     private func goalNeedsErrorAttention(_ goal: SessionGoal?) -> Bool {
@@ -748,9 +740,6 @@ final class SessionStore {
 
     private func noteActionRequired(for key: SessionKey) {
         deliverNotification(for: key, kind: .actionRequired)
-        if key == openSessionKey {
-            environment.projectList.markSessionRead(key.sessionId, serverId: key.serverId)
-        }
     }
 
     private func deliverNotification(for key: SessionKey, kind: ChatAttentionKind) {

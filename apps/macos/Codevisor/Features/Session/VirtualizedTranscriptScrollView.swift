@@ -26,6 +26,8 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     )
     private var rows: [TranscriptVirtualRow] = []
     private var rowByKey: [String: TranscriptVirtualRow] = [:]
+    private var unreadFinishedTargetByItemId: [UUID: SessionAttentionTarget] = [:]
+    private var lastPresentedAttentionTarget: SessionAttentionTarget?
     private var virtualLayout = VirtualTranscriptLayout(items: [], measuredHeights: [:], spacing: rowSpacing)
     /// Measured row heights plus staleness. The ledger's invariant is the fix
     /// for settled rows whose content keeps changing (background subagents
@@ -97,12 +99,14 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private var lastStableScrollState: SessionScrollState?
     private var boundsObserver: NSObjectProtocol?
     private var liveScrollObservers: [NSObjectProtocol] = []
+    private var presentationObservers: [NSObjectProtocol] = []
 
     private var onViewportChange: ((SessionScrollState) -> Void)?
     private var onBottomStateChange: ((Bool) -> Void)?
     private var onFollowStateChange: ((Bool) -> Void)?
     private var onNearTop: (() -> Void)?
     private var onOlderHistoryPresented: ((UInt64) -> Void)?
+    private var onAttentionPresented: ((SessionAttentionTarget) -> Void)?
     var onInitialPresentationReady: (() -> Void)?
     var isInitialPresentationReady: Bool { initialPresentationGate.isReady }
     /// The chat history itself can hold keyboard focus: a click anywhere in
@@ -175,6 +179,29 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                 }
             },
         ]
+        presentationObservers = [
+            NotificationCenter.default.addObserver(
+                forName: NSApplication.didBecomeActiveNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Self.onMain { self?.evaluatePresentedAttention() }
+            },
+            NotificationCenter.default.addObserver(
+                forName: NSApplication.didResignActiveNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Self.onMain { self?.evaluatePresentedAttention() }
+            },
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.didChangeOcclusionStateNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Self.onMain { self?.evaluatePresentedAttention() }
+            },
+        ]
     }
 
     @available(*, unavailable)
@@ -204,6 +231,9 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         for observer in liveScrollObservers {
             NotificationCenter.default.removeObserver(observer)
         }
+        for observer in presentationObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
@@ -217,6 +247,9 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             isDetaching = false
         }
         super.viewWillMove(toWindow: newWindow)
+        DispatchQueue.main.async { [weak self] in
+            self?.evaluatePresentedAttention()
+        }
     }
 
     override func layout() {
@@ -271,6 +304,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
 
     func configure(
         rows newRows: [TranscriptVirtualRow],
+        unreadAttentionTargets newUnreadAttentionTargets: [SessionAttentionTarget],
         initialState: SessionScrollState?,
         followsLatest newFollowsLatest: Bool,
         hasOlderHistory newHasOlderHistory: Bool,
@@ -288,7 +322,8 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         onBottomStateChange: @escaping (Bool) -> Void,
         onFollowStateChange: @escaping (Bool) -> Void,
         onNearTop: @escaping () -> Void,
-        onOlderHistoryPresented: @escaping (UInt64) -> Void
+        onOlderHistoryPresented: @escaping (UInt64) -> Void,
+        onAttentionPresented: @escaping (SessionAttentionTarget) -> Void
     ) {
         self.rowContent = newRowContent
         self.onViewportChange = onViewportChange
@@ -296,6 +331,16 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         self.onFollowStateChange = onFollowStateChange
         self.onNearTop = onNearTop
         self.onOlderHistoryPresented = onOlderHistoryPresented
+        self.onAttentionPresented = onAttentionPresented
+        unreadFinishedTargetByItemId = Dictionary(
+            newUnreadAttentionTargets.compactMap { target in
+                guard target.kind == .finished, let itemId = target.chatItemId else { return nil }
+                return (itemId, target)
+            },
+            uniquingKeysWith: { current, next in
+                current.sequence >= next.sequence ? current : next
+            }
+        )
         isLoadingInitialHistory = newIsLoadingInitialHistory
         isPreparingInitialProjection = newIsPreparingInitialProjection
         guard !newIsPreparingInitialProjection else {
@@ -406,6 +451,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         resolveBottomJumpIfPossible()
         checkForHistoryPrefetch()
         acknowledgeOlderHistoryPresentationIfPossible()
+        evaluatePresentedAttention()
     }
 
     /// AppKit applies prepended rows synchronously, but the acknowledgement is
@@ -882,6 +928,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         } else {
             updateMountedRows()
         }
+        evaluatePresentedAttention()
 
         let atBottom = distance <= Self.atBottomThreshold
         publishBottomState(atBottom)
@@ -1159,6 +1206,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             updateInitialPresentationReadiness()
             resolveBottomJumpIfPossible()
             startPendingSendAnimationIfPossible()
+            evaluatePresentedAttention()
             return
         }
         pendingMeasuredHeights[key] = height
@@ -1201,6 +1249,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         updateInitialPresentationReadiness()
         resolveBottomJumpIfPossible()
         startPendingSendAnimationIfPossible()
+        evaluatePresentedAttention()
     }
 
     private func resolveBottomJumpIfPossible() {
@@ -1271,6 +1320,50 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             verticalScroller?.isEnabled = true
         }
         onInitialPresentationReady?()
+        evaluatePresentedAttention()
+    }
+
+    /// Emits a receipt only for a completed assistant row that intersects the
+    /// non-overscanned viewport and has committed visible native content.
+    private func evaluatePresentedAttention() {
+        let candidate: SessionAttentionTarget? = {
+            guard initialPresentationGate.isReady,
+                !isDetaching,
+                transcriptDocumentView.alphaValue > 0,
+                !isHiddenOrHasHiddenAncestor,
+                NSApp.isActive,
+                let window,
+                window.isVisible,
+                window.occlusionState.contains(.visible),
+                !unreadFinishedTargetByItemId.isEmpty
+            else { return nil }
+
+            let viewport = contentView.bounds
+            guard viewport.width > 0, viewport.height > 0 else { return nil }
+            let range = virtualLayout.visibleRange(
+                distanceFromBottom: currentDistanceFromBottom(),
+                viewportHeight: viewport.height,
+                overscanCount: 0
+            )
+            return range.compactMap { index -> SessionAttentionTarget? in
+                guard rows.indices.contains(index),
+                    let itemId = rows[index].finishedResponseItemId,
+                    let target = unreadFinishedTargetByItemId[itemId],
+                    let host = mountedHosts[rows[index].layoutKey],
+                    !host.isHidden,
+                    host.alphaValue > 0,
+                    host.isPresentationReady,
+                    host.frame.intersects(viewport)
+                else { return nil }
+                return target
+            }.max(by: { $0.sequence < $1.sequence })
+        }()
+
+        guard candidate != lastPresentedAttentionTarget else { return }
+        lastPresentedAttentionTarget = candidate
+        if let candidate {
+            onAttentionPresented?(candidate)
+        }
     }
 
     /// Commits one measurement into the ledger and the revision-keyed caches.

@@ -137,7 +137,7 @@ struct UpdateSessionBody: Encodable {
 }
 
 private struct MarkSessionReadBody: Encodable {
-    var throughSequence: Int?
+    var throughSequence: Int
 }
 
 /// Mirrors the legacy discrete open sequence in one payload: `session` is
@@ -269,7 +269,7 @@ extension CodevisorServerClient {
         )
     }
 
-    public func markSessionRead(id: UUID, throughSequence: Int?) async throws -> ServerSession? {
+    public func markSessionRead(id: UUID, throughSequence: Int) async throws -> ServerSession? {
         do {
             return try await send(
                 "/v1/sessions/\(id.uuidString)/read",

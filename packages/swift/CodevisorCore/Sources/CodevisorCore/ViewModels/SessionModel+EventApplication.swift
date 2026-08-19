@@ -137,6 +137,9 @@ extension SessionModel {
         switch event {
         case let .update(update):
             apply(update)
+        case let .assistantItemStarted(itemId):
+            ensureAssistantTurn()
+            adoptActiveAssistantItemIdentity(itemId)
         case let .assistantFinalized(markdown, messageId, attachments):
             ensureAssistantTurn()
             guard case .assistant(var message) = activeItem else { return }
@@ -325,6 +328,8 @@ extension SessionModel {
         case .retrying:
             return .retryBackoff
         case .userMessage:
+            return .modelStream
+        case .assistantItemStarted:
             return .modelStream
         case .assistantFinalized:
             return .modelStream

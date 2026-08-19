@@ -541,16 +541,9 @@ public final class ProjectListModel {
         return session
     }
 
-    /// Shares read state through the server so opening a chat on one device
-    /// clears it everywhere. A nil sequence means the session is actively
-    /// visible and the server should acknowledge its current attention tip.
-    /// An explicit sequence is reserved for clients acknowledging a particular
-    /// rendered snapshot without consuming newer unseen activity.
-    ///
-    /// The optimistic local mutation uses the newest sequence cached by the
-    /// sidebar, but that cache must not replace nil in the request: the
-    /// terminal event can reach an open chat before the global attention
-    /// snapshot refreshes, leaving the cached value one sequence behind.
+    /// Shares read state through the server. The network request always carries
+    /// the exact sequence this client presented, so a delayed request cannot
+    /// consume attention created after that response left the viewport.
     public func markSessionRead(
         _ sessionId: UUID,
         serverId: String,
@@ -561,7 +554,10 @@ public final class ProjectListModel {
                 $0.serverId == serverId && $0.id == sessionId
             })
         else { return }
-        let rendered = throughSequence ?? sessions[index].latestAttentionSequence
+        let rendered = min(
+            max(0, throughSequence ?? sessions[index].latestAttentionSequence),
+            sessions[index].latestAttentionSequence
+        )
         sessions[index].lastSeenAttentionSequence = max(
             sessions[index].lastSeenAttentionSequence,
             rendered
@@ -570,8 +566,14 @@ public final class ProjectListModel {
             0,
             sessions[index].latestAttentionSequence - sessions[index].lastSeenAttentionSequence
         )
+        sessions[index].unreadAttentionTargets.removeAll { $0.sequence <= rendered }
         if sessions[index].unreadCount == 0 {
             sessions[index].hasUnreadError = false
+            if sessions[index].actionRequired {
+                sessions[index].sidebarState = .waitingForUser
+            } else if sessions[index].sidebarState != .inProgress {
+                sessions[index].sidebarState = .idle
+            }
         }
         persistSessions()
         guard let serverClient, serverId == selectedServerId else { return }
@@ -579,7 +581,7 @@ public final class ProjectListModel {
             do {
                 if let remote = try await serverClient.markSessionRead(
                     id: sessionId,
-                    throughSequence: throughSequence
+                    throughSequence: rendered
                 ) {
                     applyAttention(remote, serverId: serverId)
                 }
@@ -590,6 +592,25 @@ public final class ProjectListModel {
                 await refreshFromServer()
             }
         }
+    }
+
+    /// Accepts a read receipt only while the exact finished target is still
+    /// unread. This makes repeated viewport callbacks harmless and prevents a
+    /// stale mounted row from acknowledging a newer response.
+    public func acknowledgePresentedAttention(
+        _ sessionId: UUID,
+        serverId: String,
+        target: SessionAttentionTarget
+    ) {
+        guard
+            target.kind == .finished,
+            target.chatItemId != nil,
+            let session = sessions.first(where: {
+                $0.serverId == serverId && $0.id == sessionId
+            }),
+            session.unreadAttentionTargets.contains(target)
+        else { return }
+        markSessionRead(sessionId, serverId: serverId, throughSequence: target.sequence)
     }
 
     public func markSessionUnread(_ sessionId: UUID, serverId: String) {
@@ -616,19 +637,38 @@ public final class ProjectListModel {
     }
 
     private func applyAttention(_ remote: ServerSession, serverId: String) {
-        guard let id = UUID(uuidString: remote.id),
+        guard let mapped = try? remote.chatSession(serverId: serverId),
+            let id = UUID(uuidString: remote.id),
             let index = sessions.firstIndex(where: {
                 $0.serverId == serverId && $0.id == id
             })
         else { return }
-        sessions[index].latestAttentionSequence = remote.latestAttentionSequence ?? 0
-        sessions[index].lastSeenAttentionSequence = remote.lastSeenAttentionSequence ?? 0
-        sessions[index].unreadCount = remote.unreadCount ?? 0
-        sessions[index].hasUnreadError = remote.hasUnreadError ?? false
-        sessions[index].actionRequired = remote.actionRequired ?? false
-        sessions[index].actionRequiredKind = remote.actionRequiredKind
-        sessions[index].pendingPlanApproval = remote.pendingPlanApproval ?? false
+        guard !attentionIsNewer(sessions[index], than: mapped) else { return }
+        copyAttention(from: mapped, to: &sessions[index])
         persistSessions()
+    }
+
+    private func attentionIsNewer(_ lhs: ChatSession, than rhs: ChatSession) -> Bool {
+        if lhs.latestAttentionSequence != rhs.latestAttentionSequence {
+            return lhs.latestAttentionSequence > rhs.latestAttentionSequence
+        }
+        if lhs.lastSeenAttentionSequence != rhs.lastSeenAttentionSequence {
+            return lhs.lastSeenAttentionSequence > rhs.lastSeenAttentionSequence
+        }
+        return lhs.sidebarStateChangedAt > rhs.sidebarStateChangedAt
+    }
+
+    private func copyAttention(from source: ChatSession, to destination: inout ChatSession) {
+        destination.sidebarState = source.sidebarState
+        destination.sidebarStateChangedAt = source.sidebarStateChangedAt
+        destination.latestAttentionSequence = source.latestAttentionSequence
+        destination.lastSeenAttentionSequence = source.lastSeenAttentionSequence
+        destination.unreadCount = source.unreadCount
+        destination.hasUnreadError = source.hasUnreadError
+        destination.unreadAttentionTargets = source.unreadAttentionTargets
+        destination.actionRequired = source.actionRequired
+        destination.actionRequiredKind = source.actionRequiredKind
+        destination.pendingPlanApproval = source.pendingPlanApproval
     }
 
     /// Records the worktree a draft session ended up running in. The session
@@ -1020,6 +1060,9 @@ public final class ProjectListModel {
             $0.serverId == serverId && $0.id == session.id
         }) {
             let previous = nextSessions[index]
+            if attentionIsNewer(previous, than: reconciled) {
+                copyAttention(from: previous, to: &reconciled)
+            }
             if (previous.updatedAt ?? previous.createdAt)
                 == (reconciled.updatedAt ?? reconciled.createdAt)
             {

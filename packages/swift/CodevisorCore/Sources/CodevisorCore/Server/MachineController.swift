@@ -679,9 +679,12 @@ public final class MachineController {
         markReady(for: machineId)
         await refreshStatus(for: machineId)
         guard machineId == selectedMachineId else { return }
+        // Capture the durable shell-log tip BEFORE fetching navigation. Any
+        // event racing either snapshot is then replayed from this cursor.
+        let navigationCursor = (try? await client.latestShellEventCursor()) ?? 0
         await refreshNavigationState(serverId: machineId, client: client)
         guard machineId == selectedMachineId else { return }
-        startEventSync()
+        startEventSync(since: navigationCursor)
     }
 
     public func retrySelectedMachine() async {
@@ -709,18 +712,20 @@ public final class MachineController {
     /// Follows the selected server's event stream so projects and sessions
     /// stay in sync across every client connected to that server. Replaces any
     /// previous subscription (e.g. after switching machines).
-    public func startEventSync() {
+    public func startEventSync(since initialCursor: Int = 0) {
         eventSyncTask?.cancel()
         let serverId = selectedMachine.id
         let client = selectedClient
         eventSyncTask = Task { [weak self] in
+            var cursor = max(0, initialCursor)
             while !Task.isCancelled {
                 do {
-                    // The project/session lists above are the shell snapshot.
-                    // Subscribe live-only after it instead of replaying the
-                    // server's lifetime global log on every app launch.
-                    for try await event in client.shellEventStream(handledKinds: Self.shellSyncEventKinds) {
+                    for try await event in client.shellEventStream(
+                        since: cursor,
+                        handledKinds: Self.shellSyncEventKinds
+                    ) {
                         guard let self, !Task.isCancelled else { return }
+                        cursor = max(cursor, event.id)
                         await self.handleSyncEvent(
                             event,
                             serverId: serverId,
@@ -733,9 +738,10 @@ public final class MachineController {
                         "Event sync for \(serverId, privacy: .public) failed; resubscribing: \(String(describing: error), privacy: .public)"
                     )
                     guard let self, !Task.isCancelled else { return }
-                    // Reconcile durable metadata, then subscribe live-only
-                    // again. This skips a malformed event instead of retrying
-                    // forever from the same global cursor.
+                    // Capture before reconciling, then replay everything that
+                    // raced the authoritative snapshot. This also skips a
+                    // malformed event instead of retrying it forever.
+                    cursor = (try? await client.latestShellEventCursor()) ?? cursor
                     await self.refreshNavigationState(serverId: serverId, client: client)
                 }
             }

@@ -352,6 +352,11 @@ const handleRequest = async (
 
     await authorize(services.db, config, request)
 
+    if (request.method === "GET" && url.pathname === "/v1/events/cursor") {
+      writeJson(response, 200, { cursor: await run(services.db.latestEventCursor) })
+      return
+    }
+
     // The machine's view of its tailnet, for clients that can't enumerate
     // peers themselves (iOS). Authenticated: the peer list names every device
     // on the user's tailnet, which is far more than /v1/discovery reveals.

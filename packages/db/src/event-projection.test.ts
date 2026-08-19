@@ -8,6 +8,7 @@ describe("@codevisor/db", () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     const project = await run(db.createProject({ folderPath: "/tmp/session-revisions" }))
     const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+    expect(await run(db.latestEventCursor)).toBe(0)
 
     const first = await run(db.appendEvent("session.updated", session.id, { turnState: "started" }))
     await run(db.appendEvent("project.updated", project.id, { title: "unrelated" }))
@@ -24,7 +25,17 @@ describe("@codevisor/db", () => {
     expect(second.id).toBe(2)
     expect(second.globalEventId).toBeUndefined()
     expect((await run(db.listSubjectEvents(session.id))).map((event) => event.id)).toEqual([1, 2])
+    const assistantItem = (await run(db.getTranscriptPage(session.id, undefined, 8))).items.find(
+      (item) => item.role === "assistant"
+    )
+    expect(assistantItem).toBeDefined()
+    expect(first.payload).toMatchObject({ chatItemId: assistantItem?.id })
+    expect(second.payload).toMatchObject({ chatItemId: assistantItem?.id })
+    expect((await run(db.listSubjectEvents(session.id)))[0]?.payload).toMatchObject({
+      chatItemId: assistantItem?.id
+    })
     expect((await run(db.listEvents(0))).map((event) => event.kind)).toEqual(["project.updated"])
+    expect(await run(db.latestEventCursor)).toBe(1)
     expect((await run(db.getTranscriptPage(session.id, undefined, 8))).eventCursor).toBe(2)
     await Effect.runPromise(db.close)
   })

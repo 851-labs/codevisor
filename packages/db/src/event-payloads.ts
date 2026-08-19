@@ -7,6 +7,14 @@ export const jsonRecord = (value: unknown): JsonRecord | undefined =>
     ? (value as JsonRecord)
     : undefined
 
+/** Adds the canonical semantic transcript identity to a session event at the
+ * API boundary. Runtime payloads remain stored verbatim; live fanout and
+ * replay both receive the same server-owned chat item id. */
+export const withChatItemId = (payload: unknown, chatItemId: string | null): unknown => {
+  const record = jsonRecord(payload)
+  return record === undefined || chatItemId === null ? payload : { ...record, chatItemId }
+}
+
 export const parseJsonRecord = (raw: string): JsonRecord | undefined => {
   try {
     return jsonRecord(JSON.parse(raw))
