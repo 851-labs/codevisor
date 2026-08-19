@@ -37,6 +37,7 @@ struct CodevisorServerClientPluginsTests {
             {"plugins":[{"id":"codevisor.git-diff","name":"Git Diff","version":"0.1.0",
             "description":"Live git diff viewer",
             "panes":[{"type":"diff","title":"Git Diff","path":"/panes/diff/","icon":"plus.forwardslash.minus"}],
+            "tools":[{"name":"diff_summary","description":"Summarize the diff","path":"/tools/summary"}],
             "source":"linked","path":"/Users/x/.codevisor/plugins/git-diff","state":"stopped",
             "openPaneCount":2}]}
             """.utf8)
@@ -47,6 +48,7 @@ struct CodevisorServerClientPluginsTests {
         #expect(plugin.id == "codevisor.git-diff")
         #expect(plugin.state == "stopped")
         #expect(plugin.openPaneCount == 2)
+        #expect(plugin.tools?.first?.name == "diff_summary")
         #expect(
             plugin.panes == [
                 ServerPluginPaneDescriptor(
@@ -64,6 +66,7 @@ struct CodevisorServerClientPluginsTests {
             """.utf8)
         let bareSummary = try JSONDecoder().decode(ServerPluginSummary.self, from: bare)
         #expect(bareSummary.description == nil)
+        #expect(bareSummary.tools == nil)
         #expect(bareSummary.openPaneCount == nil)
 
         let token = Data(
@@ -114,6 +117,8 @@ struct CodevisorServerClientPluginsTests {
             {"id":"acme.git-diff","name":"Git Diff","version":"0.1.0",
             "description":"Live git diff viewer",
             "panes":[{"type":"diff","title":"Git Diff","path":"/panes/diff/"}],
+            "tools":[{"name":"diff_summary","description":"Summarize the diff",
+            "path":"/tools/summary","inputSchema":{"type":"object"}}],
             "installCommand":"bun install","runCommand":"bun run start","alreadyInstalled":true}
             """.utf8)
         let discovery = try JSONDecoder().decode(ServerPluginRemoteDiscovery.self, from: full)
@@ -122,8 +127,17 @@ struct CodevisorServerClientPluginsTests {
         #expect(discovery.runCommand == "bun run start")
         #expect(discovery.alreadyInstalled)
         #expect(discovery.panes.count == 1)
+        // Declared agent tools decode (the opaque inputSchema is skipped).
+        #expect(
+            discovery.tools == [
+                ServerPluginToolDescriptor(
+                    name: "diff_summary", description: "Summarize the diff",
+                    path: "/tools/summary"
+                )
+            ])
 
-        // Zero-dependency plugins have no install command or description.
+        // Zero-dependency plugins have no install command, description, or
+        // tools — all stay optional for older servers too.
         let bare = Data(
             """
             {"id":"a.b","name":"B","version":"1.0.0","panes":[],
@@ -132,6 +146,7 @@ struct CodevisorServerClientPluginsTests {
         let minimal = try JSONDecoder().decode(ServerPluginRemoteDiscovery.self, from: bare)
         #expect(minimal.installCommand == nil)
         #expect(minimal.description == nil)
+        #expect(minimal.tools == nil)
         #expect(!minimal.alreadyInstalled)
     }
 }

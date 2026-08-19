@@ -96,6 +96,68 @@ describe("parsePluginManifest", () => {
     )
   })
 
+  it("parses tool declarations, including tool-only plugins", () => {
+    const manifest = parsePluginManifest(
+      JSON.stringify({
+        ...validManifest,
+        panes: [],
+        tools: [
+          {
+            description: "Append a note",
+            inputSchema: { properties: { text: { type: "string" } }, type: "object" },
+            name: "notes_add",
+            path: "/tools/add"
+          },
+          // No trailing slash required and no inputSchema — both optional.
+          { description: "List notes", name: "notes_list", path: "/tools/list" }
+        ]
+      })
+    )
+    expect(manifest.panes).toHaveLength(0)
+    expect(manifest.tools).toHaveLength(2)
+    expect(manifest.tools?.[0]?.inputSchema).toMatchObject({ type: "object" })
+  })
+
+  const tool = (overrides: Record<string, unknown>): Record<string, unknown> => ({
+    ...validManifest,
+    tools: [{ description: "A tool", name: "tool_a", path: "/tools/a", ...overrides }]
+  })
+
+  it("rejects tool names outside the lowercase [a-z0-9_]+ grammar", () => {
+    expectInvalid(tool({ name: "Notes.Add" }), "lowercase letters, digits, and underscores")
+    expectInvalid(tool({ name: "" }), "lowercase letters, digits, and underscores")
+  })
+
+  it("rejects duplicate tool names", () => {
+    expectInvalid(
+      {
+        ...validManifest,
+        tools: [
+          { description: "A", name: "tool_a", path: "/a" },
+          { description: "B", name: "tool_a", path: "/b" }
+        ]
+      },
+      "Duplicate tool name"
+    )
+  })
+
+  it("rejects blank tool descriptions", () => {
+    expectInvalid(tool({ description: "  " }), "non-empty description")
+  })
+
+  it("rejects tool paths that are not plain absolute paths", () => {
+    expectInvalid(tool({ path: "tools/a" }), "plain absolute path")
+    expectInvalid(tool({ path: "/tools/../a" }), "plain absolute path")
+    expectInvalid(tool({ path: "/tools/a?x" }), "plain absolute path")
+    expectInvalid(tool({ path: "/tools/a#x" }), "plain absolute path")
+  })
+
+  it("rejects non-object tool input schemas", () => {
+    expectInvalid(tool({ inputSchema: "string" }), "inputSchema must be a JSON object")
+    expectInvalid(tool({ inputSchema: null }), "inputSchema must be a JSON object")
+    expectInvalid(tool({ inputSchema: ["array"] }), "inputSchema must be a JSON object")
+  })
+
   it("rejects pane paths with traversal or query fragments", () => {
     expectInvalid(
       { ...validManifest, panes: [{ path: "/../x/", title: "A", type: "a" }] },

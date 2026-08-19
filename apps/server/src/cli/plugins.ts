@@ -21,6 +21,7 @@ interface DiscoveredPlugin {
   readonly version?: string
   readonly description?: string
   readonly panes?: ReadonlyArray<{ readonly title?: string; readonly type?: string }>
+  readonly tools?: ReadonlyArray<{ readonly name?: string; readonly description?: string }>
   readonly installCommand?: string
   readonly runCommand?: string
   readonly alreadyInstalled?: boolean
@@ -71,6 +72,10 @@ export const pluginInstallCommand = async (
   if (plugin.description !== undefined) deps.log(`  about:   ${plugin.description}`)
   for (const pane of plugin.panes ?? []) {
     deps.log(`  pane:    ${pane.title} (${pane.type})`)
+  }
+  // Declared agent tools are part of what the user consents to.
+  for (const tool of plugin.tools ?? []) {
+    deps.log(`  tool:    ${tool.name} — ${tool.description}`)
   }
   if (plugin.alreadyInstalled === true) {
     deps.log("  note:    a plugin with this id is already installed; this will update it")

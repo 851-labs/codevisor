@@ -108,8 +108,44 @@ export const exampleManifest = {
   version: "0.1.0"
 }
 
+/// A tool-bearing plugin (panes empty — tool-only plugins are first-class).
+/// The paths line up with makeFakePlugin's tool endpoints below.
+export const toolManifest = {
+  description: "Notes tools",
+  id: "owner.notes",
+  name: "Notes",
+  panes: [],
+  protocolVersion: 1,
+  run: { command: "run-me" },
+  tools: [
+    {
+      description: "Append a note",
+      inputSchema: {
+        properties: { text: { type: "string" } },
+        required: ["text"],
+        type: "object"
+      },
+      name: "notes_add",
+      path: "/tools/add"
+    },
+    { description: "List saved notes as text", name: "notes_list", path: "/tools/text" },
+    {
+      description: "Answers without a content type",
+      name: "notes_untyped",
+      path: "/tools/untyped"
+    },
+    { description: "Always fails", name: "notes_fail", path: "/tools/fail" },
+    { description: "404s with an empty body", name: "notes_missing", path: "/tools/missing" },
+    { description: "Returns malformed JSON", name: "notes_bad_json", path: "/tools/bad-json" },
+    { description: "Never responds", name: "notes_slow", path: "/tools/slow" }
+  ],
+  version: "0.1.0"
+}
+
 export interface RecordedRequest {
   readonly path: string
+  readonly method: string
+  readonly body: string
   readonly headers: IncomingMessage["headers"]
 }
 
@@ -137,32 +173,78 @@ export const makeFakePlugin = (): FakePlugin => {
     requests,
     spawnShell: (_command, options) => {
       server = createServer((request, response) => {
-        requests.push({ headers: request.headers, path: request.url ?? "" })
-        const url = new URL(request.url ?? "/", "http://127.0.0.1")
-        if (url.pathname === "/panes/main/") {
-          response.writeHead(200, { "Content-Type": "text/html" })
-          response.end("<html>pane</html>")
-          return
-        }
-        if (url.pathname === "/panes/main/asset.js") {
-          response.writeHead(200, { "Content-Type": "text/javascript" })
-          response.end("console.log(1)")
-          return
-        }
-        if (url.pathname === "/panes/main/cookies") {
-          response.writeHead(200, { "set-cookie": "plugincookie=1" })
-          response.end("cookies")
-          return
-        }
-        if (url.pathname === "/panes/main/never") {
-          return
-        }
-        response.writeHead(404)
-        response.end()
+        const chunks: Array<Buffer> = []
+        request.on("data", (chunk: Buffer) => chunks.push(chunk))
+        request.on("end", () => {
+          requests.push({
+            body: Buffer.concat(chunks).toString("utf8"),
+            headers: request.headers,
+            method: request.method ?? "",
+            path: request.url ?? ""
+          })
+          const url = new URL(request.url ?? "/", "http://127.0.0.1")
+          if (url.pathname === "/panes/main/") {
+            response.writeHead(200, { "Content-Type": "text/html" })
+            response.end("<html>pane</html>")
+            return
+          }
+          if (url.pathname === "/panes/main/asset.js") {
+            response.writeHead(200, { "Content-Type": "text/javascript" })
+            response.end("console.log(1)")
+            return
+          }
+          if (url.pathname === "/panes/main/cookies") {
+            response.writeHead(200, { "set-cookie": "plugincookie=1" })
+            response.end("cookies")
+            return
+          }
+          if (url.pathname === "/panes/main/never" || url.pathname === "/tools/slow") {
+            return
+          }
+          if (url.pathname === "/tools/add") {
+            response.writeHead(200, { "Content-Type": "application/json" })
+            response.end(
+              JSON.stringify({
+                ok: true,
+                received: JSON.parse(
+                  chunks.length === 0 ? "{}" : Buffer.concat(chunks).toString("utf8")
+                )
+              })
+            )
+            return
+          }
+          if (url.pathname === "/tools/text") {
+            response.writeHead(200, { "Content-Type": "text/plain" })
+            response.end("two notes")
+            return
+          }
+          if (url.pathname === "/tools/untyped") {
+            response.writeHead(200)
+            response.end("untyped")
+            return
+          }
+          if (url.pathname === "/tools/fail") {
+            response.writeHead(500, { "Content-Type": "text/plain" })
+            response.end("boom")
+            return
+          }
+          if (url.pathname === "/tools/bad-json") {
+            response.writeHead(200, { "Content-Type": "application/json" })
+            response.end("{")
+            return
+          }
+          response.writeHead(404)
+          response.end()
+        })
       })
       const webSocketServer = new WebSocketServer({ noServer: true })
       server.on("upgrade", (request, socket, head) => {
-        requests.push({ headers: request.headers, path: request.url ?? "" })
+        requests.push({
+          body: "",
+          headers: request.headers,
+          method: request.method ?? "",
+          path: request.url ?? ""
+        })
         webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
           webSocket.on("message", (data) => webSocket.send(`echo:${String(data)}`))
         })

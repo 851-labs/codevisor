@@ -11,12 +11,18 @@ import {
 } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js"
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
-import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js"
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { randomUUID } from "node:crypto"
 import { realpathSync, statSync } from "node:fs"
 import { isAbsolute, relative, resolve } from "node:path"
 import { z } from "zod"
+import {
+  makeGatewayCatalog,
+  runCodeToolDescription,
+  searchToolDescription
+} from "./mcp-gateway-catalog.js"
 import type { McpManagerConfig } from "./mcp-manager.js"
+import { invokeGatewayPluginTool } from "./mcp-plugin-tools.js"
 import {
   sandboxOutputContent,
   sandboxSuccessfulToolResult,
@@ -45,10 +51,7 @@ export interface GatewayRuntime {
   inventory: string
 }
 
-export interface CatalogServer {
-  readonly id: string
-  readonly name: string
-}
+export type { CatalogServer } from "./mcp-gateway-catalog.js"
 
 export interface ToolGatewayConfig {
   readonly name: string
@@ -79,32 +82,30 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
     record
   } = deps
 
-  const integrationInventory = async (projectId?: string, sessionId?: string): Promise<string> => {
-    const names = [
-      "Codevisor",
-      ...(await run(config.db.resolveMcpServers(projectId, sessionId)))
-        .filter((server) => server.enabled)
-        .map((server) => server.name.trim())
-        .filter((name) => name.length > 0)
-    ].sort((left, right) => left.localeCompare(right))
-    if (names.length === 0) return "Available integrations: none."
-    return ["Available integrations through Codevisor:", ...names.map((name) => `- ${name}`)].join(
-      "\n"
+  const {
+    allTools,
+    describeCatalogPath,
+    gatewayServerAllowed,
+    integrationInventory,
+    listPluginTools,
+    searchCatalog
+  } = makeGatewayCatalog({ automationProviders, codevisorProvider, config, connectUpstream })
+
+  /// Invokes one plugin tool, resolving the calling session's cwd so plugins
+  /// can scope per-project state.
+  const invokePluginTool = async (
+    sessionId: string,
+    name: string,
+    args: Readonly<Record<string, unknown>>
+  ): Promise<unknown> => {
+    const session = await run(config.db.getSessionSummary(sessionId))
+    return invokeGatewayPluginTool(
+      config.pluginTools,
+      name,
+      args,
+      session.cwd === undefined ? {} : { cwd: session.cwd }
     )
   }
-
-  const searchToolDescription = (inventory: string): string =>
-    [
-      "Compatibility discovery endpoint for integrations connected through Codevisor. Prefer run_code for normal work so discovery, schema inspection, and actions can be composed in one invocation. Use this direct wrapper only when the harness cannot run code.",
-      inventory
-    ].join("\n\n")
-
-  const runCodeToolDescription = (inventory: string): string =>
-    [
-      "Primary Codevisor tool interface. Run sandboxed JavaScript or TypeScript that discovers and composes enabled integration, Browser Use, and Computer Use tools. Prefer this over direct search/describe/execute calls. The isolate has no filesystem, network, process environment, or credentials.",
-      'Inside code, start with `await tools.search({ query: "<intent>" })`, inspect a match with `await tools.describe.tool({ path })`, then call the exact returned path with `await tools[path](args)`. Pass an async arrow function.',
-      inventory
-    ].join("\n\n")
 
   const refreshGatewayInventories = async (): Promise<void> => {
     await Promise.all(
@@ -118,104 +119,6 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
         }
       })
     )
-  }
-
-  const allTools = async (
-    projectId?: string,
-    sessionId?: string
-  ): Promise<ReadonlyArray<{ server: CatalogServer; tool: Tool }>> => {
-    const enabled = (await run(config.db.resolveMcpServers(projectId, sessionId))).filter(
-      (server) => server.enabled
-    )
-    const results = await Promise.allSettled(
-      enabled.map(async (server) => {
-        const provider = automationProviders.get(server.id)
-        return provider === undefined
-          ? { server, tools: (await connectUpstream(server.id)).tools }
-          : { server, tools: provider.tools }
-      })
-    )
-    return [
-      ...codevisorProvider.tools.map((tool) => ({
-        server: { id: "codevisor", name: "Codevisor" },
-        tool
-      })),
-      ...results.flatMap((result) =>
-        result.status === "fulfilled"
-          ? result.value.tools.map((tool) => ({ server: result.value.server, tool }))
-          : []
-      )
-    ]
-  }
-
-  const gatewayServerAllowed = async (
-    serverId: string,
-    projectId?: string,
-    sessionId?: string
-  ): Promise<boolean> =>
-    serverId === "codevisor" ||
-    (await run(config.db.resolveMcpServers(projectId, sessionId))).some(
-      (candidate) => candidate.id === serverId && candidate.enabled
-    )
-
-  const searchCatalog = async (
-    projectId: string | undefined,
-    sessionId: string,
-    query: string,
-    limit = 12
-  ) => {
-    const normalized = query.trim().toLowerCase()
-    const terms = normalized.split(/[^a-z0-9]+/).filter((term) => term.length > 1)
-    const ranked = (await allTools(projectId, sessionId))
-      .map(({ server, tool }) => {
-        const serverName = server.name.toLowerCase()
-        const toolName = tool.name.toLowerCase()
-        const haystack =
-          `${server.name} ${tool.name} ${tool.title ?? ""} ${tool.description ?? ""}`.toLowerCase()
-        let score = normalized.length > 0 && haystack.includes(normalized) ? 40 : 0
-        for (const term of terms) {
-          if (serverName.includes(term)) score += 20
-          if (toolName.includes(term)) score += 12
-          if (haystack.includes(term)) score += 4
-        }
-        return {
-          path: `${server.id}.${tool.name}`,
-          server: server.id,
-          serverName: server.name,
-          name: tool.name,
-          title: tool.title,
-          description: tool.description,
-          score
-        }
-      })
-      .filter((item) => normalized.length === 0 || item.score > 0)
-      .sort((left, right) => right.score - left.score || left.path.localeCompare(right.path))
-    return {
-      items: ranked.slice(0, Math.max(1, Math.min(limit, 50))),
-      total: ranked.length,
-      workflow:
-        "Choose a match, call describe with its server and name, then call execute. Do not stop after discovery when the user asked for an action or answer."
-    }
-  }
-
-  const describeCatalogPath = async (
-    projectId: string | undefined,
-    sessionId: string,
-    path: string
-  ): Promise<Tool> => {
-    const separator = path.indexOf(".")
-    if (separator <= 0 || separator === path.length - 1)
-      throw new Error(`Invalid tool path: ${path}`)
-    const serverId = path.slice(0, separator)
-    const toolName = path.slice(separator + 1)
-    const allowed = await gatewayServerAllowed(serverId, projectId, sessionId)
-    if (!allowed) throw new Error("Tool server is disabled for this session")
-    const provider = automationProviders.get(serverId)
-    const definition = (provider?.tools ?? (await connectUpstream(serverId)).tools).find(
-      (candidate) => candidate.name === toolName
-    )
-    if (definition === undefined) throw new Error(`Tool not found: ${path}`)
-    return definition
   }
 
   const invokeAutomationProvider = async (
@@ -325,6 +228,13 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
         inputSchema: { server: z.string(), tool: z.string() }
       },
       async ({ server, tool }) => {
+        if (server === "plugin") {
+          const definition = (await listPluginTools()).find((candidate) => candidate.name === tool)
+          if (definition === undefined) {
+            return { isError: true, content: [{ type: "text" as const, text: "Tool not found" }] }
+          }
+          return { content: [{ type: "text" as const, text: JSON.stringify(definition) }] }
+        }
         const allowed = await gatewayServerAllowed(server, projectId, sessionId)
         if (!allowed) {
           return {
@@ -353,6 +263,16 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
         }
       },
       async ({ server, tool, arguments: args }): Promise<CallToolResult> => {
+        if (server === "plugin") {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify(await invokePluginTool(sessionId, tool, args))
+              }
+            ]
+          }
+        }
         const installed = server === "codevisor" ? undefined : await record(server)
         const allowed = await gatewayServerAllowed(server, projectId, sessionId)
         if (installed?.enabled === false || !allowed) {
@@ -417,6 +337,15 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
                 }
                 const serverId = path.slice(0, separator)
                 const toolName = path.slice(separator + 1)
+                if (serverId === "plugin") {
+                  return invokePluginTool(
+                    sessionId,
+                    toolName,
+                    typeof args === "object" && args !== null
+                      ? (args as Record<string, unknown>)
+                      : {}
+                  )
+                }
                 const installed = serverId === "codevisor" ? undefined : await record(serverId)
                 const allowed = await gatewayServerAllowed(serverId, projectId, sessionId)
                 if (installed?.enabled === false || !allowed) {

@@ -41,6 +41,7 @@ import {
   type GatewayRuntime,
   type ToolGatewayConfig
 } from "./mcp-gateway.js"
+import type { PluginToolSource } from "./mcp-plugin-tools.js"
 import { NodeStreamableHttpTransport } from "./mcp-http-transport.js"
 import { makeMcpOAuthRuntime } from "./mcp-oauth.js"
 import {
@@ -63,6 +64,7 @@ import {
 
 export { automationSkillPath } from "./mcp-automation-builtins.js"
 export type { ToolGatewayConfig } from "./mcp-gateway.js"
+export type { PluginGatewayTool, PluginToolSource } from "./mcp-plugin-tools.js"
 export { NodeStreamableHttpTransport } from "./mcp-http-transport.js"
 export { boundedMcpTimerDelay } from "./mcp-oauth.js"
 
@@ -127,6 +129,11 @@ export interface McpManagerConfig {
   /// Use resolves straight to the managed browser. Defaults to "local".
   readonly serverKind?: "local" | "remote"
   readonly syncManagedSkills?: (skills: ReadonlyArray<ManagedSkillSpec>) => Promise<void>
+  /// Installed plugins' declared agent tools, exposed through the gateway as
+  /// server "plugin" (`plugin.<pluginId>.<toolName>` paths). The server wires
+  /// the plugins manager in directly — the structural PluginToolSource seam
+  /// keeps this package free of a @codevisor/plugins dependency.
+  readonly pluginTools?: PluginToolSource
   readonly makeBrowserProvider?: (() => BrowserUseProvider) | undefined
   readonly makeComputerProvider?:
     | (() => AutomationToolProvider & {
@@ -552,6 +559,14 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       gateways,
       record
     })
+
+  // Plugin installs/uninstalls change the plugin-tool inventory the gateway
+  // advertises; refresh every live gateway's tool descriptions on change.
+  const unsubscribePluginTools = config.pluginTools?.subscribeInstalled(() => {
+    void refreshGatewayInventories().catch((cause: unknown) =>
+      reportBackgroundFailure("Plugin tool inventory refresh failed", cause)
+    )
+  })
 
   const { oauthProvider, scheduleRefresh, validateOAuthConnection } = makeMcpOAuthRuntime({
     callbackUrl,
@@ -1040,6 +1055,7 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       await connection.transport.handleRequest(request, response, body)
     },
     close: async () => {
+      unsubscribePluginTools?.()
       /* v8 ignore next -- timers only exist for the live OAuth refresh adapter. */
       for (const timer of refreshTimers.values()) clearTimeout(timer)
       await Promise.all([...connections.keys()].map(closeConnection))

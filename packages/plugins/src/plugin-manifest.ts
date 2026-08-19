@@ -14,6 +14,10 @@ export const PLUGIN_MANIFEST_FILENAME = "codevisor-plugin.json"
 /// and cookie names.
 const PLUGIN_ID_PATTERN = /^[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9-]*$/
 
+/// Tool names appear as `plugin.<pluginId>.<toolName>` catalog paths, so they
+/// must never contain the dot the path grammar splits on.
+const PLUGIN_TOOL_NAME_PATTERN = /^[a-z0-9_]+$/
+
 /// Parses and validates a codevisor-plugin.json payload. Every rule here is
 /// part of the plugin protocol: reject early with a message an author (or an
 /// agent authoring a plugin) can act on, never let a malformed manifest reach
@@ -70,6 +74,40 @@ export const parsePluginManifest = (raw: string): PluginManifest => {
     }
     if (pane.path.includes("..") || pane.path.includes("?") || pane.path.includes("#")) {
       throw new PluginsError("invalid", `Pane path must be a plain absolute path: ${pane.path}`)
+    }
+  }
+  const seenToolNames = new Set<string>()
+  for (const tool of manifest.tools ?? []) {
+    if (!PLUGIN_TOOL_NAME_PATTERN.test(tool.name)) {
+      throw new PluginsError(
+        "invalid",
+        `Tool name must be lowercase letters, digits, and underscores: ${tool.name}`
+      )
+    }
+    if (seenToolNames.has(tool.name)) {
+      throw new PluginsError("invalid", `Duplicate tool name: ${tool.name}`)
+    }
+    seenToolNames.add(tool.name)
+    if (tool.description.trim().length === 0) {
+      throw new PluginsError("invalid", `Tool ${tool.name} needs a non-empty description`)
+    }
+    // Tool paths are RPC endpoints, not documents: absolute, but with no
+    // trailing-slash requirement — nothing resolves relative URLs under them.
+    if (!tool.path.startsWith("/") || tool.path.includes("..")) {
+      throw new PluginsError("invalid", `Tool path must be a plain absolute path: ${tool.path}`)
+    }
+    if (tool.path.includes("?") || tool.path.includes("#")) {
+      throw new PluginsError("invalid", `Tool path must be a plain absolute path: ${tool.path}`)
+    }
+    // The schema is passed through to agents verbatim, so the only structural
+    // requirement is "a JSON object" (arrays and primitives are not schemas).
+    if (
+      tool.inputSchema !== undefined &&
+      (typeof tool.inputSchema !== "object" ||
+        tool.inputSchema === null ||
+        Array.isArray(tool.inputSchema))
+    ) {
+      throw new PluginsError("invalid", `Tool ${tool.name} inputSchema must be a JSON object`)
     }
   }
   return manifest

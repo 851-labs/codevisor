@@ -8,6 +8,7 @@ import {
   type SetGoalUpdate
 } from "@codevisor/agent-runtime"
 import type { Harness, NativeMcpScan, SessionConfigOption, SkillsScan } from "@codevisor/api"
+import { PluginsError, type PluginsManager, type PluginStateEvent } from "@codevisor/plugins"
 import { makeAttachmentStore, makeDatabase, type CodevisorDatabaseService } from "@codevisor/db"
 import type {
   TerminalHandlers,
@@ -759,6 +760,140 @@ export const nativeMcpRemoval = {
   removedAt: "2026-07-20T00:00:00.000Z",
   serverName: "docs"
 }
+
+/// Shared plugins-manager stub for the plugin route suites (same role as
+/// nativeMcpStub/skillsStub below): records calls and mirrors the real
+/// manager's typed failures.
+export const pluginSummary = {
+  id: "owner.example",
+  name: "Example",
+  panes: [{ path: "/panes/main/", title: "Main", type: "main" }],
+  path: "/tmp/example",
+  source: "linked",
+  state: "stopped",
+  version: "0.1.0"
+} as const
+
+export const pluginsStub = (
+  calls: Array<Array<unknown>>,
+  listeners: Array<(event: PluginStateEvent) => void> = []
+): PluginsManager => ({
+  close: () => calls.push(["close"]),
+  discoverRemote: async (request) => {
+    calls.push(["discoverRemote", request])
+    if (request.source === "ghost/missing") {
+      throw new PluginsError("invalid", "No codevisor-plugin.json found in ghost/missing")
+    }
+    return {
+      alreadyInstalled: false,
+      description: "Example plugin",
+      id: "owner.example",
+      installCommand: "bun install",
+      name: "Example",
+      panes: pluginSummary.panes,
+      runCommand: "bun run start",
+      version: "0.1.0"
+    }
+  },
+  importRemote: async (request) => {
+    calls.push(["importRemote", request])
+    if (request.source === "other/taken") {
+      throw new PluginsError("conflict", "already provided by dev-checkout")
+    }
+    return { ...pluginSummary, source: "managed" }
+  },
+  link: async (request) => {
+    calls.push(["link", request])
+    if (request.path === "relative/path") {
+      throw new PluginsError("invalid", "Plugin link path must be absolute")
+    }
+    return pluginSummary
+  },
+  remove: async (pluginId) => {
+    calls.push(["remove", pluginId])
+    if (pluginId !== "owner.example") {
+      throw new PluginsError("notFound", `Plugin not installed: ${pluginId}`)
+    }
+    return { plugins: [] }
+  },
+  get: async (pluginId) => {
+    calls.push(["get", pluginId])
+    if (pluginId === "owner.conflict") {
+      throw new PluginsError("conflict", "conflicting install")
+    }
+    if (pluginId === "owner.invalid") {
+      throw new PluginsError("invalid", "broken manifest")
+    }
+    if (pluginId === "owner.unavailable") {
+      throw new PluginsError("unavailable", "circuit breaker is open")
+    }
+    if (pluginId !== "owner.example") {
+      throw new PluginsError("notFound", `Plugin not installed: ${pluginId}`)
+    }
+    return pluginSummary
+  },
+  handleProxyRequest: async (_request, response, url) => {
+    // Mirror the real manager: only proxy-shaped paths are handled here.
+    if (!url.pathname.includes("/app/") || url.pathname.endsWith("/unhandled/")) {
+      return false
+    }
+    calls.push(["proxy", url.pathname])
+    response.writeHead(200, { "Content-Type": "text/html" })
+    response.end("<html>pane</html>")
+    return true
+  },
+  handleUpgrade: async (request, socket) => {
+    const url = new URL(request.url ?? "/", "http://127.0.0.1")
+    if (url.pathname.endsWith("/unhandled")) {
+      return false
+    }
+    calls.push(["upgrade", url.pathname])
+    socket.write("HTTP/1.1 418 Plugin Socket\r\nConnection: close\r\n\r\n")
+    socket.destroy()
+    return true
+  },
+  invokeTool: async (pluginId, toolName, args, context) => {
+    calls.push(["invokeTool", pluginId, toolName, args, context])
+    if (pluginId !== "owner.example") {
+      throw new PluginsError("notFound", `Plugin not installed: ${pluginId}`)
+    }
+    if (toolName !== "notes_add") {
+      throw new PluginsError("notFound", `Plugin ${pluginId} has no tool: ${toolName}`)
+    }
+    return { added: true, received: args }
+  },
+  listTools: async () => {
+    calls.push(["listTools"])
+    return [{ description: "Append a note", name: "notes_add", pluginId: "owner.example" }]
+  },
+  subscribeInstalled: (listener) => {
+    calls.push(["subscribeInstalled", listener])
+    return () => calls.push(["unsubscribeInstalled"])
+  },
+  issuePaneToken: async (pluginId, paneId, request) => {
+    calls.push(["issuePaneToken", pluginId, paneId, request])
+    return {
+      expiresAt: new Date().toISOString(),
+      path: `/v1/plugins/${pluginId}/app/panes/${request.paneType}/?paneId=${paneId}&codevisorPaneToken=tok`,
+      token: "tok"
+    }
+  },
+  list: async () => {
+    calls.push(["list"])
+    return { plugins: [pluginSummary] }
+  },
+  restart: async (pluginId) => {
+    calls.push(["restart", pluginId])
+    if (pluginId !== "owner.example") {
+      throw new PluginsError("notFound", `Plugin not installed: ${pluginId}`)
+    }
+    return pluginSummary
+  },
+  subscribe: (listener) => {
+    listeners.push(listener)
+    return () => calls.push(["unsubscribe"])
+  }
+})
 
 export const nativeMcpStub = (calls: Array<unknown[]>) => ({
   importServers: async (request: { identities: ReadonlyArray<string> }) => ({

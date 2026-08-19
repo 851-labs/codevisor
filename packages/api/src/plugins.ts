@@ -26,6 +26,24 @@ export const PluginCommand = Schema.Struct({
 })
 export type PluginCommand = typeof PluginCommand.Type
 
+/// One agent tool a plugin contributes. When an agent invokes it, the server
+/// POSTs the JSON arguments to `path` on the plugin's loopback server. Unlike
+/// pane paths, `path` needs no trailing slash — it is an RPC endpoint, not a
+/// document resolving relative URLs.
+export const PluginToolDescriptor = Schema.Struct({
+  /// Tool name, unique within the plugin: lowercase letters, digits, and
+  /// underscores (e.g. "notes_add").
+  name: Schema.String,
+  /// Shown to agents in tool catalogs and to users on install consent
+  /// surfaces alongside the run commands.
+  description: Schema.String,
+  path: Schema.String,
+  /// Optional JSON Schema for the tool's arguments, passed through verbatim
+  /// to agents. Absent means "any JSON object".
+  inputSchema: Schema.optional(Schema.Unknown)
+})
+export type PluginToolDescriptor = typeof PluginToolDescriptor.Type
+
 /// codevisor-plugin.json — the contract between a plugin directory and the
 /// server. Deliberately small: a plugin is any executable that serves HTTP on
 /// $PORT; everything else here is metadata the app renders without running
@@ -40,6 +58,9 @@ export const PluginManifest = Schema.Struct({
   version: Schema.String,
   description: Schema.optional(Schema.String),
   panes: Schema.Array(PluginPaneDescriptor),
+  /// Agent tools this plugin exposes to the model through the MCP gateway.
+  /// Tool-only plugins (empty panes + tools) are first-class.
+  tools: Schema.optional(Schema.Array(PluginToolDescriptor)),
   /// Run once at install/update time (dependency fetch, build). Absent for
   /// zero-dependency plugins — the documented golden path.
   install: Schema.optional(PluginCommand),
@@ -78,6 +99,8 @@ export const PluginSummary = Schema.Struct({
   version: Schema.String,
   description: Schema.optional(Schema.String),
   panes: Schema.Array(PluginPaneDescriptor),
+  /// Agent tools the plugin declares; absent when it declares none.
+  tools: Schema.optional(Schema.Array(PluginToolDescriptor)),
   source: PluginSource,
   path: Schema.String,
   state: PluginRuntimeState,
@@ -140,6 +163,9 @@ export const DiscoverRemotePluginResult = Schema.Struct({
   version: Schema.String,
   description: Schema.optional(Schema.String),
   panes: Schema.Array(PluginPaneDescriptor),
+  /// Agent tools installation would add — consent surfaces list these
+  /// alongside the verbatim commands.
+  tools: Schema.optional(Schema.Array(PluginToolDescriptor)),
   /// Run once at install time, in the plugin directory. Absent for
   /// zero-dependency plugins.
   installCommand: Schema.optional(Schema.String),
@@ -166,3 +192,15 @@ export const LinkPluginRequest = Schema.Struct({
   path: Schema.String
 })
 export type LinkPluginRequest = typeof LinkPluginRequest.Type
+
+/// Invoke one plugin-declared agent tool. `args` should match the tool's
+/// declared inputSchema — the server passes them through verbatim and the
+/// plugin validates. The response body is whatever the tool returns.
+export const InvokePluginToolRequest = Schema.Struct({
+  args: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+  /// Optional caller context forwarded to the plugin inside the signed
+  /// X-Codevisor-Context header.
+  workspaceId: Schema.optional(Schema.String),
+  cwd: Schema.optional(Schema.String)
+})
+export type InvokePluginToolRequest = typeof InvokePluginToolRequest.Type

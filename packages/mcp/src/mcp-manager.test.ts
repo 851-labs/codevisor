@@ -52,7 +52,8 @@ const listen = async (server: Server): Promise<string> => {
 }
 
 const testManager = async (
-  syncManagedSkills?: NonNullable<Parameters<typeof makeMcpManager>[0]["syncManagedSkills"]>
+  syncManagedSkills?: NonNullable<Parameters<typeof makeMcpManager>[0]["syncManagedSkills"]>,
+  extraConfig: Partial<Parameters<typeof makeMcpManager>[0]> = {}
 ): Promise<{ db: CodevisorDatabaseService; manager: McpManager }> => {
   const directory = mkdtempSync(join(tmpdir(), "codevisor-mcp-manager-"))
   directories.push(directory)
@@ -63,7 +64,8 @@ const testManager = async (
   const manager = makeMcpManager({
     db,
     dataDir: directory,
-    ...(syncManagedSkills === undefined ? {} : { syncManagedSkills })
+    ...(syncManagedSkills === undefined ? {} : { syncManagedSkills }),
+    ...extraConfig
   })
   managers.push(manager)
   return { db, manager }
@@ -738,6 +740,200 @@ describe("MCP manager", () => {
       void created
     } finally {
       await first.client.close().catch(() => undefined)
+    }
+  })
+
+  // Same real-HTTP gateway harness as the upstream test above; the plugin
+  // tool source is the structural seam the server wires the plugins manager
+  // into.
+  it(
+    "exposes plugin tools through the gateway and refreshes on installed-set changes",
+    { timeout: 20_000 },
+    async () => {
+      const listeners: Array<() => void> = []
+      let installedTools: Array<{
+        pluginId: string
+        name: string
+        description: string
+        inputSchema?: unknown
+      }> = [
+        {
+          pluginId: "owner.notes",
+          name: "notes_add",
+          description: "Append a note",
+          inputSchema: {
+            type: "object",
+            properties: { text: { type: "string" } },
+            required: ["text"]
+          }
+        }
+      ]
+      const invocations: Array<ReadonlyArray<unknown>> = []
+      const { db, manager } = await testManager(undefined, {
+        pluginTools: {
+          listTools: async () => installedTools,
+          invokeTool: async (pluginId, toolName, args, context) => {
+            invocations.push([pluginId, toolName, args, context])
+            return { ok: true, tool: toolName }
+          },
+          subscribeInstalled: (listener) => {
+            listeners.push(listener)
+            return () => listeners.splice(0)
+          }
+        }
+      })
+      const gatewayBase = await listen(createServer(manager.handleGatewayRequest))
+      manager.setBaseUrl(gatewayBase)
+      const project = await run(db.createProject({ folderPath: "/tmp/mcp-plugin-project" }))
+      const session = await run(
+        db.createSession({ harnessId: "codex", projectId: project.id, title: "Plugin tools" })
+      )
+      const sessionCwd = (await run(db.getSessionSummary(session.id))).cwd
+      const issued = await manager.issueGateway(session.id, project.id)
+      const client = new Client({ name: "plugin-tools-test", version: "1" })
+      await client.connect(
+        new StreamableHTTPClientTransport(new URL(issued.url), {
+          requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
+        }) as unknown as Transport
+      )
+      try {
+        // The advertised inventory names the plugin tool path outright, so
+        // agents can call it without a search round-trip.
+        const advertised = (await client.listTools()).tools.find((tool) => tool.name === "search")
+        expect(advertised?.description).toContain("plugin.owner.notes.notes_add — Append a note")
+
+        const search = await client.callTool({
+          name: "search",
+          arguments: { query: "note", limit: 5 }
+        })
+        expect(JSON.stringify(search.content)).toContain("plugin.owner.notes.notes_add")
+
+        const described = await client.callTool({
+          name: "describe",
+          arguments: { server: "plugin", tool: "owner.notes.notes_add" }
+        })
+        expect(JSON.stringify(described.content)).toContain("Append a note")
+        expect(
+          (
+            await client.callTool({
+              name: "describe",
+              arguments: { server: "plugin", tool: "owner.notes.missing" }
+            })
+          ).isError
+        ).toBe(true)
+
+        const executed = await client.callTool({
+          name: "execute",
+          arguments: {
+            server: "plugin",
+            tool: "owner.notes.notes_add",
+            arguments: { text: "hi" }
+          }
+        })
+        expect(executed.isError).not.toBe(true)
+        expect(JSON.stringify(executed.content)).toContain('\\"ok\\":true')
+        // The session's cwd rides along so plugins can scope per-project.
+        expect(invocations.at(-1)).toEqual([
+          "owner.notes",
+          "notes_add",
+          { text: "hi" },
+          sessionCwd === undefined ? {} : { cwd: sessionCwd }
+        ])
+
+        const viaCode = await client.callTool({
+          name: "run_code",
+          arguments: {
+            code: `async () => {
+            const schema = await tools.describe.tool({ path: "plugin.owner.notes.notes_add" });
+            const result = await tools["plugin.owner.notes.notes_add"]({ text: "from code" });
+            return { result, schema };
+          }`
+          }
+        })
+        expect(viaCode.isError).not.toBe(true)
+        expect(JSON.stringify(viaCode.content)).toContain('\\"ok\\":true')
+        expect(invocations.at(-1)).toEqual([
+          "owner.notes",
+          "notes_add",
+          { text: "from code" },
+          sessionCwd === undefined ? {} : { cwd: sessionCwd }
+        ])
+
+        // Remainders that cannot split into <pluginId>.<toolName> are refused.
+        expect(
+          (
+            await client.callTool({
+              name: "execute",
+              arguments: { server: "plugin", tool: "notesadd", arguments: {} }
+            })
+          ).isError
+        ).toBe(true)
+        expect(
+          (
+            await client.callTool({
+              name: "run_code",
+              arguments: { code: `async () => tools["plugin.owner.notes."]({})` }
+            })
+          ).isError
+        ).toBe(true)
+        expect(
+          (
+            await client.callTool({
+              name: "run_code",
+              arguments: {
+                code: `async () => tools.describe.tool({ path: "plugin.owner.notes.missing" })`
+              }
+            })
+          ).isError
+        ).toBe(true)
+
+        // An install changes the set: the subscription refreshes the
+        // advertised inventory on every live connection.
+        installedTools = [
+          ...installedTools,
+          { pluginId: "owner.notes", name: "notes_list", description: "List notes" }
+        ]
+        for (const listener of listeners) listener()
+        await vi.waitFor(async () => {
+          const refreshed = (await client.listTools()).tools.find((tool) => tool.name === "search")
+          expect(refreshed?.description).toContain("plugin.owner.notes.notes_list — List notes")
+        })
+      } finally {
+        await client.close()
+      }
+    }
+  )
+
+  it("refuses plugin tool calls when no plugin source is wired", async () => {
+    const { db, manager } = await testManager()
+    const gatewayBase = await listen(createServer(manager.handleGatewayRequest))
+    manager.setBaseUrl(gatewayBase)
+    const project = await run(db.createProject({ folderPath: "/tmp/mcp-no-plugins" }))
+    const session = await run(
+      db.createSession({ harnessId: "codex", projectId: project.id, title: "No plugins" })
+    )
+    const issued = await manager.issueGateway(session.id, project.id)
+    const client = new Client({ name: "no-plugins-test", version: "1" })
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(issued.url), {
+        requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
+      }) as unknown as Transport
+    )
+    try {
+      const executed = await client.callTool({
+        name: "execute",
+        arguments: { server: "plugin", tool: "owner.notes.notes_add", arguments: {} }
+      })
+      expect(executed.isError).toBe(true)
+      expect(JSON.stringify(executed.content)).toContain("unavailable on this server")
+      const described = await client.callTool({
+        name: "describe",
+        arguments: { server: "plugin", tool: "owner.notes.notes_add" }
+      })
+      expect(described.isError).toBe(true)
+      expect(JSON.stringify(described.content)).toContain("Tool not found")
+    } finally {
+      await client.close()
     }
   })
 

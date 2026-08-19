@@ -322,6 +322,19 @@ private struct PluginInstallSheet: View {
                     }
                 }
             }
+            // Declared agent tools are part of what the user consents to,
+            // next to the verbatim commands below.
+            if let tools = discovery.tools, !tools.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Adds \(tools.count) agent tool\(tools.count == 1 ? "" : "s"):")
+                        .font(.callout)
+                    ForEach(tools) { tool in
+                        Text(verbatim: "\(tool.name) — \(tool.description)")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
             if discovery.alreadyInstalled {
                 Label(
                     "A plugin with this id is already installed; installing will update it.",

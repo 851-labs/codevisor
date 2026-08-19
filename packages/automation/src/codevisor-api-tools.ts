@@ -689,15 +689,15 @@ export const CODEVISOR_API_TOOLS: ReadonlyArray<CodevisorApiToolSpec> = [
 
   apiTool(
     "plugins.list",
-    "List installed Codevisor plugins with their panes and runtime state.",
+    "List installed Codevisor plugins with their panes, declared agent tools, and runtime state.",
     "GET",
     "/v1/plugins"
   ),
   apiTool(
     "plugins.discover_remote",
-    "Preview a plugin source without installing it: returns the manifest summary and the exact " +
-      "install/run commands installation would execute on this machine. ALWAYS call this before " +
-      "plugins.install and show the user the result.",
+    "Preview a plugin source without installing it: returns the manifest summary (panes and any " +
+      "declared agent tools) and the exact install/run commands installation would execute on " +
+      "this machine. ALWAYS call this before plugins.install and show the user the result.",
     "POST",
     "/v1/plugins/discover-remote",
     {
@@ -708,8 +708,8 @@ export const CODEVISOR_API_TOOLS: ReadonlyArray<CodevisorApiToolSpec> = [
     "plugins.install",
     "Install (or update) a plugin from a remote source, running its install command on the " +
       "user's machine. Mandatory first step: call plugins.discover_remote and show the user the " +
-      "discovered manifest and verbatim commands. Only set confirm=true after the user " +
-      "explicitly approves.",
+      "discovered manifest, the agent tools it would add (name and description for each), and " +
+      "the verbatim commands. Only set confirm=true after the user explicitly approves.",
     "POST",
     "/v1/plugins/import-remote",
     {

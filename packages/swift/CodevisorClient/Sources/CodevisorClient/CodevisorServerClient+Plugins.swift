@@ -22,6 +22,27 @@ public struct ServerPluginPaneDescriptor: Codable, Equatable, Identifiable, Send
     }
 }
 
+/// One agent tool a plugin contributes (mirrors `PluginToolDescriptor` in
+/// packages/api). The server POSTs JSON arguments to `path` on the plugin's
+/// server when an agent invokes the tool. The descriptor's opaque
+/// `inputSchema` (a JSON Schema for the arguments) is not decoded
+/// client-side — consent and settings surfaces only need name + description.
+public struct ServerPluginToolDescriptor: Codable, Equatable, Identifiable, Sendable {
+    /// Tool name, unique within the plugin (lowercase letters, digits,
+    /// underscores).
+    public var name: String
+    public var description: String
+    public var path: String
+
+    public var id: String { name }
+
+    public init(name: String, description: String, path: String) {
+        self.name = name
+        self.description = description
+        self.path = path
+    }
+}
+
 /// A plugin installed on a machine (mirrors `PluginSummary` in packages/api).
 public struct ServerPluginSummary: Codable, Equatable, Identifiable, Sendable {
     public var id: String
@@ -29,6 +50,9 @@ public struct ServerPluginSummary: Codable, Equatable, Identifiable, Sendable {
     public var version: String
     public var description: String?
     public var panes: [ServerPluginPaneDescriptor]
+    /// Agent tools the plugin declares; absent from older servers and from
+    /// plugins that declare none.
+    public var tools: [ServerPluginToolDescriptor]?
     /// managed | linked
     public var source: String
     public var path: String
@@ -45,6 +69,7 @@ public struct ServerPluginSummary: Codable, Equatable, Identifiable, Sendable {
         version: String,
         description: String? = nil,
         panes: [ServerPluginPaneDescriptor] = [],
+        tools: [ServerPluginToolDescriptor]? = nil,
         source: String,
         path: String,
         state: String,
@@ -55,6 +80,7 @@ public struct ServerPluginSummary: Codable, Equatable, Identifiable, Sendable {
         self.version = version
         self.description = description
         self.panes = panes
+        self.tools = tools
         self.source = source
         self.path = path
         self.state = state
@@ -72,6 +98,9 @@ public struct ServerPluginRemoteDiscovery: Codable, Equatable, Sendable {
     public var version: String
     public var description: String?
     public var panes: [ServerPluginPaneDescriptor]
+    /// Agent tools installation would add — shown on the consent sheet
+    /// alongside the verbatim commands. Absent from older servers.
+    public var tools: [ServerPluginToolDescriptor]?
     public var installCommand: String?
     public var runCommand: String
     public var alreadyInstalled: Bool
@@ -82,6 +111,7 @@ public struct ServerPluginRemoteDiscovery: Codable, Equatable, Sendable {
         version: String,
         description: String? = nil,
         panes: [ServerPluginPaneDescriptor] = [],
+        tools: [ServerPluginToolDescriptor]? = nil,
         installCommand: String? = nil,
         runCommand: String,
         alreadyInstalled: Bool = false
@@ -91,6 +121,7 @@ public struct ServerPluginRemoteDiscovery: Codable, Equatable, Sendable {
         self.version = version
         self.description = description
         self.panes = panes
+        self.tools = tools
         self.installCommand = installCommand
         self.runCommand = runCommand
         self.alreadyInstalled = alreadyInstalled

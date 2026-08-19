@@ -76,6 +76,7 @@ const discovery = {
   name: "Git Diff",
   panes: [{ title: "Git Diff", type: "diff" }],
   runCommand: "bun run start",
+  tools: [{ description: "Summarize the working tree diff", name: "diff_summary" }],
   version: "0.1.0"
 }
 
@@ -98,6 +99,8 @@ describe("codevisor plugin install", () => {
     expect(output).toContain("id:      acme.git-diff")
     expect(output).toContain("about:   Live git diff viewer")
     expect(output).toContain("pane:    Git Diff (diff)")
+    // Declared agent tools appear in the consent output next to the commands.
+    expect(output).toContain("tool:    diff_summary — Summarize the working tree diff")
     expect(output).toContain("Installing will run these commands on your machine:")
     expect(output).toContain("install: bun install")
     expect(output).toContain("run:     bun run start")

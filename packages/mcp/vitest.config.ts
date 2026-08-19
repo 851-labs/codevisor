@@ -17,6 +17,7 @@ export default defineConfig({
         "**/*.test.ts",
         "src/mcp-automation-builtins.ts",
         "src/mcp-gateway.ts",
+        "src/mcp-gateway-catalog.ts",
         "src/mcp-manager.ts",
         "src/mcp-oauth.ts",
         "src/mcp-sandbox-results.ts"

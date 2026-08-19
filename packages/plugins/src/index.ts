@@ -20,7 +20,9 @@ export {
   makePluginsManager,
   type PluginsManager,
   type PluginsManagerConfig,
-  type PluginStateEvent
+  type PluginStateEvent,
+  type PluginToolInvocationContext,
+  type PluginToolSummary
 } from "./plugins-manager.js"
 export type {
   PluginProcessHandle,

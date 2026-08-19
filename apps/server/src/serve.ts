@@ -782,7 +782,11 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
         db,
         dataDir: dirname(databasePath),
         serverKind: resolvedKind,
-        ...(skills === undefined ? {} : { syncManagedSkills: skills.syncManaged })
+        ...(skills === undefined ? {} : { syncManagedSkills: skills.syncManaged }),
+        // Installed plugins' declared tools surface to agents through the MCP
+        // gateway (server "plugin"); the plugins manager satisfies the mcp
+        // package's structural PluginToolSource seam as-is.
+        ...(plugins === undefined ? {} : { pluginTools: plugins })
       })
     )
     const nativeMcp =

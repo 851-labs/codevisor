@@ -2,6 +2,7 @@ import type { PluginSummary, WorkspacePane } from "@codevisor/api"
 import {
   DiscoverRemotePluginRequest as DiscoverRemotePluginRequestSchema,
   ImportRemotePluginRequest as ImportRemotePluginRequestSchema,
+  InvokePluginToolRequest as InvokePluginToolRequestSchema,
   LinkPluginRequest as LinkPluginRequestSchema,
   PluginPaneTokenRequest as PluginPaneTokenRequestSchema
 } from "@codevisor/api"
@@ -153,6 +154,26 @@ export const routePlugins = async (
     // origin the caller actually reached (Host header), so it adds the
     // absolute URL browser tooling can open directly.
     writeJson(response, 201, { ...issued, url: `${url.origin}${issued.path}` })
+    return true
+  }
+
+  const toolRoute = matchRouteParams(url.pathname, "/v1/plugins/:pluginId/tools/:toolName")
+  if (toolRoute !== undefined && request.method === "POST") {
+    const payload = await readSchema(request, InvokePluginToolRequestSchema)
+    const args = payload.args ?? {}
+    const context = {
+      ...(payload.cwd === undefined ? {} : { cwd: payload.cwd }),
+      ...(payload.workspaceId === undefined ? {} : { workspaceId: payload.workspaceId })
+    }
+    /* v8 ignore next 2 -- both pattern captures are guaranteed by the matched route. */
+    const result = await manager.invokeTool(
+      toolRoute.pluginId ?? "",
+      toolRoute.toolName ?? "",
+      args,
+      context
+    )
+    // The tool's own response body, verbatim — plugins define their shapes.
+    writeJson(response, 200, result)
     return true
   }
 

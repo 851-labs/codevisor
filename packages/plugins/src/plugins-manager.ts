@@ -29,7 +29,14 @@ import {
   type PluginScan
 } from "./plugin-store.js"
 import { makePluginSupervisor, type PluginSupervisorConfig } from "./plugin-supervisor.js"
+import {
+  invokePluginTool,
+  type PluginToolInvocationContext,
+  type PluginToolSummary
+} from "./plugin-tools.js"
 import { PluginsError } from "./plugins-error.js"
+
+export type { PluginToolInvocationContext, PluginToolSummary } from "./plugin-tools.js"
 
 const PROXY_PATH_PATTERN = /^\/v1\/plugins\/([^/]+)\/app(\/.*)?$/
 
@@ -45,6 +52,8 @@ export interface PluginsManagerConfig extends Omit<
   readonly platform?: string
   /// Proxy request timeout before a 504 is returned.
   readonly proxyTimeoutMs?: number
+  /// Tool invocation timeout before the call fails as unavailable.
+  readonly toolTimeoutMs?: number
   /// Loopback exemption for relayed WebSocket upgrades (the relay cannot
   /// carry cookies on WS channel params); defaults to matching the server's
   /// own loopback auth exemption.
@@ -105,6 +114,23 @@ export interface PluginsManager {
   /// Observes runtime state transitions; returns an unsubscribe. Wired into
   /// the server's event fanout as `plugin.state.updated`.
   readonly subscribe: (listener: (event: PluginStateEvent) => void) => () => void
+  /// Every agent tool declared by installed plugins, flattened. Feeds the MCP
+  /// gateway's `plugin.<pluginId>.<toolName>` catalog.
+  readonly listTools: () => Promise<ReadonlyArray<PluginToolSummary>>
+  /// Invokes one plugin-declared tool: lazily starts the plugin, POSTs the
+  /// JSON arguments to the tool's manifest path with the signed
+  /// X-Codevisor-Context headers, and resolves the response body (parsed JSON
+  /// when the plugin answers with JSON, otherwise the raw text).
+  readonly invokeTool: (
+    pluginId: string,
+    toolName: string,
+    args: Readonly<Record<string, unknown>>,
+    context?: PluginToolInvocationContext
+  ) => Promise<unknown>
+  /// Observes installed-set changes (install, link, update, uninstall) so the
+  /// MCP gateway can refresh its advertised plugin tools; returns an
+  /// unsubscribe.
+  readonly subscribeInstalled: (listener: () => void) => () => void
   readonly close: () => void
 }
 
@@ -117,9 +143,11 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
   const pluginsRoot = config.pluginsRoot ?? defaultPluginsRoot()
   const platform = config.platform ?? process.platform
   const proxyTimeoutMs = config.proxyTimeoutMs ?? 30_000
+  const toolTimeoutMs = config.toolTimeoutMs ?? 30_000
   const isLoopback = config.isLocalhost ?? defaultIsLocalhost
   const tokens = makePaneTokenStore(config.now)
   const listeners = new Set<(event: PluginStateEvent) => void>()
+  const installedListeners = new Set<() => void>()
   /// PluginsManagerConfig is a strict widening of the supervisor's config
   /// (minus dataDir/onStateChange, which the manager owns), so it passes
   /// through wholesale; the supervisor ignores the manager-only keys.
@@ -166,7 +194,8 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
     version: plugin.manifest.version,
     ...(plugin.manifest.description === undefined
       ? {}
-      : { description: plugin.manifest.description })
+      : { description: plugin.manifest.description }),
+    ...(plugin.manifest.tools === undefined ? {} : { tools: plugin.manifest.tools })
   })
 
   /// Fans a supervisor state transition out to subscribers as a full summary.
@@ -184,23 +213,28 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
     }
   }
 
-  const contextHeaders = (scope: PaneTokenScope): Record<string, string> => {
-    const payload = Buffer.from(
-      JSON.stringify({
-        cwd: scope.cwd,
-        paneId: scope.paneId,
-        paneType: scope.paneType,
-        pluginId: scope.pluginId,
-        themeMode: scope.themeMode,
-        workspaceId: scope.workspaceId
-      }),
-      "utf8"
-    ).toString("base64")
+  /// Encodes and signs a context payload so plugins can trust that
+  /// X-Codevisor-Context came from this server — shared by pane proxying and
+  /// tool invocation, which carry different context shapes.
+  const signedContextHeaders = (
+    payload: Readonly<Record<string, unknown>>
+  ): Record<string, string> => {
+    const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64")
     return {
-      "x-codevisor-context": payload,
-      "x-codevisor-context-signature": tokens.signContext(payload)
+      "x-codevisor-context": encoded,
+      "x-codevisor-context-signature": tokens.signContext(encoded)
     }
   }
+
+  const contextHeaders = (scope: PaneTokenScope): Record<string, string> =>
+    signedContextHeaders({
+      cwd: scope.cwd,
+      paneId: scope.paneId,
+      paneType: scope.paneType,
+      pluginId: scope.pluginId,
+      themeMode: scope.themeMode,
+      workspaceId: scope.workspaceId
+    })
 
   /// Resolves the authenticated pane scope for a proxied request: an initial
   /// `?codevisorPaneToken=` exchange, an established cookie session, or (for
@@ -228,6 +262,14 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
     return undefined
   }
 
+  /// The installed set changed (install, update, link, uninstall): let the
+  /// MCP gateway refresh which plugin tools it advertises to agents.
+  const notifyInstalled = (): void => {
+    for (const listener of installedListeners) {
+      listener()
+    }
+  }
+
   /// Post-install summary: resolved from the unfiltered store scan so an
   /// install targeting another platform still answers with what landed on
   /// disk instead of a spurious 404.
@@ -235,6 +277,7 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
     const summary = summarize(findPluginOrFail(scanPlugins(pluginsRoot), pluginId))
     // The list changed: let subscribed clients refresh their chips/cards.
     emitState(pluginId)
+    notifyInstalled()
     return summary
   }
 
@@ -258,6 +301,7 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
       // there is nothing left to describe, so the list response is the
       // client's refresh signal.
       await installer.remove(pluginId)
+      notifyInstalled()
       return { plugins: scan().plugins.map(summarize) }
     },
     handleProxyRequest: async (request, response, url) => {
@@ -385,7 +429,30 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
         token: issued.token
       }
     },
+    invokeTool: async (pluginId, toolName, args, context = {}) => {
+      const plugin = findPluginOrFail(scan(), pluginId)
+      return invokePluginTool({
+        args,
+        context,
+        ensureRunning: () => supervisor.ensureRunning(plugin),
+        markUnreachable: () => supervisor.markUnreachable(plugin.id),
+        noteSuccess: () => supervisor.noteSuccess(plugin.id),
+        plugin,
+        signedContextHeaders,
+        timeoutMs: toolTimeoutMs,
+        toolName
+      })
+    },
     list: async () => ({ plugins: scan().plugins.map(summarize) }),
+    listTools: async () =>
+      scan().plugins.flatMap((plugin) =>
+        (plugin.manifest.tools ?? []).map((tool) => ({
+          description: tool.description,
+          name: tool.name,
+          pluginId: plugin.id,
+          ...(tool.inputSchema === undefined ? {} : { inputSchema: tool.inputSchema })
+        }))
+      ),
     restart: async (pluginId) => {
       const plugin = findPluginOrFail(scan(), pluginId)
       supervisor.restart(pluginId)
@@ -394,6 +461,10 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
     subscribe: (listener) => {
       listeners.add(listener)
       return () => listeners.delete(listener)
+    },
+    subscribeInstalled: (listener) => {
+      installedListeners.add(listener)
+      return () => installedListeners.delete(listener)
     }
   }
 }

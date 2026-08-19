@@ -116,6 +116,54 @@ http
 - WebSockets work (relative URLs). Prefer fetch for bulk data, WS for
   "something changed" signals. An open WS keeps the process alive.
 
+## Exposing tools to the model
+
+Plugins can declare agent-invocable tools next to panes. Add to the manifest:
+
+```json
+"tools": [
+  {
+    "name": "notes_add",
+    "description": "Append a note",
+    "path": "/tools/add",
+    "inputSchema": {
+      "type": "object",
+      "properties": { "text": { "type": "string" } },
+      "required": ["text"]
+    }
+  },
+  { "name": "notes_list", "description": "List saved notes", "path": "/tools/list" }
+]
+```
+
+- `name`: lowercase letters/digits/underscores, unique within the plugin.
+- `path`: plain absolute path; no trailing slash needed (RPC endpoint, not a
+  document).
+- `inputSchema`: optional JSON Schema for the arguments, shown to agents.
+
+The contract: Codevisor POSTs the JSON arguments to `path` on your server,
+with the same signed `X-Codevisor-Context` header (here carrying `pluginId`,
+`toolName`, and the caller's `workspaceId`/`cwd` when known). Respond 2xx
+with JSON (or plain text); any non-2xx marks the call failed. The process
+starts lazily on the first invocation, exactly like panes — and tool-only
+plugins are valid: leave `panes` empty. Agents discover and call the tool as
+`plugin.<pluginId>.<toolName>` through the Codevisor tool gateway; clients
+can also `POST /v1/plugins/<pluginId>/tools/<toolName>` with
+`{ "args": { ... } }`.
+
+```js
+if (url.pathname === "/tools/add" && request.method === "POST") {
+  let body = ""
+  request.on("data", (chunk) => (body += chunk))
+  request.on("end", () => {
+    notes.push(JSON.parse(body || "{}").text)
+    response.writeHead(200, { "Content-Type": "application/json" })
+    response.end(JSON.stringify({ ok: true, count: notes.length }))
+  })
+  return
+}
+```
+
 ## Lifecycle facts (for debugging)
 
 - Processes start lazily on first pane request and idle-stop after
