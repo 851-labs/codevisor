@@ -22,9 +22,22 @@ struct PluginsSettingsScreen: View {
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var actionError: String?
-    @State private var showingInstall = false
+    @State private var activeSheet: PluginsSheet?
     @State private var pluginPendingRemoval: ServerPluginSummary?
     @State private var isMutating = false
+
+    /// One sheet slot for both flows, so "Install" inside the browse sheet
+    /// can swap straight into the install sheet's discover→consent stages.
+    private enum PluginsSheet: Identifiable {
+        case install(initialSource: String?)
+        case browse
+        var id: String {
+            switch self {
+            case .install: "install"
+            case .browse: "browse"
+            }
+        }
+    }
 
     var body: some View {
         List {
@@ -47,7 +60,8 @@ struct PluginsSettingsScreen: View {
                 } description: {
                     Text("Plugins add custom panes to your workspaces, served by this machine.")
                 } actions: {
-                    Button("Install Plugin…") { showingInstall = true }
+                    Button("Browse Plugins…") { activeSheet = .browse }
+                    Button("Install Plugin…") { activeSheet = .install(initialSource: nil) }
                 }
             } else {
                 Section("Installed") {
@@ -63,7 +77,14 @@ struct PluginsSettingsScreen: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
-                    showingInstall = true
+                    activeSheet = .browse
+                } label: {
+                    Label("Browse Plugins", systemImage: "magnifyingglass")
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    activeSheet = .install(initialSource: nil)
                 } label: {
                     Label("Install Plugin", systemImage: "plus")
                 }
@@ -75,18 +96,33 @@ struct PluginsSettingsScreen: View {
         .onChange(of: environment.pluginStateRevision(for: serverId)) { _, _ in
             Task { await refreshList() }
         }
-        .sheet(isPresented: $showingInstall) {
-            PluginInstallSheet(
-                discover: { source in
-                    try await client.discoverRemotePlugin(source: source)
-                },
-                onInstall: { source in
-                    _ = try await mutate {
-                        try await client.importRemotePlugin(source: source)
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .install(let initialSource):
+                PluginInstallSheet(
+                    initialSource: initialSource,
+                    discover: { source in
+                        try await client.discoverRemotePlugin(source: source)
+                    },
+                    onInstall: { source in
+                        _ = try await mutate {
+                            try await client.importRemotePlugin(source: source)
+                        }
+                        await reload()
                     }
-                    await reload()
-                }
-            )
+                )
+            case .browse:
+                PluginRegistryBrowseSheet(
+                    fetchRegistry: { try await client.fetchPluginRegistry(query: nil) },
+                    installedIds: Set((plugins ?? []).map(\.id)),
+                    onInstall: { entry in
+                        // The registry only discovers; installing goes
+                        // through the existing consent flow with the entry's
+                        // repo as the source.
+                        activeSheet = .install(initialSource: entry.repo)
+                    }
+                )
+            }
         }
         .confirmationDialog(
             "Uninstall \(pluginPendingRemoval?.name ?? "plugin")?",
@@ -231,8 +267,11 @@ struct PluginsSettingsScreen: View {
 
 /// Two-stage install, mirroring macOS's PluginInstallSheet: enter a source,
 /// discover what it offers, then consent to the exact commands it will run.
+/// A registry selection arrives as `initialSource` (the entry's repo) and
+/// auto-discovers — skipping the typing, never the consent.
 private struct PluginInstallSheet: View {
     @Environment(\.dismiss) private var dismiss
+    var initialSource: String?
     let discover: (String) async throws -> ServerPluginRemoteDiscovery
     let onInstall: (String) async throws -> Void
 
@@ -293,6 +332,12 @@ private struct PluginInstallSheet: View {
             }
         }
         .interactiveDismissDisabled(isWorking)
+        .task {
+            if let initialSource, discovery == nil {
+                source = initialSource
+                await find()
+            }
+        }
     }
 
     @ViewBuilder
@@ -383,6 +428,133 @@ private struct PluginInstallSheet: View {
         do {
             try await onInstall(source.trimmingCharacters(in: .whitespaces))
             dismiss()
+        } catch {
+            errorMessage = ErrorReporter.userFacingMessage(for: error)
+        }
+    }
+}
+
+/// Browse the public plugin registry: a searchable list of GitHub-indexed
+/// plugins served through this machine (`GET /v1/plugins/registry`). Purely
+/// discovery — Install hands the entry's repo to the existing install sheet,
+/// so consent (verbatim commands + declared tools) is unchanged. The iOS
+/// twin of macOS's PluginRegistryBrowseSheet.
+private struct PluginRegistryBrowseSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let fetchRegistry: () async throws -> ServerPluginRegistryIndex
+    let installedIds: Set<String>
+    let onInstall: (ServerPluginRegistryEntry) -> Void
+
+    @State private var entries: [ServerPluginRegistryEntry]?
+    @State private var errorMessage: String?
+    @State private var query = ""
+
+    private var filtered: [ServerPluginRegistryEntry] {
+        PluginRegistryBrowsing.filter(entries ?? [], query: query)
+    }
+
+    var body: some View {
+        NavigationStack {
+            content
+                .navigationTitle("Browse Plugins")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Close") { dismiss() }
+                    }
+                }
+        }
+        .task { await load() }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if let entries {
+            List {
+                if entries.isEmpty {
+                    ContentUnavailableView {
+                        Label("No Plugins Published", systemImage: "puzzlepiece")
+                    } description: {
+                        Text("No plugins have been published to the registry yet.")
+                    }
+                } else if filtered.isEmpty {
+                    ContentUnavailableView.search(text: query)
+                } else {
+                    Section("Plugin Registry") {
+                        ForEach(filtered) { entry in
+                            entryRow(entry)
+                        }
+                    }
+                }
+            }
+            .searchable(text: $query, prompt: "Search plugins")
+        } else if let errorMessage {
+            // Registry unreachable and nothing cached server-side: browsing
+            // is unavailable, but manual installs still work.
+            ContentUnavailableView {
+                Label("Registry Unavailable", systemImage: "exclamationmark.triangle")
+            } description: {
+                Text(errorMessage)
+            }
+        } else {
+            ProgressView()
+                .accessibilityLabel("Loading the plugin registry")
+        }
+    }
+
+    private func entryRow(_ entry: ServerPluginRegistryEntry) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: entry.panes.first?.icon ?? "puzzlepiece")
+                .foregroundStyle(.secondary)
+                .frame(width: 24)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(entry.name)
+                    Text(entry.version)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if PluginRegistryBrowsing.isInstalled(entry, installedIds: installedIds) {
+                        Text("Installed")
+                            .font(.caption2.weight(.medium))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(RoundedRectangle(cornerRadius: 4).fill(.quaternary))
+                            .foregroundStyle(.green)
+                    }
+                }
+                Text(subtitle(entry))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if let description = entry.description, !description.isEmpty {
+                    Text(description)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Button("Install…") { onInstall(entry) }
+                .buttonStyle(.borderless)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(entry.name), \(subtitle(entry))")
+    }
+
+    /// One line, densest first: the real repo owner, what installing adds,
+    /// and the GitHub stars that anchor the entry's reputation.
+    private func subtitle(_ entry: ServerPluginRegistryEntry) -> String {
+        let capabilities = PluginRegistryBrowsing.capabilitySummary(for: entry)
+        let stars = "\(entry.stars) star\(entry.stars == 1 ? "" : "s")"
+        return ([entry.repo, capabilities, stars].filter { !$0.isEmpty }).joined(separator: " · ")
+    }
+
+    private func load() async {
+        do {
+            entries = try await fetchRegistry().entries
+            errorMessage = nil
         } catch {
             errorMessage = ErrorReporter.userFacingMessage(for: error)
         }

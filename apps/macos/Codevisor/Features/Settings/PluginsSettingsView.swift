@@ -15,9 +15,22 @@ struct PluginsSettingsView: View {
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var actionError: String?
-    @State private var showingInstall = false
+    @State private var activeSheet: PluginsSheet?
     @State private var pluginPendingRemoval: ServerPluginSummary?
     @State private var isMutating = false
+
+    /// One sheet slot for both flows, so "Install" inside the browse sheet
+    /// can swap straight into the install sheet's discover→consent stages.
+    private enum PluginsSheet: Identifiable {
+        case install(initialSource: String?)
+        case browse
+        var id: String {
+            switch self {
+            case .install: "install"
+            case .browse: "browse"
+            }
+        }
+    }
 
     /// The machine whose plugins this pane manages.
     private var serverId: String {
@@ -39,18 +52,33 @@ struct PluginsSettingsView: View {
             .onChange(of: environment.pluginStateRevision(for: serverId)) { _, _ in
                 Task { await refreshList() }
             }
-            .sheet(isPresented: $showingInstall) {
-                PluginInstallSheet(
-                    discover: { source in
-                        try await client.discoverRemotePlugin(source: source)
-                    },
-                    onInstall: { source in
-                        _ = try await mutate {
-                            try await client.importRemotePlugin(source: source)
+            .sheet(item: $activeSheet) { sheet in
+                switch sheet {
+                case .install(let initialSource):
+                    PluginInstallSheet(
+                        initialSource: initialSource,
+                        discover: { source in
+                            try await client.discoverRemotePlugin(source: source)
+                        },
+                        onInstall: { source in
+                            _ = try await mutate {
+                                try await client.importRemotePlugin(source: source)
+                            }
+                            await reload()
                         }
-                        await reload()
-                    }
-                )
+                    )
+                case .browse:
+                    PluginRegistryBrowseSheet(
+                        fetchRegistry: { try await client.fetchPluginRegistry(query: nil) },
+                        installedIds: Set((plugins ?? []).map(\.id)),
+                        onInstall: { entry in
+                            // The registry only discovers; installing goes
+                            // through the existing consent flow with the
+                            // entry's repo as the source.
+                            activeSheet = .install(initialSource: entry.repo)
+                        }
+                    )
+                }
             }
             .confirmationDialog(
                 "Uninstall \(pluginPendingRemoval?.name ?? "plugin")?",
@@ -116,7 +144,13 @@ struct PluginsSettingsView: View {
             Text("Plugins add custom panes to your workspaces, served by this machine.")
         } actions: {
             Button {
-                showingInstall = true
+                activeSheet = .browse
+            } label: {
+                Label("Browse Plugins…", systemImage: "magnifyingglass")
+            }
+            .settingsActionTint(theme)
+            Button {
+                activeSheet = .install(initialSource: nil)
             } label: {
                 Label("Install Plugin…", systemImage: "plus")
             }
@@ -139,7 +173,13 @@ struct PluginsSettingsView: View {
                     pluginRow(plugin)
                 }
                 Button {
-                    showingInstall = true
+                    activeSheet = .browse
+                } label: {
+                    Label("Browse Plugins…", systemImage: "magnifyingglass")
+                }
+                .settingsActionTint(theme)
+                Button {
+                    activeSheet = .install(initialSource: nil)
                 } label: {
                     Label("Install Plugin…", systemImage: "plus")
                 }
@@ -268,9 +308,12 @@ struct PluginsSettingsView: View {
 
 /// Two-stage install, forked from SkillRemoteImportSheet: enter a source,
 /// discover what it offers, then consent to the exact commands it will run.
+/// A registry selection arrives as `initialSource` (the entry's repo) and
+/// auto-discovers — skipping the typing, never the consent.
 private struct PluginInstallSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
+    var initialSource: String?
     let discover: (String) async throws -> ServerPluginRemoteDiscovery
     let onInstall: (String) async throws -> Void
     @State private var source = ""
@@ -398,6 +441,12 @@ private struct PluginInstallSheet: View {
         }
         .frame(width: 480, height: discovery == nil ? 200 : 480)
         .themedSurface(.sheet)
+        .task {
+            if let initialSource, discovery == nil {
+                source = initialSource
+                await find()
+            }
+        }
     }
 
     /// The verbatim manifest commands in a code box — exactly what will run,
