@@ -172,18 +172,20 @@ struct PluginsSettingsView: View {
                 ForEach(plugins ?? []) { plugin in
                     pluginRow(plugin)
                 }
-                Button {
-                    activeSheet = .browse
-                } label: {
-                    Label("Browse Plugins…", systemImage: "magnifyingglass")
+                HStack(spacing: 10) {
+                    Button {
+                        activeSheet = .browse
+                    } label: {
+                        Label("Browse Plugins…", systemImage: "magnifyingglass")
+                    }
+                    .settingsActionTint(theme)
+                    Button {
+                        activeSheet = .install(initialSource: nil)
+                    } label: {
+                        Label("Install Plugin…", systemImage: "plus")
+                    }
+                    .settingsActionTint(theme)
                 }
-                .settingsActionTint(theme)
-                Button {
-                    activeSheet = .install(initialSource: nil)
-                } label: {
-                    Label("Install Plugin…", systemImage: "plus")
-                }
-                .settingsActionTint(theme)
             } header: {
                 Text("Installed")
             }
