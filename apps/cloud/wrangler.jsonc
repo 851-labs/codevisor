@@ -22,7 +22,7 @@
       "binding": "PLUGIN_INDEX",
       // Self-hosters: replace with the id from `wrangler kv namespace create
       // PLUGIN_INDEX` on your account. The id is unused in dev and tests.
-      "id": "f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1"
+      "id": "85743d49d3a241f99548cd6ad3179f3e"
     }
   ],
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UserHub"] }],
