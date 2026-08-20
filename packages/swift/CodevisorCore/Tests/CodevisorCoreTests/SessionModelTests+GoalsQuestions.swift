@@ -23,19 +23,19 @@ extension SessionModelTests {
         #expect(model.goal?.status == .active)
         #expect(model.goal?.tokenBudget == 50_000)
 
-        await model.pauseGoal()
+        #expect(await model.pauseGoal())
         #expect(model.goal?.status == .paused)
         #expect(client.goalUpdates.last?.1 == .paused)
         // Pause must not touch the budget (keep semantics).
         #expect(client.goalUpdates.last?.2 == .keep)
 
-        await model.resumeGoal()
+        #expect(await model.resumeGoal())
         #expect(model.goal?.status == .active)
 
         await model.setGoal(tokenBudget: .clear)
         #expect(model.goal?.tokenBudget == nil)
 
-        await model.clearGoal()
+        #expect(await model.clearGoal())
         #expect(model.goal == nil)
         #expect(client.goalClearCount == 1)
     }
@@ -115,6 +115,22 @@ extension SessionModelTests {
         let didSetGoal = await model.setGoal(objective: "goal fails")
         #expect(!didSetGoal)
         #expect(model.goal == nil)
+        #expect(model.errorMessage != nil)
+    }
+
+    @Test("A failed goal clear preserves the goal and reports failure")
+    func goalClearFailurePreservesState() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+        #expect(await model.setGoal(objective: "keep this goal"))
+        client.failNextGoalClear()
+
+        #expect(!(await model.clearGoal()))
+        #expect(model.goal?.objective == "keep this goal")
         #expect(model.errorMessage != nil)
     }
 

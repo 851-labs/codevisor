@@ -55,21 +55,9 @@ extension ComposerBar {
 
     var sendButton: some View {
         Button {
-            let outgoing = text
-            if preservesFocusAfterSend {
-                retainsSubmittedTextForPromotion = true
-            }
-            onWillSend?(outgoing)
-            controller.composerText = outgoing
-            if !preservesFocusAfterSend {
-                UIApplication.shared.sendAction(
-                    #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil
-                )
-            }
-            setExpanded(false)
-            Task { await controller.send() }
+            submitComposer()
         } label: {
-            Image(systemName: "arrow.up")
+            Image(systemName: controller.isGoalComposerArmed ? "checkmark" : "arrow.up")
                 .font(.subheadline.weight(.bold))
                 .scaledFrame(width: 30, height: 30, relativeTo: .subheadline)
                 .foregroundStyle(canSend ? Color(.systemBackground) : Color.secondary.opacity(0.75))
@@ -82,7 +70,56 @@ extension ComposerBar {
         }
         .buttonStyle(.plain)
         .disabled(!canSend)
-        .accessibilityLabel("Send")
+        .accessibilityLabel(controller.isGoalComposerArmed ? "Set goal" : "Send")
+    }
+
+    var goalModeButton: some View {
+        Button {
+            controller.composerText = text
+            withAnimation(.snappy(duration: 0.15)) {
+                controller.toggleGoalComposer()
+            }
+        } label: {
+            if controller.isGoalComposerArmed {
+                HStack(spacing: 5) {
+                    Image(systemName: "target")
+                    Text("Goal")
+                    Image(systemName: "xmark")
+                        .font(.caption2.weight(.bold))
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color(.systemBackground))
+                .padding(.horizontal, 9)
+                .scaledFrame(height: 30, relativeTo: .caption)
+                .background(Capsule().fill(Color.primary.opacity(0.85)))
+                .expandedHitTarget(base: 30)
+            } else {
+                Image(systemName: "target")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .scaledFrame(width: 28, height: 28, relativeTo: .subheadline)
+                    .expandedHitTarget(base: 28)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(controller.isGoalComposerArmed ? "Goal mode on" : "Set a goal")
+        .accessibilityHint(
+            controller.isGoalComposerArmed
+                ? "Returns this draft to a regular chat message"
+                : "Uses the composer text as a persistent goal"
+        )
+    }
+
+    var goalEditCancelButton: some View {
+        Button("Cancel") {
+            withAnimation(.snappy(duration: 0.15)) {
+                controller.exitGoalComposer()
+            }
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .expandedHitTarget(base: 30)
+        .accessibilityHint("Keeps the current goal and restores your chat draft")
     }
 
     var stopButton: some View {
@@ -98,5 +135,29 @@ extension ComposerBar {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Stop")
+    }
+
+    private func submitComposer() {
+        let outgoing = text
+        let isSubmittingGoal = controller.isGoalComposerArmed
+        if preservesFocusAfterSend {
+            retainsSubmittedTextForPromotion = true
+        }
+        if !isSubmittingGoal {
+            onWillSend?(outgoing)
+        }
+        controller.composerText = outgoing
+        if !preservesFocusAfterSend {
+            UIApplication.shared.sendAction(
+                #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil
+            )
+        }
+        setExpanded(false)
+
+        if isSubmittingGoal {
+            Task { await controller.submitGoalFromComposer() }
+        } else {
+            Task { await controller.send() }
+        }
     }
 }

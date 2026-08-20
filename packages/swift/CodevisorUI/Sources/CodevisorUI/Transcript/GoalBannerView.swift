@@ -60,12 +60,8 @@ public struct GoalBannerView: View {
 
     @ViewBuilder
     private var usageLine: some View {
-        let parts = [
-            goal.tokensUsed > 0 ? "\(Self.tokens(goal.tokensUsed)) tokens" : nil,
-            goal.timeUsedSeconds > 0 ? Self.elapsed(goal.timeUsedSeconds) : nil,
-        ].compactMap { $0 }
-        if !parts.isEmpty {
-            Text(parts.joined(separator: " · "))
+        if let usageText = GoalPresentation.usageText(for: goal) {
+            Text(usageText)
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.tertiary)
         }
@@ -106,41 +102,6 @@ public struct GoalBannerView: View {
     }
 
     private var statusText: String {
-        switch goal.status {
-        case .active: "Active"
-        case .paused: "Paused"
-        case .blocked: "Blocked"
-        case .usageLimited: "Usage limited"
-        case .budgetLimited: "Budget limited"
-        case .complete: "Complete"
-        }
-    }
-
-    static func tokens(_ count: Int) -> String {
-        let formatted: String =
-            switch count {
-            case 1_000_000...: String(format: "%.1fM", Double(count) / 1_000_000)
-            case 1_000...: String(format: "%.1fk", Double(count) / 1_000)
-            default: "\(count)"
-            }
-        // "54.0k" reads as noise — trim the empty fraction.
-        return formatted.replacingOccurrences(of: ".0k", with: "k")
-            .replacingOccurrences(of: ".0M", with: "M")
-    }
-
-    /// Compact elapsed format matching the codex TUI: "59s", "1h 30m", "1d 2h 3m".
-    static func elapsed(_ seconds: Double) -> String {
-        // Goal runtimes arrive with millisecond precision; the compact UI
-        // intentionally displays completed whole seconds, matching Grok.
-        let wholeSeconds = max(0, Int(seconds.rounded(.down)))
-        if wholeSeconds < 60 { return "\(wholeSeconds)s" }
-        let minutes = wholeSeconds / 60
-        if minutes < 60 { return "\(minutes)m" }
-        let hours = minutes / 60
-        if hours < 24 {
-            let rest = minutes % 60
-            return rest == 0 ? "\(hours)h" : "\(hours)h \(rest)m"
-        }
-        return "\(hours / 24)d \(hours % 24)h \(minutes % 60)m"
+        GoalPresentation.statusText(for: goal.status)
     }
 }

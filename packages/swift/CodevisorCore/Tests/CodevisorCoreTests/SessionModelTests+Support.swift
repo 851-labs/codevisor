@@ -163,6 +163,7 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
     private var _queueMutationFailuresRemaining = 0
     private var _goalUpdates: [(String?, GoalStatus?, TokenBudgetUpdate)] = []
     private var _goalClearCount = 0
+    private var _nextGoalClearShouldFail = false
     private var _lastBudget: Int?
     private var _questionAnswers: [(String, String, [String: QuestionAnswerEntry]?)] = []
     private var _questionAnswerGate: AsyncStream<Void>?
@@ -299,6 +300,10 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
 
     var goalClearCount: Int {
         lock.withLock { _goalClearCount }
+    }
+
+    func failNextGoalClear() {
+        lock.withLock { _nextGoalClearShouldFail = true }
     }
 
     var questionAnswers: [(String, String, [String: QuestionAnswerEntry]?)] {
@@ -529,7 +534,14 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
     }
 
     func clearSessionGoal(id: UUID) async throws {
-        lock.withLock { _goalClearCount += 1 }
+        let shouldFail = lock.withLock {
+            defer { _nextGoalClearShouldFail = false }
+            if !_nextGoalClearShouldFail {
+                _goalClearCount += 1
+            }
+            return _nextGoalClearShouldFail
+        }
+        if shouldFail { throw CodevisorServerClientError.invalidResponse }
     }
 
     func answerSessionQuestion(

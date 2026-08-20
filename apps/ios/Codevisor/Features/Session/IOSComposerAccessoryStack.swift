@@ -1,3 +1,4 @@
+import ACPKit
 import CodevisorCore
 import CodevisorUI
 import SwiftUI
@@ -13,6 +14,11 @@ struct IOSComposerAccessoryStack: View {
     let maximumTodoHeight: CGFloat
     let glassNamespace: Namespace.ID
 
+    private var visibleGoal: SessionGoal? {
+        guard controller.supportsGoals, !controller.isGoalEditing else { return nil }
+        return controller.model?.goal ?? controller.draftGoal
+    }
+
     private var hasCriticalAccessory: Bool {
         controller.configurationValidationError != nil
             || controller.isTakingLongerThanExpected
@@ -21,6 +27,7 @@ struct IOSComposerAccessoryStack: View {
     private var hasInformationalAccessory: Bool {
         guard !isComposerExpanded else { return false }
         return controller.visibleTodos != nil
+            || visibleGoal != nil
             || !controller.queuedPrompts.isEmpty
             || (controller.configurationValidationError == nil
                 && controller.configurationAdjustmentMessage != nil)
@@ -40,6 +47,16 @@ struct IOSComposerAccessoryStack: View {
                         isExpanded: $controller.isTodosExpanded,
                         glassNamespace: glassNamespace,
                         maximumExpandedHeight: maximumTodoHeight
+                    )
+                    .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
+                }
+
+                if let goal = visibleGoal {
+                    IOSGoalAccessory(
+                        controller: controller,
+                        goal: goal,
+                        isDraft: controller.model?.goal == nil,
+                        glassNamespace: glassNamespace
                     )
                     .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
                 }
@@ -91,6 +108,8 @@ struct IOSComposerAccessoryStack: View {
         .padding(.bottom, hasVisibleAccessory ? ComposerGlassStyle.clusterSpacing : 0)
         .animation(Motion.quick(reduceMotion: reduceMotion), value: hasVisibleAccessory)
         .animation(Motion.quick(reduceMotion: reduceMotion), value: controller.visibleTodos != nil)
+        .animation(Motion.quick(reduceMotion: reduceMotion), value: visibleGoal?.objective)
+        .animation(Motion.quick(reduceMotion: reduceMotion), value: visibleGoal?.status)
         .animation(
             Motion.quick(reduceMotion: reduceMotion),
             value: controller.queuedPrompts.map(\.id)

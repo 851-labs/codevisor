@@ -401,24 +401,29 @@ extension SessionModel {
     }
 
     /// Pauses an active goal (stops agent-side auto-continuation).
-    public func pauseGoal() async {
+    @discardableResult
+    public func pauseGoal() async -> Bool {
         await setGoal(status: .paused)
     }
 
     /// Resumes a paused/limited goal.
-    public func resumeGoal() async {
+    @discardableResult
+    public func resumeGoal() async -> Bool {
         await setGoal(status: .active)
     }
 
     /// Clears the session goal entirely.
-    public func clearGoal() async {
+    @discardableResult
+    public func clearGoal() async -> Bool {
         await startConsumer()
         do {
             try await transport.clearGoal()
             goal = nil
             onGoalChanged?()
+            return true
         } catch {
             errorMessage = serverErrorMessage(error)
+            return false
         }
     }
 

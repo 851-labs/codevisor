@@ -126,12 +126,15 @@ extension SessionController {
         }
     }
 
-    public func setGoal(objective: String? = nil, status: GoalStatus? = nil) async {
+    @discardableResult
+    public func setGoal(objective: String? = nil, status: GoalStatus? = nil) async -> Bool {
         if let model {
-            await model.setGoal(objective: objective, status: status)
+            return await model.setGoal(objective: objective, status: status)
         } else if let objective {
             pendingGoal = objective
+            return true
         }
+        return false
     }
 
     /// The pre-connect goal shown in the banner before the session exists.
@@ -151,14 +154,19 @@ extension SessionController {
         }
     }
 
-    public func pauseGoal() async { await model?.pauseGoal() }
-    public func resumeGoal() async { await model?.resumeGoal() }
+    @discardableResult
+    public func pauseGoal() async -> Bool { await model?.pauseGoal() ?? false }
 
-    public func clearGoal() async {
+    @discardableResult
+    public func resumeGoal() async -> Bool { await model?.resumeGoal() ?? false }
+
+    @discardableResult
+    public func clearGoal() async -> Bool {
         if model == nil {
             pendingGoal = nil
+            return true
         } else {
-            await model?.clearGoal()
+            return await model?.clearGoal() ?? false
         }
     }
 

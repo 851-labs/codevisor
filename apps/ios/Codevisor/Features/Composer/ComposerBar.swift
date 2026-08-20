@@ -3,7 +3,6 @@ import CodevisorCore
 import CodevisorUI
 import PhotosUI
 import SwiftUI
-import UniformTypeIdentifiers
 
 /// The iOS composer, matching the macOS composer's structure: the input on its
 /// own line with the toolbar row beneath it (attach, model/thinking chip,
@@ -88,6 +87,10 @@ struct ComposerBar: View {
     @State var isCapturingPhoto = false
     @State var isAddingProject = false
     @State var managedProject: Project?
+    /// Editing from the goal sheet requests focus through the same one-shot
+    /// UIKit bridge as initial New Chat focus, without making ordinary view
+    /// updates reclaim the keyboard.
+    @State private var goalEditFocusRequest: UUID?
     @Environment(AppEnvironment.self) var environment
 
     var trimmed: String {
@@ -95,7 +98,9 @@ struct ComposerBar: View {
     }
 
     var canSend: Bool {
-        (!trimmed.isEmpty || !controller.composerAttachments.isEmpty)
+        (controller.isGoalComposerArmed
+            ? !trimmed.isEmpty
+            : !trimmed.isEmpty || !controller.composerAttachments.isEmpty)
             && !controller.isSubmitting
             && !controller.isConnecting
             && controller.configurationValidationState == .ready
@@ -141,7 +146,10 @@ struct ComposerBar: View {
     }
 
     private var placeholder: String {
-        controller.isSending ? "Reply while it works" : "Ask for follow-up changes"
+        if controller.isGoalComposerArmed {
+            return controller.isGoalEditing ? "Update the goal" : "Describe the goal"
+        }
+        return controller.isSending ? "Reply while it works" : "Ask for follow-up changes"
     }
 
     var body: some View {
@@ -196,6 +204,14 @@ struct ComposerBar: View {
             if retainsSubmittedTextForPromotion, newValue.isEmpty { return }
             guard text != newValue else { return }
             text = newValue
+        }
+        .onChange(of: controller.isGoalEditing) { _, isEditing in
+            if isEditing {
+                setExpanded(false)
+                goalEditFocusRequest = UUID()
+            } else {
+                goalEditFocusRequest = nil
+            }
         }
         .onDisappear {
             if !retainsSubmittedTextForPromotion {
@@ -331,6 +347,12 @@ struct ComposerBar: View {
 
     private var composerContent: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if controller.isGoalEditing {
+                Label("Edit Goal", systemImage: "target")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+
             if !controller.composerAttachments.isEmpty {
                 ComposerAttachmentStrip(controller: controller)
             }
@@ -353,8 +375,8 @@ struct ComposerBar: View {
                     // existing submission lock.
                     isEditable: textEditorHandoffRole != .none
                         || !(controller.isSubmitting || controller.isResolvingQuestion),
-                    focusRequest: initialFocusRequest,
-                    onFocusRequestFulfilled: onInitialFocusRequestFulfilled,
+                    focusRequest: goalEditFocusRequest ?? initialFocusRequest,
+                    onFocusRequestFulfilled: fulfillFocusRequest,
                     onPasteAttachments: handlePastedAttachments,
                     // Scrolling stays off unless the text really overflows,
                     // so a drag on the card is never swallowed by the editor.
@@ -392,20 +414,29 @@ struct ComposerBar: View {
             }
 
             HStack(spacing: 10) {
-                attachButton
-                ModelConfigChip(controller: controller)
-                ForEach(controller.pickerOptions) { option in
-                    ConfigChip(controller: controller, option: option)
-                }
-                Spacer(minLength: 0)
-                // Mirrors the macOS toolbar: while the agent runs, stop takes
-                // the send slot; typing a draft brings send back beside it.
-                HStack(spacing: 6) {
-                    if controller.isSending {
-                        stopButton
-                        if !trimmed.isEmpty { sendButton }
-                    } else {
-                        sendButton
+                if controller.isGoalEditing {
+                    goalEditCancelButton
+                    Spacer(minLength: 0)
+                    sendButton
+                } else {
+                    attachButton
+                    ModelConfigChip(controller: controller)
+                    ForEach(controller.pickerOptions) { option in
+                        ConfigChip(controller: controller, option: option)
+                    }
+                    if controller.canEditGoal {
+                        goalModeButton
+                    }
+                    Spacer(minLength: 0)
+                    // Mirrors the macOS toolbar: while the agent runs, stop
+                    // takes the send slot; a draft brings send back beside it.
+                    HStack(spacing: 6) {
+                        if controller.isSending {
+                            stopButton
+                            if !trimmed.isEmpty { sendButton }
+                        } else {
+                            sendButton
+                        }
                     }
                 }
             }
@@ -417,6 +448,14 @@ struct ComposerBar: View {
             // only shares touches with the row's own buttons, and a tap
             // never travels the 8pt minimum.
             .simultaneousGesture(expansionDrag)
+        }
+    }
+
+    private func fulfillFocusRequest(_ request: UUID) {
+        if goalEditFocusRequest == request {
+            goalEditFocusRequest = nil
+        } else {
+            onInitialFocusRequestFulfilled?(request)
         }
     }
 
@@ -483,206 +522,6 @@ struct ComposerBar: View {
     func setExpanded(_ expand: Bool) {
         withAnimation(.snappy(duration: 0.28)) {
             isExpanded = expand
-        }
-    }
-}
-
-private struct ComposerTextView: UIViewRepresentable {
-    @Binding var text: String
-    let handoffID: UUID?
-    let handoffRole: ComposerTextEditorHandoffRole
-    var isEditable: Bool
-    var focusRequest: UUID?
-    var onFocusRequestFulfilled: ((UUID) -> Void)?
-    var onPasteAttachments: ([PastedAttachment]) -> Void
-    var isScrollEnabled: Bool
-    @Binding var contentHeight: CGFloat
-    var onResizePanChanged: (CGFloat) -> Void
-    var onResizePanEnded: (CGFloat, CGFloat) -> Void
-    var onResizePanCancelled: () -> Void
-
-    func makeUIView(context: Context) -> ComposerTextViewContainer {
-        let container = ComposerTextViewContainer()
-        installActivation(on: container, coordinator: context.coordinator)
-        container.activateIfPossible()
-        return container
-    }
-
-    func updateUIView(_ container: ComposerTextViewContainer, context: Context) {
-        installActivation(on: container, coordinator: context.coordinator)
-        container.activateIfPossible()
-    }
-
-    static func dismantleUIView(
-        _ container: ComposerTextViewContainer,
-        coordinator _: Coordinator
-    ) {
-        container.activation = nil
-        ComposerTextViewHandoffRegistry.release(container)
-    }
-
-    private func installActivation(
-        on container: ComposerTextViewContainer,
-        coordinator: Coordinator
-    ) {
-        container.activation = { [self, weak container, weak coordinator] in
-            guard let container, let coordinator else { return }
-            let view: HeightReportingTextView?
-            switch handoffRole {
-            case .none:
-                // The canonical route outlives NewChatFlow. If SwiftUI updates
-                // this representable before the coordinator's synchronous
-                // settle hook, adopt the existing editor instead of stacking
-                // a second local UITextView over it.
-                view =
-                    container.localEditor
-                    ?? ComposerTextViewHandoffRegistry.retirePromotionEditor(
-                        ownedBy: container
-                    )
-                    ?? makeEditor()
-                container.localEditor = view
-                if let view, view.superview !== container {
-                    container.addSubview(view)
-                }
-            case .promotionSource:
-                if let handoffID {
-                    view = ComposerTextViewHandoffRegistry.attachSource(
-                        id: handoffID,
-                        to: container,
-                        makeEditor: makeEditor
-                    )
-                } else {
-                    view = container.localEditor ?? makeEditor()
-                    container.localEditor = view
-                    if let view, view.superview !== container {
-                        container.addSubview(view)
-                    }
-                }
-            case .promotionDestination:
-                guard let handoffID else { return }
-                view = ComposerTextViewHandoffRegistry.attachDestination(
-                    id: handoffID,
-                    to: container
-                )
-            }
-            guard let view else { return }
-            configure(view, coordinator: coordinator)
-            container.setNeedsLayout()
-        }
-    }
-
-    private func makeEditor() -> HeightReportingTextView {
-        let view = HeightReportingTextView()
-        view.backgroundColor = .clear
-        view.font = .preferredFont(forTextStyle: .body)
-        view.adjustsFontForContentSizeCategory = true
-        view.textContainerInset = UIEdgeInsets(top: 4, left: 0, bottom: 4, right: 0)
-        view.textContainer.lineFragmentPadding = 0
-        // Prompts are code-adjacent — no auto-capitalized first letters.
-        view.autocapitalizationType = .none
-        // A plain UITextView implicitly accepts only strings. Declare the two
-        // attachment representations as pasteable too, then let the paste
-        // delegate consume them without inserting rich text into the prompt.
-        view.pasteConfiguration = UIPasteConfiguration(acceptableTypeIdentifiers: [
-            UTType.plainText.identifier,
-            UTType.fileURL.identifier,
-            UTType.image.identifier,
-        ])
-        view.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        // Height flows from the view's own layout, not from updateUIView: a
-        // freshly (re)mounted composer has zero width until UIKit lays it
-        // out, so measuring during the SwiftUI update reported nothing and a
-        // restored draft sat at the minimum height until the next keystroke.
-        return view
-    }
-
-    private func configure(_ view: HeightReportingTextView, coordinator: Coordinator) {
-        view.delegate = coordinator
-        view.pasteDelegate = coordinator
-        view.onContentHeightChange = { [binding = $contentHeight] height in
-            // Defer: layout can run inside a view update.
-            Task { @MainActor in
-                binding.wrappedValue = height
-            }
-        }
-        // Only push text the view doesn't already have (a restored draft, a
-        // send clearing the field) — and never while the keyboard holds an
-        // active composition, which a programmatic set would tear down.
-        if view.text != text, view.markedTextRange == nil {
-            view.text = text
-            // The callback defers its binding write, so reporting here —
-            // inside a view update — is safe.
-            view.reportContentHeight()
-        }
-        if view.isEditable != isEditable {
-            view.isEditable = isEditable
-        }
-        view.onFocusRequestFulfilled = onFocusRequestFulfilled
-        coordinator.onPasteAttachments = onPasteAttachments
-        view.requestInitialFocus(focusRequest)
-        if view.isScrollEnabled != isScrollEnabled {
-            view.isScrollEnabled = isScrollEnabled
-        }
-        // Closure reassignment never touches keyboard or layout state.
-        view.onResizePanChanged = onResizePanChanged
-        view.onResizePanEnded = onResizePanEnded
-        view.onResizePanCancelled = onResizePanCancelled
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text, onPasteAttachments: onPasteAttachments)
-    }
-
-    final class Coordinator: NSObject, UITextViewDelegate, UITextPasteDelegate {
-        private let text: Binding<String>
-        var onPasteAttachments: ([PastedAttachment]) -> Void
-
-        init(
-            text: Binding<String>,
-            onPasteAttachments: @escaping ([PastedAttachment]) -> Void
-        ) {
-            self.text = text
-            self.onPasteAttachments = onPasteAttachments
-        }
-
-        func textViewDidChange(_ textView: UITextView) {
-            text.wrappedValue = textView.text
-            (textView as? HeightReportingTextView)?.reportContentHeight()
-        }
-
-        /// UIKit supplies item providers only after the user invokes Paste,
-        /// preserving the system's paste privacy behavior. Files win over
-        /// image previews, matching the macOS composer; plain text delegates
-        /// back to UITextView's standard transformation.
-        func textPasteConfigurationSupporting(
-            _ textPasteConfigurationSupporting: any UITextPasteConfigurationSupporting,
-            transform item: any UITextPasteItem
-        ) {
-            let provider = item.itemProvider
-            if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
-                item.setNoResult()
-                provider.loadObject(ofClass: NSURL.self) { [weak self] object, _ in
-                    guard let url = object as? NSURL else { return }
-                    Task { @MainActor [weak self] in
-                        self?.onPasteAttachments([.fileURL(url as URL)])
-                    }
-                }
-                return
-            }
-            if provider.canLoadObject(ofClass: UIImage.self) {
-                item.setNoResult()
-                provider.loadObject(ofClass: UIImage.self) { [weak self] object, _ in
-                    guard let image = object as? UIImage,
-                        let data = image.pngData()
-                    else { return }
-                    Task { @MainActor [weak self] in
-                        self?.onPasteAttachments([.image(data: data, suggestedName: nil)])
-                    }
-                }
-                return
-            }
-            item.setDefaultResult()
         }
     }
 }
