@@ -11,8 +11,12 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as PluginsRouteImport } from './routes/plugins'
+import { Route as LlmsDottxtRouteImport } from './routes/llms[.]txt'
+import { Route as DocsDotmdRouteImport } from './routes/docs[.]md'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DownloadMacosRouteImport } from './routes/download.macos'
+import { Route as DocsChar123Char125DotmdRouteImport } from './routes/docs/{$}[.]md'
+import { Route as DocsLlmsDottxtRouteImport } from './routes/docs/llms[.]txt'
 import { Route as DocsSplatRouteImport } from './routes/docs/$'
 import { Route as ApiSearchRouteImport } from './routes/api/search'
 
@@ -26,6 +30,16 @@ const PluginsRoute = PluginsRouteImport.update({
   path: '/plugins',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LlmsDottxtRoute = LlmsDottxtRouteImport.update({
+  id: '/llms.txt',
+  path: '/llms.txt',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DocsDotmdRoute = DocsDotmdRouteImport.update({
+  id: '/docs.md',
+  path: '/docs.md',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -34,6 +48,16 @@ const IndexRoute = IndexRouteImport.update({
 const DownloadMacosRoute = DownloadMacosRouteImport.update({
   id: '/download/macos',
   path: '/download/macos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DocsChar123Char125DotmdRoute = DocsChar123Char125DotmdRouteImport.update({
+  id: '/docs/{$}.md',
+  path: '/docs/{$}.md',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DocsLlmsDottxtRoute = DocsLlmsDottxtRouteImport.update({
+  id: '/docs/llms.txt',
+  path: '/docs/llms.txt',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DocsSplatRoute = DocsSplatRouteImport.update({
@@ -49,62 +73,90 @@ const ApiSearchRoute = ApiSearchRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/docs.md': typeof DocsDotmdRoute
+  '/llms.txt': typeof LlmsDottxtRoute
   '/plugins': typeof PluginsRoute
   '/privacy': typeof PrivacyRoute
   '/api/search': typeof ApiSearchRoute
   '/docs/$': typeof DocsSplatRoute
+  '/docs/llms.txt': typeof DocsLlmsDottxtRoute
+  '/docs/{$}.md': typeof DocsChar123Char125DotmdRoute
   '/download/macos': typeof DownloadMacosRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/docs.md': typeof DocsDotmdRoute
+  '/llms.txt': typeof LlmsDottxtRoute
   '/plugins': typeof PluginsRoute
   '/privacy': typeof PrivacyRoute
   '/api/search': typeof ApiSearchRoute
   '/docs/$': typeof DocsSplatRoute
+  '/docs/llms.txt': typeof DocsLlmsDottxtRoute
+  '/docs/{$}.md': typeof DocsChar123Char125DotmdRoute
   '/download/macos': typeof DownloadMacosRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/docs.md': typeof DocsDotmdRoute
+  '/llms.txt': typeof LlmsDottxtRoute
   '/plugins': typeof PluginsRoute
   '/privacy': typeof PrivacyRoute
   '/api/search': typeof ApiSearchRoute
   '/docs/$': typeof DocsSplatRoute
+  '/docs/llms.txt': typeof DocsLlmsDottxtRoute
+  '/docs/{$}.md': typeof DocsChar123Char125DotmdRoute
   '/download/macos': typeof DownloadMacosRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/docs.md'
+    | '/llms.txt'
     | '/plugins'
     | '/privacy'
     | '/api/search'
     | '/docs/$'
+    | '/docs/llms.txt'
+    | '/docs/{$}.md'
     | '/download/macos'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/docs.md'
+    | '/llms.txt'
     | '/plugins'
     | '/privacy'
     | '/api/search'
     | '/docs/$'
+    | '/docs/llms.txt'
+    | '/docs/{$}.md'
     | '/download/macos'
   id:
     | '__root__'
     | '/'
+    | '/docs.md'
+    | '/llms.txt'
     | '/plugins'
     | '/privacy'
     | '/api/search'
     | '/docs/$'
+    | '/docs/llms.txt'
+    | '/docs/{$}.md'
     | '/download/macos'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  DocsDotmdRoute: typeof DocsDotmdRoute
+  LlmsDottxtRoute: typeof LlmsDottxtRoute
   PluginsRoute: typeof PluginsRoute
   PrivacyRoute: typeof PrivacyRoute
   ApiSearchRoute: typeof ApiSearchRoute
   DocsSplatRoute: typeof DocsSplatRoute
+  DocsLlmsDottxtRoute: typeof DocsLlmsDottxtRoute
+  DocsChar123Char125DotmdRoute: typeof DocsChar123Char125DotmdRoute
   DownloadMacosRoute: typeof DownloadMacosRoute
 }
 
@@ -124,6 +176,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PluginsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/llms.txt': {
+      id: '/llms.txt'
+      path: '/llms.txt'
+      fullPath: '/llms.txt'
+      preLoaderRoute: typeof LlmsDottxtRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/docs.md': {
+      id: '/docs.md'
+      path: '/docs.md'
+      fullPath: '/docs.md'
+      preLoaderRoute: typeof DocsDotmdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -136,6 +202,20 @@ declare module '@tanstack/react-router' {
       path: '/download/macos'
       fullPath: '/download/macos'
       preLoaderRoute: typeof DownloadMacosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/docs/{$}.md': {
+      id: '/docs/{$}.md'
+      path: '/docs/{$}.md'
+      fullPath: '/docs/{$}.md'
+      preLoaderRoute: typeof DocsChar123Char125DotmdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/docs/llms.txt': {
+      id: '/docs/llms.txt'
+      path: '/docs/llms.txt'
+      fullPath: '/docs/llms.txt'
+      preLoaderRoute: typeof DocsLlmsDottxtRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/docs/$': {
@@ -157,10 +237,14 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DocsDotmdRoute: DocsDotmdRoute,
+  LlmsDottxtRoute: LlmsDottxtRoute,
   PluginsRoute: PluginsRoute,
   PrivacyRoute: PrivacyRoute,
   ApiSearchRoute: ApiSearchRoute,
   DocsSplatRoute: DocsSplatRoute,
+  DocsLlmsDottxtRoute: DocsLlmsDottxtRoute,
+  DocsChar123Char125DotmdRoute: DocsChar123Char125DotmdRoute,
   DownloadMacosRoute: DownloadMacosRoute,
 }
 export const routeTree = rootRouteImport

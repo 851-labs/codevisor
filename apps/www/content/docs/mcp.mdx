@@ -1,0 +1,117 @@
+---
+title: MCP Servers
+description: Manage Model Context Protocol tools for the agents on a Codevisor machine.
+icon: Plug
+---
+
+Codevisor Server provides one Model Context Protocol gateway to agent sessions. The gateway combines
+Codevisor tools, Browser Use, Computer Use, plugin tools, and user-configured MCP servers. Clients
+manage the catalog; they do not pass upstream credentials to individual agent harnesses.
+
+## Managed and native servers
+
+**Managed MCP servers** are stored by Codevisor and can use HTTP or stdio. Codevisor owns their
+connection state, authorization, tool discovery, and per-project or per-session visibility.
+
+**Native MCP servers** already exist in a harness configuration file. A scan groups them by harness
+and coalesces equivalent entries into import candidates. The client sends only candidate identities
+when importing; Codevisor rereads values and secrets on the server machine.
+
+Project-file MCP entries are read-only. For harnesses whose global format is safely writable,
+Codevisor can toggle or remove entries. It creates a one-time backup before the first edit, stores
+removed fragments, and exposes a restore action.
+
+## Add a managed server
+
+Create an HTTP server:
+
+```http
+POST /v1/mcps
+Content-Type: application/json
+
+{
+  "name": "Issues",
+  "transport": "http",
+  "url": "https://mcp.example.com/mcp",
+  "authType": "bearer",
+  "bearerToken": "secret"
+}
+```
+
+Or start a local stdio server on the Codevisor machine:
+
+```json
+{
+  "name": "Local tools",
+  "transport": "stdio",
+  "command": "npx",
+  "args": ["-y", "@acme/mcp-server"],
+  "env": { "ACME_TOKEN": "secret" }
+}
+```
+
+HTTP servers support `none`, `bearer`, and `oauth` authorization. Stdio servers do not accept those
+authorization fields; put process credentials in `env`. Server responses expose only environment
+and header names, never their values.
+
+MCP secrets are encrypted at rest with AES-256-GCM. Codevisor creates a machine-local key named
+`mcp-secret-key` in the data directory. A deployment may instead set `CODEVISOR_MCP_SECRET_KEY` to
+a base64-encoded 32-byte key. Back up the key with the database: encrypted credentials cannot be
+recovered without it.
+
+## Connect and authorize
+
+`POST /v1/mcps/detect-auth` probes an HTTP URL and returns the detected authorization type. After a
+server is created or edited:
+
+- `POST /v1/mcps/{id}/connect` reconnects it and refreshes its tool catalog.
+- `GET /v1/mcps/{id}/tools` returns the tools currently exposed.
+- `POST /v1/mcps/{id}/oauth-start` returns an authorization URL.
+- `POST /v1/mcps/{id}/oauth-disconnect` clears OAuth tokens and disables the server.
+
+The OAuth callback and completion routes are browser-flow transports, not general client APIs. A
+client should open the returned authorization URL and then refresh `GET /v1/mcps` until the server
+becomes connected.
+
+`connectionState` is one of `disconnected`, `connecting`, `connected`, `needsSetup`, `unavailable`,
+`needsAuthorization`, `expired`, or `error`. Display the optional `detail` when present.
+
+## Scope tools
+
+The `enabled` value on the managed server is the machine-wide switch. Project and session settings
+can further disable it:
+
+```http
+PATCH /v1/projects/{projectId}/mcps/{mcpId}
+Content-Type: application/json
+
+{ "enabled": false }
+```
+
+```http
+PATCH /v1/sessions/{sessionId}/mcps/{mcpId}
+Content-Type: application/json
+
+{ "enabled": false }
+```
+
+The session setting is the narrowest scope. Effective availability is the machine setting AND the
+project setting AND the session setting; a narrower scope cannot enable a machine-disabled server.
+Both scope mutations return the resolved MCP list for that context.
+
+## Import harness-native MCPs
+
+1. Call `GET /v1/native-mcps` and present its `candidates` and per-harness scan results.
+2. Send selected candidate `identity` values to `POST /v1/native-mcps/import`.
+3. Review each outcome. It is `imported`, `skipped`, or `failed` and can carry warnings.
+
+An import may warn when a secret contains an unexpanded shell-variable placeholder or when the
+authorization probe cannot reach the server. Imported entries do not automatically remove the
+original harness-native entries.
+
+Use the `supportsDisable` and `supportsRemove` flags from the scan before offering native edit
+actions. Removal and restoration use `/v1/native-mcps/remove`, `/v1/native-mcps/removals`, and
+`/v1/native-mcps/removals/{id}/restore`.
+
+The [API reference](/docs/api-reference) contains the request and response schemas for all managed,
+native, and scoped MCP routes.

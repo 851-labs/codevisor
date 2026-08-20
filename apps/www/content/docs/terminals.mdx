@@ -1,11 +1,25 @@
 ---
 title: Terminal protocol
-description: Create terminals and exchange input, output, resize, close, and exit frames.
+description: Implement the bidirectional Codevisor terminal protocol.
 icon: SquareTerminal
 ---
 
-Create a terminal with `POST /v1/terminals`. The response contains a terminal ID, a WebSocket path,
-and the next output sequence.
+Create a terminal with `POST /v1/terminals`:
+
+```json
+{
+  "sessionId": "session-id",
+  "cwd": "/srv/project",
+  "cols": 120,
+  "rows": 36,
+  "shell": "/bin/zsh",
+  "args": ["-l"]
+}
+```
+
+`shell` and `args` are optional. Set `attachOnly: true` to attach to an agent-owned background
+terminal without spawning a shell; creation fails until that terminal has registered. The response
+contains `terminalId`, `websocketPath`, and `nextOutputSeq`.
 
 Connect to `/v1/terminals/{id}/socket?lastOutputSeq=N`. The server replays output after the supplied
 sequence before sending live frames.
@@ -31,5 +45,9 @@ Every client frame carries a stable `clientId` and a monotonic `clientSeq`.
 Server frames are `output`, `exit`, or `error` objects. Their `seq` field is the replay cursor.
 Persist the highest processed sequence and supply it as `lastOutputSeq` after reconnecting.
 
+Keep one stable `clientId` per client attachment and increase `clientSeq` for every frame. This lets
+the server reject duplicate input after a client retries or reconnects.
+
 Deleting `/v1/terminals/session/{sessionId}` closes the live terminal associated with a session so a
-later create request can start a fresh shell.
+later create request can start a fresh shell. It returns `200 { "closed": true }`; when no live
+terminal exists, it returns `404 { "closed": false }`.

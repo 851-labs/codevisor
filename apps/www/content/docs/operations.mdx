@@ -1,22 +1,24 @@
 ---
 title: Operations and troubleshooting
-description: Monitor, update, restart, and troubleshoot a Codevisor Server.
+description: Monitor, update, restart, and troubleshoot the server.
 icon: Wrench
 ---
 
 ## Service status
 
 ```bash
-systemctl --user status codevisor-server
-journalctl --user -u codevisor-server -f
+codevisor status
+codevisor logs --follow
 ```
 
-For a root installation, omit `--user`.
+These commands select the systemd user unit, system unit, or background-process log as appropriate.
+Use `codevisor status --json` for machine-readable server identity and harness readiness.
 
 ## Health and identity
 
-`GET /v1/health` reports the release and database readiness. `GET /v1/info` reports the server ID,
-kind, platform, bind address, and feature markers.
+`GET /v1/health` reports the release, database state, process identity, and migration progress when
+present. `GET /v1/info` reports the server and machine IDs, kind, platform, architecture, hostname,
+bind address, and feature markers.
 
 ## Updates
 
@@ -39,3 +41,7 @@ codevisor update --alpha
 4. Check firewall, reverse-proxy, and TLS configuration independently.
 5. Confirm the service user's `PATH` contains the coding-agent CLIs you expect the server to use.
 6. Use `POST /v1/harnesses/rescan` after installing a CLI without restarting the server.
+7. Use `codevisor plugin list` and an explicit plugin restart when a pane returns `502` or a plugin
+   is in the `failed` state.
+8. Inspect MCP `connectionState` and `detail`; OAuth servers may need authorization rather than a
+   process restart.

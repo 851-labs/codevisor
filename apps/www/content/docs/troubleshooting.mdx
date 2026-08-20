@@ -1,0 +1,31 @@
+---
+title: Troubleshooting
+description: Diagnose app, connection, server, and extension problems.
+icon: CircleQuestionMark
+---
+
+Start by identifying which machine owns the failing resource. Agent processes, projects, MCP
+servers, skills, plugins, and terminals run on the Codevisor Server machine even when you are using
+them from another device.
+
+<Cards>
+  <Card
+    title="Server operations"
+    description="Check service status, logs, health, updates, and harness discovery."
+    href="/docs/operations"
+  />
+  <Card
+    title="Authentication"
+    description="Review pairing, bearer tokens, and trusted localhost requests."
+    href="/docs/authentication"
+  />
+  <Card
+    title="Network security"
+    description="Check private networking, firewalls, TLS termination, and credential handling."
+    href="/docs/security"
+  />
+</Cards>
+
+When reporting a problem, include the Codevisor app and server versions, the affected machine, and
+the relevant server logs. Do not include pairing tokens, API keys, prompts, source code, or other
+credentials.

@@ -1,6 +1,6 @@
 ---
 title: Network security
-description: Expose a remote Codevisor Server without exposing its credentials or transport.
+description: Deploy the server without exposing its credentials or transport.
 icon: ShieldCheck
 ---
 
@@ -13,7 +13,23 @@ trusted private network, put it behind a TLS-terminating reverse proxy or a priv
 - Restrict port `49361` with a host firewall or private network policy.
 - Terminate HTTPS and WSS before traffic crosses an untrusted network.
 - Keep the SQLite database and installation directory readable only by the service user.
-- Store pairing tokens in a credential manager; the current API does not expose token revocation.
+- Store bearer tokens in an operating-system credential manager.
+- Rotate the stable connection token with `codevisor token --rotate` if it is exposed. Separately
+  issued pairing tokens have no individual revocation endpoint.
+
+## Extension trust
+
+Installing a plugin may run its declared install command and later runs its server command. A stdio
+MCP server and a custom agent run arbitrary local commands. Skills can direct an agent to execute
+tools and change files. Review the source, manifest, command, requested tools, and update before
+adding any of them to a sensitive machine.
+
+MCP credentials are encrypted with a key stored in the server data directory, but a process running
+as the service user can still access Codevisor's files. Filesystem permissions remain the primary
+local boundary.
+
+Plugin panes use short-lived, pane-scoped tokens and HttpOnly cookies through the server proxy.
+Never give a plugin webview the machine bearer token.
 
 The hosted API reference intentionally does not execute requests. This prevents server addresses and
 bearer tokens from being sent to `www.codevisor.dev`.

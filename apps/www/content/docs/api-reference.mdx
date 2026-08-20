@@ -1,6 +1,6 @@
 ---
 title: API reference
-description: Complete reference for the experimental Codevisor Server HTTP, SSE, and WebSocket surface.
+description: Reference for the documented Codevisor Server HTTP, SSE, and WebSocket contract.
 icon: BookOpen
 ---
 
@@ -24,14 +24,39 @@ The reference pages are generated from the same OpenAPI document served by
     href="/docs/api-reference/projects/get-projects"
   />
   <Card
+    title="Workspaces"
+    description="Create workspaces and arrange their panes."
+    href="/docs/api-reference/workspaces/get-workspaces"
+  />
+  <Card
     title="Harnesses"
     description="Discover agents and manage their accounts."
     href="/docs/api-reference/harnesses/get-harnesses"
   />
   <Card
+    title="Plugins"
+    description="Install plugins and inspect the tools they expose."
+    href="/docs/api-reference/plugins/get-plugins"
+  />
+  <Card
+    title="MCP servers"
+    description="Manage upstream tools, authorization, native imports, and scopes."
+    href="/docs/api-reference/mcp-servers/get-mcps"
+  />
+  <Card
+    title="Skills"
+    description="Create, import, synchronize, and install agent skills."
+    href="/docs/api-reference/skills/get-skills"
+  />
+  <Card
     title="Sessions"
     description="Create sessions, send prompts, and inspect transcripts."
     href="/docs/api-reference/sessions/get-sessions"
+  />
+  <Card
+    title="Files"
+    description="Upload files for use by connected clients and sessions."
+    href="/docs/api-reference/files/post-files"
   />
   <Card
     title="Events"

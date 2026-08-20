@@ -1,47 +1,40 @@
 ---
-title: Codevisor Server
-description: Run coding agents on another machine and build clients against the experimental Codevisor Server API.
-icon: Server
+title: Get started
+description: Install Codevisor and choose how your clients and machines connect.
+icon: Rocket
 ---
 
-Codevisor Server hosts projects, coding-agent sessions, event streams, files, and terminals. The
-Codevisor macOS app uses the same HTTP and WebSocket API documented here.
-
-<Callout type="warning" title="Experimental API">
-  The `/v1` API is public for experimentation, but its compatibility policy is not finalized yet.
-  Pin the Codevisor Server release you test against and read release notes before upgrading.
-</Callout>
-
-## Start here
+Codevisor Server runs coding agents and owns machine-local project state. Codevisor clients connect
+to one or more servers. The macOS app includes a local server; Linux installations run it directly.
 
 <Cards>
   <Card
-    title="Quickstart"
-    description="Install a Linux server, pair it, and make your first request."
+    title="Install Codevisor"
+    description="Install the macOS app or a standalone Linux server."
+    href="/docs/installation"
+  />
+  <Card
+    title="Connect a remote machine"
+    description="Run setup, issue a connection token, and pair a client."
     href="/docs/quickstart"
   />
   <Card
-    title="Authentication"
-    description="Understand localhost trust and remote bearer tokens."
-    href="/docs/authentication"
+    title="Extend Codevisor"
+    description="Add plugins, MCP servers, skills, or ACP-compatible agents."
+    href="/docs/extensions"
   />
   <Card
-    title="API concepts"
-    description="Learn resources, errors, cursors, and idempotent actions."
-    href="/docs/api-concepts"
-  />
-  <Card
-    title="API reference"
-    description="Browse every current HTTP and streaming endpoint."
-    href="/docs/api-reference"
+    title="Codevisor Server"
+    description="Read the server guides and generated API reference."
+    href="/docs/server"
   />
 </Cards>
 
-## Default endpoint
+## How the pieces fit together
 
-A standalone server listens on `127.0.0.1:49361` unless configured otherwise. The Linux installer
-binds to `0.0.0.0:49361`, enables token authentication, and can install a systemd service.
+- A **machine** runs Codevisor Server and the coding-agent CLIs installed on that machine.
+- A **client** connects to one or more machines and presents their projects, sessions, and panes.
+- **Extensions** such as MCP servers, skills, plugins, and custom agents are managed by that server.
 
-```bash
-curl http://127.0.0.1:49361/v1/health
-```
+If you are integrating your own client, continue with [Codevisor Server](/docs/server) and the
+[API reference](/docs/api-reference).

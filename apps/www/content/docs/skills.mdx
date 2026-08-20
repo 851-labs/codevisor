@@ -1,0 +1,100 @@
+---
+title: Skills
+description: Share reusable instruction sets across the coding agents on a machine.
+icon: BookOpen
+---
+
+Skills are folders of reusable instructions centered on a `SKILL.md` file. Codevisor keeps the
+canonical user-managed collection in `~/.agents/skills` and materializes each skill where compatible
+agent harnesses can read it.
+
+## Skill format
+
+A minimal `SKILL.md` uses YAML frontmatter followed by instructions:
+
+```md
+---
+name: release-check
+description: Verify a release candidate before publishing it.
+---
+
+Check tests, package versions, generated artifacts, and the changelog.
+```
+
+The enclosing directory becomes the stable API identifier. A skill may include scripts,
+references, templates, and other files beside `SKILL.md`.
+
+## Read the catalog
+
+`GET /v1/skills` returns one complete `SkillsScan`:
+
+- `canonicalDir` is the shared store on the server machine.
+- `global` lists canonical skills and their state in every compatible harness.
+- `harnesses` lists independent or broken entries found in each harness's own directory.
+
+An install state is `linked`, `copied`, `canonical`, `notInstalled`, `broken`, or `conflict`.
+Clients should render those states rather than infer installation from paths.
+
+## Create and import
+
+Create a skill from fields or pasted content:
+
+```http
+POST /v1/skills
+Content-Type: application/json
+
+{
+  "name": "release-check",
+  "description": "Verify a release candidate before publishing it."
+}
+```
+
+New skills are installed into every compatible harness immediately. If `content` already begins
+with valid frontmatter, Codevisor writes it verbatim and uses its `name` to derive the directory.
+
+To import a folder already on the server machine, send its absolute `path` to
+`POST /v1/skills/import`. To import from GitHub, GitLab, a git URL, or a site publishing the standard
+well-known skills endpoints, use the remote flow:
+
+1. `POST /v1/skills/discover-remote` with `{ "source": "owner/repo" }`.
+2. Present the candidates and their `alreadyExists` values.
+3. `POST /v1/skills/import-remote` with the same `source` and optional `skillNames` selection.
+
+Source formats match the common `npx skills` conventions, including repository subpaths and refs.
+
+## Install into harnesses
+
+Set one canonical skill's state for one harness:
+
+```http
+PUT /v1/skills/{directoryName}/harnesses/{harnessId}
+Content-Type: application/json
+
+{ "installed": true }
+```
+
+Codevisor prefers a relative symlink and falls back to a copy when links are unavailable. It never
+overwrites an unrelated real directory. A conflicting harness copy remains visible as `conflict`
+until the user resolves it.
+
+`POST /v1/skills/sync` installs all canonical skills into all link-based harnesses. Supply
+`directoryNames` to limit the operation. Harnesses that read `~/.agents/skills` directly require no
+links, and harnesses that also read it avoid redundant copies.
+
+## Make an existing skill global
+
+`POST /v1/skills/make-global` promotes an independent harness skill:
+
+```json
+{ "harnessId": "claude-code", "directoryName": "release-check" }
+```
+
+Codevisor moves the folder into the canonical store and links it back when that harness needs a
+link. If an identical canonical skill exists, it removes only the verified duplicate and uses the
+canonical copy. Drifted content produces a conflict instead of being destroyed.
+
+Deleting `DELETE /v1/skills/{directoryName}` removes the canonical skill and sweeps its dangling
+links. It does not delete unrelated independent harness skills.
+
+Skill files always live on the machine that runs the agents. Remote clients should use these APIs
+instead of assuming filesystem access. See the [API reference](/docs/api-reference) for every schema.

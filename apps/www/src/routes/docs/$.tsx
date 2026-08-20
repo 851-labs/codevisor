@@ -1,5 +1,5 @@
 import { Suspense, type ReactNode } from "react"
-import { createFileRoute, notFound } from "@tanstack/react-router"
+import { createFileRoute, notFound, redirect } from "@tanstack/react-router"
 import { createServerFn } from "@tanstack/react-start"
 import { useFumadocsLoader } from "fumadocs-core/source/client"
 import { DocsLayout } from "fumadocs-ui/layouts/docs"
@@ -11,21 +11,43 @@ import { useMDXComponents } from "../../components/mdx"
 import { baseOptions } from "../../lib/layout.shared"
 import { source } from "../../lib/source"
 
+const movedDocsRedirects: Record<string, string> = {
+  "getting-started": "/docs",
+  app: "/docs",
+  "extensions/plugins": "/docs/plugins",
+  "extensions/mcp": "/docs/mcp",
+  "extensions/skills": "/docs/skills",
+  "extensions/custom-agents": "/docs/custom-agents",
+  "server/quickstart": "/docs/quickstart",
+  "server/installation": "/docs/installation",
+  "server/configuration": "/docs/configuration",
+  "server/authentication": "/docs/authentication",
+  "server/security": "/docs/security",
+  "server/api-concepts": "/docs/api-concepts",
+  "server/realtime": "/docs/realtime",
+  "server/terminals": "/docs/terminals",
+  "server/operations": "/docs/operations"
+}
+
 export const Route = createFileRoute("/docs/$")({
   component: Page,
   loader: async ({ params }) => {
     const slugs = params._splat?.split("/").filter(Boolean) ?? []
+    const redirectHref = movedDocsRedirects[slugs.join("/")]
+    if (redirectHref) throw redirect({ href: redirectHref, statusCode: 301 })
+
     const data = await serverLoader({ data: slugs })
     if (data.type === "docs") await clientLoader.preload(data.path)
     return data
   },
   head: ({ loaderData }) => ({
     meta: [
-      { title: `${loaderData?.title ?? "Server docs"} — Codevisor` },
+      { title: `${loaderData?.title ?? "Docs"} — Codevisor` },
       {
         name: "description",
         content:
-          loaderData?.description ?? "Documentation for the experimental Codevisor Server API."
+          loaderData?.description ??
+          "Documentation for the Codevisor app, extensions, server, and API."
       }
     ]
   })

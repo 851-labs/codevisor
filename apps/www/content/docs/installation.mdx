@@ -1,6 +1,6 @@
 ---
 title: Installation
-description: Install and run Codevisor Server on Linux or macOS.
+description: Install Codevisor Server and its command-line tools on macOS or Linux.
 icon: Download
 ---
 
@@ -30,16 +30,27 @@ export PATH="$HOME/.local/bin:$PATH"
 | `CODEVISOR_INSTALL_DIR`  | Runtime installation directory | `~/.codevisor/server` or `/opt/codevisor`        |
 | `CODEVISOR_BIN_DIR`      | Command symlink directory      | `~/.local/bin` (`/usr/local/bin` as root, Linux) |
 | `CODEVISOR_PORT`         | Listening port                 | `49361`                                          |
+| `CODEVISOR_DATA_DIR`     | Linux database and data dir    | `~/.codevisor/data` or `/var/lib/codevisor/data` |
 | `CODEVISOR_NO_SERVICE=1` | Skip systemd setup             | systemd enabled when available                   |
+| `CODEVISOR_NO_SETUP=1`   | Skip interactive onboarding    | setup runs when a terminal is available          |
 
 ## Without systemd
 
 ```bash
 CODEVISOR_NO_SERVICE=1 curl -fsSL https://www.codevisor.dev/install.sh | sh
-codevisor-server serve --host 0.0.0.0 --port 49361 --auth token
+codevisor start
 ```
 
-Run the process under your preferred supervisor and give it a persistent home directory.
+`codevisor start` runs a detached background process when no systemd unit exists. Use
+`codevisor stop`, `codevisor restart`, `codevisor status`, and `codevisor logs --follow` to manage it.
+Run `codevisor setup` after the first start.
+
+To use another supervisor, run the foreground command and give the service user a persistent home
+directory:
+
+```bash
+codevisor-server serve --host 0.0.0.0 --port 49361 --auth token
+```
 
 ## User service persistence
 

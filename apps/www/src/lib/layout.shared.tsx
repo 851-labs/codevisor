@@ -6,13 +6,9 @@ export function baseOptions(): BaseLayoutProps {
       title: (
         <span className="flex items-center gap-2 font-semibold">
           <img src="/codevisor-icon.png" alt="" className="size-4 rounded" />
-          Codevisor Server
+          Codevisor Docs
         </span>
       )
-    },
-    links: [
-      { text: "Home", url: "/" },
-      { text: "Install", url: "/#install" }
-    ]
+    }
   }
 }

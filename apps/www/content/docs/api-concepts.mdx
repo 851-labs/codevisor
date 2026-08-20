@@ -1,13 +1,17 @@
 ---
 title: API concepts
-description: Understand resources, errors, pagination, idempotency, and compatibility.
+description: Understand server resources, errors, pagination, idempotency, and compatibility.
 icon: Braces
 ---
 
 ## Base URL and encoding
 
-All endpoints are under `/v1`. JSON endpoints use `application/json`; file upload and download use
-binary bodies. Successful deletion commonly returns `204 No Content`.
+All documented endpoints are under `/v1`. JSON request bodies use `application/json`.
+`POST /v1/files?name=…` accepts the raw file bytes—not multipart form data—and uses `Content-Type`
+as the file MIME type. `GET` and `HEAD /v1/files/{id}` support byte ranges.
+
+Successful deletion often returns `204 No Content`, but some delete operations return a refreshed
+collection or an outcome object. Follow each endpoint's documented response.
 
 ## Errors
 
@@ -17,8 +21,10 @@ Errors use an HTTP status and a JSON object:
 { "error": "Project not found" }
 ```
 
-Validation failures return `422`. Authentication failures return `401`. Resource conflicts and
-unsupported state transitions may return `409`.
+Malformed JSON and schema validation failures return `400`. Authentication failures return `401`;
+missing resources return `404`; conflicts return `409`. A well-formed request that cannot be applied
+to the selected project, Git repository, attachment, or native configuration may return `422`.
+Feature managers can also include a stable `code` beside `error`.
 
 ## Resource model
 
@@ -26,10 +32,14 @@ A project points to a folder on a server. A worktree is a server-created Git wor
 project. A session selects a project, harness, optional account, and optional worktree. Prompts are
 queued and session output arrives through persisted events.
 
+Workspaces hold ordered panes. A pane can represent a chat, terminal, plugin, or new-tab surface.
+Clients should preserve unknown pane providers so newer servers do not lose layout state.
+
 ## Cursors and replay
 
 Transcript pagination uses `before` and `limit`. Event streams use a monotonic `since` cursor. Save
-the last processed cursor and pass it when reconnecting so the server can replay missed events.
+the last processed cursor only after applying an event, then pass it when reconnecting. Global and
+session streams use different cursor domains; do not move a cursor between them.
 
 ## Idempotent actions
 
@@ -40,3 +50,7 @@ the same identifier for a retry returns the stored result instead of performing 
 
 The API is currently experimental. `/v1` identifies the current protocol family, but does not yet
 promise that every shape remains unchanged between Codevisor releases.
+
+Use `GET /v1/openapi.json` as the public route allowlist for your pinned release. Ignore unknown JSON
+fields and event kinds, and gate optional behavior with `GET /v1/capabilities` or the relevant
+feature state instead of assuming every server can provide it.

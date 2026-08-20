@@ -1,0 +1,92 @@
+---
+title: Custom agents
+description: Connect another ACP-compatible coding agent to Codevisor.
+icon: Bot
+---
+
+Codevisor can launch any coding-agent CLI that speaks the Agent Client Protocol (ACP) over standard
+input and output. A custom harness joins the same project, session, event, prompt, and terminal model
+as a built-in harness.
+
+## Define a harness
+
+Custom harnesses live in `~/.codevisor/harnesses.json` on the server machine. The file accepts an
+object or a bare array:
+
+```json
+{
+  "harnesses": [
+    {
+      "id": "acme-agent",
+      "name": "Acme Agent",
+      "command": "/usr/local/bin/acme-agent",
+      "args": ["acp"],
+      "env": { "ACME_PROFILE": "codevisor" }
+    }
+  ]
+}
+```
+
+`id` must match `[A-Za-z0-9][A-Za-z0-9._-]{0,63}` and cannot collide with a built-in harness or
+another custom entry. `name` and `command` must be non-empty. `args` is an array of strings and `env`
+is a string-to-string object.
+
+At launch, Codevisor runs `command` with `args`, merges `env` into the process environment, and
+speaks ACP on the child process's standard streams. The command must not use standard output for
+human logs because that corrupts the protocol; send logs to standard error.
+
+<Callout type="warning" title="Environment values are not secret storage">
+  Custom harness definitions are returned by the management API, including `env`. Use the agent's
+  own credential store or an indirect profile setting for secrets.
+</Callout>
+
+## Test before saving
+
+Test an unsaved definition with `POST /v1/harnesses/custom/test`. Codevisor starts the command,
+performs the ACP initialize handshake, and returns:
+
+```json
+{
+  "ok": true,
+  "agentName": "Acme Agent",
+  "protocolVersion": 1
+}
+```
+
+On failure, `ok` is false and `error` explains what failed. A successful handshake proves that the
+process starts and speaks ACP; it does not prove every session capability works.
+
+## Read and replace definitions
+
+`GET /v1/harnesses/custom` returns `{ "harnesses": [...] }`. `PUT /v1/harnesses/custom` replaces
+the whole list and rewrites the file atomically:
+
+```http
+PUT /v1/harnesses/custom
+Content-Type: application/json
+
+{
+  "harnesses": [
+    {
+      "id": "acme-agent",
+      "name": "Acme Agent",
+      "command": "/usr/local/bin/acme-agent",
+      "args": ["acp"]
+    }
+  ]
+}
+```
+
+The server rejects the entire update if any entry is invalid. On success it refreshes the runtime
+catalog and returns the current harness list. Treat PUT as full replacement: merge edits with the
+latest GET result so one client does not erase another client's definitions.
+
+The file remains the source of truth and is safe to edit by hand. At startup, malformed entries are
+skipped with warnings instead of preventing the server from booting.
+
+After saving, use `GET /v1/harnesses` to read readiness. A custom harness is available when its
+command resolves in the server process's environment. Call `POST /v1/harnesses/rescan` after
+installing or moving the binary.
+
+See [Harnesses in the API reference](/docs/api-reference/harnesses/get-harnesses) for session-facing
+harness shapes and the custom management routes.

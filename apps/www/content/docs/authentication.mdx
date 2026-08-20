@@ -1,6 +1,6 @@
 ---
 title: Authentication
-description: Pair clients and authenticate remote HTTP and WebSocket requests.
+description: Pair clients with the server and authenticate remote requests.
 icon: KeyRound
 ---
 
@@ -8,12 +8,29 @@ icon: KeyRound
 
 `--auth none` accepts every request and is appropriate only for a loopback-only development server.
 `--auth token` requires a valid bearer token for remote requests while continuing to trust requests
-that originate from localhost.
+from `127.0.0.1`, `::1`, or an IPv4-mapped loopback address.
 
-## Pairing
+`GET /v1/health` and `GET /v1/discovery` are tokenless in both modes. The discovery response is
+deliberately minimal so an unpaired client can identify a server without learning projects,
+sessions, extensions, or credentials.
 
-Pairing tokens are issued through the API. Because the issuance endpoint is authenticated remotely,
-the initial token must be requested locally:
+## Connection token
+
+Each machine has one stable connection token. Setup creates it, and local operators can print or
+rotate it:
+
+```bash
+codevisor token
+codevisor token --rotate
+```
+
+The equivalent endpoints are `GET /v1/auth/connection-token` and
+`POST /v1/auth/connection-token/rotate`. Rotation invalidates the previous connection token, so
+every client using it must pair again.
+
+## Additional pairing tokens
+
+Create a separate bearer credential with:
 
 ```bash
 curl -fsS -X POST http://127.0.0.1:49361/v1/auth/pairing-token
@@ -25,6 +42,10 @@ curl -fsS -X POST http://127.0.0.1:49361/v1/auth/pairing-token
   "createdAt": "2026-07-10T12:00:00.000Z"
 }
 ```
+
+Remote callers must already be authenticated to issue another token. The server persists only the
+token hash and cannot reveal it later. There is currently no endpoint to revoke one individual
+pairing token; use a distinct server or replace its data store when that separation is required.
 
 ## HTTP requests
 
@@ -39,6 +60,6 @@ Send the same `Authorization` header during the WebSocket upgrade. A rejected up
 `401 Unauthorized` and closes the connection.
 
 <Callout type="info">
-  Tokens are credentials. Do not put them in URLs, browser storage, logs, screenshots, or the hosted
-  documentation site.
+  Tokens grant control of agents, projects, terminals, and extensions on the machine. Do not put
+  them in URLs, browser storage, logs, screenshots, or the hosted documentation site.
 </Callout>

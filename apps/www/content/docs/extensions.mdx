@@ -1,0 +1,48 @@
+---
+title: Overview
+description: Add tools, instructions, agents, and workspace interfaces to Codevisor.
+icon: Puzzle
+---
+
+Codevisor has four extension systems. They solve different problems and all run on the machine that
+hosts Codevisor Server.
+
+<Cards>
+  <Card
+    title="Plugins"
+    description="Add server-supervised workspace panes and agent-callable tools."
+    href="/docs/plugins"
+  />
+  <Card
+    title="MCP servers"
+    description="Make external tools available to the coding agents on a machine."
+    href="/docs/mcp"
+  />
+  <Card
+    title="Skills"
+    description="Share reusable instruction sets across compatible coding agents."
+    href="/docs/skills"
+  />
+  <Card
+    title="Custom agents"
+    description="Connect another ACP-compatible coding agent over standard input and output."
+    href="/docs/custom-agents"
+  />
+</Cards>
+
+| Use this     | When you need to add                        | Runtime                                        |
+| ------------ | ------------------------------------------- | ---------------------------------------------- |
+| Custom agent | Another coding-agent CLI                    | ACP subprocess over standard input and output  |
+| MCP server   | Tools for coding agents                     | HTTP or stdio MCP                              |
+| Skill        | Reusable agent instructions                 | Files installed into harness skill directories |
+| Plugin       | Workspace UI, agent-callable tools, or both | Supervised loopback HTTP server                |
+
+Extensions are machine-scoped. The server owns their processes, files, configuration, and
+credentials; connected clients manage them through the HTTP API. A plugin is the only extension
+that renders a workspace pane. MCP servers and plugin tools both add tools to agent sessions, while
+skills change agent instructions without running another service.
+
+<Callout type="warning" title="Trust boundary">
+  Plugins, stdio MCP servers, skills, and custom agents can execute code or influence an agent on
+  the server machine. Inspect their source and commands before installing them.
+</Callout>

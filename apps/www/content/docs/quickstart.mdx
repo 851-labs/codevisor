@@ -1,20 +1,28 @@
 ---
 title: Quickstart
-description: Install a remote Codevisor Server, pair a client, and verify the connection.
+description: Install the server, pair a client, and verify the connection.
 icon: Rocket
 ---
 
 ## Install on Linux
 
-The installer supports Linux on x86-64 and arm64. It downloads a self-contained server runtime and,
-when systemd is available, starts it as a service.
+The installer supports Linux on x86-64 and arm64. It downloads a self-contained runtime and starts
+it with systemd when available.
 
 ```bash
 curl -fsSL https://www.codevisor.dev/install.sh | sh
 ```
 
-The default port is `49361`. A non-root install lives under `~/.codevisor/server` and creates a user
-service; a root install uses `/opt/codevisor` and a system service.
+The default port is `49361`. A non-root install uses `~/.codevisor`; a root install uses
+`/opt/codevisor` for the runtime and `/var/lib/codevisor` for data. In an interactive terminal, the
+installer runs setup after installation. Rerun it at any time:
+
+```bash
+codevisor setup
+```
+
+Setup starts the server, asks how clients should reach it, and prints a stable connection token,
+deeplink, and QR code. Tailscale is the recommended remote path.
 
 ## Check health locally
 
@@ -22,19 +30,18 @@ service; a root install uses `/opt/codevisor` and a system service.
 curl http://127.0.0.1:49361/v1/health
 ```
 
-The health endpoint is the only endpoint that never requires a bearer token.
+Health reports whether the database is ready. `GET /v1/discovery` is also tokenless and returns a
+minimal machine manifest for private-network discovery.
 
-## Issue a pairing token
+## Authenticate a client
 
-Run this command on the server machine. Localhost requests are trusted when token authentication is
-enabled.
+For a client you control, read the machine's stable connection token locally:
 
 ```bash
-TOKEN=$(curl -fsS -X POST http://127.0.0.1:49361/v1/auth/pairing-token \
-  | jq -r .token)
+TOKEN=$(codevisor token)
 ```
 
-Treat the returned `hm_…` token as a password. Remote requests send it as a bearer token:
+Treat the returned `hm_…` value as a password. Remote requests send it as a bearer token:
 
 ```bash
 curl http://SERVER_ADDRESS:49361/v1/info \
@@ -42,3 +49,15 @@ curl http://SERVER_ADDRESS:49361/v1/info \
 ```
 
 You can also enter the machine address and token in Codevisor under **Machines → Add Machine**.
+
+To create a separate credential instead, call `POST /v1/auth/pairing-token` from localhost. The
+server stores only its hash and does not expose that token again.
+
+## Inspect the contract
+
+```bash
+curl http://SERVER_ADDRESS:49361/v1/openapi.json \
+  -H "Authorization: Bearer $TOKEN" > codevisor-openapi.json
+```
+
+Use [API concepts](/docs/api-concepts) before implementing replaying event or terminal sockets.

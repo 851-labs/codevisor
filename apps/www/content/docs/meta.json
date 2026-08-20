@@ -1,6 +1,14 @@
 {
   "pages": [
     "index",
+    "---Extensions---",
+    "extensions",
+    "plugins",
+    "mcp",
+    "skills",
+    "custom-agents",
+    "---Codevisor Server---",
+    "server",
     "quickstart",
     "installation",
     "configuration",
@@ -10,8 +18,10 @@
     "realtime",
     "terminals",
     "operations",
-    "---API reference---",
+    "---Reference---",
     "api-reference",
-    "...(openapi)"
+    "...(openapi)",
+    "---Help---",
+    "troubleshooting"
   ]
 }

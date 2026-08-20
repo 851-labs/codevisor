@@ -1,6 +1,6 @@
 ---
 title: Events and replay
-description: Consume global and session-scoped updates over HTTP, SSE, or WebSocket.
+description: Synchronize clients with global and session-scoped server events.
 icon: Radio
 ---
 
@@ -10,6 +10,8 @@ event-specific payload.
 ```json
 {
   "id": 42,
+  "globalEventId": 42,
+  "subjectRevision": 7,
   "serverId": "build-box",
   "kind": "session.updated",
   "subjectId": "session-id",
@@ -17,6 +19,21 @@ event-specific payload.
   "payload": {}
 }
 ```
+
+`id` is the cursor for the stream that delivered the envelope. `globalEventId` identifies the event
+in the global shell log when it belongs there. `subjectRevision` is monotonic within one subject and
+drives session-scoped replay. Optional cursor fields are absent when they do not apply.
+
+## Close the snapshot race
+
+To load a snapshot without missing an event created during the request:
+
+1. Read `GET /v1/events/cursor` and save its `cursor`.
+2. Fetch the project, workspace, or session snapshot needed by the screen.
+3. Connect to `/v1/events/socket?since=CURSOR` or `/v1/events?since=CURSOR`.
+4. Apply the replayed events, then continue with live events.
+
+Capturing the cursor first guarantees that changes concurrent with the snapshot are replayed.
 
 ## Persisted session history
 
@@ -36,3 +53,10 @@ cursor, and stays open for new events.
 
 Each WebSocket message is one JSON-encoded event envelope. Reconnect with the last processed cursor.
 Passing `Number.MAX_SAFE_INTEGER` as `since` requests live events without replay.
+
+The session socket sends a `kind: "keepalive"` envelope about every 25 seconds. Its `id` equals the
+current session cursor; do not advance the saved cursor or render it as session activity. On session
+sockets, the envelope `id` has already been rewritten to the subject-revision cursor.
+
+Event handling should be idempotent. Replayed metadata events may replace cached resources, while
+append-only output should be deduplicated by its event cursor.

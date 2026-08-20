@@ -1,0 +1,239 @@
+---
+title: Plugins
+description: Add custom panes and agent-callable tools served from a Codevisor machine.
+icon: PanelsTopLeft
+---
+
+A Codevisor plugin is a folder containing `codevisor-plugin.json` and a command that starts an HTTP
+server. Codevisor starts it on demand, assigns it a loopback port, and proxies its panes and tools to
+authenticated clients and agent sessions.
+
+Plugins can provide workspace panes, agent-callable tools, or both. Because their UI and state live
+on the server machine, the same pane can appear on every connected client.
+
+## Install and manage
+
+Browse published plugins in the [plugin directory](/plugins), or use the CLI on the server machine:
+
+```bash
+codevisor plugin install owner/repo
+codevisor plugin list
+codevisor plugin remove owner.plugin
+```
+
+Installation is a two-step flow. Codevisor first discovers the manifest so the client can show the
+exact install and run commands, panes, and tools. It installs only after the user confirms. Managed
+installs live under `~/.codevisor/plugins` and can be updated by installing the same source again.
+
+For local development, link an absolute directory instead of copying it:
+
+```bash
+codevisor plugin link /absolute/path/to/plugin
+```
+
+Linked directories remain owned by the developer. Edit the source, then restart the plugin from
+Codevisor; a development server with hot reload can update without a restart.
+
+## Manifest
+
+The manifest must be named `codevisor-plugin.json` at the plugin root.
+
+```json
+{
+  "protocolVersion": 1,
+  "id": "acme.notes",
+  "name": "Notes",
+  "description": "Keep notes beside a workspace.",
+  "version": "0.1.0",
+  "panes": [
+    {
+      "type": "main",
+      "title": "Notes",
+      "path": "/panes/main/",
+      "icon": "note.text"
+    }
+  ],
+  "tools": [
+    {
+      "name": "notes_add",
+      "description": "Append a note to the current workspace.",
+      "path": "/tools/notes-add",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "text": { "type": "string" } },
+        "required": ["text"],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "run": { "command": "node server.js" },
+  "idleTimeoutSeconds": 300,
+  "healthPath": "/health"
+}
+```
+
+`id` must contain exactly one dot and use lowercase `owner.name` form; each segment permits letters,
+digits, and hyphens. Pane types and tool names must be unique. Pane paths start and end with `/` and
+cannot contain a query, fragment, or `..`. Tool paths start with `/` but need no trailing slash.
+
+Optional fields include:
+
+- `install.command`, run once during install or update.
+- `platforms`, a `process.platform` allowlist such as `darwin` or `linux`.
+- `idleTimeoutSeconds`, which defaults to `300`; set it to `0` to keep the process alive.
+- `healthPath`, which must return a 2xx response before the plugin is ready. Without it, a TCP
+  connection is the readiness check.
+
+## Server contract
+
+Codevisor runs `run.command` in the plugin directory with these environment variables:
+
+| Variable                    | Meaning                                     |
+| --------------------------- | ------------------------------------------- |
+| `PORT`                      | Assigned loopback port                      |
+| `CODEVISOR_PLUGIN_ID`       | Manifest plugin ID                          |
+| `CODEVISOR_PLUGIN_DATA_DIR` | Persistent directory for plugin-owned state |
+
+Bind only to `127.0.0.1:$PORT`. Write persistent data under `CODEVISOR_PLUGIN_DATA_DIR`; do not rely
+on browser storage when state must follow a workspace across devices.
+
+Every proxied pane request includes `X-Codevisor-Context`, a base64-encoded JSON object with the
+available `cwd`, `workspaceId`, `paneId`, and `themeMode`. Treat every field as optional and validate
+it before using it.
+
+Pane documents must use relative URLs for scripts, styles, requests, and WebSockets. This keeps all
+traffic under the authenticated plugin proxy without HTML rewriting.
+
+This zero-dependency server implements the example manifest:
+
+```js
+import http from "node:http"
+
+const decodeContext = (header) => {
+  try {
+    return JSON.parse(Buffer.from(header ?? "", "base64").toString("utf8"))
+  } catch {
+    return {}
+  }
+}
+
+const server = http.createServer(async (request, response) => {
+  const url = new URL(request.url ?? "/", "http://127.0.0.1")
+  const context = decodeContext(request.headers["x-codevisor-context"])
+
+  if (url.pathname === "/health") return response.end("ok")
+
+  if (url.pathname === "/panes/main/") {
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8" })
+    return response.end(`<!doctype html>
+      <style>
+        body { color: var(--codevisor-fg, CanvasText);
+               background: var(--codevisor-bg, Canvas); }
+      </style>
+      <h1>Notes</h1><p id="cwd"></p>
+      <script>
+        fetch("context").then(r => r.json()).then(data => {
+          document.querySelector("#cwd").textContent = data.cwd ?? "No workspace"
+        })
+      </script>`)
+  }
+
+  if (url.pathname === "/panes/main/context") {
+    response.writeHead(200, { "content-type": "application/json" })
+    return response.end(JSON.stringify({ cwd: context.cwd }))
+  }
+
+  if (url.pathname === "/tools/notes-add" && request.method === "POST") {
+    let body = ""
+    for await (const chunk of request) body += chunk
+    const args = JSON.parse(body || "{}")
+    response.writeHead(200, { "content-type": "application/json" })
+    return response.end(JSON.stringify({ saved: args.text }))
+  }
+
+  response.writeHead(404).end()
+})
+
+server.listen(Number(process.env.PORT), "127.0.0.1")
+```
+
+## Pane integration
+
+A client opens a plugin pane in four steps:
+
+1. Read a workspace pane whose `providerId` is `plugin:<pluginId>` and whose `paneType` matches the
+   manifest.
+2. Request a short-lived pane token with
+   `POST /v1/plugins/{pluginId}/panes/{paneId}/token`.
+3. Load the returned `path` against the machine's base URL. The initial query token is exchanged for
+   a scoped, HttpOnly cookie.
+4. Reload open panes when a `plugin.updated` event arrives. Use `plugin.state.updated` only to show
+   runtime state.
+
+Do not put the machine bearer token in a webview URL. Subresources and proxied WebSockets use the
+pane cookie instead.
+
+Native clients may inject a small `window.codevisor` bridge. Plugins should feature-detect it before
+calling `getContext()`, `openUrl(url)`, or `setTitle(title)`, and listen for
+`codevisor:themechange`. A pane must still work in an ordinary browser without the bridge.
+
+Codevisor exposes theme values as CSS custom properties:
+
+| Variable                                                                       | Meaning                     |
+| ------------------------------------------------------------------------------ | --------------------------- |
+| `--codevisor-bg`, `--codevisor-bg-elevated`                                    | Base and raised backgrounds |
+| `--codevisor-fg`                                                               | Primary text                |
+| `--codevisor-fg-secondary`, `--codevisor-fg-tertiary`                          | Secondary and faint text    |
+| `--codevisor-border`, `--codevisor-separator`                                  | Borders and dividers        |
+| `--codevisor-accent`                                                           | Interactive accent          |
+| `--codevisor-status-ok`, `--codevisor-status-warn`, `--codevisor-status-error` | Status colors               |
+| `--codevisor-diff-added`, `--codevisor-diff-removed`                           | Diff text                   |
+| `--codevisor-diff-added-bg`, `--codevisor-diff-removed-bg`                     | Diff backgrounds            |
+| `--codevisor-font-family`, `--codevisor-font-family-mono`                      | UI and monospace fonts      |
+
+Build sensible fallbacks into every use:
+
+```css
+body {
+  color: var(--codevisor-fg, CanvasText);
+  background: var(--codevisor-bg, Canvas);
+  font-family: var(--codevisor-font-family, sans-serif);
+}
+```
+
+## Agent tools
+
+For each tool, Codevisor sends the JSON arguments directly to the manifest `path`:
+
+```json
+{ "text": "Remember to update the schema" }
+```
+
+The signed `X-Codevisor-Context` and `X-Codevisor-Context-Signature` headers carry `pluginId`,
+`toolName`, and the available `workspaceId` and `cwd`. Return JSON or plain text with a 2xx status;
+return a non-2xx response for failures. The agent-facing tool name is
+`plugin.acme.notes.notes_add`. A client invoking the management API wraps the arguments as
+`{ "args": { ... }, "workspaceId": "...", "cwd": "..." }`; Codevisor unwraps `args` before it
+calls the plugin.
+
+## Lifecycle and failures
+
+Plugins start lazily on the first pane or tool request. Codevisor waits up to 15 seconds for
+readiness, shuts idle processes down, and restarts crashed processes with backoff. Five consecutive
+crashes leave the plugin in `failed` until an explicit restart. The proxy returns `502` when the
+process cannot be reached and `504` when a request exceeds 30 seconds. An open pane WebSocket keeps
+the process active.
+
+## Publish
+
+Publish the plugin in a public GitHub repository, keep the manifest at the repository root, and add
+the `codevisor-plugin` topic. The repository owner must match the owner segment of the manifest ID.
+The public index refreshes periodically and reports rejected repositories with a reason.
+
+The [Plugins API](/docs/api-reference/plugins/get-plugins) covers registry search, discovery,
+installation, linking, runtime state, pane tokens, and direct tool invocation.
+
+<Callout type="warning" title="Experimental protocol">
+  The plugin protocol is new and can change between Codevisor releases. Pin the release you build
+  and test against.
+</Callout>
