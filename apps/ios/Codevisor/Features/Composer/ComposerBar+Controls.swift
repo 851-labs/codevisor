@@ -110,6 +110,47 @@ extension ComposerBar {
         )
     }
 
+    /// iOS has no slash-command palette, so Plan needs a visible touch entry
+    /// point. At rest it stays compact in the crowded composer toolbar; once
+    /// active it becomes a labeled, removable chip like Goal. The expanded
+    /// hit target preserves the HIG's 44-point minimum without making the
+    /// toolbar itself taller.
+    var planModeButton: some View {
+        Button {
+            Task { await controller.togglePlanMode() }
+        } label: {
+            if controller.isPlanModeOn {
+                HStack(spacing: 5) {
+                    Image(systemName: "map")
+                    Text("Plan")
+                    Image(systemName: "xmark")
+                        .font(.caption2.weight(.bold))
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color(.systemBackground))
+                .padding(.horizontal, 9)
+                .scaledFrame(height: 30, relativeTo: .caption)
+                .background(Capsule().fill(Color.primary.opacity(0.85)))
+                .expandedHitTarget(base: 30)
+            } else {
+                Image(systemName: "map")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .scaledFrame(width: 28, height: 28, relativeTo: .subheadline)
+                    .expandedHitTarget(base: 28)
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(controller.isPlanModeUpdatePending)
+        .opacity(controller.isPlanModeUpdatePending ? 0.5 : 1)
+        .accessibilityLabel(controller.isPlanModeOn ? "Plan mode on" : "Plan mode off")
+        .accessibilityHint(
+            controller.isPlanModeOn
+                ? "Returns the agent to implementation mode"
+                : "Asks the agent to create a plan before making changes"
+        )
+    }
+
     var goalEditCancelButton: some View {
         Button("Cancel") {
             withAnimation(.snappy(duration: 0.15)) {

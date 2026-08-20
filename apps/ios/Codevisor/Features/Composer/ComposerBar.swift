@@ -424,6 +424,9 @@ struct ComposerBar: View {
                     ForEach(controller.pickerOptions) { option in
                         ConfigChip(controller: controller, option: option)
                     }
+                    if controller.hasPlanMode {
+                        planModeButton
+                    }
                     if controller.canEditGoal {
                         goalModeButton
                     }
