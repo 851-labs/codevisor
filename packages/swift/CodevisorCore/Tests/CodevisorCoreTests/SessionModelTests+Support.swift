@@ -163,6 +163,11 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
     private var _lastBudget: Int?
     private var _questionAnswers: [(String, String, [String: QuestionAnswerEntry]?)] = []
     private var _questionAnswerGate: AsyncStream<Void>?
+    // Envelope ids for scripted prompt echoes are monotonic, like the real
+    // server's: repeated prompts (and test-emitted events picking ids above
+    // the echoed range) must never reuse an id, or cursor-based replay in
+    // `subscribeEvents` would treat distinct events as already-seen.
+    private var _nextEnvelopeId = 1
 
     var detailConversation: [ServerConversationItem] = []
     var detailCursor = 0
@@ -392,7 +397,7 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
         }
         yieldEvent(
             ServerEventEnvelope(
-                id: 1,
+                id: nextEnvelopeId(),
                 serverId: "local",
                 kind: "session.output",
                 subjectId: id.uuidString,
@@ -404,7 +409,7 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
             ))
         yieldEvent(
             ServerEventEnvelope(
-                id: 2,
+                id: nextEnvelopeId(),
                 serverId: "local",
                 kind: "session.updated",
                 subjectId: id.uuidString,
@@ -414,6 +419,13 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
                 ])
             ))
         return ServerPromptAccepted(accepted: true, sessionId: id.uuidString)
+    }
+
+    private func nextEnvelopeId() -> Int {
+        lock.withLock {
+            defer { _nextEnvelopeId += 1 }
+            return _nextEnvelopeId
+        }
     }
 
     func cancelSession(id: UUID) async throws {

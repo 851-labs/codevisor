@@ -341,9 +341,17 @@ public struct ServerSessionTransport: Sendable {
         since: Int = Self.liveOnlyEventCursor
     ) -> AsyncThrowingStream<ServerSessionStreamEvent, any Error> {
         AsyncThrowingStream { continuation in
+            // The upstream subscription is acquired synchronously at stream
+            // construction, NOT inside the bridge task. Callers subscribe and
+            // then prompt (`startConsumer()` before `transport.prompt` in
+            // SessionModel); if registration happened inside the task it
+            // would race that prompt, and for a cursor-less (live-only)
+            // session the server replays nothing — events emitted before the
+            // subscription registers would be lost permanently.
+            let upstream = client.sessionEventStream(id: sessionId, since: since)
             let task = Task {
                 do {
-                    for try await event in client.sessionEventStream(id: sessionId, since: since) {
+                    for try await event in upstream {
                         for update in Self.sessionStreamEvents(from: event) {
                             continuation.yield(update)
                         }
@@ -363,9 +371,13 @@ public struct ServerSessionTransport: Sendable {
         since: Int
     ) -> AsyncThrowingStream<ServerSessionStreamEvent, any Error> {
         AsyncThrowingStream { continuation in
+            // Acquired synchronously for the same reason as `streamEvents`:
+            // subscription registration must complete before the caller's
+            // next prompt, or live-only streams silently drop its events.
+            let upstream = client.eventStream(since: since)
             let task = Task {
                 do {
-                    for try await event in client.eventStream(since: since)
+                    for try await event in upstream
                     where
                         event.subjectId.caseInsensitiveCompare(sessionId.uuidString) == .orderedSame
                     {

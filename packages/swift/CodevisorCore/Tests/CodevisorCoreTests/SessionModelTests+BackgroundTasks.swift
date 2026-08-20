@@ -17,15 +17,18 @@ extension SessionModelTests {
         // Echoed prompt finishes the turn, so the session is idle. No
         // snapshot yet — tab pruning must not treat that as "no tasks".
         await model.send("run tests in the background")
+        await settleUntil { !model.isSending }
         #expect(model.isSending == false)
         #expect(model.isWaitingOnBackgroundTasks == false)
         #expect(model.hasBackgroundTaskSnapshot == false)
 
         var runtimeEdges = 0
         model.onRuntimeStateChanged = { runtimeEdges += 1 }
+        // The prompt echo consumed envelope ids 1-2; manual emits continue
+        // the monotonic sequence from 3.
         client.emit(
             ServerEventEnvelope(
-                id: 2,
+                id: 3,
                 serverId: "local",
                 kind: "session.updated",
                 subjectId: sessionId.uuidString,
@@ -36,7 +39,7 @@ extension SessionModelTests {
         #expect(model.isRuntimeIdle == false)
         client.emit(
             ServerEventEnvelope(
-                id: 3,
+                id: 4,
                 serverId: "local",
                 kind: "session.updated",
                 subjectId: sessionId.uuidString,
@@ -48,7 +51,7 @@ extension SessionModelTests {
 
         client.emit(
             ServerEventEnvelope(
-                id: 4,
+                id: 5,
                 serverId: "local",
                 kind: "session.updated",
                 subjectId: sessionId.uuidString,
@@ -76,7 +79,7 @@ extension SessionModelTests {
         // the waiting indicator: it is running, not being waited on.
         client.emit(
             ServerEventEnvelope(
-                id: 5,
+                id: 6,
                 serverId: "local",
                 kind: "session.updated",
                 subjectId: sessionId.uuidString,
@@ -110,7 +113,7 @@ extension SessionModelTests {
         // The empty replace-on-update snapshot clears the indicator.
         client.emit(
             ServerEventEnvelope(
-                id: 6,
+                id: 7,
                 serverId: "local",
                 kind: "session.updated",
                 subjectId: sessionId.uuidString,

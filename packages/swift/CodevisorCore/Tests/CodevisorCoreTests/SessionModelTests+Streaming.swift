@@ -126,6 +126,7 @@ extension SessionModelTests {
         )
 
         await model.send("hello server")
+        await settleUntil { !model.isSending }
 
         #expect(client.promptedTexts == ["hello server"])
         #expect(model.conversation.count == 2)
