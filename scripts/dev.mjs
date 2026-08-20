@@ -239,6 +239,9 @@ const sharedEnvironment = {
   // filled in once the cloud is healthy, so clients can sign in without any
   // GitHub OAuth setup.
   CODEVISOR_DEV_CLOUD_URL: cloudUrl,
+  // Vite only exposes VITE_-prefixed vars to app code (import.meta.env);
+  // the www plugin directory uses this to hit the dev cloud registry.
+  VITE_CODEVISOR_DEV_CLOUD_URL: cloudUrl,
   CODEVISOR_DEV_CLOUD_TOKEN: ""
 }
 const databasePath = join(dataDirectory, "codevisor-server.sqlite")

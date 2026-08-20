@@ -10,7 +10,19 @@ import { useState } from "react"
 /// registry lists every public GitHub repo tagged `codevisor-plugin` whose
 /// manifest passes validation; entries always show the real repo owner.
 
-const REGISTRY_INDEX_URL = "https://cloud.codevisor.dev/plugins/index.json"
+// Same dev-isolation convention as the server's registry client: the dev
+// runner's local cloud instance wins, production is the fallback. Resolved
+// lazily INSIDE the server function only — this route module is also bundled
+// for the browser, where `process` does not exist.
+const registryIndexUrl = (): string => {
+  // import.meta.env, not process.env: the SSR handler runs on workerd, which
+  // has no process environment — Vite injects VITE_-prefixed vars statically.
+  const base = (
+    (import.meta.env["VITE_CODEVISOR_DEV_CLOUD_URL"] as string | undefined) ??
+    "https://cloud.codevisor.dev"
+  ).replace(/\/+$/, "")
+  return `${base}/plugins/index.json`
+}
 
 /// Exactly what the cards render, and nothing more — the loader payload must
 /// be serializable, and the full registry entry carries opaque tool
@@ -48,7 +60,7 @@ const toDirectoryEntry = (entry: PluginRegistryEntry): DirectoryEntry => ({
 const fetchDirectory = createServerFn({ method: "GET" }).handler(
   async (): Promise<DirectoryData> => {
     try {
-      const response = await fetch(REGISTRY_INDEX_URL, { signal: AbortSignal.timeout(10_000) })
+      const response = await fetch(registryIndexUrl(), { signal: AbortSignal.timeout(10_000) })
       if (!response.ok) return { entries: null }
       const index = (await response.json()) as { entries?: ReadonlyArray<PluginRegistryEntry> }
       return { entries: (index.entries ?? []).map(toDirectoryEntry) }
