@@ -94,9 +94,9 @@ http
 - **Bind `127.0.0.1` on `Number(process.env.PORT)`** — never `0.0.0.0`.
 - Read per-pane context (cwd, workspaceId, paneId, themeMode) from the
   `X-Codevisor-Context` header: base64 JSON, present on every proxied request.
-- Style with the injected CSS variables so panes match the app theme:
-  `--codevisor-bg/-fg/-border/-accent/-font-family/-diff-added/-diff-removed`
-  (and more — always provide fallbacks: `var(--codevisor-bg, Canvas)`).
+- Style with the injected `--codevisor-*` CSS variables so panes match the
+  app theme (full reference under "Styling panes"); every `var()` needs a
+  fallback: `var(--codevisor-bg, Canvas)`.
 - **Keep ALL state in your plugin server** — in memory for ephemera, under
   `$CODEVISOR_PLUGIN_DATA_DIR` for anything durable (never in the plugin
   folder). The same pane renders on multiple devices at once (Mac, iPhone,
@@ -172,6 +172,40 @@ if (url.pathname === "/tools/add" && request.method === "POST") {
 - The server must accept connections on `$PORT` within 15s of spawn.
 - Pane shows an error card? Check `plugins.list` state, then the output
   terminal. 502 = process unreachable (crashed?), 504 = request hung >30s.
+
+## Styling panes
+
+Panes render inside Codevisor's chrome, which is native macOS/iOS and
+deliberately quiet: system font, small type (11–13px chrome, ~12px mono
+content), hairline 1px borders, flat surfaces with at most one elevation
+step, no shadows or gradients, whitespace over boxes, and color reserved
+for meaning — the accent, status, and diff tokens below. A pane inherits
+that look by building from these variables instead of its own palette.
+
+The clients inject these on `:root` (values track the user's theme live —
+a `codevisor:themechange` event fires on `window` when they change):
+
+| Variable                                     | Meaning                               |
+| -------------------------------------------- | ------------------------------------- |
+| `--codevisor-bg`                             | pane background                       |
+| `--codevisor-bg-elevated`                    | raised surface (cards, header bars)   |
+| `--codevisor-fg`                             | primary text                          |
+| `--codevisor-fg-secondary`                   | secondary text                        |
+| `--codevisor-fg-tertiary`                    | faint text (placeholders, timestamps) |
+| `--codevisor-border`                         | control borders                       |
+| `--codevisor-separator`                      | hairline dividers                     |
+| `--codevisor-accent`                         | interactive/highlight color           |
+| `--codevisor-status-ok` / `-warn` / `-error` | status colors                         |
+| `--codevisor-diff-added` / `-removed`        | diff foregrounds                      |
+| `--codevisor-diff-added-bg` / `-removed-bg`  | diff line backgrounds                 |
+| `--codevisor-font-family`                    | UI font (system stack)                |
+| `--codevisor-font-family-mono`               | monospace font                        |
+
+Because the variables only exist inside the app's webviews (see "Seeing
+your pane"), every `var()` carries a fallback; `color-mix` against
+`Canvas`/`CanvasText` plus `:root { color-scheme: light dark }` keeps the
+fallbacks theme-correct too — the git-diff reference plugin
+(codevisor repo, `plugins/git-diff/server.ts`) shows the full pattern.
 
 ## Seeing your pane
 
