@@ -10,7 +10,7 @@ import {
   usesAcpModelSelectionExtension
 } from "./index.js"
 
-describe("acp model-selection extension", () => {
+describe("Grok Build model-selection extension", () => {
   it("distinguishes a native model option from the optional model extension", () => {
     expect(
       acpConfigOptionIds({

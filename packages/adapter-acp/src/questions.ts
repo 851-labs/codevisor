@@ -10,6 +10,17 @@ export interface PendingAcpQuestion {
   readonly resolve: (response: unknown) => void
 }
 
+/// Adapter-owned client request mapped onto Codevisor's shared blocking-question
+/// flow. ACP-backed native adapters use this without teaching the generic ACP
+/// transport about their private request methods or response shapes.
+export interface AcpMappedQuestion<Response> {
+  readonly sessionId: string
+  readonly questions: ReadonlyArray<QuestionSpec>
+  readonly planDocument?: string
+  readonly cancelledResponse: Response
+  readonly responseFor: (answer: QuestionAnswer) => Response
+}
+
 export type AcpPermissionOutcome =
   | { outcome: { outcome: "cancelled" } }
   | { outcome: { optionId: string; outcome: "selected" } }

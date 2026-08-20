@@ -71,6 +71,7 @@
         "@codevisor/adapter-acp": "workspace:*",
         "@codevisor/adapter-claude": "workspace:*",
         "@codevisor/adapter-codex": "workspace:*",
+        "@codevisor/adapter-grok-build": "workspace:*",
         "@codevisor/agent-runtime": "workspace:*",
         "@codevisor/api": "workspace:*",
         "@codevisor/automation": "workspace:*",
@@ -170,6 +171,19 @@
         "@codevisor/api": "workspace:*",
         "effect": "4.0.0-beta.92",
         "smol-toml": "1.7.0",
+      },
+      "devDependencies": {
+        "vitest": "4.1.6",
+      },
+    },
+    "packages/adapter-grok-build": {
+      "name": "@codevisor/adapter-grok-build",
+      "dependencies": {
+        "@agentclientprotocol/sdk": "1.1.0",
+        "@codevisor/adapter-acp": "workspace:*",
+        "@codevisor/agent-runtime": "workspace:*",
+        "@codevisor/api": "workspace:*",
+        "effect": "4.0.0-beta.92",
       },
       "devDependencies": {
         "vitest": "4.1.6",
@@ -502,6 +516,8 @@
     "@codevisor/adapter-claude": ["@codevisor/adapter-claude@workspace:packages/adapter-claude"],
 
     "@codevisor/adapter-codex": ["@codevisor/adapter-codex@workspace:packages/adapter-codex"],
+
+    "@codevisor/adapter-grok-build": ["@codevisor/adapter-grok-build@workspace:packages/adapter-grok-build"],
 
     "@codevisor/agent-runtime": ["@codevisor/agent-runtime@workspace:packages/agent-runtime"],
 

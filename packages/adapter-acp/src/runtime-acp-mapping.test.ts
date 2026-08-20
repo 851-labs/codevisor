@@ -19,7 +19,7 @@ describe("@codevisor/agent-runtime", () => {
       plan: {},
       terminal: true
     })
-    expect(acpClientCapabilities("grok-build", false)).toEqual({
+    expect(acpClientCapabilities("generic-acp-agent", false)).toEqual({
       plan: {},
       terminal: false
     })

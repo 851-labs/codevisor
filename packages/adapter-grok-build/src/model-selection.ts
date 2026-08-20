@@ -1,7 +1,7 @@
 import type * as acp from "@agentclientprotocol/sdk"
 import type { SessionConfigOption } from "@codevisor/api"
 
-/// The synthesized config-option id for the ACP model-selection extension.
+/// The synthesized config-option id for Grok's ACP model-selection extension.
 /// Agents that report `session/new.models` (e.g. grok) expose their model list
 /// via this optional extension rather than a `configOptions` entry, and apply a
 /// change through `session/set_model` — NOT `session/set_config_option` (which

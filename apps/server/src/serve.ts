@@ -6,6 +6,7 @@ import {
 import { makeAcpProvider, testAcpConnection } from "@codevisor/adapter-acp"
 import { makeClaudeProvider } from "@codevisor/adapter-claude"
 import { makeCodexProvider } from "@codevisor/adapter-codex"
+import { makeGrokBuildProvider } from "@codevisor/adapter-grok-build"
 import type { DataUpgradeProgress, UpdateInfo } from "@codevisor/api"
 import {
   makeAttachmentStore,
@@ -742,7 +743,8 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
       providerFactories: [
         (env, context) => makeAcpProvider(env, context),
         (env, context) => makeClaudeProvider(env, context),
-        (env, context) => makeCodexProvider(env, context)
+        (env, context) => makeCodexProvider(env, context),
+        (env, context) => makeGrokBuildProvider(env, context)
       ],
       resolveEnv: () => resolveShellEnv()
     })

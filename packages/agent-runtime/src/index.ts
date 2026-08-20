@@ -56,8 +56,8 @@ export interface ProviderFactoryContext {
 }
 
 /// Constructs a provider against the runtime's live environment. Adapter
-/// packages (@codevisor/adapter-acp, -claude, -codex) export `make*Provider`
-/// functions that plug in here; the app composes the set it wants.
+/// packages export `make*Provider` functions that plug in here; the app
+/// composes the set it wants.
 export type ProviderFactory = (
   environment: ProviderEnvironment,
   context: ProviderFactoryContext
@@ -554,7 +554,9 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     }
   ),
   executableHarness("devin", "Devin", "brain", ["devin"], "devin", ["acp"]),
-  executableHarness("grok-build", "Grok Build", "x.square", ["grok"], "grok", ["agent", "stdio"]),
+  executableHarness("grok-build", "Grok Build", "x.square", ["grok"], "grok", ["agent", "stdio"], {
+    provider: "grok-build"
+  }),
   executableHarness("kilo", "Kilo", "shippingbox", ["kilo"], "kilo", ["acp"], {
     installMethods: [{ kind: "npm", packageName: "@kilocode/cli" }],
     update: {
@@ -1095,7 +1097,13 @@ function executableHarness(
   extra: Partial<
     Pick<
       HarnessDefinition,
-      "installMethods" | "update" | "installHint" | "fallbackPaths" | "nativeMcp" | "skills"
+      | "installMethods"
+      | "update"
+      | "installHint"
+      | "fallbackPaths"
+      | "nativeMcp"
+      | "skills"
+      | "provider"
     >
   > = {}
 ): HarnessDefinition {

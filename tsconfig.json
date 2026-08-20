@@ -26,6 +26,9 @@
       "path": "./packages/adapter-codex"
     },
     {
+      "path": "./packages/adapter-grok-build"
+    },
+    {
       "path": "./packages/skills"
     },
     {

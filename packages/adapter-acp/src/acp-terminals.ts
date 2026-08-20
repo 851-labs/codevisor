@@ -77,9 +77,8 @@ export interface AcpTerminalHostConfig {
   readonly emit: RuntimeEmit
   readonly env: NodeJS.ProcessEnv
   /// Standard ACP treats `command` as an executable with a separate argv.
-  /// Grok currently sends a complete shell invocation in `command` with an
-  /// empty argv, so its connection opts into executing that string via a
-  /// shell instead.
+  /// ACP-backed adapters whose agents send a complete shell invocation in
+  /// `command` can opt into executing that string through a shell instead.
   readonly commandMode?: "argv" | "shell"
   readonly spawner?: AcpTerminalSpawner
 }

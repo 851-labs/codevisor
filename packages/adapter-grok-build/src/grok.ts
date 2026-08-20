@@ -1,13 +1,8 @@
 import type { GoalStatus, QuestionSpec, SessionGoal, SessionModeState } from "@codevisor/api"
-import type { QuestionAnswer, RuntimeEvent } from "@codevisor/agent-runtime"
+import type { RuntimeEvent } from "@codevisor/agent-runtime"
+import type { AcpMappedQuestion } from "@codevisor/adapter-acp"
 
-export interface GrokMappedQuestion<Response> {
-  readonly sessionId: string
-  readonly questions: ReadonlyArray<QuestionSpec>
-  readonly planDocument?: string
-  readonly cancelledResponse: Response
-  readonly responseFor: (answer: QuestionAnswer) => Response
-}
+export type GrokMappedQuestion<Response> = AcpMappedQuestion<Response>
 
 export type GrokPlanApprovalResponse =
   | { readonly outcome: "approved" | "abandoned" }

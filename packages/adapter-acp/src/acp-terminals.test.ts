@@ -174,22 +174,22 @@ describe("makeAcpTerminalHost", () => {
     expect(() => host.output({ sessionId: "session-1", terminalId })).toThrow(/Unknown terminal/)
   })
 
-  it("runs Grok's complete shell invocation through a shell, including long commands", () => {
+  it("runs complete shell invocations through a shell, including long commands", () => {
     const { host, spawns } = makeHost({ commandMode: "shell" })
-    const grokCommand = `/bin/zsh -lc 'printf %s ${"x".repeat(8_192)}'`
-    host.create({ command: grokCommand, args: [], sessionId: "grok-session" })
+    const shellCommand = `/bin/zsh -lc 'printf %s ${"x".repeat(8_192)}'`
+    host.create({ command: shellCommand, args: [], sessionId: "shell-session" })
 
     expect(spawns[0]).toMatchObject(
       process.platform === "win32"
         ? {
             command: process.env.ComSpec ?? "cmd.exe",
-            args: ["/d", "/s", "/c", grokCommand]
+            args: ["/d", "/s", "/c", shellCommand]
           }
-        : { command: "/bin/sh", args: ["-lc", grokCommand] }
+        : { command: "/bin/sh", args: ["-lc", shellCommand] }
     )
     // The complete invocation is an argument, never an executable pathname;
-    // this is what avoids Grok's observed spawn ENAMETOOLONG/ENOENT failures.
-    expect(spawns[0]?.command).not.toBe(grokCommand)
+    // This avoids treating a full invocation as an executable path.
+    expect(spawns[0]?.command).not.toBe(shellCommand)
   })
 
   it("truncates buffered output from the beginning at a character boundary", () => {

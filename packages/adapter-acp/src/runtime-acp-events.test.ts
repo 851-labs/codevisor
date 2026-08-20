@@ -1,8 +1,20 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import { toEventEnvelope, type RuntimeEmit, type RuntimeEvent } from "@codevisor/agent-runtime"
-import { acpProtocolVersion } from "./index.js"
-import { conversationEvent, makeAcpAgentRuntime, makeConnector, run } from "./test-support.js"
+import {
+  toEventEnvelope,
+  type QuestionAnswer,
+  type RuntimeEmit,
+  type RuntimeEvent,
+  type SetGoalUpdate
+} from "@codevisor/agent-runtime"
+import { acpProtocolVersion, type AcpConnector } from "./index.js"
+import {
+  conversationEvent,
+  FakeConnection,
+  makeAcpAgentRuntime,
+  makeConnector,
+  run
+} from "./test-support.js"
 
 describe("@codevisor/agent-runtime", () => {
   it("streams turn lifecycle and session output through the persistent sink", async () => {
@@ -157,6 +169,64 @@ describe("@codevisor/agent-runtime", () => {
     await expect(
       run(runtime.answerQuestion(sessionId, "q-1", { outcome: "cancelled" }))
     ).rejects.toThrow("Questions are not supported by this harness")
+  })
+
+  it("preserves optional question and goal methods through the generic ACP provider", async () => {
+    const answered: Array<readonly [string, string, QuestionAnswer]> = []
+    const goalUpdates: Array<readonly [string, SetGoalUpdate]> = []
+    const cleared: Array<string> = []
+    const goal = {
+      createdAt: "2026-08-20T00:00:00.000Z",
+      objective: "finish the adapter",
+      status: "active" as const,
+      timeUsedSeconds: 0,
+      tokenBudget: null,
+      tokensUsed: 0,
+      updatedAt: "2026-08-20T00:00:00.000Z"
+    }
+    class InteractiveConnection extends FakeConnection {
+      answerQuestion(sessionId: string, questionId: string, answer: QuestionAnswer) {
+        return Effect.sync(() => {
+          answered.push([sessionId, questionId, answer])
+        })
+      }
+
+      setGoal(sessionId: string, update: SetGoalUpdate) {
+        return Effect.sync(() => {
+          goalUpdates.push([sessionId, update])
+          return goal
+        })
+      }
+
+      clearGoal(sessionId: string) {
+        return Effect.sync(() => {
+          cleared.push(sessionId)
+        })
+      }
+    }
+    const connector: AcpConnector = {
+      connect: (request, emit) => Effect.succeed(new InteractiveConnection(request, emit))
+    }
+    const runtime = makeAcpAgentRuntime({
+      connector,
+      env: { PATH: "/bin" },
+      executableExists: (name) => name === "gemini",
+      locateExecutable: (name) => `/bin/${name}`
+    })
+    const sessionId = await run(
+      runtime.createAgentSession("gemini", "/tmp/project", () => undefined)
+    )
+    const answer = { answers: { choice: { answers: ["A"] } }, outcome: "answered" as const }
+
+    await expect(run(runtime.setGoal(sessionId, { status: "paused" }))).resolves.toEqual(goal)
+    await expect(
+      run(runtime.answerQuestion(sessionId, "question-1", answer))
+    ).resolves.toBeUndefined()
+    await expect(run(runtime.clearGoal(sessionId))).resolves.toBeUndefined()
+
+    expect(goalUpdates).toEqual([[sessionId, { status: "paused" }]])
+    expect(answered).toEqual([[sessionId, "question-1", answer]])
+    expect(cleared).toEqual([sessionId])
   })
 
   it("delegates goal calls to handles that support them", async () => {

@@ -14,6 +14,7 @@ import {
   type HarnessAccountContext,
   type LoadedAgentSession,
   type ProviderEnvironment,
+  type ProviderId,
   type QuestionAnswer,
   type RuntimeEmit,
   type SetGoalUpdate
@@ -87,6 +88,9 @@ const unavailableReadiness = (
 }
 
 export interface AcpProviderConfig {
+  /// Provider identity for an ACP-backed native adapter. The generic provider
+  /// keeps `acp`; packages that compose its transport register their own id.
+  readonly providerId?: ProviderId
   readonly connector?: AcpConnector
   /// Bounds the authentication-only ACP session used during discovery. Some
   /// agents accept initialize but never answer session/new; discovery must
@@ -158,9 +162,8 @@ export const makeAcpProvider = (
     cancel: Effect.gen(function* () {
       yield* connection.cancel(sessionId)
       // Cancelling without a locally tracked prompt can otherwise leave a
-      // replayed assistant chunk generating forever (notably after a Grok
-      // goal was cleared). A terminal event is idempotent if the prompt also
-      // resolves with its own cancellation event.
+      // replayed assistant chunk generating forever. A terminal event is
+      // idempotent if the prompt also resolves with its own cancellation event.
       yield* adapterPromise("cancelTurnEnd", () =>
         emit(turnLifecycleEvent(sessionId, randomUUID(), "ended", "cancelled"))
       )
@@ -205,7 +208,7 @@ export const makeAcpProvider = (
   })
 
   return {
-    id: "acp",
+    id: config.providerId ?? "acp",
     readiness: (definition) =>
       resolveLaunch(definition, environment) === undefined
         ? unavailableReadiness(definition, environment)

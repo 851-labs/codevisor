@@ -13,25 +13,9 @@ export {
   type AcpConnector,
   type AcpHarnessLaunchRequest
 } from "./connection.js"
-export {
-  grokAskUserQuestion,
-  grokGoalNotification,
-  grokModeState,
-  grokPlanApprovalQuestion,
-  type GrokGoalNotification
-} from "./grok.js"
-export {
-  acpConfigOptionIds,
-  acpModelConfigId,
-  acpModelConfigOption,
-  acpReasoningEffortConfigId,
-  acpReasoningEffortConfigOption,
-  applyAcpModelSelection,
-  applyAcpReasoningEffortSelection,
-  extractAcpModelState,
-  usesAcpModelSelectionExtension
-} from "./model-selection.js"
+export { type ConfigureAcpClientApp } from "./client-app.js"
 export { runtimeEventFromNotification } from "./notifications.js"
+export { turnLifecycleEvent } from "./internal.js"
 export {
   extractPiStartupInfo,
   isPiStartupInfoNotification,
@@ -39,10 +23,21 @@ export {
 } from "./pi.js"
 export { makeAcpProvider, type AcpProviderConfig } from "./provider.js"
 export { acpPrompt, type AcpPromptCapabilities } from "./prompt.js"
-export { acpPermissionOutcome, acpPermissionQuestion } from "./questions.js"
+export { acpPermissionOutcome, acpPermissionQuestion, type AcpMappedQuestion } from "./questions.js"
+export {
+  type AcpConnectionExtensionContext,
+  type AcpQuestionControls,
+  type AcpSdkConnectionCustomization,
+  type AcpSetConfigOptionContext
+} from "./sdk-connection.js"
 export {
   makeStdioAcpConnector,
+  makeStdioAcpConnectorWithOptions,
   stdioAcpConnector,
   testAcpConnection,
-  type AcpConnectionTestResult
+  type AcpConnectionTestResult,
+  type AcpStdioExtension,
+  type AcpStdioExtensionContext,
+  type AcpStdioExtensionFactory,
+  type StdioAcpConnectorOptions
 } from "./stdio-connector.js"

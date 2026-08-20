@@ -6,7 +6,7 @@ import {
   grokPlanApprovalQuestion
 } from "./index.js"
 
-describe("Grok ACP compatibility", () => {
+describe("Grok Build compatibility", () => {
   it("advertises the modes Grok implements but does not report", () => {
     expect(grokModeState.currentModeId).toBe("default")
     expect(grokModeState.availableModes.map((mode) => [mode.id, mode.canonicalId])).toEqual([

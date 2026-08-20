@@ -1,17 +1,15 @@
 import * as acp from "@agentclientprotocol/sdk"
 import type { NewSessionResponse } from "@agentclientprotocol/sdk"
-import { randomUUID } from "node:crypto"
-import type { SessionGoal } from "@codevisor/api"
+import type { SessionConfigOption } from "@codevisor/api"
 import {
   adapterPromise,
   clampFailureDetail,
   normalizePromptInput,
   runtimeEffect,
   summarizeProcessFailure,
+  type AgentSessionMetadata,
   type AgentSessionSummary,
   type QuestionAnswer,
-  type RuntimeEvent,
-  type SetGoalUpdate,
   type ToolGatewayConfig
 } from "@codevisor/agent-runtime"
 import {
@@ -21,17 +19,7 @@ import {
   type AcpSessionMetadataResponse
 } from "./config-options.js"
 import type { AcpAgentConnection } from "./connection.js"
-import type { GrokAskUserQuestionResponse, GrokPlanApprovalResponse } from "./grok.js"
-import { isGenericConnectionClose, turnLifecycleEvent } from "./internal.js"
-import {
-  acpConfigOptionIds,
-  acpReasoningEffortConfigId,
-  applyAcpModelSelection,
-  applyAcpReasoningEffortSelection,
-  extractAcpModelState,
-  usesAcpModelSelectionExtension,
-  type AcpModelState
-} from "./model-selection.js"
+import { isGenericConnectionClose } from "./internal.js"
 import { extractPiStartupInfo } from "./pi.js"
 import { acpPrompt, type AcpPromptCapabilities } from "./prompt.js"
 
@@ -44,12 +32,6 @@ export interface AcpQuestionControls {
   readonly cancelQuestions: (sessionId: string | undefined) => void
 }
 
-export interface AcpGrokControls {
-  readonly requestPlanApproval: (params: unknown) => Promise<GrokPlanApprovalResponse>
-  readonly askUserQuestion: (params: unknown) => Promise<GrokAskUserQuestionResponse>
-  readonly onSessionNotification: (params: unknown) => void
-}
-
 export interface AcpAuthControls {
   readonly methods: ReadonlyArray<{
     readonly id: string
@@ -59,31 +41,59 @@ export interface AcpAuthControls {
   readonly canLogout: boolean
 }
 
+export interface AcpSetConfigOptionContext {
+  readonly connection: acp.ClientConnection
+  readonly sessionId: string
+  readonly configId: string
+  readonly value: string
+}
+
+export interface AcpConnectionExtensionContext {
+  readonly connection: acp.ClientConnection
+  readonly questions?: AcpQuestionControls
+}
+
+/// Provider-neutral customization points for ACP-backed native adapters. The
+/// generic connection remains responsible for protocol methods; adapters can
+/// enrich metadata, handle private configuration routes, or decorate the
+/// normalized connection with additional capabilities.
+export interface AcpSdkConnectionCustomization {
+  readonly customizeSessionMetadata?: (
+    sessionId: string,
+    response: AcpSessionMetadataResponse,
+    metadata: AgentSessionMetadata
+  ) => AgentSessionMetadata
+  readonly setConfigOption?: (
+    context: AcpSetConfigOptionContext
+  ) => Promise<ReadonlyArray<SessionConfigOption> | undefined>
+  readonly extendConnection?: (
+    connection: AcpAgentConnection,
+    context: AcpConnectionExtensionContext
+  ) => AcpAgentConnection
+}
+
+export interface AcpSdkConnectionOptions {
+  readonly terminate?: () => void
+  readonly promptCapabilities?: AcpPromptCapabilities
+  readonly questions?: AcpQuestionControls
+  readonly auth?: AcpAuthControls
+  readonly piStartupInfoBySession?: Map<string, string>
+  readonly piSessionError?: (sessionId: string) => Promise<string | undefined>
+  readonly harnessId?: string
+  readonly customization?: AcpSdkConnectionCustomization
+}
+
 /* v8 ignore start -- stdio ACP adapter is exercised by integration/packaging smoke tests. */
 export const sdkConnection = (
   connection: acp.ClientConnection,
   stderr: () => string,
-  terminate: () => void = () => undefined,
-  promptCapabilities: AcpPromptCapabilities = {},
-  questions?: AcpQuestionControls,
-  auth: AcpAuthControls = { methods: [], canLogout: false },
-  piStartupInfoBySession?: Map<string, string>,
-  piSessionError?: (sessionId: string) => Promise<string | undefined>,
-  harnessId?: string,
-  grokGoals: Map<string, SessionGoal> = new Map(),
-  onGrokGoalEvent: (event: RuntimeEvent) => void = () => undefined
+  options: AcpSdkConnectionOptions = {}
 ): AcpAgentConnection => {
   connection.closed.catch(() => undefined)
-
-  // Per-session model list from the ACP model-selection extension, cached so a
-  // later `session/set_model` can rebuild the picker with the new current value.
-  const modelStates = new Map<string, AcpModelState>()
-  // Some adapters (notably pi-acp) expose a native select option whose id is
-  // also `model`. That must go through standard ACP set_config_option; the
-  // optional session/set_model extension is only for agents without a native
-  // model option.
-  const nativeConfigIds = new Map<string, ReadonlySet<string>>()
-  const grokGoalTurns = new Map<string, Promise<void>>()
+  const terminate = options.terminate ?? (() => undefined)
+  const promptCapabilities = options.promptCapabilities ?? {}
+  const questions = options.questions
+  const auth = options.auth ?? { methods: [], canLogout: false }
 
   const mcpServers = (toolGateway: ToolGatewayConfig | undefined) =>
     toolGateway === undefined
@@ -97,62 +107,7 @@ export const sdkConnection = (
           }
         ]
 
-  const runGrokGoalPrompt = (
-    sessionId: string,
-    prompt: string,
-    announceActivity = false
-  ): Promise<void> => {
-    const turnId = randomUUID()
-    onGrokGoalEvent(turnLifecycleEvent(sessionId, turnId, "started"))
-    if (announceActivity) {
-      onGrokGoalEvent({
-        kind: "session.output",
-        subjectId: sessionId,
-        payload: {
-          content: { text: "Starting goal", type: "text" },
-          sessionUpdate: "agent_thought_chunk"
-        }
-      })
-    }
-    const turn = connection.agent
-      .request(acp.methods.agent.session.prompt, {
-        prompt: [{ type: "text", text: prompt }],
-        sessionId
-      })
-      .then(
-        (response) => {
-          onGrokGoalEvent(turnLifecycleEvent(sessionId, turnId, "ended", response.stopReason))
-        },
-        (cause) => {
-          onGrokGoalEvent(turnLifecycleEvent(sessionId, turnId, "ended", "cancelled"))
-          throw cause
-        }
-      )
-    grokGoalTurns.set(sessionId, turn)
-    void turn
-      .catch(() => undefined)
-      .finally(() => {
-        if (grokGoalTurns.get(sessionId) === turn) grokGoalTurns.delete(sessionId)
-      })
-    return turn
-  }
-
-  const stopGrokGoalTurn = async (sessionId: string): Promise<boolean> => {
-    const activeTurn = grokGoalTurns.get(sessionId)
-    if (activeTurn === undefined) return false
-    questions?.cancelQuestions(sessionId)
-    await connection.agent.notify(acp.methods.agent.session.cancel, { sessionId })
-    await activeTurn.catch(() => undefined)
-    return true
-  }
-
-  const currentGoalOrThrow = (sessionId: string): SessionGoal => {
-    const current = grokGoals.get(sessionId)
-    if (current === undefined) throw new Error("No Grok goal is currently set")
-    return current
-  }
-
-  return {
+  const base: AcpAgentConnection = {
     probeAuth: (cwd) =>
       adapterPromise("probeAuth", async () => {
         try {
@@ -240,18 +195,20 @@ export const sdkConnection = (
           cwd,
           mcpServers: mcpServers(toolGateway)
         })) as NewSessionResponse
-        if (piStartupInfoBySession !== undefined) {
+        if (options.piStartupInfoBySession !== undefined) {
           const startupInfo = extractPiStartupInfo(response)
           if (startupInfo !== undefined) {
-            piStartupInfoBySession.set(response.sessionId, startupInfo)
+            options.piStartupInfoBySession.set(response.sessionId, startupInfo)
           }
         }
-        nativeConfigIds.set(response.sessionId, acpConfigOptionIds(response))
-        const modelState = extractAcpModelState(response)
-        if (modelState !== undefined) {
-          modelStates.set(response.sessionId, modelState)
-        }
-        return sessionMetadata(response.sessionId, response, modelState, harnessId)
+        const metadata = sessionMetadata(response.sessionId, response, options.harnessId)
+        return (
+          options.customization?.customizeSessionMetadata?.(
+            response.sessionId,
+            response,
+            metadata
+          ) ?? metadata
+        )
       }),
     loadSession: (sessionId, cwd, toolGateway) =>
       adapterPromise("loadSession", async () => {
@@ -260,12 +217,11 @@ export const sdkConnection = (
           mcpServers: mcpServers(toolGateway),
           sessionId
         })) as AcpSessionMetadataResponse
-        nativeConfigIds.set(sessionId, acpConfigOptionIds(response))
-        const modelState = extractAcpModelState(response)
-        if (modelState !== undefined) {
-          modelStates.set(sessionId, modelState)
-        }
-        return sessionMetadata(sessionId, response, modelState, harnessId)
+        const metadata = sessionMetadata(sessionId, response, options.harnessId)
+        return (
+          options.customization?.customizeSessionMetadata?.(sessionId, response, metadata) ??
+          metadata
+        )
       }),
     prompt: (sessionId, input) =>
       adapterPromise("prompt", async () => {
@@ -273,7 +229,7 @@ export const sdkConnection = (
           prompt: acpPrompt(normalizePromptInput(input), promptCapabilities),
           sessionId
         })
-        const stopDetail = await piSessionError?.(sessionId)
+        const stopDetail = await options.piSessionError?.(sessionId)
         return {
           stopReason: response.stopReason,
           ...(stopDetail === undefined ? {} : { stopDetail })
@@ -292,103 +248,31 @@ export const sdkConnection = (
       }),
     setConfigOption: (sessionId, configId, value) =>
       adapterPromise("setConfigOption", async () => {
-        // The model picker is the ACP model-selection extension, applied via
-        // `session/set_model`. Grok doesn't implement `session/set_config_option`
-        // at all, so routing a model change through it would 404.
-        if (usesAcpModelSelectionExtension(configId, nativeConfigIds.get(sessionId))) {
-          return applyAcpModelSelection(connection, modelStates, sessionId, value)
-        }
-        if (configId === acpReasoningEffortConfigId) {
-          return applyAcpReasoningEffortSelection(connection, modelStates, sessionId, value)
-        }
-        const selection = acpConfigSelection(harnessId, configId, value)
+        const customized = await options.customization?.setConfigOption?.({
+          configId,
+          connection,
+          sessionId,
+          value
+        })
+        if (customized !== undefined) return customized
+        const selection = acpConfigSelection(options.harnessId, configId, value)
         const response = await connection.agent.request(acp.methods.agent.session.setConfigOption, {
           configId: selection.configId,
           sessionId,
           value: selection.value
         })
-        return normalizeAcpConfigOptions(response.configOptions ?? [], harnessId)
+        return normalizeAcpConfigOptions(response.configOptions ?? [], options.harnessId)
       }),
-    ...(harnessId !== "grok-build"
-      ? {}
-      : {
-          setGoal: (sessionId: string, update: SetGoalUpdate) =>
-            adapterPromise("setGoal", async () => {
-              if (update.objective !== undefined) {
-                const objective = update.objective.trim()
-                if (objective.length === 0) throw new Error("Goal objective cannot be empty")
-                if (update.status !== undefined && update.status !== "active") {
-                  throw new Error("A new Grok goal must start active")
-                }
-                if (
-                  update.tokenBudget !== undefined &&
-                  update.tokenBudget !== null &&
-                  (!Number.isSafeInteger(update.tokenBudget) || update.tokenBudget <= 0)
-                ) {
-                  throw new Error("Goal token budget must be a positive integer")
-                }
-                await stopGrokGoalTurn(sessionId)
-                const now = new Date().toISOString()
-                const goal: SessionGoal = {
-                  objective,
-                  status: "active",
-                  tokenBudget: update.tokenBudget ?? null,
-                  tokensUsed: 0,
-                  timeUsedSeconds: 0,
-                  createdAt: now,
-                  updatedAt: now
-                }
-                grokGoals.set(sessionId, goal)
-                const budget =
-                  update.tokenBudget === undefined || update.tokenBudget === null
-                    ? ""
-                    : ` --budget ${update.tokenBudget}`
-                runGrokGoalPrompt(sessionId, `/goal ${objective}${budget}`, true)
-                return goal
-              }
-
-              if (update.tokenBudget !== undefined) {
-                throw new Error("Grok can only set a token budget when starting a goal")
-              }
-              if (update.status === "paused") {
-                currentGoalOrThrow(sessionId)
-                const cancelledActiveTurn = await stopGrokGoalTurn(sessionId)
-                if (!cancelledActiveTurn) {
-                  await runGrokGoalPrompt(sessionId, "/goal pause")
-                }
-                const current = currentGoalOrThrow(sessionId)
-                const goal = {
-                  ...current,
-                  status: "paused" as const,
-                  updatedAt: new Date().toISOString()
-                }
-                grokGoals.set(sessionId, goal)
-                return goal
-              }
-              if (update.status === "active") {
-                const current = currentGoalOrThrow(sessionId)
-                const goal = {
-                  ...current,
-                  status: "active" as const,
-                  updatedAt: new Date().toISOString()
-                }
-                grokGoals.set(sessionId, goal)
-                runGrokGoalPrompt(sessionId, "/goal resume", true)
-                return goal
-              }
-              throw new Error(`Unsupported Grok goal status: ${update.status ?? "unchanged"}`)
-            }),
-          clearGoal: (sessionId: string) =>
-            adapterPromise("clearGoal", async () => {
-              await stopGrokGoalTurn(sessionId)
-              await runGrokGoalPrompt(sessionId, "/goal clear")
-              grokGoals.delete(sessionId)
-            })
-        }),
     close: runtimeEffect("close", () => {
       connection.close(new Error(summarizeProcessFailure(stderr(), "agent connection closed")))
       terminate()
     })
   }
+  return (
+    options.customization?.extendConnection?.(base, {
+      connection,
+      ...(questions === undefined ? {} : { questions })
+    }) ?? base
+  )
 }
 /* v8 ignore stop */

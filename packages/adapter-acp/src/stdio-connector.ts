@@ -5,7 +5,6 @@ import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import { homedir } from "node:os"
 import { Readable, Writable } from "node:stream"
 import { Effect } from "effect"
-import type { SessionGoal } from "@codevisor/api"
 import {
   adapterPromise,
   summarizeProcessFailure,
@@ -14,28 +13,46 @@ import {
   type RuntimeEvent
 } from "@codevisor/agent-runtime"
 import { makeAcpTerminalHost } from "./acp-terminals.js"
-import { createClientApp } from "./client-app.js"
+import { createClientApp, type ConfigureAcpClientApp } from "./client-app.js"
 import { acpClientCapabilities, type AcpConnector } from "./connection.js"
-import {
-  grokAskUserQuestion,
-  grokGoalNotification,
-  grokPlanApprovalQuestion,
-  type GrokMappedQuestion
-} from "./grok.js"
 import { isGenericConnectionClose } from "./internal.js"
 import { isPiStartupInfoNotification, readPiSessionError } from "./pi.js"
 import { runtimeEventFromNotification } from "./notifications.js"
 import {
   acpPermissionOutcome,
   acpPermissionQuestion,
+  type AcpMappedQuestion,
   type PendingAcpQuestion
 } from "./questions.js"
-import { sdkConnection } from "./sdk-connection.js"
+import { sdkConnection, type AcpSdkConnectionCustomization } from "./sdk-connection.js"
+
+export interface AcpStdioExtensionContext {
+  readonly emit: (event: RuntimeEvent) => void
+  readonly enqueueQuestion: <Response>(question: AcpMappedQuestion<Response>) => Promise<Response>
+}
+
+export interface AcpStdioExtension {
+  readonly configureClientApp?: ConfigureAcpClientApp
+  /// Replaces the default notification mapping for this connection. Returning
+  /// an empty array deliberately consumes an update.
+  readonly mapSessionNotification?: (
+    notification: acp.SessionNotification
+  ) => ReadonlyArray<RuntimeEvent>
+  readonly sdkConnectionCustomization?: AcpSdkConnectionCustomization
+}
+
+export type AcpStdioExtensionFactory = (context: AcpStdioExtensionContext) => AcpStdioExtension
+
+export interface StdioAcpConnectorOptions {
+  readonly backgroundTerminals?: BackgroundTerminalIntegration
+  readonly connectTimeoutMs?: number
+  readonly terminalCommandMode?: "argv" | "shell"
+  readonly extension?: AcpStdioExtensionFactory
+}
 
 /* v8 ignore start -- stdio ACP adapter is exercised by integration/packaging smoke tests. */
-export const makeStdioAcpConnector = (
-  backgroundTerminals?: BackgroundTerminalIntegration,
-  connectTimeoutMs = 10_000
+export const makeStdioAcpConnectorWithOptions = (
+  options: StdioAcpConnectorOptions = {}
 ): AcpConnector => ({
   connect: (request, emit) =>
     adapterPromise("connect", async () => {
@@ -59,18 +76,17 @@ export const makeStdioAcpConnector = (
       const stderr = captureStderr(child)
       const pendingQuestions = new Map<string, PendingAcpQuestion>()
       const piStartupInfoBySession = new Map<string, string>()
-      const grokGoals = new Map<string, SessionGoal>()
       const safeEmit = (event: RuntimeEvent): void => {
         void emit(event).catch(() => undefined)
       }
       const terminals =
-        backgroundTerminals === undefined
+        options.backgroundTerminals === undefined
           ? undefined
           : makeAcpTerminalHost({
-              commandMode: request.harnessId === "grok-build" ? "shell" : "argv",
+              commandMode: options.terminalCommandMode ?? "argv",
               emit,
               env: request.env,
-              integration: backgroundTerminals
+              integration: options.backgroundTerminals
             })
       const emitQuestionResolved = (
         questionId: string,
@@ -91,7 +107,7 @@ export const makeStdioAcpConnector = (
         })
       }
       const enqueueQuestion = <Response>(
-        question: GrokMappedQuestion<Response>
+        question: AcpMappedQuestion<Response>
       ): Promise<Response> => {
         const questionId = randomUUID()
         if (question.planDocument !== undefined) {
@@ -120,6 +136,7 @@ export const makeStdioAcpConnector = (
           })
         })
       }
+      const extension = options.extension?.({ emit: safeEmit, enqueueQuestion })
       const connection = createClientApp(
         (notification) => {
           const startupInfo = piStartupInfoBySession.get(notification.sessionId)
@@ -131,7 +148,10 @@ export const makeStdioAcpConnector = (
             piStartupInfoBySession.delete(notification.sessionId)
             return
           }
-          safeEmit(runtimeEventFromNotification(notification))
+          const events = extension?.mapSessionNotification?.(notification) ?? [
+            runtimeEventFromNotification(notification)
+          ]
+          for (const event of events) safeEmit(event)
         },
         (params) => {
           const question = acpPermissionQuestion(params)
@@ -147,32 +167,7 @@ export const makeStdioAcpConnector = (
           })
         },
         terminals,
-        request.harnessId === "grok-build"
-          ? {
-              requestPlanApproval: (params) => {
-                const question = grokPlanApprovalQuestion(params)
-                return question === undefined
-                  ? Promise.resolve({ outcome: "cancelled" as const })
-                  : enqueueQuestion(question)
-              },
-              askUserQuestion: (params) => {
-                const question = grokAskUserQuestion(params)
-                return question === undefined
-                  ? Promise.resolve({ outcome: "cancelled" as const })
-                  : enqueueQuestion(question)
-              },
-              onSessionNotification: (params) => {
-                const mapped = grokGoalNotification(params, (sessionId) => grokGoals.get(sessionId))
-                if (mapped === undefined) return
-                if (mapped.goal === undefined) {
-                  grokGoals.delete(mapped.sessionId)
-                } else {
-                  grokGoals.set(mapped.sessionId, mapped.goal)
-                }
-                safeEmit(mapped.event)
-              }
-            }
-          : undefined
+        extension?.configureClientApp
       ).connect(
         acp.ndJsonStream(
           Writable.toWeb(child.stdin) as WritableStream<Uint8Array>,
@@ -237,8 +232,8 @@ export const makeStdioAcpConnector = (
             }),
             spawnFailure
           ]),
-          connectTimeoutMs,
-          `ACP initialize timed out after ${connectTimeoutMs}ms`
+          options.connectTimeoutMs ?? 10_000,
+          `ACP initialize timed out after ${options.connectTimeoutMs ?? 10_000}ms`
         )
       } catch (cause) {
         const raw = cause instanceof Error ? cause : new Error(String(cause))
@@ -255,17 +250,15 @@ export const makeStdioAcpConnector = (
         terminate()
         throw error
       }
-      const established = sdkConnection(
-        connection,
-        stderr,
-        () => {
+      const established = sdkConnection(connection, stderr, {
+        terminate: () => {
           cancelQuestions(undefined)
           terminals?.closeAll()
           terminate()
         },
-        initialized?.agentCapabilities?.promptCapabilities ?? {},
-        { answerQuestion, cancelQuestions },
-        {
+        promptCapabilities: initialized?.agentCapabilities?.promptCapabilities ?? {},
+        questions: { answerQuestion, cancelQuestions },
+        auth: {
           methods: (initialized?.authMethods ?? []).map((method) => ({
             id: method.id,
             name: method.name,
@@ -273,14 +266,18 @@ export const makeStdioAcpConnector = (
           })),
           canLogout: initialized?.agentCapabilities?.auth?.logout != null
         },
-        request.harnessId === "pi" ? piStartupInfoBySession : undefined,
-        request.harnessId === "pi"
-          ? (sessionId) => readPiSessionError(sessionId, request.env.HOME ?? homedir())
-          : undefined,
-        request.harnessId,
-        grokGoals,
-        safeEmit
-      )
+        ...(request.harnessId === "pi"
+          ? {
+              piStartupInfoBySession,
+              piSessionError: (sessionId: string) =>
+                readPiSessionError(sessionId, request.env.HOME ?? homedir())
+            }
+          : {}),
+        harnessId: request.harnessId,
+        ...(extension?.sdkConnectionCustomization === undefined
+          ? {}
+          : { customization: extension.sdkConnectionCustomization })
+      })
       // Newer ACP agents report identity in the initialize response; read it
       // defensively so older protocol versions stay decodable.
       const reportedInfo = (
@@ -298,6 +295,15 @@ export const makeStdioAcpConnector = (
       }
     })
 })
+
+export const makeStdioAcpConnector = (
+  backgroundTerminals?: BackgroundTerminalIntegration,
+  connectTimeoutMs = 10_000
+): AcpConnector =>
+  makeStdioAcpConnectorWithOptions({
+    connectTimeoutMs,
+    ...(backgroundTerminals === undefined ? {} : { backgroundTerminals })
+  })
 
 /// Result of a one-shot ACP handshake probe — the "Test Connection" action
 /// for user-defined custom harnesses.

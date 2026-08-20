@@ -13,13 +13,6 @@ import type {
   SessionModeState
 } from "@codevisor/api"
 import type { AgentSessionMetadata } from "@codevisor/agent-runtime"
-import { grokModeState } from "./grok.js"
-import {
-  acpModelConfigOption,
-  acpReasoningEffortConfigId,
-  acpReasoningEffortConfigOption,
-  type AcpModelState
-} from "./model-selection.js"
 
 export const acpConfigSelection = (
   harnessId: string | undefined,
@@ -38,36 +31,17 @@ export interface AcpSessionMetadataResponse {
 export const sessionMetadata = (
   sessionId: string,
   response: AcpSessionMetadataResponse,
-  modelState: AcpModelState | undefined,
   harnessId?: string
 ): AgentSessionMetadata => {
   const configOptions = normalizeAcpConfigOptions(response.configOptions ?? [], harnessId)
-  // Append each synthesized picker unless the adapter already reported an
-  // equivalent native option — don't double up.
-  const withModel = [...configOptions]
-  if (modelState !== undefined) {
-    if (!withModel.some((option) => option.category === "model")) {
-      withModel.push(acpModelConfigOption(modelState))
-    }
-    const reasoning = acpReasoningEffortConfigOption(modelState)
-    if (
-      reasoning !== undefined &&
-      !withModel.some((option) => option.id === acpReasoningEffortConfigId)
-    ) {
-      withModel.push(reasoning)
-    }
-  }
   const modes =
     response.modes === undefined || response.modes === null
-      ? harnessId === "grok-build"
-        ? grokModeState
-        : undefined
+      ? undefined
       : normalizeModeState(response.modes)
   return {
     sessionId,
     ...(modes === undefined ? {} : { modes }),
-    ...(harnessId === "grok-build" ? { supportsGoals: true } : {}),
-    configOptions: withModel
+    configOptions
   }
 }
 

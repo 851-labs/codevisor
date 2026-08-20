@@ -1,17 +1,17 @@
 import * as acp from "@agentclientprotocol/sdk"
 import type { AcpTerminalHost } from "./acp-terminals.js"
-import type { GrokAskUserQuestionResponse, GrokPlanApprovalResponse } from "./grok.js"
 import type { AcpPermissionOutcome } from "./questions.js"
-import type { AcpGrokControls } from "./sdk-connection.js"
+
+export type ConfigureAcpClientApp = (app: acp.ClientApp) => acp.ClientApp
 
 /* v8 ignore start -- stdio ACP adapter is exercised by integration/packaging smoke tests. */
 export const createClientApp = (
   onSessionUpdate: (notification: acp.SessionNotification) => void,
   onPermissionRequest: (params: unknown) => Promise<AcpPermissionOutcome>,
   terminals?: AcpTerminalHost,
-  grok?: AcpGrokControls
+  configure?: ConfigureAcpClientApp
 ): acp.ClientApp => {
-  const app = acp
+  let app = acp
     .client({ name: "Codevisor" })
     .onNotification(acp.methods.client.session.update, ({ params }) => {
       onSessionUpdate(params)
@@ -22,29 +22,7 @@ export const createClientApp = (
     .onRequest(acp.methods.client.session.requestPermission, ({ params }) =>
       onPermissionRequest(params)
     )
-  if (grok !== undefined) {
-    const planApproval = ({ params }: { readonly params: unknown }) =>
-      grok.requestPlanApproval(params)
-    const askUserQuestion = ({ params }: { readonly params: unknown }) =>
-      grok.askUserQuestion(params)
-    for (const method of ["_x.ai/exit_plan_mode", "x.ai/exit_plan_mode"]) {
-      app.onRequest<unknown, GrokPlanApprovalResponse>(method, (params) => params, planApproval)
-    }
-    for (const method of ["_x.ai/ask_user_question", "x.ai/ask_user_question"]) {
-      app.onRequest<unknown, GrokAskUserQuestionResponse>(
-        method,
-        (params) => params,
-        askUserQuestion
-      )
-    }
-    for (const method of ["_x.ai/session_notification", "x.ai/session_notification"]) {
-      app.onNotification<unknown>(
-        method,
-        (params) => params,
-        ({ params }) => grok.onSessionNotification(params)
-      )
-    }
-  }
+  if (configure !== undefined) app = configure(app)
   if (terminals === undefined) {
     return app
   }
