@@ -7,13 +7,11 @@ import SwiftUI
 struct SidebarWorkspaceRow: View {
     let item: SidebarWorkspaceListItem
     let store: SessionStore?
-    var isNested = false
     var isExpanded = false
     var onToggle: (() -> Void)? = nil
     let isSelected: Bool
     let isReordering: Bool
     let titleFont: Font
-    let hierarchyIndent: CGFloat
     let onActivateSession: (ChatSession) -> Void
     let onArchive: () -> Void
     let onRename: () -> Void
@@ -83,7 +81,6 @@ struct SidebarWorkspaceRow: View {
                 }
             }
             .padding(.horizontal, 8)
-            .padding(.leading, isNested ? hierarchyIndent : 0)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
@@ -143,18 +140,9 @@ struct SidebarWorkspaceRow: View {
         return "square.grid.2x2"
     }
 
+    /// Disclosure labels identify the workspace only. Project and worktree
+    /// context belongs on each child chat, matching the iOS organization.
     private var title: String {
-        guard !isNested, let project = item.project else {
-            return item.workspace.name
-        }
-        guard
-            let worktree = item.primarySession?.worktreeName?
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-            !worktree.isEmpty,
-            worktree.localizedCaseInsensitiveCompare(project.name) != .orderedSame
-        else {
-            return project.name
-        }
-        return "\(project.name) · \(worktree)"
+        item.workspace.name.isEmpty ? "Workspace" : item.workspace.name
     }
 }

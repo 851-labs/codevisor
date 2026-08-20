@@ -134,10 +134,10 @@ struct SidebarView: View {
         visibleProjects.filter { !$0.isScratch }
     }
 
-    /// Workspaces whose chats sit at the root of the "by project" list:
-    /// scratch-backed ones, plus any whose project no longer resolves.
-    private var looseWorkspaceItems: [SidebarWorkspaceListItem] {
-        workspaceItems.filter { $0.project?.isScratch != false }
+    /// Match iOS by placing scratch-backed chats at the root and keeping
+    /// workspace containers out of the "by project" organization.
+    private var looseProjectSessions: [SidebarSessionListItem] {
+        chronologicalSessions.filter(\.project.isScratch)
     }
 
     private var chronologicalSessions: [SidebarSessionListItem] {
@@ -270,8 +270,9 @@ struct SidebarView: View {
         withAnimation(.snappy(duration: 0.28)) {
             if organization == .byProject {
                 expanded.formUnion(workspaces.map(\.projectId))
+            } else {
+                expandedWorkspaces.formUnion(workspaces.map(\.id))
             }
-            expandedWorkspaces.formUnion(workspaces.map(\.id))
         }
     }
 
@@ -323,16 +324,16 @@ struct SidebarView: View {
                                 .geometryGroup()
                         }
                         // Chats without a real project (scratch-backed
-                        // workspaces) sit at the root as plain chat rows —
-                        // a single-use folder is not a project.
-                        ForEach(looseWorkspaceItems) { item in
-                            workspaceFolder(item, hierarchyDepth: 0)
+                        // sessions) sit at the root as plain chat rows — a
+                        // single-use folder is not a project.
+                        ForEach(looseProjectSessions) { item in
+                            reorderableChronologicalSessionRow(item.session, project: item.project)
                                 .geometryGroup()
                                 .transition(.identity)
                         }
                     } else if organization == .byWorkspace {
                         ForEach(workspaceItems) { item in
-                            workspaceFolder(item, hierarchyDepth: 0)
+                            workspaceFolder(item)
                                 .geometryGroup()
                                 .transition(.identity)
                         }
@@ -344,7 +345,7 @@ struct SidebarView: View {
                         }
                     }
                     if organization == .byProject && projectSectionProjects.isEmpty
-                        && looseWorkspaceItems.isEmpty
+                        && looseProjectSessions.isEmpty
                     {
                         Text("No projects yet")
                             .font(.caption)
@@ -595,13 +596,13 @@ struct SidebarView: View {
         // compact enough to reorder. Ending the drag restores every folder
         // exactly as the user left it.
         if isProjectVisuallyExpanded(project.id) {
-            let items = workspaceItems.filter { $0.workspace.projectId == project.id }
-            ForEach(items) { item in
-                workspaceFolder(item, hierarchyDepth: 1)
+            let sessions = orderedSessions(in: project)
+            ForEach(sessions) { session in
+                reorderableChronologicalSessionRow(session, project: project, isNested: true)
                     .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
             }
-            if items.isEmpty {
-                Text("No workspaces yet")
+            if sessions.isEmpty {
+                Text("No chats yet")
                     .font(.subheadline)
                     .foregroundStyle(.tertiary)
                     .padding(.leading, 16)
@@ -612,36 +613,31 @@ struct SidebarView: View {
     }
 
     @ViewBuilder
-    private func workspaceFolder(
-        _ item: SidebarWorkspaceListItem,
-        hierarchyDepth: Int
-    ) -> some View {
-        if item.sessions.count == 1, let session = item.sessions.first {
-            sessionRow(session, hierarchyDepth: hierarchyDepth)
-        } else {
-            workspaceRow(
-                item,
-                isNested: hierarchyDepth > 0,
-                isExpanded: expandedWorkspaces.contains(item.id),
-                onToggle: { toggleWorkspace(item.id) }
-            )
+    private func workspaceFolder(_ item: SidebarWorkspaceListItem) -> some View {
+        let isExpanded = expandedWorkspaces.contains(item.id)
+        workspaceRow(
+            item,
+            isExpanded: isExpanded,
+            onToggle: { toggleWorkspace(item.id) }
+        )
 
-            if expandedWorkspaces.contains(item.id) {
+        if expandedWorkspaces.contains(item.id) {
+            if let project = item.project {
                 ForEach(item.sessions) { session in
-                    sessionRow(session, hierarchyDepth: hierarchyDepth + 1)
+                    reorderableChronologicalSessionRow(session, project: project, isNested: true)
                         .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
                 }
-                if item.sessions.isEmpty {
-                    Text("No tabs yet")
-                        .font(.subheadline)
-                        .foregroundStyle(.tertiary)
-                        .padding(
-                            .leading,
-                            8 + CGFloat(hierarchyDepth + 1) * hierarchyIndent + 24
-                        )
-                        .padding(.vertical, 3)
-                        .transition(.opacity)
-                }
+            }
+            if item.sessions.isEmpty {
+                Text("No tabs yet")
+                    .font(.subheadline)
+                    .foregroundStyle(.tertiary)
+                    .padding(
+                        .leading,
+                        8 + hierarchyIndent + 24
+                    )
+                    .padding(.vertical, 3)
+                    .transition(.opacity)
             }
         }
     }
@@ -789,14 +785,9 @@ struct SidebarView: View {
 
     @ViewBuilder
     private func archivedSessionRow(_ session: ChatSession, project: Project) -> some View {
-        switch organization {
-        case .compact:
-            // The Agents list pairs each chat with its project subtitle.
-            chronologicalSessionRow(session, project: project, isArchivedEntry: true)
-        case .byProject, .byWorkspace:
-            // Both nest chats under a heading, so the compact row is the match.
-            sessionRow(session, isArchivedEntry: true)
-        }
+        // Every organization deliberately shares the exact same agent row;
+        // only the live hierarchy around it changes.
+        chronologicalSessionRow(session, project: project, isArchivedEntry: true)
     }
 
     /// Restores a chat and revives its workspace, mirroring the archive
@@ -869,7 +860,6 @@ struct SidebarView: View {
     /// primary-chat activation behavior.
     private func workspaceRow(
         _ item: SidebarWorkspaceListItem,
-        isNested: Bool = false,
         isExpanded: Bool = false,
         onToggle: (() -> Void)? = nil
     ) -> some View {
@@ -886,13 +876,11 @@ struct SidebarView: View {
         return SidebarWorkspaceRow(
             item: item,
             store: store,
-            isNested: isNested,
             isExpanded: isExpanded,
             onToggle: onToggle,
             isSelected: isSelected,
             isReordering: isReordering,
             titleFont: itemTitleFont,
-            hierarchyIndent: hierarchyIndent,
             onActivateSession: { activateSession($0) },
             onArchive: { archiveWorkspace(item) },
             onRename: {
@@ -946,7 +934,8 @@ struct SidebarView: View {
         _ session: ChatSession,
         project: Project,
         isDragPreview: Bool = false,
-        isArchivedEntry: Bool = false
+        isArchivedEntry: Bool = false,
+        isNested: Bool = false
     ) -> some View {
         let isSelected =
             !isDragPreview
@@ -954,15 +943,17 @@ struct SidebarView: View {
             && selection == .session(serverId: session.serverId, id: session.id)
         // Manual-order chat rows attach this gesture alongside their native
         // drag source so activation does not prevent drag-to-reorder.
-        let activatesOnMouseDown = order != .none
         return SidebarChronologicalSessionRow(
             session: session,
             project: project,
             store: store,
             isDragPreview: isDragPreview,
             isArchivedEntry: isArchivedEntry,
+            hierarchyDepth: isNested ? 1 : 0,
+            hierarchyIndent: hierarchyIndent,
+            showsProjectName: !isNested || organization != .byProject,
             isSelected: isSelected,
-            activatesOnMouseDown: activatesOnMouseDown,
+            activatesOnMouseDown: order != .none,
             isReordering: isReordering,
             titleFont: itemTitleFont,
             isUnread: { isUnread(session) },
@@ -1057,14 +1048,23 @@ struct SidebarView: View {
     }
 
     @ViewBuilder
-    private func reorderableChronologicalSessionRow(_ session: ChatSession, project: Project) -> some View {
+    private func reorderableChronologicalSessionRow(
+        _ session: ChatSession,
+        project: Project,
+        isNested: Bool = false
+    ) -> some View {
         if order == .none {
-            chronologicalSessionRow(session, project: project)
+            chronologicalSessionRow(session, project: project, isNested: isNested)
                 .onDrag(
                     { sessionDragItemProvider(for: session) },
                     preview: {
-                        chronologicalSessionRow(session, project: project, isDragPreview: true)
-                            .frame(width: 260)
+                        chronologicalSessionRow(
+                            session,
+                            project: project,
+                            isDragPreview: true,
+                            isNested: isNested
+                        )
+                        .frame(width: 260)
                     }
                 )
                 .simultaneousGesture(sessionActivationGesture(session))
@@ -1078,7 +1078,7 @@ struct SidebarView: View {
                     )
                 )
         } else {
-            chronologicalSessionRow(session, project: project)
+            chronologicalSessionRow(session, project: project, isNested: isNested)
         }
     }
 

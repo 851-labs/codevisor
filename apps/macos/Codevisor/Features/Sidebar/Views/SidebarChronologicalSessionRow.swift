@@ -8,6 +8,9 @@ struct SidebarChronologicalSessionRow: View {
     let store: SessionStore?
     var isDragPreview = false
     var isArchivedEntry = false
+    var hierarchyDepth = 0
+    var hierarchyIndent: CGFloat = 8
+    var showsProjectName = true
     let isSelected: Bool
     /// Manual-order chat rows attach this gesture alongside their native
     /// drag source so activation does not prevent drag-to-reorder.
@@ -38,7 +41,7 @@ struct SidebarChronologicalSessionRow: View {
                     Text(session.title)
                         .font(titleFont)
                         .lineLimit(1)
-                    Text([project.name, session.worktreeName].compactMap { $0 }.joined(separator: " · "))
+                    Text(subtitle)
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
@@ -52,6 +55,7 @@ struct SidebarChronologicalSessionRow: View {
                 )
             }
             .padding(.horizontal, 8)
+            .padding(.leading, CGFloat(hierarchyDepth) * hierarchyIndent)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
@@ -97,6 +101,20 @@ struct SidebarChronologicalSessionRow: View {
                 )
             }
         }
+    }
+
+    private var subtitle: String {
+        if !showsProjectName {
+            guard let worktreeName = session.worktreeName, !worktreeName.isEmpty else {
+                return project.name
+            }
+            return worktreeName
+        }
+
+        return [project.name, session.worktreeName]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+            .joined(separator: " · ")
     }
 
     /// Activate a chat as soon as the primary pointer goes down. Keeping this
