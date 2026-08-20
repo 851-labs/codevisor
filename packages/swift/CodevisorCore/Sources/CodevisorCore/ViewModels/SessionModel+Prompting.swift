@@ -99,21 +99,27 @@ extension SessionModel {
         }
     }
 
-    public func updateQueuedPrompt(id: String, text: String) async {
+    @discardableResult
+    public func updateQueuedPrompt(id: String, text: String) async -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty else { return false }
         do {
             _ = try await transport.updateQueuedPrompt(id: id, text: trimmed)
+            return true
         } catch {
             errorMessage = serverErrorMessage(error)
+            return false
         }
     }
 
-    public func deleteQueuedPrompt(id: String) async {
+    @discardableResult
+    public func deleteQueuedPrompt(id: String) async -> Bool {
         do {
             try await transport.deleteQueuedPrompt(id: id)
+            return true
         } catch {
             errorMessage = serverErrorMessage(error)
+            return false
         }
     }
 

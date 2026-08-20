@@ -158,6 +158,9 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
     private var _promptQueueResponse: [ServerPromptQueueItem] = []
     private var _promptQueueGate: AsyncStream<Void>?
     private var _promptQueueRequestCount = 0
+    private var _queueUpdates: [(id: String, text: String)] = []
+    private var _queueDeletes: [String] = []
+    private var _queueMutationFailuresRemaining = 0
     private var _goalUpdates: [(String?, GoalStatus?, TokenBudgetUpdate)] = []
     private var _goalClearCount = 0
     private var _lastBudget: Int?
@@ -278,6 +281,18 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
         lock.withLock { _promptQueueGate = gate }
     }
 
+    var queueUpdates: [(id: String, text: String)] {
+        lock.withLock { _queueUpdates }
+    }
+
+    var queueDeletes: [String] {
+        lock.withLock { _queueDeletes }
+    }
+
+    func failNextQueueMutation() {
+        lock.withLock { _queueMutationFailuresRemaining += 1 }
+    }
+
     var goalUpdates: [(String?, GoalStatus?, TokenBudgetUpdate)] {
         lock.withLock { _goalUpdates }
     }
@@ -368,6 +383,41 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
             for await _ in gate { break }
         }
         return response
+    }
+
+    func updateQueuedPrompt(
+        sessionId: UUID,
+        queueItemId: String,
+        text: String
+    ) async throws -> ServerPromptQueueItem {
+        let shouldFail = lock.withLock {
+            guard _queueMutationFailuresRemaining > 0 else {
+                _queueUpdates.append((queueItemId, text))
+                return false
+            }
+            _queueMutationFailuresRemaining -= 1
+            return true
+        }
+        if shouldFail { throw URLError(.networkConnectionLost) }
+        return ServerPromptQueueItem(
+            id: queueItemId,
+            sessionId: sessionId.uuidString,
+            text: text,
+            createdAt: "2026-08-20T00:00:00.000Z",
+            updatedAt: "2026-08-20T00:00:00.000Z"
+        )
+    }
+
+    func deleteQueuedPrompt(sessionId _: UUID, queueItemId: String) async throws {
+        let shouldFail = lock.withLock {
+            guard _queueMutationFailuresRemaining > 0 else {
+                _queueDeletes.append(queueItemId)
+                return false
+            }
+            _queueMutationFailuresRemaining -= 1
+            return true
+        }
+        if shouldFail { throw URLError(.networkConnectionLost) }
     }
 
     func upsertSession(_ session: ChatSession) async throws -> ServerSession { fatalError("unused") }

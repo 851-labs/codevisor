@@ -21,6 +21,7 @@ struct IOSComposerAccessoryStack: View {
     private var hasInformationalAccessory: Bool {
         guard !isComposerExpanded else { return false }
         return controller.visibleTodos != nil
+            || !controller.queuedPrompts.isEmpty
             || (controller.configurationValidationError == nil
                 && controller.configurationAdjustmentMessage != nil)
             || controller.modelFallbackMessage != nil
@@ -39,6 +40,14 @@ struct IOSComposerAccessoryStack: View {
                         isExpanded: $controller.isTodosExpanded,
                         glassNamespace: glassNamespace,
                         maximumExpandedHeight: maximumTodoHeight
+                    )
+                    .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
+                }
+
+                if !controller.queuedPrompts.isEmpty {
+                    IOSPromptQueueAccessory(
+                        controller: controller,
+                        glassNamespace: glassNamespace
                     )
                     .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
                 }
@@ -82,6 +91,10 @@ struct IOSComposerAccessoryStack: View {
         .padding(.bottom, hasVisibleAccessory ? ComposerGlassStyle.clusterSpacing : 0)
         .animation(Motion.quick(reduceMotion: reduceMotion), value: hasVisibleAccessory)
         .animation(Motion.quick(reduceMotion: reduceMotion), value: controller.visibleTodos != nil)
+        .animation(
+            Motion.quick(reduceMotion: reduceMotion),
+            value: controller.queuedPrompts.map(\.id)
+        )
         .animation(Motion.quick(reduceMotion: reduceMotion), value: controller.modelFallbackMessage)
         .animation(
             Motion.quick(reduceMotion: reduceMotion),

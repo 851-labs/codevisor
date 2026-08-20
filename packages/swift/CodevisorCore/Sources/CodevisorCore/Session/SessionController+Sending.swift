@@ -256,12 +256,14 @@ extension SessionController {
         await model?.cancel()
     }
 
-    public func updateQueuedPrompt(id: String, text: String) async {
-        await model?.updateQueuedPrompt(id: id, text: text)
+    @discardableResult
+    public func updateQueuedPrompt(id: String, text: String) async -> Bool {
+        await model?.updateQueuedPrompt(id: id, text: text) ?? false
     }
 
-    public func deleteQueuedPrompt(id: String) async {
-        await model?.deleteQueuedPrompt(id: id)
+    @discardableResult
+    public func deleteQueuedPrompt(id: String) async -> Bool {
+        await model?.deleteQueuedPrompt(id: id) ?? false
     }
 
     public func setMode(_ modeId: String) async {
