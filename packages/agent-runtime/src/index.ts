@@ -419,13 +419,15 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
   {
     detectBinaries: ["cursor-agent"],
     id: "cursor",
+    installHint: "curl https://cursor.com/install -fsS | bash",
+    installMethods: [{ command: "curl https://cursor.com/install -fsS | bash", kind: "curl" }],
     launch: {
       args: ["--force", "--sandbox", "disabled", "acp"],
       command: "cursor-agent",
       kind: "executable"
     },
     name: "Cursor",
-    provider: "acp",
+    provider: "cursor",
     symbolName: "cursorarrow.rays"
   },
   // Amp's harness runs through the separate `amp-acp` adapter binary, not the

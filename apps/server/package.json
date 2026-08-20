@@ -20,6 +20,7 @@
     "@codevisor/adapter-acp": "workspace:*",
     "@codevisor/adapter-claude": "workspace:*",
     "@codevisor/adapter-codex": "workspace:*",
+    "@codevisor/adapter-cursor": "workspace:*",
     "@codevisor/adapter-grok-build": "workspace:*",
     "@codevisor/agent-runtime": "workspace:*",
     "@codevisor/api": "workspace:*",

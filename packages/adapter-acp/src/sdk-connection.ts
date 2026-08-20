@@ -79,7 +79,6 @@ export interface AcpSdkConnectionOptions {
   readonly auth?: AcpAuthControls
   readonly piStartupInfoBySession?: Map<string, string>
   readonly piSessionError?: (sessionId: string) => Promise<string | undefined>
-  readonly harnessId?: string
   readonly customization?: AcpSdkConnectionCustomization
 }
 
@@ -201,7 +200,7 @@ export const sdkConnection = (
             options.piStartupInfoBySession.set(response.sessionId, startupInfo)
           }
         }
-        const metadata = sessionMetadata(response.sessionId, response, options.harnessId)
+        const metadata = sessionMetadata(response.sessionId, response)
         return (
           options.customization?.customizeSessionMetadata?.(
             response.sessionId,
@@ -217,7 +216,7 @@ export const sdkConnection = (
           mcpServers: mcpServers(toolGateway),
           sessionId
         })) as AcpSessionMetadataResponse
-        const metadata = sessionMetadata(sessionId, response, options.harnessId)
+        const metadata = sessionMetadata(sessionId, response)
         return (
           options.customization?.customizeSessionMetadata?.(sessionId, response, metadata) ??
           metadata
@@ -255,13 +254,13 @@ export const sdkConnection = (
           value
         })
         if (customized !== undefined) return customized
-        const selection = acpConfigSelection(options.harnessId, configId, value)
+        const selection = acpConfigSelection(configId, value)
         const response = await connection.agent.request(acp.methods.agent.session.setConfigOption, {
           configId: selection.configId,
           sessionId,
           value: selection.value
         })
-        return normalizeAcpConfigOptions(response.configOptions ?? [], options.harnessId)
+        return normalizeAcpConfigOptions(response.configOptions ?? [])
       }),
     close: runtimeEffect("close", () => {
       connection.close(new Error(summarizeProcessFailure(stderr(), "agent connection closed")))

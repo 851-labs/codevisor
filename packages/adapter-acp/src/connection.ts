@@ -14,16 +14,9 @@ import type { SessionGoal } from "@codevisor/api"
 
 export const acpProtocolVersion = acp.PROTOCOL_VERSION
 
-/// Cursor gates its native per-model Reasoning, Thinking, Effort, Context,
-/// and Fast controls behind this ACP client capability. Other harnesses do
-/// not receive Cursor's proprietary metadata.
-export const acpClientCapabilities = (
-  harnessId: string,
-  terminal: boolean
-): acp.ClientCapabilities => ({
+export const acpClientCapabilities = (terminal: boolean): acp.ClientCapabilities => ({
   plan: {},
-  terminal,
-  ...(harnessId === "cursor" ? { _meta: { parameterizedModelPicker: true } } : {})
+  terminal
 })
 
 export interface AcpHarnessLaunchRequest {
@@ -53,7 +46,11 @@ export interface AcpAgentConnection {
     sessionId: string,
     input: string | PromptInput
   ) => Effect.Effect<
-    { readonly stopReason: string; readonly stopDetail?: string },
+    {
+      readonly stopReason: string
+      readonly stopDetail?: string
+      readonly retryable?: boolean
+    },
     AgentRuntimeError
   >
   readonly cancel: (sessionId: string) => Effect.Effect<void, AgentRuntimeError>

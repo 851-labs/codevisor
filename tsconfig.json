@@ -26,6 +26,9 @@
       "path": "./packages/adapter-codex"
     },
     {
+      "path": "./packages/adapter-cursor"
+    },
+    {
       "path": "./packages/adapter-grok-build"
     },
     {

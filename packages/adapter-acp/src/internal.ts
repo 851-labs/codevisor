@@ -6,7 +6,8 @@ export const turnLifecycleEvent = (
   turnId: string,
   turnState: "started" | "ended",
   stopReason?: string,
-  stopDetail?: string
+  stopDetail?: string,
+  retryable?: boolean
 ): RuntimeEvent => ({
   kind: "session.updated",
   subjectId: sessionId,
@@ -15,7 +16,8 @@ export const turnLifecycleEvent = (
     turnId,
     turnState,
     ...(stopReason === undefined ? {} : { stopReason }),
-    ...(stopDetail === undefined ? {} : { stopDetail })
+    ...(stopDetail === undefined ? {} : { stopDetail }),
+    ...(retryable === true ? { retryable: true } : {})
   }
 })
 

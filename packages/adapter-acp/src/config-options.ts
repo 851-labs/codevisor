@@ -15,13 +15,9 @@ import type {
 import type { AgentSessionMetadata } from "@codevisor/agent-runtime"
 
 export const acpConfigSelection = (
-  harnessId: string | undefined,
   configId: string,
   value: string
-): { readonly configId: string; readonly value: string } =>
-  harnessId === "cursor" && configId === "speed"
-    ? { configId: "fast", value: value === "fast" ? "true" : "false" }
-    : { configId, value }
+): { readonly configId: string; readonly value: string } => ({ configId, value })
 
 export interface AcpSessionMetadataResponse {
   readonly configOptions?: ReadonlyArray<AcpSessionConfigOption> | null
@@ -30,10 +26,9 @@ export interface AcpSessionMetadataResponse {
 
 export const sessionMetadata = (
   sessionId: string,
-  response: AcpSessionMetadataResponse,
-  harnessId?: string
+  response: AcpSessionMetadataResponse
 ): AgentSessionMetadata => {
-  const configOptions = normalizeAcpConfigOptions(response.configOptions ?? [], harnessId)
+  const configOptions = normalizeAcpConfigOptions(response.configOptions ?? [])
   const modes =
     response.modes === undefined || response.modes === null
       ? undefined
@@ -80,30 +75,11 @@ export const normalizeModeState = (state: AcpSessionModeState): SessionModeState
 })
 
 export const normalizeAcpConfigOptions = (
-  options: ReadonlyArray<AcpSessionConfigOption>,
-  harnessId?: string
+  options: ReadonlyArray<AcpSessionConfigOption>
 ): ReadonlyArray<SessionConfigOption> =>
   options.flatMap((option) => {
     if (option.type !== "select" || typeof option.currentValue !== "string") {
       return []
-    }
-    if (harnessId === "cursor" && option.id === "context") return []
-    if (harnessId === "cursor" && option.id === "fast") {
-      return [
-        {
-          id: "speed",
-          name: "Speed",
-          ...(option.description === undefined || option.description === null
-            ? {}
-            : { description: option.description }),
-          category: "speed",
-          currentValue: option.currentValue === "true" ? "fast" : "standard",
-          options: [
-            { name: "Standard", value: "standard" },
-            { name: "Fast", value: "fast" }
-          ]
-        }
-      ]
     }
     return [
       {

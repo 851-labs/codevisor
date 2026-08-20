@@ -32,6 +32,9 @@ export interface AcpStdioExtensionContext {
 }
 
 export interface AcpStdioExtension {
+  readonly customizeClientCapabilities?: (
+    capabilities: acp.ClientCapabilities
+  ) => acp.ClientCapabilities
   readonly configureClientApp?: ConfigureAcpClientApp
   /// Replaces the default notification mapping for this connection. Returning
   /// an empty array deliberately consumes an update.
@@ -218,11 +221,13 @@ export const makeStdioAcpConnectorWithOptions = (
         )
       })
       let initialized: acp.InitializeResponse
+      const clientCapabilities = acpClientCapabilities(terminals !== undefined)
       try {
         initialized = await promiseWithTimeout(
           Promise.race([
             connection.agent.request(acp.methods.agent.initialize, {
-              clientCapabilities: acpClientCapabilities(request.harnessId, terminals !== undefined),
+              clientCapabilities:
+                extension?.customizeClientCapabilities?.(clientCapabilities) ?? clientCapabilities,
               clientInfo: {
                 name: "Codevisor",
                 title: "Codevisor",
@@ -273,7 +278,6 @@ export const makeStdioAcpConnectorWithOptions = (
                 readPiSessionError(sessionId, request.env.HOME ?? homedir())
             }
           : {}),
-        harnessId: request.harnessId,
         ...(extension?.sdkConnectionCustomization === undefined
           ? {}
           : { customization: extension.sdkConnectionCustomization })

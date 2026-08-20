@@ -155,7 +155,16 @@ export const makeAcpProvider = (
         )
         const result = yield* connection.prompt(sessionId, input)
         yield* adapterPromise("promptTurnEnd", () =>
-          emit(turnLifecycleEvent(sessionId, turnId, "ended", result.stopReason, result.stopDetail))
+          emit(
+            turnLifecycleEvent(
+              sessionId,
+              turnId,
+              "ended",
+              result.stopReason,
+              result.stopDetail,
+              result.retryable
+            )
+          )
         )
         return result
       }),

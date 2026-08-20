@@ -84,7 +84,7 @@ export interface QuestionAnswer {
   readonly answers?: Readonly<Record<string, QuestionAnswerEntry>>
 }
 
-export type ProviderId = "acp" | "claude" | "codex" | "grok-build"
+export type ProviderId = "acp" | "claude" | "codex" | "cursor" | "grok-build"
 
 export type HarnessLaunch =
   | {

@@ -57,6 +57,46 @@ describe("@codevisor/agent-runtime", () => {
     )
   })
 
+  it("preserves retryable terminal metadata from an extended ACP connection", async () => {
+    class RetryableConnection extends FakeConnection {
+      override prompt(_sessionId: string, _input: Parameters<FakeConnection["prompt"]>[1]) {
+        return Effect.succeed({
+          retryable: true,
+          stopDetail: "Cursor is temporarily unavailable.",
+          stopReason: "end_turn"
+        })
+      }
+    }
+    const connector: AcpConnector = {
+      connect: (request, emit) => Effect.succeed(new RetryableConnection(request, emit))
+    }
+    const runtime = makeAcpAgentRuntime({
+      connector,
+      env: { PATH: "/bin" },
+      executableExists: (name) => name === "gemini",
+      locateExecutable: (name) => `/bin/${name}`
+    })
+    const events: Array<RuntimeEvent> = []
+    const sessionId = await run(
+      runtime.createAgentSession("gemini", "/tmp/project", (event) => {
+        events.push(event)
+      })
+    )
+
+    await run(runtime.prompt(sessionId, "hello"))
+
+    expect(events.at(-1)).toMatchObject({
+      kind: "session.updated",
+      payload: {
+        retryable: true,
+        stopDetail: "Cursor is temporarily unavailable.",
+        stopReason: "end_turn",
+        turnState: "ended"
+      },
+      subjectId: sessionId
+    })
+  })
+
   it("delivers events that arrive with no prompt in flight", async () => {
     // Regression test for the dropped-background-events bug: the sink used to
     // exist only for the duration of a prompt request.

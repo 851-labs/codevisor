@@ -13,28 +13,19 @@ import {
 } from "./index.js"
 
 describe("@codevisor/agent-runtime", () => {
-  it("requests Cursor's parameterized model controls without leaking proprietary metadata", () => {
-    expect(acpClientCapabilities("cursor", true)).toEqual({
-      _meta: { parameterizedModelPicker: true },
+  it("advertises only provider-neutral ACP client capabilities", () => {
+    expect(acpClientCapabilities(true)).toEqual({
       plan: {},
       terminal: true
     })
-    expect(acpClientCapabilities("generic-acp-agent", false)).toEqual({
+    expect(acpClientCapabilities(false)).toEqual({
       plan: {},
       terminal: false
     })
   })
 
-  it("translates Codevisor's speed vocabulary to Cursor's native fast toggle", () => {
-    expect(acpConfigSelection("cursor", "speed", "standard")).toEqual({
-      configId: "fast",
-      value: "false"
-    })
-    expect(acpConfigSelection("cursor", "speed", "fast")).toEqual({
-      configId: "fast",
-      value: "true"
-    })
-    expect(acpConfigSelection("gemini", "speed", "fast")).toEqual({
+  it("passes generic ACP configuration selections through", () => {
+    expect(acpConfigSelection("speed", "fast")).toEqual({
       configId: "speed",
       value: "fast"
     })
@@ -154,78 +145,6 @@ describe("@codevisor/agent-runtime", () => {
 
     expect(options[0]?.options.map((option) => option.name)).toEqual(["off", "low", "high"])
     expect(options[1]?.options.map((option) => option.name)).toEqual(["Thinking: model"])
-  })
-
-  it("normalizes Cursor's fast toggle into Speed and hides its context picker", () => {
-    const options = normalizeAcpConfigOptions(
-      [
-        {
-          category: "model",
-          currentValue: "claude-opus-4-8",
-          id: "model",
-          name: "Model",
-          options: [{ name: "Claude Opus 4.8", value: "claude-opus-4-8" }],
-          type: "select"
-        },
-        {
-          category: "thought_level",
-          currentValue: "true",
-          id: "thinking",
-          name: "Thinking",
-          options: [
-            { name: "Off", value: "false" },
-            { name: "On", value: "true" }
-          ],
-          type: "select"
-        },
-        {
-          category: "thought_level",
-          currentValue: "high",
-          id: "effort",
-          name: "Effort",
-          options: [
-            { name: "Low", value: "low" },
-            { name: "High", value: "high" }
-          ],
-          type: "select"
-        },
-        {
-          category: "model_config",
-          currentValue: "200000",
-          id: "context",
-          name: "Context",
-          options: [{ name: "200k", value: "200000" }],
-          type: "select"
-        },
-        {
-          category: "model_config",
-          currentValue: "false",
-          id: "fast",
-          name: "Fast",
-          options: [
-            { name: "Off", value: "false" },
-            { name: "On", value: "true" }
-          ],
-          type: "select"
-        }
-      ] as never,
-      "cursor"
-    )
-
-    expect(options.map(({ category, id }) => ({ category, id }))).toEqual([
-      { category: "model", id: "model" },
-      { category: "thought_level", id: "thinking" },
-      { category: "thought_level", id: "effort" },
-      { category: "speed", id: "speed" }
-    ])
-    expect(options.at(-1)).toMatchObject({
-      currentValue: "standard",
-      name: "Speed",
-      options: [
-        { name: "Standard", value: "standard" },
-        { name: "Fast", value: "fast" }
-      ]
-    })
   })
 
   it("maps ACP permission requests onto questions and answers back onto option ids", () => {

@@ -14,14 +14,6 @@ describe("@codevisor/agent-runtime", () => {
     expect(directlyCapable.some((harness) => harness.launch?.kind === "npx")).toBe(false)
   })
 
-  it("launches Cursor ACP with command approvals bypassed and its sandbox disabled", () => {
-    expect(harnessCatalog.find((harness) => harness.id === "cursor")?.launch).toEqual({
-      args: ["--force", "--sandbox", "disabled", "acp"],
-      command: "cursor-agent",
-      kind: "executable"
-    })
-  })
-
   it("discovers ready local executables and unavailable harnesses", async () => {
     const runtime = makeAcpAgentRuntime({
       env: { PATH: "/bin" },
@@ -53,7 +45,8 @@ describe("@codevisor/agent-runtime", () => {
       "executable"
     )
     expect(harnesses.find((harness) => harness.id === "cursor")?.readiness).toEqual({
-      state: "ready"
+      detail: "Provider not available",
+      state: "unavailable"
     })
     // Install hints ride along only for harnesses that define them.
     expect(harnesses.find((harness) => harness.id === "claude-code")?.installHint).toContain(
