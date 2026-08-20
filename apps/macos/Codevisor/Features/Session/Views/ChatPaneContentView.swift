@@ -13,6 +13,8 @@ struct ChatPaneContentView: View {
     let project: Project
     let store: SessionStore
     let environment: AppEnvironment
+    /// True only for the routed chat selected in the workspace's active leaf.
+    let isReadEligible: Bool
 
     var body: some View {
         if let chatSessionId = descriptor.chatSessionId {
@@ -50,7 +52,8 @@ struct ChatPaneContentView: View {
                     let controller = store.controller(for: chatSession, project: chatProject)
                     ChatScreen(
                         controller: controller,
-                        focus: focus
+                        focus: focus,
+                        isReadEligible: isReadEligible
                     )
                     .id(chatSession.id)
                     .onChange(of: chatSession, initial: true) { _, updatedSession in

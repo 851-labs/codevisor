@@ -27,6 +27,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private var rows: [TranscriptVirtualRow] = []
     private var rowByKey: [String: TranscriptVirtualRow] = [:]
     private var unreadFinishedTargetByItemId: [UUID: SessionAttentionTarget] = [:]
+    private var isReadEligible = false
     private var lastPresentedAttentionTarget: SessionAttentionTarget?
     private var virtualLayout = VirtualTranscriptLayout(items: [], measuredHeights: [:], spacing: rowSpacing)
     /// Measured row heights plus staleness. The ledger's invariant is the fix
@@ -201,6 +202,20 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             ) { [weak self] _ in
                 Self.onMain { self?.evaluatePresentedAttention() }
             },
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.didBecomeKeyNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Self.onMain { self?.evaluatePresentedAttention() }
+            },
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.didResignKeyNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Self.onMain { self?.evaluatePresentedAttention() }
+            },
         ]
     }
 
@@ -305,6 +320,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     func configure(
         rows newRows: [TranscriptVirtualRow],
         unreadAttentionTargets newUnreadAttentionTargets: [SessionAttentionTarget],
+        isReadEligible newIsReadEligible: Bool,
         initialState: SessionScrollState?,
         followsLatest newFollowsLatest: Bool,
         hasOlderHistory newHasOlderHistory: Bool,
@@ -332,6 +348,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         self.onNearTop = onNearTop
         self.onOlderHistoryPresented = onOlderHistoryPresented
         self.onAttentionPresented = onAttentionPresented
+        isReadEligible = newIsReadEligible
         unreadFinishedTargetByItemId = Dictionary(
             newUnreadAttentionTargets.compactMap { target in
                 guard target.kind == .finished, let itemId = target.chatItemId else { return nil }
@@ -341,6 +358,11 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                 current.sequence >= next.sequence ? current : next
             }
         )
+        if !newIsReadEligible {
+            // Reset the candidate while backgrounded so promoting this chat
+            // later can acknowledge a response that has remained unread.
+            evaluatePresentedAttention()
+        }
         isLoadingInitialHistory = newIsLoadingInitialHistory
         isPreparingInitialProjection = newIsPreparingInitialProjection
         guard !newIsPreparingInitialProjection else {
@@ -1331,10 +1353,14 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                 !isDetaching,
                 transcriptDocumentView.alphaValue > 0,
                 !isHiddenOrHasHiddenAncestor,
-                NSApp.isActive,
                 let window,
-                window.isVisible,
-                window.occlusionState.contains(.visible),
+                TranscriptAttentionPresentationState(
+                    isReadEligible: isReadEligible,
+                    isApplicationActive: NSApp.isActive,
+                    isWindowKey: window.isKeyWindow,
+                    isWindowVisible: window.isVisible,
+                    isWindowOnScreen: window.occlusionState.contains(.visible)
+                ).allowsAcknowledgement,
                 !unreadFinishedTargetByItemId.isEmpty
             else { return nil }
 

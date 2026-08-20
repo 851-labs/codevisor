@@ -260,6 +260,32 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
         centerTabs.lazy.compactMap { $0.root.group(id: leafId)?.selectedPane }.first
     }
 
+    /// Whether this pane is the one chat allowed to acknowledge rendered
+    /// attention. The routed chat and the selected pane of the active leaf
+    /// must agree; merely remaining mounted in another split is insufficient.
+    public func isReadAcknowledgementEligible(
+        forChat chatSessionId: UUID,
+        inLeaf leafId: UUID,
+        routedSessionId: UUID,
+        activeLeafId: UUID?
+    ) -> Bool {
+        guard chatSessionId == routedSessionId,
+            let selectedTab = selectedCenterTab
+        else { return false }
+
+        let resolvedActiveLeafId: UUID
+        if let activeLeafId {
+            guard selectedTab.root.group(id: activeLeafId) != nil else { return false }
+            resolvedActiveLeafId = activeLeafId
+        } else {
+            resolvedActiveLeafId = selectedTab.activeLeafId
+        }
+        guard resolvedActiveLeafId == leafId,
+            let pane = selectedTab.root.group(id: leafId)?.selectedPane
+        else { return false }
+        return pane.kind == .chat && pane.chatSessionId == chatSessionId
+    }
+
     /// The pane that owns a chat session reference, if it is still open.
     public func pane(containingChat sessionId: UUID) -> PaneDescriptorState? {
         centerTabs.lazy

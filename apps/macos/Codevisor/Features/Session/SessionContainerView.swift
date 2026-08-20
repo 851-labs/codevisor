@@ -803,10 +803,30 @@ struct SessionContainerView: View {
                     session: session,
                     project: project,
                     store: store,
-                    environment: environment
+                    environment: environment,
+                    isReadEligible: isReadAcknowledgementEligible(
+                        descriptor,
+                        inLeaf: leafId
+                    )
                 ))
         }
         return model
+    }
+
+    /// A mounted transcript may acknowledge attention only when navigation
+    /// and the active split agree that it is the chat facing the user.
+    private func isReadAcknowledgementEligible(
+        _ descriptor: PaneDescriptorState,
+        inLeaf leafId: UUID
+    ) -> Bool {
+        guard let chatSessionId = descriptor.chatSessionId else { return false }
+        return store.workspace(for: session, project: project)
+            .isReadAcknowledgementEligible(
+                forChat: chatSessionId,
+                inLeaf: leafId,
+                routedSessionId: session.id,
+                activeLeafId: activeLeafId
+            )
     }
 
     /// "New Chat" from a New tab page: creates the SESSION eagerly — a real
