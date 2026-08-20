@@ -16,15 +16,9 @@ export interface GatewayCatalogDeps {
   readonly connectUpstream: (id: string) => Promise<UpstreamConnection>
 }
 
-export const searchToolDescription = (inventory: string): string =>
+export const executeToolDescription = (inventory: string): string =>
   [
-    "Compatibility discovery endpoint for integrations connected through Codevisor. Prefer run_code for normal work so discovery, schema inspection, and actions can be composed in one invocation. Use this direct wrapper only when the harness cannot run code.",
-    inventory
-  ].join("\n\n")
-
-export const runCodeToolDescription = (inventory: string): string =>
-  [
-    "Primary Codevisor tool interface. Run sandboxed JavaScript or TypeScript that discovers and composes enabled integration, Browser Use, and Computer Use tools. Prefer this over direct search/describe/execute calls. The isolate has no filesystem, network, process environment, or credentials.",
+    "Primary Codevisor tool interface. Run sandboxed JavaScript or TypeScript that discovers and composes enabled integration, Browser Use, and Computer Use tools. The isolate has no filesystem, network, process environment, or credentials.",
     'Inside code, start with `await tools.search({ query: "<intent>" })`, inspect a match with `await tools.describe.tool({ path })`, then call the exact returned path with `await tools[path](args)`. Pass an async arrow function.',
     inventory
   ].join("\n\n")
@@ -135,7 +129,7 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
       items: ranked.slice(0, Math.max(1, Math.min(limit, 50))),
       total: ranked.length,
       workflow:
-        "Choose a match, call describe with its server and name, then call execute. Do not stop after discovery when the user asked for an action or answer."
+        "Choose a match, inspect it with tools.describe.tool({ path }), then call tools[path](args). Do not stop after discovery when the user asked for an action or answer."
     }
   }
 

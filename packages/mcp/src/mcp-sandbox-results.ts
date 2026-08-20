@@ -62,7 +62,7 @@ const callToolErrorMessage = (result: CallToolResult): string => {
 }
 
 /// Native Computer Use and browser-client methods reject their promises on a
-/// failed action. Mirror that behavior inside run_code instead of handing the
+/// failed action. Mirror that behavior inside execute instead of handing the
 /// model a truthy `{ isError: true }` object that it can accidentally ignore.
 export const sandboxSuccessfulToolResult = (
   result: CallToolResult,

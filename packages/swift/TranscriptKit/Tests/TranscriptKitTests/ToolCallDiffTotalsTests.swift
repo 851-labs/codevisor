@@ -77,22 +77,13 @@ struct ToolCallDiffTotalsTests {
     func gatewayDisplayTitle() {
         #expect(
             ToolCall(
-                toolCallId: "claude", title: "codevisor.search", status: .completed,
-                rawInput: ["query": "Sentry"]
-            ).displayTitle == "Searched integrations for Sentry")
-        #expect(
-            ToolCall(
                 toolCallId: "codex", title: "mcp__codevisor__execute", status: .inProgress,
-                rawInput: ["tool": "find_organizations"]
-            ).displayTitle == "Running find organizations…")
+                rawInput: ["code": "async () => 42"]
+            ).displayTitle == "Running an integration workflow…")
         #expect(
             ToolCall(
-                toolCallId: "acp", title: "codevisor_describe", status: .completed,
-                rawInput: ["tool": "search_issues"]
-            ).displayTitle == "Inspected search issues")
-        #expect(
-            ToolCall(
-                toolCallId: "code", title: "codevisor.run_code", status: .completed
+                toolCallId: "claude", title: "codevisor.execute", status: .completed,
+                rawInput: ["code": "async () => 42"]
             ).displayTitle == "Ran an integration workflow")
         #expect(
             ToolCall(
@@ -100,7 +91,7 @@ struct ToolCallDiffTotalsTests {
             ).displayTitle == "Searched available tools")
         #expect(
             ToolCall(
-                toolCallId: "legacy", title: "mcp__herdman__search", status: .completed
-            ).displayTitle == "Searched integrations")
+                toolCallId: "legacy", title: "mcp__herdman__execute", status: .completed
+            ).displayTitle == "Ran an integration workflow")
     }
 }

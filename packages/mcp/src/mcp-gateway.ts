@@ -16,11 +16,7 @@ import { randomUUID } from "node:crypto"
 import { realpathSync, statSync } from "node:fs"
 import { isAbsolute, relative, resolve } from "node:path"
 import { z } from "zod"
-import {
-  makeGatewayCatalog,
-  runCodeToolDescription,
-  searchToolDescription
-} from "./mcp-gateway-catalog.js"
+import { executeToolDescription, makeGatewayCatalog } from "./mcp-gateway-catalog.js"
 import type { McpManagerConfig } from "./mcp-manager.js"
 import { invokeGatewayPluginTool } from "./mcp-plugin-tools.js"
 import {
@@ -39,8 +35,7 @@ import { errorMessage, run, type UpstreamConnection } from "./mcp-support.js"
 export interface GatewayConnection {
   readonly server: McpSdkServer
   readonly transport: StreamableHTTPServerTransport
-  readonly searchTool: RegisteredTool
-  readonly runCodeTool: RegisteredTool
+  readonly executeTool: RegisteredTool
 }
 
 export interface GatewayRuntime {
@@ -87,7 +82,6 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
     describeCatalogPath,
     gatewayServerAllowed,
     integrationInventory,
-    listPluginTools,
     searchCatalog
   } = makeGatewayCatalog({ automationProviders, codevisorProvider, config, connectUpstream })
 
@@ -114,8 +108,7 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
         if (inventory === gateway.inventory) return
         gateway.inventory = inventory
         for (const connection of gateway.connections.values()) {
-          connection.searchTool.update({ description: searchToolDescription(inventory) })
-          connection.runCodeTool.update({ description: runCodeToolDescription(inventory) })
+          connection.executeTool.update({ description: executeToolDescription(inventory) })
         }
       })
     )
@@ -202,102 +195,10 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
   const createGatewayConnection = async (runtime: GatewayRuntime): Promise<GatewayConnection> => {
     const { inventory, projectId, sessionId } = runtime
     const sdkServer = new McpSdkServer({ name: "Codevisor Tool Gateway", version: "0.1.0" })
-    const searchTool = sdkServer.registerTool(
-      "search",
-      {
-        description: searchToolDescription(inventory),
-        inputSchema: {
-          query: z.string().default(""),
-          limit: z.number().int().min(1).max(50).default(12)
-        }
-      },
-      async ({ query, limit }) => ({
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(await searchCatalog(projectId, sessionId, query, limit))
-          }
-        ]
-      })
-    )
-    sdkServer.registerTool(
-      "describe",
-      {
-        description:
-          "Compatibility wrapper that returns one enabled tool schema. Prefer tools.describe.tool inside run_code.",
-        inputSchema: { server: z.string(), tool: z.string() }
-      },
-      async ({ server, tool }) => {
-        if (server === "plugin") {
-          const definition = (await listPluginTools()).find((candidate) => candidate.name === tool)
-          if (definition === undefined) {
-            return { isError: true, content: [{ type: "text" as const, text: "Tool not found" }] }
-          }
-          return { content: [{ type: "text" as const, text: JSON.stringify(definition) }] }
-        }
-        const allowed = await gatewayServerAllowed(server, projectId, sessionId)
-        if (!allowed) {
-          return {
-            isError: true,
-            content: [{ type: "text" as const, text: "Tool server is disabled for this session" }]
-          }
-        }
-        const provider = automationProviders.get(server)
-        const definitions = provider?.tools ?? (await connectUpstream(server)).tools
-        const definition = definitions.find((candidate) => candidate.name === tool)
-        if (definition === undefined) {
-          return { isError: true, content: [{ type: "text" as const, text: "Tool not found" }] }
-        }
-        return { content: [{ type: "text" as const, text: JSON.stringify(definition) }] }
-      }
-    )
-    sdkServer.registerTool(
+    const executeTool = sdkServer.registerTool(
       "execute",
       {
-        description:
-          "Compatibility wrapper that executes one enabled tool. Prefer calling the exact tools[path] inside run_code.",
-        inputSchema: {
-          server: z.string(),
-          tool: z.string(),
-          arguments: z.record(z.string(), z.unknown()).default({})
-        }
-      },
-      async ({ server, tool, arguments: args }): Promise<CallToolResult> => {
-        if (server === "plugin") {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify(await invokePluginTool(sessionId, tool, args))
-              }
-            ]
-          }
-        }
-        const installed = server === "codevisor" ? undefined : await record(server)
-        const allowed = await gatewayServerAllowed(server, projectId, sessionId)
-        if (installed?.enabled === false || !allowed) {
-          return {
-            isError: true,
-            content: [{ type: "text", text: `${installed?.name ?? "Codevisor"} is disabled` }]
-          }
-        }
-        const provider = automationProviders.get(server)
-        if (provider !== undefined) {
-          return invokeAutomationProvider(
-            provider,
-            { sessionId, ...(projectId === undefined ? {} : { projectId }) },
-            tool,
-            args
-          )
-        }
-        const connection = await connectUpstream(server)
-        return (await connection.client.callTool({ name: tool, arguments: args })) as CallToolResult
-      }
-    )
-    const runCodeTool = sdkServer.registerTool(
-      "run_code",
-      {
-        description: runCodeToolDescription(inventory),
+        description: executeToolDescription(inventory),
         inputSchema: { code: z.string().min(1) }
       },
       async ({ code }, { signal }) => {
@@ -316,7 +217,7 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
                     typeof args === "object" && args !== null
                       ? (args as { query?: unknown; limit?: unknown })
                       : {}
-                  return searchCatalog(
+                  return await searchCatalog(
                     projectId,
                     sessionId,
                     typeof input.query === "string" ? input.query : "",
@@ -329,7 +230,7 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
                   if (typeof input.path !== "string") {
                     throw new Error("tools.describe.tool expects { path: string }")
                   }
-                  return describeCatalogPath(projectId, sessionId, input.path)
+                  return await describeCatalogPath(projectId, sessionId, input.path)
                 }
                 const separator = path.indexOf(".")
                 if (separator <= 0 || separator === path.length - 1) {
@@ -338,7 +239,7 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
                 const serverId = path.slice(0, separator)
                 const toolName = path.slice(separator + 1)
                 if (serverId === "plugin") {
-                  return invokePluginTool(
+                  return await invokePluginTool(
                     sessionId,
                     toolName,
                     typeof args === "object" && args !== null
@@ -411,8 +312,7 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
     const connection: GatewayConnection = {
       server: sdkServer,
       transport,
-      searchTool,
-      runCodeTool
+      executeTool
     }
     await sdkServer.connect(transport as unknown as Transport)
     return connection

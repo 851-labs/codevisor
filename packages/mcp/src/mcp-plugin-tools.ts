@@ -35,8 +35,8 @@ export const PLUGIN_CATALOG_SERVER: CatalogServer = { id: "plugin", name: "Plugi
 
 /// Plugin tool definitions in catalog shape (dotted names). Recomputed on
 /// every listing so a fresh install/uninstall is immediately reflected in
-/// search/describe/execute; the advertised inventory string refreshes through
-/// the plugins manager subscription in mcp-manager.
+/// the execute sandbox catalog; the advertised inventory string refreshes
+/// through the plugins manager subscription in mcp-manager.
 export const pluginToolDefinitions = async (
   source: PluginToolSource | undefined
 ): Promise<ReadonlyArray<Tool>> => {

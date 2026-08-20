@@ -116,19 +116,10 @@ describe("mcp routes", () => {
       }) as unknown as McpTransport
     )
     const listed = await client.listTools()
-    expect(listed.tools.map((tool) => tool.name)).toEqual([
-      "search",
-      "describe",
-      "execute",
-      "run_code"
-    ])
-    expect(listed.tools.find((tool) => tool.name === "search")?.description).toContain("PostHog")
-    expect(listed.tools.find((tool) => tool.name === "run_code")?.description).toContain("PostHog")
-    expect(listed.tools.find((tool) => tool.name === "run_code")?.description).toContain(
-      "Primary Codevisor tool interface"
-    )
+    expect(listed.tools.map((tool) => tool.name)).toEqual(["execute"])
+    expect(listed.tools.find((tool) => tool.name === "execute")?.description).toContain("PostHog")
     expect(listed.tools.find((tool) => tool.name === "execute")?.description).toContain(
-      "Compatibility wrapper"
+      "Primary Codevisor tool interface"
     )
     let toolListChanges = 0
     client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
@@ -142,28 +133,28 @@ describe("mcp routes", () => {
     })
     await waitFor(() => toolListChanges > 0)
     expect(
-      (await client.listTools()).tools.find((tool) => tool.name === "search")?.description
+      (await client.listTools()).tools.find((tool) => tool.name === "execute")?.description
     ).toContain("Linear")
     const executed = await client.callTool({
-      name: "run_code",
+      name: "execute",
       arguments: { code: "async () => 6 * 7" }
     })
     expect(executed.isError).not.toBe(true)
     expect(JSON.stringify(executed.content)).toContain("42")
     const searchedInCode = await client.callTool({
-      name: "run_code",
+      name: "execute",
       arguments: { code: 'async () => await tools.search({ query: "missing" })' }
     })
     expect(searchedInCode.isError).not.toBe(true)
     expect(JSON.stringify(searchedInCode.content)).toContain('\\"total\\":0')
     const codevisorSearch = await client.callTool({
-      name: "run_code",
+      name: "execute",
       arguments: { code: 'async () => await tools.search({ query: "Codevisor sessions" })' }
     })
     expect(codevisorSearch.isError).not.toBe(true)
     expect(JSON.stringify(codevisorSearch.content)).toContain("codevisor.sessions.list")
     const codevisorProjects = await client.callTool({
-      name: "run_code",
+      name: "execute",
       arguments: { code: 'async () => await tools["codevisor.projects.list"]({})' }
     })
     expect(codevisorProjects.isError).not.toBe(true)
@@ -171,7 +162,7 @@ describe("mcp routes", () => {
     const controlledFolder = mkdtempSync(join(tmpdir(), "codevisor-mcp-control-"))
     tempDirs.push(controlledFolder)
     const controlled = await client.callTool({
-      name: "run_code",
+      name: "execute",
       arguments: {
         code: `async () => {
           const project = await tools["codevisor.projects.create"]({
@@ -239,7 +230,7 @@ describe("mcp routes", () => {
       }) as unknown as McpTransport
     )
     const result = await client.callTool({
-      name: "run_code",
+      name: "execute",
       arguments: { code: 'async () => await tools["codevisor.projects.list"]({})' }
     })
     expect(result.isError).not.toBe(true)

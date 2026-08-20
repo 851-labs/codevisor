@@ -219,7 +219,7 @@ struct WorkedItemsTests {
     func gatewaySummary() {
         let calls = [
             ToolCall(toolCallId: "1", title: "ToolSearch"),
-            ToolCall(toolCallId: "2", title: "mcp__codevisor__search"),
+            ToolCall(toolCallId: "2", title: "mcp__codevisor__execute"),
             ToolCall(toolCallId: "3", title: "codevisor_execute"),
         ]
         #expect(ToolCallSummary.describe(calls) == "Used 3 integration tools")

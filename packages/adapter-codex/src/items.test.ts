@@ -6,7 +6,7 @@ describe("CodexProvider", () => {
     const { client, events } = await setup()
     client.emit("item/started", {
       item: {
-        arguments: { server: "server-id", tool: "find_organizations" },
+        arguments: { code: 'async () => tools["linear.find_organizations"]({})' },
         id: "mcp-1",
         server: "codevisor",
         status: "inProgress",
@@ -18,7 +18,7 @@ describe("CodexProvider", () => {
     })
     client.emit("item/completed", {
       item: {
-        arguments: { server: "server-id", tool: "find_organizations" },
+        arguments: { code: 'async () => tools["linear.find_organizations"]({})' },
         id: "mcp-1",
         result: { content: [{ text: "ok", type: "text" }] },
         server: "codevisor",
@@ -33,7 +33,7 @@ describe("CodexProvider", () => {
     const payloads = events.map((event) => event.payload as Record<string, unknown>)
     expect(payloads).toContainEqual(
       expect.objectContaining({
-        rawInput: { server: "server-id", tool: "find_organizations" },
+        rawInput: { code: 'async () => tools["linear.find_organizations"]({})' },
         sessionUpdate: "tool_call",
         title: "codevisor.execute",
         toolCallId: "mcp-1"

@@ -272,7 +272,7 @@ describe("MCP manager", () => {
   // Spawns a real stdio upstream plus an HTTP gateway — comfortably fast on
   // dev machines but past the 5s default on slower CI runners.
   it(
-    "connects a working upstream and exposes its tools through every gateway surface",
+    "connects a working upstream and exposes its tools through execute",
     { timeout: 20_000 },
     async () => {
       const upstream = await workingUpstream()
@@ -348,47 +348,24 @@ describe("MCP manager", () => {
       try {
         expect(client.getInstructions()).toBeUndefined()
 
-        const search = await client.callTool({
-          name: "search",
-          arguments: { query: "project", limit: 1 }
-        })
-        expect(JSON.stringify(search.content)).toContain("lookup_project")
-
-        const described = await client.callTool({
-          name: "describe",
-          arguments: { server: created.id, tool: "lookup_project" }
-        })
-        expect(JSON.stringify(described.content)).toContain("Find a project")
-        expect(
-          (
-            await client.callTool({
-              name: "describe",
-              arguments: { server: created.id, tool: "missing_tool" }
-            })
-          ).isError
-        ).toBe(true)
-
-        const executed = await client.callTool({
-          name: "execute",
-          arguments: { server: created.id, tool: "lookup_project", arguments: { name: "Rails" } }
-        })
-        expect(executed.isError).not.toBe(true)
-
         const codeResult = await client.callTool({
-          name: "run_code",
+          name: "execute",
           arguments: {
             code: `async () => {
-            const matches = await tools.search({ query: "issues", limit: 1 });
+            const matches = await tools.search({ query: "project", limit: 1 });
             const schema = await tools.describe.tool({ path: matches.items[0].path });
-            const called = await tools[matches.items[0].path]({});
-            return { called, schema };
+            const called = await tools[matches.items[0].path]({ name: "Rails" });
+            const issues = await tools.search({ query: "issues", limit: 1 });
+            const issueCall = await tools[issues.items[0].path]({});
+            return { called, issueCall, schema };
           }`
           }
         })
         expect(codeResult.isError).not.toBe(true)
+        expect(JSON.stringify(codeResult.content)).toContain("Find a project")
         expect(JSON.stringify(codeResult.content)).toContain("list_issues")
         const binaryCodeResult = await client.callTool({
-          name: "run_code",
+          name: "execute",
           arguments: {
             code: `async () => tools["${created.id}.lookup_project"]({ binary: true })`
           }
@@ -410,12 +387,12 @@ describe("MCP manager", () => {
           `async () => tools.describe.tool({ path: "${created.id}.missing_tool" })`,
           `async () => tools["invalid"]({})`
         ]) {
-          expect((await client.callTool({ name: "run_code", arguments: { code } })).isError).toBe(
+          expect((await client.callTool({ name: "execute", arguments: { code } })).isError).toBe(
             true
           )
         }
         const caughtAutomationError = await client.callTool({
-          name: "run_code",
+          name: "execute",
           arguments: {
             code: `async () => tools["computer.select_text"]({
             app: "com.apple.Notes",
@@ -435,7 +412,7 @@ describe("MCP manager", () => {
           `async () => tools["${created.id}.lookup_project"]("primitive")`
         ]) {
           expect(
-            (await client.callTool({ name: "run_code", arguments: { code } })).isError
+            (await client.callTool({ name: "execute", arguments: { code } })).isError
           ).not.toBe(true)
         }
 
@@ -443,15 +420,7 @@ describe("MCP manager", () => {
         expect(
           (
             await client.callTool({
-              name: "describe",
-              arguments: { server: created.id, tool: "lookup_project" }
-            })
-          ).isError
-        ).toBe(true)
-        expect(
-          (
-            await client.callTool({
-              name: "run_code",
+              name: "execute",
               arguments: {
                 code: `async () => tools.describe.tool({ path: "${created.id}.lookup_project" })`
               }
@@ -462,14 +431,6 @@ describe("MCP manager", () => {
           (
             await client.callTool({
               name: "execute",
-              arguments: { server: created.id, tool: "lookup_project", arguments: {} }
-            })
-          ).isError
-        ).toBe(true)
-        expect(
-          (
-            await client.callTool({
-              name: "run_code",
               arguments: { code: `async () => tools["${created.id}.lookup_project"]({})` }
             })
           ).isError
@@ -654,7 +615,12 @@ describe("MCP manager", () => {
     try {
       expect(
         JSON.stringify(
-          (await first.client.callTool({ name: "search", arguments: { query: "project" } })).content
+          (
+            await first.client.callTool({
+              name: "execute",
+              arguments: { code: 'async () => tools.search({ query: "project" })' }
+            })
+          ).content
         )
       ).toContain("lookup_project")
 
@@ -663,13 +629,22 @@ describe("MCP manager", () => {
       try {
         expect(
           JSON.stringify(
-            (await second.client.callTool({ name: "search", arguments: { query: "issues" } }))
-              .content
+            (
+              await second.client.callTool({
+                name: "execute",
+                arguments: { code: 'async () => tools.search({ query: "issues" })' }
+              })
+            ).content
           )
         ).toContain("list_issues")
         // The first connection keeps working alongside the second.
         expect(
-          (await first.client.callTool({ name: "search", arguments: { query: "project" } })).isError
+          (
+            await first.client.callTool({
+              name: "execute",
+              arguments: { code: 'async () => tools.search({ query: "project" })' }
+            })
+          ).isError
         ).not.toBe(true)
 
         // Terminating one MCP session leaves the other connected and makes
@@ -688,7 +663,12 @@ describe("MCP manager", () => {
           }).then((response) => response.status)
         ).toBe(404)
         expect(
-          (await first.client.callTool({ name: "search", arguments: { query: "project" } })).isError
+          (
+            await first.client.callTool({
+              name: "execute",
+              arguments: { code: 'async () => tools.search({ query: "project" })' }
+            })
+          ).isError
         ).not.toBe(true)
       } finally {
         await second.client.close().catch(() => undefined)
@@ -799,58 +779,24 @@ describe("MCP manager", () => {
       try {
         // The advertised inventory names the plugin tool path outright, so
         // agents can call it without a search round-trip.
-        const advertised = (await client.listTools()).tools.find((tool) => tool.name === "search")
+        const advertised = (await client.listTools()).tools.find((tool) => tool.name === "execute")
         expect(advertised?.description).toContain("plugin.owner.notes.notes_add — Append a note")
 
-        const search = await client.callTool({
-          name: "search",
-          arguments: { query: "note", limit: 5 }
-        })
-        expect(JSON.stringify(search.content)).toContain("plugin.owner.notes.notes_add")
-
-        const described = await client.callTool({
-          name: "describe",
-          arguments: { server: "plugin", tool: "owner.notes.notes_add" }
-        })
-        expect(JSON.stringify(described.content)).toContain("Append a note")
-        expect(
-          (
-            await client.callTool({
-              name: "describe",
-              arguments: { server: "plugin", tool: "owner.notes.missing" }
-            })
-          ).isError
-        ).toBe(true)
-
-        const executed = await client.callTool({
+        const viaCode = await client.callTool({
           name: "execute",
           arguments: {
-            server: "plugin",
-            tool: "owner.notes.notes_add",
-            arguments: { text: "hi" }
-          }
-        })
-        expect(executed.isError).not.toBe(true)
-        expect(JSON.stringify(executed.content)).toContain('\\"ok\\":true')
-        // The session's cwd rides along so plugins can scope per-project.
-        expect(invocations.at(-1)).toEqual([
-          "owner.notes",
-          "notes_add",
-          { text: "hi" },
-          sessionCwd === undefined ? {} : { cwd: sessionCwd }
-        ])
-
-        const viaCode = await client.callTool({
-          name: "run_code",
-          arguments: {
             code: `async () => {
-            const schema = await tools.describe.tool({ path: "plugin.owner.notes.notes_add" });
-            const result = await tools["plugin.owner.notes.notes_add"]({ text: "from code" });
-            return { result, schema };
+            const matches = await tools.search({ query: "note", limit: 5 });
+            const path = matches.items[0].path;
+            const schema = await tools.describe.tool({ path });
+            const result = await tools[path]({ text: "from code" });
+            return { matches, result, schema };
           }`
           }
         })
         expect(viaCode.isError).not.toBe(true)
+        expect(JSON.stringify(viaCode.content)).toContain("plugin.owner.notes.notes_add")
+        expect(JSON.stringify(viaCode.content)).toContain("Append a note")
         expect(JSON.stringify(viaCode.content)).toContain('\\"ok\\":true')
         expect(invocations.at(-1)).toEqual([
           "owner.notes",
@@ -864,14 +810,6 @@ describe("MCP manager", () => {
           (
             await client.callTool({
               name: "execute",
-              arguments: { server: "plugin", tool: "notesadd", arguments: {} }
-            })
-          ).isError
-        ).toBe(true)
-        expect(
-          (
-            await client.callTool({
-              name: "run_code",
               arguments: { code: `async () => tools["plugin.owner.notes."]({})` }
             })
           ).isError
@@ -879,7 +817,7 @@ describe("MCP manager", () => {
         expect(
           (
             await client.callTool({
-              name: "run_code",
+              name: "execute",
               arguments: {
                 code: `async () => tools.describe.tool({ path: "plugin.owner.notes.missing" })`
               }
@@ -895,7 +833,7 @@ describe("MCP manager", () => {
         ]
         for (const listener of listeners) listener()
         await vi.waitFor(async () => {
-          const refreshed = (await client.listTools()).tools.find((tool) => tool.name === "search")
+          const refreshed = (await client.listTools()).tools.find((tool) => tool.name === "execute")
           expect(refreshed?.description).toContain("plugin.owner.notes.notes_list — List notes")
         })
       } finally {
@@ -922,13 +860,15 @@ describe("MCP manager", () => {
     try {
       const executed = await client.callTool({
         name: "execute",
-        arguments: { server: "plugin", tool: "owner.notes.notes_add", arguments: {} }
+        arguments: { code: 'async () => tools["plugin.owner.notes.notes_add"]({})' }
       })
       expect(executed.isError).toBe(true)
       expect(JSON.stringify(executed.content)).toContain("unavailable on this server")
       const described = await client.callTool({
-        name: "describe",
-        arguments: { server: "plugin", tool: "owner.notes.notes_add" }
+        name: "execute",
+        arguments: {
+          code: 'async () => tools.describe.tool({ path: "plugin.owner.notes.notes_add" })'
+        }
       })
       expect(described.isError).toBe(true)
       expect(JSON.stringify(described.content)).toContain("Tool not found")
