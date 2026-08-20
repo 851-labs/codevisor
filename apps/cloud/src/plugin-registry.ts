@@ -37,6 +37,9 @@ export interface PluginIndexEntry {
   repo: string
   stars: number
   pushedAt: string
+  /// Curation groundwork: reserved for first-party verification of an entry.
+  /// The indexer never sets it yet, so it is always absent today.
+  verified?: boolean
 }
 
 /// Why a tagged repo was left out — published alongside the index so plugin

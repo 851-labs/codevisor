@@ -45,6 +45,9 @@ function Nav() {
           Codevisor
         </a>
         <div className="flex items-center gap-6 text-muted">
+          <a href="/plugins" className="transition-colors hover:text-text">
+            Plugins
+          </a>
           <a href="/docs" className="transition-colors hover:text-text">
             Docs
           </a>

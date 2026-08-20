@@ -209,7 +209,10 @@ export const PluginRegistryEntry = Schema.Struct({
   /// Feed this to the discover→consent→install flow as the plugin source.
   repo: Schema.String,
   stars: Schema.Number,
-  pushedAt: Schema.String
+  pushedAt: Schema.String,
+  /// Curation groundwork: reserved for first-party verification of an entry.
+  /// The indexer never sets it yet, so it is always absent today.
+  verified: Schema.optional(Schema.Boolean)
 })
 export type PluginRegistryEntry = typeof PluginRegistryEntry.Type
 
@@ -224,7 +227,9 @@ export type PluginRegistryRejection = typeof PluginRegistryRejection.Type
 /// The whole registry index (`GET /v1/plugins/registry`): the machine fetches
 /// and caches the hosted index so clients only ever talk to their machine.
 export const PluginRegistryIndex = Schema.Struct({
-  generatedAt: Schema.String,
+  /// Null until the indexer's first poll completes — the cloud serves an
+  /// honest empty index rather than a 404.
+  generatedAt: Schema.NullOr(Schema.String),
   entries: Schema.Array(PluginRegistryEntry),
   rejected: Schema.Array(PluginRegistryRejection)
 })

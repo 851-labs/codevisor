@@ -113,10 +113,19 @@ struct CodevisorServerClientPluginsTests {
         #expect(entry.repo == "acme/git-diff")
         #expect(entry.stars == 12)
         #expect(entry.tools?.first?.name == "diff_summary")
-        // Description/tools stay optional, exactly like installed summaries.
+        // Description/tools stay optional, exactly like installed summaries;
+        // `verified` is curation groundwork the indexer never sets yet.
         let bare = try #require(index.entries.last)
         #expect(bare.description == nil)
         #expect(bare.tools == nil)
+        #expect(bare.verified == nil)
+
+        // Before the indexer's first poll, the cloud serves an honest empty
+        // index whose generatedAt is null.
+        let empty = Data(#"{"generatedAt":null,"entries":[],"rejected":[]}"#.utf8)
+        let emptyIndex = try JSONDecoder().decode(ServerPluginRegistryIndex.self, from: empty)
+        #expect(emptyIndex.generatedAt == nil)
+        #expect(emptyIndex.entries.isEmpty)
     }
 
     @Test("Install request bodies carry the raw source and path strings")

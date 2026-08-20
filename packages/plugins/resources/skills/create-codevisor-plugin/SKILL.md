@@ -192,3 +192,10 @@ Push the folder to a public GitHub repo whose owner matches the id's
 namespace (`owner.name` ⇒ `github.com/owner/...`). Others install it with
 `plugins.discover_remote` → user consent → `plugins.install`, or
 `codevisor plugin install owner/repo`.
+
+To list it in the plugin registry (Settings ▸ Plugins ▸ Browse and
+codevisor.dev/plugins), add the `codevisor-plugin` GitHub topic to the
+repo; the registry indexes it within ~15 minutes. The manifest must sit at
+the repo root and its id namespace must equal the repo owner, or the entry
+is rejected (rejections and reasons appear in the index's `rejected` list).
+Untag the repo to delist it.

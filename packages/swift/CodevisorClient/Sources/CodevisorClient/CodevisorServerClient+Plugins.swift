@@ -144,6 +144,9 @@ public struct ServerPluginRegistryEntry: Codable, Equatable, Identifiable, Senda
     public var repo: String
     public var stars: Int
     public var pushedAt: String
+    /// Curation groundwork: reserved for first-party verification of an
+    /// entry. The indexer never sets it yet, so it is always absent today.
+    public var verified: Bool?
 
     public init(
         id: String,
@@ -154,7 +157,8 @@ public struct ServerPluginRegistryEntry: Codable, Equatable, Identifiable, Senda
         tools: [ServerPluginToolDescriptor]? = nil,
         repo: String,
         stars: Int,
-        pushedAt: String
+        pushedAt: String,
+        verified: Bool? = nil
     ) {
         self.id = id
         self.name = name
@@ -165,6 +169,7 @@ public struct ServerPluginRegistryEntry: Codable, Equatable, Identifiable, Senda
         self.repo = repo
         self.stars = stars
         self.pushedAt = pushedAt
+        self.verified = verified
     }
 }
 
@@ -173,10 +178,12 @@ public struct ServerPluginRegistryEntry: Codable, Equatable, Identifiable, Senda
 /// `rejected` diagnostics for plugin authors; clients don't render them, so
 /// decoding simply ignores that key.
 public struct ServerPluginRegistryIndex: Codable, Equatable, Sendable {
-    public var generatedAt: String
+    /// Null until the indexer's first poll completes — the cloud serves an
+    /// honest empty index rather than a 404.
+    public var generatedAt: String?
     public var entries: [ServerPluginRegistryEntry]
 
-    public init(generatedAt: String, entries: [ServerPluginRegistryEntry]) {
+    public init(generatedAt: String? = nil, entries: [ServerPluginRegistryEntry]) {
         self.generatedAt = generatedAt
         self.entries = entries
     }

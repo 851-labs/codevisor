@@ -416,8 +416,16 @@ describe("@codevisor/api", () => {
     expect(index.entries).toHaveLength(2)
     expect(index.entries[0]?.repo).toBe("acme/git-diff")
     expect(index.entries[1]?.description).toBeUndefined()
+    // Curation groundwork: the indexer never sets `verified` yet.
+    expect(index.entries[0]?.verified).toBeUndefined()
     expect(index.rejected[0]?.reason).toContain("not found")
     expect(() => decode(PluginRegistryIndex)({ entries: [] })).toThrow()
+
+    // Before the indexer's first poll, the cloud serves an honest empty
+    // index whose generatedAt is null.
+    const empty = decode(PluginRegistryIndex)({ generatedAt: null, entries: [], rejected: [] })
+    expect(empty.generatedAt).toBeNull()
+    expect(empty.entries).toEqual([])
   })
 
   it("exports the complete server endpoint inventory as OpenAPI operations", () => {
