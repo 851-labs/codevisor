@@ -1,5 +1,19 @@
 import Foundation
 
+/// The remote-tracking branch new Codevisor worktrees start from for one
+/// project. The remote is explicit so projects are not tied to `origin`.
+public struct ProjectWorktreeBase: Sendable, Codable, Equatable, Hashable {
+    public var remote: String
+    public var branch: String
+
+    public init(remote: String, branch: String) {
+        self.remote = remote
+        self.branch = branch
+    }
+
+    public var displayName: String { "\(remote)/\(branch)" }
+}
+
 /// A folder a project lives in on one machine. A logical project can have a
 /// location per server; sessions derive their working directory from the
 /// location on the server they run on (or from a worktree).
@@ -51,6 +65,9 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
     public var createdAt: Date
     /// Per-server folders for this project.
     public var locations: [ProjectLocation]
+    /// Explicit worktree base selected in Manage Project. Nil preserves the
+    /// server's legacy origin/main fallback for projects not yet configured.
+    public var worktreeBase: ProjectWorktreeBase?
     /// True for the hidden backing project of a scratch workspace — the empty
     /// folder a brand-new chat starts in (under ~/codevisor/workspaces on its
     /// machine). Server-derived from the folder location on every response.
@@ -67,6 +84,7 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
         origin: SessionOrigin = .codevisor,
         createdAt: Date = Date(),
         locations: [ProjectLocation] = [],
+        worktreeBase: ProjectWorktreeBase? = nil,
         isScratch: Bool = false
     ) {
         self.id = id
@@ -77,6 +95,7 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
         self.origin = origin
         self.createdAt = createdAt
         self.locations = locations
+        self.worktreeBase = worktreeBase
         self.isScratch = isScratch
     }
 
@@ -119,7 +138,7 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
 
     private enum Keys: String, CodingKey {
         case id, serverId, name, folderURL, isArchived, symbolName, origin, createdAt, locations
-        case isScratch
+        case isScratch, worktreeBase
     }
 
     // Custom decoding tolerates records persisted before locations existed
@@ -134,6 +153,7 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
         origin = try container.decodeIfPresent(SessionOrigin.self, forKey: .origin) ?? .codevisor
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
         isScratch = try container.decodeIfPresent(Bool.self, forKey: .isScratch) ?? false
+        worktreeBase = try container.decodeIfPresent(ProjectWorktreeBase.self, forKey: .worktreeBase)
         if let locations = try container.decodeIfPresent([ProjectLocation].self, forKey: .locations) {
             self.locations = locations
         } else if let legacyFolderURL = try container.decodeIfPresent(URL.self, forKey: .folderURL) {
@@ -155,6 +175,7 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
         try container.encode(origin, forKey: .origin)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(locations, forKey: .locations)
+        try container.encodeIfPresent(worktreeBase, forKey: .worktreeBase)
         try container.encode(isScratch, forKey: .isScratch)
     }
 }

@@ -56,11 +56,11 @@ struct ComposerBar: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
 
-    @State private var text = ""
+    @State var text = ""
     /// The source New Chat editor keeps drawing the submitted glyphs until
     /// the promotion layer has covered it. The durable controller draft is
     /// already empty, so newly mounted destination composers remain empty.
-    @State private var retainsSubmittedTextForPromotion = false
+    @State var retainsSubmittedTextForPromotion = false
     /// Measured height of the text itself, used for the collapsed size and as
     /// the starting point of a drag.
     @State private var measuredTextHeight: CGFloat = 0
@@ -79,17 +79,18 @@ struct ComposerBar: View {
     /// animation so release doesn't flash back to the old resting height.
     @State private var releaseHeight: CGFloat?
     @State private var photoItems: [PhotosPickerItem] = []
-    @State private var isPickingPhotos = false
-    @State private var isPickingFiles = false
-    @State private var isCapturingPhoto = false
-    @State private var isAddingProject = false
-    @Environment(AppEnvironment.self) private var environment
+    @State var isPickingPhotos = false
+    @State var isPickingFiles = false
+    @State var isCapturingPhoto = false
+    @State var isAddingProject = false
+    @State var managedProject: Project?
+    @Environment(AppEnvironment.self) var environment
 
-    private var trimmed: String {
+    var trimmed: String {
         text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private var canSend: Bool {
+    var canSend: Bool {
         (!trimmed.isEmpty || !controller.composerAttachments.isEmpty)
             && !controller.isSubmitting
             && !controller.isConnecting
@@ -164,6 +165,14 @@ struct ComposerBar: View {
             AddProjectSheet { project in
                 selectTargetProject(project)
             }
+        }
+        .sheet(item: $managedProject) { project in
+            ManageProjectSheet(
+                project: project,
+                client: environment.machines.client(for: project.serverId),
+                didUpdate: { await environment.projectList.refreshFromServer() },
+                onArchive: { archiveManagedProject(project) }
+            )
         }
         .onGeometryChange(for: CGFloat.self) {
             $0.size.height
@@ -463,233 +472,10 @@ struct ComposerBar: View {
         withAnimation(.snappy(duration: 0.28)) { releaseHeight = nil }
     }
 
-    private func setExpanded(_ expand: Bool) {
+    func setExpanded(_ expand: Bool) {
         withAnimation(.snappy(duration: 0.28)) {
             isExpanded = expand
         }
-    }
-
-    // MARK: - Run chips (new-chat page only)
-
-    /// Projects offered by the picker (scratch backing projects, when a
-    /// server has any, are internal and never listed).
-    private var pickerProjects: [Project] {
-        environment.projectList.activeProjects.filter { !$0.isScratch }
-    }
-
-    /// The live project record. The controller holds a snapshot from when
-    /// the project was picked; the server's git probe lands on the list
-    /// afterwards, and the worktree chip must follow the probed value.
-    private var liveProject: Project {
-        environment.projectList.projects.first {
-            $0.serverId == controller.project.serverId && $0.id == controller.project.id
-        } ?? controller.project
-    }
-
-    private var runTargetChips: some View {
-        HStack(spacing: 10) {
-            projectChip
-            if liveProject.isGitRepository {
-                Divider()
-                    .frame(height: 14)
-                    .accessibilityHidden(true)
-                runLocationChip
-            }
-        }
-    }
-
-    private var projectChip: some View {
-        Menu {
-            ForEach(pickerProjects) { project in
-                Button {
-                    selectTargetProject(project)
-                } label: {
-                    menuRow(
-                        project.name,
-                        systemImage: project.symbolName,
-                        isSelected: controller.project.id == project.id
-                    )
-                }
-            }
-            Divider()
-            Button {
-                isAddingProject = true
-            } label: {
-                Label("New Project…", systemImage: "folder.badge.plus")
-            }
-        } label: {
-            chipLabel(controller.project.name, systemImage: controller.project.symbolName)
-        }
-        .accessibilityLabel("Project")
-        .accessibilityValue(controller.project.name)
-    }
-
-    private var runLocationChip: some View {
-        let newWorktree = controller.wantsNewWorktree
-        return Menu {
-            Button {
-                selectRunLocation(newWorktree: false)
-            } label: {
-                menuRow("Project Directory", systemImage: "folder.fill", isSelected: !newWorktree)
-            }
-            Button {
-                selectRunLocation(newWorktree: true)
-            } label: {
-                menuRow("New Worktree", systemImage: "arrow.triangle.branch", isSelected: newWorktree)
-            }
-        } label: {
-            chipLabel(
-                newWorktree ? "New Worktree" : "Project Directory",
-                systemImage: newWorktree ? "arrow.triangle.branch" : "folder.fill"
-            )
-        }
-        .accessibilityLabel("Run location")
-        .accessibilityValue(newWorktree ? "New Worktree" : "Project Directory")
-    }
-
-    /// A picked project carries the machine's remembered worktree preference
-    /// (worktrees only make sense for git projects).
-    func selectTargetProject(_ project: Project) {
-        environment.composerDefaults.rememberNewWorkspaceProject(
-            serverId: project.serverId,
-            projectId: project.id
-        )
-        let prefersWorktree =
-            project.isGitRepository
-            && environment.composerDefaults.prefersWorktreeForNewWorkspaces(
-                forServer: project.serverId
-            )
-        Task {
-            await controller.selectProject(project)
-            controller.wantsNewWorktree = prefersWorktree
-        }
-        // Re-probe git capability so the run-location chip tracks fresh data.
-        Task { await environment.projectList.refreshFromServer() }
-    }
-
-    private func selectRunLocation(newWorktree: Bool) {
-        environment.composerDefaults.rememberNewWorkspaceWorktreePreference(
-            serverId: controller.project.serverId,
-            createsWorktree: newWorktree
-        )
-        controller.wantsNewWorktree = newWorktree
-    }
-
-    private func chipLabel(_ title: String, systemImage: String) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: systemImage)
-                .font(.caption)
-            Text(title)
-                .lineLimit(1)
-        }
-        .foregroundStyle(.secondary)
-    }
-
-    @ViewBuilder
-    private func menuRow(_ title: String, systemImage: String, isSelected: Bool) -> some View {
-        if isSelected {
-            Label(title, systemImage: "checkmark")
-        } else {
-            Label(title, systemImage: systemImage)
-        }
-    }
-
-    // MARK: - Controls
-
-    private var remainingAttachmentSlots: Int {
-        max(0, SessionController.maxAttachments - controller.composerAttachments.count)
-    }
-
-    /// Routes file and image pasteboard content through the same staging paths
-    /// as the attachment menu. The paste delegate consumes these items so it
-    /// does not also insert a filename or object-replacement character.
-    private func handlePastedAttachments(_ pasted: [PastedAttachment]) {
-        for item in pasted {
-            switch item {
-            case let .fileURL(url):
-                ComposerAttachmentStaging.stage(pickedURLs: [url], into: controller)
-            case let .image(data, suggestedName):
-                controller.attachImageData(data, suggestedName: suggestedName)
-            }
-        }
-    }
-
-    private var attachButton: some View {
-        Menu {
-            Button {
-                isPickingPhotos = true
-            } label: {
-                Label("Photo Library", systemImage: "photo.on.rectangle")
-            }
-            if UIImagePickerController.isSourceTypeAvailable(.camera) {
-                Button {
-                    isCapturingPhoto = true
-                } label: {
-                    Label("Take Photo", systemImage: "camera")
-                }
-            }
-            Button {
-                isPickingFiles = true
-            } label: {
-                Label("Choose Files", systemImage: "folder")
-            }
-        } label: {
-            Image(systemName: "paperclip")
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.secondary)
-                .scaledFrame(width: 28, height: 28, relativeTo: .subheadline)
-                .expandedHitTarget(base: 28)
-        }
-        .buttonStyle(.plain)
-        .disabled(remainingAttachmentSlots == 0)
-        .accessibilityLabel("Attach files")
-    }
-
-    private var sendButton: some View {
-        Button {
-            let outgoing = text
-            if preservesFocusAfterSend {
-                retainsSubmittedTextForPromotion = true
-            }
-            onWillSend?(outgoing)
-            controller.composerText = outgoing
-            if !preservesFocusAfterSend {
-                UIApplication.shared.sendAction(
-                    #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil
-                )
-            }
-            setExpanded(false)
-            Task { await controller.send() }
-        } label: {
-            Image(systemName: "arrow.up")
-                .font(.subheadline.weight(.bold))
-                .scaledFrame(width: 30, height: 30, relativeTo: .subheadline)
-                .foregroundStyle(canSend ? Color(.systemBackground) : Color.secondary.opacity(0.75))
-                .background(
-                    Circle().fill(
-                        canSend ? Color.primary.opacity(0.85) : Color.secondary.opacity(0.16)
-                    )
-                )
-                .expandedHitTarget(base: 30)
-        }
-        .buttonStyle(.plain)
-        .disabled(!canSend)
-        .accessibilityLabel("Send")
-    }
-
-    private var stopButton: some View {
-        Button {
-            Task { await controller.stop() }
-        } label: {
-            Image(systemName: "stop.fill")
-                .font(.caption.weight(.bold))
-                .scaledFrame(width: 30, height: 30, relativeTo: .caption)
-                .foregroundStyle(.secondary)
-                .background(Circle().fill(Color.secondary.opacity(0.16)))
-                .expandedHitTarget(base: 30)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Stop")
     }
 }
 

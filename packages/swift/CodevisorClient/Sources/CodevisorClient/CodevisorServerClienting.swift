@@ -188,6 +188,11 @@ public protocol CodevisorServerClienting: Sendable {
     func upsertProject(_ project: Project) async throws -> ServerProject
     func updateProject(_ project: Project) async throws -> ServerProject
     func deleteProject(id: UUID) async throws
+    func listProjectGitBranches(projectId: UUID) async throws -> [ServerProjectGitBranch]
+    func updateProjectWorktreeBase(
+        id: UUID,
+        worktreeBase: ProjectWorktreeBase?
+    ) async throws -> ServerProject
     /// Creates the hidden backing project for a brand-new scratch workspace:
     /// the server allocates a memorable name, creates its empty folder under
     /// ~/codevisor/workspaces, and registers a project pointing at it. The

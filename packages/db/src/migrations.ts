@@ -1067,5 +1067,13 @@ export const migrations: ReadonlyArray<Migration> = [
         ) end
       );
     `
+  },
+  {
+    id: 38,
+    name: "project worktree base branch",
+    sql: `
+      alter table projects add column worktree_base_remote text;
+      alter table projects add column worktree_base_branch text;
+    `
   }
 ]

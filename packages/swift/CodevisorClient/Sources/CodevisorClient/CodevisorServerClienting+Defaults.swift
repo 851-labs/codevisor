@@ -3,6 +3,15 @@ import CodevisorProtocol
 import Foundation
 
 public extension CodevisorServerClienting {
+    func listProjectGitBranches(projectId: UUID) async throws -> [ServerProjectGitBranch] { [] }
+
+    func updateProjectWorktreeBase(
+        id: UUID,
+        worktreeBase: ProjectWorktreeBase?
+    ) async throws -> ServerProject {
+        throw CodevisorServerClientError.invalidResponse
+    }
+
     /// Defaults for fakes and relay transports that don't manage a machine's
     /// cloud registration: report "not registered" and refuse to change it.
     func cloudRegistration() async throws -> ServerCloudRegistration {

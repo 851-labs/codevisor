@@ -24,6 +24,7 @@ import {
   isGitWorkTree,
   isWorktreeBranchCollision,
   listCodevisorWorktreeBranchNames,
+  listProjectGitBranches,
   rollbackFailedWorktree,
   worktreeStartPoint
 } from "@codevisor/worktrees"
@@ -48,6 +49,7 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "../server-context.js"
+import { cloneDirectoryName, looksLikeGitUrl } from "./project-git-url.js"
 
 export const routeProjects = async (
   services: CodevisorServerServices,
@@ -238,6 +240,19 @@ export const routeProjects = async (
     return true
   }
 
+  const branchProjectId = matchRoute(url.pathname, "/v1/projects/:id/git/branches")
+  if (branchProjectId !== undefined && request.method === "GET") {
+    const project = await getProjectOrFail(services.db, branchProjectId)
+    const location = localLocationOrFail(serverId, project)
+    assertLocationFolderExists(location)
+    if (!(await isGitWorkTree(location.folderPath))) {
+      throw new HttpFailure(422, `Project folder is not a git repository: ${location.folderPath}`)
+    }
+    const environment = await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
+    writeJson(response, 200, await listProjectGitBranches(location.folderPath, environment))
+    return true
+  }
+
   const worktreeProjectId = matchRoute(url.pathname, "/v1/projects/:id/worktrees")
   if (worktreeProjectId !== undefined && request.method === "GET") {
     writeJson(response, 200, await run(services.db.listWorktrees(worktreeProjectId)))
@@ -263,7 +278,12 @@ export const routeProjects = async (
     // Refresh once, outside the collision loop. The ref check above handles
     // established conflicts; retrying `git worktree add -b` handles the race
     // where another isolated server claims the same branch after our scan.
-    const startPoint = await worktreeStartPoint(location.folderPath)
+    const environment = await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
+    const startPoint = await worktreeStartPoint(
+      location.folderPath,
+      project.worktreeBase,
+      environment
+    )
     for (let attempt = 0; attempt < 100; attempt += 1) {
       const name =
         config.worktreeNameStyle === "development"
@@ -289,7 +309,6 @@ export const routeProjects = async (
         /* v8 ignore stop */
       }
       const startedAt = Date.now()
-      const environment = await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
       const publishSetup = makeWorktreeSetupPublisher(
         services.db,
         fanout,
@@ -427,21 +446,6 @@ const makeProjectSetupPublisher = (
     return next
   }
 }
-
-/// Derives the managed checkout directory name from the remote URL
-/// ("git@github.com:acme/widget.git" → "widget").
-const cloneDirectoryName = (url: string): string | undefined => {
-  const trimmed = url.trim().replace(/\/+$/, "")
-  /* v8 ignore next -- a URL that passed looksLikeGitUrl always has at least one non-separator segment. */
-  const last = trimmed.split(/[/:]/).filter(Boolean).at(-1) ?? ""
-  const name = last.replace(/\.git$/i, "")
-  return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name) ? name : undefined
-}
-
-const looksLikeGitUrl = (url: string): boolean =>
-  /^(https?:\/\/|git:\/\/|ssh:\/\/)[^\s]+$/.test(url) ||
-  /^[\w.-]+@[\w.-]+:[^\s]+$/.test(url) ||
-  url.startsWith("file://")
 
 const makeWorktreeSetupPublisher = (
   db: CodevisorDatabaseService,

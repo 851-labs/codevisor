@@ -48,12 +48,33 @@ struct ModelTests {
 
     @Test("Project and session encode and decode")
     func codable() throws {
-        let project = Project.fromFolder(URL(fileURLWithPath: "/w"))
+        var project = Project.fromFolder(URL(fileURLWithPath: "/w"))
+        project.worktreeBase = ProjectWorktreeBase(remote: "upstream", branch: "release/next")
         let session = ChatSession(projectId: project.id, title: "S")
         let projectData = try JSONEncoder().encode(project)
         let sessionData = try JSONEncoder().encode(session)
         #expect(try JSONDecoder().decode(Project.self, from: projectData) == project)
         #expect(try JSONDecoder().decode(ChatSession.self, from: sessionData) == session)
+    }
+
+    @Test("Server projects decode an optional worktree base and map it to the domain model")
+    func serverProjectWorktreeBase() throws {
+        let legacy = try JSONDecoder().decode(
+            ServerProject.self,
+            from: Data(
+                #"{"id":"6604c914-659b-401a-a008-edbd7ea9738f","name":"Legacy","isArchived":false,"symbolName":"folder","origin":"codevisor","createdAt":"2026-08-19T00:00:00.000Z","locations":[]}"#
+                    .utf8)
+        )
+        let configured = try JSONDecoder().decode(
+            ServerProject.self,
+            from: Data(
+                #"{"id":"6604c914-659b-401a-a008-edbd7ea9738f","name":"Configured","isArchived":false,"symbolName":"folder","origin":"codevisor","createdAt":"2026-08-19T00:00:00.000Z","locations":[],"worktreeBase":{"remote":"upstream","branch":"develop"}}"#
+                    .utf8)
+        )
+
+        #expect(legacy.worktreeBase == nil)
+        #expect(configured.worktreeBase?.displayName == "upstream/develop")
+        #expect(try configured.project().worktreeBase == configured.worktreeBase)
     }
 
     @Test("Legacy project records decode their folderURL into a location")

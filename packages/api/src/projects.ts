@@ -11,6 +11,23 @@ export const ProjectLocation = Schema.Struct({
 })
 export type ProjectLocation = typeof ProjectLocation.Type
 
+/// The remote-tracking branch new Codevisor worktrees start from. Keeping the
+/// remote separate from the branch avoids baking an `origin` assumption into
+/// project configuration and preserves branch names containing slashes.
+export const ProjectWorktreeBase = Schema.Struct({
+  remote: Schema.String,
+  branch: Schema.String
+})
+export type ProjectWorktreeBase = typeof ProjectWorktreeBase.Type
+
+/// One remote branch offered by the project settings branch picker.
+export const ProjectGitBranch = Schema.Struct({
+  remote: Schema.String,
+  branch: Schema.String,
+  isDefault: Schema.Boolean
+})
+export type ProjectGitBranch = typeof ProjectGitBranch.Type
+
 export const Project = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
@@ -27,6 +44,9 @@ export const Project = Schema.Struct({
   /// /v1/projects/from-git). Machine-independent by design: any machine can
   /// materialize the same project by cloning the same remote.
   repoUrl: Schema.optional(Schema.String),
+  /// An explicit base for newly-created worktrees. Absent preserves the
+  /// legacy origin/main (then HEAD) behavior for existing projects.
+  worktreeBase: Schema.optional(ProjectWorktreeBase),
   /// True for the hidden backing project of a scratch workspace (its folder
   /// lives under ~/codevisor/workspaces). Derived from the folder location by
   /// the server on every response, never stored, so clients can filter these
@@ -116,7 +136,9 @@ export const UpdateProjectRequest = Schema.Struct({
   /// revives only the children that same cascade archived. See
   /// `archive_cascade_from` in @codevisor/db.
   isArchived: Schema.optional(Schema.Boolean),
-  symbolName: Schema.optional(Schema.String)
+  symbolName: Schema.optional(Schema.String),
+  /// Null clears an explicit selection and restores the legacy default.
+  worktreeBase: Schema.optional(Schema.NullOr(ProjectWorktreeBase))
 })
 export type UpdateProjectRequest = typeof UpdateProjectRequest.Type
 

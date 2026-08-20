@@ -8,6 +8,8 @@ import {
   EventEnvelope,
   HarnessAuthFlow,
   Project,
+  ProjectGitBranch,
+  UpdateProjectRequest,
   ServerCapabilities,
   SessionDetail,
   SessionGoal,
@@ -94,6 +96,20 @@ describe("@codevisor/api", () => {
         }
       ]
     })
+
+    const configured = decode(Project)({
+      ...encode(Project)(project),
+      worktreeBase: { remote: "upstream", branch: "release/next" }
+    })
+    expect(configured.worktreeBase).toEqual({ remote: "upstream", branch: "release/next" })
+    expect(
+      decode(ProjectGitBranch)({
+        remote: "upstream",
+        branch: "release/next",
+        isDefault: false
+      })
+    ).toMatchObject({ remote: "upstream", branch: "release/next" })
+    expect(decode(UpdateProjectRequest)({ worktreeBase: null })).toEqual({ worktreeBase: null })
   })
 
   it("accepts client-provided creation metadata", () => {

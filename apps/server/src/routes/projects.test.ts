@@ -325,6 +325,93 @@ describe("project routes", () => {
     expect(JSON.stringify(worktree.body)).not.toContain("Project not found")
   })
 
+  it("lists and applies a project's configured worktree base branch", async () => {
+    const execFileAsync = promisify(execFile)
+    const git = (args: ReadonlyArray<string>, cwd: string) =>
+      execFileAsync("git", [...args], { cwd })
+    const root = mkdtempSync(join(tmpdir(), "codevisor-project-base-"))
+    const worktreesRoot = join(root, "worktrees")
+    const origin = join(root, "origin")
+    const repo = join(root, "repo")
+    const nonGitRepo = join(root, "non-git")
+    mkdirSync(origin)
+    mkdirSync(nonGitRepo)
+    process.env["CODEVISOR_WORKTREES_ROOT"] = worktreesRoot
+    tempDirs.push(root)
+
+    try {
+      await git(["init", "-b", "main"], origin)
+      await git(
+        ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", "main"],
+        origin
+      )
+      await git(["checkout", "-b", "release/next"], origin)
+      await git(
+        ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", "release"],
+        origin
+      )
+      const releaseSha = (await git(["rev-parse", "HEAD"], origin)).stdout.trim()
+      await git(["checkout", "main"], origin)
+      await git(["clone", origin, repo], root)
+
+      const { server } = await start()
+      await jsonRequest(server, "/v1/projects", {
+        body: JSON.stringify({ folderPath: nonGitRepo, id: "non-git-project" }),
+        method: "POST"
+      })
+      const nonGitBranches = await jsonRequest(server, "/v1/projects/non-git-project/git/branches")
+      expect(nonGitBranches.status).toBe(422)
+
+      await jsonRequest(server, "/v1/projects", {
+        body: JSON.stringify({ folderPath: repo, id: "configured-base-project" }),
+        method: "POST"
+      })
+
+      const branches = await jsonRequest(
+        server,
+        "/v1/projects/configured-base-project/git/branches"
+      )
+      expect(branches.status).toBe(200)
+      expect(branches.body).toEqual(
+        expect.arrayContaining([
+          { remote: "origin", branch: "main", isDefault: true },
+          { remote: "origin", branch: "release/next", isDefault: false }
+        ])
+      )
+
+      const configured = await jsonRequest(server, "/v1/projects/configured-base-project", {
+        body: JSON.stringify({
+          worktreeBase: { remote: "origin", branch: "release/next" }
+        }),
+        method: "PATCH"
+      })
+      expect(configured.body).toMatchObject({
+        worktreeBase: { remote: "origin", branch: "release/next" }
+      })
+
+      const created = await jsonRequest(server, "/v1/projects/configured-base-project/worktrees", {
+        body: JSON.stringify({ name: "from-release" }),
+        method: "POST"
+      })
+      expect(created.status).toBe(201)
+      const worktreePath = (created.body as { readonly path: string }).path
+      expect((await git(["rev-parse", "HEAD"], worktreePath)).stdout.trim()).toBe(releaseSha)
+
+      await jsonRequest(server, "/v1/projects/configured-base-project", {
+        body: JSON.stringify({ worktreeBase: { remote: "origin", branch: "missing" } }),
+        method: "PATCH"
+      })
+      const missing = await jsonRequest(server, "/v1/projects/configured-base-project/worktrees", {
+        body: JSON.stringify({ name: "missing-base" }),
+        method: "POST"
+      })
+      expect(missing.status).toBe(422)
+      expect((missing.body as { readonly error: string }).error).toContain("Manage Project")
+    } finally {
+      delete process.env["CODEVISOR_WORKTREES_ROOT"]
+    }
+  })
+
   it("creates worktrees and runs worktree sessions in them", async () => {
     const execFileAsync = promisify(execFile)
     const git = (args: ReadonlyArray<string>, cwd: string) =>

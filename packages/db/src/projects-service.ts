@@ -87,12 +87,14 @@ export const makeProjectsService = (
         if (request.id === undefined || claimed.project_id.toLowerCase() === projectId) {
           return getProject(claimed.project_id)
         }
+        const claimedProject = getProject(claimed.project_id)
         const merge = sqlite.transaction(() => {
           sqlite
             .prepare(
               `insert into projects (
-                id, name, is_archived, symbol_name, origin, created_at, repo_url
-              ) values (?, ?, ?, ?, ?, ?, ?)`
+                id, name, is_archived, symbol_name, origin, created_at, repo_url,
+                worktree_base_remote, worktree_base_branch
+              ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)`
             )
             .run(
               projectId,
@@ -101,7 +103,9 @@ export const makeProjectsService = (
               request.symbolName ?? "folder.fill",
               request.origin ?? "codevisor",
               createdAt,
-              request.repoUrl ?? null
+              request.repoUrl ?? null,
+              claimedProject.worktreeBase?.remote ?? null,
+              claimedProject.worktreeBase?.branch ?? null
             )
           for (const table of ["project_locations", "sessions", "worktrees"]) {
             sqlite
@@ -134,8 +138,9 @@ export const makeProjectsService = (
         sqlite
           .prepare(
             `insert into projects (
-              id, name, is_archived, symbol_name, origin, created_at, repo_url
-            ) values (?, ?, ?, ?, ?, ?, ?)`
+              id, name, is_archived, symbol_name, origin, created_at, repo_url,
+              worktree_base_remote, worktree_base_branch
+            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)`
           )
           .run(
             project.id,
@@ -144,7 +149,9 @@ export const makeProjectsService = (
             project.symbolName,
             project.origin,
             project.createdAt,
-            project.repoUrl ?? null
+            project.repoUrl ?? null,
+            null,
+            null
           )
         sqlite
           .prepare(
@@ -181,6 +188,10 @@ export const makeProjectsService = (
         // the flag and both transitions from it keeps them consistent by
         // construction rather than by three parallel conditions.
         const stamp = archivedStamp(request.isArchived, current.isArchived, current.archivedAt)
+        const worktreeBase =
+          request.worktreeBase === undefined
+            ? current.worktreeBase
+            : (request.worktreeBase ?? undefined)
         const archiving = stamp !== null && !current.isArchived
         const unarchiving = stamp === null && current.isArchived
         // One transaction so a cascade can never half-apply: a project that
@@ -189,7 +200,8 @@ export const makeProjectsService = (
         sqlite.transaction(() => {
           sqlite
             .prepare(
-              `update projects set name = ?, is_archived = ?, archived_at = ?, symbol_name = ?
+              `update projects set name = ?, is_archived = ?, archived_at = ?, symbol_name = ?,
+                worktree_base_remote = ?, worktree_base_branch = ?
                where id = ? collate nocase`
             )
             .run(
@@ -197,6 +209,8 @@ export const makeProjectsService = (
               stamp === null ? 0 : 1,
               stamp,
               request.symbolName ?? current.symbolName,
+              worktreeBase?.remote ?? null,
+              worktreeBase?.branch ?? null,
               id
             )
           if (stamp !== null && archiving) {

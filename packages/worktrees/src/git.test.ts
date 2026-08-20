@@ -16,9 +16,9 @@ import {
   parseGitNumstat,
   rollbackFailedWorktree,
   sanitizeGitOutputLine,
-  worktreeStartPoint,
   type GitOutputStream
 } from "./git.js"
+import { worktreeStartPoint } from "./project-branches.js"
 
 const makeRepo = (): { readonly root: string; readonly repo: string } => {
   const root = mkdtempSync(join(tmpdir(), "codevisor-git-"))
@@ -256,25 +256,6 @@ describe("git helper", () => {
       .toString()
       .trim()
     expect(worktreeHead).toBe(remoteTip)
-  })
-
-  it("uses cached origin/main when refreshing it fails", async () => {
-    const root = mkdtempSync(join(tmpdir(), "codevisor-git-offline-"))
-    const origin = join(root, "origin")
-    mkdirSync(origin)
-    execFileSync("git", ["init", "-b", "main"], { cwd: origin })
-    execFileSync(
-      "git",
-      ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", "init"],
-      { cwd: origin }
-    )
-    const clone = join(root, "clone")
-    execFileSync("git", ["clone", origin, clone], { cwd: root })
-    execFileSync("git", ["remote", "set-url", "origin", join(root, "missing-origin")], {
-      cwd: clone
-    })
-
-    expect(await worktreeStartPoint(clone)).toBe("origin/main")
   })
 
   it("rejects with the collected stderr when git fails", async () => {

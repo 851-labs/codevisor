@@ -92,7 +92,7 @@ final class ChatControllerCache {
         let persisted = environment.composerDrafts.draft(forServer: serverId)
         let restoredProject =
             persisted.flatMap { saved in
-                environment.projectList.projects.first {
+                environment.projectList.activeProjects.first {
                     $0.serverId == serverId && $0.id == saved.projectId
                 }
             } ?? environment.composerDefaults.lastProjectId(forServer: serverId).flatMap {
@@ -218,5 +218,14 @@ final class ChatControllerCache {
             controllers[key] = nil
             accessOrder.removeAll { $0 == key }
         }
+    }
+}
+
+extension SessionController {
+    func keepOrRetargetDraft(to project: Project) -> Bool {
+        if self.project.isArchived, self.project.id != project.id {
+            Task { await selectProject(project) }
+        }
+        return true
     }
 }

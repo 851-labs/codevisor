@@ -59,6 +59,7 @@ public struct ServerProject: Decodable, Equatable, Sendable {
     public var origin: SessionOrigin
     public var createdAt: String
     public var locations: [ServerProjectLocation]
+    public var worktreeBase: ProjectWorktreeBase? = nil
     /// The git remote this project was cloned from, for projects added via
     /// clone-from-git. Absent on older servers and directory-based projects.
     public var repoUrl: String? = nil
@@ -92,6 +93,7 @@ public struct ServerProject: Decodable, Equatable, Sendable {
                     isGitRepository: location.isGitRepository
                 )
             },
+            worktreeBase: worktreeBase,
             isScratch: isScratch ?? false
         )
     }
@@ -104,6 +106,7 @@ public struct ServerProject: Decodable, Equatable, Sendable {
         origin: SessionOrigin,
         createdAt: String,
         locations: [ServerProjectLocation],
+        worktreeBase: ProjectWorktreeBase? = nil,
         repoUrl: String? = nil,
         isScratch: Bool? = nil
     ) {
@@ -114,6 +117,7 @@ public struct ServerProject: Decodable, Equatable, Sendable {
         self.origin = origin
         self.createdAt = createdAt
         self.locations = locations
+        self.worktreeBase = worktreeBase
         self.repoUrl = repoUrl
         self.isScratch = isScratch
     }

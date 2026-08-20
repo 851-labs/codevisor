@@ -285,7 +285,7 @@ struct WorkspaceScreen: View {
                 }
             } else if missing {
                 ContentUnavailableView("Chat Not Found", systemImage: "questionmark.bubble")
-            } else if isDraft, draftController == nil {
+            } else if isDraft, draftController == nil || draftProjectCandidate == nil {
                 if draftProjectCandidate == nil {
                     // Match macOS's stale-while-revalidate behavior: an empty
                     // persisted snapshot opens project setup immediately. If
@@ -1367,9 +1367,10 @@ struct WorkspaceScreen: View {
     /// send should do. Idempotent: re-runs harmlessly as the project list
     /// arrives.
     private func setUpDraftIfNeeded(preferredProject: Project? = nil) {
-        guard isDraft, draftController == nil else { return }
+        guard isDraft else { return }
         guard let project = preferredProject ?? draftProjectCandidate
         else { return }
+        guard draftController?.keepOrRetargetDraft(to: project) != true else { return }
         // The retained draft: leaving and coming back — or relaunching —
         // restores the unsent message, attachments, and picked run location.
         let controller = ChatControllerCache.shared.draftController(
@@ -1395,7 +1396,6 @@ struct WorkspaceScreen: View {
         let addedProject = environment.projectList.addProject(
             folderURL: URL(fileURLWithPath: path)
         )
-        project = addedProject
         setUpDraftIfNeeded(preferredProject: addedProject)
 
         // A folder may have been selected several pushes deep. Reveal this

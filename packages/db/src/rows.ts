@@ -26,6 +26,8 @@ export interface ProjectRow {
   readonly origin: Project["origin"]
   readonly created_at: string
   readonly repo_url: string | null
+  readonly worktree_base_remote: string | null
+  readonly worktree_base_branch: string | null
 }
 
 export interface ArchivedWorktreeRow {

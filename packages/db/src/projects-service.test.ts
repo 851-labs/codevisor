@@ -4,6 +4,30 @@ import { makeDatabase } from "./index.js"
 import { run, tempDatabase } from "./test-support.js"
 
 describe("@codevisor/db", () => {
+  it("persists and clears a project's worktree base branch", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/configured-base" }))
+    expect(project.worktreeBase).toBeUndefined()
+
+    const configured = await run(
+      db.updateProject(project.id, {
+        worktreeBase: { remote: "upstream", branch: "release/next" }
+      })
+    )
+    expect(configured.worktreeBase).toEqual({ remote: "upstream", branch: "release/next" })
+    expect((await run(db.listProjects))[0]?.worktreeBase).toEqual({
+      remote: "upstream",
+      branch: "release/next"
+    })
+
+    const renamed = await run(db.updateProject(project.id, { name: "Still configured" }))
+    expect(renamed.worktreeBase).toEqual({ remote: "upstream", branch: "release/next" })
+    expect(
+      (await run(db.updateProject(project.id, { worktreeBase: null }))).worktreeBase
+    ).toBeUndefined()
+    await run(db.close)
+  })
+
   it("round-trips the git remote a project was cloned from", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     const cloned = await run(

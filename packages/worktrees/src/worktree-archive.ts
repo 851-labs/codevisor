@@ -8,9 +8,9 @@ import {
   GitError,
   isWorktreeBranchCollision,
   listCodevisorWorktreeBranchNames,
-  runGit,
-  worktreeStartPoint
+  runGit
 } from "./git.js"
+import { worktreeStartPoint } from "./project-branches.js"
 
 /// Archiving a chat used to delete its worktree outright, losing any work that
 /// was not committed. Instead we capture the worktree's full state as a commit

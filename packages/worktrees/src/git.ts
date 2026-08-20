@@ -146,34 +146,6 @@ const lineSplitter = (
   }
 }
 
-/// Refreshes and returns the ref new worktrees should be cut from. Fetching is
-/// best-effort so worktree creation still works offline: a cached `origin/main`
-/// is preferred when it exists, otherwise `git worktree add` falls back to HEAD.
-export const worktreeStartPoint = async (repoDir: string): Promise<string | undefined> => {
-  await git(
-    "fetch",
-    [
-      "fetch",
-      "--no-tags",
-      "--no-recurse-submodules",
-      "origin",
-      "+refs/heads/main:refs/remotes/origin/main"
-    ],
-    repoDir
-  ).catch(() => undefined)
-
-  try {
-    await git(
-      "rev-parse",
-      ["rev-parse", "--verify", "--quiet", "refs/remotes/origin/main"],
-      repoDir
-    )
-    return "origin/main"
-  } catch {
-    return undefined
-  }
-}
-
 const branchDiffBaseRefs = ["origin/HEAD", "origin/main", "origin/master", "main", "master"]
 
 export const parseGitNumstat = (numstat: string): BranchDiffTotals => {

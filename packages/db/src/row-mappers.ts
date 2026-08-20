@@ -65,7 +65,15 @@ export const projectFromRow = (
   origin: row.origin,
   createdAt: row.created_at,
   locations: locations.map(projectLocationFromRow),
-  ...(row.repo_url === null ? {} : { repoUrl: row.repo_url })
+  ...(row.repo_url === null ? {} : { repoUrl: row.repo_url }),
+  ...(row.worktree_base_remote === null || row.worktree_base_branch === null
+    ? {}
+    : {
+        worktreeBase: {
+          remote: row.worktree_base_remote,
+          branch: row.worktree_base_branch
+        }
+      })
 })
 
 export const archivedWorktreeFromRow = (row: ArchivedWorktreeRow): ArchivedWorktree => ({
