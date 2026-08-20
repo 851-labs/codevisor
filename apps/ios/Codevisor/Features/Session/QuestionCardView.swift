@@ -5,12 +5,12 @@ import SwiftUI
 
 /// A blocking agent question as the composer card's content — the macOS
 /// QuestionPickerContent on a phone: the composer's one glass card morphs
-/// into this while a question is active. One question at a time with arrow
-/// pagination, selections and notes accumulated across questions and
-/// submitted once, an "Other" row backed by a note field, and skipping
-/// allowed (only Other demands text). The common case — one single-select
-/// question — answers on a single tap. The hosting ComposerBar owns the
-/// glass surface and the "Submitting response…" overlay.
+/// into this while a question is active. First-party setup flows receive a
+/// dedicated touch presentation; generic questions show one question at a
+/// time with arrow pagination, selections and notes accumulated across
+/// questions and submitted once. The common case — one single-select
+/// question — answers on a single tap. The hosting ComposerBar owns the glass
+/// surface and the "Submitting response…" overlay.
 struct QuestionCardView: View {
     @Bindable var controller: SessionController
     let request: QuestionRequest
@@ -51,7 +51,16 @@ struct QuestionCardView: View {
         return true
     }
 
+    @ViewBuilder
     var body: some View {
+        if let question, isBrowserExtensionPresentation(question) {
+            BrowserExtensionQuestionCard(controller: controller, question: question)
+        } else {
+            genericQuestionCard
+        }
+    }
+
+    private var genericQuestionCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
 
@@ -73,6 +82,11 @@ struct QuestionCardView: View {
         }
     }
 
+    private func isBrowserExtensionPresentation(_ spec: QuestionSpec) -> Bool {
+        spec.presentation == .browserExtensionSetup
+            || spec.presentation == .browserExtensionWaiting
+    }
+
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
             Label("Action required", systemImage: "questionmark.bubble")
@@ -91,6 +105,8 @@ struct QuestionCardView: View {
                 Image(systemName: "xmark")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
+                    .scaledFrame(width: 28, height: 28, relativeTo: .caption)
+                    .expandedHitTarget(base: 28)
             }
             .buttonStyle(HoverIconButtonStyle(shape: .circle))
             .accessibilityLabel("Dismiss question")
@@ -162,6 +178,7 @@ struct QuestionCardView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
+            .frame(minHeight: 44)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 10)
@@ -207,6 +224,7 @@ struct QuestionCardView: View {
         .lineLimit(1...4)
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
+        .frame(minHeight: 44)
         .background(
             RoundedRectangle(cornerRadius: 10)
                 .fill(Color(.tertiarySystemFill).opacity(0.5))
@@ -236,6 +254,7 @@ struct QuestionCardView: View {
                     }
                     .buttonStyle(.bordered)
                     .buttonBorderShape(.circle)
+                    .controlSize(.large)
                 } else if questionIndex > 0 {
                     Button {
                         withAnimation(.snappy(duration: 0.2)) { questionIndex -= 1 }
@@ -245,6 +264,7 @@ struct QuestionCardView: View {
                     }
                     .buttonStyle(.bordered)
                     .buttonBorderShape(.circle)
+                    .controlSize(.large)
                     .accessibilityLabel("Previous question")
                 }
                 Spacer()
@@ -257,6 +277,7 @@ struct QuestionCardView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .buttonBorderShape(.circle)
+                    .controlSize(.large)
                     .disabled(!isSubmittable)
                     .accessibilityLabel("Submit answers")
                 } else {
@@ -268,6 +289,7 @@ struct QuestionCardView: View {
                     }
                     .buttonStyle(.bordered)
                     .buttonBorderShape(.circle)
+                    .controlSize(.large)
                     .accessibilityLabel("Next question")
                 }
             }

@@ -88,6 +88,16 @@ extension SessionController {
         return try await serverClient.browserExtensionIcon()
     }
 
+    /// Opens Chrome's extension page and reveals the prepared extension on
+    /// the computer running the session. iOS uses this instead of downloading
+    /// a desktop archive it cannot install locally.
+    public func openBrowserExtensionInstaller() async throws {
+        guard let serverClient else {
+            throw CodevisorServerClientError.invalidResponse
+        }
+        _ = try await serverClient.installDevelopmentBrowserExtension()
+    }
+
     // MARK: - Codex plan approval
 
     /// Only harnesses that propose plans without a blocking approval tool use

@@ -310,6 +310,10 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
         lock.withLock { _questionAnswers }
     }
 
+    var browserExtensionInstallerOpenCount: Int {
+        lock.withLock { _configUpdates.count(where: { $0.0 == "browser-extension-installer" }) }
+    }
+
     func holdQuestionAnswers(until gate: AsyncStream<Void>) {
         lock.withLock { _questionAnswerGate = gate }
     }
@@ -487,6 +491,11 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
         lock.withLock { _cancelCount += 1 }
     }
     func setSessionMode(id: UUID, modeId: String) async throws {}
+
+    func installDevelopmentBrowserExtension() async throws -> ServerBrowserUseConfiguration {
+        lock.withLock { _configUpdates.append(("browser-extension-installer", "open")) }
+        return .init(chromeAvailable: true, chromeConnected: false, managedAvailable: true)
+    }
 
     func setSessionConfig(id: UUID, configId: String, value: String) async throws {
         let (gate, shouldFail) = lock.withLock {
