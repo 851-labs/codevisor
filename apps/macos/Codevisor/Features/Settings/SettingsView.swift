@@ -7,9 +7,7 @@ import UserNotifications
 import CodevisorUI
 
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case general
-    case appearance
-    case notifications
+    case general, appearance, notifications
     case shortcuts
     case machines
 
@@ -212,7 +210,9 @@ struct SettingsView: View {
             }
             .listStyle(.sidebar)
             .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
+            .themedSurface(.sidebar)
             .navigationSplitViewColumnWidth(min: 185, ideal: 205, max: 240)
+            .themedToolbarBackground(theme, role: .sidebar)
             // System Settings keeps its sidebar fixed; a collapse control
             // would just leave an empty content window here.
             .toolbar(removing: .sidebarToggle)
@@ -224,6 +224,7 @@ struct SettingsView: View {
                         destination(for: route)
                     }
             }
+            .themedToolbarBackground(theme, role: .content)
         }
         // Every navigation (sidebar selection, push, pop, deep link) files
         // the previous page into the history — except when back/forward is
@@ -243,7 +244,6 @@ struct SettingsView: View {
         // surface (painted by ThemedRoot) shows through; system themes keep
         // the native look.
         .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
-        .themedToolbarBackground(theme, role: .content)
     }
 
     /// Selecting a sidebar section resets any machine pages pushed over the
