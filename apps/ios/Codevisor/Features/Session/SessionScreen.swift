@@ -54,9 +54,12 @@ struct SessionTranscriptView: View {
     @Environment(\.theme) private var theme
     @Environment(AppEnvironment.self) private var environment
     @State private var disclosure = TranscriptDisclosureStore()
-    /// The composer's resting height, used to size the transcript's bottom
-    /// spacer and the mask that sits under the card.
-    @State private var composerHeight: CGFloat = 96
+    @Namespace private var composerGlassNamespace
+    /// Resting measurements stay split so a live resize drag never republishes
+    /// transcript geometry. `ComposerBar` owns the card measurement; the
+    /// accessory stack changes only when semantic surfaces appear or resize.
+    @State private var composerCardHeight: CGFloat = 96
+    @State private var composerAccessoryHeight: CGFloat = 0
     /// True while the transcript is parked at the newest content; drives both
     /// auto-scroll and the scroll-to-bottom button, mirroring the macOS
     /// transcript's follow mode.
@@ -64,8 +67,8 @@ struct SessionTranscriptView: View {
     @State private var isAtBottom = true
     /// Height available to the chat area, used to cap composer expansion.
     @State private var availableHeight: CGFloat = 600
-    /// True while the composer is dragged to full height; the accessories
-    /// around it (scroll-to-bottom, notice rails) hide until it collapses.
+    /// True while the composer is dragged to full height; informational
+    /// accessories hide until it collapses, while actionable failures remain.
     @State private var composerExpanded = false
     /// Fetches and caches transcript attachment previews via the controller's
     /// authenticated client.
@@ -82,6 +85,12 @@ struct SessionTranscriptView: View {
     /// launch point for the optimistic user row instead of estimating from the
     /// transcript's bottom inset.
     @State private var sendAnimationSourceFrame: CGRect?
+
+    /// The complete resting bottom chrome above the safe-area margin. Every
+    /// transcript inset and snapshot crop reads this single value.
+    private var composerHeight: CGFloat {
+        composerCardHeight + composerAccessoryHeight
+    }
 
     var body: some View {
         chat
@@ -243,44 +252,23 @@ struct SessionTranscriptView: View {
                     .allowsHitTesting(false)
             }
 
-            VStack(spacing: 8) {
-                // A fully-expanded composer is a focused writing surface: the
-                // accessories above it hide and return on collapse.
-                if !composerExpanded {
-                    if !isAtBottom, hasScrollableContent {
-                        HStack {
-                            Spacer()
+            GlassEffectContainer(spacing: ComposerGlassStyle.clusterSpacing) {
+                composerCluster
+                    // The jump control belongs to the same material group but
+                    // not its measured vertical stack: showing it must never
+                    // change transcript insets or the user's scroll position.
+                    .overlay(alignment: .topTrailing) {
+                        if !composerExpanded, !isAtBottom, hasScrollableContent {
                             scrollToBottomButton
+                                .offset(y: -52)
+                                .glassEffectID(
+                                    ComposerGlassElement.scrollToBottom.rawValue,
+                                    in: composerGlassNamespace
+                                )
+                                .glassEffectTransition(.matchedGeometry)
+                                .transition(.opacity)
                         }
-                        .transition(.opacity)
                     }
-                    composerNoticeRail
-                        .transition(.opacity)
-                }
-                ComposerBar(
-                    controller: controller,
-                    // Dragged fully open, the card reaches all the way up to
-                    // the top bar (a hair of breathing room; the run-picker
-                    // chips keep their slot above it on the new-chat page);
-                    // text-driven auto-resize keeps its own, much lower cap
-                    // inside ComposerBar.
-                    maxHeight: availableHeight - 12,
-                    collapsedHeight: $composerHeight,
-                    isExpanded: $composerExpanded,
-                    showsRunPickers: showsRunPickers,
-                    initialFocusRequest: initialComposerFocusRequest,
-                    onInitialFocusRequestFulfilled:
-                        onInitialComposerFocusRequestFulfilled,
-                    preservesFocusAfterSend: preservesComposerFocusOnSend,
-                    textEditorHandoffRole: composerTextEditorHandoffRole,
-                    textEditorHandoffID: composerTextEditorHandoffID,
-                    onSendSourceFrameChange: { frame in
-                        sendAnimationSourceFrame = frame
-                    },
-                    onWillSend: { text in
-                        onComposerWillSend?(text, sendAnimationSourceFrame ?? .zero)
-                    }
-                )
             }
             .padding(.horizontal, 10)
             .padding(.bottom, 6)
@@ -299,24 +287,46 @@ struct SessionTranscriptView: View {
         .background(Color(.systemGroupedBackground))
     }
 
-    @ViewBuilder
-    private var composerNoticeRail: some View {
-        if let message = controller.configurationValidationError {
-            ComposerNoticeRail(
-                message,
-                kind: .error,
-                actionTitle: "Retry",
-                action: {
-                    Task { await controller.retryExistingSessionCapabilities() }
+    private var composerCluster: some View {
+        VStack(spacing: 0) {
+            IOSComposerAccessoryStack(
+                controller: controller,
+                isComposerExpanded: composerExpanded,
+                maximumTodoHeight: max(132, min(240, availableHeight * 0.35)),
+                glassNamespace: composerGlassNamespace
+            )
+            .onGeometryChange(for: CGFloat.self) {
+                $0.size.height
+            } action: { height in
+                if composerAccessoryHeight != height {
+                    composerAccessoryHeight = height
+                }
+            }
+
+            ComposerBar(
+                controller: controller,
+                // Actionable notices remain visible while fully expanded, so
+                // reserve their measured height from the editor's upper bound.
+                maxHeight: max(160, availableHeight - composerAccessoryHeight - 12),
+                collapsedHeight: $composerCardHeight,
+                isExpanded: $composerExpanded,
+                showsRunPickers: showsRunPickers,
+                initialFocusRequest: initialComposerFocusRequest,
+                onInitialFocusRequestFulfilled:
+                    onInitialComposerFocusRequestFulfilled,
+                preservesFocusAfterSend: preservesComposerFocusOnSend,
+                textEditorHandoffRole: composerTextEditorHandoffRole,
+                textEditorHandoffID: composerTextEditorHandoffID,
+                glassNamespace: composerGlassNamespace,
+                onSendSourceFrameChange: { frame in
+                    sendAnimationSourceFrame = frame
+                },
+                onWillSend: { text in
+                    onComposerWillSend?(text, sendAnimationSourceFrame ?? .zero)
                 }
             )
-        } else if let message = controller.configurationAdjustmentMessage {
-            ComposerNoticeRail(
-                message,
-                kind: .warning,
-                onDismiss: { controller.dismissConfigurationAdjustment() }
-            )
         }
+        .animation(Motion.quick(reduceMotion: reduceMotion), value: composerExpanded)
     }
 
     private var scrollToBottomButton: some View {
@@ -482,76 +492,6 @@ struct SessionTranscriptView: View {
         hasher.combine(dynamicTypeSize)
         hasher.combine(displayScale)
         hasher.combine(Self.transcriptMeasurementSchemaVersion)
-        return hasher.finalize()
-    }
-
-    private static func estimatedHeight(for item: ConversationItem) -> CGFloat {
-        switch item {
-        case let .user(message):
-            max(52, min(240, 48 + CGFloat(message.text.count / 72) * 18))
-        case .assistant:
-            320
-        }
-    }
-
-    private static func estimatedPlanHeight(_ markdown: String) -> CGFloat {
-        max(120, min(640, 72 + CGFloat(markdown.utf8.count / 72) * 18))
-    }
-
-    private static func planMeasurementRevision(_ markdown: String) -> Int {
-        var hasher = Hasher()
-        hasher.combine(markdown.utf8.count)
-        return hasher.finalize()
-    }
-
-    private static func optimisticMeasurementRevision(
-        for message: UserMessage,
-        showsStartingAgent: Bool
-    ) -> Int {
-        var hasher = Hasher()
-        hasher.combine(2)
-        hasher.combine(message.text.utf8.count)
-        hasher.combine(message.attachments.count)
-        for attachment in message.attachments {
-            hasher.combine(attachment.id)
-            hasher.combine(attachment.sizeBytes)
-        }
-        hasher.combine(showsStartingAgent)
-        return hasher.finalize()
-    }
-
-    private static func measurementRevision(
-        for item: ConversationItem,
-        waitingOnBackgroundTask: String?
-    ) -> Int {
-        var hasher = Hasher()
-        switch item {
-        case let .user(message):
-            hasher.combine(0)
-            hasher.combine(message.text.utf8.count)
-            hasher.combine(message.attachments.count)
-            for attachment in message.attachments {
-                hasher.combine(attachment.id)
-                hasher.combine(attachment.sizeBytes)
-            }
-        case let .assistant(message):
-            let turn = message.turn
-            hasher.combine(1)
-            hasher.combine(turn.entries.count)
-            hasher.combine(turn.isGenerating)
-            hasher.combine(turn.detailRevision)
-            hasher.combine(turn.hasDeferredWorkedDetails)
-            hasher.combine(turn.contextCompactionStatus?.rawValue)
-            hasher.combine(turn.planDocument?.utf8.count ?? 0)
-            hasher.combine(turn.stopDetail?.utf8.count ?? 0)
-            hasher.combine(turn.subagentActivityFingerprint)
-            hasher.combine(turn.attachments.count)
-            for attachment in turn.attachments {
-                hasher.combine(attachment.id)
-                hasher.combine(attachment.sizeBytes)
-            }
-        }
-        hasher.combine(waitingOnBackgroundTask)
         return hasher.finalize()
     }
 }

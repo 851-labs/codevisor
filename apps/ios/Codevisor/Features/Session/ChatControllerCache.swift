@@ -27,6 +27,9 @@ final class ChatControllerCache {
     /// macOS's SessionStore: opening enough chats may discard a transcript
     /// model, but it must not forget where the user was reading.
     @ObservationIgnored private var scrollStates: [Key: SessionScrollState] = [:]
+    /// Todo disclosure outlives the heavier controller LRU, matching the
+    /// macOS SessionStore contract for pinned session checklists.
+    @ObservationIgnored private var todoExpansionStates: [Key: Bool] = [:]
     /// Access order, most recent last — LRU eviction so browsing many chats
     /// doesn't retain every transcript ever opened.
     @ObservationIgnored private var accessOrder: [Key] = []
@@ -69,7 +72,7 @@ final class ChatControllerCache {
                 serverId: session.serverId
             )
         }
-        bindScrollState(controller, to: key)
+        bindRetainedSessionState(controller, to: key)
         controllers[key] = controller
         evictIfNeeded()
         return controller
@@ -144,7 +147,7 @@ final class ChatControllerCache {
         let key = Key(serverId: session.serverId, id: session.id)
         noteAccess(key)
         controllers[key] = controller
-        bindScrollState(controller, to: key)
+        bindRetainedSessionState(controller, to: key)
         if draftsByServer[session.serverId] === controller {
             draftsByServer[session.serverId] = nil
         }
@@ -193,10 +196,16 @@ final class ChatControllerCache {
         accessOrder.append(key)
     }
 
-    private func bindScrollState(_ controller: SessionController, to key: Key) {
+    private func bindRetainedSessionState(_ controller: SessionController, to key: Key) {
         controller.scrollState = scrollStates[key]
         controller.onScrollStateChange = { [weak self] state in
             self?.scrollStates[key] = state
+        }
+        controller.restoreTodoDisclosure(
+            isExpanded: todoExpansionStates[key] ?? true
+        )
+        controller.onTodosExpandedChange = { [weak self] isExpanded in
+            self?.todoExpansionStates[key] = isExpanded
         }
     }
 

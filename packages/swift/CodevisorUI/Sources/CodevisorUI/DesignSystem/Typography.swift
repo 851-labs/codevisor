@@ -38,6 +38,17 @@ public enum Typography {
         #endif
     }()
 
+    /// The smallest comfortable interactive target for the current platform.
+    /// The visible glyph can remain compact; use `expandedHitTarget` to grow
+    /// its hit region without changing surrounding layout.
+    public static let minimumInteractiveTargetSize: CGFloat = {
+        #if os(macOS)
+            return 20
+        #else
+            return 44
+        #endif
+    }()
+
     // MARK: SF Symbol glyph sizes
 
     /// Point sizes for `Image(systemName:)` glyphs in app chrome. These are

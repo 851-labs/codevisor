@@ -9,11 +9,18 @@ public struct TodoPanelView: View {
     let plan: Plan
     @Binding var isExpanded: Bool
     var glassNamespace: Namespace.ID? = nil
+    var maximumExpandedHeight: CGFloat? = nil
 
-    public init(plan: Plan, isExpanded: Binding<Bool>, glassNamespace: Namespace.ID? = nil) {
+    public init(
+        plan: Plan,
+        isExpanded: Binding<Bool>,
+        glassNamespace: Namespace.ID? = nil,
+        maximumExpandedHeight: CGFloat? = nil
+    ) {
         self.plan = plan
         self._isExpanded = isExpanded
         self.glassNamespace = glassNamespace
+        self.maximumExpandedHeight = maximumExpandedHeight
     }
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -59,22 +66,27 @@ public struct TodoPanelView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .expandedHitTarget(
+                base: 24,
+                minimum: Typography.minimumInteractiveTargetSize
+            )
             .accessibilityLabel("Todos, \(completedCount) of \(plan.entries.count) done")
             .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
             .accessibilityAddTraits(.isButton)
 
             TranscriptDisclosureContentReveal(isExpanded: isExpanded) {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(Array(plan.entries.enumerated()), id: \.offset) { _, entry in
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Image(systemName: symbol(for: entry.status))
-                                .foregroundStyle(color(for: entry.status))
-                                .font(.caption)
-                            Text(entry.content)
-                                .font(.callout.weight(entry.status == .inProgress ? .medium : .regular))
-                                .strikethrough(entry.status == .completed, color: .secondary)
-                                .foregroundStyle(textStyle(for: entry.status))
+                Group {
+                    if let maximumExpandedHeight {
+                        ViewThatFits(in: .vertical) {
+                            entries
+                            ScrollView {
+                                entries
+                            }
+                            .scrollIndicators(.visible)
                         }
+                        .frame(maxHeight: maximumExpandedHeight)
+                    } else {
+                        entries
                     }
                 }
                 .padding(.top, 6)
@@ -87,6 +99,23 @@ public struct TodoPanelView: View {
             id: .todos,
             in: glassNamespace
         )
+    }
+
+    private var entries: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(Array(plan.entries.enumerated()), id: \.offset) { _, entry in
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: symbol(for: entry.status))
+                        .foregroundStyle(color(for: entry.status))
+                        .font(.caption)
+                    Text(entry.content)
+                        .font(.callout.weight(entry.status == .inProgress ? .medium : .regular))
+                        .strikethrough(entry.status == .completed, color: .secondary)
+                        .foregroundStyle(textStyle(for: entry.status))
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func symbol(for status: PlanEntryStatus) -> String {

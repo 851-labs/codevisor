@@ -42,18 +42,39 @@ public struct ComposerNoticeRail: View {
                 .font(.caption)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
-            if let actionTitle, let action {
-                Button(actionTitle, action: action)
-                    .buttonStyle(.plain)
-                    .font(.caption.weight(.semibold))
-            }
-            if let onDismiss {
-                Button(action: onDismiss) {
-                    Image(systemName: "xmark")
-                        .font(.caption.weight(.semibold))
+            if hasControls {
+                // Expanded touch targets must not overlap. The visible
+                // controls stay compact while their hit regions meet at the
+                // midpoint of this platform-aware gap.
+                HStack(spacing: max(8, Typography.minimumInteractiveTargetSize - 20)) {
+                    if let actionTitle, let action {
+                        Button(actionTitle, action: action)
+                            .buttonStyle(.plain)
+                            .font(.caption.weight(.semibold))
+                            .expandedHitTarget(
+                                base: 20,
+                                minimum: Typography.minimumInteractiveTargetSize
+                            )
+                    }
+                    if let onDismiss {
+                        Button(action: onDismiss) {
+                            #if os(iOS)
+                                Image(systemName: "xmark")
+                                    .font(.caption.weight(.semibold))
+                                    .scaledFrame(width: 20, height: 20, relativeTo: .caption)
+                            #else
+                                Image(systemName: "xmark")
+                                    .font(.caption.weight(.semibold))
+                            #endif
+                        }
+                        .buttonStyle(.plain)
+                        .expandedHitTarget(
+                            base: 20,
+                            minimum: Typography.minimumInteractiveTargetSize
+                        )
+                        .accessibilityLabel("Dismiss notice")
+                    }
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Dismiss notice")
             }
         }
         .foregroundStyle(foregroundColor)
@@ -70,7 +91,13 @@ public struct ComposerNoticeRail: View {
                     .fill(foregroundColor.opacity(0.08))
             }
         }
-        .accessibilityElement(children: .combine)
+        // Actionable notices expose their controls as separate VoiceOver
+        // elements; passive notices read as one concise announcement.
+        .accessibilityElement(children: hasControls ? .contain : .combine)
+    }
+
+    private var hasControls: Bool {
+        action != nil || onDismiss != nil
     }
 
     private var defaultSystemImage: String {

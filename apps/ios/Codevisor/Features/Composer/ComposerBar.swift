@@ -47,6 +47,10 @@ struct ComposerBar: View {
     /// deliberately survives dismiss/reopen, so it must never identify a
     /// concrete UIKit editor. Only the short-lived NewChatFlow may do that.
     var textEditorHandoffID: UUID? = nil
+    /// Supplied by the session's one bottom-chrome GlassEffectContainer so
+    /// the composer and its accessories animate as a coordinated material
+    /// group. Standalone previews can omit it.
+    var glassNamespace: Namespace.ID? = nil
     /// Window-space editor bounds are the animation's real source geometry.
     var onSendSourceFrameChange: ((CGRect) -> Void)? = nil
     /// Captured before the controller clears its durable draft. New Chat uses
@@ -250,7 +254,11 @@ struct ComposerBar: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .composerGlassSurface(cornerRadius: ComposerGlassStyle.composerCornerRadius)
+        .composerGlassSurface(
+            cornerRadius: ComposerGlassStyle.composerCornerRadius,
+            id: .composer,
+            in: glassNamespace
+        )
         // Submission blanket over the whole card, exactly like the macOS
         // composer shell.
         .overlay {
