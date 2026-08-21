@@ -7,7 +7,6 @@ import SwiftUI
 /// New Tab plugin cards.
 struct PluginNewTabOption: Identifiable, Equatable {
     var pluginId: String
-    var pluginName: String
     var paneType: String
     var title: String
     var iconPath: String?
@@ -18,7 +17,6 @@ struct PluginNewTabOption: Identifiable, Equatable {
 /// The iOS take on macOS's new-tab page: pick what this tab becomes. The
 /// placeholder converts in place, so the tab keeps its slot in the grid.
 struct NewTabPaneView: View {
-    let projectName: String
     let onNewChat: () -> Void
     let onNewTerminal: () -> Void
     /// The machine's API client, for the machine-scoped plugin pane rows.
@@ -37,14 +35,12 @@ struct NewTabPaneView: View {
                 VStack(spacing: 14) {
                     newTabOption(
                         title: "New Chat",
-                        subtitle: "Start an agent in \(projectName)",
                         action: onNewChat
                     ) {
                         Image(systemName: "bubble.left.and.bubble.right")
                     }
                     newTabOption(
                         title: "New Terminal",
-                        subtitle: "Open a shell on the machine",
                         action: onNewTerminal
                     ) {
                         Image(systemName: "terminal")
@@ -52,7 +48,6 @@ struct NewTabPaneView: View {
                     ForEach(pluginOptions) { option in
                         newTabOption(
                             title: option.title,
-                            subtitle: option.pluginName,
                             action: { onOpenPlugin(option) }
                         ) {
                             if let client {
@@ -91,7 +86,6 @@ struct NewTabPaneView: View {
             plugin.panes.map { pane in
                 PluginNewTabOption(
                     pluginId: plugin.id,
-                    pluginName: plugin.name,
                     paneType: pane.type,
                     title: pane.title,
                     iconPath: pane.iconPath ?? plugin.iconPath
@@ -102,7 +96,6 @@ struct NewTabPaneView: View {
 
     private func newTabOption<Icon: View>(
         title: String,
-        subtitle: String,
         action: @escaping () -> Void,
         @ViewBuilder icon: () -> Icon
     ) -> some View {
@@ -112,14 +105,9 @@ struct NewTabPaneView: View {
                     .font(.title3)
                     .scaledFrame(width: 34, relativeTo: .title3)
                     .foregroundStyle(.tint)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(.primary)
-                    Text(subtitle)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
+                Text(title)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.primary)
                 Spacer()
             }
             .padding(16)

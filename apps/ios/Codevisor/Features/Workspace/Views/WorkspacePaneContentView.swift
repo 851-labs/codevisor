@@ -34,7 +34,6 @@ struct WorkspacePaneContentView: View {
     let hasStarted: Bool
     let onWorkspaceReady: ((UUID) -> Void)?
     let connectChat: (UUID) async -> Void
-    let newTabProjectName: String
     let onConvertToChat: () -> Void
     let onConvertToTerminal: () -> Void
     let onConvertToPlugin: (PluginNewTabOption) -> Void
@@ -93,7 +92,6 @@ struct WorkspacePaneContentView: View {
             }
         case .newTab:
             NewTabPaneView(
-                projectName: newTabProjectName,
                 onNewChat: onConvertToChat,
                 onNewTerminal: onConvertToTerminal,
                 client: machineClient,

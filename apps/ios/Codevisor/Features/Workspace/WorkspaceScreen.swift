@@ -668,7 +668,6 @@ struct WorkspaceScreen: View {
             hasStarted: hasStarted,
             onWorkspaceReady: onWorkspaceReady,
             connectChat: { await connectChat(sessionId: $0) },
-            newTabProjectName: resolvedProject?.name ?? "",
             onConvertToChat: { convertToChat(pane) },
             onConvertToTerminal: { convertToTerminal(pane) },
             onConvertToPlugin: { convertToPlugin(pane, option: $0) },
@@ -1072,7 +1071,6 @@ struct WorkspaceScreen: View {
         if pane.kind == .newTab {
             content = AnyView(
                 NewTabPaneView(
-                    projectName: resolvedProject?.name ?? "",
                     onNewChat: {},
                     onNewTerminal: {}
                 )

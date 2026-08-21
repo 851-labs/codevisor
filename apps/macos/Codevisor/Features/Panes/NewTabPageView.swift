@@ -12,7 +12,6 @@ import CodevisorUI
 /// offered by the machine's installed plugins.
 private struct PluginPaneOption: Identifiable, Equatable {
     var pluginId: String
-    var pluginName: String
     var paneType: String
     var title: String
     var iconPath: String?
@@ -21,6 +20,7 @@ private struct PluginPaneOption: Identifiable, Equatable {
 }
 
 struct NewTabPageView: View {
+    @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
     /// The placeholder pane this page belongs to.
     let paneId: UUID
@@ -73,9 +73,13 @@ struct NewTabPageView: View {
                 group?.focusSelectedPane()
             }
         )
-        .task {
+        .task(id: pluginStateRevision) {
             await loadPluginOptions()
         }
+    }
+
+    private var pluginStateRevision: UInt64 {
+        environment.pluginStateRevision(for: iconCacheNamespace)
     }
 
     /// Machine-scoped plugin pane cards. Errors (older servers without the
@@ -88,7 +92,6 @@ struct NewTabPageView: View {
             plugin.panes.map { pane in
                 PluginPaneOption(
                     pluginId: plugin.id,
-                    pluginName: plugin.name,
                     paneType: pane.type,
                     title: pane.title,
                     iconPath: pane.iconPath ?? plugin.iconPath
@@ -101,7 +104,6 @@ struct NewTabPageView: View {
     private var optionCards: some View {
         NewTabOptionCard(
             title: "New Chat",
-            subtitle: "Start another chat in this workspace",
             action: {
                 if let onNewChat {
                     onNewChat()
@@ -114,7 +116,6 @@ struct NewTabPageView: View {
         }
         NewTabOptionCard(
             title: "New Terminal",
-            subtitle: "Open a shell in this workspace",
             action: { group?.convertNewTabPane(id: paneId, to: .terminal) }
         ) {
             Image(systemName: "terminal")
@@ -122,7 +123,6 @@ struct NewTabPageView: View {
         ForEach(pluginOptions) { option in
             NewTabOptionCard(
                 title: option.title,
-                subtitle: option.pluginName,
                 action: {
                     group?.convertNewTabPane(
                         id: paneId,
@@ -152,7 +152,6 @@ struct NewTabPageView: View {
 private struct NewTabOptionCard<Icon: View>: View {
     @Environment(\.theme) private var theme
     let title: String
-    let subtitle: String
     let action: () -> Void
     @ViewBuilder let icon: Icon
 
@@ -166,17 +165,10 @@ private struct NewTabOptionCard<Icon: View>: View {
                     .font(.system(size: 26, weight: .regular))
                     .foregroundStyle(theme.textPrimary)
                     .frame(height: 32)
-                VStack(spacing: 4) {
-                    Text(title)
-                        // 13 pt = the macOS `.body` text style.
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(theme.textPrimary)
-                    Text(subtitle)
-                        // 11 pt = the macOS `.subheadline` text style.
-                        .font(.subheadline)
-                        .foregroundStyle(theme.textSecondary)
-                        .multilineTextAlignment(.center)
-                }
+                Text(title)
+                    // 13 pt = the macOS `.body` text style.
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(theme.textPrimary)
             }
             .padding(.horizontal, 18)
             .frame(width: 190, height: 128)
@@ -193,7 +185,6 @@ private struct NewTabOptionCard<Icon: View>: View {
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
         .accessibilityLabel(title)
-        .accessibilityHint(subtitle)
     }
 }
 
