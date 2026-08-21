@@ -92,6 +92,8 @@ jobs:
             exit 1
           fi
           release_complete=false
+          ghostty_stamp="$(apps/macos/scripts/build-ghostty.sh --print-stamp)"
+          ghostty_asset="GhosttyKit-$ghostty_stamp.tar.gz"
           if release_json="$(gh release view "$tag" --json assets,isDraft,isPrerelease 2>/dev/null)"; then
             expected_assets='[
               "Codevisor-macOS-arm64.zip",
@@ -103,10 +105,12 @@ jobs:
               "codevisor-server-linux-arm64.tar.gz",
               "codevisor-server-linux-x64.tar.gz"
             ]'
-            release_complete="$(jq -r --argjson expected "$expected_assets" '
+            release_complete="$(jq -r --argjson expected "$expected_assets" --arg ghostty "$ghostty_asset" '
               (.isDraft == false)
               and (.isPrerelease == true)
               and (($expected - [.assets[].name]) | length == 0)
+              and ([.assets[].name] | index($ghostty) != null)
+              and ([.assets[].name] | index($ghostty + ".sha256") != null)
             ' <<<"$release_json")"
           fi
           feeds_complete=true
@@ -118,7 +122,13 @@ jobs:
               feeds_complete=false
             fi
           done
-          if [[ "$release_complete" == true && "$feeds_complete" == true ]]; then
+          ghostty_complete=false
+          if curl --fail --silent --show-error \
+            "https://updates.codevisor.dev/dev-artifacts/ghostty/$ghostty_stamp/GhosttyKit.xcframework.tar.gz.sha256" \
+            >/dev/null; then
+            ghostty_complete=true
+          fi
+          if [[ "$release_complete" == true && "$feeds_complete" == true && "$ghostty_complete" == true ]]; then
             echo "$tag and both Alpha feeds are already complete."
             echo "publish=false" >> "$GITHUB_OUTPUT"
             exit 0
@@ -193,6 +203,10 @@ jobs:
           curl --fail --silent --show-error https://updates.codevisor.dev/server/alpha.json \
             | jq -e --argjson build "${{ steps.alpha.outputs.build }}" \
               '.buildNumber == $build' >/dev/null
+          ghostty_stamp="$(apps/macos/scripts/build-ghostty.sh --print-stamp)"
+          curl --fail --silent --show-error \
+            "https://updates.codevisor.dev/dev-artifacts/ghostty/$ghostty_stamp/GhosttyKit.xcframework.tar.gz.sha256" \
+            >/dev/null
           for arch in arm64 x64; do
             feed="$RUNNER_TEMP/appcast-$arch.xml"
             curl --fail --silent --show-error \

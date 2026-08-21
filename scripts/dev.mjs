@@ -1,11 +1,20 @@
 import { createHash, X509Certificate } from "node:crypto"
 import { execFileSync, spawn } from "node:child_process"
-import { access, cp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises"
+import { access, cp, mkdir, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { createServer } from "node:net"
 import { homedir } from "node:os"
 import { basename, join, resolve } from "node:path"
 import process from "node:process"
 import { fileURLToPath } from "node:url"
+
+import { bootstrapDevelopment } from "./dev-bootstrap.mjs"
+import {
+  developmentLayout,
+  ensureDevelopmentDirectories,
+  localDevelopmentEnvironment,
+  remoteDevelopmentEnvironment
+} from "./dev-layout.mjs"
+import { runXcodebuild } from "./xcodebuild.mjs"
 
 const repoRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)))
 
@@ -22,9 +31,15 @@ const ambientAllowlist = new Set([
   "CODEVISOR_DEV_WWW_PORT",
   "CODEVISOR_DEV_CLOUD_PORT",
   "CODEVISOR_DEV_DATA_DIR",
+  "CODEVISOR_DEV_LOGS_DIR",
+  "CODEVISOR_DEV_CACHE_DIR",
   "HERDMAN_DEV_DATA_DIR",
   "CODEVISOR_WORKTREES_ROOT",
   "HERDMAN_WORKTREES_ROOT",
+  "CODEVISOR_REPOS_ROOT",
+  "CODEVISOR_PLUGINS_ROOT",
+  "CODEVISOR_GHOSTTY_ARTIFACTS_ROOT",
+  "CODEVISOR_GHOSTTY_ARTIFACT_ORIGIN",
   "CODEVISOR_IOS_SIMULATOR",
   "CODEVISOR_VERSION",
   "HERDMAN_VERSION"
@@ -40,22 +55,15 @@ const worktreeHash = createHash("sha256").update(worktreeName).digest("hex")
 const developmentIconColor = colorFromHash(worktreeHash)
 const instanceName = `${worktreeName}-${instanceHash}`
 const appName = `Codevisor (${worktreeName})`
-// All build/server scratch is colocated under a single gitignored tmp/ dir so
-// the worktree root stays tidy and everything is removed with the worktree.
-const tmpRoot = join(repoRoot, "tmp")
-const derivedDataPath = join(tmpRoot, "DerivedData")
+const layout = developmentLayout(repoRoot)
+const tmpRoot = layout.tmpRoot
+const derivedDataPath = layout.build.macos.derivedData
 // The local dev instance and a standalone "remote" server each get their own
-// codevisor data dir — no cross-instance conflicts, and a realistic two-machine
-// setup for testing remote flows and sync locally.
-const dataDirectory =
-  process.env.CODEVISOR_DEV_DATA_DIR ??
-  process.env.HERDMAN_DEV_DATA_DIR ??
-  join(tmpRoot, "codevisor")
-const remoteDataDirectory = join(tmpRoot, "codevisor-remote")
-const worktreesDirectory =
-  process.env.CODEVISOR_WORKTREES_ROOT ??
-  process.env.HERDMAN_WORKTREES_ROOT ??
-  join(homedir(), "codevisor-development", instanceName)
+// production-shaped roots under tmp/: codevisor mirrors ~/codevisor and
+// .codevisor mirrors ~/.codevisor. The fake remote repeats that layout.
+const dataDirectory = layout.local.data
+const remoteDataDirectory = layout.remote.data
+const worktreesDirectory = layout.local.worktrees
 
 const preferredPort = 51_000 + (Number.parseInt(instanceHash.slice(0, 8), 16) % 10_000)
 const requestedPort = parsePort(
@@ -102,19 +110,25 @@ const cloudExtraVariables = Object.entries(cloudDevVariables)
   // Keys prefixed CODEVISOR_DEV_ configure this script, not the Worker.
   .filter(([key]) => !key.startsWith("CODEVISOR_DEV_"))
   .flatMap(([key, value]) => ["--var", `${key}:${value}`])
-const cloudPersistPath = join(tmpRoot, "wrangler")
+const cloudPersistPath = layout.wrangler
 
-// One-time move of an earlier instance's state into the current data dir, so
-// relocating (Application Support → .codevisor → tmp/codevisor) never drops
-// the machines/projects you added. Checks each prior location in order.
-if (dataDirectory === join(tmpRoot, "codevisor") && !(await pathExists(dataDirectory))) {
+// One-time move of earlier local app/server state into tmp/.codevisor/data.
+// The old tmp/codevisor path is recognized only when it contains a server DB;
+// after this migration that path belongs exclusively to dev worktrees.
+if (dataDirectory === layout.local.data && (await directoryIsEmpty(dataDirectory))) {
   for (const previous of [
+    join(tmpRoot, "codevisor"),
     join(repoRoot, ".codevisor"),
     join(homedir(), "Library", "Application Support", "Codevisor Development", instanceName)
   ]) {
-    if (await pathExists(previous)) {
+    const isLegacyTmpData = previous === join(tmpRoot, "codevisor")
+    if (
+      (await pathExists(previous)) &&
+      (!isLegacyTmpData || (await pathExists(join(previous, "codevisor-server.sqlite"))))
+    ) {
       console.log(`Moving dev state into ${dataDirectory}`)
-      await mkdir(tmpRoot, { recursive: true })
+      await rm(dataDirectory, { recursive: true, force: true })
+      await mkdir(layout.local.root, { recursive: true })
       await cp(previous, dataDirectory, { recursive: true })
       await rm(previous, { recursive: true, force: true })
       break
@@ -122,9 +136,23 @@ if (dataDirectory === join(tmpRoot, "codevisor") && !(await pathExists(dataDirec
   }
 }
 
-await mkdir(dataDirectory, { recursive: true })
-await mkdir(remoteDataDirectory, { recursive: true })
-await mkdir(worktreesDirectory, { recursive: true })
+// The old fake-remote root contained flat server state. Move it only when it
+// has no nested repos/worktrees whose Git metadata contains absolute paths.
+const legacyRemoteDataDirectory = join(tmpRoot, "codevisor-remote")
+if (
+  (await pathExists(join(legacyRemoteDataDirectory, "codevisor-server.sqlite"))) &&
+  (await directoryIsEmpty(remoteDataDirectory)) &&
+  !(await containsAnyPath(legacyRemoteDataDirectory, ["repos", "plugins", "worktrees"]))
+) {
+  console.log(`Moving dev remote state into ${remoteDataDirectory}`)
+  await rm(remoteDataDirectory, { recursive: true, force: true })
+  await mkdir(layout.remote.root, { recursive: true })
+  await cp(legacyRemoteDataDirectory, remoteDataDirectory, { recursive: true })
+  await rm(legacyRemoteDataDirectory, { recursive: true, force: true })
+}
+
+await ensureDevelopmentDirectories(layout)
+Object.assign(process.env, localDevelopmentEnvironment(layout, process.env))
 
 console.log(`Codevisor development instance: ${worktreeName}`)
 console.log(`  app:      ${appName}`)
@@ -136,10 +164,7 @@ console.log(`  data:     ${dataDirectory}`)
 console.log(`  worktrees:${worktreesDirectory}`)
 console.log(`  icon:     ${developmentIconColor.hex}`)
 
-if (!(await pathExists(join(repoRoot, "node_modules", ".bin", "tsc")))) {
-  await run("bun", ["install", "--frozen-lockfile"])
-}
-await ensureGhosttyFramework()
+await bootstrapDevelopment(repoRoot, { environment: process.env, ghostty: true })
 await run("bun", ["run", "--cwd", "apps/server", "build"])
 
 // The local cloud instance: real Workers runtime (workerd) with local D1 and
@@ -192,43 +217,40 @@ const cloud = spawn(
 const generatedIconDirectory = await createDevelopmentAppIcon()
 const developmentSigningArguments = await resolveDevelopmentSigningArguments()
 try {
-  await run("xcodebuild", [
-    "-project",
-    "apps/macos/Codevisor.xcodeproj",
-    "-scheme",
-    "Codevisor",
-    "-configuration",
-    "Debug",
-    "-derivedDataPath",
-    derivedDataPath,
-    `CODEVISOR_DEV_PRODUCT_NAME=${appName}`,
-    `CODEVISOR_DEV_DISPLAY_NAME=${appName}`,
-    `CODEVISOR_DEV_BUNDLE_IDENTIFIER=com.851labs.Codevisor.Development.${instanceHash}`,
-    "ASSETCATALOG_COMPILER_APPICON_NAME=AppIconDevGenerated",
-    "INFOPLIST_KEY_CFBundleIconFile=AppIconDevGenerated",
-    "INFOPLIST_KEY_CFBundleIconName=AppIconDevGenerated",
-    ...developmentSigningArguments,
-    "build"
-  ])
+  await runXcodebuild(
+    repoRoot,
+    "macos",
+    [
+      "-project",
+      "apps/macos/Codevisor.xcodeproj",
+      "-scheme",
+      "Codevisor",
+      "-configuration",
+      "Debug",
+      `CODEVISOR_DEV_PRODUCT_NAME=${appName}`,
+      `CODEVISOR_DEV_DISPLAY_NAME=${appName}`,
+      `CODEVISOR_DEV_BUNDLE_IDENTIFIER=com.851labs.Codevisor.Development.${instanceHash}`,
+      "ASSETCATALOG_COMPILER_APPICON_NAME=AppIconDevGenerated",
+      "INFOPLIST_KEY_CFBundleIconFile=AppIconDevGenerated",
+      "INFOPLIST_KEY_CFBundleIconName=AppIconDevGenerated",
+      ...developmentSigningArguments,
+      "build"
+    ],
+    { environment: process.env, layout }
+  )
 } finally {
   await rm(generatedIconDirectory, { recursive: true, force: true })
 }
 const developmentBrowserIconDirectory = await createDevelopmentBrowserExtensionIcons()
 
 const sharedEnvironment = {
-  ...process.env,
+  ...localDevelopmentEnvironment(layout, process.env),
   CODEVISOR_DEV_WORKTREE: worktreeName,
   CODEVISOR_DEV_INSTANCE_ID: instanceName,
   CODEVISOR_DEV_ICON_COLOR: developmentIconColor.hex,
   CODEVISOR_DEV_EXTENSION_ICON_DIR: developmentBrowserIconDirectory,
   CODEVISOR_DEV_PORT: String(port),
   CODEVISOR_DEV_WWW_PORT: String(wwwPort),
-  CODEVISOR_DEV_DATA_DIR: dataDirectory,
-  CODEVISOR_WORKTREES_ROOT: worktreesDirectory,
-  // Installed plugins are dev-instance state like everything else here:
-  // worktree-local, cleaned up with the worktree, never the production
-  // ~/.codevisor/plugins.
-  CODEVISOR_PLUGINS_ROOT: join(dataDirectory, "plugins"),
   // The dev remote's details, so the app can offer a one-click "add the test
   // remote" in Settings → Machines (the token is filled in once it's read).
   CODEVISOR_DEV_REMOTE_HOST: "127.0.0.1",
@@ -305,12 +327,8 @@ const remoteServer = spawn(
   {
     cwd: repoRoot,
     env: {
-      ...process.env,
+      ...remoteDevelopmentEnvironment(layout, process.env),
       CODEVISOR_DEV_INSTANCE_ID: `${instanceName}-remote`,
-      CODEVISOR_DATA_DIR: remoteDataDirectory,
-      CODEVISOR_WORKTREES_ROOT: join(remoteDataDirectory, "worktrees"),
-      CODEVISOR_REPOS_ROOT: join(remoteDataDirectory, "repos"),
-      CODEVISOR_PLUGINS_ROOT: join(remoteDataDirectory, "plugins"),
       // The Dev Remote joins the dev cloud too — a realistic second machine
       // in the hub's machine list.
       CODEVISOR_DEV_CLOUD_URL: cloudUrl,
@@ -351,6 +369,7 @@ const stop = async (exitCode = 0) => {
   for (const child of [server, remoteServer]) {
     if (child.exitCode === null) child.kill("SIGTERM")
   }
+  await rm(layout.runtime.manifest, { force: true })
   process.exitCode = exitCode
 }
 
@@ -383,13 +402,20 @@ void waitForExit(cloud).then((result) => {
 })
 
 try {
+  await writeFile(
+    layout.runtime.manifest,
+    `${JSON.stringify({ kind: "macos", pid: process.pid, repoRoot, startedAt: new Date().toISOString() }, null, 2)}\n`
+  )
   await waitForHealth(port, server)
   await waitForHealth(remotePort, remoteServer)
   await announceDevRemote()
   const appBundle = join(derivedDataPath, "Build", "Products", "Debug", `${appName}.app`)
   const launchEnvironment = Object.entries(sharedEnvironment).filter(
     ([key]) =>
-      key.startsWith("CODEVISOR_") || key.startsWith("HERDMAN_") || key.startsWith("GHOSTTY_")
+      key === "TMPDIR" ||
+      key.startsWith("CODEVISOR_") ||
+      key.startsWith("HERDMAN_") ||
+      key.startsWith("GHOSTTY_")
   )
   const openArguments = [
     "-n",
@@ -574,7 +600,7 @@ async function createDevelopmentAppIcon() {
 }
 
 async function createDevelopmentBrowserExtensionIcons() {
-  const iconsetDirectory = join(tmpRoot, "BrowserExtensionDev.iconset")
+  const iconsetDirectory = join(layout.build.generated, "BrowserExtensionDev.iconset")
   const compiledIcon = join(
     derivedDataPath,
     "Build",
@@ -616,77 +642,6 @@ function run(command, arguments_, cwd = repoRoot) {
     if (result.code === 0) return
     throw new Error(`${command} failed (${describeExit(result)})`)
   })
-}
-
-async function ensureGhosttyFramework() {
-  const relativeFramework = join("apps", "macos", "Frameworks", "GhosttyKit.xcframework")
-  const destination = join(repoRoot, relativeFramework)
-  const buildScript = join(repoRoot, "apps/macos/scripts/build-ghostty.sh")
-
-  // The stamp identifies the pinned Ghostty ref + build flags the framework
-  // was produced from. A framework without a matching stamp predates a
-  // build-script change (new ref, new flags such as -Dsentry=false) and must
-  // not be reused — silently copying stale prebuilts between worktrees is
-  // how an already-fixed build script kept shipping a crashing binary.
-  const expectedStamp = (await capture(buildScript, ["--print-stamp"])).trim()
-  const stampOf = async (frameworkPath) => {
-    try {
-      return (await readFile(join(frameworkPath, ".codevisor-stamp"), "utf8")).trim()
-    } catch {
-      return null
-    }
-  }
-
-  const destinationExists = await pathExists(destination)
-  if (destinationExists && (await stampOf(destination)) === expectedStamp) return
-
-  const worktreeList = await capture("git", ["worktree", "list", "--porcelain"])
-  const otherWorktrees = worktreeList
-    .split("\n")
-    .filter((line) => line.startsWith("worktree "))
-    .map((line) => line.slice("worktree ".length))
-    .filter((path) => path !== repoRoot)
-
-  let unstampedFallback = null
-  for (const worktree of otherWorktrees) {
-    const source = join(worktree, relativeFramework)
-    if (!(await pathExists(source))) continue
-    if ((await stampOf(source)) === expectedStamp) {
-      console.log(`\nCopying GhosttyKit.xcframework from ${worktree}`)
-      await rm(destination, { recursive: true, force: true })
-      await mkdir(join(repoRoot, "apps", "macos", "Frameworks"), { recursive: true })
-      await cp(source, destination, { recursive: true })
-      return
-    }
-    if (!unstampedFallback) unstampedFallback = source
-  }
-
-  console.log(
-    destinationExists
-      ? "\nGhosttyKit.xcframework is stale for the current pinned ref/build flags; rebuilding."
-      : "\nNo worktree has a current GhosttyKit.xcframework; building it from the pinned submodule."
-  )
-  try {
-    await run("git", ["submodule", "update", "--init", ".repos/ghostty"])
-    await run(buildScript, [])
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error)
-    // A stale framework beats no framework: keep developing, loudly.
-    if (destinationExists) {
-      console.error(`Ghostty rebuild failed (${reason}); continuing with the STALE framework.`)
-      return
-    }
-    if (unstampedFallback) {
-      console.error(
-        `Ghostty rebuild failed (${reason}); copying an UNSTAMPED framework from ${unstampedFallback}. ` +
-          "It may predate current build flags — rebuild with apps/macos/scripts/build-ghostty.sh when possible."
-      )
-      await mkdir(join(repoRoot, "apps", "macos", "Frameworks"), { recursive: true })
-      await cp(unstampedFallback, destination, { recursive: true })
-      return
-    }
-    throw error
-  }
 }
 
 function capture(command, arguments_) {
@@ -740,6 +695,19 @@ async function pathExists(path) {
   } catch {
     return false
   }
+}
+
+async function directoryIsEmpty(path) {
+  try {
+    return (await readdir(path)).length === 0
+  } catch (error) {
+    if (error?.code === "ENOENT") return true
+    throw error
+  }
+}
+
+async function containsAnyPath(root, names) {
+  return (await Promise.all(names.map((name) => pathExists(join(root, name))))).some(Boolean)
 }
 
 async function waitForHealth(port, child) {

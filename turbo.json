@@ -1,5 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "cacheDir": "tmp/build/turbo-cache",
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

@@ -45,7 +45,7 @@ export interface WorktreeSnapshot {
 ///
 /// Obvious regenerable junk is filtered out so the warning stays meaningful.
 const regenerablePattern =
-  /(^|\/)(node_modules|\.venv|venv|__pycache__|target|dist|build|out|\.next|\.turbo|\.gradle|\.pytest_cache|coverage|\.DS_Store)(\/|$)/
+  /(^|\/)(node_modules|\.venv|venv|__pycache__|target|dist|build|out|tmp|\.next|\.turbo|\.gradle|\.pytest_cache|coverage|\.DS_Store)(\/|$)/
 
 export const meaningfulIgnoredPaths = (paths: ReadonlyArray<string>): ReadonlyArray<string> =>
   paths.filter((path) => !regenerablePattern.test(path))

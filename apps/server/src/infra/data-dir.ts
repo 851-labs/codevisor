@@ -14,7 +14,8 @@ export const codevisorRoot = (): string => join(homedir(), ".codevisor")
 export const resolveDataDir = (): string =>
   process.env["CODEVISOR_DATA_DIR"] ?? join(codevisorRoot(), "data")
 
-export const resolveLogsDir = (): string => join(codevisorRoot(), "logs")
+export const resolveLogsDir = (): string =>
+  process.env["CODEVISOR_LOGS_DIR"] ?? join(codevisorRoot(), "logs")
 
 export const defaultDatabasePath = (): string => join(resolveDataDir(), "codevisor-server.sqlite")
 

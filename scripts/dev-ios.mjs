@@ -5,30 +5,41 @@
 // client of the dev remote.
 import { createHash } from "node:crypto"
 import { spawn } from "node:child_process"
-import { access, cp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises"
+import { access, cp, mkdir, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { createServer } from "node:net"
 import { basename, join, resolve } from "node:path"
 import process from "node:process"
 import { fileURLToPath } from "node:url"
 
+import { bootstrapDevelopment } from "./dev-bootstrap.mjs"
+import {
+  developmentLayout,
+  ensureDevelopmentDirectories,
+  IOS_DEVELOPMENT_BUNDLE_IDENTIFIER,
+  legacyIOSDevelopmentBundleIdentifiers,
+  localDevelopmentEnvironment,
+  remoteDevelopmentEnvironment
+} from "./dev-layout.mjs"
+import { runXcodebuild } from "./xcodebuild.mjs"
+
 const repoRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)))
 const worktreeName = basename(repoRoot)
 const instanceHash = createHash("sha256").update(repoRoot).digest("hex").slice(0, 10)
 const instanceName = `${worktreeName}-${instanceHash}`
-const tmpRoot = join(repoRoot, "tmp")
-const derivedDataPath = join(tmpRoot, "DerivedData-iOS")
+const layout = developmentLayout(repoRoot)
+const derivedDataPath = layout.build.ios.derivedData
 // Shared with scripts/dev.mjs's dev remote so the simulator talks to the same
 // "Dev Remote" machine (same data, same stable token) either way.
-const remoteDataDirectory = join(tmpRoot, "codevisor-remote")
+const remoteDataDirectory = layout.remote.data
 const remoteName = `Dev Remote (${worktreeName})`
 // Same hash → hue derivation as scripts/dev.mjs, so a worktree's iOS icon
 // color matches its macOS icon color.
 const worktreeHash = createHash("sha256").update(worktreeName).digest("hex")
 const developmentIconColor = colorFromHash(worktreeHash)
 const appDisplayName = `Codevisor (${worktreeName})`
-// Per-worktree bundle id so several worktrees' dev builds coexist on one
-// simulator/device, mirroring the macOS dev instance identifiers.
-const bundleIdentifier = `com.dylanplayer.codevisor.ios.${instanceHash}`
+// One development bundle id means each install replaces the prior worktree's
+// app instead of leaving another simulator container behind.
+const bundleIdentifier = IOS_DEVELOPMENT_BUNDLE_IDENTIFIER
 const simulatorName = process.env.CODEVISOR_IOS_SIMULATOR ?? "iPhone 17 Pro"
 
 const preferredPort = 51_000 + (Number.parseInt(instanceHash.slice(0, 8), 16) % 10_000)
@@ -57,9 +68,23 @@ const cloudPort =
     ? (requestedCloudPort ?? (await findAvailablePort(preferredCloudPort, 41_000, 10_000)))
     : undefined
 const cloudURL = externalCloudURL ?? `http://localhost:${cloudPort}`
-const cloudPersistPath = join(tmpRoot, "wrangler")
+const cloudPersistPath = layout.wrangler
 
-await mkdir(remoteDataDirectory, { recursive: true })
+const legacyRemoteDataDirectory = join(layout.tmpRoot, "codevisor-remote")
+if (
+  (await pathExists(join(legacyRemoteDataDirectory, "codevisor-server.sqlite"))) &&
+  (await directoryIsEmpty(remoteDataDirectory)) &&
+  !(await containsAnyPath(legacyRemoteDataDirectory, ["repos", "plugins", "worktrees"]))
+) {
+  console.log(`Moving dev remote state into ${remoteDataDirectory}`)
+  await rm(remoteDataDirectory, { recursive: true, force: true })
+  await mkdir(layout.remote.root, { recursive: true })
+  await cp(legacyRemoteDataDirectory, remoteDataDirectory, { recursive: true })
+  await rm(legacyRemoteDataDirectory, { recursive: true, force: true })
+}
+
+await ensureDevelopmentDirectories(layout)
+Object.assign(process.env, localDevelopmentEnvironment(layout, process.env))
 
 console.log(`Codevisor iOS development instance: ${worktreeName}`)
 console.log(`  server:    ${serverURL}  (${remoteName})`)
@@ -69,9 +94,7 @@ console.log(`  app:       ${appDisplayName} (${bundleIdentifier})`)
 console.log(`  icon:      ${developmentIconColor.hex}`)
 console.log(`  cloud:     ${cloudURL}${externalCloudURL === undefined ? " (managed)" : ""}`)
 
-if (!(await pathExists(join(repoRoot, "node_modules", ".bin", "tsc")))) {
-  await run("bun", ["install", "--frozen-lockfile"])
-}
+await bootstrapDevelopment(repoRoot, { environment: process.env })
 await run("bun", ["run", "--cwd", "apps/server", "build"])
 
 // Match the macOS development runner: unless an external dev cloud was
@@ -154,12 +177,8 @@ const server = spawn(
   {
     cwd: repoRoot,
     env: {
-      ...process.env,
+      ...remoteDevelopmentEnvironment(layout, process.env),
       CODEVISOR_DEV_INSTANCE_ID: `${instanceName}-remote`,
-      CODEVISOR_DATA_DIR: remoteDataDirectory,
-      CODEVISOR_WORKTREES_ROOT: join(remoteDataDirectory, "worktrees"),
-      CODEVISOR_REPOS_ROOT: join(remoteDataDirectory, "repos"),
-      CODEVISOR_PLUGINS_ROOT: join(remoteDataDirectory, "plugins"),
       ...(cloudSession === undefined
         ? {}
         : {
@@ -190,6 +209,7 @@ const stop = async (exitCode = 0) => {
   cloud?.kill("SIGTERM")
   await Promise.race([waitForExit(server), delay(2_000)])
   if (server.exitCode === null) server.kill("SIGTERM")
+  await rm(layout.runtime.manifest, { force: true })
   process.exitCode = exitCode
 }
 
@@ -205,29 +225,47 @@ const serverExit = waitForExit(server).then(async (result) => {
 })
 
 try {
+  await writeFile(
+    layout.runtime.manifest,
+    `${JSON.stringify({ kind: "ios", pid: process.pid, repoRoot, startedAt: new Date().toISOString() }, null, 2)}\n`
+  )
   const simulator = await selectSimulator(simulatorName)
   simulatorUdid = simulator.udid
   console.log(`  device:    ${simulator.name} (${simulator.runtime}) ${simulator.udid}`)
 
+  // Commands such as listapps require a booted simulator. Boot before doing
+  // any per-device inspection so dev:ios also works from a fresh shutdown.
+  await run("xcrun", ["simctl", "bootstatus", simulator.udid, "-b"])
+  await openSimulatorUserInterface()
+
+  const installedApps = await capture("xcrun", ["simctl", "listapps", simulator.udid])
+  for (const legacyBundleIdentifier of legacyIOSDevelopmentBundleIdentifiers(installedApps)) {
+    console.log(`Removing legacy Codevisor iOS development app ${legacyBundleIdentifier}`)
+    await run("xcrun", ["simctl", "uninstall", simulator.udid, legacyBundleIdentifier])
+  }
+
   const generatedIconDirectory = await createDevelopmentAppIcon()
   try {
-    await run("xcodebuild", [
-      "-project",
-      "apps/ios/Codevisor.xcodeproj",
-      "-scheme",
-      "Codevisor",
-      "-configuration",
-      "Debug",
-      "-destination",
-      `platform=iOS Simulator,id=${simulator.udid}`,
-      "-derivedDataPath",
-      derivedDataPath,
-      `CODEVISOR_IOS_BUNDLE_IDENTIFIER=${bundleIdentifier}`,
-      `INFOPLIST_KEY_CFBundleDisplayName=${appDisplayName}`,
-      "ASSETCATALOG_COMPILER_APPICON_NAME=AppIconDevGenerated",
-      "INFOPLIST_KEY_CFBundleIconName=AppIconDevGenerated",
-      "build"
-    ])
+    await runXcodebuild(
+      repoRoot,
+      "ios",
+      [
+        "-project",
+        "apps/ios/Codevisor.xcodeproj",
+        "-scheme",
+        "Codevisor",
+        "-configuration",
+        "Debug",
+        "-destination",
+        `platform=iOS Simulator,id=${simulator.udid}`,
+        `CODEVISOR_IOS_BUNDLE_IDENTIFIER=${bundleIdentifier}`,
+        `INFOPLIST_KEY_CFBundleDisplayName=${appDisplayName}`,
+        "ASSETCATALOG_COMPILER_APPICON_NAME=AppIconDevGenerated",
+        "INFOPLIST_KEY_CFBundleIconName=AppIconDevGenerated",
+        "build"
+      ],
+      { environment: process.env, layout }
+    )
   } finally {
     await rm(generatedIconDirectory, { recursive: true, force: true })
   }
@@ -235,10 +273,7 @@ try {
   await waitForHealth(remotePort, server)
   const token = await readConnectionToken()
 
-  // Boot (if needed), make the Simulator window visible, then install + launch
-  // with the dev server's coordinates in the app's environment.
-  await run("xcrun", ["simctl", "bootstatus", simulator.udid, "-b"])
-  await openSimulatorUserInterface()
+  // Install and launch with the dev server's coordinates in the app's environment.
   const appBundle = join(
     derivedDataPath,
     "Build",
@@ -547,6 +582,19 @@ async function pathExists(path) {
   } catch {
     return false
   }
+}
+
+async function directoryIsEmpty(path) {
+  try {
+    return (await readdir(path)).length === 0
+  } catch (error) {
+    if (error?.code === "ENOENT") return true
+    throw error
+  }
+}
+
+async function containsAnyPath(root, names) {
+  return (await Promise.all(names.map((name) => pathExists(join(root, name))))).some(Boolean)
 }
 
 async function waitForHealth(port, child) {

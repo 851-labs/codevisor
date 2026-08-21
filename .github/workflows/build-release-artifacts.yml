@@ -267,6 +267,8 @@ jobs:
           key: ghosttykit-${{ hashFiles('apps/macos/scripts/build-ghostty.sh', 'apps/macos/patches/ghostty-libcpp-availability.patch') }}
       - name: Verify GhosttyKit
         run: test -d apps/macos/Frameworks/GhosttyKit.xcframework
+      - name: Package shared GhosttyKit development artifact
+        run: scripts/release/package-ghosttykit.sh dist/release
       - name: Resolve Xcode cache version
         id: xcode-cache-version
         shell: bash
@@ -414,6 +416,8 @@ jobs:
             dist/release/Codevisor-*.dmg.sha256
             dist/release/codevisor-server-*.tar.gz
             dist/release/codevisor-server-*.tar.gz.sha256
+            dist/release/GhosttyKit-*.tar.gz
+            dist/release/GhosttyKit-*.tar.gz.sha256
           if-no-files-found: error
           retention-days: ${{ inputs.artifact_retention_days }}
       - name: Remove signing material and clean persistent runner

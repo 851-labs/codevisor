@@ -80,6 +80,8 @@ jobs:
             exit 1
           }
           release_json="$(gh release view "$alpha_tag" --json assets,isDraft,isPrerelease)"
+          ghostty_stamp="$(apps/macos/scripts/build-ghostty.sh --print-stamp)"
+          ghostty_asset="GhosttyKit-$ghostty_stamp.tar.gz"
           expected_assets='[
             "Codevisor-macOS-arm64.zip",
             "Codevisor-macOS-x64.zip",
@@ -90,10 +92,12 @@ jobs:
             "codevisor-server-linux-arm64.tar.gz",
             "codevisor-server-linux-x64.tar.gz"
           ]'
-          jq -e --argjson expected "$expected_assets" '
+          jq -e --argjson expected "$expected_assets" --arg ghostty "$ghostty_asset" '
             (.isDraft == false)
             and (.isPrerelease == true)
             and (($expected - [.assets[].name]) | length == 0)
+            and ([.assets[].name] | index($ghostty) != null)
+            and ([.assets[].name] | index($ghostty + ".sha256") != null)
           ' <<<"$release_json" >/dev/null || {
             echo "Published Alpha release $alpha_tag is incomplete." >&2
             exit 1
@@ -109,6 +113,9 @@ jobs:
               node scripts/release/verify-appcast.mjs "$feed" "$build" alpha
             fi
           done
+          curl --fail --silent --show-error \
+            "https://updates.codevisor.dev/dev-artifacts/ghostty/$ghostty_stamp/GhosttyKit.xcframework.tar.gz.sha256" \
+            >/dev/null
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "alpha_run_id=$run_id" >> "$GITHUB_OUTPUT"
@@ -239,6 +246,10 @@ jobs:
           curl --fail --silent --show-error https://updates.codevisor.dev/server/stable.json \
             | jq -e --arg version "$VERSION" --argjson build "$BUILD_NUMBER" \
               '.version == $version and .buildNumber == $build' >/dev/null
+          ghostty_stamp="$(apps/macos/scripts/build-ghostty.sh --print-stamp)"
+          curl --fail --silent --show-error \
+            "https://updates.codevisor.dev/dev-artifacts/ghostty/$ghostty_stamp/GhosttyKit.xcframework.tar.gz.sha256" \
+            >/dev/null
           for arch in arm64 x64; do
             feed="$RUNNER_TEMP/appcast-$arch.xml"
             curl --fail --silent --show-error \

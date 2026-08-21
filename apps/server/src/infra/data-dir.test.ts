@@ -10,6 +10,7 @@ import {
 } from "./data-dir.js"
 
 const previousDataDir = process.env["CODEVISOR_DATA_DIR"]
+const previousLogsDir = process.env["CODEVISOR_LOGS_DIR"]
 
 afterEach(() => {
   if (previousDataDir === undefined) {
@@ -17,11 +18,17 @@ afterEach(() => {
   } else {
     process.env["CODEVISOR_DATA_DIR"] = previousDataDir
   }
+  if (previousLogsDir === undefined) {
+    delete process.env["CODEVISOR_LOGS_DIR"]
+  } else {
+    process.env["CODEVISOR_LOGS_DIR"] = previousLogsDir
+  }
 })
 
 describe("canonical data directory", () => {
   it("lays out ~/.codevisor identically on every platform", () => {
     delete process.env["CODEVISOR_DATA_DIR"]
+    delete process.env["CODEVISOR_LOGS_DIR"]
     expect(codevisorRoot()).toBe(join(homedir(), ".codevisor"))
     expect(resolveDataDir()).toBe(join(homedir(), ".codevisor", "data"))
     expect(resolveLogsDir()).toBe(join(homedir(), ".codevisor", "logs"))
@@ -36,5 +43,10 @@ describe("canonical data directory", () => {
     process.env["CODEVISOR_DATA_DIR"] = "/tmp/custom-data"
     expect(resolveDataDir()).toBe("/tmp/custom-data")
     expect(defaultDatabasePath()).toBe("/tmp/custom-data/codevisor-server.sqlite")
+  })
+
+  it("honors the CODEVISOR_LOGS_DIR override", () => {
+    process.env["CODEVISOR_LOGS_DIR"] = "/tmp/custom-logs"
+    expect(resolveLogsDir()).toBe("/tmp/custom-logs")
   })
 })

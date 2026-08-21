@@ -257,10 +257,8 @@ private actor AttachmentPreviewDiskCache {
     private let directory: URL
 
     init() {
-        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         directory =
-            caches
-            .appendingPathComponent("Codevisor", isDirectory: true)
+            CodevisorAppVariant.cacheURL()
             .appendingPathComponent("AttachmentThumbnails-v1", isDirectory: true)
     }
 

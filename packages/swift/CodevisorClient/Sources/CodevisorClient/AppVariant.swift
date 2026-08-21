@@ -203,6 +203,25 @@ public enum CodevisorAppVariant: Sendable {
         )
     }
 
+    public static func cacheURL(fileManager: FileManager = .default) -> URL {
+        if isDevelopment,
+            let override = environment["CODEVISOR_DEV_CACHE_DIR"],
+            !override.isEmpty
+        {
+            return createdDirectory(
+                at: URL(fileURLWithPath: override, isDirectory: true),
+                fileManager: fileManager
+            )
+        }
+        let base =
+            fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first
+            ?? fileManager.temporaryDirectory
+        return createdDirectory(
+            at: base.appendingPathComponent(applicationSupportDirectoryName, isDirectory: true),
+            fileManager: fileManager
+        )
+    }
+
     /// One-time rescue for the HerdMan → Codevisor rename: the app updates in
     /// place (the bundle id stayed `com.851labs.HerdMan`) but the Application
     /// Support folder name changed, orphaning every file-backed preference in
@@ -255,7 +274,7 @@ public enum CodevisorAppVariant: Sendable {
     /// server's database and logs live at ~/.codevisor/{data,logs} on every OS
     /// so machine state is laid out identically everywhere (a prerequisite for
     /// moving sessions between machines). Development builds keep their
-    /// isolated per-instance directories under Application Support instead.
+    /// isolated production-shaped directories supplied by the dev runner.
     public static func serverDataDirectoryURL(fileManager: FileManager = .default) -> URL {
         guard !isDevelopment else { return applicationSupportURL(fileManager: fileManager) }
         return createdDirectory(
@@ -266,6 +285,15 @@ public enum CodevisorAppVariant: Sendable {
     }
 
     public static func serverLogsDirectoryURL(fileManager: FileManager = .default) -> URL {
+        if isDevelopment,
+            let override = environment["CODEVISOR_DEV_LOGS_DIR"],
+            !override.isEmpty
+        {
+            return createdDirectory(
+                at: URL(fileURLWithPath: override, isDirectory: true),
+                fileManager: fileManager
+            )
+        }
         guard !isDevelopment else { return applicationSupportURL(fileManager: fileManager) }
         return createdDirectory(
             at: Self.homeDirectory(fileManager: fileManager)

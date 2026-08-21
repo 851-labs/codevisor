@@ -198,13 +198,7 @@ public final class DiagnosticsClient {
     }
 
     private static var cacheDirectoryURL: URL {
-        let base =
-            FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
-            ?? FileManager.default.temporaryDirectory
-        return
-            base
-            .appendingPathComponent(CodevisorAppVariant.applicationSupportDirectoryName, isDirectory: true)
-            .appendingPathComponent("Diagnostics", isDirectory: true)
+        CodevisorAppVariant.cacheURL().appendingPathComponent("Diagnostics", isDirectory: true)
     }
 }
 

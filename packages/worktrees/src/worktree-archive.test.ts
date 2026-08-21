@@ -386,6 +386,7 @@ describe("meaningfulIgnoredPaths", () => {
         "apps/www/dist/",
         "src/generated.local.json",
         "target/debug/",
+        "tmp/.codevisor/data/",
         "coverage/"
       ])
     ).toEqual([".env", "src/generated.local.json"])

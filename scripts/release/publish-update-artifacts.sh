@@ -116,3 +116,36 @@ aws s3 cp "$manifest" "s3://$bucket/server/$channel.json" \
   --endpoint-url "$R2_S3_API_ENDPOINT" \
   --content-type application/json \
   --cache-control "public, max-age=60"
+
+# The native development bootstrap consumes one immutable GhosttyKit artifact
+# keyed by the build stamp. Publishing it on both channels is idempotent.
+shopt -s nullglob
+ghostty_archives=("$artifact_dir"/GhosttyKit-*.tar.gz)
+if [[ "${#ghostty_archives[@]}" -ne 1 ]]; then
+  echo "Expected exactly one GhosttyKit development artifact; found ${#ghostty_archives[@]}" >&2
+  exit 1
+fi
+ghostty_archive="${ghostty_archives[0]}"
+ghostty_checksum="$ghostty_archive.sha256"
+[[ -f "$ghostty_checksum" ]] || { echo "Missing $ghostty_checksum" >&2; exit 1; }
+ghostty_name="$(basename "$ghostty_archive")"
+ghostty_stamp="${ghostty_name#GhosttyKit-}"
+ghostty_stamp="${ghostty_stamp%.tar.gz}"
+expected_checksum="$(awk '{print $1}' "$ghostty_checksum")"
+actual_checksum="$(sha256sum "$ghostty_archive" | awk '{print $1}')"
+if [[ ! "$expected_checksum" =~ ^[0-9a-fA-F]{64}$ || "$actual_checksum" != "$expected_checksum" ]]; then
+  echo "GhosttyKit checksum validation failed" >&2
+  exit 1
+fi
+for file in "$ghostty_archive" "$ghostty_checksum"; do
+  published_name="GhosttyKit.xcframework.tar.gz"
+  content_type=application/gzip
+  if [[ "$file" == *.sha256 ]]; then
+    published_name="$published_name.sha256"
+    content_type=text/plain
+  fi
+  aws s3 cp "$file" "s3://$bucket/dev-artifacts/ghostty/$ghostty_stamp/$published_name" \
+    --endpoint-url "$R2_S3_API_ENDPOINT" \
+    --content-type "$content_type" \
+    --cache-control "public, max-age=31536000, immutable"
+done
