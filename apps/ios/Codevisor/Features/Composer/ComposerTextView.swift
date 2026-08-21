@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct ComposerTextView: UIViewRepresentable {
     @Binding var text: String
+    @Binding var selection: NSRange
     let handoffID: UUID?
     let handoffRole: ComposerTextEditorHandoffRole
     var isEditable: Bool
@@ -113,6 +114,8 @@ struct ComposerTextView: UIViewRepresentable {
     }
 
     private func configure(_ view: HeightReportingTextView, coordinator: Coordinator) {
+        coordinator.isApplyingSwiftUIUpdate = true
+        defer { coordinator.isApplyingSwiftUIUpdate = false }
         view.delegate = coordinator
         view.pasteDelegate = coordinator
         view.onContentHeightChange = { [binding = $contentHeight] height in
@@ -130,6 +133,13 @@ struct ComposerTextView: UIViewRepresentable {
             // inside a view update — is safe.
             view.reportContentHeight()
         }
+        let textLength = (view.text as NSString).length
+        if selection.location + selection.length <= textLength,
+            view.selectedRange != selection,
+            view.markedTextRange == nil
+        {
+            view.selectedRange = selection
+        }
         if view.isEditable != isEditable {
             view.isEditable = isEditable
         }
@@ -146,24 +156,38 @@ struct ComposerTextView: UIViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text, onPasteAttachments: onPasteAttachments)
+        Coordinator(
+            text: $text,
+            selection: $selection,
+            onPasteAttachments: onPasteAttachments
+        )
     }
 
     final class Coordinator: NSObject, UITextViewDelegate, UITextPasteDelegate {
         private let text: Binding<String>
+        private let selection: Binding<NSRange>
         var onPasteAttachments: ([PastedAttachment]) -> Void
+        var isApplyingSwiftUIUpdate = false
 
         init(
             text: Binding<String>,
+            selection: Binding<NSRange>,
             onPasteAttachments: @escaping ([PastedAttachment]) -> Void
         ) {
             self.text = text
+            self.selection = selection
             self.onPasteAttachments = onPasteAttachments
         }
 
         func textViewDidChange(_ textView: UITextView) {
             text.wrappedValue = textView.text
+            selection.wrappedValue = textView.selectedRange
             (textView as? HeightReportingTextView)?.reportContentHeight()
+        }
+
+        func textViewDidChangeSelection(_ textView: UITextView) {
+            guard !isApplyingSwiftUIUpdate else { return }
+            selection.wrappedValue = textView.selectedRange
         }
 
         /// UIKit supplies item providers only after the user invokes Paste,

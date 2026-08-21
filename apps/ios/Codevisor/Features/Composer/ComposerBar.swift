@@ -56,10 +56,16 @@ struct ComposerBar: View {
     /// this to give the outgoing text one visual owner during sheet promotion.
     var onWillSend: ((String) -> Void)? = nil
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
 
     @State var text = ""
+    /// The UIKit editor reports its UTF-16 selection so slash commands can
+    /// replace the token at the caret without disturbing the rest of a draft.
+    @State var selection = NSRange(location: 0, length: 0)
+    /// The command palette floats above the composer, so its rendered height
+    /// drives the same explicit upward offset used by the macOS composer.
+    @State var slashMenuContentHeight: CGFloat = 0
     /// The source New Chat editor keeps drawing the submitted glyphs until
     /// the promotion layer has covered it. The durable controller draft is
     /// already empty, so newly mounted destination composers remain empty.
@@ -87,10 +93,15 @@ struct ComposerBar: View {
     @State var isCapturingPhoto = false
     @State var isAddingProject = false
     @State var managedProject: Project?
-    /// Editing from the goal sheet requests focus through the same one-shot
-    /// UIKit bridge as initial New Chat focus, without making ordinary view
-    /// updates reclaim the keyboard.
+    /// Editing from the goal accessory requests focus through the same
+    /// one-shot UIKit bridge as initial New Chat focus, without making
+    /// ordinary view updates reclaim the keyboard.
     @State private var goalEditFocusRequest: UUID?
+    /// Clearing remains a deliberate destructive action even though goal
+    /// editing now opens directly in the composer instead of through a sheet.
+    @State var isConfirmingGoalClear = false
+    @State var isClearingGoal = false
+    @State var goalClearError: String?
     @Environment(AppEnvironment.self) var environment
 
     var trimmed: String {
@@ -103,6 +114,7 @@ struct ComposerBar: View {
             : !trimmed.isEmpty || !controller.composerAttachments.isEmpty)
             && !controller.isSubmitting
             && !controller.isConnecting
+            && !isClearingGoal
             && controller.configurationValidationState == .ready
     }
 
@@ -146,10 +158,15 @@ struct ComposerBar: View {
     }
 
     private var placeholder: String {
-        if controller.isGoalComposerArmed {
-            return controller.isGoalEditing ? "Update the goal" : "Describe the goal"
-        }
         return controller.isSending ? "Reply while it works" : "Ask for follow-up changes"
+    }
+
+    /// Position the root-level overlay from the card's top edge. Keeping the
+    /// overlay at the root gives it a higher z-order than the run pickers;
+    /// using the card edge makes the palette cover those chips while open.
+    private var slashPaletteOffset: CGFloat {
+        let cardTop = showsRunPickers ? runPickersHeight + 8 : 0
+        return cardTop - slashPaletteHeight - ComposerGlassStyle.clusterSpacing
     }
 
     var body: some View {
@@ -160,19 +177,48 @@ struct ComposerBar: View {
             // group, like the macOS new-chat row; the choice is fixed the
             // moment the first message creates the workspace.
             if showsRunPickers {
-                runTargetChips
-                    .font(.footnote)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .composerGlassSurface(cornerRadius: 18)
-                    .onGeometryChange(for: CGFloat.self) {
-                        $0.size.height
-                    } action: { height in
-                        runPickersHeight = height
-                    }
+                if showsSlashCommandPopup {
+                    // Liquid Glass may remain visible in its own compositing
+                    // pass even at zero opacity. Remove the controls entirely
+                    // while retaining their measured layout slot so the
+                    // palette can occupy it without moving the composer.
+                    Color.clear
+                        .frame(height: runPickersHeight)
+                        .accessibilityHidden(true)
+                } else {
+                    runTargetChips
+                        .font(.footnote)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .composerGlassSurface(
+                            cornerRadius: 18,
+                            id: .newChatConfiguration,
+                            in: glassNamespace
+                        )
+                        .onGeometryChange(for: CGFloat.self) {
+                            $0.size.height
+                        } action: { height in
+                            runPickersHeight = height
+                        }
+                }
             }
             card
         }
+        // The root-level overlay always draws above both children. On New
+        // Chat it is positioned from the card, intentionally covering the
+        // project/run-location chips while the command palette is open.
+        .overlay(alignment: .top) {
+            if controller.activeQuestion == nil, showsSlashCommandPopup {
+                slashCommandPopup
+                    .offset(y: slashPaletteOffset)
+                    .zIndex(1)
+            }
+        }
+        // Apple’s glass transition owns the palette's insertion/removal.
+        // This value changes only at the visible/hidden boundary, so ordinary
+        // query filtering swaps rows immediately while filtering to zero (or
+        // back from zero) still morphs the glass out of/into the composer.
+        .animation(Motion.quick(reduceMotion: reduceMotion), value: showsSlashCommandPopup)
         .sheet(isPresented: $isAddingProject) {
             AddProjectSheet { project in
                 selectTargetProject(project)
@@ -186,6 +232,29 @@ struct ComposerBar: View {
                 onArchive: { archiveManagedProject(project) }
             )
         }
+        .alert(
+            "Clear this goal?",
+            isPresented: $isConfirmingGoalClear
+        ) {
+            Button("Clear Goal", role: .destructive) {
+                clearGoalFromComposer()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            let objective = controller.goal?.objective ?? controller.draftGoal?.objective ?? text
+            Text("The agent stops working toward “\(objective)”.")
+        }
+        .alert(
+            "Couldn't Clear Goal",
+            isPresented: Binding(
+                get: { goalClearError != nil },
+                set: { if !$0 { goalClearError = nil } }
+            )
+        ) {
+            Button("OK") { goalClearError = nil }
+        } message: {
+            Text(goalClearError ?? "Please try again.")
+        }
         .onGeometryChange(for: CGFloat.self) {
             $0.size.height
         } action: { height in
@@ -194,7 +263,13 @@ struct ComposerBar: View {
                 collapsedHeight = height
             }
         }
-        .onAppear { text = controller.composerText }
+        .onAppear {
+            text = controller.composerText
+            selection = NSRange(
+                location: (controller.composerText as NSString).length,
+                length: 0
+            )
+        }
         // The UIKit editor deliberately owns keystrokes locally, but model-
         // initiated changes (a successful send clearing the draft, or a
         // failed send restoring it) still need to cross that boundary. On a
@@ -204,6 +279,7 @@ struct ComposerBar: View {
             if retainsSubmittedTextForPromotion, newValue.isEmpty { return }
             guard text != newValue else { return }
             text = newValue
+            selection = NSRange(location: (newValue as NSString).length, length: 0)
         }
         .onChange(of: controller.isGoalEditing) { _, isEditing in
             if isEditing {
@@ -211,6 +287,14 @@ struct ComposerBar: View {
                 goalEditFocusRequest = UUID()
             } else {
                 goalEditFocusRequest = nil
+            }
+        }
+        .onChange(of: showsSlashCommandPopup) { _, isVisible in
+            // A dismissed menu must not retain the previous query's measured
+            // height. Its next glass emergence starts from the correct
+            // estimated geometry for the newly visible options.
+            if !isVisible {
+                slashMenuContentHeight = 0
             }
         }
         .onDisappear {
@@ -347,12 +431,6 @@ struct ComposerBar: View {
 
     private var composerContent: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if controller.isGoalEditing {
-                Label("Edit Goal", systemImage: "target")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-
             if !controller.composerAttachments.isEmpty {
                 ComposerAttachmentStrip(controller: controller)
             }
@@ -364,6 +442,7 @@ struct ComposerBar: View {
                 // scrolling is disabled inside a fixed frame.
                 ComposerTextView(
                     text: $text,
+                    selection: $selection,
                     handoffID: textEditorHandoffID,
                     handoffRole: textEditorHandoffRole,
                     // The controller is briefly `isSubmitting` while the
@@ -374,7 +453,9 @@ struct ComposerBar: View {
                     // atomic responder swap; normal composers keep the
                     // existing submission lock.
                     isEditable: textEditorHandoffRole != .none
-                        || !(controller.isSubmitting || controller.isResolvingQuestion),
+                        || !(controller.isSubmitting
+                            || controller.isResolvingQuestion
+                            || isClearingGoal),
                     focusRequest: goalEditFocusRequest ?? initialFocusRequest,
                     onFocusRequestFulfilled: fulfillFocusRequest,
                     onPasteAttachments: handlePastedAttachments,
@@ -413,45 +494,68 @@ struct ComposerBar: View {
                 }
             }
 
+            composerToolbar
+                .font(.callout)
+                .contentShape(Rectangle())
+                .animation(
+                    Motion.quick(reduceMotion: reduceMotion),
+                    value: controller.isGoalEditing
+                )
+                // The chrome half of grab-anywhere: this SwiftUI drag covers the
+                // toolbar row, and the editor's UIKit pan covers the text area
+                // (see `HeightReportingTextView.expansionPan`). Simultaneous here
+                // only shares touches with the row's own buttons, and a tap
+                // never travels the 8pt minimum.
+                .simultaneousGesture(expansionDrag)
+        }
+    }
+
+    /// Goal editing and ordinary composition occupy the same toolbar slot.
+    /// Remove the outgoing chrome immediately so SwiftUI never crossfades two
+    /// interactive rows on top of each other; only the replacement row fades
+    /// in. The UIKit editor above stays mounted, preserving focus and
+    /// selection through the mode change.
+    @ViewBuilder
+    private var composerToolbar: some View {
+        if controller.isGoalEditing {
             HStack(spacing: 10) {
-                if controller.isGoalEditing {
-                    goalEditCancelButton
-                    Spacer(minLength: 0)
-                    sendButton
-                } else {
-                    attachButton
-                    ModelConfigChip(controller: controller)
-                    ForEach(controller.pickerOptions) { option in
-                        ConfigChip(controller: controller, option: option)
-                    }
-                    if controller.hasPlanMode {
-                        planModeButton
-                    }
-                    if controller.canEditGoal {
-                        goalModeButton
-                    }
-                    Spacer(minLength: 0)
-                    // Mirrors the macOS toolbar: while the agent runs, stop
-                    // takes the send slot; a draft brings send back beside it.
-                    HStack(spacing: 6) {
-                        if controller.isSending {
-                            stopButton
-                            if !trimmed.isEmpty { sendButton }
-                        } else {
-                            sendButton
-                        }
+                goalEditCancelButton
+                Spacer(minLength: 0)
+                clearGoalButton
+                sendButton
+            }
+            .transition(composerModeTransition)
+        } else {
+            HStack(spacing: 10) {
+                attachButton
+                ModelConfigChip(controller: controller)
+                ForEach(controller.pickerOptions) { option in
+                    ConfigChip(controller: controller, option: option)
+                }
+                if controller.hasPlanMode, controller.isPlanModeOn {
+                    planModeChip
+                }
+                if controller.canEditGoal, controller.isGoalComposerArmed {
+                    goalModeChip
+                }
+                Spacer(minLength: 0)
+                // Mirrors the macOS toolbar: while the agent runs, stop
+                // takes the send slot; a draft brings send back beside it.
+                HStack(spacing: 6) {
+                    if controller.isSending {
+                        stopButton
+                        if !trimmed.isEmpty { sendButton }
+                    } else {
+                        sendButton
                     }
                 }
             }
-            .font(.callout)
-            .contentShape(Rectangle())
-            // The chrome half of grab-anywhere: this SwiftUI drag covers the
-            // toolbar row, and the editor's UIKit pan covers the text area
-            // (see `HeightReportingTextView.expansionPan`). Simultaneous here
-            // only shares touches with the row's own buttons, and a tap
-            // never travels the 8pt minimum.
-            .simultaneousGesture(expansionDrag)
+            .transition(composerModeTransition)
         }
+    }
+
+    private var composerModeTransition: AnyTransition {
+        .asymmetric(insertion: .opacity, removal: .identity)
     }
 
     private func fulfillFocusRequest(_ request: UUID) {

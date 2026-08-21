@@ -332,6 +332,7 @@ export interface PromptQueueRow {
   readonly updated_at: string
   readonly attachments: string | null
   readonly state: "pending" | "processing"
+  readonly position: number
 }
 
 export interface FileRow {

@@ -290,6 +290,11 @@ public final class SessionModel {
     /// removed ids briefly so the second event can identify a real promotion;
     /// explicit deletions never produce a matching user-message id.
     @ObservationIgnored var pendingQueuePromotionIDs: [String: TimeInterval] = [:]
+    /// User rows inserted locally before their server echo arrives. Modern
+    /// servers echo the same id; this side table scopes the content fallback
+    /// needed during rolling upgrades to those actual optimistic rows instead
+    /// of treating any repeated user text as a duplicate.
+    @ObservationIgnored var pendingOptimisticUserMessageIDs: Set<UUID> = []
     /// Approximate transcript text size, seeded from history and increased by
     /// live assistant chunks. It drives adaptive stream pacing without
     /// inspecting the full transcript during every flush.

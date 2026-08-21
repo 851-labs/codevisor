@@ -262,6 +262,11 @@ extension SessionController {
     }
 
     @discardableResult
+    public func reorderQueuedPrompts(ids: [String]) async -> Bool {
+        await model?.reorderQueuedPrompts(ids: ids) ?? false
+    }
+
+    @discardableResult
     public func deleteQueuedPrompt(id: String) async -> Bool {
         await model?.deleteQueuedPrompt(id: id) ?? false
     }

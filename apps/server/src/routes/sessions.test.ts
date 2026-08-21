@@ -1292,6 +1292,19 @@ describe("sessions routes", () => {
     ])
     expect(
       (
+        await jsonRequest(server, `/v1/sessions/${session.id}/queue`, {
+          body: JSON.stringify({
+            queueItemIds: [removedResponse.queueItemId, queuedResponse.queueItemId]
+          }),
+          method: "PATCH"
+        })
+      ).body
+    ).toMatchObject([
+      { id: removedResponse.queueItemId, text: "queued remove" },
+      { id: queuedResponse.queueItemId, text: "queued original" }
+    ])
+    expect(
+      (
         await jsonRequest(
           server,
           `/v1/sessions/${session.id}/queue/${queuedResponse.queueItemId}`,

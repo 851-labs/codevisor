@@ -513,6 +513,13 @@ public extension CodevisorServerClienting {
         )
     }
 
+    func reorderQueuedPrompts(
+        sessionId: UUID,
+        queueItemIds _: [String]
+    ) async throws -> [ServerPromptQueueItem] {
+        try await promptQueue(id: sessionId)
+    }
+
     func deleteQueuedPrompt(sessionId: UUID, queueItemId: String) async throws {}
 
     /// Defaults so fakes and older transports keep compiling; the HTTP client

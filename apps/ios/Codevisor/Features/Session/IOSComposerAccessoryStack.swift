@@ -13,6 +13,7 @@ struct IOSComposerAccessoryStack: View {
     let isComposerExpanded: Bool
     let maximumTodoHeight: CGFloat
     let glassNamespace: Namespace.ID
+    @State private var isPresentingQueue = false
 
     private var visibleGoal: SessionGoal? {
         guard controller.supportsGoals, !controller.isGoalEditing else { return nil }
@@ -48,25 +49,30 @@ struct IOSComposerAccessoryStack: View {
                         glassNamespace: glassNamespace,
                         maximumExpandedHeight: maximumTodoHeight
                     )
-                    .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
+                    // The content fades while `glassEffectTransition` owns
+                    // the material morph inside the shared container.
+                    .transition(.opacity)
                 }
 
                 if let goal = visibleGoal {
                     IOSGoalAccessory(
                         controller: controller,
                         goal: goal,
-                        isDraft: controller.model?.goal == nil,
                         glassNamespace: glassNamespace
                     )
-                    .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
+                    // Entering edit mode removes the old goal content
+                    // immediately; its glass can still morph while the
+                    // replacement composer chrome animates in.
+                    .transition(.asymmetric(insertion: .opacity, removal: .identity))
                 }
 
                 if !controller.queuedPrompts.isEmpty {
                     IOSPromptQueueAccessory(
                         controller: controller,
-                        glassNamespace: glassNamespace
+                        glassNamespace: glassNamespace,
+                        isPresentingQueue: $isPresentingQueue
                     )
-                    .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
+                    .transition(.opacity)
                 }
 
                 if controller.configurationValidationError == nil,
@@ -123,6 +129,9 @@ struct IOSComposerAccessoryStack: View {
             Motion.quick(reduceMotion: reduceMotion),
             value: controller.configurationAdjustmentMessage
         )
+        .sheet(isPresented: $isPresentingQueue) {
+            IOSPromptQueueSheet(controller: controller)
+        }
     }
 }
 

@@ -364,6 +364,11 @@ export const UpdateQueuedPromptRequest = Schema.Struct({
 })
 export type UpdateQueuedPromptRequest = typeof UpdateQueuedPromptRequest.Type
 
+export const ReorderQueuedPromptsRequest = Schema.Struct({
+  queueItemIds: Schema.Array(Schema.String)
+})
+export type ReorderQueuedPromptsRequest = typeof ReorderQueuedPromptsRequest.Type
+
 export const CancelRequest = Schema.Struct({
   clientActionId: Schema.optional(Schema.String)
 })

@@ -15,6 +15,7 @@ export const makePromptQueueService = (
   | "createPromptQueueItem"
   | "listPromptQueue"
   | "updatePromptQueueItem"
+  | "reorderPromptQueue"
   | "deletePromptQueueItem"
   | "claimPromptQueueItem"
   | "completePromptQueueItem"
@@ -44,10 +45,14 @@ export const makePromptQueueService = (
         sqlite
           .prepare(
             `insert into prompt_queue_items (
-              id, session_id, text, created_at, updated_at, attachments
-            ) values (?, ?, ?, ?, ?, ?)`
+              id, session_id, text, created_at, updated_at, attachments, position
+            ) values (?, ?, ?, ?, ?, ?, (
+              select coalesce(max(position), -1) + 1
+              from prompt_queue_items
+              where session_id = ? and state = 'pending'
+            ))`
           )
-          .run(item.id, sessionId, text, now, now, serializeAttachments(attachments))
+          .run(item.id, sessionId, text, now, now, serializeAttachments(attachments), sessionId)
         return item
       }),
     listPromptQueue: (rawSessionId) =>
@@ -74,6 +79,31 @@ export const makePromptQueueService = (
             .get(sessionId, queueItemId) as PromptQueueRow
         )
       }),
+    reorderPromptQueue: (rawSessionId, queueItemIds) =>
+      attempt("reorderPromptQueue", () => {
+        const sessionId = canonicalUuid(rawSessionId)
+        getSession(sessionId)
+        const transaction = sqlite.transaction(() => {
+          const current = listPromptQueueSync(sqlite, sessionId)
+          const currentIDs = new Set(current.map((item) => item.id))
+          const seen = new Set<string>()
+          const orderedIDs = queueItemIds.filter((id) => {
+            if (!currentIDs.has(id) || seen.has(id)) return false
+            seen.add(id)
+            return true
+          })
+          orderedIDs.push(...current.map((item) => item.id).filter((id) => !seen.has(id)))
+
+          const updatePosition = sqlite.prepare(
+            "update prompt_queue_items set position = ? where session_id = ? and state = 'pending' and id = ?"
+          )
+          orderedIDs.forEach((id, position) => {
+            updatePosition.run(position, sessionId, id)
+          })
+          return listPromptQueueSync(sqlite, sessionId)
+        })
+        return transaction()
+      }),
     deletePromptQueueItem: (rawSessionId, queueItemId) =>
       attempt("deletePromptQueueItem", () => {
         const result = sqlite
@@ -91,7 +121,7 @@ export const makePromptQueueService = (
             .prepare(
               `select * from prompt_queue_items
                where session_id = ? and state = 'pending'
-               order by created_at asc, rowid asc
+               order by position asc, created_at asc, rowid asc
                limit 1`
             )
             .get(sessionId) as PromptQueueRow | undefined

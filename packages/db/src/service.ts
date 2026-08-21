@@ -224,6 +224,10 @@ export interface CodevisorDatabaseService {
     queueItemId: string,
     text: string
   ) => Effect.Effect<PromptQueueItem, DatabaseError>
+  readonly reorderPromptQueue: (
+    sessionId: string,
+    queueItemIds: ReadonlyArray<string>
+  ) => Effect.Effect<ReadonlyArray<PromptQueueItem>, DatabaseError>
   readonly deletePromptQueueItem: (
     sessionId: string,
     queueItemId: string

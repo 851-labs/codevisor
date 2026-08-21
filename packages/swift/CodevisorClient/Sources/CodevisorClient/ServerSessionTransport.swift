@@ -203,6 +203,10 @@ extension ServerSessionTransport {
         try await client.updateQueuedPrompt(sessionId: sessionId, queueItemId: id, text: text)
     }
 
+    public func reorderQueuedPrompts(ids: [String]) async throws -> [ServerPromptQueueItem] {
+        try await client.reorderQueuedPrompts(sessionId: sessionId, queueItemIds: ids)
+    }
+
     public func deleteQueuedPrompt(id: String) async throws {
         try await client.deleteQueuedPrompt(sessionId: sessionId, queueItemId: id)
     }

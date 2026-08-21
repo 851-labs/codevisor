@@ -20,6 +20,10 @@ private struct UpdateQueuedPromptBody: Encodable {
     var text: String
 }
 
+private struct ReorderQueuedPromptsBody: Encodable {
+    var queueItemIds: [String]
+}
+
 private struct CancelBody: Encodable {
     var clientActionId = UUID().uuidString
 }
@@ -424,6 +428,17 @@ extension CodevisorServerClient {
             "/v1/sessions/\(sessionId.uuidString)/queue/\(queueItemId)",
             method: "PATCH",
             body: UpdateQueuedPromptBody(text: text)
+        )
+    }
+
+    public func reorderQueuedPrompts(
+        sessionId: UUID,
+        queueItemIds: [String]
+    ) async throws -> [ServerPromptQueueItem] {
+        try await send(
+            "/v1/sessions/\(sessionId.uuidString)/queue",
+            method: "PATCH",
+            body: ReorderQueuedPromptsBody(queueItemIds: queueItemIds)
         )
     }
 

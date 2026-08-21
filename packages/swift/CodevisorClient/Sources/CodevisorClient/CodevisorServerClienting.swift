@@ -307,6 +307,10 @@ public protocol CodevisorServerClienting: Sendable {
     /// servers/transports that predate HEAD metadata for filesystem previews.
     func fileVersion(sessionId: UUID, path: String) async throws -> String?
     func updateQueuedPrompt(sessionId: UUID, queueItemId: String, text: String) async throws -> ServerPromptQueueItem
+    func reorderQueuedPrompts(
+        sessionId: UUID,
+        queueItemIds: [String]
+    ) async throws -> [ServerPromptQueueItem]
     func deleteQueuedPrompt(sessionId: UUID, queueItemId: String) async throws
     func cancelSession(id: UUID) async throws
     func setSessionMode(id: UUID, modeId: String) async throws

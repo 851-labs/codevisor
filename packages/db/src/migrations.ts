@@ -1092,5 +1092,29 @@ export const migrations: ReadonlyArray<Migration> = [
       set metadata = null
       where provider_id like 'plugin:%';
     `
+  },
+  {
+    id: 41,
+    name: "reorderable session prompt queue",
+    sql: `
+      alter table prompt_queue_items add column position integer not null default 0;
+
+      with ranked as (
+        select rowid as queue_rowid,
+          row_number() over (
+            partition by session_id, state
+            order by created_at asc, rowid asc
+          ) - 1 as queue_position
+        from prompt_queue_items
+      )
+      update prompt_queue_items
+      set position = (
+        select queue_position from ranked
+        where ranked.queue_rowid = prompt_queue_items.rowid
+      );
+
+      create index prompt_queue_items_session_state_position_idx
+        on prompt_queue_items(session_id, state, position, created_at);
+    `
   }
 ]

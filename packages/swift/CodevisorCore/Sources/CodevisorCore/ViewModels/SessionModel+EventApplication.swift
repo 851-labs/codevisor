@@ -198,10 +198,7 @@ extension SessionModel {
             activeItem = .assistant(message)
             if !isSending { isSending = true }
         case let .queueUpdated(queue):
-            rememberRemovedQueueItems(in: queue)
-            queuedPrompts = queue
-            promptQueueRevision &+= 1
-            onQueuedPromptsChanged?()
+            applyQueuedPromptSnapshot(queue)
         case let .updateGate(waiting, harnessName):
             updateGateHarnessName = waiting ? harnessName : nil
         case let .backgroundTasks(tasks):
@@ -362,20 +359,23 @@ extension SessionModel {
                 user.attachments = attachments
                 settledConversation[index] = .user(user)
             }
+            pendingOptimisticUserMessageIDs.remove(echoId)
             return
         }
         // CONTENT fallback (older servers that don't echo the client id).
-        // Deliberately NOT conditioned on a live generating assistant: an
-        // agent restart between the local append and the echo (e.g. the
-        // harness dying on its first spawn and reconnecting) tears the
-        // active bubble down, and requiring it duplicated the user message.
-        // A conversation whose newest entry is an identical user message
-        // only happens for that echo.
-        if case var .user(user) = settledConversation.last, user.text == trimmed {
+        // Restrict it to rows this client actually appended optimistically.
+        // Repeated queue prompts and messages from another client are distinct
+        // turns even when their text is identical.
+        if let index = settledConversation.lastIndex(where: { item in
+            guard case let .user(user) = item else { return false }
+            return pendingOptimisticUserMessageIDs.contains(user.id)
+                && user.text == trimmed
+        }), case var .user(user) = settledConversation[index] {
             if user.attachments.isEmpty, !attachments.isEmpty {
                 user.attachments = attachments
-                settledConversation[settledConversation.count - 1] = .user(user)
+                settledConversation[index] = .user(user)
             }
+            pendingOptimisticUserMessageIDs.remove(user.id)
             return
         }
         settleActiveItem()
@@ -388,6 +388,13 @@ extension SessionModel {
                 )))
         startActiveBubble()
         if !isSending { isSending = true }
+    }
+
+    func applyQueuedPromptSnapshot(_ queue: [ServerPromptQueueItem]) {
+        rememberRemovedQueueItems(in: queue)
+        queuedPrompts = queue
+        promptQueueRevision &+= 1
+        onQueuedPromptsChanged?()
     }
 
     private func rememberRemovedQueueItems(in updatedQueue: [ServerPromptQueueItem]) {
@@ -419,6 +426,11 @@ extension SessionModel {
     }
 
     func ensureAssistantTurn() {
+        // User output is ordered before assistant output. Once provider output
+        // begins, an unmatched optimistic row is no longer awaiting an echo;
+        // retaining it could make a later equal queue/remote prompt look like
+        // that echo.
+        pendingOptimisticUserMessageIDs.removeAll()
         if case let .assistant(message) = activeItem {
             // A finished turn is never reopened: output arriving after the
             // stopReason means the agent started a new turn on its own (e.g. a

@@ -105,7 +105,7 @@ final public class SessionController {
     /// Whether the pinned unfinished todo checklist is expanded. SessionStore
     /// mirrors this independently so navigation and controller eviction
     /// preserve the last state the user chose for each chat.
-    public var isTodosExpanded = true {
+    public var isTodosExpanded = false {
         didSet { onTodosExpandedChange?(isTodosExpanded) }
     }
     @ObservationIgnored public var onTodosExpandedChange: ((Bool) -> Void)?

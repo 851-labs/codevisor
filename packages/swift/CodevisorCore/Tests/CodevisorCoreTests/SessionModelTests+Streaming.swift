@@ -278,6 +278,44 @@ extension SessionModelTests {
         #expect(promotedMessageIDs == [queueItemId])
     }
 
+    @Test("Identical queued prompts remain distinct transcript rows")
+    func identicalQueuedPromptsRemainDistinct() async throws {
+        let sessionId = UUID()
+        let queueItemId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.echoOnPrompt = false
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+
+        await model.send("again")
+        let directMessageId = try #require(userMessages(model).first?.id)
+        model.apply(
+            .update(
+                .agentMessageChunk(
+                    .text("Completed the first turn."),
+                    messageId: "assistant-1",
+                    parentToolCallId: nil,
+                    phase: nil
+                )))
+        model.apply(.finished(.endTurn, stopDetail: nil))
+
+        let queued = ServerPromptQueueItem(
+            id: queueItemId.uuidString,
+            sessionId: sessionId.uuidString,
+            text: "again",
+            createdAt: "2026-08-21T00:00:00.000Z",
+            updatedAt: "2026-08-21T00:00:00.000Z"
+        )
+        model.apply(.queueUpdated([queued]))
+        model.apply(.queueUpdated([]))
+        model.apply(.userMessage(id: queueItemId.uuidString, text: "again", attachments: []))
+
+        #expect(userMessages(model).map(\.text) == ["again", "again"])
+        #expect(userMessages(model).map(\.id) == [directMessageId, queueItemId])
+    }
+
     @Test("A new empty session negotiates the scoped stream before its first prompt")
     func newSessionFirstPromptUsesScopedStream() async {
         let sessionId = UUID()

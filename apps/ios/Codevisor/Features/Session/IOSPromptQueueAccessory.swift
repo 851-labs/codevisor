@@ -7,7 +7,7 @@ import SwiftUI
 struct IOSPromptQueueAccessory: View {
     @Bindable var controller: SessionController
     let glassNamespace: Namespace.ID
-    @State private var isPresentingQueue = false
+    @Binding var isPresentingQueue: Bool
 
     private var firstItem: ServerPromptQueueItem? {
         controller.queuedPrompts.first
@@ -22,27 +22,23 @@ struct IOSPromptQueueAccessory: View {
         Button {
             isPresentingQueue = true
         } label: {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 7) {
-                    Image(systemName: "text.line.first.and.arrowtriangle.forward")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Text("Queue")
-                        .font(.caption.weight(.semibold))
-                    Text(countText)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer(minLength: 8)
-                    Image(systemName: "chevron.up")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.tertiary)
-                }
-
+            HStack(spacing: 7) {
+                Image(systemName: "text.line.first.and.arrowtriangle.forward")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
                 if let firstItem {
                     Text(firstItem.text)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if controller.queuedPrompts.count > 1 {
+                    Text("(\(controller.queuedPrompts.count))")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: true, vertical: false)
                 }
             }
             .padding(10)
@@ -59,18 +55,10 @@ struct IOSPromptQueueAccessory: View {
         .accessibilityLabel("Queue, \(countText)")
         .accessibilityValue(firstItem.map { "Next: \($0.text)" } ?? "")
         .accessibilityHint("Opens queued message management")
-        .sheet(isPresented: $isPresentingQueue) {
-            IOSPromptQueueSheet(controller: controller)
-        }
-        .onChange(of: controller.queuedPrompts.isEmpty) { _, isEmpty in
-            if isEmpty {
-                isPresentingQueue = false
-            }
-        }
     }
 }
 
-private struct IOSPromptQueueSheet: View {
+struct IOSPromptQueueSheet: View {
     private enum Destination: Hashable {
         case edit(String)
     }
@@ -78,32 +66,33 @@ private struct IOSPromptQueueSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Bindable var controller: SessionController
     @State private var path: [Destination] = []
-    @State private var pendingDeleteID: String?
     @State private var deletingIDs: Set<String> = []
+    @State private var displayedQueue: [ServerPromptQueueItem]
+    @State private var isReordering = false
     @State private var mutationError: String?
 
-    private var pendingDeleteItem: ServerPromptQueueItem? {
-        guard let pendingDeleteID else { return nil }
-        return controller.queuedPrompts.first { $0.id == pendingDeleteID }
+    init(controller: SessionController) {
+        self.controller = controller
+        _displayedQueue = State(initialValue: controller.queuedPrompts)
     }
 
     var body: some View {
         NavigationStack(path: $path) {
             List {
-                Section {
-                    ForEach(Array(controller.queuedPrompts.enumerated()), id: \.element.id) {
-                        index, item in
-                        queueRow(item, position: index)
-                    }
-                } footer: {
-                    Text("Messages are sent in order as the agent becomes available.")
+                ForEach(displayedQueue) { item in
+                    queueRow(item)
                 }
+                .onMove(perform: moveQueue)
             }
-            .navigationTitle("Queued Messages")
+            .navigationTitle("Queue")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    EditButton()
+                        .disabled(displayedQueue.count < 2 || isReordering)
                 }
             }
             .navigationDestination(for: Destination.self) { destination in
@@ -112,25 +101,7 @@ private struct IOSPromptQueueSheet: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
-        .interactiveDismissDisabled(!deletingIDs.isEmpty)
-        .confirmationDialog(
-            "Remove queued message?",
-            isPresented: Binding(
-                get: { pendingDeleteItem != nil },
-                set: { if !$0 { pendingDeleteID = nil } }
-            ),
-            titleVisibility: .visible,
-            presenting: pendingDeleteItem
-        ) { item in
-            Button("Remove Message", role: .destructive) {
-                delete(item)
-            }
-            Button("Cancel", role: .cancel) {
-                pendingDeleteID = nil
-            }
-        } message: { _ in
-            Text("This message will not be sent. This action cannot be undone.")
-        }
+        .interactiveDismissDisabled(!deletingIDs.isEmpty || isReordering)
         .alert(
             "Couldn't Update Queue",
             isPresented: Binding(
@@ -142,82 +113,52 @@ private struct IOSPromptQueueSheet: View {
         } message: {
             Text(mutationError ?? "Please try again.")
         }
-        .onChange(of: controller.queuedPrompts.map(\.id)) { _, ids in
-            reconcile(with: ids)
+        .onChange(of: controller.queuedPrompts) { _, queue in
+            displayedQueue = queue
+            reconcile(with: queue.map(\.id))
         }
     }
 
-    private func queueRow(_ item: ServerPromptQueueItem, position: Int) -> some View {
+    private func queueRow(_ item: ServerPromptQueueItem) -> some View {
         Button {
             path.append(.edit(item.id))
         } label: {
-            HStack(alignment: .top, spacing: 12) {
-                queuePositionIcon(position)
+            HStack(spacing: 8) {
+                Text(item.text)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(position == 0 ? "Next" : "Message \(position + 1)")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Text(item.text)
-                        .font(.body)
-                        .foregroundStyle(.primary)
-                        .lineLimit(3)
-                    if let attachments = item.attachments, !attachments.isEmpty {
-                        Label(attachmentText(attachments.count), systemImage: "paperclip")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Spacer(minLength: 8)
-
-                if deletingIDs.contains(item.id) {
-                    ProgressView()
-                        .controlSize(.small)
-                } else {
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.tertiary)
-                }
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
             }
-            .frame(minHeight: Typography.minimumInteractiveTargetSize)
+            .frame(
+                maxWidth: .infinity,
+                minHeight: Typography.minimumInteractiveTargetSize,
+                alignment: .leading
+            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(deletingIDs.contains(item.id))
-        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+        .disabled(deletingIDs.contains(item.id) || isReordering)
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button("Remove", systemImage: "trash", role: .destructive) {
-                pendingDeleteID = item.id
+                delete(item)
             }
-            Button("Edit", systemImage: "pencil") {
-                path.append(.edit(item.id))
-            }
-            .tint(.accentColor)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(position == 0 ? "Next queued message" : "Queued message \(position + 1)")
+        .accessibilityLabel("Queued message")
         .accessibilityValue(accessibilityValue(for: item))
         .accessibilityHint("Double-tap to edit")
         .accessibilityAction(named: "Edit") {
             path.append(.edit(item.id))
         }
         .accessibilityAction(named: "Remove") {
-            pendingDeleteID = item.id
-        }
-    }
-
-    @ViewBuilder
-    private func queuePositionIcon(_ position: Int) -> some View {
-        if position == 0 {
-            Image(systemName: "arrow.right.circle.fill")
-                .font(.body)
-                .foregroundStyle(Color.accentColor)
-                .scaledFrame(width: 22, relativeTo: .body)
-        } else {
-            Image(systemName: "circle")
-                .font(.body)
-                .foregroundStyle(.tertiary)
-                .scaledFrame(width: 22, relativeTo: .body)
+            delete(item)
         }
     }
 
@@ -244,7 +185,6 @@ private struct IOSPromptQueueSheet: View {
     }
 
     private func delete(_ item: ServerPromptQueueItem) {
-        pendingDeleteID = nil
         guard deletingIDs.insert(item.id).inserted else { return }
 
         Task {
@@ -256,20 +196,28 @@ private struct IOSPromptQueueSheet: View {
         }
     }
 
+    private func moveQueue(from source: IndexSet, to destination: Int) {
+        guard !isReordering, deletingIDs.isEmpty else { return }
+        displayedQueue.move(fromOffsets: source, toOffset: destination)
+        let orderedIDs = displayedQueue.map(\.id)
+        isReordering = true
+
+        Task {
+            let didReorder = await controller.reorderQueuedPrompts(ids: orderedIDs)
+            isReordering = false
+            if !didReorder {
+                displayedQueue = controller.queuedPrompts
+                mutationError = controller.errorMessage ?? "The queue could not be reordered."
+            }
+        }
+    }
+
     private func reconcile(with ids: [String]) {
         let currentIDs = Set(ids)
         deletingIDs.formIntersection(currentIDs)
 
-        if let pendingDeleteID, !currentIDs.contains(pendingDeleteID) {
-            self.pendingDeleteID = nil
-        }
-
         if case .edit(let editingID) = path.last, !currentIDs.contains(editingID) {
             path.removeLast()
-        }
-
-        if ids.isEmpty {
-            dismiss()
         }
     }
 
@@ -332,10 +280,6 @@ private struct IOSQueuedPromptEditor: View {
         .navigationBarTitleDisplayMode(.inline)
         .scrollDismissesKeyboard(.interactively)
         .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") { onFinish() }
-                    .disabled(isSaving)
-            }
             ToolbarItem(placement: .confirmationAction) {
                 if isSaving {
                     ProgressView()
@@ -343,7 +287,7 @@ private struct IOSQueuedPromptEditor: View {
                         .accessibilityLabel("Saving queued message")
                 } else {
                     Button("Save") { save() }
-                        .disabled(trimmedText.isEmpty || trimmedText == item.text)
+                        .disabled(trimmedText.isEmpty)
                 }
             }
         }

@@ -55,9 +55,11 @@ extension ComposerBar {
 
     var sendButton: some View {
         Button {
-            submitComposer()
+            submitOrAcceptSlashCommand()
         } label: {
-            Image(systemName: controller.isGoalComposerArmed ? "checkmark" : "arrow.up")
+            // Goal creation remains the ordinary composer interaction. Only
+            // an existing goal in edit mode uses the save checkmark.
+            Image(systemName: controller.isGoalEditing ? "checkmark" : "arrow.up")
                 .font(.subheadline.weight(.bold))
                 .scaledFrame(width: 30, height: 30, relativeTo: .subheadline)
                 .foregroundStyle(canSend ? Color(.systemBackground) : Color.secondary.opacity(0.75))
@@ -70,97 +72,114 @@ extension ComposerBar {
         }
         .buttonStyle(.plain)
         .disabled(!canSend)
-        .accessibilityLabel(controller.isGoalComposerArmed ? "Set goal" : "Send")
+        .accessibilityLabel(controller.isGoalEditing ? "Save goal" : "Send")
     }
 
-    var goalModeButton: some View {
+    /// An active Goal chip. Goal is entered through `/goal`; this chip only
+    /// provides the matching, discoverable way to leave the mode.
+    var goalModeChip: some View {
         Button {
             controller.composerText = text
-            withAnimation(.snappy(duration: 0.15)) {
-                controller.toggleGoalComposer()
+            withAnimation(Motion.quick(reduceMotion: reduceMotion)) {
+                controller.exitGoalComposer()
             }
         } label: {
-            if controller.isGoalComposerArmed {
-                HStack(spacing: 5) {
-                    Image(systemName: "target")
-                    Text("Goal")
-                    Image(systemName: "xmark")
-                        .font(.caption2.weight(.bold))
-                }
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(Color(.systemBackground))
-                .padding(.horizontal, 9)
-                .scaledFrame(height: 30, relativeTo: .caption)
-                .background(Capsule().fill(Color.primary.opacity(0.85)))
-                .expandedHitTarget(base: 30)
-            } else {
+            HStack(spacing: 5) {
                 Image(systemName: "target")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .scaledFrame(width: 28, height: 28, relativeTo: .subheadline)
-                    .expandedHitTarget(base: 28)
+                Text("Goal")
+                Image(systemName: "xmark")
+                    .font(.caption2.weight(.bold))
             }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(Color(.systemBackground))
+            .padding(.horizontal, 9)
+            .scaledFrame(height: 30, relativeTo: .caption)
+            .background(Capsule().fill(Color.primary.opacity(0.85)))
+            .expandedHitTarget(base: 30)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(controller.isGoalComposerArmed ? "Goal mode on" : "Set a goal")
-        .accessibilityHint(
-            controller.isGoalComposerArmed
-                ? "Returns this draft to a regular chat message"
-                : "Uses the composer text as a persistent goal"
-        )
+        .accessibilityLabel("Goal mode on")
+        .accessibilityHint("Returns this draft to a regular chat message")
     }
 
-    /// iOS has no slash-command palette, so Plan needs a visible touch entry
-    /// point. At rest it stays compact in the crowded composer toolbar; once
-    /// active it becomes a labeled, removable chip like Goal. The expanded
-    /// hit target preserves the HIG's 44-point minimum without making the
-    /// toolbar itself taller.
-    var planModeButton: some View {
+    /// An active Plan chip. Plan is entered through `/plan`; this chip only
+    /// provides the matching, discoverable way to return to build mode.
+    var planModeChip: some View {
         Button {
             Task { await controller.togglePlanMode() }
         } label: {
-            if controller.isPlanModeOn {
-                HStack(spacing: 5) {
-                    Image(systemName: "map")
-                    Text("Plan")
-                    Image(systemName: "xmark")
-                        .font(.caption2.weight(.bold))
-                }
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(Color(.systemBackground))
-                .padding(.horizontal, 9)
-                .scaledFrame(height: 30, relativeTo: .caption)
-                .background(Capsule().fill(Color.primary.opacity(0.85)))
-                .expandedHitTarget(base: 30)
-            } else {
+            HStack(spacing: 5) {
                 Image(systemName: "map")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .scaledFrame(width: 28, height: 28, relativeTo: .subheadline)
-                    .expandedHitTarget(base: 28)
+                Text("Plan")
+                Image(systemName: "xmark")
+                    .font(.caption2.weight(.bold))
             }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(Color(.systemBackground))
+            .padding(.horizontal, 9)
+            .scaledFrame(height: 30, relativeTo: .caption)
+            .background(Capsule().fill(Color.primary.opacity(0.85)))
+            .expandedHitTarget(base: 30)
         }
         .buttonStyle(.plain)
         .disabled(controller.isPlanModeUpdatePending)
         .opacity(controller.isPlanModeUpdatePending ? 0.5 : 1)
-        .accessibilityLabel(controller.isPlanModeOn ? "Plan mode on" : "Plan mode off")
-        .accessibilityHint(
-            controller.isPlanModeOn
-                ? "Returns the agent to implementation mode"
-                : "Asks the agent to create a plan before making changes"
-        )
+        .accessibilityLabel("Plan mode on")
+        .accessibilityHint("Returns the agent to implementation mode")
     }
 
     var goalEditCancelButton: some View {
         Button("Cancel") {
-            withAnimation(.snappy(duration: 0.15)) {
+            withAnimation(Motion.quick(reduceMotion: reduceMotion)) {
                 controller.exitGoalComposer()
             }
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
+        .disabled(isClearingGoal)
         .expandedHitTarget(base: 30)
         .accessibilityHint("Keeps the current goal and restores your chat draft")
+    }
+
+    var clearGoalButton: some View {
+        Button(role: .destructive) {
+            isConfirmingGoalClear = true
+        } label: {
+            ZStack {
+                Image(systemName: "trash")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.red)
+                    .opacity(isClearingGoal ? 0 : 1)
+                if isClearingGoal {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.red)
+                }
+            }
+            .scaledFrame(width: 30, height: 30, relativeTo: .subheadline)
+            .expandedHitTarget(base: 30)
+        }
+        .buttonStyle(.plain)
+        .disabled(isClearingGoal)
+        .accessibilityLabel(isClearingGoal ? "Clearing goal" : "Clear goal")
+        .accessibilityHint("Stops automatic continuation and keeps the chat history")
+    }
+
+    func clearGoalFromComposer() {
+        guard !isClearingGoal else { return }
+        isClearingGoal = true
+
+        Task {
+            let succeeded = await controller.clearGoal()
+            isClearingGoal = false
+            if succeeded {
+                withAnimation(Motion.quick(reduceMotion: reduceMotion)) {
+                    controller.exitGoalComposer()
+                }
+            } else {
+                goalClearError = controller.errorMessage ?? "The goal could not be cleared."
+            }
+        }
     }
 
     var stopButton: some View {
@@ -178,7 +197,7 @@ extension ComposerBar {
         .accessibilityLabel("Stop")
     }
 
-    private func submitComposer() {
+    func submitComposer() {
         let outgoing = text
         let isSubmittingGoal = controller.isGoalComposerArmed
         if preservesFocusAfterSend {

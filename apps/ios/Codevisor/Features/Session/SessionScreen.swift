@@ -216,6 +216,10 @@ struct SessionTranscriptView: View {
         !controller.settledConversation.isEmpty || controller.hasActiveItem
     }
 
+    private var showsScrollToBottom: Bool {
+        !composerExpanded && !isAtBottom && hasScrollableContent
+    }
+
     /// One chat surface for every connection state. The composer is mounted
     /// exactly once — reconnects (run-location changes, harness switches)
     /// swap only the content behind it, so drafts keep their text, focus,
@@ -258,18 +262,23 @@ struct SessionTranscriptView: View {
                     // not its measured vertical stack: showing it must never
                     // change transcript insets or the user's scroll position.
                     .overlay(alignment: .topTrailing) {
-                        if !composerExpanded, !isAtBottom, hasScrollableContent {
+                        if showsScrollToBottom {
                             scrollToBottomButton
                                 .offset(y: -52)
                                 .glassEffectID(
                                     ComposerGlassElement.scrollToBottom.rawValue,
                                     in: composerGlassNamespace
                                 )
-                                .glassEffectTransition(.matchedGeometry)
+                                // This control floats well beyond the
+                                // container spacing, so Apple recommends
+                                // materializing instead of seeking a nearby
+                                // shape to morph from.
+                                .glassEffectTransition(.materialize)
                                 .transition(.opacity)
                         }
                     }
             }
+            .animation(Motion.quick(reduceMotion: reduceMotion), value: showsScrollToBottom)
             .padding(.horizontal, 10)
             .padding(.bottom, 6)
         }

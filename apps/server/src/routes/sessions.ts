@@ -5,6 +5,7 @@ import {
   OpenSessionRequest as OpenSessionRequestSchema,
   CancelRequest,
   PromptRequest,
+  ReorderQueuedPromptsRequest,
   SetConfigRequest,
   SetGoalRequest,
   SetModeRequest,
@@ -300,6 +301,13 @@ const routeSessionActions = async (
   const queueSessionId = matchRoute(url.pathname, "/v1/sessions/:id/queue")
   if (queueSessionId !== undefined && request.method === "GET") {
     writeJson(response, 200, await run(services.db.listPromptQueue(queueSessionId)))
+    return true
+  }
+
+  if (queueSessionId !== undefined && request.method === "PATCH") {
+    const payload = await readSchema(request, ReorderQueuedPromptsRequest)
+    await run(services.db.reorderPromptQueue(queueSessionId, payload.queueItemIds))
+    writeJson(response, 200, await publishPromptQueue(services.db, fanout, queueSessionId))
     return true
   }
 

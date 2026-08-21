@@ -45,11 +45,13 @@ public struct TodoPanelView: View {
                     Image(systemName: "checklist")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text("Todos")
-                        .font(.caption.weight(.semibold))
                     Text("\(completedCount)/\(plan.entries.count)")
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(.tertiary)
+                    if isExpanded {
+                        Text("Progress")
+                            .font(.caption.weight(.semibold))
+                    }
                     if !isExpanded, let current = currentStep {
                         Text(current.content)
                             .font(.caption)
@@ -70,7 +72,7 @@ public struct TodoPanelView: View {
                 base: 24,
                 minimum: Typography.minimumInteractiveTargetSize
             )
-            .accessibilityLabel("Todos, \(completedCount) of \(plan.entries.count) done")
+            .accessibilityLabel("Progress, \(completedCount) of \(plan.entries.count) done")
             .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
             .accessibilityAddTraits(.isButton)
 
@@ -144,7 +146,7 @@ public struct TodoPanelView: View {
 }
 
 #Preview {
-    @Previewable @State var isExpanded = true
+    @Previewable @State var isExpanded = false
     return TodoPanelView(
         plan: Plan(entries: [
             PlanEntry(content: "Read the existing code", priority: .high, status: .completed),

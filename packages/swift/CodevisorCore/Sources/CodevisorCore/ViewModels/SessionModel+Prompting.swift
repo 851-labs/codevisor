@@ -36,6 +36,7 @@ extension SessionModel {
 
         settleActiveItem()
         appendSettled(.user(message))
+        pendingOptimisticUserMessageIDs.insert(message.id)
         startActiveBubble()
         isSending = true
         noteProviderActivity(.modelStream)
@@ -58,6 +59,7 @@ extension SessionModel {
             await drain()
         } catch {
             await drain()
+            pendingOptimisticUserMessageIDs.remove(message.id)
             let message = serverErrorMessage(error)
             errorMessage = message
             finish(stopReason: nil, outcome: .failed, stopDetail: message, retryable: true)
@@ -105,6 +107,19 @@ extension SessionModel {
         guard !trimmed.isEmpty else { return false }
         do {
             _ = try await transport.updateQueuedPrompt(id: id, text: trimmed)
+            return true
+        } catch {
+            errorMessage = serverErrorMessage(error)
+            return false
+        }
+    }
+
+    @discardableResult
+    public func reorderQueuedPrompts(ids: [String]) async -> Bool {
+        guard ids.count == Set(ids).count else { return false }
+        do {
+            let queue = try await transport.reorderQueuedPrompts(ids: ids)
+            applyQueuedPromptSnapshot(queue)
             return true
         } catch {
             errorMessage = serverErrorMessage(error)

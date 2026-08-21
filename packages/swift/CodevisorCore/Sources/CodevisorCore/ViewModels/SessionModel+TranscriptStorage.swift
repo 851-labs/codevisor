@@ -71,6 +71,9 @@ extension SessionModel {
     /// trailing assistant bubble stays active so live streaming resumes into
     /// the same storage slot the transcript's active row renders.
     func setConversation(_ items: [ConversationItem]) {
+        // A canonical snapshot supersedes any locally inferred echo state.
+        // Events after its cursor carry enough identity to reconcile normally.
+        pendingOptimisticUserMessageIDs.removeAll()
         let items = items.filter(\.hasRenderableTranscriptContent)
         if case .assistant = items.last {
             settledConversation = Array(items.dropLast())

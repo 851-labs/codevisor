@@ -202,7 +202,7 @@ final class ChatControllerCache {
             self?.scrollStates[key] = state
         }
         controller.restoreTodoDisclosure(
-            isExpanded: todoExpansionStates[key] ?? true
+            isExpanded: todoExpansionStates[key] ?? false
         )
         controller.onTodosExpandedChange = { [weak self] isExpanded in
             self?.todoExpansionStates[key] = isExpanded

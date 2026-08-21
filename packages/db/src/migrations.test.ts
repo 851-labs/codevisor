@@ -407,18 +407,29 @@ describe("@codevisor/db", () => {
       (await run(db.getSessionDetail(firstSession.id))).promptQueue.map((item) => item.text)
     ).toEqual(["queued a", "queued b"])
     expect(
+      (await run(db.reorderPromptQueue(firstSession.id, [queuedB.id, queuedA.id]))).map(
+        (item) => item.text
+      )
+    ).toEqual(["queued b", "queued a"])
+    expect(
+      (await run(db.reorderPromptQueue(firstSession.id, ["missing", queuedA.id, queuedA.id]))).map(
+        (item) => item.text
+      )
+    ).toEqual(["queued a", "queued b"])
+    await run(db.reorderPromptQueue(firstSession.id, [queuedB.id, queuedA.id]))
+    expect(
       await run(db.updatePromptQueueItem(firstSession.id, queuedB.id, "queued b edited"))
     ).toMatchObject({ text: "queued b edited" })
     expect(await run(db.claimPromptQueueItem(firstSession.id))).toMatchObject({
-      id: queuedA.id,
-      text: "queued a"
+      id: queuedB.id,
+      text: "queued b edited"
     })
-    expect(await run(db.listPromptQueue(firstSession.id))).toMatchObject([{ id: queuedB.id }])
+    expect(await run(db.listPromptQueue(firstSession.id))).toMatchObject([{ id: queuedA.id }])
     expect(await run(db.listProcessingPromptQueue(firstSession.id))).toMatchObject([
-      { id: queuedA.id }
+      { id: queuedB.id }
     ])
-    await run(db.completePromptQueueItem(firstSession.id, queuedA.id))
-    await run(db.deletePromptQueueItem(firstSession.id, queuedB.id))
+    await run(db.completePromptQueueItem(firstSession.id, queuedB.id))
+    await run(db.deletePromptQueueItem(firstSession.id, queuedA.id))
     expect(await run(db.listPromptQueue(firstSession.id))).toEqual([])
     await expect(
       run(db.updatePromptQueueItem(firstSession.id, "missing-queue-item", "nope"))

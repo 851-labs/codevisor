@@ -159,6 +159,7 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
     private var _promptQueueGate: AsyncStream<Void>?
     private var _promptQueueRequestCount = 0
     private var _queueUpdates: [(id: String, text: String)] = []
+    private var _queueReorders: [[String]] = []
     private var _queueDeletes: [String] = []
     private var _queueMutationFailuresRemaining = 0
     private var _goalUpdates: [(String?, GoalStatus?, TokenBudgetUpdate)] = []
@@ -284,6 +285,10 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
 
     var queueUpdates: [(id: String, text: String)] {
         lock.withLock { _queueUpdates }
+    }
+
+    var queueReorders: [[String]] {
+        lock.withLock { _queueReorders }
     }
 
     var queueDeletes: [String] {
@@ -415,6 +420,30 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
             createdAt: "2026-08-20T00:00:00.000Z",
             updatedAt: "2026-08-20T00:00:00.000Z"
         )
+    }
+
+    func reorderQueuedPrompts(
+        sessionId: UUID,
+        queueItemIds: [String]
+    ) async throws -> [ServerPromptQueueItem] {
+        let shouldFail = lock.withLock {
+            guard _queueMutationFailuresRemaining > 0 else {
+                _queueReorders.append(queueItemIds)
+                return false
+            }
+            _queueMutationFailuresRemaining -= 1
+            return true
+        }
+        if shouldFail { throw URLError(.networkConnectionLost) }
+        return queueItemIds.map { id in
+            ServerPromptQueueItem(
+                id: id,
+                sessionId: sessionId.uuidString,
+                text: id,
+                createdAt: "2026-08-20T00:00:00.000Z",
+                updatedAt: "2026-08-20T00:00:00.000Z"
+            )
+        }
     }
 
     func deleteQueuedPrompt(sessionId _: UUID, queueItemId: String) async throws {

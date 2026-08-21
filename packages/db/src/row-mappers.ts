@@ -297,7 +297,7 @@ export const listPromptQueueSync = (
     .prepare(
       `select * from prompt_queue_items
        where session_id = ? and state = ?
-       order by created_at asc, rowid asc`
+       order by position asc, created_at asc, rowid asc`
     )
     .all(sessionId, state)
     .map((row) => promptQueueFromRow(row as PromptQueueRow))
