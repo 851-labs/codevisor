@@ -203,6 +203,11 @@ final class GhosttyTerminalSurface: TerminalSurface {
             surfaceView.focusForInput()
         } else {
             surfaceView.focusDidChange(false)
+            // visibilityChanged(false) can clear Ghostty's input focus
+            // without an AppKit resignFirstResponder transition. Publish the
+            // same loss here so the pane group cannot keep stale shortcut
+            // hints after focus moves back to the main workspace.
+            surfaceView.onFocusChanged?(false)
         }
     }
 

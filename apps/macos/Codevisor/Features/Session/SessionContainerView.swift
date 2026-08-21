@@ -200,6 +200,7 @@ struct SessionContainerView: View {
         // device materializes in the mounted macOS strip immediately.
         let _ = (workspaceRevision, environment.workspaceSync.revision)
         let workspace = store.workspace(for: session, project: project)
+        let bottomGroup = store.paneGroup(for: session, project: project)
         return VStack(spacing: 0) {
             if workspace.centerTabs.count > 1 {
                 WorkspaceTabBar(
@@ -207,6 +208,9 @@ struct SessionContainerView: View {
                     selectedTabId: workspace.selectedCenterTabId,
                     title: workspaceTabTitle,
                     descriptor: workspaceTabDescriptor,
+                    pluginIconClient: environment.machines.client(for: session.serverId),
+                    pluginIconCacheNamespace: session.serverId,
+                    showsShortcutHints: !bottomGroup.hasFocusedPane,
                     onSelect: selectCenterTab,
                     onClose: closeCenterTab,
                     onMove: moveCenterTab,
@@ -216,7 +220,7 @@ struct SessionContainerView: View {
             }
             SessionScreen(
                 controller: controller,
-                paneGroup: store.paneGroup(for: session, project: project),
+                paneGroup: bottomGroup,
                 centerGroup: activeCenterModel(in: workspace),
                 focus: sessionFocus,
                 centerTree: liveCenterTree ?? workspace.centerTree,
@@ -737,12 +741,8 @@ struct SessionContainerView: View {
                 sessionFocus.focusComposer()
             }
         }
-        model.requestBackgroundFocus = {
-            sessionFocus.focusPaneBackground()
-        }
-        model.requestToggle = {
-            sessionFocus.requestPanelToggle?()
-        }
+        model.requestBackgroundFocus = { sessionFocus.focusPaneBackground() }
+        model.requestToggle = { sessionFocus.requestPanelToggle?() }
         model.onPaneClosed = { descriptor in
             if descriptor.kind == .chat {
                 if let closedSessionId = descriptor.chatSessionId {
