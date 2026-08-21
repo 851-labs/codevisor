@@ -29,6 +29,7 @@ jobs:
       tag: ${{ steps.release.outputs.tag }}
       alpha_run_id: ${{ steps.release.outputs.alpha_run_id }}
       build: ${{ steps.release.outputs.build }}
+      ghostty_stamp: ${{ steps.release.outputs.ghostty_stamp }}
       first_bridge: ${{ steps.bridge.outputs.first }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -70,6 +71,8 @@ jobs:
           [[ "$(jq -r .version "$provenance")" == "$version" ]] || { echo "Alpha version mismatch." >&2; exit 1; }
           build="$(jq -r .build_number "$provenance")"
           [[ "$build" =~ ^[0-9]+$ ]] || { echo "Alpha build number is invalid." >&2; exit 1; }
+          ghostty_stamp="$(jq -r .ghostty_stamp "$provenance")"
+          [[ "$ghostty_stamp" =~ ^[0-9a-f]{40}-[0-9a-f]{16}$ ]] || { echo "Ghostty stamp is invalid." >&2; exit 1; }
           alpha_tag="v$version-alpha.$build"
           alpha_tag_sha="$(git ls-remote origin "refs/tags/$alpha_tag^{}" | awk '{print $1}')"
           if [[ -z "$alpha_tag_sha" ]]; then
@@ -80,7 +83,6 @@ jobs:
             exit 1
           }
           release_json="$(gh release view "$alpha_tag" --json assets,isDraft,isPrerelease)"
-          ghostty_stamp="$(apps/macos/scripts/build-ghostty.sh --print-stamp)"
           ghostty_asset="GhosttyKit-$ghostty_stamp.tar.gz"
           expected_assets='[
             "Codevisor-macOS-arm64.zip",
@@ -120,6 +122,7 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "alpha_run_id=$run_id" >> "$GITHUB_OUTPUT"
           echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "ghostty_stamp=$ghostty_stamp" >> "$GITHUB_OUTPUT"
       - name: Detect one-time Sparkle bridge
         id: bridge
         run: |
@@ -153,6 +156,7 @@ jobs:
       VERSION: ${{ needs.metadata.outputs.version }}
       TAG: ${{ needs.metadata.outputs.tag }}
       BUILD_NUMBER: ${{ needs.metadata.outputs.build }}
+      GHOSTTY_STAMP: ${{ needs.metadata.outputs.ghostty_stamp }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -246,9 +250,8 @@ jobs:
           curl --fail --silent --show-error https://updates.codevisor.dev/server/stable.json \
             | jq -e --arg version "$VERSION" --argjson build "$BUILD_NUMBER" \
               '.version == $version and .buildNumber == $build' >/dev/null
-          ghostty_stamp="$(apps/macos/scripts/build-ghostty.sh --print-stamp)"
           curl --fail --silent --show-error \
-            "https://updates.codevisor.dev/dev-artifacts/ghostty/$ghostty_stamp/GhosttyKit.xcframework.tar.gz.sha256" \
+            "https://updates.codevisor.dev/dev-artifacts/ghostty/$GHOSTTY_STAMP/GhosttyKit.xcframework.tar.gz.sha256" \
             >/dev/null
           for arch in arm64 x64; do
             feed="$RUNNER_TEMP/appcast-$arch.xml"

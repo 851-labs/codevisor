@@ -208,6 +208,8 @@ jobs:
   build-macos:
     needs: guard
     runs-on: [self-hosted, macOS, ARM64, codevisor-macos-arm64]
+    outputs:
+      ghostty_stamp: ${{ steps.package-ghostty.outputs.stamp }}
     env:
       CODEVISOR_BUILD_NUMBER: ${{ github.run_number }}
       CODEVISOR_SOURCE_REVISION: ${{ inputs.source_sha }}
@@ -268,7 +270,18 @@ jobs:
       - name: Verify GhosttyKit
         run: test -d apps/macos/Frameworks/GhosttyKit.xcframework
       - name: Package shared GhosttyKit development artifact
-        run: scripts/release/package-ghosttykit.sh dist/release
+        id: package-ghostty
+        shell: bash
+        run: |
+          archive="$(scripts/release/package-ghosttykit.sh dist/release)"
+          stamp="$(basename "$archive")"
+          stamp="${stamp#GhosttyKit-}"
+          stamp="${stamp%.tar.gz}"
+          [[ "$stamp" =~ ^[0-9a-f]{40}-[0-9a-f]{16}$ ]] || {
+            echo "Invalid packaged Ghostty stamp: $stamp" >&2
+            exit 1
+          }
+          echo "stamp=$stamp" >> "$GITHUB_OUTPUT"
       - name: Resolve Xcode cache version
         id: xcode-cache-version
         shell: bash
@@ -451,7 +464,8 @@ jobs:
             --arg source_sha "${{ inputs.source_sha }}" \
             --arg build_number "$GITHUB_RUN_NUMBER" \
             --arg run_id "$GITHUB_RUN_ID" \
-            '{version: $version, channel: $channel, source_sha: $source_sha, build_number: $build_number, run_id: $run_id}' \
+            --arg ghostty_stamp "${{ needs.build-macos.outputs.ghostty_stamp }}" \
+            '{version: $version, channel: $channel, source_sha: $source_sha, build_number: $build_number, run_id: $run_id, ghostty_stamp: $ghostty_stamp}' \
             > release-provenance.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

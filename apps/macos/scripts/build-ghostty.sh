@@ -39,9 +39,10 @@ BUILD_FLAGS=(
 # xcframework on install; `dev.mjs` refuses to reuse or copy a framework
 # whose stamp doesn't match, so a build-script change (new ref, new flags)
 # invalidates every prebuilt copy instead of silently shipping stale ones.
+PATCH_FINGERPRINT="$(/usr/bin/shasum -a 256 "$GHOSTTY_COMPAT_PATCH" | awk '{print $1}')"
 BUILD_FINGERPRINT="$({
   printf '%s\n' "${BUILD_FLAGS[@]}"
-  /usr/bin/shasum -a 256 "$GHOSTTY_COMPAT_PATCH"
+  printf '%s\n' "$PATCH_FINGERPRINT"
 } | /usr/bin/shasum -a 256 | cut -c1-16)"
 STAMP="${GHOSTTY_REF}-${BUILD_FINGERPRINT}"
 

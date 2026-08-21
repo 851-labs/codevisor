@@ -1,8 +1,17 @@
 import assert from "node:assert/strict"
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
+import { execFile } from "node:child_process"
+import { cp, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
+import { promisify } from "node:util"
+
+const execFileAsync = promisify(execFile)
+const buildGhosttyScript = new URL("../apps/macos/scripts/build-ghostty.sh", import.meta.url)
+const ghosttyPatch = new URL(
+  "../apps/macos/patches/ghostty-libcpp-availability.patch",
+  import.meta.url
+)
 
 import {
   ghosttyArtifactsRoot,
@@ -17,6 +26,27 @@ test("shared Ghostty path is deterministic", () => {
     ghosttyCachedFramework(root, "stamp"),
     "/shared/ghostty/stamp/GhosttyKit.xcframework"
   )
+})
+
+test("Ghostty build stamp is independent of the checkout path", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codevisor-ghostty-stamp-test-"))
+  try {
+    const stamps = []
+    for (const checkout of ["first", "nested/second"]) {
+      const macosRoot = join(root, checkout, "apps/macos")
+      const script = join(macosRoot, "scripts/build-ghostty.sh")
+      await mkdir(join(macosRoot, "scripts"), { recursive: true })
+      await mkdir(join(macosRoot, "patches"), { recursive: true })
+      await cp(buildGhosttyScript, script)
+      await cp(ghosttyPatch, join(macosRoot, "patches/ghostty-libcpp-availability.patch"))
+      const { stdout } = await execFileAsync("/bin/bash", [script, "--print-stamp"])
+      stamps.push(stdout.trim())
+    }
+
+    assert.equal(stamps[0], stamps[1])
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
 })
 
 test("Ghostty framework validation requires the expected stamp and structure", async () => {

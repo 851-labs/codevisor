@@ -73,7 +73,8 @@ jobs:
           channel="$(jq -r .channel "$provenance_dir/release-provenance.json")"
           build="$(jq -r .build_number "$provenance_dir/release-provenance.json")"
           sha="$(jq -r .source_sha "$provenance_dir/release-provenance.json")"
-          if [[ "$channel" != alpha || "$sha" != "$source_sha" || ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || ! "$build" =~ ^[0-9]+$ ]]; then
+          ghostty_stamp="$(jq -r .ghostty_stamp "$provenance_dir/release-provenance.json")"
+          if [[ "$channel" != alpha || "$sha" != "$source_sha" || ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || ! "$build" =~ ^[0-9]+$ || ! "$ghostty_stamp" =~ ^[0-9a-f]{40}-[0-9a-f]{16}$ ]]; then
             echo "Invalid Alpha provenance." >&2
             exit 1
           fi
@@ -92,7 +93,6 @@ jobs:
             exit 1
           fi
           release_complete=false
-          ghostty_stamp="$(apps/macos/scripts/build-ghostty.sh --print-stamp)"
           ghostty_asset="GhosttyKit-$ghostty_stamp.tar.gz"
           if release_json="$(gh release view "$tag" --json assets,isDraft,isPrerelease 2>/dev/null)"; then
             expected_assets='[
@@ -139,6 +139,7 @@ jobs:
           echo "build=$build" >> "$GITHUB_OUTPUT"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "ghostty_stamp=$ghostty_stamp" >> "$GITHUB_OUTPUT"
       - name: Download immutable Alpha artifacts
         if: steps.alpha.outputs.publish == 'true'
         env:
@@ -197,15 +198,15 @@ jobs:
         if: steps.alpha.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          GHOSTTY_STAMP: ${{ steps.alpha.outputs.ghostty_stamp }}
         run: |
           gh release view "${{ steps.alpha.outputs.tag }}" --json isPrerelease \
             --jq 'select(.isPrerelease == true)' >/dev/null
           curl --fail --silent --show-error https://updates.codevisor.dev/server/alpha.json \
             | jq -e --argjson build "${{ steps.alpha.outputs.build }}" \
               '.buildNumber == $build' >/dev/null
-          ghostty_stamp="$(apps/macos/scripts/build-ghostty.sh --print-stamp)"
           curl --fail --silent --show-error \
-            "https://updates.codevisor.dev/dev-artifacts/ghostty/$ghostty_stamp/GhosttyKit.xcframework.tar.gz.sha256" \
+            "https://updates.codevisor.dev/dev-artifacts/ghostty/$GHOSTTY_STAMP/GhosttyKit.xcframework.tar.gz.sha256" \
             >/dev/null
           for arch in arm64 x64; do
             feed="$RUNNER_TEMP/appcast-$arch.xml"
