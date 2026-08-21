@@ -61,10 +61,6 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
     public var pluginId: String?
     /// Plugin panes only: which of the plugin's pane types this renders.
     public var pluginPaneType: String?
-    /// Plugin panes only: the opaque metadata JSON synced with the server's
-    /// pane record (`{pluginId, paneType, icon?}` — see
-    /// `PaneDescriptorState.pluginMetadataJSON`).
-    public var pluginMetadata: String?
     /// Every pane moves between groups alike — tabs are tabs (the only
     /// rule with real stakes is the CLOSE rule: a lone placeholder only
     /// closes when its group can dissolve — see `canClosePane` + the
@@ -80,8 +76,7 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
         chatSessionId: UUID? = nil,
         ownerChatSessionId: UUID? = nil,
         pluginId: String? = nil,
-        pluginPaneType: String? = nil,
-        pluginMetadata: String? = nil
+        pluginPaneType: String? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -92,7 +87,6 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
         self.ownerChatSessionId = ownerChatSessionId
         self.pluginId = pluginId
         self.pluginPaneType = pluginPaneType
-        self.pluginMetadata = pluginMetadata
     }
 
     public init(from decoder: Decoder) throws {
@@ -113,8 +107,7 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
             // Panes persisted before plugin panes existed carry no plugin
             // payload.
             pluginId: try container.decodeIfPresent(String.self, forKey: .pluginId),
-            pluginPaneType: try container.decodeIfPresent(String.self, forKey: .pluginPaneType),
-            pluginMetadata: try container.decodeIfPresent(String.self, forKey: .pluginMetadata)
+            pluginPaneType: try container.decodeIfPresent(String.self, forKey: .pluginPaneType)
         )
     }
 }
@@ -346,8 +339,7 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
         chatSessionId: UUID? = nil,
         name: String? = nil,
         pluginId: String? = nil,
-        pluginPaneType: String? = nil,
-        pluginIcon: String? = nil
+        pluginPaneType: String? = nil
     ) -> PaneDescriptorState? {
         guard let index = panes.firstIndex(where: { $0.id == id }),
             panes[index].kind == .newTab
@@ -374,7 +366,7 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
             guard
                 let converted = Self.pluginPane(
                     id: paneId, name: name, pluginId: pluginId,
-                    pluginPaneType: pluginPaneType, pluginIcon: pluginIcon
+                    pluginPaneType: pluginPaneType
                 )
             else { return nil }
             pane = converted

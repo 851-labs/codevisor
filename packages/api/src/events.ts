@@ -40,9 +40,8 @@ export const EventKind = Schema.Literals([
   "plugin.state.updated",
   /// The plugin's code/install changed (restart, re-import, link) — clients
   /// reload the plugin's open panes (subjectId = plugin id). Payload:
-  /// PluginSummary. Deliberately distinct from `plugin.state.updated`:
-  /// runtime state transitions include idle shutdown, and reloading on those
-  /// would wake the plugin in an endless idle-stop → reload loop.
+  /// PluginSummary. Deliberately distinct from `plugin.state.updated` so a
+  /// routine process-state transition never reloads pane content.
   "plugin.updated",
   "terminal.output",
   "terminal.exit",

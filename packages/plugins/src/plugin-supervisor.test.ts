@@ -9,7 +9,7 @@ import { PluginsError } from "./plugins-error.js"
 import { cleanups, fakeSpawn, makeDataDir, plugin } from "./test-support.js"
 
 describe("makePluginSupervisor", () => {
-  it("starts lazily, reuses the running process, and reports state", async () => {
+  it("starts, reuses the running process, and reports state", async () => {
     const spawn = fakeSpawn()
     const supervisor = makePluginSupervisor({
       dataDir: makeDataDir(),
@@ -45,6 +45,7 @@ describe("makePluginSupervisor", () => {
     const spawn = fakeSpawn({ listen: false })
     const supervisor = makePluginSupervisor({
       dataDir: makeDataDir(),
+      maxConsecutiveFailures: 1,
       readyTimeoutMs: 400,
       spawnShell: spawn.spawnShell
     })

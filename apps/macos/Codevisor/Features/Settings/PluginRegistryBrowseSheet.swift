@@ -91,7 +91,7 @@ struct PluginRegistryBrowseSheet: View {
 
     private func entryRow(_ entry: ServerPluginRegistryEntry) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: entry.panes.first?.icon ?? "puzzlepiece")
+            Image(systemName: "puzzlepiece")
                 .foregroundStyle(.secondary)
                 .frame(width: 20)
                 .accessibilityHidden(true)

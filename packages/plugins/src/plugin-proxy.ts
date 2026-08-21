@@ -39,8 +39,8 @@ export interface ForwardHttpOptions {
 }
 
 /// How a forwarded request ended, so the caller can feed the supervisor:
-/// `ok` resets the idle/crash accounting, `unreachable` means the plugin's
-/// port is dead (kick the runtime so the next request relaunches), `timeout`
+/// `ok` resets the crash accounting, `unreachable` means the plugin's
+/// port is dead (kick the runtime so supervision relaunches it), `timeout`
 /// means the process is alive but hung (no kick).
 export type ForwardHttpOutcome = "ok" | "timeout" | "unreachable"
 

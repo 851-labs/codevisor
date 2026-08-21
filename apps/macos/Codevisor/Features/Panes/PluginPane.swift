@@ -191,9 +191,9 @@ final class PluginPane: Pane, Identifiable {
 
     func visibilityChanged(_ visible: Bool) {}
 
-    /// Closing the tab needs no server-side teardown here: the shared pane
-    /// record is closed by the group's sync flow, and the plugin server's
-    /// idle timer reaps the process once no panes are connected.
+    /// Closing the tab needs no server-side process teardown here: the shared
+    /// pane record is closed by the group's sync flow, while the plugin stays
+    /// available to other clients, panes, and tools until server shutdown.
     func willDelete() async {
         detach()
     }

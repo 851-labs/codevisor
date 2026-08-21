@@ -964,8 +964,6 @@ public final class WorkspaceSyncModel {
                 providerId: "plugin:\(pluginId)",
                 paneType: type,
                 title: pane.name,
-                metadata: pane.pluginMetadata
-                    ?? PaneDescriptorState.pluginMetadataJSON(pluginId: pluginId, paneType: type),
                 createdAt: ServerDateCoding.string(from: createdAt)
             )
         }
@@ -993,8 +991,7 @@ public final class WorkspaceSyncModel {
                 name: record.title,
                 terminalKey: id.uuidString,
                 pluginId: pluginId,
-                pluginPaneType: record.paneType,
-                pluginMetadata: record.metadata
+                pluginPaneType: record.paneType
             )
         }
         // Unknown providers still drop silently: the registry remains

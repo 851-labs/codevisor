@@ -34,8 +34,8 @@ export const makeDataDir = (): string => makeDir("codevisor-plugin-data-")
 export const delay = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms))
 
-/// An InstalledPlugin handed straight to the supervisor (no manifest file on
-/// disk, so fractional idle timeouts are usable for fast tests).
+/// An InstalledPlugin handed straight to the supervisor without a manifest
+/// file on disk.
 export const plugin = (overrides: Partial<InstalledPlugin["manifest"]> = {}): InstalledPlugin => ({
   directoryName: "example",
   id: "owner.example",
@@ -151,6 +151,8 @@ export interface RecordedRequest {
 
 export interface FakePlugin {
   readonly requests: Array<RecordedRequest>
+  readonly spawnCount: () => number
+  readonly simulateExit: (message: string) => void
   readonly spawnShell: (
     command: string,
     options: PluginSpawnOptions
@@ -167,11 +169,22 @@ export interface FakePlugin {
 /// proxy.
 export const makeFakePlugin = (): FakePlugin => {
   let server: Server | undefined
+  let spawns = 0
+  let exitListeners: Array<(message: string) => void> = []
   const requests: Array<RecordedRequest> = []
   cleanups.push(() => server?.close())
   return {
     requests,
+    spawnCount: () => spawns,
+    simulateExit: (message) => {
+      server?.close()
+      for (const listener of exitListeners) {
+        listener(message)
+      }
+    },
     spawnShell: (_command, options) => {
+      spawns += 1
+      exitListeners = []
       server = createServer((request, response) => {
         const chunks: Array<Buffer> = []
         request.on("data", (chunk: Buffer) => chunks.push(chunk))
@@ -196,6 +209,13 @@ export const makeFakePlugin = (): FakePlugin => {
           if (url.pathname === "/panes/main/cookies") {
             response.writeHead(200, { "set-cookie": "plugincookie=1" })
             response.end("cookies")
+            return
+          }
+          if (url.pathname === "/assets/icon.svg" || url.pathname === "/assets/pane.svg") {
+            response.writeHead(200, { "Content-Type": "image/svg+xml" })
+            response.end(
+              '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" fill="#7657e8"/></svg>'
+            )
             return
           }
           if (url.pathname === "/panes/main/never" || url.pathname === "/tools/slow") {
@@ -250,7 +270,11 @@ export const makeFakePlugin = (): FakePlugin => {
         })
       })
       server.listen(Number(options.env["PORT"]), "127.0.0.1")
-      return { kill: () => server?.close(), onExit: () => undefined, pid: 1 }
+      return {
+        kill: () => server?.close(),
+        onExit: (listener) => exitListeners.push(listener),
+        pid: 1
+      }
     },
     stop: () => server?.close()
   }

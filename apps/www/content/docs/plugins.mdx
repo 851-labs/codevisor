@@ -5,8 +5,8 @@ icon: PanelsTopLeft
 ---
 
 A Codevisor plugin is a folder containing `codevisor-plugin.json` and a command that starts an HTTP
-server. Codevisor starts it on demand, assigns it a loopback port, and proxies its panes and tools to
-authenticated clients and agent sessions.
+server. Codevisor starts every installed plugin with the main server, assigns it a loopback port,
+and proxies its panes and tools to authenticated clients and agent sessions.
 
 Plugins can provide workspace panes, agent-callable tools, or both. Because their UI and state live
 on the server machine, the same pane can appear on every connected client.
@@ -45,12 +45,12 @@ The manifest must be named `codevisor-plugin.json` at the plugin root.
   "name": "Notes",
   "description": "Keep notes beside a workspace.",
   "version": "0.1.0",
+  "iconPath": "/assets/icon.svg",
   "panes": [
     {
       "type": "main",
       "title": "Notes",
-      "path": "/panes/main/",
-      "icon": "note.text"
+      "path": "/panes/main/"
     }
   ],
   "tools": [
@@ -67,7 +67,6 @@ The manifest must be named `codevisor-plugin.json` at the plugin root.
     }
   ],
   "run": { "command": "node server.js" },
-  "idleTimeoutSeconds": 300,
   "healthPath": "/health"
 }
 ```
@@ -80,7 +79,8 @@ Optional fields include:
 
 - `install.command`, run once during install or update.
 - `platforms`, a `process.platform` allowlist such as `darwin` or `linux`.
-- `idleTimeoutSeconds`, which defaults to `300`; set it to `0` to keep the process alive.
+- `iconPath`, a plain absolute server path to SVG, PNG, or WebP artwork for the plugin. A pane may
+  declare its own `iconPath`; otherwise it inherits the plugin artwork.
 - `healthPath`, which must return a 2xx response before the plugin is ready. Without it, a TCP
   connection is the readiness check.
 
@@ -108,6 +108,7 @@ This zero-dependency server implements the example manifest:
 
 ```js
 import http from "node:http"
+import { readFile } from "node:fs/promises"
 
 const decodeContext = (header) => {
   try {
@@ -122,6 +123,11 @@ const server = http.createServer(async (request, response) => {
   const context = decodeContext(request.headers["x-codevisor-context"])
 
   if (url.pathname === "/health") return response.end("ok")
+
+  if (url.pathname === "/assets/icon.svg") {
+    response.writeHead(200, { "content-type": "image/svg+xml" })
+    return response.end(await readFile(new URL("./assets/icon.svg", import.meta.url)))
+  }
 
   if (url.pathname === "/panes/main/") {
     response.writeHead(200, { "content-type": "text/html; charset=utf-8" })
@@ -156,6 +162,20 @@ const server = http.createServer(async (request, response) => {
 
 server.listen(Number(process.env.PORT), "127.0.0.1")
 ```
+
+### Plugin artwork
+
+Native Codevisor panes use platform-native symbols. Third-party pane chrome uses the artwork served
+from `iconPath`; icon names are never persisted in workspace records. The plugin-level path is the
+default, and a pane-level path overrides it. When neither exists—or an asset cannot be loaded—the
+client displays its generic plugin symbol.
+
+Serve SVG as `image/svg+xml`, PNG as `image/png`, or WebP as `image/webp`. Assets are limited to 512
+KiB. SVG must be self-contained: scripts, embedded documents, entities, external links, and external
+CSS resources are rejected. Codevisor validates the response and normalizes every format to a
+transparent 256 px PNG. Clients therefore render the same bounded raster asset on every platform.
+Use full-color artwork that remains legible in light and dark interfaces; plugin artwork is not
+treated as a tintable system symbol.
 
 ## Pane integration
 
@@ -218,11 +238,12 @@ calls the plugin.
 
 ## Lifecycle and failures
 
-Plugins start lazily on the first pane or tool request. Codevisor waits up to 15 seconds for
-readiness, shuts idle processes down, and restarts crashed processes with backoff. Five consecutive
-crashes leave the plugin in `failed` until an explicit restart. The proxy returns `502` when the
-process cannot be reached and `504` when a request exceeds 30 seconds. An open pane WebSocket keeps
-the process active.
+After the main HTTP listener is ready, Codevisor starts every compatible installed plugin and keeps
+it running until server shutdown. Codevisor waits up to 15 seconds for readiness and restarts
+crashed processes with exponential backoff. Five consecutive failures leave the plugin in `failed`
+until an explicit restart. One plugin failing never prevents the main server or other plugins from
+starting. The proxy returns `502` when a process cannot be reached and `504` when a request exceeds
+30 seconds.
 
 ## Publish
 

@@ -28,9 +28,8 @@ extension AppEnvironment {
 
     /// Publishes that a `plugin.updated` event changed one plugin's code or
     /// install (restart, re-import, re-link). Deliberately separate from
-    /// `pluginStateDidChange`: runtime state transitions include idle
-    /// shutdown, and reloading panes on those would wake the plugin in an
-    /// endless idle-stop → reload loop.
+    /// `pluginStateDidChange`: routine runtime transitions should not reload
+    /// pane content.
     public func pluginDidUpdate(onServer serverId: String, pluginId: String) {
         pluginUpdateRevisions[pluginUpdateKey(serverId: serverId, pluginId: pluginId), default: 0] &+= 1
     }

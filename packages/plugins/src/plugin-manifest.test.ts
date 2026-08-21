@@ -35,14 +35,14 @@ describe("parsePluginManifest", () => {
         ...validManifest,
         description: "A plugin",
         healthPath: "/health",
-        idleTimeoutSeconds: 0,
+        iconPath: "/assets/plugin.svg",
         install: { command: "bun install" },
-        panes: [{ icon: "sparkles", path: "/x/", title: "X", type: "x" }],
+        panes: [{ iconPath: "/assets/pane.webp", path: "/x/", title: "X", type: "x" }],
         platforms: ["darwin"]
       })
     )
     expect(manifest.install?.command).toBe("bun install")
-    expect(manifest.idleTimeoutSeconds).toBe(0)
+    expect(manifest.iconPath).toBe("/assets/plugin.svg")
   })
 
   it("rejects non-JSON payloads", () => {
@@ -67,9 +67,16 @@ describe("parsePluginManifest", () => {
     expectInvalid({ ...validManifest, run: { command: "  " } }, "run.command")
   })
 
-  it("rejects negative or fractional idle timeouts", () => {
-    expectInvalid({ ...validManifest, idleTimeoutSeconds: -1 }, "idleTimeoutSeconds")
-    expectInvalid({ ...validManifest, idleTimeoutSeconds: 1.5 }, "idleTimeoutSeconds")
+  it("rejects icon paths that are not plain absolute server paths", () => {
+    expectInvalid({ ...validManifest, iconPath: "icon.svg" }, "Plugin iconPath")
+    expectInvalid({ ...validManifest, iconPath: "/icons/../icon.svg" }, "Plugin iconPath")
+    expectInvalid(
+      {
+        ...validManifest,
+        panes: [{ iconPath: "/icon.svg?dark", path: "/x/", title: "X", type: "x" }]
+      },
+      "Pane x iconPath"
+    )
   })
 
   it("rejects duplicate pane types", () => {

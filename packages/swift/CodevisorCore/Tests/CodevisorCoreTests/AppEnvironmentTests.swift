@@ -72,7 +72,7 @@ struct AppEnvironmentTests {
         #expect(environment.pluginUpdateRevision(forServer: "remote", pluginId: "owner.a") == 0)
 
         // The machine-scoped plugin-state revision is a separate channel:
-        // idle stop / crash chips must never trigger pane reloads.
+        // runtime-state chips must never trigger pane reloads.
         #expect(environment.pluginStateRevision(for: "local") == 0)
     }
 

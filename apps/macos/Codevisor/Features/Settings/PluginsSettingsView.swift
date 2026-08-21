@@ -47,7 +47,7 @@ struct PluginsSettingsView: View {
                 if !theme.isSystem { theme.windowBackground }
             }
             .task(id: serverId) { await reload() }
-            // plugin.state.updated events (start, crash, idle stop, list
+            // plugin.state.updated events (start, crash, restart, and list
             // changes) bump the revision; refetch the light list.
             .onChange(of: environment.pluginStateRevision(for: serverId)) { _, _ in
                 Task { await refreshList() }
@@ -196,10 +196,16 @@ struct PluginsSettingsView: View {
 
     private func pluginRow(_ plugin: ServerPluginSummary) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: plugin.panes.first?.icon ?? "puzzlepiece")
-                .foregroundStyle(.secondary)
-                .frame(width: 20)
-                .accessibilityHidden(true)
+            PluginIconView(
+                pluginId: plugin.id,
+                iconPath: plugin.iconPath,
+                client: client,
+                cacheNamespace: serverId,
+                fallbackSystemName: "puzzlepiece"
+            )
+            .foregroundStyle(.secondary)
+            .frame(width: 20, height: 20)
+            .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(plugin.name).foregroundStyle(.primary)
@@ -359,7 +365,7 @@ private struct PluginInstallSheet: View {
                         if !discovery.panes.isEmpty {
                             VStack(alignment: .leading, spacing: 2) {
                                 ForEach(discovery.panes) { pane in
-                                    Label(pane.title, systemImage: pane.icon ?? "puzzlepiece")
+                                    Label(pane.title, systemImage: "puzzlepiece")
                                         .font(.callout)
                                 }
                             }

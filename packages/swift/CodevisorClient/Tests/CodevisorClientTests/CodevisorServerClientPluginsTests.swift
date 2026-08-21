@@ -36,7 +36,8 @@ struct CodevisorServerClientPluginsTests {
             """
             {"plugins":[{"id":"codevisor.git-diff","name":"Git Diff","version":"0.1.0",
             "description":"Live git diff viewer",
-            "panes":[{"type":"diff","title":"Git Diff","path":"/panes/diff/","icon":"plus.forwardslash.minus"}],
+            "iconPath":"/assets/icon.svg",
+            "panes":[{"type":"diff","title":"Git Diff","path":"/panes/diff/","iconPath":"/assets/diff.webp"}],
             "tools":[{"name":"diff_summary","description":"Summarize the diff","path":"/tools/summary"}],
             "source":"linked","path":"/Users/x/.codevisor/plugins/git-diff","state":"stopped",
             "openPaneCount":2}]}
@@ -48,12 +49,13 @@ struct CodevisorServerClientPluginsTests {
         #expect(plugin.id == "codevisor.git-diff")
         #expect(plugin.state == "stopped")
         #expect(plugin.openPaneCount == 2)
+        #expect(plugin.iconPath == "/assets/icon.svg")
         #expect(plugin.tools?.first?.name == "diff_summary")
         #expect(
             plugin.panes == [
                 ServerPluginPaneDescriptor(
                     type: "diff", title: "Git Diff", path: "/panes/diff/",
-                    icon: "plus.forwardslash.minus"
+                    iconPath: "/assets/diff.webp"
                 )
             ])
 

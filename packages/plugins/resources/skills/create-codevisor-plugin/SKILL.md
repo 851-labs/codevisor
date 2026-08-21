@@ -19,10 +19,8 @@ remote). You can scaffold, install, and show a working pane in under a minute.
    - CLI: `codevisor plugin link <absolute-path>`
 3. **Open a pane** so the user sees it immediately: use the
    `workspaces.open_plugin_pane` tool (or tell the user it's on the New Tab
-   page). Pane records need `providerId: "plugin:<pluginId>"`, the pane
-   `type`, and metadata JSON exactly like
-   `{"icon":"<sf-symbol>","paneType":"<type>","pluginId":"<id>"}`
-   (sorted keys; omit `icon` when the manifest has none).
+   page). Pane records need `providerId: "plugin:<pluginId>"` and the pane
+   `type`; do not persist icon metadata in the workspace record.
 4. **Iterate**: edit files → `plugins.restart` → open panes reload
    automatically on every connected device. HMR-capable dev servers (Vite
    etc.) also work without restarting, since WebSockets are proxied. Read
@@ -38,9 +36,9 @@ remote). You can scaffold, install, and show a working pane in under a minute.
   "name": "My Plugin",
   "description": "One line about what it does",
   "version": "0.1.0",
-  "panes": [{ "type": "main", "title": "My Plugin", "path": "/panes/main/", "icon": "sparkles" }],
+  "iconPath": "/assets/icon.svg",
+  "panes": [{ "type": "main", "title": "My Plugin", "path": "/panes/main/" }],
   "run": { "command": "node server.js" },
-  "idleTimeoutSeconds": 300,
   "healthPath": "/health"
 }
 ```
@@ -48,12 +46,25 @@ remote). You can scaffold, install, and show a working pane in under a minute.
 - `id`: lowercase `owner.name` (letters/digits/hyphens, exactly one dot).
 - Pane `path` MUST start **and** end with `/`.
 - `install: {"command": "..."}` only if dependencies are unavoidable.
-- `icon` is an SF Symbol name (optional).
+- `iconPath` is an optional plain absolute server path to SVG, PNG, or WebP.
+  A pane-level `iconPath` overrides the plugin path; otherwise it inherits it.
+
+Create the referenced `assets/icon.svg` as self-contained full-color artwork
+(no scripts, embedded HTML, external links, or external CSS):
+
+```svg
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14" fill="#7657e8"/>
+  <circle cx="32" cy="32" r="13" fill="#fff"/>
+</svg>
+```
 
 ## Server template (zero-dep Node)
 
 ```js
 const http = require("http")
+const { readFile } = require("node:fs/promises")
+const path = require("node:path")
 
 const decodeContext = (header) => {
   try {
@@ -64,10 +75,14 @@ const decodeContext = (header) => {
 }
 
 http
-  .createServer((request, response) => {
+  .createServer(async (request, response) => {
     const url = new URL(request.url, "http://127.0.0.1")
     const context = decodeContext(request.headers["x-codevisor-context"])
     if (url.pathname === "/health") return response.end("ok")
+    if (url.pathname === "/assets/icon.svg") {
+      response.writeHead(200, { "Content-Type": "image/svg+xml" })
+      return response.end(await readFile(path.join(__dirname, "assets/icon.svg")))
+    }
     if (url.pathname === "/panes/main/") {
       response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
       return response.end(`<!doctype html><html><head><meta charset="utf-8">
@@ -92,6 +107,10 @@ http
   never `/app.js` or absolute URLs). Panes are served under a proxy prefix;
   path-absolute URLs escape it and 404.
 - **Bind `127.0.0.1` on `Number(process.env.PORT)`** — never `0.0.0.0`.
+- **Serve `iconPath` with the right MIME type.** Codevisor accepts SVG, PNG,
+  and WebP up to 512 KiB, rejects active/external SVG content, and normalizes
+  every asset to a 256 px PNG for clients. Use full-color artwork that works
+  on light and dark backgrounds; it is not tinted like a system symbol.
 - Read per-pane context (cwd, workspaceId, paneId, themeMode) from the
   `X-Codevisor-Context` header: base64 JSON, present on every proxied request.
 - Style with the injected `--codevisor-*` CSS variables so panes match the
@@ -113,8 +132,8 @@ http
 - The in-page bridge: `window.codevisor.getContext()`, `.openUrl(url)`,
   `.setTitle(title)`; theme changes fire a `codevisor:themechange` event
   (feature-detect it — the bridge only exists inside the app's webviews).
-- WebSockets work (relative URLs). Prefer fetch for bulk data, WS for
-  "something changed" signals. An open WS keeps the process alive.
+- WebSockets work (relative URLs). Prefer fetch for bulk data and WS for
+  "something changed" signals.
 
 ## Exposing tools to the model
 
@@ -144,9 +163,9 @@ Plugins can declare agent-invocable tools next to panes. Add to the manifest:
 The contract: Codevisor POSTs the JSON arguments to `path` on your server,
 with the same signed `X-Codevisor-Context` header (here carrying `pluginId`,
 `toolName`, and the caller's `workspaceId`/`cwd` when known). Respond 2xx
-with JSON (or plain text); any non-2xx marks the call failed. The process
-starts lazily on the first invocation, exactly like panes — and tool-only
-plugins are valid: leave `panes` empty. Agents discover and call the tool as
+with JSON (or plain text); any non-2xx marks the call failed. The installed
+plugin process is already running; tool-only plugins are valid, so leave
+`panes` empty. Agents discover and call the tool as
 `plugin.<pluginId>.<toolName>` through the Codevisor tool gateway; clients
 can also `POST /v1/plugins/<pluginId>/tools/<toolName>` with
 `{ "args": { ... } }`.
@@ -166,9 +185,9 @@ if (url.pathname === "/tools/add" && request.method === "POST") {
 
 ## Lifecycle facts (for debugging)
 
-- Processes start lazily on first pane request and idle-stop after
-  `idleTimeoutSeconds` (default 300; `0` = never). Crashes restart with
-  backoff; 5 consecutive failures → `failed` until `plugins.restart`.
+- Codevisor starts installed plugins after its main listener is ready and
+  keeps them running until server shutdown. Crashes restart with backoff; 5
+  consecutive failures → `failed` until `plugins.restart`.
 - The server must accept connections on `$PORT` within 15s of spawn.
 - Pane shows an error card? Check `plugins.list` state, then the output
   terminal. 502 = process unreachable (crashed?), 504 = request hung >30s.

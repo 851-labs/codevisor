@@ -21,6 +21,36 @@ describe("plugin listing", () => {
     expect(list.plugins[0]?.panes[0]?.type).toBe("main")
   })
 
+  it("fetches plugin and pane artwork through the supervised process", async () => {
+    const { fake, manager } = makeManager(
+      { backoffBaseMs: 0 },
+      {
+        ...exampleManifest,
+        iconPath: "/assets/icon.svg",
+        panes: [
+          {
+            iconPath: "/assets/pane.svg",
+            path: "/panes/main/",
+            title: "Main",
+            type: "main"
+          }
+        ]
+      }
+    )
+    const pluginIcon = await manager.fetchIcon("owner.example")
+    const paneIcon = await manager.fetchIcon("owner.example", "main")
+    expect(pluginIcon.contentType).toBe("image/png")
+    expect(paneIcon.data.byteLength).toBeGreaterThan(0)
+    expect(fake.requests.map((request) => request.path)).toEqual([
+      "/assets/icon.svg",
+      "/assets/pane.svg"
+    ])
+    expect(fake.requests[0]?.headers["x-codevisor-context-signature"]).toBeDefined()
+
+    fake.stop()
+    await expect(manager.fetchIcon("owner.example")).rejects.toThrow(/request failed/)
+  })
+
   it("omits absent descriptions and filters other-platform plugins", async () => {
     const { manager, root } = makeManager()
     writePlugin(root, "elsewhere", {
@@ -190,7 +220,7 @@ describe("pane proxy", () => {
     expect(body.code).toBe("pluginUnreachable")
   })
 
-  it("kicks the supervisor on 502 so the next request relaunches the plugin", async () => {
+  it("kicks the supervisor on 502 so automatic recovery relaunches the plugin", async () => {
     const { fake, manager } = makeManager({ backoffBaseMs: 0 })
     const outer = await makeOuterServer(manager)
     const issued = await manager.issuePaneToken("owner.example", "pane-1", { paneType: "main" })
@@ -201,8 +231,9 @@ describe("pane proxy", () => {
     const token = new URL(`http://x${issued.path}`).searchParams.get("codevisorPaneToken")
     const paneUrl = `${outer.origin}/v1/plugins/owner.example/app/panes/main/?codevisorPaneToken=${token}`
     expect((await fetch(paneUrl)).status).toBe(502)
-    // The 502 marked the plugin stopped, so this request relaunches instead
-    // of forwarding into the dead port again.
+    await expect.poll(() => fake.spawnCount()).toBe(2)
+    // Recovery happens without pane traffic; the next request uses the
+    // replacement process instead of forwarding into the dead port again.
     expect((await fetch(paneUrl)).status).toBe(200)
     expect((await manager.get("owner.example")).state).toBe("running")
   })

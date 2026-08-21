@@ -805,9 +805,8 @@ public final class MachineController {
         case "plugin.updated":
             // The plugin's code/install changed (restart, re-import, link) —
             // open panes reload. Deliberately NOT driven off
-            // plugin.state.updated: idle shutdown also transitions to
-            // `stopped`, and reloading on that would wake the plugin in an
-            // endless idle-stop → reload loop.
+            // plugin.state.updated: routine runtime transitions must not
+            // reload the plugin's pane content.
             onPluginUpdated?(serverId, event.subjectId)
         default:
             // Prompt/queue/error events are handled by the session transports.

@@ -4,16 +4,15 @@
   "name": "Git Diff",
   "description": "Live git diff viewer for the workspace working directory",
   "version": "0.1.0",
+  "iconPath": "/assets/icon.svg",
   "panes": [
     {
       "type": "diff",
       "title": "Git Diff",
-      "path": "/panes/diff/",
-      "icon": "plus.forwardslash.minus"
+      "path": "/panes/diff/"
     }
   ],
   "run": { "command": "bun run server.ts" },
   "platforms": ["darwin", "linux"],
-  "idleTimeoutSeconds": 300,
   "healthPath": "/health"
 }

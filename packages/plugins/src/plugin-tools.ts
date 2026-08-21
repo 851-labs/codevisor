@@ -83,8 +83,8 @@ export const invokePluginTool = async (options: InvokePluginToolOptions): Promis
     )
   }
   const text = await response.text()
-  // Any response means the process is healthy: reset the idle clock and the
-  // crash circuit breaker exactly like a completed pane request.
+  // Any response means the process is healthy: reset the crash circuit
+  // breaker exactly like a completed pane request.
   options.noteSuccess()
   if (!response.ok) {
     throw new PluginsError(

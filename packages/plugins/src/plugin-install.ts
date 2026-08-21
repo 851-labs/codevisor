@@ -245,6 +245,7 @@ export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller 
           runCommand: manifest.run.command,
           version: manifest.version,
           ...(manifest.description === undefined ? {} : { description: manifest.description }),
+          ...(manifest.iconPath === undefined ? {} : { iconPath: manifest.iconPath }),
           ...(manifest.install === undefined ? {} : { installCommand: manifest.install.command }),
           ...(manifest.tools === undefined ? {} : { tools: manifest.tools })
         }

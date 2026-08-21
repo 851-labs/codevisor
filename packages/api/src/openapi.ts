@@ -188,6 +188,8 @@ export const endpoints = [
   "GET /v1/plugins/:pluginId",
   "DELETE /v1/plugins/:pluginId",
   "POST /v1/plugins/:pluginId/restart",
+  "GET /v1/plugins/:pluginId/icon",
+  "GET /v1/plugins/:pluginId/panes/:paneType/icon",
   "POST /v1/plugins/:pluginId/panes/:paneId/token",
   "POST /v1/plugins/:pluginId/tools/:toolName",
   "GET /v1/mcps",
@@ -610,6 +612,14 @@ const makeOperation = (
   if (endpoint === "GET /v1/files/:id") {
     successResponse.content = {
       "application/octet-stream": { schema: { type: "string", format: "binary" } }
+    }
+  }
+  if (
+    endpoint === "GET /v1/plugins/:pluginId/icon" ||
+    endpoint === "GET /v1/plugins/:pluginId/panes/:paneType/icon"
+  ) {
+    successResponse.content = {
+      "image/png": { schema: { type: "string", format: "binary" } }
     }
   }
 

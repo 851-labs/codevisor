@@ -1,76 +1,9 @@
 import { describe, expect, it } from "vitest"
 import { makePluginSupervisor } from "./plugin-supervisor.js"
-import { delay, fakeSpawn, makeDataDir, plugin } from "./test-support.js"
+import { fakeSpawn, makeDataDir, plugin } from "./test-support.js"
 
-/// Idle shutdown, WS pinning, crash backoff, and the circuit breaker — the
-/// Phase 3 supervision-hardening behaviors, unit tested with short real
-/// timeouts and an injectable clock.
-
-describe("idle shutdown", () => {
-  it("stops an idle plugin and relaunches on the next request", async () => {
-    const spawn = fakeSpawn()
-    const supervisor = makePluginSupervisor({
-      dataDir: makeDataDir(),
-      spawnShell: spawn.spawnShell
-    })
-    const target = plugin({ idleTimeoutSeconds: 0.12 })
-    await supervisor.ensureRunning(target)
-    expect(supervisor.state("owner.example")).toBe("running")
-    await expect.poll(() => supervisor.state("owner.example")).toBe("stopped")
-    expect(spawn.spawnCount()).toBe(1)
-    await supervisor.ensureRunning(target)
-    expect(supervisor.state("owner.example")).toBe("running")
-    expect(spawn.spawnCount()).toBe(2)
-    supervisor.closeAll()
-  })
-
-  it("never idles out plugins with idleTimeoutSeconds 0", async () => {
-    const spawn = fakeSpawn()
-    const supervisor = makePluginSupervisor({
-      dataDir: makeDataDir(),
-      spawnShell: spawn.spawnShell
-    })
-    await supervisor.ensureRunning(plugin({ idleTimeoutSeconds: 0 }))
-    await delay(250)
-    expect(supervisor.state("owner.example")).toBe("running")
-    supervisor.closeAll()
-  })
-
-  it("keeps an active plugin alive, then idles out once requests stop", async () => {
-    const spawn = fakeSpawn()
-    const supervisor = makePluginSupervisor({
-      dataDir: makeDataDir(),
-      spawnShell: spawn.spawnShell
-    })
-    const target = plugin({ idleTimeoutSeconds: 0.25 })
-    await supervisor.ensureRunning(target)
-    for (let index = 0; index < 4; index += 1) {
-      await delay(100)
-      // Each proxied request resets the idle clock through ensureRunning.
-      await supervisor.ensureRunning(target)
-    }
-    expect(supervisor.state("owner.example")).toBe("running")
-    expect(spawn.spawnCount()).toBe(1)
-    await expect.poll(() => supervisor.state("owner.example")).toBe("stopped")
-  })
-
-  it("pins the process alive while a splice is open", async () => {
-    const spawn = fakeSpawn()
-    const supervisor = makePluginSupervisor({
-      dataDir: makeDataDir(),
-      spawnShell: spawn.spawnShell
-    })
-    await supervisor.ensureRunning(plugin({ idleTimeoutSeconds: 0.12 }))
-    const release = supervisor.pin("owner.example")
-    await delay(350)
-    expect(supervisor.state("owner.example")).toBe("running")
-    release()
-    // Releases are idempotent: a double close must not unbalance the count.
-    release()
-    await expect.poll(() => supervisor.state("owner.example")).toBe("stopped")
-    expect(spawn.spawnCount()).toBe(1)
-  })
-})
+/// Crash backoff and the circuit breaker, unit tested with an injectable
+/// clock. Process lifetime is owned by the manager's always-running loop.
 
 describe("crash backoff and circuit breaker", () => {
   it("refuses restarts inside the crash-backoff window, then relaunches", async () => {
@@ -139,6 +72,31 @@ describe("crash backoff and circuit breaker", () => {
     supervisor.closeAll()
   })
 
+  it("does not treat occasional failures after a stable runtime as a crash loop", async () => {
+    let now = 0
+    const spawn = fakeSpawn()
+    const supervisor = makePluginSupervisor({
+      backoffBaseMs: 0,
+      dataDir: makeDataDir(),
+      maxConsecutiveFailures: 2,
+      now: () => now,
+      spawnShell: spawn.spawnShell,
+      stableRuntimeMs: 100
+    })
+    const target = plugin()
+    await supervisor.ensureRunning(target)
+    spawn.simulateExit("exited with code 1")
+    await supervisor.ensureRunning(target)
+    now = 100
+    spawn.simulateExit("exited with code 1")
+    // The stable second run resets the earlier failure before this crash is
+    // counted, so the process remains eligible for automatic recovery.
+    expect(supervisor.state("owner.example")).toBe("stopped")
+    await supervisor.ensureRunning(target)
+    expect(supervisor.state("owner.example")).toBe("running")
+    supervisor.closeAll()
+  })
+
   it("treats markUnreachable as a crash of the live process only", async () => {
     const spawn = fakeSpawn()
     const supervisor = makePluginSupervisor({
@@ -193,6 +151,7 @@ describe("state change notifications", () => {
     const transitions: Array<string> = []
     const supervisor = makePluginSupervisor({
       dataDir: makeDataDir(),
+      maxConsecutiveFailures: 1,
       onStateChange: (_pluginId, state) => transitions.push(state),
       readyTimeoutMs: 300,
       spawnShell: spawn.spawnShell

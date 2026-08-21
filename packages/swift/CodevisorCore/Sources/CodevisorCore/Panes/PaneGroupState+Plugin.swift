@@ -11,39 +11,6 @@ struct LenientPaneDescriptorState: Decodable {
     }
 }
 
-/// The plugin fields the server's pane record carries as opaque metadata:
-/// enough for any client to rebuild the descriptor (and its tab icon)
-/// without consulting the plugin manifest.
-struct PluginPaneMetadata: Codable, Equatable {
-    var pluginId: String
-    var paneType: String
-    var icon: String?
-}
-
-extension PaneDescriptorState {
-    /// The canonical metadata JSON for a plugin pane. Deterministic
-    /// (sorted keys) so a locally-created pane compares equal to its own
-    /// server echo in the optimistic sync barrier.
-    public static func pluginMetadataJSON(
-        pluginId: String,
-        paneType: String,
-        icon: String? = nil
-    ) -> String? {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        let value = PluginPaneMetadata(pluginId: pluginId, paneType: paneType, icon: icon)
-        guard let data = try? encoder.encode(value) else { return nil }
-        return String(data: data, encoding: .utf8)
-    }
-
-    /// The manifest icon carried in the plugin metadata, if any. Tab strips
-    /// fall back to a generic puzzle-piece symbol when absent.
-    public var pluginIcon: String? {
-        guard let pluginMetadata, let data = pluginMetadata.data(using: .utf8) else { return nil }
-        return (try? JSONDecoder().decode(PluginPaneMetadata.self, from: data))?.icon
-    }
-}
-
 extension PaneGroupState {
     /// Builds a plugin pane descriptor for `convertNewTabPane`. Nil when the
     /// plugin identity is incomplete (a plugin pane without its plugin is
@@ -52,8 +19,7 @@ extension PaneGroupState {
         id: UUID,
         name: String?,
         pluginId: String?,
-        pluginPaneType: String?,
-        pluginIcon: String?
+        pluginPaneType: String?
     ) -> PaneDescriptorState? {
         guard let pluginId, !pluginId.isEmpty, let pluginPaneType, !pluginPaneType.isEmpty
         else { return nil }
@@ -63,10 +29,7 @@ extension PaneGroupState {
             name: name ?? "Plugin",
             terminalKey: id.uuidString,
             pluginId: pluginId,
-            pluginPaneType: pluginPaneType,
-            pluginMetadata: PaneDescriptorState.pluginMetadataJSON(
-                pluginId: pluginId, paneType: pluginPaneType, icon: pluginIcon
-            )
+            pluginPaneType: pluginPaneType
         )
     }
 }

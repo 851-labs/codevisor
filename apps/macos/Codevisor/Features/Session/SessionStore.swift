@@ -506,6 +506,8 @@ final class SessionStore {
             sessionId: session.id,
             placement: placement,
             repository: repository,
+            pluginIconClient: client,
+            pluginIconCacheNamespace: session.serverId,
             makeContext: {
                 [
                     weak projectList = environment.projectList,

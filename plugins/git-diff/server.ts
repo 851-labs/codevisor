@@ -164,6 +164,11 @@ Bun.serve({
     if (url.pathname === "/health") {
       return new Response("ok")
     }
+    if (url.pathname === "/assets/icon.svg") {
+      return new Response(Bun.file(new URL("./assets/icon.svg", import.meta.url)), {
+        headers: { "Content-Type": "image/svg+xml" }
+      })
+    }
     if (url.pathname === "/panes/diff/") {
       return new Response(page(), { headers: { "Content-Type": "text/html; charset=utf-8" } })
     }

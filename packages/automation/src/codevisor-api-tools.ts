@@ -305,10 +305,9 @@ export const CODEVISOR_API_TOOLS: ReadonlyArray<CodevisorApiToolSpec> = [
     "workspaces.open_plugin_pane",
     "Open a plugin pane in a workspace by upserting a workspace pane record. " +
       "Set providerId to `plugin:<pluginId>` (e.g. plugin:codevisor.git-diff), paneType to the " +
-      "pane type from the plugin's manifest (see plugins.list), and metadata to the JSON string " +
-      '`{"icon":"<icon>","paneType":"<paneType>","pluginId":"<pluginId>"}` with keys in exactly ' +
-      "that order, omitting icon when the manifest pane has none — clients compare this string " +
-      "byte-for-byte. paneId is the stable pane identity: pass a new lowercase UUID to open a " +
+      "pane type from the plugin's manifest (see plugins.list). Omit metadata; plugin artwork " +
+      "comes from the running plugin server and is never stored in workspace records. paneId is " +
+      "the stable pane identity: pass a new lowercase UUID to open a " +
       "new pane, or an existing pane's id to replace it.",
     "PUT",
     "/v1/workspaces/:workspaceId/panes/:paneId",

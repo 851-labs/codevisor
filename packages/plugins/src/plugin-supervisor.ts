@@ -65,17 +65,23 @@ export interface PluginSupervisorConfig {
   readonly readyTimeoutMs?: number
   readonly now?: () => number
   /// Crash/restart circuit breaker: after this many consecutive failures
-  /// without a successful request in between, the plugin is refused until an
-  /// explicit stop/restart. Default 5.
+  /// without a successful request or stable runtime in between, the plugin
+  /// is refused until an explicit stop/restart. Default 5.
   readonly maxConsecutiveFailures?: number
   /// First restart-backoff window after a crash; doubles per consecutive
   /// failure. Default 500ms.
   readonly backoffBaseMs?: number
   /// Backoff ceiling. Default 30s.
   readonly backoffCapMs?: number
+  /// A process that stays up this long is no longer part of the previous
+  /// crash sequence. Default 30s.
+  readonly stableRuntimeMs?: number
   /// Observes every runtime state transition (fed into the server's event
   /// fanout as plugin.state.updated).
   readonly onStateChange?: (pluginId: string, state: PluginRuntimeState) => void
+  /// A live process exited or stopped answering. The manager uses this seam
+  /// to restore the always-running installed-plugin invariant after backoff.
+  readonly onUnexpectedExit?: (pluginId: string) => void
   /// When present, each plugin process's output streams into an attachable
   /// external terminal (sessionId `plugin:{pluginId}`) so clients can offer
   /// "Show Output".
@@ -87,43 +93,34 @@ interface RunningPlugin {
   port?: number
   process?: PluginProcessHandle
   startPromise?: Promise<number>
-  /// Idle-shutdown clock: last proxied request (or WS release) timestamp.
-  lastActivityAt: number
-  /// Open WebSocket splices pin the process alive; the idle clock only runs
-  /// at zero.
-  pins: number
-  idleTimer?: NodeJS.Timeout
-  /// Captured from the manifest at start time (ms; 0 = never idle out).
-  idleTimeoutMs: number
-  /// Consecutive failed starts/crashes since the last successful request.
+  /// Consecutive failed starts/crashes since the last successful request or
+  /// stable runtime.
   failures: number
+  /// Start of the current healthy run, used to distinguish a crash loop from
+  /// occasional failures over a long-lived server session.
+  runningSince?: number
   /// Restart-backoff gate: ensureRunning refuses before this timestamp.
   notBefore: number
 }
 
 export interface PluginSupervisor {
-  /// Lazily starts the plugin's server if needed and resolves its loopback
-  /// port. Concurrent callers share one start attempt. Refuses while the
+  /// Starts the plugin's server if needed and resolves its loopback port.
+  /// Concurrent callers share one start attempt. Refuses while the
   /// crash circuit breaker is tripped or inside a restart-backoff window.
   readonly ensureRunning: (plugin: InstalledPlugin) => Promise<number>
   readonly state: (pluginId: string) => PluginRuntimeState
-  /// A proxied request completed successfully: resets the idle clock and the
-  /// crash circuit breaker.
+  /// A proxied request completed successfully: resets the crash circuit
+  /// breaker.
   readonly noteSuccess: (pluginId: string) => void
-  /// Pins the process alive for the lifetime of a WebSocket splice; the
-  /// returned release is idempotent and restarts the idle clock.
-  readonly pin: (pluginId: string) => () => void
   /// The proxy found the plugin's port dead while the supervisor thought it
-  /// was running: treat it as a crash so the next request relaunches instead
-  /// of hitting a dead port forever.
+  /// was running: treat it as a crash so the manager relaunches it instead of
+  /// forwarding into a dead port forever.
   readonly markUnreachable: (pluginId: string) => void
   /// Stop + clear failure state; the next request starts fresh.
   readonly restart: (pluginId: string) => void
   readonly stop: (pluginId: string) => void
   readonly closeAll: () => void
 }
-
-export const DEFAULT_IDLE_TIMEOUT_SECONDS = 300
 
 /// A crashed or killed plugin must never take the server with it: every
 /// stream gets an error listener from construction (stdio-transport
@@ -239,6 +236,7 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
   const maxConsecutiveFailures = config.maxConsecutiveFailures ?? 5
   const backoffBaseMs = config.backoffBaseMs ?? 500
   const backoffCapMs = config.backoffCapMs ?? 30_000
+  const stableRuntimeMs = config.stableRuntimeMs ?? 30_000
 
   const runtime = (pluginId: string): RunningPlugin => {
     const existing = runtimes.get(pluginId)
@@ -247,10 +245,7 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
     }
     const created: RunningPlugin = {
       failures: 0,
-      idleTimeoutMs: 0,
-      lastActivityAt: 0,
       notBefore: 0,
-      pins: 0,
       state: "stopped"
     }
     runtimes.set(pluginId, created)
@@ -265,65 +260,23 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
     config.onStateChange?.(pluginId, state)
   }
 
-  const clearIdleTimer = (current: RunningPlugin): void => {
-    if (current.idleTimer !== undefined) {
-      clearTimeout(current.idleTimer)
-      delete current.idleTimer
-    }
-  }
-
   const clearProcess = (current: RunningPlugin): void => {
-    clearIdleTimer(current)
     delete current.port
     delete current.process
+    delete current.runningSince
   }
 
   /// One crash or failed start: arm the exponential-backoff window and pick
   /// the next state — `failed` once the circuit breaker trips, `stopped`
   /// while restarts are still allowed.
   const registerFailure = (current: RunningPlugin): PluginRuntimeState => {
+    if (current.runningSince !== undefined && now() - current.runningSince >= stableRuntimeMs) {
+      current.failures = 0
+    }
     current.failures += 1
     current.notBefore = now() + Math.min(backoffBaseMs * 2 ** (current.failures - 1), backoffCapMs)
     clearProcess(current)
     return current.failures >= maxConsecutiveFailures ? "failed" : "stopped"
-  }
-
-  /// Idle shutdown: one unref'd timer per running plugin, re-armed until the
-  /// last activity is older than the idle window and no WS splice pins the
-  /// process.
-  const armIdleTimer = (
-    pluginId: string,
-    current: RunningPlugin,
-    child: PluginProcessHandle
-  ): void => {
-    clearIdleTimer(current)
-    if (current.idleTimeoutMs <= 0) {
-      return
-    }
-    // While pinned the clock is parked (recheck a full window later);
-    // otherwise fire when the last activity ages past the window. A slightly
-    // negative remainder just fires immediately and rechecks.
-    const remaining =
-      current.pins > 0
-        ? current.idleTimeoutMs
-        : current.lastActivityAt + current.idleTimeoutMs - now()
-    const timer = setTimeout(() => {
-      delete current.idleTimer
-      /* v8 ignore next 3 -- a stop landing between timer fire and callback dispatch leaves nothing to do. */
-      if (current.state !== "running" || current.process !== child) {
-        return
-      }
-      if (current.pins > 0 || now() - current.lastActivityAt < current.idleTimeoutMs) {
-        armIdleTimer(pluginId, current, child)
-        return
-      }
-      log(`Plugin ${pluginId} idle for ${current.idleTimeoutMs}ms; stopping`)
-      child.kill()
-      clearProcess(current)
-      setState(pluginId, current, "stopped")
-    }, remaining)
-    timer.unref()
-    current.idleTimer = timer
   }
 
   const start = async (plugin: InstalledPlugin, current: RunningPlugin): Promise<number> => {
@@ -358,6 +311,7 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
       if (state.process === child && state.state === "running") {
         log(`Plugin ${plugin.id} ${message.split("\n")[0]}`)
         setState(plugin.id, state, registerFailure(state))
+        config.onUnexpectedExit?.(plugin.id)
       }
     })
     current.process = child
@@ -368,11 +322,8 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
       }
       if (await tcpProbe(port)) {
         current.port = port
-        current.idleTimeoutMs =
-          (plugin.manifest.idleTimeoutSeconds ?? DEFAULT_IDLE_TIMEOUT_SECONDS) * 1_000
-        current.lastActivityAt = now()
+        current.runningSince = now()
         setState(plugin.id, current, "running")
-        armIdleTimer(plugin.id, current, child)
         log(`Plugin ${plugin.id} listening on 127.0.0.1:${port}`)
         return port
       }
@@ -390,8 +341,8 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
     if (current === undefined) {
       return
     }
-    // Explicit stop/restart clears the crash accounting: the next request
-    // starts fresh with no backoff and an open circuit breaker.
+    // Explicit stop/restart clears the crash accounting so the manager can
+    // relaunch fresh with no backoff and an open circuit breaker.
     current.failures = 0
     current.notBefore = 0
     if (current.state === "stopped") {
@@ -415,7 +366,6 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
     },
     ensureRunning: async (plugin) => {
       const current = runtime(plugin.id)
-      current.lastActivityAt = now()
       if (current.state === "running" && current.port !== undefined) {
         return current.port
       }
@@ -437,10 +387,7 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
       }
       setState(plugin.id, current, "starting")
       const startPromise = start(plugin, current).catch((cause: unknown) => {
-        registerFailure(current)
-        // A start that never came up is always `failed` (the breaker decides
-        // only whether retries are still allowed).
-        setState(plugin.id, current, "failed")
+        setState(plugin.id, current, registerFailure(current))
         throw cause
       })
       current.startPromise = startPromise
@@ -459,28 +406,16 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
       /* v8 ignore next -- a running runtime always tracks its process. */
       current.process?.kill()
       setState(pluginId, current, registerFailure(current))
+      config.onUnexpectedExit?.(pluginId)
     },
     noteSuccess: (pluginId) => {
       const current = runtimes.get(pluginId)
       if (current === undefined) {
         return
       }
-      current.lastActivityAt = now()
       current.failures = 0
       current.notBefore = 0
-    },
-    pin: (pluginId) => {
-      const current = runtime(pluginId)
-      current.pins += 1
-      let released = false
-      return () => {
-        if (released) {
-          return
-        }
-        released = true
-        current.pins -= 1
-        current.lastActivityAt = now()
-      }
+      current.runningSince = now()
     },
     restart: (pluginId) => stop(pluginId),
     state: (pluginId) => runtimes.get(pluginId)?.state ?? "stopped",

@@ -1083,5 +1083,14 @@ export const migrations: ReadonlyArray<Migration> = [
       alter table projects drop column symbol_name;
       alter table workspaces drop column symbol_name;
     `
+  },
+  {
+    id: 40,
+    name: "remove persisted plugin icons",
+    sql: `
+      update workspace_panes
+      set metadata = null
+      where provider_id like 'plugin:%';
+    `
   }
 ]

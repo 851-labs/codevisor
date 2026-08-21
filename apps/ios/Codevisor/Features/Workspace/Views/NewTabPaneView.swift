@@ -10,7 +10,7 @@ struct PluginNewTabOption: Identifiable, Equatable {
     var pluginName: String
     var paneType: String
     var title: String
-    var icon: String?
+    var iconPath: String?
 
     var id: String { "\(pluginId)|\(paneType)" }
 }
@@ -24,6 +24,7 @@ struct NewTabPaneView: View {
     /// The machine's API client, for the machine-scoped plugin pane rows.
     /// Nil (previews) shows no plugin rows.
     var client: (any CodevisorServerClienting)? = nil
+    var iconCacheNamespace = "preview"
     var onOpenPlugin: (PluginNewTabOption) -> Void = { _ in }
 
     @State private var pluginOptions: [PluginNewTabOption] = []
@@ -37,22 +38,35 @@ struct NewTabPaneView: View {
                     newTabOption(
                         title: "New Chat",
                         subtitle: "Start an agent in \(projectName)",
-                        systemImage: "bubble.left.and.bubble.right",
                         action: onNewChat
-                    )
+                    ) {
+                        Image(systemName: "bubble.left.and.bubble.right")
+                    }
                     newTabOption(
                         title: "New Terminal",
                         subtitle: "Open a shell on the machine",
-                        systemImage: "terminal",
                         action: onNewTerminal
-                    )
+                    ) {
+                        Image(systemName: "terminal")
+                    }
                     ForEach(pluginOptions) { option in
                         newTabOption(
                             title: option.title,
                             subtitle: option.pluginName,
-                            systemImage: option.icon ?? "puzzlepiece.extension",
                             action: { onOpenPlugin(option) }
-                        )
+                        ) {
+                            if let client {
+                                PluginIconView(
+                                    pluginId: option.pluginId,
+                                    paneType: option.paneType,
+                                    iconPath: option.iconPath,
+                                    client: client,
+                                    cacheNamespace: iconCacheNamespace
+                                )
+                            } else {
+                                Image(systemName: "puzzlepiece.extension")
+                            }
+                        }
                     }
                 }
                 .padding(.horizontal, 24)
@@ -80,21 +94,21 @@ struct NewTabPaneView: View {
                     pluginName: plugin.name,
                     paneType: pane.type,
                     title: pane.title,
-                    icon: pane.icon
+                    iconPath: pane.iconPath ?? plugin.iconPath
                 )
             }
         }
     }
 
-    private func newTabOption(
+    private func newTabOption<Icon: View>(
         title: String,
         subtitle: String,
-        systemImage: String,
-        action: @escaping () -> Void
+        action: @escaping () -> Void,
+        @ViewBuilder icon: () -> Icon
     ) -> some View {
         Button(action: action) {
             HStack(spacing: 14) {
-                Image(systemName: systemImage)
+                icon()
                     .font(.title3)
                     .scaledFrame(width: 34, relativeTo: .title3)
                     .foregroundStyle(.tint)

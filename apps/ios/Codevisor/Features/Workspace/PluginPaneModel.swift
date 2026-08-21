@@ -202,8 +202,7 @@ final class PluginPaneCache {
     static let shared = PluginPaneCache()
 
     /// How long a hidden pane's webview stays alive after it was last
-    /// visible. Mirrors the server's default plugin idleTimeoutSeconds (300)
-    /// so the whole stack shares one "hot for ~5 minutes" story.
+    /// visible, balancing instant tab switches against WebKit memory use.
     private let retentionSeconds: TimeInterval = 300
     /// Hard ceiling on simultaneously live webviews regardless of retention —
     /// each one is a web-content process, which is jetsam-relevant on iOS.

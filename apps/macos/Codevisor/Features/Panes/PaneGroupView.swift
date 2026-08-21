@@ -422,7 +422,10 @@ struct PaneGroupBar: View {
                     name: pane.kind == .chat ? (chatTitle?(pane) ?? pane.name) : pane.name,
                     kind: pane.kind,
                     isAgentOwned: pane.attachOnly,
-                    pluginIcon: pane.pluginIcon,
+                    pluginId: pane.pluginId,
+                    pluginPaneType: pane.pluginPaneType,
+                    pluginIconClient: group.pluginIconClient,
+                    pluginIconCacheNamespace: group.pluginIconCacheNamespace,
                     isSelected: pane.id == group.state.selectedPaneId,
                     isDragging: draggingPaneId == pane.id,
                     width: slot.width,
@@ -848,8 +851,10 @@ struct PaneTab: View {
     /// Agent-owned background terminals get a server-rack glyph so ownership
     /// is obvious next to the user's own shells (which get a terminal glyph).
     let isAgentOwned: Bool
-    /// Plugin panes: the manifest's SF Symbol, else the puzzle-piece fallback.
-    var pluginIcon: String? = nil
+    var pluginId: String? = nil
+    var pluginPaneType: String? = nil
+    var pluginIconClient: (any CodevisorServerClienting)? = nil
+    var pluginIconCacheNamespace = "preview"
     let isSelected: Bool
     let isDragging: Bool
     let width: CGFloat
@@ -901,7 +906,7 @@ struct PaneTab: View {
         case .chat: "text.bubble"
         case .terminal: isAgentOwned ? "server.rack" : "terminal"
         case .newTab: "square.dashed"
-        case .plugin: pluginIcon ?? "puzzlepiece.extension"
+        case .plugin: "puzzlepiece.extension"
         }
     }
 
@@ -992,7 +997,7 @@ struct PaneTab: View {
     private var capsuleContent: some View {
         HStack(spacing: 4) {
             if showsIcon {
-                Image(systemName: iconName)
+                tabIcon
                     .font(.system(size: 12, weight: .medium))
                     // Same ink as the label in both states.
                     .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
@@ -1013,6 +1018,22 @@ struct PaneTab: View {
         // stacked tabs); everything else centers.
         .frame(maxWidth: .infinity, alignment: isSliver ? .leading : .center)
         .frame(height: capsuleHeight)
+    }
+
+    @ViewBuilder
+    private var tabIcon: some View {
+        if kind == .plugin, let pluginId, let pluginIconClient {
+            PluginIconView(
+                pluginId: pluginId,
+                paneType: pluginPaneType,
+                iconPath: "server",
+                client: pluginIconClient,
+                cacheNamespace: pluginIconCacheNamespace
+            )
+            .frame(width: 12, height: 12)
+        } else {
+            Image(systemName: iconName)
+        }
     }
 
     private var closeButton: some View {

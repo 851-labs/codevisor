@@ -204,12 +204,22 @@ describe("plugin routes", () => {
     // The route enriches the manager's server-relative path with an absolute
     // URL against the origin the caller reached (Host header).
     expect(issued.url).toBe(`${server.url}${issued.path}`)
+
+    const pluginIcon = await fetch(`${server.url}/v1/plugins/owner.example/icon`)
+    expect(pluginIcon.status).toBe(200)
+    expect(pluginIcon.headers.get("content-type")).toBe("image/png")
+    expect(pluginIcon.headers.get("cache-control")).toBe("private, max-age=300")
+    expect([...new Uint8Array(await pluginIcon.arrayBuffer())]).toEqual([1, 2, 3])
+    const paneIcon = await fetch(`${server.url}/v1/plugins/owner.example/panes/main/icon`)
+    expect(paneIcon.status).toBe(200)
     expect(calls).toContainEqual([
       "issuePaneToken",
       "owner.example",
       "pane-1",
       { cwd: "/tmp", paneType: "main" }
     ])
+    expect(calls).toContainEqual(["fetchIcon", "owner.example", undefined])
+    expect(calls).toContainEqual(["fetchIcon", "owner.example", "main"])
   })
 
   it("maps PluginsError codes onto HTTP statuses", async () => {

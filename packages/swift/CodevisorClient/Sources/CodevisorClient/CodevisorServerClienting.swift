@@ -154,6 +154,9 @@ public protocol CodevisorServerClienting: Sendable {
     /// Plugins installed on this machine (`GET /v1/plugins`). Empty on
     /// servers without the plugins feature.
     func listPlugins() async throws -> [ServerPluginSummary]
+    /// Fetches plugin or pane artwork. The server accepts SVG/PNG/WebP from
+    /// the plugin process and returns a normalized PNG to clients.
+    func pluginIcon(pluginId: String, paneType: String?) async throws -> ServerPluginIconAsset
     /// Issues a short-lived pane token and returns the server-relative pane
     /// URL to load in a webview
     /// (`POST /v1/plugins/:pluginId/panes/:paneId/token`).
@@ -181,8 +184,8 @@ public protocol CodevisorServerClienting: Sendable {
     /// Uninstall a managed plugin and return the updated list
     /// (`DELETE /v1/plugins/:pluginId`).
     func removePlugin(pluginId: String) async throws -> [ServerPluginSummary]
-    /// Stop the plugin's process and clear its crash state; the next pane
-    /// request relaunches it (`POST /v1/plugins/:pluginId/restart`).
+    /// Stop and immediately relaunch the plugin, clearing its crash state
+    /// (`POST /v1/plugins/:pluginId/restart`).
     func restartPlugin(pluginId: String) async throws -> ServerPluginSummary
     func listProjects() async throws -> [ServerProject]
     func upsertProject(_ project: Project) async throws -> ServerProject

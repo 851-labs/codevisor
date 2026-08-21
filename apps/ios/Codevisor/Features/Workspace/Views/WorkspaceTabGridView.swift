@@ -12,6 +12,8 @@ struct WorkspaceTabGridView<ReorderGesture: Gesture>: View {
     let gridLiftFeedback: Int
     let pendingNewTabZoomPaneId: UUID?
     let showsGrid: Bool
+    let pluginIconClient: any CodevisorServerClienting
+    let pluginIconCacheNamespace: String
     let title: (PaneDescriptorState) -> String
     let onSelect: (PaneDescriptorState) -> Void
     let onClose: (PaneDescriptorState) -> Void
@@ -40,6 +42,8 @@ struct WorkspaceTabGridView<ReorderGesture: Gesture>: View {
                                     in: $0
                                 )
                             },
+                            pluginIconClient: pluginIconClient,
+                            pluginIconCacheNamespace: pluginIconCacheNamespace,
                             onSelect: { onSelect(pane) },
                             onClose: { onClose(pane) },
                             onMoveEarlier: moveAction(pane, -1),
@@ -108,6 +112,8 @@ struct WorkspaceTabGridView<ReorderGesture: Gesture>: View {
                 pane: drag.pane,
                 snapshot: drag.snapshot,
                 title: drag.title,
+                pluginIconClient: pluginIconClient,
+                pluginIconCacheNamespace: pluginIconCacheNamespace,
                 showsCloseButton: false,
                 onClose: {}
             )

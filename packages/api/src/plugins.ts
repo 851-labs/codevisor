@@ -15,9 +15,10 @@ export const PluginPaneDescriptor = Schema.Struct({
   type: Schema.String,
   title: Schema.String,
   path: Schema.String,
-  /// Optional SF Symbol name for pane chrome; clients fall back to a generic
-  /// plugin symbol.
-  icon: Schema.optional(Schema.String)
+  /// Optional absolute path on the plugin server to pane artwork. The path
+  /// may serve SVG, PNG, or WebP and falls back to the plugin-level icon,
+  /// then client-owned generic plugin chrome.
+  iconPath: Schema.optional(Schema.String)
 })
 export type PluginPaneDescriptor = typeof PluginPaneDescriptor.Type
 
@@ -46,8 +47,8 @@ export type PluginToolDescriptor = typeof PluginToolDescriptor.Type
 
 /// codevisor-plugin.json — the contract between a plugin directory and the
 /// server. Deliberately small: a plugin is any executable that serves HTTP on
-/// $PORT; everything else here is metadata the app renders without running
-/// the plugin (lazy activation).
+/// $PORT; everything else here is metadata the app renders without executing
+/// plugin code. Installed plugins run for the lifetime of the server.
 export const PluginManifest = Schema.Struct({
   protocolVersion: Schema.Number,
   /// Owner-namespaced id, lowercase `owner.name`. Validated against the
@@ -57,6 +58,10 @@ export const PluginManifest = Schema.Struct({
   name: Schema.String,
   version: Schema.String,
   description: Schema.optional(Schema.String),
+  /// Optional absolute path on the plugin server to the plugin's own artwork.
+  /// Clients fetch it through the authenticated Codevisor server, never from
+  /// the plugin's loopback origin directly.
+  iconPath: Schema.optional(Schema.String),
   panes: Schema.Array(PluginPaneDescriptor),
   /// Agent tools this plugin exposes to the model through the MCP gateway.
   /// Tool-only plugins (empty panes + tools) are first-class.
@@ -69,9 +74,6 @@ export const PluginManifest = Schema.Struct({
   run: PluginCommand,
   /// process.platform allowlist; absent means all platforms.
   platforms: Schema.optional(Schema.Array(Schema.String)),
-  /// Idle shutdown after this many seconds with no connected panes.
-  /// 0 disables idle shutdown. Default 300.
-  idleTimeoutSeconds: Schema.optional(Schema.Number),
   /// Optional HTTP readiness path (must return 2xx). Absent: a successful
   /// TCP connect to the assigned port counts as ready.
   healthPath: Schema.optional(Schema.String)
@@ -98,6 +100,7 @@ export const PluginSummary = Schema.Struct({
   name: Schema.String,
   version: Schema.String,
   description: Schema.optional(Schema.String),
+  iconPath: Schema.optional(Schema.String),
   panes: Schema.Array(PluginPaneDescriptor),
   /// Agent tools the plugin declares; absent when it declares none.
   tools: Schema.optional(Schema.Array(PluginToolDescriptor)),
@@ -162,6 +165,7 @@ export const DiscoverRemotePluginResult = Schema.Struct({
   name: Schema.String,
   version: Schema.String,
   description: Schema.optional(Schema.String),
+  iconPath: Schema.optional(Schema.String),
   panes: Schema.Array(PluginPaneDescriptor),
   /// Agent tools installation would add — consent surfaces list these
   /// alongside the verbatim commands.
@@ -169,7 +173,7 @@ export const DiscoverRemotePluginResult = Schema.Struct({
   /// Run once at install time, in the plugin directory. Absent for
   /// zero-dependency plugins.
   installCommand: Schema.optional(Schema.String),
-  /// Runs the plugin server whenever a pane needs it.
+  /// Runs the plugin server while Codevisor is running.
   runCommand: Schema.String,
   /// A plugin with this id is already installed on the machine; importing
   /// again updates a managed install (and conflicts with a linked one).
@@ -203,6 +207,7 @@ export const PluginRegistryEntry = Schema.Struct({
   name: Schema.String,
   version: Schema.String,
   description: Schema.optional(Schema.String),
+  iconPath: Schema.optional(Schema.String),
   panes: Schema.Array(PluginPaneDescriptor),
   tools: Schema.optional(Schema.Array(PluginToolDescriptor)),
   /// GitHub "owner/name" — the directory always shows the real repo owner.

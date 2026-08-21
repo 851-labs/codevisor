@@ -916,6 +916,15 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
     )
     startupCompleted = true
     console.log(`Codevisor server listening at ${server.url}`)
+    // Installed plugins are server companions: start them only after the
+    // main listener is ready, without letting one broken plugin delay or
+    // fail Codevisor startup. The manager keeps crashed processes running
+    // again behind its own backoff/circuit breaker.
+    void plugins
+      ?.startAll()
+      .catch((cause: unknown) =>
+        console.log(`Plugin startup unavailable: ${failureMessage(cause)}`)
+      )
   })
 
   return Effect.runPromise(program).catch(async (cause: unknown) => {

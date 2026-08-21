@@ -6,7 +6,7 @@ import { PluginsError } from "./plugins-error.js"
 import { exampleManifest, makeDir, makeManager, toolManifest, writePlugin } from "./test-support.js"
 
 /// Agent-tool surface of the manager: flattened tool listings, the invocation
-/// path (lazy start, signed context, typed failures), and the installed-set
+/// path (running-process reuse, signed context, typed failures), and the installed-set
 /// subscription that keeps the MCP gateway's advertised tools fresh.
 
 const invalid = async (

@@ -17,6 +17,11 @@ export {
 } from "./plugin-install.js"
 export { PANE_TOKEN_QUERY_PARAM } from "./plugin-pane-auth.js"
 export {
+  MAX_PLUGIN_ICON_BYTES,
+  type PluginIconAsset,
+  type PluginIconContentType
+} from "./plugin-icon.js"
+export {
   DEFAULT_PLUGIN_REGISTRY_URL,
   filterPluginRegistryIndex,
   makePluginRegistryClient,

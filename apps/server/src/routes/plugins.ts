@@ -173,6 +173,31 @@ export const routePlugins = async (
     return true
   }
 
+  const paneIconRoute = matchRouteParams(url.pathname, "/v1/plugins/:pluginId/panes/:paneType/icon")
+  if (paneIconRoute !== undefined && request.method === "GET") {
+    /* v8 ignore next 2 -- both captures exist when the route matches. */
+    const icon = await manager.fetchIcon(paneIconRoute.pluginId ?? "", paneIconRoute.paneType ?? "")
+    response.writeHead(200, {
+      "Cache-Control": "private, max-age=300",
+      "Content-Length": String(icon.data.byteLength),
+      "Content-Type": icon.contentType
+    })
+    response.end(icon.data)
+    return true
+  }
+
+  const pluginIconId = matchRoute(url.pathname, "/v1/plugins/:pluginId/icon")
+  if (pluginIconId !== undefined && request.method === "GET") {
+    const icon = await manager.fetchIcon(pluginIconId)
+    response.writeHead(200, {
+      "Cache-Control": "private, max-age=300",
+      "Content-Length": String(icon.data.byteLength),
+      "Content-Type": icon.contentType
+    })
+    response.end(icon.data)
+    return true
+  }
+
   const toolRoute = matchRouteParams(url.pathname, "/v1/plugins/:pluginId/tools/:toolName")
   if (toolRoute !== undefined && request.method === "POST") {
     const payload = await readSchema(request, InvokePluginToolRequestSchema)
@@ -197,10 +222,8 @@ export const routePlugins = async (
   if (restartId !== undefined && request.method === "POST") {
     const restarted = await manager.restart(restartId)
     // Restart is the manual "pick up my changes" action; open panes reload.
-    // Deliberately NOT emitted on plugin.state.updated transitions: restart
-    // leaves the plugin stopped until the next request (lazy start), and idle
-    // shutdown produces the same transition — reloading on those would wake
-    // the plugin in an endless idle-stop → reload loop.
+    // Runtime state transitions stay separate because crash recovery should
+    // not reload a healthy webview unless the user explicitly restarts it.
     await appendAndPublish(services.db, fanout, "plugin.updated", restarted.id, restarted)
     writeJson(response, 200, restarted)
     return true

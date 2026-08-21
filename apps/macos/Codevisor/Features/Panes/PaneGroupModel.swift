@@ -30,6 +30,8 @@ final class PaneGroupModel: Identifiable {
     @ObservationIgnored private var live: [UUID: any Pane] = [:]
     @ObservationIgnored private let repository: any PaneGroupRepository
     @ObservationIgnored private let makeContext: (PaneDescriptorState) -> PaneContext
+    @ObservationIgnored let pluginIconClient: (any CodevisorServerClienting)?
+    @ObservationIgnored let pluginIconCacheNamespace: String
     /// Set by the session screen: performs the panel toggle with proper focus
     /// handoff (the screen owns the composer/terminal focus controller).
     @ObservationIgnored var requestToggle: (() -> Void)?
@@ -78,11 +80,15 @@ final class PaneGroupModel: Identifiable {
         sessionId: UUID,
         placement: PaneGroupPlacement = .bottom,
         repository: any PaneGroupRepository,
+        pluginIconClient: (any CodevisorServerClienting)? = nil,
+        pluginIconCacheNamespace: String = "preview",
         makeContext: @escaping (PaneDescriptorState) -> PaneContext
     ) {
         self.sessionId = sessionId
         self.placement = placement
         self.repository = repository
+        self.pluginIconClient = pluginIconClient
+        self.pluginIconCacheNamespace = pluginIconCacheNamespace
         self.makeContext = makeContext
         if let stored = repository.load(sessionId: sessionId, placement: placement) {
             self.state = stored
@@ -382,15 +388,13 @@ final class PaneGroupModel: Identifiable {
         chatSessionId: UUID? = nil,
         name: String? = nil,
         pluginId: String? = nil,
-        pluginPaneType: String? = nil,
-        pluginIcon: String? = nil
+        pluginPaneType: String? = nil
     ) {
         guard let previous = state.panes.first(where: { $0.id == id }),
             let converted = state.convertNewTabPane(
                 id: id, to: kind, sessionId: sessionId,
                 chatSessionId: chatSessionId, name: name,
-                pluginId: pluginId, pluginPaneType: pluginPaneType,
-                pluginIcon: pluginIcon
+                pluginId: pluginId, pluginPaneType: pluginPaneType
             )
         else { return }
         if Self.requiresNewLivePane(previous: previous, next: converted) {

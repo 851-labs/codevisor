@@ -3,7 +3,7 @@ import Testing
 @testable import CodevisorCore
 
 /// The pane<->server-record mapping behind workspace sync: plugin panes ride
-/// a `plugin:`-prefixed provider with opaque metadata; unknown providers
+/// a `plugin:`-prefixed provider without icon metadata; unknown providers
 /// still drop silently.
 @MainActor
 @Suite("WorkspaceSyncModel pane mapping")
@@ -21,10 +21,7 @@ struct WorkspaceSyncPaneMappingTests {
             // restored descriptor rebuilds exactly this.
             terminalKey: id.uuidString,
             pluginId: "codevisor.git-diff",
-            pluginPaneType: "diff",
-            pluginMetadata: PaneDescriptorState.pluginMetadataJSON(
-                pluginId: "codevisor.git-diff", paneType: "diff", icon: "plus.forwardslash.minus"
-            )
+            pluginPaneType: "diff"
         )
         let record = WorkspaceSyncModel.serverPane(
             from: pane, workspaceId: workspaceId, createdAt: Date()
@@ -32,7 +29,7 @@ struct WorkspaceSyncPaneMappingTests {
         #expect(record.providerId == "plugin:codevisor.git-diff")
         #expect(record.paneType == "diff")
         #expect(record.title == "Git Diff")
-        #expect(record.metadata == pane.pluginMetadata)
+        #expect(record.metadata == nil)
         #expect(record.resourceKind == nil)
         #expect(record.resourceId == nil)
 
@@ -41,11 +38,10 @@ struct WorkspaceSyncPaneMappingTests {
         // what makes the optimistic sync barrier acknowledge the echo).
         let restored = WorkspaceSyncModel.descriptor(from: record)
         #expect(restored == pane)
-        #expect(restored?.pluginIcon == "plus.forwardslash.minus")
     }
 
-    @Test("Plugin panes without a local metadata payload synthesize one")
-    func pluginPaneSynthesizesMetadata() {
+    @Test("Plugin panes never persist icon metadata")
+    func pluginPaneOmitsMetadata() {
         let pane = PaneDescriptorState(
             id: UUID(),
             kind: .plugin,
@@ -57,12 +53,7 @@ struct WorkspaceSyncPaneMappingTests {
         let record = WorkspaceSyncModel.serverPane(
             from: pane, workspaceId: workspaceId, createdAt: Date()
         )
-        #expect(
-            record.metadata
-                == PaneDescriptorState.pluginMetadataJSON(
-                    pluginId: "codevisor.git-diff", paneType: "diff"
-                )
-        )
+        #expect(record.metadata == nil)
     }
 
     @Test("Unknown providers and malformed plugin providers still drop silently")

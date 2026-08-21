@@ -18,6 +18,12 @@ const PLUGIN_ID_PATTERN = /^[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9-]*$/
 /// must never contain the dot the path grammar splits on.
 const PLUGIN_TOOL_NAME_PATTERN = /^[a-z0-9_]+$/
 
+const validateServerPath = (label: string, path: string): void => {
+  if (!path.startsWith("/") || path.includes("..") || path.includes("?") || path.includes("#")) {
+    throw new PluginsError("invalid", `${label} must be a plain absolute path: ${path}`)
+  }
+}
+
 /// Parses and validates a codevisor-plugin.json payload. Every rule here is
 /// part of the plugin protocol: reject early with a message an author (or an
 /// agent authoring a plugin) can act on, never let a malformed manifest reach
@@ -52,11 +58,8 @@ export const parsePluginManifest = (raw: string): PluginManifest => {
   if (manifest.run.command.trim().length === 0) {
     throw new PluginsError("invalid", "Plugin run.command must not be empty")
   }
-  if (
-    manifest.idleTimeoutSeconds !== undefined &&
-    (!Number.isInteger(manifest.idleTimeoutSeconds) || manifest.idleTimeoutSeconds < 0)
-  ) {
-    throw new PluginsError("invalid", "idleTimeoutSeconds must be a non-negative integer")
+  if (manifest.iconPath !== undefined) {
+    validateServerPath("Plugin iconPath", manifest.iconPath)
   }
   const seenPaneTypes = new Set<string>()
   for (const pane of manifest.panes) {
@@ -72,8 +75,9 @@ export const parsePluginManifest = (raw: string): PluginManifest => {
         `Pane path must start and end with "/" so relative URLs resolve under the proxy prefix: ${pane.path}`
       )
     }
-    if (pane.path.includes("..") || pane.path.includes("?") || pane.path.includes("#")) {
-      throw new PluginsError("invalid", `Pane path must be a plain absolute path: ${pane.path}`)
+    validateServerPath("Pane path", pane.path)
+    if (pane.iconPath !== undefined) {
+      validateServerPath(`Pane ${pane.type} iconPath`, pane.iconPath)
     }
   }
   const seenToolNames = new Set<string>()
@@ -93,12 +97,7 @@ export const parsePluginManifest = (raw: string): PluginManifest => {
     }
     // Tool paths are RPC endpoints, not documents: absolute, but with no
     // trailing-slash requirement — nothing resolves relative URLs under them.
-    if (!tool.path.startsWith("/") || tool.path.includes("..")) {
-      throw new PluginsError("invalid", `Tool path must be a plain absolute path: ${tool.path}`)
-    }
-    if (tool.path.includes("?") || tool.path.includes("#")) {
-      throw new PluginsError("invalid", `Tool path must be a plain absolute path: ${tool.path}`)
-    }
+    validateServerPath(`Tool ${tool.name} path`, tool.path)
     // The schema is passed through to agents verbatim, so the only structural
     // requirement is "a JSON object" (arrays and primitives are not schemas).
     if (

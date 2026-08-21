@@ -779,6 +779,9 @@ export const pluginsStub = (
   listeners: Array<(event: PluginStateEvent) => void> = []
 ): PluginsManager => ({
   close: () => calls.push(["close"]),
+  startAll: async () => {
+    calls.push(["startAll"])
+  },
   discoverRemote: async (request) => {
     calls.push(["discoverRemote", request])
     if (request.source === "ghost/missing") {
@@ -801,6 +804,10 @@ export const pluginsStub = (
       throw new PluginsError("conflict", "already provided by dev-checkout")
     }
     return { ...pluginSummary, source: "managed" }
+  },
+  fetchIcon: async (pluginId, paneType) => {
+    calls.push(["fetchIcon", pluginId, paneType])
+    return { contentType: "image/png", data: new Uint8Array([1, 2, 3]) }
   },
   link: async (request) => {
     calls.push(["link", request])

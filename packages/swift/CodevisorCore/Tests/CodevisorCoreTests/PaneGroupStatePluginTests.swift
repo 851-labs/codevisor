@@ -17,10 +17,7 @@ struct PaneGroupStatePluginTests {
             name: "Git Diff",
             terminalKey: UUID().uuidString,
             pluginId: "codevisor.git-diff",
-            pluginPaneType: "diff",
-            pluginMetadata: PaneDescriptorState.pluginMetadataJSON(
-                pluginId: "codevisor.git-diff", paneType: "diff", icon: "plus.forwardslash.minus"
-            )
+            pluginPaneType: "diff"
         )
         let decoded = try JSONDecoder().decode(
             PaneDescriptorState.self, from: JSONEncoder().encode(pane)
@@ -28,8 +25,6 @@ struct PaneGroupStatePluginTests {
         #expect(decoded == pane)
         #expect(decoded.pluginId == "codevisor.git-diff")
         #expect(decoded.pluginPaneType == "diff")
-        // The manifest icon rides the opaque metadata JSON.
-        #expect(decoded.pluginIcon == "plus.forwardslash.minus")
     }
 
     @Test("Descriptors persisted before plugin panes decode with no plugin payload")
@@ -41,7 +36,6 @@ struct PaneGroupStatePluginTests {
         let decoded = try JSONDecoder().decode(PaneDescriptorState.self, from: legacy)
         #expect(decoded.pluginId == nil)
         #expect(decoded.pluginPaneType == nil)
-        #expect(decoded.pluginMetadata == nil)
     }
 
     @Test("An unknown future pane kind drops alone instead of failing the group")
@@ -78,14 +72,13 @@ struct PaneGroupStatePluginTests {
         let converted = state.convertNewTabPane(
             id: placeholder.id, to: .plugin, sessionId: sessionId,
             name: "Git Diff", pluginId: "codevisor.git-diff",
-            pluginPaneType: "diff", pluginIcon: "plus.forwardslash.minus"
+            pluginPaneType: "diff"
         )
         #expect(converted?.kind == .plugin)
         #expect(converted?.id == placeholder.id)
         #expect(converted?.name == "Git Diff")
         #expect(converted?.pluginId == "codevisor.git-diff")
         #expect(converted?.pluginPaneType == "diff")
-        #expect(converted?.pluginIcon == "plus.forwardslash.minus")
         #expect(state.selectedPaneId == converted?.id)
 
         // A plugin conversion without its plugin identity is refused (the

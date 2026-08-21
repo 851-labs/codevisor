@@ -8,17 +8,17 @@ public struct ServerPluginPaneDescriptor: Codable, Equatable, Identifiable, Send
     public var type: String
     public var title: String
     public var path: String
-    /// Optional SF Symbol for pane chrome; clients fall back to a generic
-    /// puzzle-piece symbol.
-    public var icon: String?
+    /// Optional absolute path on the plugin server to pane artwork. When
+    /// absent, clients inherit the plugin-level artwork.
+    public var iconPath: String?
 
     public var id: String { type }
 
-    public init(type: String, title: String, path: String, icon: String? = nil) {
+    public init(type: String, title: String, path: String, iconPath: String? = nil) {
         self.type = type
         self.title = title
         self.path = path
-        self.icon = icon
+        self.iconPath = iconPath
     }
 }
 
@@ -49,6 +49,7 @@ public struct ServerPluginSummary: Codable, Equatable, Identifiable, Sendable {
     public var name: String
     public var version: String
     public var description: String?
+    public var iconPath: String?
     public var panes: [ServerPluginPaneDescriptor]
     /// Agent tools the plugin declares; absent from older servers and from
     /// plugins that declare none.
@@ -68,6 +69,7 @@ public struct ServerPluginSummary: Codable, Equatable, Identifiable, Sendable {
         name: String,
         version: String,
         description: String? = nil,
+        iconPath: String? = nil,
         panes: [ServerPluginPaneDescriptor] = [],
         tools: [ServerPluginToolDescriptor]? = nil,
         source: String,
@@ -79,6 +81,7 @@ public struct ServerPluginSummary: Codable, Equatable, Identifiable, Sendable {
         self.name = name
         self.version = version
         self.description = description
+        self.iconPath = iconPath
         self.panes = panes
         self.tools = tools
         self.source = source
@@ -97,6 +100,7 @@ public struct ServerPluginRemoteDiscovery: Codable, Equatable, Sendable {
     public var name: String
     public var version: String
     public var description: String?
+    public var iconPath: String?
     public var panes: [ServerPluginPaneDescriptor]
     /// Agent tools installation would add — shown on the consent sheet
     /// alongside the verbatim commands. Absent from older servers.
@@ -110,6 +114,7 @@ public struct ServerPluginRemoteDiscovery: Codable, Equatable, Sendable {
         name: String,
         version: String,
         description: String? = nil,
+        iconPath: String? = nil,
         panes: [ServerPluginPaneDescriptor] = [],
         tools: [ServerPluginToolDescriptor]? = nil,
         installCommand: String? = nil,
@@ -120,6 +125,7 @@ public struct ServerPluginRemoteDiscovery: Codable, Equatable, Sendable {
         self.name = name
         self.version = version
         self.description = description
+        self.iconPath = iconPath
         self.panes = panes
         self.tools = tools
         self.installCommand = installCommand
@@ -137,6 +143,7 @@ public struct ServerPluginRegistryEntry: Codable, Equatable, Identifiable, Senda
     public var name: String
     public var version: String
     public var description: String?
+    public var iconPath: String?
     public var panes: [ServerPluginPaneDescriptor]
     public var tools: [ServerPluginToolDescriptor]?
     /// GitHub "owner/name" — the directory always shows the real repo owner.
@@ -153,6 +160,7 @@ public struct ServerPluginRegistryEntry: Codable, Equatable, Identifiable, Senda
         name: String,
         version: String,
         description: String? = nil,
+        iconPath: String? = nil,
         panes: [ServerPluginPaneDescriptor] = [],
         tools: [ServerPluginToolDescriptor]? = nil,
         repo: String,
@@ -164,6 +172,7 @@ public struct ServerPluginRegistryEntry: Codable, Equatable, Identifiable, Senda
         self.name = name
         self.version = version
         self.description = description
+        self.iconPath = iconPath
         self.panes = panes
         self.tools = tools
         self.repo = repo
@@ -210,6 +219,18 @@ public struct ServerPluginPaneTokenResponse: Codable, Equatable, Sendable {
     }
 }
 
+/// Plugin artwork normalized by the server to a bounded PNG, regardless of
+/// whether the plugin supplied SVG, PNG, or WebP.
+public struct ServerPluginIconAsset: Equatable, Sendable {
+    public var data: Data
+    public var contentType: String
+
+    public init(data: Data, contentType: String) {
+        self.data = data
+        self.contentType = contentType
+    }
+}
+
 extension CodevisorServerClient {
     private struct PluginListResponse: Decodable {
         var plugins: [ServerPluginSummary]
@@ -233,6 +254,29 @@ extension CodevisorServerClient {
     public func listPlugins() async throws -> [ServerPluginSummary] {
         let response: PluginListResponse = try await get("/v1/plugins")
         return response.plugins
+    }
+
+    public func pluginIcon(pluginId: String, paneType: String? = nil) async throws -> ServerPluginIconAsset {
+        let pluginPath = pathComponent(pluginId)
+        let path: String
+        if let paneType {
+            path = "/v1/plugins/\(pluginPath)/panes/\(pathComponent(paneType))/icon"
+        } else {
+            path = "/v1/plugins/\(pluginPath)/icon"
+        }
+        let (data, response) = try await performRawResponse(
+            path,
+            method: "GET",
+            body: nil,
+            contentType: nil
+        )
+        guard
+            response.value(forHTTPHeaderField: "Content-Type")?.lowercased()
+                .hasPrefix("image/png") == true
+        else {
+            throw CodevisorServerClientError.invalidResponse
+        }
+        return ServerPluginIconAsset(data: data, contentType: "image/png")
     }
 
     public func fetchPluginRegistry(query: String? = nil) async throws -> ServerPluginRegistryIndex {

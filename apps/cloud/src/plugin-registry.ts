@@ -166,6 +166,7 @@ const toEntry = (manifest: PluginManifest, repo: GitHubSearchRepo): PluginIndexE
   name: manifest.name,
   version: manifest.version,
   ...(manifest.description !== undefined ? { description: manifest.description } : {}),
+  ...(manifest.iconPath !== undefined ? { iconPath: manifest.iconPath } : {}),
   panes: manifest.panes,
   ...(manifest.tools !== undefined ? { tools: manifest.tools } : {}),
   repo: repo.full_name,

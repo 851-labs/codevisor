@@ -1,4 +1,5 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 import UIKit
 
@@ -8,6 +9,8 @@ struct PanePreviewTile: View {
     let pane: PaneDescriptorState
     let snapshot: UIImage?
     let title: String
+    let pluginIconClient: any CodevisorServerClienting
+    let pluginIconCacheNamespace: String
     let showsCloseButton: Bool
     let onClose: () -> Void
 
@@ -16,7 +19,7 @@ struct PanePreviewTile: View {
         case .terminal: "terminal"
         case .chat: "bubble.left.and.bubble.right"
         case .newTab: "plus.square.on.square"
-        case .plugin: pane.pluginIcon ?? "puzzlepiece.extension"
+        case .plugin: "puzzlepiece.extension"
         }
     }
 
@@ -40,7 +43,7 @@ struct PanePreviewTile: View {
             } else {
                 VStack {
                     Spacer()
-                    Image(systemName: symbolName)
+                    paneIcon
                         .font(.system(size: 28, weight: .regular))
                         .foregroundStyle(
                             pane.kind == .terminal
@@ -78,6 +81,22 @@ struct PanePreviewTile: View {
                 .padding(7)
                 .accessibilityLabel("Close \(title)")
             }
+        }
+    }
+
+    @ViewBuilder
+    private var paneIcon: some View {
+        if pane.kind == .plugin, let pluginId = pane.pluginId {
+            PluginIconView(
+                pluginId: pluginId,
+                paneType: pane.pluginPaneType,
+                iconPath: "server",
+                client: pluginIconClient,
+                cacheNamespace: pluginIconCacheNamespace
+            )
+            .frame(width: 28, height: 28)
+        } else {
+            Image(systemName: symbolName)
         }
     }
 }

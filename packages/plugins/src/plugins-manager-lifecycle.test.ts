@@ -1,12 +1,11 @@
 import { rmSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import { WebSocket } from "ws"
 import type { PluginStateEvent } from "./plugins-manager.js"
-import { cleanups, exampleManifest, makeManager, makeOuterServer } from "./test-support.js"
+import { fakeSpawn, makeManager, makeOuterServer } from "./test-support.js"
 
 /// Manager-level supervision behaviors: explicit restart, state-change
-/// fanout, and WS pinning against the idle lifecycle.
+/// fanout, and always-running process ownership.
 
 describe("restart", () => {
   it("stops the running process, clears crash state, and returns the summary", async () => {
@@ -17,8 +16,7 @@ describe("restart", () => {
     expect((await manager.get("owner.example")).state).toBe("running")
     const summary = await manager.restart("owner.example")
     expect(summary.id).toBe("owner.example")
-    expect(summary.state).toBe("stopped")
-    // The next pane request relaunches fresh.
+    expect(summary.state).toBe("running")
     expect((await fetch(`${outer.origin}${issued.path}`)).status).toBe(200)
     expect((await manager.get("owner.example")).state).toBe("running")
   })
@@ -46,11 +44,13 @@ describe("state events", () => {
       "starting",
       "running",
       "stopping",
-      "stopped"
+      "stopped",
+      "starting",
+      "running"
     ])
     unsubscribe()
     expect((await fetch(`${outer.origin}${issued.path}`)).status).toBe(200)
-    expect(events).toHaveLength(4)
+    expect(events).toHaveLength(6)
   })
 
   it("skips events for plugins removed from disk mid-flight", async () => {
@@ -68,35 +68,27 @@ describe("state events", () => {
   })
 })
 
-describe("idle lifecycle", () => {
-  it(
-    "open websockets pin the process; closing them lets it idle out",
-    { timeout: 15_000 },
-    async () => {
-      // The manifest schema only allows whole seconds, so this integration
-      // test runs on a real 1s idle window (fast idle mechanics are unit
-      // tested against the supervisor directly).
-      const { manager } = makeManager({}, { ...exampleManifest, idleTimeoutSeconds: 1 })
-      const outer = await makeOuterServer(manager)
-      const socket = await new Promise<WebSocket>((resolve, reject) => {
-        const candidate = new WebSocket(
-          `ws://127.0.0.1:${outer.port}/v1/plugins/owner.example/app/live`
-        )
-        cleanups.push(() => candidate.close())
-        candidate.on("open", () => resolve(candidate))
-        candidate.on("error", reject)
-      })
-      await new Promise<string>((resolve) => {
-        socket.on("message", (data) => resolve(String(data)))
-        socket.send("ping")
-      })
-      // Well past the idle window, the open splice keeps the process alive.
-      await new Promise((resolve) => setTimeout(resolve, 1_400))
-      expect((await manager.get("owner.example")).state).toBe("running")
-      socket.close()
-      await expect
-        .poll(async () => (await manager.get("owner.example")).state, { timeout: 6_000 })
-        .toBe("stopped")
-    }
-  )
+describe("always-running lifecycle", () => {
+  it("starts installed plugins and restarts them after a crash", async () => {
+    const { fake, manager } = makeManager({ backoffBaseMs: 0 })
+    await Promise.all([manager.startAll(), manager.startAll()])
+    expect((await manager.get("owner.example")).state).toBe("running")
+    expect(fake.spawnCount()).toBe(1)
+    fake.simulateExit("exited with code 1")
+    await expect.poll(() => fake.spawnCount()).toBe(2)
+    expect((await manager.get("owner.example")).state).toBe("running")
+    manager.close()
+    await manager.startAll()
+  })
+
+  it("stops automatic retries after the circuit breaker trips", async () => {
+    const spawn = fakeSpawn({ listen: false })
+    const { manager } = makeManager({
+      maxConsecutiveFailures: 1,
+      readyTimeoutMs: 200,
+      spawnShell: spawn.spawnShell
+    })
+    await manager.startAll()
+    expect((await manager.get("owner.example")).state).toBe("failed")
+  })
 })

@@ -792,7 +792,8 @@ struct SessionContainerView: View {
                         onNewChat: { [weak model] in
                             createChat(convertingPlaceholder: descriptor.id, in: model)
                         },
-                        client: environment.machines.client(for: session.serverId)
+                        client: environment.machines.client(for: session.serverId),
+                        iconCacheNamespace: session.serverId
                     ))
             }
             return AnyView(

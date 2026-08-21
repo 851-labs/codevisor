@@ -1,4 +1,5 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 import UIKit
 
@@ -8,6 +9,8 @@ struct PaneCard: View {
     let pane: PaneDescriptorState
     let title: String
     let snapshot: UIImage?
+    let pluginIconClient: any CodevisorServerClienting
+    let pluginIconCacheNamespace: String
     let onSelect: () -> Void
     let onClose: () -> Void
     let onMoveEarlier: (() -> Void)?
@@ -18,7 +21,7 @@ struct PaneCard: View {
         case .terminal: "terminal"
         case .chat: "bubble.left.and.bubble.right"
         case .newTab: "plus.square.on.square"
-        case .plugin: pane.pluginIcon ?? "puzzlepiece.extension"
+        case .plugin: "puzzlepiece.extension"
         }
     }
 
@@ -28,6 +31,8 @@ struct PaneCard: View {
                 pane: pane,
                 snapshot: snapshot,
                 title: title,
+                pluginIconClient: pluginIconClient,
+                pluginIconCacheNamespace: pluginIconCacheNamespace,
                 showsCloseButton: true,
                 onClose: onClose
             )
@@ -46,7 +51,7 @@ struct PaneCard: View {
             }
 
             HStack(spacing: 5) {
-                Image(systemName: symbolName)
+                paneIcon
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 Text(title)
@@ -67,5 +72,21 @@ struct PaneCard: View {
             .scale(scale: 0.84, anchor: .center)
                 .combined(with: .opacity)
         )
+    }
+
+    @ViewBuilder
+    private var paneIcon: some View {
+        if pane.kind == .plugin, let pluginId = pane.pluginId {
+            PluginIconView(
+                pluginId: pluginId,
+                paneType: pane.pluginPaneType,
+                iconPath: "server",
+                client: pluginIconClient,
+                cacheNamespace: pluginIconCacheNamespace
+            )
+            .frame(width: 12, height: 12)
+        } else {
+            Image(systemName: symbolName)
+        }
     }
 }

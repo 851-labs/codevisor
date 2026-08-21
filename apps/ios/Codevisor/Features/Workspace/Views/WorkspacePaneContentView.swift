@@ -42,6 +42,7 @@ struct WorkspacePaneContentView: View {
     let workspaceCwd: String
     /// The machine's API client, for the New Tab page's plugin pane rows.
     let machineClient: any CodevisorServerClienting
+    let machineId: String
     /// The pane's cached plugin model (webview + load state), resolved by
     /// WorkspaceScreen so the cache sees every visibility change.
     let pluginPaneModel: (PaneDescriptorState) -> PluginPaneModel
@@ -96,6 +97,7 @@ struct WorkspacePaneContentView: View {
                 onNewChat: onConvertToChat,
                 onNewTerminal: onConvertToTerminal,
                 client: machineClient,
+                iconCacheNamespace: machineId,
                 onOpenPlugin: onConvertToPlugin
             )
         case .plugin:

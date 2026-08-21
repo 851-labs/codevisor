@@ -103,6 +103,10 @@ public extension CodevisorServerClienting {
     /// overrides both with the real requests.
     func listPlugins() async throws -> [ServerPluginSummary] { [] }
 
+    func pluginIcon(pluginId: String, paneType: String?) async throws -> ServerPluginIconAsset {
+        throw CodevisorServerClientError.invalidResponse
+    }
+
     func issuePluginPaneToken(
         pluginId: String,
         paneId: String,

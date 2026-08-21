@@ -460,6 +460,8 @@ struct WorkspaceScreen: View {
             gridLiftFeedback: gridLiftFeedback,
             pendingNewTabZoomPaneId: pendingNewTabZoomPaneId,
             showsGrid: showsGrid,
+            pluginIconClient: environment.machines.client(for: resolvedServerId),
+            pluginIconCacheNamespace: resolvedServerId,
             title: { title(for: $0) },
             onSelect: { pane in
                 guard gridDrag == nil,
@@ -673,6 +675,7 @@ struct WorkspaceScreen: View {
             serverConfig: serverConfig,
             workspaceCwd: workspaceCwd,
             machineClient: environment.machines.client(for: resolvedServerId),
+            machineId: resolvedServerId,
             pluginPaneModel: { pluginPaneModel(for: $0) },
             onRenamePane: { renamePane($0, to: $1) }
         )
@@ -823,9 +826,9 @@ struct WorkspaceScreen: View {
             )
         }
         if pane.kind == .plugin {
-            // Closing the tab drops the webview (and its web-content
-            // process) now; the plugin server's idle timer reaps the
-            // machine-side process once no panes are connected.
+            // Closing the tab drops this client's webview and web-content
+            // process. The machine-side plugin remains available to other
+            // clients, panes, and tools until the Codevisor server stops.
             PluginPaneCache.shared.remove(paneId: pane.id)
         }
         if pane.kind == .chat, let sessionId = pane.chatSessionId,
@@ -1143,8 +1146,7 @@ struct WorkspaceScreen: View {
             sessionId: workspaceSessionId,
             name: option.title,
             pluginId: option.pluginId,
-            pluginPaneType: option.paneType,
-            pluginIcon: option.icon
+            pluginPaneType: option.paneType
         )
         paneBinding.wrappedValue = state
         if let converted {
