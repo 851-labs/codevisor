@@ -5,14 +5,12 @@ import CodevisorUI
 
 /// Settings ▸ Machines ▸ <machine>: everything that belongs to one machine.
 /// Harnesses, MCP servers, and skills push their own pages (like Xcode's
-/// per-agent Intelligence pages); the machine's server status and (for this
-/// Mac) remote access follow below.
+/// per-agent Intelligence pages); this Mac's remote access follows below.
 struct MachineSettingsDetailView: View {
     let machineId: String
 
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
-    @State private var serverStatus: ServerStatusModel?
     @State private var tokenCopied = false
     @State private var tokenError: String?
 
@@ -64,23 +62,17 @@ struct MachineSettingsDetailView: View {
 
             Section {
                 NavigationLink(value: MachineSettingsRoute.harnesses(machineId)) {
-                    Label("Harnesses", systemImage: "cpu")
+                    settingsNavigationLabel("Harnesses", systemImage: "cpu")
                 }
                 NavigationLink(value: MachineSettingsRoute.mcps(machineId)) {
-                    Label("MCP Servers", systemImage: "puzzlepiece.extension")
+                    settingsNavigationLabel("MCP Servers", systemImage: "puzzlepiece.extension")
                 }
                 NavigationLink(value: MachineSettingsRoute.skills(machineId)) {
-                    Label("Skills", systemImage: "book.closed")
+                    settingsNavigationLabel("Skills", systemImage: "book.closed")
                 }
                 NavigationLink(value: MachineSettingsRoute.plugins(machineId)) {
-                    Label("Plugins", systemImage: "puzzlepiece")
+                    settingsNavigationLabel("Plugins", systemImage: "puzzlepiece")
                 }
-            }
-
-            Section {
-                serverStatusContent
-            } header: {
-                Text("About")
             }
 
             if machine?.isLocal == true {
@@ -112,10 +104,6 @@ struct MachineSettingsDetailView: View {
         }
         .settingsPaneFormStyle(theme)
         .navigationTitle(displayName)
-        .task(id: machineId) {
-            serverStatus = ServerStatusModel(client: environment.machines.client(for: machineId))
-            await serverStatus?.refresh()
-        }
     }
 
     private var statusText: String {
@@ -131,51 +119,12 @@ struct MachineSettingsDetailView: View {
         return machine?.baseURL.absoluteString ?? ""
     }
 
-    /// The few facts a user acts on: the version, an update when one exists,
-    /// the address of a remote machine, and problems (unreachable server,
-    /// running migration). Internal plumbing — server self-name, database
-    /// state, local bind host — stays out.
-    @ViewBuilder
-    private var serverStatusContent: some View {
-        if let serverStatus {
-            if let errorMessage = serverStatus.errorMessage {
-                Label(errorMessage, systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.secondary)
-            }
-            statusRow("Version", value: serverStatus.info?.version ?? serverStatus.health?.version ?? "—")
-            if let machine, !machine.isLocal, !machine.isCloud {
-                LabeledContent("Address") {
-                    Text(machine.baseURL.absoluteString)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .textSelection(.enabled)
-                }
-            }
-            if let update = serverStatus.update, update.updateAvailable {
-                HStack {
-                    Label("Update available", systemImage: "arrow.down.circle")
-                    Spacer()
-                    Text("\(update.currentVersion) → \(update.latestVersion)")
-                        .foregroundStyle(.secondary)
-                }
-            }
-            if let update = serverStatus.update, update.migrationState != "idle" {
-                statusRow("Migration", value: update.migrationState.capitalized)
-            }
-        } else {
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("Checking…")
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private func statusRow(_ title: String, value: String) -> some View {
-        LabeledContent(title) {
-            Text(value)
-                .foregroundStyle(.secondary)
+    private func settingsNavigationLabel(_ title: String, systemImage: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: systemImage)
+                .frame(width: 24)
+                .accessibilityHidden(true)
+            Text(title)
         }
     }
 
