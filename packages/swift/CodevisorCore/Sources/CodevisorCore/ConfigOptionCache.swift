@@ -12,6 +12,11 @@ public final class ConfigOptionCache {
     private let capabilitiesKey: String
     private var cache: [String: [String: [SessionConfigOption]]]
     private var capabilitiesCache: [String: [ServerHarnessCapability]]
+    /// In-memory generations prevent a capability request started before an
+    /// authentication or catalog change from restoring the stale snapshot
+    /// after invalidation. They do not need persistence: no request survives
+    /// a process launch.
+    private var capabilityRevisions: [String: UInt64] = [:]
     /// In-memory catalog-only seeds used to make the first composer render
     /// immediately. They are intentionally not persisted and may be replaced
     /// by the speculative onboarding warm.
@@ -52,6 +57,14 @@ public final class ConfigOptionCache {
         capabilitiesCache[serverId] ?? []
     }
 
+    /// Captures the current validity generation for an asynchronous
+    /// capability request. Store the result only if this value still matches.
+    public func capabilityRevision(forServer serverId: String) -> UInt64 {
+        if let revision = capabilityRevisions[serverId] { return revision }
+        capabilityRevisions[serverId] = 0
+        return 0
+    }
+
     /// Seeds the picker from a harness catalog that is already on screen. The
     /// expensive model/mode inspection can then fill in the rest in the
     /// background without making new chat wait on an empty cache.
@@ -88,6 +101,19 @@ public final class ConfigOptionCache {
         persist()
     }
 
+    /// Stores a capability response only if no catalog mutation invalidated
+    /// it while the request was in flight.
+    @discardableResult
+    public func store(
+        _ capabilities: [ServerHarnessCapability],
+        forServer serverId: String,
+        ifRevision expectedRevision: UInt64
+    ) -> Bool {
+        guard capabilityRevision(forServer: serverId) == expectedRevision else { return false }
+        store(capabilities, forServer: serverId)
+        return true
+    }
+
     /// Merges one freshly inspected harness without discarding the cached
     /// catalog for every other harness on the same server.
     public func store(_ capability: ServerHarnessCapability, forServer serverId: String) {
@@ -103,11 +129,33 @@ public final class ConfigOptionCache {
         persist()
     }
 
+    /// Merges one capability response only while its request generation is
+    /// still current.
+    @discardableResult
+    public func store(
+        _ capability: ServerHarnessCapability,
+        forServer serverId: String,
+        ifRevision expectedRevision: UInt64
+    ) -> Bool {
+        guard capabilityRevision(forServer: serverId) == expectedRevision else { return false }
+        store(capability, forServer: serverId)
+        return true
+    }
+
     /// Stores a speculative warm only while this server has no capability
     /// snapshot. A project-specific composer refresh is more authoritative;
     /// if it wins the race, a generic onboarding warm must not overwrite it.
     @discardableResult
-    public func storeIfEmpty(_ capabilities: [ServerHarnessCapability], forServer serverId: String) -> Bool {
+    public func storeIfEmpty(
+        _ capabilities: [ServerHarnessCapability],
+        forServer serverId: String,
+        ifRevision expectedRevision: UInt64? = nil
+    ) -> Bool {
+        if let expectedRevision,
+            capabilityRevision(forServer: serverId) != expectedRevision
+        {
+            return false
+        }
         guard capabilitiesCache[serverId] == nil || provisionalCapabilityServers.contains(serverId) else {
             return false
         }
@@ -115,11 +163,12 @@ public final class ConfigOptionCache {
         return true
     }
 
-    /// Drops the catalog snapshot for one server while retaining each
-    /// harness's last-known config choices. Authentication and enablement can
-    /// change which harnesses belong in the new-chat picker, so the catalog
-    /// must not seed a newly mounted composer after either mutation.
+    /// Drops every capability-derived picker value for one server.
+    /// Authentication, account selection, enablement, and discovery can all
+    /// change both the harness catalog and each harness's model definitions.
     public func invalidateCapabilities(forServer serverId: String) {
+        capabilityRevisions[serverId, default: 0] &+= 1
+        cache.removeValue(forKey: serverId)
         capabilitiesCache.removeValue(forKey: serverId)
         provisionalCapabilityServers.remove(serverId)
         persist()
@@ -127,6 +176,12 @@ public final class ConfigOptionCache {
 
     /// Clears all cached config (used by "Delete all data").
     public func clear() {
+        let servers = Set(capabilityRevisions.keys)
+            .union(cache.keys)
+            .union(capabilitiesCache.keys)
+        for serverId in servers {
+            capabilityRevisions[serverId, default: 0] &+= 1
+        }
         cache = [:]
         capabilitiesCache = [:]
         provisionalCapabilityServers = []

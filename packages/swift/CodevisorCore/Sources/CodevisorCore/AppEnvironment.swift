@@ -50,9 +50,7 @@ public final class AppEnvironment {
     private var harnessLifecycleByServer: [String: [ServerHarness]] = [:]
     private let clientDataResetter: (any ClientDataResetting)?
 
-    public var serverClient: any CodevisorServerClienting {
-        machines.selectedClient
-    }
+    public var serverClient: any CodevisorServerClienting { machines.selectedClient }
 
     /// True while an app self-update or a selected-server update is installing.
     /// Drives the composer lock so no new turn starts during the restart.
@@ -371,7 +369,9 @@ public final class AppEnvironment {
     public func warmHarnessCapabilities() async {
         let serverId = machines.selectedMachineId
         guard configCache.needsCapabilityWarm(forServer: serverId) else { return }
-        let client = machines.client(for: serverId)
+        let (client, cacheRevision) = (
+            machines.client(for: serverId), configCache.capabilityRevision(forServer: serverId)
+        )
         do {
             let response = try await client.capabilities(
                 cwd: FileManager.default.temporaryDirectory.path
@@ -379,7 +379,7 @@ public final class AppEnvironment {
             let capabilities = response.harnesses.filter { capability in
                 capability.harness.enabled && capability.harness.isReady
             }
-            configCache.storeIfEmpty(capabilities, forServer: serverId)
+            configCache.storeIfEmpty(capabilities, forServer: serverId, ifRevision: cacheRevision)
         } catch {
             // This is speculative only. The composer owns the visible retry
             // and error state if its normal project-specific load also fails.

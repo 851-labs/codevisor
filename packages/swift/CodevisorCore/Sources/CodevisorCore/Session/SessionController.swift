@@ -42,6 +42,11 @@ final public class SessionController {
     var uploadTasks: [UUID: Task<Void, Never>] = [:]
     public internal(set) var harnesses: [ServerHarness] = []
     public internal(set) var preparationState: PreparationState = .loading
+    /// True while the draft's model, mode, and harness capabilities are being
+    /// fetched or decoded. This stays independent from `preparationState`:
+    /// onboarding may supply a usable provisional harness catalog before the
+    /// model definitions finish loading.
+    public internal(set) var isRefreshingHarnessCapabilities = false
     public internal(set) var configurationValidationState: ConfigurationValidationState = .ready
     /// Non-nil when reconnecting replaced a persisted value that the harness
     /// no longer advertises.
@@ -247,6 +252,9 @@ final public class SessionController {
     var modeStateByHarness: [String: SessionModeState] = [:]
     var configOptionsByHarness: [String: [SessionConfigOption]] = [:]
     var supportsGoalsByHarness: [String: Bool] = [:]
+    /// Invalidates older capability responses when a newer refresh starts or
+    /// Settings changes the harness catalog while a request is in flight.
+    var harnessCapabilityRequestRevision: UInt64 = 0
     /// True while a model change is resolving the model-owned controls that
     /// accompany it. The composer keeps its popover geometry stable and shows
     /// an explicit loading state instead of briefly presenting stale settings.

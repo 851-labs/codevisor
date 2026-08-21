@@ -134,8 +134,8 @@ struct ConfigOptionCacheTests {
         #expect(cache.options(forHarness: "claude-code", onServer: "local").first?.currentValue == "sonnet")
     }
 
-    @Test("Invalidating one server drops its catalog but preserves config choices")
-    func invalidatesCatalogPerServer() {
+    @Test("Invalidating one server drops all picker data for that server")
+    func invalidatesPickerDataPerServer() {
         let store = InMemoryStore()
         let cache = ConfigOptionCache(store: store)
         cache.store([capability(model: "local")], forServer: "local")
@@ -144,12 +144,25 @@ struct ConfigOptionCacheTests {
         cache.invalidateCapabilities(forServer: "local")
 
         #expect(cache.capabilities(forServer: "local").isEmpty)
-        #expect(cache.options(forHarness: "codex", onServer: "local").first?.currentValue == "local")
+        #expect(cache.options(forHarness: "codex", onServer: "local").isEmpty)
         #expect(cache.capabilities(forServer: "remote").first?.configOptions.first?.currentValue == "remote")
+        #expect(cache.options(forHarness: "codex", onServer: "remote").first?.currentValue == "remote")
 
         let reopened = ConfigOptionCache(store: store)
         #expect(reopened.capabilities(forServer: "local").isEmpty)
-        #expect(reopened.options(forHarness: "codex", onServer: "local").first?.currentValue == "local")
+        #expect(reopened.options(forHarness: "codex", onServer: "local").isEmpty)
+    }
+
+    @Test("A response started before invalidation cannot restore stale capabilities")
+    func rejectsInvalidatedResponse() {
+        let cache = ConfigOptionCache(store: InMemoryStore())
+        let revision = cache.capabilityRevision(forServer: "local")
+
+        cache.invalidateCapabilities(forServer: "local")
+
+        #expect(!cache.store([capability(model: "stale")], forServer: "local", ifRevision: revision))
+        #expect(cache.capabilities(forServer: "local").isEmpty)
+        #expect(cache.options(forHarness: "codex", onServer: "local").isEmpty)
     }
 
     private func capability(model: String) -> ServerHarnessCapability {

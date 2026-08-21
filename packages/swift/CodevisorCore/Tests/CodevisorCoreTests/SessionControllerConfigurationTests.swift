@@ -6,6 +6,54 @@ import ACPKit
 @MainActor
 @Suite("SessionController configuration")
 struct SessionControllerConfigurationTests {
+    @Test("An in-flight capability refresh keeps a provisional catalog loading")
+    func provisionalCatalogKeepsModelLoading() {
+        let cache = ConfigOptionCache(store: InMemoryStore())
+        let capability = capability(model: "gpt-5.6")
+        let controller = SessionController(
+            project: Project.fromFolder(URL(fileURLWithPath: "/tmp/project")),
+            configCache: cache
+        )
+        controller.harnesses = [capability.harness]
+        controller.selectedHarnessId = capability.harness.id
+        controller.preparationState = .ready
+        controller.isRefreshingHarnessCapabilities = true
+
+        #expect(controller.isRefreshingHarnessCapabilities)
+        #expect(controller.isLoadingModelMenu)
+        #expect(!controller.hasModelMenu)
+    }
+
+    @Test("Catalog invalidation clears a mounted draft before its refresh")
+    func invalidationClearsMountedDraft() {
+        let cache = ConfigOptionCache(store: InMemoryStore())
+        let capability = capability(model: "stale-model")
+        let controller = SessionController(
+            project: Project.fromFolder(URL(fileURLWithPath: "/tmp/project")),
+            configCache: cache
+        )
+        controller.harnesses = [capability.harness]
+        controller.selectedHarnessId = capability.harness.id
+        controller.configOptionsByHarness[capability.harness.id] = capability.configOptions
+        controller.modeStateByHarness[capability.harness.id] = SessionModeState(
+            currentModeId: "default",
+            availableModes: [SessionMode(id: "default", name: "Default")]
+        )
+        controller.supportsGoalsByHarness[capability.harness.id] = true
+        controller.preparationState = .ready
+
+        #expect(controller.hasModelMenu)
+        controller.invalidateHarnessCapabilities()
+
+        #expect(controller.harnesses.isEmpty)
+        #expect(controller.configOptions.isEmpty)
+        #expect(controller.modeState == nil)
+        #expect(!controller.supportsGoals)
+        #expect(controller.preparationState == .loading)
+        #expect(controller.isRefreshingHarnessCapabilities)
+        #expect(controller.isLoadingModelMenu)
+    }
+
     @Test("Remote attention metadata does not republish the controller session")
     func ignoresPresentationOnlySessionUpdates() {
         let original = session()
@@ -100,6 +148,31 @@ struct SessionControllerConfigurationTests {
             cwd: "/remote/project",
             configSelections: ["model": "gpt-5.5"],
             createdAt: Date(timeIntervalSince1970: 1)
+        )
+    }
+
+    private func capability(model: String) -> ServerHarnessCapability {
+        ServerHarnessCapability(
+            harness: ServerHarness(
+                id: "codex",
+                name: "Codex",
+                symbolName: "chevron.left.forwardslash.chevron.right",
+                source: "registry",
+                launchKind: "executable",
+                enabled: true,
+                readiness: ServerHarnessReadiness(state: "ready")
+            ),
+            modes: nil,
+            configOptions: [
+                SessionConfigOption(
+                    id: "model",
+                    name: "Model",
+                    category: SessionConfigOption.Category.model,
+                    currentValue: model,
+                    options: [SessionConfigSelectOption(value: model, name: model)]
+                )
+            ],
+            supportsGoals: false
         )
     }
 }

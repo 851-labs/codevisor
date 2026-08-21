@@ -19,11 +19,23 @@ extension SessionController {
         }
         if seedFromCachedServerCapabilities() {
             preparationState = .ready
-            Task { await self.prepareFromServerCapabilities(serverClient) }
+            let refresh = beginHarnessCapabilityRefresh()
+            Task {
+                await self.prepareFromServerCapabilities(
+                    serverClient,
+                    requestRevision: refresh.request,
+                    cacheRevision: refresh.cache
+                )
+            }
             return
         }
         preparationState = .loading
-        _ = await prepareFromServerCapabilities(serverClient)
+        let refresh = beginHarnessCapabilityRefresh()
+        _ = await prepareFromServerCapabilities(
+            serverClient,
+            requestRevision: refresh.request,
+            cacheRevision: refresh.cache
+        )
     }
 
     /// Refreshes only the harness used by a resumed chat. This runs beside
@@ -96,9 +108,32 @@ extension SessionController {
     public func refreshHarnessCapabilities() async {
         guard let serverClient else {
             preparationState = .failed
+            isRefreshingHarnessCapabilities = false
             return
         }
-        _ = await prepareFromServerCapabilities(serverClient)
+        let refresh = beginHarnessCapabilityRefresh()
+        _ = await prepareFromServerCapabilities(
+            serverClient,
+            requestRevision: refresh.request,
+            cacheRevision: refresh.cache
+        )
+    }
+
+    /// Immediately removes capability-derived state from a draft when
+    /// Settings changes harness authentication, accounts, enablement, or
+    /// discovery. The following refresh repopulates it from the server.
+    /// Connected sessions keep their runtime-owned configuration.
+    public func invalidateHarnessCapabilities() {
+        harnessCapabilityRequestRevision &+= 1
+        guard model == nil else { return }
+        modelConfigurationResolutionRevision &+= 1
+        isResolvingModelConfiguration = false
+        isRefreshingHarnessCapabilities = true
+        preparationState = .loading
+        harnesses = []
+        configOptionsByHarness = [:]
+        modeStateByHarness = [:]
+        supportsGoalsByHarness = [:]
     }
 
     static func configurationAdjustmentMessage(
@@ -171,22 +206,49 @@ extension SessionController {
         )
     }
 
+    private func beginHarnessCapabilityRefresh() -> (request: UInt64, cache: UInt64) {
+        harnessCapabilityRequestRevision &+= 1
+        isRefreshingHarnessCapabilities = true
+        return (
+            harnessCapabilityRequestRevision,
+            configCache.capabilityRevision(forServer: project.serverId)
+        )
+    }
+
     @discardableResult
-    private func prepareFromServerCapabilities(_ serverClient: any CodevisorServerClienting) async -> Bool {
+    private func prepareFromServerCapabilities(
+        _ serverClient: any CodevisorServerClienting,
+        requestRevision: UInt64,
+        cacheRevision: UInt64
+    ) async -> Bool {
         do {
             let response = try await serverClient.capabilities(cwd: project.folderURL.path)
             let capabilities = response.harnesses.filter { capability in
                 capability.harness.enabled && capability.harness.isReady
             }
+            guard requestRevision == harnessCapabilityRequestRevision,
+                cacheRevision == configCache.capabilityRevision(forServer: project.serverId)
+            else { return false }
+            guard
+                configCache.store(
+                    capabilities,
+                    forServer: project.serverId,
+                    ifRevision: cacheRevision
+                )
+            else { return false }
             applyHarnessCapabilities(capabilities)
-            configCache.store(capabilities, forServer: project.serverId)
             preparationState = .ready
+            isRefreshingHarnessCapabilities = false
             return true
         } catch {
+            guard requestRevision == harnessCapabilityRequestRevision,
+                cacheRevision == configCache.capabilityRevision(forServer: project.serverId)
+            else { return false }
             Log.session.error("capability fetch failed: \(String(describing: error), privacy: .public)")
             if harnesses.isEmpty {
                 preparationState = .failed
             }
+            isRefreshingHarnessCapabilities = false
             return false
         }
     }

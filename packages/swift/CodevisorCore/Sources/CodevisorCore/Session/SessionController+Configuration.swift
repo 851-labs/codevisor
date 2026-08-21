@@ -190,6 +190,7 @@ extension SessionController {
     /// place with a spinner during that gap instead of popping it in later.
     public var isLoadingModelMenu: Bool {
         guard !hasModelMenu else { return false }
+        if isRefreshingHarnessCapabilities { return true }
         if isConnecting || isConnectingToHarness { return true }
         // A draft with no spawned agent yet (new-chat page, deferred chats)
         // fetching harness capabilities: hold the model chip's slot with a
@@ -327,6 +328,7 @@ extension SessionController {
         revision: UInt64
     ) async -> Bool {
         guard let serverClient else { return true }
+        let cacheRevision = configCache.capabilityRevision(forServer: project.serverId)
         var selections = Dictionary(
             uniqueKeysWithValues: configOptions.map { ($0.id, $0.currentValue) }
         )
@@ -340,15 +342,22 @@ extension SessionController {
             )
             guard modelConfigurationResolutionRevision == revision,
                 pendingConfigByHarness[harnessId]?["model"] == expectedModelValue,
+                cacheRevision == configCache.capabilityRevision(forServer: project.serverId),
                 let capability = response.harnesses.first(where: { $0.harness.id == harnessId }),
                 !capability.configOptions.isEmpty
             else { return true }
 
+            guard
+                configCache.store(
+                    capability,
+                    forServer: project.serverId,
+                    ifRevision: cacheRevision
+                )
+            else { return true }
             configOptionsByHarness[harnessId] = capability.configOptions
             pendingConfigByHarness[harnessId] = Dictionary(
                 uniqueKeysWithValues: capability.configOptions.map { ($0.id, $0.currentValue) }
             )
-            configCache.store(capability, forServer: project.serverId)
             return capability.configOptions.first {
                 $0.category == SessionConfigOption.Category.model || $0.id == "model"
             }?.currentValue == expectedModelValue

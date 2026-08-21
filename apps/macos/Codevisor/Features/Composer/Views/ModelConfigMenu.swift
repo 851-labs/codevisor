@@ -8,6 +8,7 @@ import SwiftUI
 /// large catalog never buries reasoning, speed, context, or thinking toggles.
 struct ModelConfigMenu: View {
     @Environment(AppEnvironment.self) private var environment
+    @Environment(\.openSettings) private var openSettings
     @Bindable var controller: SessionController
 
     @State private var isPresented = false
@@ -24,7 +25,7 @@ struct ModelConfigMenu: View {
     }
 
     var body: some View {
-        if controller.isLoadingModelMenu, modelGroups.isEmpty {
+        if controller.isLoadingModelMenu {
             ProgressView()
                 .controlSize(.small)
                 .frame(minWidth: 96)
@@ -41,6 +42,13 @@ struct ModelConfigMenu: View {
             .help("Model and settings")
             .accessibilityLabel("Model settings")
             .accessibilityValue(accessibilityValue)
+            .popover(
+                isPresented: $isPresented,
+                attachmentAnchor: .rect(.bounds),
+                arrowEdge: .bottom
+            ) {
+                configurationPopover
+            }
         }
     }
 }
@@ -95,7 +103,29 @@ private extension ModelConfigMenu {
                     .padding(8)
                 }
             }
+
+            Divider()
+
+            Button(action: showHarnessSettings) {
+                HStack(spacing: 8) {
+                    Image(systemName: "gearshape")
+                        .frame(width: 16)
+                    Text("Manage Harnesses…")
+                    Spacer(minLength: 8)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+            .help("Open Harness Settings")
         }
+    }
+
+    private func showHarnessSettings() {
+        isPresented = false
+        SettingsRouter.shared.showHarnesses(machineId: controller.project.serverId)
+        openSettings()
     }
 
     private func modelGroup(_ group: HarnessGroup) -> some View {
@@ -454,13 +484,6 @@ private extension ModelConfigMenu {
             if let model = controller.modelOption {
                 Text(model.currentName)
                     .foregroundStyle(.primary)
-                    .popover(
-                        isPresented: $isPresented,
-                        attachmentAnchor: .rect(.bounds),
-                        arrowEdge: .bottom
-                    ) {
-                        configurationPopover
-                    }
             }
             ForEach(controller.thoughtLevelOptions) { option in
                 Text(option.currentName)
