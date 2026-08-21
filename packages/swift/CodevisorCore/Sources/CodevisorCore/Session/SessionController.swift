@@ -247,6 +247,11 @@ final public class SessionController {
     var modeStateByHarness: [String: SessionModeState] = [:]
     var configOptionsByHarness: [String: [SessionConfigOption]] = [:]
     var supportsGoalsByHarness: [String: Bool] = [:]
+    /// True while a model change is resolving the model-owned controls that
+    /// accompany it. The composer keeps its popover geometry stable and shows
+    /// an explicit loading state instead of briefly presenting stale settings.
+    public internal(set) var isResolvingModelConfiguration = false
+    var modelConfigurationResolutionRevision: UInt64 = 0
     var didLoadExistingHarnessCapabilities = false
     var didFinishExistingRuntimeConfiguration = false
     var didLoadExistingRuntimeConfiguration = false

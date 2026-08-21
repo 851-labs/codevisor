@@ -94,6 +94,102 @@ describe("@codevisor/agent-runtime", () => {
     expect(connector.connections[0]?.closeCount).toBe(1)
   })
 
+  it("resolves model-dependent settings inside an inspection session", async () => {
+    let closeCount = 0
+    const applied: Array<readonly [string, string]> = []
+    const options = (model = "default", reasoning = "low", speed = "standard") => [
+      {
+        category: "model",
+        currentValue: model,
+        id: "model",
+        name: "Model",
+        options: [
+          { name: "Default", value: "default" },
+          { name: "Pro", value: "pro" }
+        ]
+      },
+      {
+        category: "thought_level",
+        currentValue: reasoning,
+        id: "reasoning",
+        name: "Reasoning",
+        options:
+          model === "pro"
+            ? [
+                { name: "Low", value: "low" },
+                { name: "High", value: "high" }
+              ]
+            : [{ name: "Low", value: "low" }]
+      },
+      {
+        category: "speed",
+        currentValue: speed,
+        id: "speed",
+        name: "Speed",
+        options:
+          model === "pro"
+            ? [
+                { name: "Standard", value: "standard" },
+                { name: "Fast", value: "fast" }
+              ]
+            : [{ name: "Standard", value: "standard" }]
+      }
+    ]
+    let current = options()
+    const handle = {
+      cancel: Effect.succeed({ runtimeState: "reusable" as const }),
+      close: Effect.sync(() => {
+        closeCount += 1
+      }),
+      prompt: () => Effect.succeed({ stopReason: "end_turn" }),
+      setConfigOption: (configId: string, value: string) =>
+        Effect.sync(() => {
+          applied.push([configId, value])
+          if (configId === "model") current = options(value)
+          else if (configId === "reasoning") current = options("pro", value)
+          else if (configId === "speed") current = options("pro", "high", value)
+          return current
+        }),
+      setMode: () => Effect.void
+    }
+    const custom = {
+      createSession: () =>
+        Effect.succeed({
+          handle,
+          metadata: { configOptions: current, sessionId: "inspection" }
+        }),
+      id: "claude" as const,
+      loadSession: () => Effect.die("unused"),
+      readiness: () => ({ state: "ready" }) as const
+    }
+    const runtime = makeAcpAgentRuntime({
+      env: { PATH: "/bin" },
+      executableExists: () => true,
+      locateExecutable: (name) => `/bin/${name}`,
+      providers: { claude: custom as never }
+    })
+
+    const inspected = await run(
+      runtime.inspectHarness("claude-code", "/tmp/project", undefined, {
+        speed: "fast",
+        reasoning: "high",
+        model: "pro"
+      })
+    )
+
+    expect(applied).toEqual([
+      ["model", "pro"],
+      ["reasoning", "high"],
+      ["speed", "fast"]
+    ])
+    expect(inspected.configOptions.map((option) => [option.id, option.currentValue])).toEqual([
+      ["model", "pro"],
+      ["reasoning", "high"],
+      ["speed", "fast"]
+    ])
+    expect(closeCount).toBe(1)
+  })
+
   it("maps harness inspection failures and closes their connection", async () => {
     const connector = makeConnector()
     const runtime = makeAcpAgentRuntime({

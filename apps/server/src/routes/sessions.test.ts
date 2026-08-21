@@ -838,7 +838,9 @@ describe("sessions routes", () => {
       ]
     })
     expect(agents.inspections).toEqual([["codex", workspaceFolder]])
+    expect(agents.inspectionConfigs).toEqual([undefined])
     agents.inspections.splice(0)
+    agents.inspectionConfigs.splice(0)
     expect(
       (
         await jsonRequest(
@@ -857,6 +859,24 @@ describe("sessions routes", () => {
       ).body
     ).toMatchObject({ harnesses: [{ harness: { id: "codex" } }] })
     expect(agents.inspections).toEqual([["codex", workspaceFolder]])
+    expect(
+      (
+        await jsonRequest(
+          server,
+          `/v1/capabilities?cwd=${encodeURIComponent(workspaceFolder)}&harnessId=codex&config.model=gpt-next`
+        )
+      ).body
+    ).toMatchObject({
+      harnesses: [
+        {
+          configOptions: [
+            { currentValue: "gpt-next", id: "model" },
+            { currentValue: "high", id: "reasoning" }
+          ]
+        }
+      ]
+    })
+    expect(agents.inspectionConfigs.at(-1)).toEqual({ model: "gpt-next" })
     expect((await jsonRequest(server, "/v1/capabilities")).body).toMatchObject({
       harnesses: [{ harness: { id: "codex" } }]
     })
@@ -1359,7 +1379,7 @@ describe("sessions routes", () => {
           method: "POST"
         })
       ).body
-    ).toEqual({ configId: "model" })
+    ).toMatchObject({ configId: "model", configOptions: [{ id: "model" }] })
     expect(agents.configs).toEqual([[session.agentSessionId, "model", "gpt-5"]])
 
     // Goal set: the double-option tokenBudget key only forwards when present.

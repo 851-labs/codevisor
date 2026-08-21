@@ -46,7 +46,10 @@ extension SessionModel {
         }
 
         do {
-            try await transport.setConfigOption(configId: configId, value: value)
+            let resolved = try await transport.setConfigOption(configId: configId, value: value)
+            if configMutationRevisions[configId] == revision, let resolved, !resolved.isEmpty {
+                configOptions = resolved
+            }
             return true
         } catch {
             // Only undo this mutation if it is still the newest request and

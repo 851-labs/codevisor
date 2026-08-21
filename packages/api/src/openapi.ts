@@ -70,6 +70,7 @@ import {
   ServerCapabilities,
   ServerInfo,
   SessionDetail,
+  SessionConfigOption,
   SessionGoal,
   SessionSummary,
   SetConfigRequest,
@@ -428,7 +429,10 @@ const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> => ({
   "POST /v1/sessions/:id/prompt": PromptAcceptedResponse,
   "POST /v1/sessions/:id/cancel": Schema.Struct({ cancelled: Schema.Boolean }),
   "POST /v1/sessions/:id/mode": Schema.Struct({ modeId: Schema.String }),
-  "POST /v1/sessions/:id/config": Schema.Struct({ configId: Schema.String }),
+  "POST /v1/sessions/:id/config": Schema.Struct({
+    configId: Schema.String,
+    configOptions: Schema.optional(Schema.Array(SessionConfigOption))
+  }),
   "POST /v1/sessions/:id/goal": SessionGoal,
   "POST /v1/sessions/:id/questions/:questionId/answer": Schema.Struct({
     outcome: Schema.Literals(["answered", "cancelled"]),

@@ -133,7 +133,8 @@ export interface AgentRuntimeService {
   readonly inspectHarness: (
     harnessId: string,
     cwd: string,
-    account?: HarnessAccountContext
+    account?: HarnessAccountContext,
+    configSelections?: Readonly<Record<string, string>>
   ) => Effect.Effect<AgentSessionMetadata, AgentRuntimeError>
   readonly loadAgentSession: (
     harnessId: string,
@@ -883,7 +884,7 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
         manageSession(harnessId, created.metadata, cwd, created.handle, sink, account)
         return created.metadata.sessionId
       }),
-    inspectHarness: (harnessId, cwd, account) =>
+    inspectHarness: (harnessId, cwd, account, configSelections) =>
       Effect.gen(function* () {
         const { definition, provider } = yield* definitionFor(harnessId)
         const timeoutMs = config.harnessInspectionTimeoutMs ?? 15_000
@@ -906,8 +907,25 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
               )
             )
           )
+        let configOptions = created.metadata.configOptions
+        const selections = Object.entries(configSelections ?? {}).toSorted(([left], [right]) => {
+          if (left === "model") return -1
+          if (right === "model") return 1
+          return left.localeCompare(right)
+        })
+        for (const [configId, value] of selections) {
+          const option = configOptions.find((candidate) => candidate.id === configId)
+          const selectableValues =
+            option?.options.flatMap((entry) =>
+              "value" in entry ? [entry.value] : entry.options.map((nested) => nested.value)
+            ) ?? []
+          if (!selectableValues.includes(value) || option?.currentValue === value) continue
+          configOptions = yield* created.handle
+            .setConfigOption(configId, value)
+            .pipe(Effect.catchCause(() => Effect.succeed(configOptions)))
+        }
         void Effect.runPromise(created.handle.close).catch(() => undefined)
-        return created.metadata
+        return { ...created.metadata, configOptions }
       }),
     loadAgentSession: (harnessId, agentSessionId, cwd, sink, account, toolGateway) =>
       adapterPromise("loadAgentSession", () =>

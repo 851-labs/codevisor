@@ -29,6 +29,14 @@ public protocol CodevisorServerClienting: Sendable {
     /// Inspects only one known harness. Existing chats use this overload so
     /// unrelated agents never enter their loading path.
     func capabilities(cwd: String, harnessId: String) async throws -> ServerCapabilities
+    /// Resolves a draft's dependent configuration against a temporary
+    /// inspection session. Model is applied first server-side, then any still
+    /// compatible reasoning, speed, or harness-specific selections.
+    func capabilities(
+        cwd: String,
+        harnessId: String,
+        configSelections: [String: String]
+    ) async throws -> ServerCapabilities
     func listHarnesses() async throws -> [ServerHarness]
     /// The list with lifecycle decoration (update knowledge, install
     /// methods) — for Settings and update banners. The plain `listHarnesses`
@@ -303,6 +311,13 @@ public protocol CodevisorServerClienting: Sendable {
     func cancelSession(id: UUID) async throws
     func setSessionMode(id: UUID, modeId: String) async throws
     func setSessionConfig(id: UUID, configId: String, value: String) async throws
+    /// Newer servers return the complete resolved option set with the config
+    /// acknowledgement so model-dependent controls can update atomically.
+    func setSessionConfigAndReturnOptions(
+        id: UUID,
+        configId: String,
+        value: String
+    ) async throws -> [SessionConfigOption]?
     @discardableResult
     func setSessionGoal(
         id: UUID,

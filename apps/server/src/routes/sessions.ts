@@ -486,7 +486,7 @@ const routeSessionActions = async (
             configSelectionsFromOptions(configOptions)
           )
         )
-        return { configId: payload.configId }
+        return { configId: payload.configId, configOptions }
       }
     )
     return true

@@ -116,7 +116,6 @@ struct NewChatView: View {
                                 ComposerCard(
                                     controller: controller,
                                     placeholder: "Do anything",
-                                    showsHarnessPicker: false,
                                     onTextViewReady: { textView in
                                         focus.composerTextView = textView
                                         if let paneFocus, let chatId = preCreatedSession?.id {
@@ -136,24 +135,14 @@ struct NewChatView: View {
                                     focusChatId: preCreatedSession?.id,
                                     glassNamespace: composerGlassNamespace
                                 )
-                                if controller.canChooseHarness || showsRunPickers {
+                                if showsRunPickers {
                                     HStack(spacing: 4) {
-                                        if controller.canChooseHarness {
-                                            HarnessPickerMenu(controller: controller)
-                                        }
-                                        if showsRunPickers {
-                                            if controller.canChooseHarness {
-                                                Divider()
-                                                    .frame(height: 14)
-                                                    .accessibilityHidden(true)
-                                            }
-                                            projectPicker(controller)
-                                            if liveProject(for: controller).isGitRepository {
-                                                Divider()
-                                                    .frame(height: 14)
-                                                    .accessibilityHidden(true)
-                                                runLocationPicker(controller)
-                                            }
+                                        projectPicker(controller)
+                                        if liveProject(for: controller).isGitRepository {
+                                            Divider()
+                                                .frame(height: 14)
+                                                .accessibilityHidden(true)
+                                            runLocationPicker(controller)
                                         }
                                     }
                                     .font(.callout)

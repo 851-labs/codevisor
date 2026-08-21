@@ -248,7 +248,10 @@ extension SessionModel {
             }
         for option in changed {
             do {
-                try await transport.setConfigOption(configId: option.id, value: option.currentValue)
+                _ = try await transport.setConfigOption(
+                    configId: option.id,
+                    value: option.currentValue
+                )
             } catch {
                 // Best-effort restore: the remaining options still apply.
                 Log.session.error(

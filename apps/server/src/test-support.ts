@@ -66,6 +66,7 @@ export const makeAgents = (): AgentRuntimeService & {
   readonly goalClears: Array<string>
   readonly questionAnswers: Array<readonly [string, string, QuestionAnswer]>
   readonly inspections: Array<readonly [string, string]>
+  readonly inspectionConfigs: Array<Readonly<Record<string, string>> | undefined>
   readonly creations: Array<readonly [string, string]>
   readonly environmentRefreshes: Array<number>
   readonly sinks: Map<string, RuntimeEventSink>
@@ -81,6 +82,7 @@ export const makeAgents = (): AgentRuntimeService & {
   const goalClears: Array<string> = []
   const questionAnswers: Array<readonly [string, string, QuestionAnswer]> = []
   const inspections: Array<readonly [string, string]> = []
+  const inspectionConfigs: Array<Readonly<Record<string, string>> | undefined> = []
   const creations: Array<readonly [string, string]> = []
   const environmentRefreshes: Array<number> = []
   const sinks = new Map<string, RuntimeEventSink>()
@@ -158,6 +160,7 @@ export const makeAgents = (): AgentRuntimeService & {
     goalClears,
     questionAnswers,
     inspections,
+    inspectionConfigs,
     creations,
     environmentRefreshes,
     sinks,
@@ -194,9 +197,10 @@ export const makeAgents = (): AgentRuntimeService & {
             }, delayMs)
           })
       ),
-    inspectHarness: (harnessId, cwd) =>
+    inspectHarness: (harnessId, cwd, _account, configSelections) =>
       Effect.sync(() => {
         inspections.push([harnessId, cwd])
+        inspectionConfigs.push(configSelections)
         if (cwd.includes("capability-fail")) {
           throw new Error("capability probe failed")
         }
@@ -206,6 +210,7 @@ export const makeAgents = (): AgentRuntimeService & {
             configOptions: []
           }
         }
+        const model = configSelections?.model ?? "gpt-5"
         return {
           sessionId: `inspect-${harnessId}`,
           supportsGoals: true,
@@ -218,15 +223,18 @@ export const makeAgents = (): AgentRuntimeService & {
               id: "model",
               name: "Model",
               category: "model",
-              currentValue: "gpt-5",
+              currentValue: model,
               options: [{ value: "gpt-5", name: "GPT-5" }]
             },
             {
               id: "reasoning",
               name: "Reasoning",
               category: "thought_level",
-              currentValue: "medium",
-              options: [{ value: "medium", name: "Medium" }]
+              currentValue: model === "gpt-next" ? "high" : "medium",
+              options:
+                model === "gpt-next"
+                  ? [{ value: "high", name: "High" }]
+                  : [{ value: "medium", name: "Medium" }]
             }
           ]
         }

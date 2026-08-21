@@ -264,20 +264,41 @@ extension CodevisorServerClient {
     }
 
     public func capabilities(cwd: String) async throws -> ServerCapabilities {
-        try await capabilities(cwd: cwd, harnessId: nil)
+        try await capabilities(cwd: cwd, harnessId: nil, configSelections: [:])
     }
 
     public func capabilities(cwd: String, harnessId: String) async throws -> ServerCapabilities {
-        try await capabilities(cwd: cwd, harnessId: Optional(harnessId))
+        try await capabilities(cwd: cwd, harnessId: Optional(harnessId), configSelections: [:])
     }
 
-    private func capabilities(cwd: String, harnessId: String?) async throws -> ServerCapabilities {
+    public func capabilities(
+        cwd: String,
+        harnessId: String,
+        configSelections: [String: String]
+    ) async throws -> ServerCapabilities {
+        try await capabilities(
+            cwd: cwd,
+            harnessId: Optional(harnessId),
+            configSelections: configSelections
+        )
+    }
+
+    private func capabilities(
+        cwd: String,
+        harnessId: String?,
+        configSelections: [String: String]
+    ) async throws -> ServerCapabilities {
         var components = URLComponents()
         components.path = "/v1/capabilities"
         components.queryItems = [URLQueryItem(name: "cwd", value: cwd)]
         if let harnessId {
             components.queryItems?.append(URLQueryItem(name: "harnessId", value: harnessId))
         }
+        components.queryItems?.append(
+            contentsOf: configSelections.sorted { $0.key < $1.key }.map { configId, value in
+                URLQueryItem(name: "config.\(configId)", value: value)
+            }
+        )
         guard let path = components.string else {
             throw CodevisorServerClientError.invalidURL("capabilities")
         }

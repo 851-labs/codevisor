@@ -472,6 +472,13 @@ export const discoverCapabilities = async (
   // processes, so inspecting the whole catalog would put unrelated agents on
   // the resumed chat's critical path.
   const requestedHarnessId = url.searchParams.get("harnessId")?.trim() || undefined
+  const requestedConfigSelections = Object.fromEntries(
+    [...url.searchParams.entries()].flatMap(([key, value]) =>
+      key.startsWith("config.") && key.length > "config.".length
+        ? [[key.slice("config.".length), value] as const]
+        : []
+    )
+  )
   const harnesses = await discoverHarnesses(services, false, requestedHarnessId)
   const readyHarnesses = harnesses.filter(
     (harness) => harness.enabled && harness.readiness.state === "ready"
@@ -481,7 +488,14 @@ export const discoverCapabilities = async (
       readyHarnesses.map(async (harness) => {
         try {
           const account = await services.auth?.activeAccountContext(harness.id)
-          const metadata = await run(services.agents.inspectHarness(harness.id, cwd, account))
+          const metadata = await run(
+            services.agents.inspectHarness(
+              harness.id,
+              cwd,
+              account,
+              requestedHarnessId === harness.id ? requestedConfigSelections : undefined
+            )
+          )
           return {
             harness,
             ...(metadata.modes === undefined ? {} : { modes: metadata.modes }),

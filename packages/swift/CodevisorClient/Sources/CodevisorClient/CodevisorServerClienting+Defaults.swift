@@ -51,6 +51,23 @@ public extension CodevisorServerClienting {
         )
     }
 
+    func capabilities(
+        cwd: String,
+        harnessId: String,
+        configSelections _: [String: String]
+    ) async throws -> ServerCapabilities {
+        try await capabilities(cwd: cwd, harnessId: harnessId)
+    }
+
+    func setSessionConfigAndReturnOptions(
+        id: UUID,
+        configId: String,
+        value: String
+    ) async throws -> [SessionConfigOption]? {
+        try await setSessionConfig(id: id, configId: configId, value: value)
+        return nil
+    }
+
     func openBrowserExtensionFolder() async throws -> ServerBrowserUseConfiguration {
         throw CodevisorServerClientError.invalidResponse
     }

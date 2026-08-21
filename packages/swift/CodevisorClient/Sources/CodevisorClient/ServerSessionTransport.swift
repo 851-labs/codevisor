@@ -171,7 +171,9 @@ public struct ServerSessionTransport: Sendable {
         self.client = client
         self.sessionId = sessionId
     }
+}
 
+extension ServerSessionTransport {
     public func prompt(
         _ text: String,
         attachments: [Attachment] = [],
@@ -213,8 +215,15 @@ public struct ServerSessionTransport: Sendable {
         try await client.setSessionMode(id: sessionId, modeId: modeId)
     }
 
-    public func setConfigOption(configId: String, value: String) async throws {
-        try await client.setSessionConfig(id: sessionId, configId: configId, value: value)
+    public func setConfigOption(
+        configId: String,
+        value: String
+    ) async throws -> [SessionConfigOption]? {
+        try await client.setSessionConfigAndReturnOptions(
+            id: sessionId,
+            configId: configId,
+            value: value
+        )
     }
 
     @discardableResult

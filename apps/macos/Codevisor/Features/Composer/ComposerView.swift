@@ -26,16 +26,13 @@ struct ComposerSlashItem: Identifiable {
 
 /// The chat composer card: a multiline input (Return sends, Shift+Return adds a
 /// newline) with an inline toolbar holding the combined model dropdown
-/// (model/thinking level/speed), the harness picker (before connecting), any
-/// remaining config pickers, and a send button.
+/// (models grouped by harness plus every model-owned setting), active modes,
+/// and a send button.
 struct ComposerCard: View {
     static let cornerRadius = ComposerGlassStyle.composerCornerRadius
 
     @Bindable var controller: SessionController
     var placeholder: String = "Do anything"
-    /// The new-chat page hosts the harness picker in its own row below the
-    /// composer; session pages keep it inline.
-    var showsHarnessPicker: Bool = true
     /// Surfaces the composer's text view so keyboard handoffs can move
     /// first-responder focus to it.
     var onTextViewReady: ((SubmittingTextView) -> Void)? = nil
@@ -156,7 +153,9 @@ struct ComposerCard: View {
             isSlashMenuDismissed = false
         }
     }
+}
 
+private extension ComposerCard {
     private var standardContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             // The attachment strip sits tight against the input, closer than
@@ -221,12 +220,6 @@ struct ComposerCard: View {
                 } else {
                     attachButton
                     ModelConfigMenu(controller: controller)
-                    if showsHarnessPicker {
-                        HarnessPickerMenu(controller: controller)
-                    }
-                    ForEach(controller.pickerOptions) { option in
-                        configMenu(option)
-                    }
                     // Active modes show as removable chips (turned on via
                     // the /plan and /goal slash commands).
                     if controller.hasPlanMode, controller.isPlanModeOn {
@@ -355,39 +348,6 @@ struct ComposerCard: View {
         .buttonStyle(.plain)
         .accessibilityLabel("/\(command.name), \(command.description)")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-
-    private func configMenu(_ option: SessionConfigOption) -> some View {
-        Menu {
-            if controller.isConnectingToHarness {
-                Label("Connecting to harness…", systemImage: "arrow.triangle.2.circlepath")
-                    .disabled(true)
-            } else {
-                ForEach(option.options) { value in
-                    Toggle(
-                        isOn: Binding(
-                            get: {
-                                controller.configOptions.first { $0.id == option.id }?.currentValue
-                                    == value.value
-                            },
-                            set: { isOn in
-                                guard isOn else { return }
-                                Task { await controller.setConfigOption(option.id, value.value) }
-                            }
-                        )
-                    ) {
-                        Text(value.name)
-                    }
-                }
-            }
-        } label: {
-            chipLabel(option.currentName)
-        }
-        .menuStyle(.button)
-        .buttonStyle(HoverIconButtonStyle(shape: .chip))
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help(option.name)
     }
 
     /// Leaves edit-goal mode without changing the goal (the banner returns).

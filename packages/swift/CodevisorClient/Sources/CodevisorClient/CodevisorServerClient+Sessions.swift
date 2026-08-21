@@ -35,6 +35,11 @@ private struct SetConfigBody: Encodable {
     var clientActionId = UUID().uuidString
 }
 
+private struct SetConfigResponse: Decodable {
+    var configId: String
+    var configOptions: [SessionConfigOption]?
+}
+
 /// Custom encoding because synthesized Codable cannot express the token-budget
 /// double-option: `.keep` omits the key, `.clear` encodes a literal `null`,
 /// `.set` encodes the number. Internal (not private) so tests can pin the
@@ -443,11 +448,20 @@ extension CodevisorServerClient {
     }
 
     public func setSessionConfig(id: UUID, configId: String, value: String) async throws {
-        try await sendNoResponse(
+        _ = try await setSessionConfigAndReturnOptions(id: id, configId: configId, value: value)
+    }
+
+    public func setSessionConfigAndReturnOptions(
+        id: UUID,
+        configId: String,
+        value: String
+    ) async throws -> [SessionConfigOption]? {
+        let response: SetConfigResponse = try await send(
             "/v1/sessions/\(id.uuidString)/config",
             method: "POST",
             body: SetConfigBody(configId: configId, value: value)
         )
+        return response.configOptions
     }
 
     @discardableResult
