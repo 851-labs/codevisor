@@ -120,15 +120,6 @@ struct SessionOverlayTests {
         #expect(model.sessions.first { $0.id == session.id }?.agentSessionId == "agent-123")
     }
 
-    @Test("setIcon updates and persists a project symbol")
-    func setIcon() {
-        let model = makeModel()
-        let ws = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/iconme"))
-        #expect(ws.symbolName == Project.defaultSymbolName)
-        model.setIcon("hammer", for: ws)
-        #expect(model.projects.first { $0.id == ws.id }?.symbolName == "hammer")
-    }
-
     @Test("removeAll clears projects and sessions")
     func removeAll() {
         let model = makeModel()

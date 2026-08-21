@@ -1075,5 +1075,13 @@ export const migrations: ReadonlyArray<Migration> = [
       alter table projects add column worktree_base_remote text;
       alter table projects add column worktree_base_branch text;
     `
+  },
+  {
+    id: 39,
+    name: "remove dynamic entity icons",
+    sql: `
+      alter table projects drop column symbol_name;
+      alter table workspaces drop column symbol_name;
+    `
   }
 ]

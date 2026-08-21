@@ -45,20 +45,15 @@ public struct ProjectLocation: Sendable, Codable, Equatable {
     }
 }
 
-/// A coding project shown in the sidebar. Identity (name, icon) is logical;
-/// where it lives on disk is per-machine via `locations`.
+/// A coding project shown in the sidebar. Its identity is logical; where it
+/// lives on disk is per-machine via `locations`.
 public struct Project: Identifiable, Sendable, Codable, Equatable {
-    /// The SF Symbol used when a project has no custom icon.
-    public static let defaultSymbolName = "folder.fill"
-
     public var id: UUID
     /// The Codevisor server this cached record was observed on. Legacy/local
     /// projects default to "local".
     public var serverId: String
     public var name: String
     public var isArchived: Bool
-    /// The SF Symbol shown for this project in the sidebar.
-    public var symbolName: String
     /// Whether the project was added in Codevisor or created while importing
     /// external sessions. Imported projects with no visible sessions are hidden.
     public var origin: SessionOrigin
@@ -80,7 +75,6 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
         serverId: String = "local",
         name: String,
         isArchived: Bool = false,
-        symbolName: String = Project.defaultSymbolName,
         origin: SessionOrigin = .codevisor,
         createdAt: Date = Date(),
         locations: [ProjectLocation] = [],
@@ -91,7 +85,6 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
         self.serverId = serverId
         self.name = name
         self.isArchived = isArchived
-        self.symbolName = symbolName
         self.origin = origin
         self.createdAt = createdAt
         self.locations = locations
@@ -137,7 +130,7 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
     }
 
     private enum Keys: String, CodingKey {
-        case id, serverId, name, folderURL, isArchived, symbolName, origin, createdAt, locations
+        case id, serverId, name, folderURL, isArchived, origin, createdAt, locations
         case isScratch, worktreeBase
     }
 
@@ -149,7 +142,6 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
         serverId = try container.decodeIfPresent(String.self, forKey: .serverId) ?? "local"
         name = try container.decode(String.self, forKey: .name)
         isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
-        symbolName = try container.decodeIfPresent(String.self, forKey: .symbolName) ?? Project.defaultSymbolName
         origin = try container.decodeIfPresent(SessionOrigin.self, forKey: .origin) ?? .codevisor
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
         isScratch = try container.decodeIfPresent(Bool.self, forKey: .isScratch) ?? false
@@ -171,7 +163,6 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
         try container.encode(serverId, forKey: .serverId)
         try container.encode(name, forKey: .name)
         try container.encode(isArchived, forKey: .isArchived)
-        try container.encode(symbolName, forKey: .symbolName)
         try container.encode(origin, forKey: .origin)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(locations, forKey: .locations)

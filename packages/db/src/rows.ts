@@ -22,7 +22,6 @@ export interface ProjectRow {
   readonly name: string
   readonly is_archived: number
   readonly archived_at: string | null
-  readonly symbol_name: string
   readonly origin: Project["origin"]
   readonly created_at: string
   readonly repo_url: string | null
@@ -64,7 +63,6 @@ export interface WorkspaceRow {
   readonly project_id: string
   readonly name: string
   readonly has_custom_name: number
-  readonly symbol_name: string | null
   readonly root_directory: string | null
   readonly is_archived: number
   readonly archived_at: string | null

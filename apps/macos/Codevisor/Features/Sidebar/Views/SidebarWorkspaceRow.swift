@@ -1,4 +1,5 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 /// One workspace row, either top-level or nested beneath its project.
@@ -15,7 +16,6 @@ struct SidebarWorkspaceRow: View {
     let onActivateSession: (ChatSession) -> Void
     let onArchive: () -> Void
     let onRename: () -> Void
-    let onChangeIcon: () -> Void
 
     var body: some View {
         HoverableRow(
@@ -28,7 +28,7 @@ struct SidebarWorkspaceRow: View {
                     Button(action: onToggle) {
                         HStack(spacing: 7) {
                             ZStack {
-                                Image(systemName: FilledSymbol.preferred("square.grid.2x2"))
+                                Image(systemName: EntitySystemSymbol.workspace)
                                     .foregroundStyle(.secondary)
                                     .opacity(isHovered ? 0 : 1)
                                 Image(systemName: "chevron.right")
@@ -63,7 +63,7 @@ struct SidebarWorkspaceRow: View {
                         )
                     }
                 } else {
-                    Image(systemName: symbol)
+                    Image(systemName: EntitySystemSymbol.workspace)
                         .frame(width: 18)
                         .foregroundStyle(.secondary)
                     Text(title)
@@ -103,12 +103,6 @@ struct SidebarWorkspaceRow: View {
                     .labelStyle(.titleAndIcon)
             }
             Button {
-                onChangeIcon()
-            } label: {
-                Label("Change Icon", systemImage: "app.grid")
-                    .labelStyle(.titleAndIcon)
-            }
-            Button {
                 onArchive()
             } label: {
                 Label("Archive", systemImage: "archivebox")
@@ -126,18 +120,6 @@ struct SidebarWorkspaceRow: View {
                 guard let session = item.primarySession else { return }
                 onActivateSession(session)
             }
-    }
-
-    /// The workspace's own icon; a workspace born before icons existed
-    /// falls back to its project's, then to a generic glyph.
-    private var symbol: String {
-        if let symbol = item.workspace.symbolName {
-            return FilledSymbol.preferred(symbol)
-        }
-        if let project = item.project {
-            return FilledSymbol.preferred(project.symbolName)
-        }
-        return "square.grid.2x2"
     }
 
     /// Disclosure labels identify the workspace only. Project and worktree

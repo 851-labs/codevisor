@@ -151,25 +151,3 @@ enum MenuIconRasterizer {
         return drawn
     }
 }
-
-/// Prefers the filled variant of an SF Symbol when one exists — the sidebar
-/// uses filled icons only, but older projects may have unfilled symbols saved.
-@MainActor
-enum FilledSymbol {
-    private static var cache: [String: String] = [:]
-
-    static func preferred(_ symbol: String) -> String {
-        if let cached = cache[symbol] { return cached }
-        let filled = symbol + ".fill"
-        let resolved: String
-        if symbol.contains(".fill") {
-            resolved = symbol
-        } else if NSImage(systemSymbolName: filled, accessibilityDescription: nil) != nil {
-            resolved = filled
-        } else {
-            resolved = symbol
-        }
-        cache[symbol] = resolved
-        return resolved
-    }
-}

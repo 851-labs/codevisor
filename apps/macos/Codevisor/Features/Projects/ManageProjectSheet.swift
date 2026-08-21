@@ -35,7 +35,7 @@ struct ManageProjectSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Image(systemName: FilledSymbol.preferred(project.symbolName))
+                Image(systemName: EntitySystemSymbol.project)
                     .font(.title3)
                     .foregroundStyle(.secondary)
                 VStack(alignment: .leading, spacing: 2) {

@@ -238,7 +238,6 @@ const ensureSessionWorkspace = async (
       projectId: project.id,
       name: workspaceName,
       hasCustomName: false,
-      symbolName: project.symbolName,
       /* v8 ignore next -- server-created sessions always resolve a cwd; omission protects legacy rows without a local project location. */
       ...(rootDirectory === undefined ? {} : { rootDirectory })
     })

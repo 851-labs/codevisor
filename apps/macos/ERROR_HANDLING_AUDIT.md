@@ -94,7 +94,7 @@ Persistence and sync failures that lose state invisibly:
 ## Priority 4 — (b) fine as-is, but should get a log line once logging exists
 
 - Best-effort cleanup: `TerminalPane.swift:126` (DELETE server shell), `MachineController.swift:220/303`, `LocalCodevisorServer.swift:277` + shutdown/health `try?`s
-- Cosmetic fallbacks: `BranchDiffBadge.swift:157/191`, `IconPickerView.swift:140-142`, `AttachmentViews.swift:37`, `MarkdownThemeAdapter.swift:30`, `InlineMarkdown.swift:15`, `ConfigOptionCache`, `SessionUpdate.swift:245` (phase)
+- Cosmetic fallbacks: `BranchDiffBadge.swift:157/191`, `AttachmentViews.swift:37`, `MarkdownThemeAdapter.swift:30`, `InlineMarkdown.swift:15`, `ConfigOptionCache`, `SessionUpdate.swift:245` (phase)
 - Deliberate resilience: `SessionModel.swift:184` (stream error → reconcile), `ServerSessionTransport.swift:208`, `SessionController.swift:1092` (log tail), `AppUpdateInstaller.swift:67` (rollback)
 - Benign: all `try? await Task.sleep(...)` sites (cancellation-only)
 

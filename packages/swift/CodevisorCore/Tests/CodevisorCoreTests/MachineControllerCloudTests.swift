@@ -123,7 +123,6 @@ struct MachineControllerCloudTests {
         #expect(cloud.isCloud)
         #expect(cloud.name == "Cloud Mac")
         #expect(cloud.baseURL == CodevisorMachine.cloudPlaceholderBaseURL)
-        #expect(cloud.resolvedAppearance == .cloudDefault)
         #expect(controller.machine(for: "cloud:dev-1") == cloud)
     }
 
@@ -320,71 +319,14 @@ struct MachineControllerCloudTests {
         #expect(controller.serverConfig(for: "cloud:dev-1").requestTransport != nil)
     }
 
-    @Test("Setting a cloud machine's appearance reflects in allMachines and persists")
-    func cloudAppearance() throws {
-        let store = InMemoryStore()
-        let (controller, _, provider) = makeController(store: store)
-        provider.cloudMachines = [makeCloudMachine()]
-        #expect(controller.machine(for: "cloud:dev-1")?.resolvedAppearance == .cloudDefault)
-
-        controller.setAppearance(MachineAppearance(symbolName: "server.rack"), for: "cloud:dev-1")
-        #expect(
-            controller.machine(for: "cloud:dev-1")?.resolvedAppearance.symbolName == "server.rack"
-        )
-        // Other machines keep their own appearance.
-        #expect(controller.machine(for: "local")?.resolvedAppearance == .localDefault)
-
-        // A simulated relaunch over the same persisted registry keeps the
-        // icon — the `cloud:<deviceId>` key is stable across launches.
-        let projectList = ProjectListModel(
-            projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-            sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-        )
-        let second = MachineController(store: store, projectList: projectList)
-        let secondProvider = FakeCloudProvider()
-        secondProvider.cloudMachines = [makeCloudMachine()]
-        second.cloudProvider = secondProvider
-        #expect(
-            second.machine(for: "cloud:dev-1")?.resolvedAppearance.symbolName == "server.rack"
-        )
-    }
-
-    @Test("An invalid cloud appearance falls back to the cloud default")
-    func cloudAppearanceInvalidFallsBack() {
-        let (controller, _, provider) = makeController()
-        provider.cloudMachines = [makeCloudMachine()]
-
-        controller.setAppearance(MachineAppearance(symbolName: "   "), for: "cloud:dev-1")
-        #expect(controller.machine(for: "cloud:dev-1")?.resolvedAppearance == .cloudDefault)
-    }
-
-    @Test("The delete-all-data reset drops saved cloud appearances")
-    func resetDropsCloudAppearances() throws {
-        let store = InMemoryStore()
-        let (controller, _, provider) = makeController(store: store)
-        provider.cloudMachines = [makeCloudMachine()]
-        controller.setAppearance(MachineAppearance(symbolName: "server.rack"), for: "cloud:dev-1")
-        #expect(!controller.registry.cloudAppearances.isEmpty)
-
-        controller.removeAllRemoteMachines()
-
-        #expect(controller.registry.cloudAppearances.isEmpty)
-        #expect(controller.machine(for: "cloud:dev-1")?.resolvedAppearance == .cloudDefault)
-        let persisted = try JSONDecoder().decode(
-            MachineRegistry.self,
-            from: #require(store.loadData(forKey: "machines"))
-        )
-        #expect(persisted.cloudAppearances.isEmpty)
-    }
-
-    @Test("Registries persisted before cloudAppearances decode with an empty map")
+    @Test("Registries persisted before explicit selection decode")
     func registryDecodeCompatibility() throws {
         let legacy = """
             {"selectedMachineId":"local","remoteMachines":[]}
             """
         let registry = try JSONDecoder().decode(MachineRegistry.self, from: Data(legacy.utf8))
-        #expect(registry.cloudAppearances.isEmpty)
         #expect(registry.selectedMachineId == "local")
+        #expect(!registry.hasExplicitMachineSelection)
     }
 
     @Test("Sign-out with a cloud machine selected falls back to local")

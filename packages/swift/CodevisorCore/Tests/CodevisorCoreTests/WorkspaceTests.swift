@@ -365,17 +365,23 @@ struct WorkspaceRepositoryTests {
         #expect(repository.workspace(id: workspace.id)?.isArchived == true)
     }
 
-    @Test("symbolName round-trips and old payloads decode without it")
-    func symbolNameCodable() throws {
-        let repository = DefaultWorkspaceRepository(store: InMemoryStore())
-        var workspace = repository.ensureWorkspace(for: seed(), legacyGroups: nil)
-        // Pre-icon payloads must keep decoding (synthesized optional).
-        let legacyData = try JSONEncoder().encode(workspace)
-        #expect(try JSONDecoder().decode(Workspace.self, from: legacyData).symbolName == nil)
-        workspace.symbolName = "hammer"
-        repository.save(workspace)
-        let reloaded = repository.workspace(id: workspace.id)
-        #expect(reloaded?.symbolName == "hammer")
+    @Test("Legacy icon metadata is ignored and no longer persisted")
+    func legacyIconMetadataIsRemoved() throws {
+        let workspace = DefaultWorkspaceRepository(store: InMemoryStore())
+            .ensureWorkspace(for: seed(), legacyGroups: nil)
+        var payload = try #require(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(workspace)) as? [String: Any]
+        )
+        payload["symbolName"] = "hammer"
+
+        let decoded = try JSONDecoder().decode(
+            Workspace.self,
+            from: JSONSerialization.data(withJSONObject: payload)
+        )
+        let encoded = try #require(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(decoded)) as? [String: Any]
+        )
+        #expect(encoded["symbolName"] == nil)
     }
 
     @Test("Backfill adopts the workspace's initial project identity")

@@ -35,11 +35,14 @@ struct MachineSettingsDetailView: View {
         Form {
             Section {
                 HStack(spacing: 10) {
-                    Image(systemName: machine?.resolvedAppearance.symbolName ?? "desktopcomputer")
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 26)
-                        .accessibilityHidden(true)
+                    Image(
+                        systemName: machine.map(EntitySystemSymbol.machine)
+                            ?? EntitySystemSymbol.machine(.local)
+                    )
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 26)
+                    .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(displayName)
                             .font(.headline)

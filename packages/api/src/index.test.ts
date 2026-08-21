@@ -48,7 +48,6 @@ describe("@codevisor/api", () => {
       id: "project-1",
       name: "Legacy",
       isArchived: false,
-      symbolName: "folder",
       origin: "herdman",
       createdAt: "2026-06-30T00:00:00.000Z",
       locations: []
@@ -63,7 +62,6 @@ describe("@codevisor/api", () => {
       id: "project-1",
       name: "Codevisor",
       isArchived: false,
-      symbolName: "folder",
       origin: "codevisor",
       createdAt: "2026-06-30T00:00:00.000Z",
       locations: [
@@ -82,7 +80,6 @@ describe("@codevisor/api", () => {
       id: "project-1",
       name: "Codevisor",
       isArchived: false,
-      symbolName: "folder",
       origin: "codevisor",
       createdAt: "2026-06-30T00:00:00.000Z",
       locations: [
@@ -119,15 +116,13 @@ describe("@codevisor/api", () => {
         folderPath: "/Users/me/src/Codevisor",
         name: "Codevisor",
         isArchived: true,
-        symbolName: "archivebox",
         origin: "imported",
         createdAt: "2026-06-30T00:00:00.000Z"
       })
     ).toMatchObject({
       id: "project-1",
       isArchived: true,
-      origin: "imported",
-      symbolName: "archivebox"
+      origin: "imported"
     })
 
     expect(
@@ -165,7 +160,6 @@ describe("@codevisor/api", () => {
       isArchived: false,
       createdAt: "2026-07-01T00:00:00.000Z"
     })
-    expect(workspace.symbolName).toBeUndefined()
     expect(workspace.rootDirectory).toBeUndefined()
 
     expect(
@@ -174,15 +168,13 @@ describe("@codevisor/api", () => {
         projectId: "project-1",
         name: "Renamed",
         hasCustomName: true,
-        symbolName: "hammer",
         rootDirectory: "/Users/me/src/Codevisor",
         isArchived: false,
         createdAt: "2026-07-01T00:00:00.000Z"
       })
     ).toMatchObject({
       hasCustomName: true,
-      rootDirectory: "/Users/me/src/Codevisor",
-      symbolName: "hammer"
+      rootDirectory: "/Users/me/src/Codevisor"
     })
     expect(() => decode(UpsertWorkspaceRequest)({ name: "Missing project" })).toThrow()
   })

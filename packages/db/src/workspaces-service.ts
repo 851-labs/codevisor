@@ -117,14 +117,13 @@ export const makeWorkspacesService = (
           sqlite
             .prepare(
               `insert into workspaces (
-                 id, server_id, project_id, name, has_custom_name, symbol_name,
+                 id, server_id, project_id, name, has_custom_name,
                  root_directory, is_archived, archived_at, created_at, updated_at
-               ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null)
+               ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, null)
                on conflict(id) do update set
                  project_id = excluded.project_id,
                  name = excluded.name,
                  has_custom_name = excluded.has_custom_name,
-                 symbol_name = excluded.symbol_name,
                  root_directory = excluded.root_directory,
                  is_archived = excluded.is_archived,
                  archived_at = excluded.archived_at,
@@ -136,7 +135,6 @@ export const makeWorkspacesService = (
               projectId,
               request.name,
               request.hasCustomName ? 1 : 0,
-              request.symbolName ?? null,
               request.rootDirectory ?? null,
               stamp === null ? 0 : 1,
               stamp,
@@ -178,14 +176,13 @@ export const makeWorkspacesService = (
           sqlite
             .prepare(
               `update workspaces set
-                 name = ?, has_custom_name = ?, symbol_name = ?, root_directory = ?,
+                 name = ?, has_custom_name = ?, root_directory = ?,
                  is_archived = ?, archived_at = ?, updated_at = ?
                where id = ?`
             )
             .run(
               request.name ?? existing.name,
               (request.hasCustomName ?? existing.has_custom_name === 1) ? 1 : 0,
-              request.symbolName ?? existing.symbol_name,
               request.rootDirectory ?? existing.root_directory,
               stamp === null ? 0 : 1,
               stamp,

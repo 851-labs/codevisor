@@ -142,7 +142,6 @@ public enum WorkspaceWorktreeSplitMigration {
                 hasCustomName: false,
                 rootDirectory: firstCwd(of: group),
                 worktreeName: group.worktreeName,
-                symbolName: workspace.symbolName,
                 serverId: workspace.serverId,
                 projectId: workspace.projectId,
                 centerTabs: tabs,

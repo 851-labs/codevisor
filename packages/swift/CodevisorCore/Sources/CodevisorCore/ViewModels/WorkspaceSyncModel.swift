@@ -520,7 +520,6 @@ public final class WorkspaceSyncModel {
                     hasCustomName: record.hasCustomName || source.hasCustomName,
                     rootDirectory: record.rootDirectory ?? source.rootDirectory,
                     worktreeName: source.worktreeName ?? worktreeName,
-                    symbolName: record.symbolName ?? source.symbolName,
                     serverId: serverId,
                     projectId: projectId,
                     centerTabs: source.centerTabs,
@@ -552,7 +551,6 @@ public final class WorkspaceSyncModel {
             }
             workspace.rootDirectory = record.rootDirectory ?? workspace.rootDirectory
             workspace.worktreeName = workspace.worktreeName ?? worktreeName
-            workspace.symbolName = record.symbolName ?? workspace.symbolName
             workspace.isArchived = record.isArchived
             workspace.isServerSynced = true
 
@@ -918,7 +916,6 @@ public final class WorkspaceSyncModel {
             projectId: workspace.projectId.uuidString,
             name: workspace.name,
             hasCustomName: workspace.hasCustomName,
-            symbolName: workspace.symbolName,
             rootDirectory: workspace.rootDirectory,
             isArchived: workspace.isArchived,
             createdAt: ServerDateCoding.string(from: workspace.createdAt)
@@ -1230,7 +1227,6 @@ public final class WorkspaceSyncModel {
             hasCustomName: record.hasCustomName,
             rootDirectory: record.rootDirectory,
             worktreeName: worktreeName,
-            symbolName: record.symbolName,
             serverId: serverId,
             projectId: projectId,
             centerTabs: tabs,

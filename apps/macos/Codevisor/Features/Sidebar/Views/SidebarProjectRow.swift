@@ -1,4 +1,5 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 /// A project folder row: disclosure toggle behind the label, a hover
@@ -15,7 +16,6 @@ struct SidebarProjectRow: View {
     let onDisclosureToggle: () -> Void
     let onRestoreRequest: () -> Void
     let onNewChat: () -> Void
-    let onChangeIcon: () -> Void
     let onArchive: () -> Void
 
     var body: some View {
@@ -40,7 +40,7 @@ struct SidebarProjectRow: View {
                     HStack(spacing: 6) {
                         // On hover the project icon becomes a disclosure chevron.
                         ZStack {
-                            Image(systemName: FilledSymbol.preferred(project.symbolName))
+                            Image(systemName: EntitySystemSymbol.project)
                                 .foregroundStyle(.secondary)
                                 .opacity(isHovered && !isArchivedEntry ? 0 : 1)
                             Image(systemName: "chevron.right")
@@ -93,7 +93,6 @@ struct SidebarProjectRow: View {
                 }
             } else {
                 Button("New chat here") { onNewChat() }
-                Button("Change icon") { onChangeIcon() }
                 Button {
                     onArchive()
                 } label: {

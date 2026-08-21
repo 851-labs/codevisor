@@ -2,9 +2,9 @@ import SwiftUI
 import CodevisorCore
 import CodevisorUI
 
-/// The compact, always-available machine selector in the window toolbar.
-/// Its glyph mirrors the selected machine's saved appearance and inherits the
-/// active theme's semantic foreground color.
+/// The compact machine selector that stays available in the window toolbar.
+/// Its glyph reflects the selected machine kind and inherits the active
+/// theme's semantic foreground color.
 struct MachinePickerToolbarMenu: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.openSettings) private var openSettings
@@ -30,7 +30,7 @@ struct MachinePickerToolbarMenu: View {
                     Label {
                         Text(machine.name)
                     } icon: {
-                        MenuSymbolIcon(systemName: machine.resolvedAppearance.symbolName)
+                        MenuSymbolIcon(systemName: EntitySystemSymbol.machine(machine))
                     }
                 }
             }
@@ -42,7 +42,7 @@ struct MachinePickerToolbarMenu: View {
                 openSettings()
             }
         } label: {
-            Image(systemName: selectedMachine.resolvedAppearance.symbolName)
+            Image(systemName: EntitySystemSymbol.machine(selectedMachine))
                 .symbolRenderingMode(.monochrome)
                 .foregroundStyle(theme.textPrimary)
                 // SF Symbols have different intrinsic widths. Give every

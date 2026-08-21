@@ -102,8 +102,7 @@ describe("@codevisor/db", () => {
         id: "client-id-2",
         isArchived: true,
         name: "merged",
-        origin: "imported",
-        symbolName: "shippingbox"
+        origin: "imported"
       })
     )
     expect(merged.id).toBe("client-id-2")

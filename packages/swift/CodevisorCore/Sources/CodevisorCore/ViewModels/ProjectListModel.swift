@@ -371,18 +371,6 @@ public final class ProjectListModel {
         setArchived(false, for: project)
     }
 
-    /// Sets the SF Symbol icon for a project.
-    public func setIcon(_ symbolName: String, for project: Project) {
-        guard
-            let index = projects.firstIndex(where: {
-                $0.serverId == project.serverId && $0.id == project.id
-            })
-        else { return }
-        projects[index].symbolName = symbolName
-        persistProjects()
-        syncProject(projects[index])
-    }
-
     public func removeProject(_ project: Project) {
         pendingDeletedProjectIds.insert(
             ScopedSessionID(serverId: project.serverId, id: project.id)

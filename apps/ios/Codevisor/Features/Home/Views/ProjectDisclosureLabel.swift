@@ -1,4 +1,5 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 /// Native disclosure label for a project and its direct agent children.
@@ -10,15 +11,11 @@ struct ProjectDisclosureLabel: View {
     let status: HomeSessionStatus
     let showsStatus: Bool
 
-    private var symbolName: String {
-        project.symbolName == Project.defaultSymbolName ? "folder" : project.symbolName
-    }
-
     var body: some View {
         HStack(spacing: Self.statusToLabelSpacing) {
             HomeStatusIndicator(status: showsStatus ? status : .idle)
                 .frame(width: Self.statusWidth)
-            Label(project.name, systemImage: symbolName)
+            Label(project.name, systemImage: EntitySystemSymbol.projectList)
                 .font(.body.weight(.semibold))
                 .foregroundStyle(.primary)
                 .textCase(nil)

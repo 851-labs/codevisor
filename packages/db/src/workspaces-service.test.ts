@@ -146,7 +146,6 @@ describe("@codevisor/db", () => {
         projectId: project.id,
         name: "Renamed",
         hasCustomName: true,
-        symbolName: "hammer",
         rootDirectory: "/tmp/pane-workspaces/worktree",
         isArchived: true,
         createdAt: "2026-07-02T00:00:00.000Z"
@@ -156,7 +155,6 @@ describe("@codevisor/db", () => {
       id: "workspace-1",
       name: "Renamed",
       hasCustomName: true,
-      symbolName: "hammer",
       rootDirectory: "/tmp/pane-workspaces/worktree",
       isArchived: true,
       createdAt: "2026-07-01T00:00:00.000Z"

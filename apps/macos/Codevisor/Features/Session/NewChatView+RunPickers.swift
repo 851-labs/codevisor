@@ -45,7 +45,7 @@ extension NewChatView {
                     Label {
                         Text(project.name)
                     } icon: {
-                        MenuSymbolIcon(systemName: FilledSymbol.preferred(project.symbolName))
+                        MenuSymbolIcon(systemName: EntitySystemSymbol.project)
                     }
                 }
             }
@@ -61,7 +61,7 @@ extension NewChatView {
             }
         } label: {
             PickerChip(text: selected.name) {
-                Image(systemName: FilledSymbol.preferred(selected.symbolName))
+                Image(systemName: EntitySystemSymbol.project)
                     .font(.system(size: 12))
             }
         }

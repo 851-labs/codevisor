@@ -1,4 +1,5 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 extension ComposerBar {
@@ -37,7 +38,7 @@ extension ComposerBar {
                 } label: {
                     menuRow(
                         project.name,
-                        systemImage: project.symbolName,
+                        systemImage: EntitySystemSymbol.project,
                         isSelected: controller.project.id == project.id
                     )
                 }
@@ -49,7 +50,7 @@ extension ComposerBar {
                 Label("New Project…", systemImage: "folder.badge.plus")
             }
         } label: {
-            chipLabel(controller.project.name, systemImage: controller.project.symbolName)
+            chipLabel(controller.project.name, systemImage: EntitySystemSymbol.project)
         }
         .accessibilityLabel("Project")
         .accessibilityValue(controller.project.name)

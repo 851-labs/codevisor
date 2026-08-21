@@ -36,7 +36,6 @@ export const Project = Schema.Struct({
   /// clients predating the archived-sections release; new UI should sort and
   /// label from this timestamp.
   archivedAt: Schema.optional(Schema.String),
-  symbolName: Schema.String,
   origin: SessionOrigin,
   createdAt: Schema.String,
   locations: Schema.Array(ProjectLocation),
@@ -60,7 +59,6 @@ export const CreateProjectRequest = Schema.Struct({
   folderPath: Schema.String,
   name: Schema.optional(Schema.String),
   isArchived: Schema.optional(Schema.Boolean),
-  symbolName: Schema.optional(Schema.String),
   origin: Schema.optional(SessionOrigin),
   createdAt: Schema.optional(Schema.String),
   repoUrl: Schema.optional(Schema.String)
@@ -136,7 +134,6 @@ export const UpdateProjectRequest = Schema.Struct({
   /// revives only the children that same cascade archived. See
   /// `archive_cascade_from` in @codevisor/db.
   isArchived: Schema.optional(Schema.Boolean),
-  symbolName: Schema.optional(Schema.String),
   /// Null clears an explicit selection and restores the legacy default.
   worktreeBase: Schema.optional(Schema.NullOr(ProjectWorktreeBase))
 })

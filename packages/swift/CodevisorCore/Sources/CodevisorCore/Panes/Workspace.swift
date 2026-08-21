@@ -66,10 +66,6 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     /// so the server derives their cwd. Decoded leniently: payloads written
     /// before this field existed load as nil.
     public var worktreeName: String?
-    /// The workspace's SF Symbol, seeded from its project's icon at
-    /// creation; the user can change it later. Nil (pre-icon workspaces)
-    /// falls back to the project's icon in the UI.
-    public var symbolName: String?
     /// The machine the workspace's sessions and shells live on.
     public let serverId: String
     public let projectId: UUID
@@ -92,7 +88,7 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     public var isServerSynced: Bool
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, hasCustomName, rootDirectory, worktreeName, symbolName, serverId
+        case id, name, hasCustomName, rootDirectory, worktreeName, serverId
         case projectId, centerTabs, selectedCenterTabId, bottomGroup, createdAt, isArchived
         case isServerSynced
         /// Version-1 workspaces stored one tree whose leaves were tab groups.
@@ -106,7 +102,6 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
         hasCustomName = try container.decode(Bool.self, forKey: .hasCustomName)
         rootDirectory = try container.decodeIfPresent(String.self, forKey: .rootDirectory)
         worktreeName = try container.decodeIfPresent(String.self, forKey: .worktreeName)
-        symbolName = try container.decodeIfPresent(String.self, forKey: .symbolName)
         serverId = try container.decode(String.self, forKey: .serverId)
         projectId = try container.decode(UUID.self, forKey: .projectId)
         if let decodedTabs = try container.decodeIfPresent([WorkspaceTab].self, forKey: .centerTabs) {
@@ -142,7 +137,6 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
         try container.encode(hasCustomName, forKey: .hasCustomName)
         try container.encodeIfPresent(rootDirectory, forKey: .rootDirectory)
         try container.encodeIfPresent(worktreeName, forKey: .worktreeName)
-        try container.encodeIfPresent(symbolName, forKey: .symbolName)
         try container.encode(serverId, forKey: .serverId)
         try container.encode(projectId, forKey: .projectId)
         try container.encode(centerTabs, forKey: .centerTabs)
@@ -159,7 +153,6 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
         hasCustomName: Bool = false,
         rootDirectory: String?,
         worktreeName: String? = nil,
-        symbolName: String? = nil,
         serverId: String,
         projectId: UUID,
         centerTree: SplitNode,
@@ -173,7 +166,6 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
         self.hasCustomName = hasCustomName
         self.rootDirectory = rootDirectory
         self.worktreeName = worktreeName
-        self.symbolName = symbolName
         self.serverId = serverId
         self.projectId = projectId
         let tabs = Self.migrateLegacyCenterTree(centerTree)
@@ -191,7 +183,6 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
         hasCustomName: Bool = false,
         rootDirectory: String?,
         worktreeName: String? = nil,
-        symbolName: String? = nil,
         serverId: String,
         projectId: UUID,
         centerTabs: [WorkspaceTab],
@@ -207,7 +198,6 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
         self.hasCustomName = hasCustomName
         self.rootDirectory = rootDirectory
         self.worktreeName = worktreeName
-        self.symbolName = symbolName
         self.serverId = serverId
         self.projectId = projectId
         self.centerTabs = centerTabs

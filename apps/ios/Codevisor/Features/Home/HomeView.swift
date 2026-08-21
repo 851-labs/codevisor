@@ -1219,7 +1219,7 @@ struct HomeView: View {
                 Label("Manage Machines…", systemImage: "desktopcomputer")
             }
         } label: {
-            Image(systemName: machines.selectedMachine.resolvedAppearance.symbolName)
+            Image(systemName: EntitySystemSymbol.machine(machines.selectedMachine))
         }
         .accessibilityLabel("Machine: \(machines.selectedMachine.name)")
     }

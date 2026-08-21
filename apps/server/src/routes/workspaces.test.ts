@@ -332,7 +332,6 @@ describe("workspace routes", () => {
         projectId: project.id,
         name: "Renamed",
         hasCustomName: true,
-        symbolName: "hammer",
         rootDirectory: projectFolder,
         isArchived: false
       }),
@@ -342,7 +341,6 @@ describe("workspace routes", () => {
     expect(renamed.body).toMatchObject({
       name: "Renamed",
       hasCustomName: true,
-      symbolName: "hammer",
       rootDirectory: projectFolder
     })
     expect((renamed.body as { readonly updatedAt?: string }).updatedAt).toBeDefined()

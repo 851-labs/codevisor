@@ -26,7 +26,6 @@ struct ProjectListModelTests {
             id: UUID().uuidString,
             name: "widget",
             isArchived: false,
-            symbolName: "folder.fill",
             origin: .codevisor,
             createdAt: "2026-07-03T00:00:00.000Z",
             locations: [
@@ -1122,7 +1121,6 @@ func serverProject(from project: Project) -> ServerProject {
         id: project.id.uuidString,
         name: project.name,
         isArchived: project.isArchived,
-        symbolName: project.symbolName,
         origin: project.origin,
         createdAt: serverDateString(from: project.createdAt),
         locations: project.locations.map { location in

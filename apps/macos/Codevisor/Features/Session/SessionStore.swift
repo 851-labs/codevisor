@@ -235,13 +235,12 @@ final class SessionStore {
     /// Wraps a just-sent new chat in its workspace: the record is rooted at
     /// the session's directory (the project folder until a first-send
     /// worktree finishes creating — `applyWorktree` moves it then), named
-    /// after the project, and carries the project's icon.
+    /// after the project.
     @discardableResult
     func createWorkspace(for session: ChatSession, project: Project) -> Workspace {
         var created = workspace(for: session, project: project)
         created.name = session.worktreeName ?? project.name
         created.hasCustomName = false
-        created.symbolName = project.symbolName
         environment.workspaces.save(created)
         return created
     }

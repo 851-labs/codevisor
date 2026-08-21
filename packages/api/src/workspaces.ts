@@ -11,7 +11,6 @@ export const Workspace = Schema.Struct({
   projectId: Schema.String,
   name: Schema.String,
   hasCustomName: Schema.Boolean,
-  symbolName: Schema.optional(Schema.String),
   rootDirectory: Schema.optional(Schema.String),
   isArchived: Schema.Boolean,
   archivedAt: Schema.optional(Schema.String),
@@ -25,7 +24,6 @@ export type Workspace = typeof Workspace.Type
 export const UpdateWorkspaceRequest = Schema.Struct({
   name: Schema.optional(Schema.String),
   hasCustomName: Schema.optional(Schema.Boolean),
-  symbolName: Schema.optional(Schema.String),
   rootDirectory: Schema.optional(Schema.String),
   /// Archiving a workspace cascades to its sessions while retaining pane
   /// layout; unarchiving revives only the sessions that cascade archived.
@@ -40,7 +38,6 @@ export const UpsertWorkspaceRequest = Schema.Struct({
   projectId: Schema.String,
   name: Schema.String,
   hasCustomName: Schema.Boolean,
-  symbolName: Schema.optional(Schema.String),
   rootDirectory: Schema.optional(Schema.String),
   isArchived: Schema.optional(Schema.Boolean),
   /// Client backfills preserve the original creation date.

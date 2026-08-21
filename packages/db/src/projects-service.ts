@@ -92,15 +92,14 @@ export const makeProjectsService = (
           sqlite
             .prepare(
               `insert into projects (
-                id, name, is_archived, symbol_name, origin, created_at, repo_url,
+                id, name, is_archived, origin, created_at, repo_url,
                 worktree_base_remote, worktree_base_branch
-              ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+              ) values (?, ?, ?, ?, ?, ?, ?, ?)`
             )
             .run(
               projectId,
               request.name ?? basename(request.folderPath),
               (request.isArchived ?? false) ? 1 : 0,
-              request.symbolName ?? "folder.fill",
               request.origin ?? "codevisor",
               createdAt,
               request.repoUrl ?? null,
@@ -128,7 +127,6 @@ export const makeProjectsService = (
         id: projectId,
         name: request.name ?? basename(request.folderPath),
         isArchived: request.isArchived ?? false,
-        symbolName: request.symbolName ?? "folder.fill",
         origin: request.origin ?? "codevisor",
         createdAt,
         locations: [location],
@@ -138,15 +136,14 @@ export const makeProjectsService = (
         sqlite
           .prepare(
             `insert into projects (
-              id, name, is_archived, symbol_name, origin, created_at, repo_url,
+              id, name, is_archived, origin, created_at, repo_url,
               worktree_base_remote, worktree_base_branch
-            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            ) values (?, ?, ?, ?, ?, ?, ?, ?)`
           )
           .run(
             project.id,
             project.name,
             project.isArchived ? 1 : 0,
-            project.symbolName,
             project.origin,
             project.createdAt,
             project.repoUrl ?? null,
@@ -200,7 +197,7 @@ export const makeProjectsService = (
         sqlite.transaction(() => {
           sqlite
             .prepare(
-              `update projects set name = ?, is_archived = ?, archived_at = ?, symbol_name = ?,
+              `update projects set name = ?, is_archived = ?, archived_at = ?,
                 worktree_base_remote = ?, worktree_base_branch = ?
                where id = ? collate nocase`
             )
@@ -208,7 +205,6 @@ export const makeProjectsService = (
               request.name ?? current.name,
               stamp === null ? 0 : 1,
               stamp,
-              request.symbolName ?? current.symbolName,
               worktreeBase?.remote ?? null,
               worktreeBase?.branch ?? null,
               id

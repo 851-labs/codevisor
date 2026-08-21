@@ -28,12 +28,10 @@ struct SidebarView: View {
     // using the established newline-separated UUID representation.
     @State private var expanded: Set<UUID> = []
     @State private var expandedWorkspaces: Set<UUID> = []
-    @State private var iconEditing: Project?
     @State private var renamingSession: ChatSession?
     @State private var renameTitle = ""
     @State private var renamingWorkspace: Workspace?
     @State private var workspaceRenameTitle = ""
-    @State private var workspaceIconEditing: Workspace?
     /// Bumped after workspace mutations (backfill sweep, renames) so the
     /// non-observable repository is re-read.
     @State private var workspaceRevision = 0
@@ -466,14 +464,7 @@ struct SidebarView: View {
         sidebarChangeObserversView
             .modifier(
                 SidebarSheetsModifier(
-                    iconEditing: $iconEditing,
-                    workspaceIconEditing: $workspaceIconEditing,
                     showingRemoteMachine: $showingRemoteMachine,
-                    list: list,
-                    onSaveWorkspace: { updated in
-                        environment.workspaces.save(updated)
-                        workspaceRevision += 1
-                    },
                     onAddRemoteMachine: { host, name, token in
                         do {
                             try await environment.machines.addRemoteValidating(host: host, name: name, token: token)
@@ -685,7 +676,6 @@ struct SidebarView: View {
             onDisclosureToggle: { toggle(project.id) },
             onRestoreRequest: { restoreRequest = ArchivedRestoreRequest(target: .project(project)) },
             onNewChat: { selection = .newChat(project.id) },
-            onChangeIcon: { iconEditing = project },
             onArchive: { list.archive(project) }
         )
     }
@@ -886,8 +876,7 @@ struct SidebarView: View {
             onRename: {
                 workspaceRenameTitle = item.workspace.name
                 renamingWorkspace = item.workspace
-            },
-            onChangeIcon: { workspaceIconEditing = item.workspace }
+            }
         )
     }
 

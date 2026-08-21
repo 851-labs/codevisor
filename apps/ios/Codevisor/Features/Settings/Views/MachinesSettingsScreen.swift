@@ -33,7 +33,7 @@ struct MachinesSettingsScreen: View {
                         MachineDetailScreen(machineId: machine.id)
                     } label: {
                         HStack(spacing: 10) {
-                            Image(systemName: machine.resolvedAppearance.symbolName)
+                            Image(systemName: EntitySystemSymbol.machine(machine))
                                 .foregroundStyle(.secondary)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(machine.name)

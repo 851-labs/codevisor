@@ -27,33 +27,20 @@ public struct MachineRegistry: Sendable, Codable, Equatable {
     /// never sets this, so a vanished auto-pick can be replaced next refresh.
     public var hasExplicitMachineSelection: Bool
     public var remoteMachines: [CodevisorMachine]
-    /// The local machine isn't stored in `remoteMachines`, so its optional
-    /// appearance override lives alongside the remote registry.
-    public var localAppearance: MachineAppearance?
-    /// Appearance overrides for cloud-relay machines, keyed by their stable
-    /// `cloud:<deviceId>` machine id. Cloud machines are synthesized from
-    /// cloud presence rather than stored in `remoteMachines`, so their icons
-    /// live here. Entries for machines that leave the account are kept — a
-    /// reconnecting machine gets its icon back for free.
-    public var cloudAppearances: [String: MachineAppearance]
 
     public init(
         selectedMachineId: String = CodevisorMachine.local.id,
         hasExplicitMachineSelection: Bool = false,
-        remoteMachines: [CodevisorMachine] = [],
-        localAppearance: MachineAppearance? = nil,
-        cloudAppearances: [String: MachineAppearance] = [:]
+        remoteMachines: [CodevisorMachine] = []
     ) {
         self.selectedMachineId = selectedMachineId
         self.hasExplicitMachineSelection = hasExplicitMachineSelection
         self.remoteMachines = remoteMachines
-        self.localAppearance = localAppearance
-        self.cloudAppearances = cloudAppearances
     }
 
-    /// Custom decode so registries persisted before `cloudAppearances`
-    /// existed load with an empty map instead of failing (which would look
-    /// like corruption and reset the machine list).
+    /// Custom decode keeps registries persisted before explicit selection
+    /// existed loadable. Unknown legacy appearance keys are intentionally
+    /// ignored and disappear the next time the registry is saved.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         selectedMachineId = try container.decode(String.self, forKey: .selectedMachineId)
@@ -65,12 +52,6 @@ public struct MachineRegistry: Sendable, Codable, Equatable {
                 forKey: .hasExplicitMachineSelection
             ) ?? false
         remoteMachines = try container.decode([CodevisorMachine].self, forKey: .remoteMachines)
-        localAppearance = try container.decodeIfPresent(MachineAppearance.self, forKey: .localAppearance)
-        cloudAppearances =
-            try container.decodeIfPresent(
-                [String: MachineAppearance].self,
-                forKey: .cloudAppearances
-            ) ?? [:]
     }
 }
 
@@ -258,9 +239,7 @@ public final class MachineController {
     @ObservationIgnored public var cloudProvider: (any CloudMachineProviding)?
 
     public var machines: [CodevisorMachine] {
-        var local = CodevisorMachine.local
-        local.appearance = registry.localAppearance
-        return [local] + registry.remoteMachines
+        [CodevisorMachine.local] + registry.remoteMachines
     }
 
     /// Every machine the app can reach, however it arrives: the configured
@@ -276,10 +255,6 @@ public final class MachineController {
                 if let loopback = cloudProvider?.loopbackBaseURL(for: cloud) {
                     machine.baseURL = loopback
                 }
-                // Cloud machines aren't stored in the registry, so their saved
-                // icon lives in a side map keyed by the stable `cloud:` id. Nil
-                // resolves to the icloud default.
-                machine.appearance = registry.cloudAppearances[machine.id]
                 return machine
             }
     }
@@ -563,29 +538,6 @@ public final class MachineController {
             let index = registry.remoteMachines.firstIndex(where: { $0.id == id })
         else { return }
         registry.remoteMachines[index].name = customName
-        persist()
-    }
-
-    /// Updates the icon used to identify a machine throughout the app.
-    /// Invalid values fall back to that machine kind's safe default.
-    public func setAppearance(_ appearance: MachineAppearance, for id: String) {
-        guard let machine = machine(for: id) else { return }
-        let normalized = CodevisorMachine(
-            id: machine.id,
-            name: machine.name,
-            baseURL: machine.baseURL,
-            kind: machine.kind,
-            token: machine.token,
-            appearance: appearance
-        ).resolvedAppearance
-
-        if machine.isLocal {
-            registry.localAppearance = normalized
-        } else if machine.isCloud {
-            registry.cloudAppearances[machine.id] = normalized
-        } else if let index = registry.remoteMachines.firstIndex(where: { $0.id == id }) {
-            registry.remoteMachines[index].appearance = normalized
-        }
         persist()
     }
 
@@ -1157,9 +1109,7 @@ private extension MachineRegistry {
         return MachineRegistry(
             selectedMachineId: keepsSelection ? selectedMachineId : CodevisorMachine.local.id,
             hasExplicitMachineSelection: hasExplicitMachineSelection,
-            remoteMachines: remotes,
-            localAppearance: localAppearance,
-            cloudAppearances: cloudAppearances
+            remoteMachines: remotes
         )
     }
 }

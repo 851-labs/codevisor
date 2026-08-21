@@ -25,7 +25,6 @@ struct MachinesSettingsView: View {
     @State private var discovery = MachineDiscoveryService()
     @State private var addingDiscovered: DiscoveredMachine?
     @State private var renaming: CodevisorMachine?
-    @State private var iconEditing: CodevisorMachine?
     @State private var removing: CodevisorMachine?
     @State private var tokenNotice: String?
     @State private var actionError: MachineActionError?
@@ -150,11 +149,6 @@ struct MachinesSettingsView: View {
                         message: ErrorReporter.userFacingMessage(for: error)
                     )
                 }
-            }
-        }
-        .sheet(item: $iconEditing) { machine in
-            IconPickerView(currentSymbol: machine.resolvedAppearance.symbolName) { symbol in
-                machines.setAppearance(MachineAppearance(symbolName: symbol), for: machine.id)
             }
         }
         .confirmationDialog(
@@ -356,14 +350,8 @@ struct MachinesSettingsView: View {
     /// any other machine, with presence and cloud account actions.
     private func cloudMachineRow(_ machine: CodevisorMachine, presence: CloudMachine) -> some View {
         let isSelected = machine.id == machines.selectedMachineId
-        // A saved icon wins; without one, fall back to the presence-derived
-        // glyph this row has always shown.
-        let symbolName =
-            machine.appearance != nil
-            ? machine.resolvedAppearance.symbolName
-            : (presence.os == "linux" ? "server.rack" : "desktopcomputer")
         return HStack(spacing: 10) {
-            Image(systemName: symbolName)
+            Image(systemName: EntitySystemSymbol.machine(machine))
                 .symbolRenderingMode(.monochrome)
                 .foregroundStyle(theme.textPrimary)
                 .frame(width: 20)
@@ -404,7 +392,6 @@ struct MachinesSettingsView: View {
                 .controlSize(.small)
             }
             Menu {
-                Button("Change icon") { iconEditing = machine }
                 Button("Rename…") { renamingCloud = presence }
                 Divider()
                 Button("Disconnect…", role: .destructive) { removingCloud = presence }
@@ -421,7 +408,6 @@ struct MachinesSettingsView: View {
             .accessibilityLabel("Actions for \(presence.name)")
         }
         .contextMenu {
-            Button("Change icon") { iconEditing = machine }
             Button("Rename…") { renamingCloud = presence }
             Button("Disconnect…", role: .destructive) { removingCloud = presence }
         }
@@ -431,7 +417,7 @@ struct MachinesSettingsView: View {
     private func machineRow(_ machine: CodevisorMachine) -> some View {
         let isSelected = machine.id == machines.selectedMachineId
         return HStack(spacing: 10) {
-            Image(systemName: machine.resolvedAppearance.symbolName)
+            Image(systemName: EntitySystemSymbol.machine(machine))
                 .symbolRenderingMode(.monochrome)
                 .foregroundStyle(theme.textPrimary)
                 .frame(width: 20)
@@ -467,8 +453,6 @@ struct MachinesSettingsView: View {
             }
             if machine.isLocal {
                 Menu {
-                    Button("Change icon") { iconEditing = machine }
-                    Divider()
                     Button("Copy Connection Token") { copyConnectionToken() }
                 } label: {
                     Image(systemName: "ellipsis.circle")
@@ -483,7 +467,6 @@ struct MachinesSettingsView: View {
                 .accessibilityLabel("Actions for \(machine.name)")
             } else {
                 Menu {
-                    Button("Change icon") { iconEditing = machine }
                     Button("Rename…") { renaming = machine }
                     Divider()
                     Button("Remove…", role: .destructive) { removing = machine }

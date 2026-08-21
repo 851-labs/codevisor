@@ -174,6 +174,12 @@ describe("@codevisor/db", () => {
     ).map((column) => column.name)
     expect(workspaceColumns).toContain("project_id")
     expect(workspaceColumns).not.toContain("folder_path")
+    expect(workspaceColumns).not.toContain("symbol_name")
+    expect(
+      (sqlite.pragma("table_info(projects)") as ReadonlyArray<{ readonly name: string }>).map(
+        (column) => column.name
+      )
+    ).not.toContain("symbol_name")
     expect(sqlite.prepare("select count(*) as count from workspaces").get()).toEqual({ count: 0 })
     // Migration 22 added the workspace scratchpad table; migration 33 dropped
     // it again when the notes feature was removed. A fresh migrate run still
@@ -238,7 +244,6 @@ describe("@codevisor/db", () => {
         folderPath: "/tmp/client",
         name: "Client Project",
         isArchived: true,
-        symbolName: "externaldrive",
         origin: "imported",
         createdAt: "2026-06-30T00:00:00.000Z"
       })
@@ -250,7 +255,6 @@ describe("@codevisor/db", () => {
       id: "project-client-id",
       name: "Client Project",
       isArchived: true,
-      symbolName: "externaldrive",
       origin: "imported",
       createdAt: "2026-06-30T00:00:00.000Z"
     })
@@ -264,19 +268,16 @@ describe("@codevisor/db", () => {
     const updatedProject = await run(
       db.updateProject(firstProject.id, {
         isArchived: true,
-        name: "Archived Codevisor",
-        symbolName: "archivebox"
+        name: "Archived Codevisor"
       })
     )
     expect(updatedProject).toMatchObject({
       isArchived: true,
-      name: "Archived Codevisor",
-      symbolName: "archivebox"
+      name: "Archived Codevisor"
     })
     expect(await run(db.updateProject(secondProject.id, {}))).toMatchObject({
       isArchived: false,
-      name: "Named Project",
-      symbolName: "folder.fill"
+      name: "Named Project"
     })
     await expect(run(db.updateProject("missing", { name: "nope" }))).rejects.toBeInstanceOf(
       DatabaseError

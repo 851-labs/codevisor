@@ -55,7 +55,6 @@ public struct ServerProject: Decodable, Equatable, Sendable {
     public var id: String
     public var name: String
     public var isArchived: Bool
-    public var symbolName: String
     public var origin: SessionOrigin
     public var createdAt: String
     public var locations: [ServerProjectLocation]
@@ -76,7 +75,6 @@ public struct ServerProject: Decodable, Equatable, Sendable {
             serverId: serverId,
             name: name,
             isArchived: isArchived,
-            symbolName: symbolName,
             origin: origin,
             createdAt: try ServerDateCoding.date(from: createdAt),
             locations: locations.map { location in
@@ -102,7 +100,6 @@ public struct ServerProject: Decodable, Equatable, Sendable {
         id: String,
         name: String,
         isArchived: Bool,
-        symbolName: String,
         origin: SessionOrigin,
         createdAt: String,
         locations: [ServerProjectLocation],
@@ -113,7 +110,6 @@ public struct ServerProject: Decodable, Equatable, Sendable {
         self.id = id
         self.name = name
         self.isArchived = isArchived
-        self.symbolName = symbolName
         self.origin = origin
         self.createdAt = createdAt
         self.locations = locations
@@ -131,7 +127,6 @@ public struct ServerWorkspace: Decodable, Equatable, Sendable {
     public var projectId: String
     public var name: String
     public var hasCustomName: Bool
-    public var symbolName: String?
     public var rootDirectory: String?
     public var isArchived: Bool
     public var archivedAt: String?
@@ -144,7 +139,6 @@ public struct ServerWorkspace: Decodable, Equatable, Sendable {
         projectId: String,
         name: String,
         hasCustomName: Bool,
-        symbolName: String? = nil,
         rootDirectory: String? = nil,
         isArchived: Bool,
         archivedAt: String? = nil,
@@ -156,7 +150,6 @@ public struct ServerWorkspace: Decodable, Equatable, Sendable {
         self.projectId = projectId
         self.name = name
         self.hasCustomName = hasCustomName
-        self.symbolName = symbolName
         self.rootDirectory = rootDirectory
         self.isArchived = isArchived
         self.archivedAt = archivedAt
@@ -282,7 +275,6 @@ struct CreateProjectBody: Encodable {
     var folderPath: String
     var name: String
     var isArchived: Bool
-    var symbolName: String
     var origin: SessionOrigin
     var createdAt: String
 
@@ -291,7 +283,6 @@ struct CreateProjectBody: Encodable {
         folderPath = project.folderURL.path
         name = project.name
         isArchived = project.isArchived
-        symbolName = project.symbolName
         origin = project.origin
         createdAt = ServerDateCoding.string(from: project.createdAt)
     }
@@ -300,12 +291,10 @@ struct CreateProjectBody: Encodable {
 private struct UpdateProjectBody: Encodable {
     var name: String
     var isArchived: Bool
-    var symbolName: String
 
     init(project: Project) {
         name = project.name
         isArchived = project.isArchived
-        symbolName = project.symbolName
     }
 }
 
@@ -338,7 +327,6 @@ private struct UpsertWorkspaceBody: Encodable {
     var projectId: String
     var name: String
     var hasCustomName: Bool
-    var symbolName: String?
     var rootDirectory: String?
     var isArchived: Bool
     var createdAt: String
@@ -348,7 +336,6 @@ private struct UpsertWorkspaceBody: Encodable {
         projectId = workspace.projectId
         name = workspace.name
         hasCustomName = workspace.hasCustomName
-        symbolName = workspace.symbolName
         rootDirectory = workspace.rootDirectory
         isArchived = workspace.isArchived
         createdAt = workspace.createdAt
