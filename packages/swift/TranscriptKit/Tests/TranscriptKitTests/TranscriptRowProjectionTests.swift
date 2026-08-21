@@ -27,23 +27,77 @@ struct TranscriptRowProjectionTests {
 
     @Test func completedActiveRowCarriesItsFinishedResponseIdentity() throws {
         let responseItemId = UUID()
+        let completed = ConversationItem.assistant(
+            AssistantMessage(
+                id: responseItemId,
+                turn: AssistantTurn(entries: [.text(id: "answer", markdown: "Done")])
+            )
+        )
+        let generating = ConversationItem.assistant(
+            AssistantMessage(turn: AssistantTurn(isGenerating: true))
+        )
         let completedRows = try TranscriptRowProjectionCache.project(
-            makeInput(
-                hasActiveItem: true,
-                activeFinishedResponseItemId: responseItemId
-            ),
+            makeInput(active: completed),
             options: .init(includesConnectingRow: true)
         )
         let generatingRows = try TranscriptRowProjectionCache.project(
-            makeInput(hasActiveItem: true),
+            makeInput(active: generating),
             options: .init(includesConnectingRow: true)
         )
 
         #expect(
-            completedRows.first(where: { $0.id == .active })?.finishedResponseItemId
+            completedRows.first(where: { $0.id == .active(responseItemId) })?.finishedResponseItemId
                 == responseItemId
         )
-        #expect(generatingRows.first(where: { $0.id == .active })?.finishedResponseItemId == nil)
+        #expect(
+            generatingRows.first(where: { $0.id == .active(generating.id) })?.finishedResponseItemId
+                == nil
+        )
+        #expect(
+            TranscriptPresentationRow.ID.active(responseItemId).layoutKey
+                == TranscriptPresentationRow.ID.message(responseItemId).layoutKey
+        )
+    }
+
+    @Test func staleActiveProjectionKeepsItsAssistantDuringTheNextTurn() {
+        let previous = ConversationItem.assistant(
+            AssistantMessage(
+                turn: AssistantTurn(entries: [.text(id: "answer", markdown: "Previous response")])
+            )
+        )
+        let next = ConversationItem.assistant(
+            AssistantMessage(turn: AssistantTurn(isGenerating: true))
+        )
+
+        let resolved = TranscriptActiveItemResolver.resolve(
+            projected: previous,
+            live: next,
+            settled: [previous, .user(UserMessage(text: "Follow up"))]
+        )
+
+        #expect(resolved == previous)
+    }
+
+    @Test func activeIdentityAdoptionKeepsRenderingTheLiveAssistant() {
+        let local = ConversationItem.assistant(
+            AssistantMessage(turn: AssistantTurn(isGenerating: true))
+        )
+        let canonical = ConversationItem.assistant(
+            AssistantMessage(
+                turn: AssistantTurn(
+                    entries: [.text(id: "answer", markdown: "Streaming")],
+                    isGenerating: true
+                )
+            )
+        )
+
+        let resolved = TranscriptActiveItemResolver.resolve(
+            projected: local,
+            live: canonical,
+            settled: []
+        )
+
+        #expect(resolved == canonical)
     }
 
     @Test func pendingMessageAdoptsTheSettledRowsIdentityWithoutDuplicating() throws {
@@ -127,8 +181,7 @@ struct TranscriptRowProjectionTests {
     private func makeInput(
         settled: [ConversationItem] = [],
         pending: UserMessage? = nil,
-        hasActiveItem: Bool = false,
-        activeFinishedResponseItemId: UUID? = nil,
+        active: ConversationItem? = nil,
         setup: [SessionSetupPhase] = [],
         isLoadingInitialHistory: Bool = false,
         sessionError: String? = nil,
@@ -137,8 +190,7 @@ struct TranscriptRowProjectionTests {
         TranscriptProjectionInput(
             settledConversation: settled,
             pendingUserMessage: pending,
-            hasActiveItem: hasActiveItem,
-            activeFinishedResponseItemId: activeFinishedResponseItemId,
+            activeItem: active,
             setupPhases: setup,
             waitingBackgroundTaskDescription: nil,
             waitingHarnessUpdateName: nil,

@@ -11,6 +11,7 @@ import SwiftUI
 import CodevisorCore
 import ACPKit
 import CodevisorUI
+import TranscriptKit
 
 struct ChatScreen: View {
     private static let composerBottomMargin: CGFloat = 16
@@ -452,13 +453,12 @@ struct ChatScreen: View {
                     estimatedHeight: 80
                 ))
         }
-        if controller.hasActiveItem {
+        if let activeItem = controller.activeItem {
             result.append(
                 .init(
-                    id: .active,
-                    content: .active,
-                    estimatedHeight: 320,
-                    finishedResponseItemId: controller.activeFinishedResponseItemId
+                    id: .active(activeItem.id),
+                    content: .active(activeItem),
+                    estimatedHeight: 320
                 ))
         }
         if !pendingIsOpeningRow, let message = pendingMessage {
@@ -622,8 +622,8 @@ struct ChatScreen: View {
                 waitingOnBackgroundTask: waitingOnBackgroundTask,
                 presentation: .result
             )
-        case .active:
-            TranscriptActiveItemView(controller: controller)
+        case let .active(item):
+            TranscriptActiveItemView(controller: controller, projectedItem: item)
         case let .setup(phases):
             SessionSetupView(phases: phases)
         case let .optimistic(message, showsStartingAgent):
@@ -819,6 +819,7 @@ struct ChatScreen: View {
 /// cost that made streaming degrade with conversation length.
 private struct TranscriptActiveItemView: View {
     let controller: SessionController
+    let projectedItem: ConversationItem
     @Environment(\.transcriptInvalidateRowMeasurement) private var invalidateRowMeasurement
 
     var body: some View {
@@ -826,38 +827,41 @@ private struct TranscriptActiveItemView: View {
         let waitingOnBackgroundTask = controller.waitingBackgroundTaskDescription
         let goal = controller.model?.goal
         let goalActivity = goal?.status == .active ? goal?.activity : nil
-        if let item = controller.activeItem {
-            ConversationItemView(
-                item: item,
-                isWaitingOnUser: controller.pendingQuestion != nil,
-                waitingOnBackgroundTask: waitingOnBackgroundTask,
-                goalActivity: goalActivity
-            )
-            // The active row is hosted behind the transcript's observation
-            // isolation boundary, so environment values injected by the
-            // outer row factory are otherwise frozen until this row is
-            // remounted. Read and inject subagent activity here so a newly
-            // active child starts shimmering while its parent is still
-            // generating, not only after the parent turn settles.
-            .environment(
-                \.runningSubagentToolCallIds,
-                controller.runningSubagentToolCallIds
-            )
-            // Like subagent activity above, the outer active-row host's
-            // environment is frozen from when streaming began. Refresh
-            // hover suspension here so copy affordances wake up as soon
-            // as the turn ends into a background-task wait.
-            .environment(\.hoverTrackingSuspended, controller.isSending)
-            .id(item.id)
-            .onChange(of: revision, initial: true) { _, _ in
-                invalidateRowMeasurement?()
-            }
-            .onChange(of: waitingOnBackgroundTask) { _, _ in
-                invalidateRowMeasurement?()
-            }
-            .onChange(of: goalActivity) { _, _ in
-                invalidateRowMeasurement?()
-            }
+        let item = TranscriptActiveItemResolver.resolve(
+            projected: projectedItem,
+            live: controller.activeItem,
+            settled: controller.settledConversation
+        )
+        ConversationItemView(
+            item: item,
+            isWaitingOnUser: controller.pendingQuestion != nil,
+            waitingOnBackgroundTask: waitingOnBackgroundTask,
+            goalActivity: goalActivity
+        )
+        // The active row is hosted behind the transcript's observation
+        // isolation boundary, so environment values injected by the
+        // outer row factory are otherwise frozen until this row is
+        // remounted. Read and inject subagent activity here so a newly
+        // active child starts shimmering while its parent is still
+        // generating, not only after the parent turn settles.
+        .environment(
+            \.runningSubagentToolCallIds,
+            controller.runningSubagentToolCallIds
+        )
+        // Like subagent activity above, the outer active-row host's
+        // environment is frozen from when streaming began. Refresh
+        // hover suspension here so copy affordances wake up as soon
+        // as the turn ends into a background-task wait.
+        .environment(\.hoverTrackingSuspended, controller.isSending)
+        .id(item.id)
+        .onChange(of: revision, initial: true) { _, _ in
+            invalidateRowMeasurement?()
+        }
+        .onChange(of: waitingOnBackgroundTask) { _, _ in
+            invalidateRowMeasurement?()
+        }
+        .onChange(of: goalActivity) { _, _ in
+            invalidateRowMeasurement?()
         }
     }
 }

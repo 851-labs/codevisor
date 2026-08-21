@@ -33,8 +33,8 @@ struct TranscriptVirtualRowContent: View {
                 waitingOnBackgroundTask: waitingOnBackgroundTask,
                 presentation: .result
             )
-        case .active:
-            TranscriptActiveItemView(controller: controller)
+        case let .active(item):
+            TranscriptActiveItemView(controller: controller, projectedItem: item)
         case let .setup(phases):
             SessionSetupView(phases: phases)
         case let .optimistic(message, showsStartingAgent):

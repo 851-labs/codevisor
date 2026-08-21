@@ -2,6 +2,7 @@ import CodevisorCore
 import CodevisorUI
 import QuartzCore
 import SwiftUI
+import TranscriptKit
 import UIKit
 
 /// A UIKit port of the macOS document-view virtualizer. UIScrollView owns only
@@ -84,6 +85,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     private var receivedSendAnimationToken: UInt64?
     private var pendingSendAnimationRequest: UserSendAnimationRequest?
     private var pendingSendAnimationRowKey: String?
+    private var pendingSendSourceLayout: VirtualTranscriptLayout?
     private var sendAnimationSourceFrame: CGRect?
     private var claimSendAnimation: ((UserSendAnimationRequest) -> Bool)?
     private var onSendAnimationStarted:
@@ -95,6 +97,8 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         )?
     private var onSendAnimationCompleted: ((UserSendAnimationRequest) -> Void)?
     private var activeSendAnimationRequest: UserSendAnimationRequest?
+    private var activeSendSourceLayout: VirtualTranscriptLayout?
+    private var hiddenSendAssistantRowKeys: Set<String> = []
     private var sendAnimationCompletion: TranscriptSendAnimationCompletion?
     private var presentationRole: TranscriptPresentationRole = .foreground
     private var reduceMotion = false
@@ -338,6 +342,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             receivedSendAnimationToken = newSendAnimationRequest?.token
             pendingSendAnimationRequest = newSendAnimationRequest
             pendingSendAnimationRowKey = nil
+            pendingSendSourceLayout = newSendAnimationRequest == nil ? nil : virtualLayout
         }
         if let request = pendingSendAnimationRequest {
             let requestedKey = TranscriptVirtualRow.ID.message(request.messageID).layoutKey
@@ -423,6 +428,8 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         disclosureAnchorReleaseTask?.cancel()
         sendAnimationCompletion = nil
         activeSendAnimationRequest = nil
+        activeSendSourceLayout = nil
+        hiddenSendAssistantRowKeys.removeAll(keepingCapacity: false)
         for host in mountedHosts.values {
             host.removeFromSuperview()
             host.detachFromParent()
@@ -507,9 +514,9 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         from oldRows: [TranscriptVirtualRow],
         to newRows: [TranscriptVirtualRow],
     ) {
-        guard oldRows.contains(where: { $0.id == .active }),
-            let activeHeight = measurements[TranscriptVirtualRow.ID.active.layoutKey],
-            !newRows.contains(where: { $0.id == .active })
+        guard let oldActive = oldRows.first(where: { $0.id.isActiveRow }),
+            let activeHeight = measurements[oldActive.layoutKey],
+            !newRows.contains(where: { $0.layoutKey == oldActive.layoutKey })
         else { return }
         let oldKeys = Set(oldRows.map(\.layoutKey))
         let insertedSettledRows = newRows.filter {
@@ -631,7 +638,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     private func rebuildDocumentGeometry(changedHeights: [String: CGFloat]? = nil) {
         let previousLayout = virtualLayout
         let previousDistance = initialPositionApplied ? currentDistanceFromBottom() : nil
-        let followsStreamingLatest = followsLatest && rows.contains { $0.id == .active }
+        let followsStreamingLatest = followsLatest && rows.contains { $0.id.isActiveRow }
         let pinsExplicitBottom = bottomJumpGate.isActive
         let visibleAnchorKey: String?
         if !pinsExplicitBottom,
@@ -1063,6 +1070,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
                 force: host.representedRow == nil,
             )
         }
+        synchronizeSendAssistantVisibility()
     }
 
     private func park(_ host: TranscriptRowHost, for key: String) {
@@ -1237,7 +1245,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         // Ordinary mounted rows batch into one document snapshot, matching
         // the macOS virtualizer and avoiding redundant anchor corrections.
         guard measurementCommitGate.allowsGeometryCommit else { return }
-        if measurement.key == TranscriptVirtualRow.ID.active.layoutKey {
+        if rowByKey[measurement.key]?.id.isActiveRow == true {
             measurementCommitTask?.cancel()
             measurementCommitTask = nil
             commitPendingMeasurements()
@@ -1472,7 +1480,11 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             let rowKey = pendingSendAnimationRowKey
         else { return }
         guard initialPositionApplied, bounds.width > 0, bounds.height > 0,
-            let host = mountedHosts[rowKey], host.isPresentationReady
+            let host = mountedHosts[rowKey], host.isPresentationReady,
+            sendHistoryDestinationIsReady(
+                sourceLayout: pendingSendSourceLayout,
+                rowKey: rowKey
+            )
         else { return }
 
         // Prewarmed destinations do not own animation consumption, but their
@@ -1494,11 +1506,14 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             let claimed = claimSendAnimation(request)
             pendingSendAnimationRequest = nil
             pendingSendAnimationRowKey = nil
+            pendingSendSourceLayout = nil
             return claimed
         }
 
         func claimAndCompleteWithoutAnimation() {
-            guard claimAndClear() else { return }
+            let claimed = claimAndClear()
+            finishSendPresentation()
+            guard claimed else { return }
             onSendAnimationCompleted?(request)
         }
 
@@ -1506,6 +1521,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             claimAndCompleteWithoutAnimation()
             return
         }
+        let sourceLayout = pendingSendSourceLayout
         let bottomSpacerHeight =
             rows.last { $0.id == .bottomSpacer }.flatMap { row in
                 if case let .bottomSpacer(height) = row.content { height } else { nil }
@@ -1531,9 +1547,13 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             claimAndCompleteWithoutAnimation()
             return
         }
-        guard claimAndClear() else { return }
+        guard claimAndClear() else {
+            finishSendPresentation()
+            return
+        }
 
         host.layer.removeAnimation(forKey: "codevisor.user-send")
+        beginSendPresentation(request: request, sourceLayout: sourceLayout)
         if usesExternalFlight {
             host.layer.opacity = 0
         }
@@ -1547,13 +1567,92 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
                 self.activeSendAnimationRequest?.token == request.token
             else { return }
             host.layer.opacity = 1
-            self.activeSendAnimationRequest = nil
-            self.sendAnimationCompletion = nil
+            self.finishSendPresentation()
             self.onSendAnimationCompleted?(request)
         }
         sendAnimationCompletion = completion
         group.delegate = completion
         host.layer.add(group, forKey: "codevisor.user-send")
+    }
+
+    private func beginSendPresentation(
+        request: UserSendAnimationRequest,
+        sourceLayout: VirtualTranscriptLayout?
+    ) {
+        finishSendPresentation()
+        activeSendAnimationRequest = request
+        activeSendSourceLayout = sourceLayout
+
+        if let sourceLayout {
+            for (key, host) in mountedHosts {
+                guard
+                    let translation = TranscriptSendHistoryTransition.translationY(
+                        forKey: key,
+                        from: sourceLayout,
+                        to: virtualLayout
+                    ),
+                    translation > 1
+                else { continue }
+                host.layer.removeAnimation(forKey: "codevisor.send-history-shift")
+                let movement = CABasicAnimation(keyPath: "transform.translation.y")
+                movement.fromValue = translation
+                movement.toValue = 0
+                movement.duration = TranscriptSendAnimationContract.duration
+                movement.timingFunction = CAMediaTimingFunction(
+                    controlPoints: Float(TranscriptSendAnimationContract.controlPoint1.x),
+                    Float(TranscriptSendAnimationContract.controlPoint1.y),
+                    Float(TranscriptSendAnimationContract.controlPoint2.x),
+                    Float(TranscriptSendAnimationContract.controlPoint2.y)
+                )
+                movement.fillMode = .backwards
+                movement.isRemovedOnCompletion = true
+                host.layer.add(movement, forKey: "codevisor.send-history-shift")
+            }
+        }
+        synchronizeSendAssistantVisibility()
+    }
+
+    private func synchronizeSendAssistantVisibility() {
+        guard presentationRole == .foreground else { return }
+        let sourceLayout = activeSendSourceLayout ?? pendingSendSourceLayout
+        guard activeSendAnimationRequest != nil || pendingSendAnimationRequest != nil else { return }
+        for (key, host) in mountedHosts {
+            guard rowByKey[key]?.id.isActiveRow == true,
+                sourceLayout?.indexByKey[key] == nil
+            else { continue }
+            host.layer.opacity = 0
+            hiddenSendAssistantRowKeys.insert(key)
+        }
+    }
+
+    private func finishSendPresentation() {
+        for key in hiddenSendAssistantRowKeys {
+            mountedHosts[key]?.layer.opacity = 1
+        }
+        hiddenSendAssistantRowKeys.removeAll(keepingCapacity: true)
+        activeSendAnimationRequest = nil
+        activeSendSourceLayout = nil
+        sendAnimationCompletion = nil
+    }
+
+    private func sendHistoryDestinationIsReady(
+        sourceLayout: VirtualTranscriptLayout?,
+        rowKey: String
+    ) -> Bool {
+        guard let sourceLayout,
+            sourceLayout.indexByKey[rowKey] == nil,
+            sourceLayout.keys.contains(where: { $0.hasPrefix("message:") }),
+            let targetIndex = rows.firstIndex(where: { $0.layoutKey == rowKey })
+        else { return true }
+        return rows[targetIndex...].allSatisfy { row in
+            let key = row.layoutKey
+            guard row.id != .bottomSpacer else { return true }
+            guard let host = mountedHosts[key] else { return false }
+            return measurements[key] != nil
+                && !measurements.isStale(key)
+                && host.isAttachmentGeometryReady
+                && host.isPresentationReady
+        }
     }
 
     private func sendAnimationTarget(

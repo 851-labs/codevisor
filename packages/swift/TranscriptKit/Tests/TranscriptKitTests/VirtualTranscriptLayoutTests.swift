@@ -3,6 +3,49 @@ import Testing
 @testable import TranscriptKit
 
 struct VirtualTranscriptLayoutTests {
+    @Test func retainedRowsCanAnimateAcrossAnInstantBottomJump() throws {
+        let previous = VirtualTranscriptLayout(
+            items: [
+                .init(key: "assistant", estimatedHeight: 200),
+                .init(key: "spacer", estimatedHeight: 100),
+            ],
+            measuredHeights: [:],
+            spacing: 20
+        )
+        let current = VirtualTranscriptLayout(
+            items: [
+                .init(key: "assistant", estimatedHeight: 200),
+                .init(key: "user", estimatedHeight: 40),
+                .init(key: "active", estimatedHeight: 60),
+                .init(key: "spacer", estimatedHeight: 100),
+            ],
+            measuredHeights: [:],
+            spacing: 20
+        )
+
+        #expect(
+            TranscriptSendHistoryTransition.translationY(
+                forKey: "assistant",
+                from: previous,
+                to: current
+            ) == 140
+        )
+        #expect(
+            TranscriptSendHistoryTransition.translationY(
+                forKey: "spacer",
+                from: previous,
+                to: current
+            ) == 0
+        )
+        #expect(
+            TranscriptSendHistoryTransition.translationY(
+                forKey: "user",
+                from: previous,
+                to: current
+            ) == nil
+        )
+    }
+
     private let items = [
         VirtualTranscriptLayout.Item(key: "a", estimatedHeight: 100),
         VirtualTranscriptLayout.Item(key: "b", estimatedHeight: 200),

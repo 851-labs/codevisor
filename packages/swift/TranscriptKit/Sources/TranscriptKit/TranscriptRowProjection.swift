@@ -14,11 +14,12 @@ public struct TranscriptProjectionInput: Sendable {
 
     public let settledConversation: [ConversationItem]
     public let pendingUserMessage: UserMessage?
-    public let hasActiveItem: Bool
-    /// Canonical identity of the active assistant slot once that turn has
-    /// finished. The slot deliberately survives completion to preserve its
-    /// native view identity, so `hasActiveItem` alone does not mean generating.
-    public let activeFinishedResponseItemId: UUID?
+    /// Immutable value represented by the projected active row. The native
+    /// row may observe newer token content only while the live item keeps this
+    /// identity; at a turn boundary this snapshot keeps the old response on
+    /// screen until the replacement projection commits.
+    public let activeItem: ConversationItem?
+    public var hasActiveItem: Bool { activeItem != nil }
     public let setupPhases: [SessionSetupPhase]
     public let waitingBackgroundTaskDescription: String?
     public let waitingHarnessUpdateName: String?
@@ -30,8 +31,7 @@ public struct TranscriptProjectionInput: Sendable {
     public init(
         settledConversation: [ConversationItem],
         pendingUserMessage: UserMessage?,
-        hasActiveItem: Bool,
-        activeFinishedResponseItemId: UUID? = nil,
+        activeItem: ConversationItem?,
         setupPhases: [SessionSetupPhase],
         waitingBackgroundTaskDescription: String?,
         waitingHarnessUpdateName: String?,
@@ -42,8 +42,7 @@ public struct TranscriptProjectionInput: Sendable {
     ) {
         self.settledConversation = settledConversation
         self.pendingUserMessage = pendingUserMessage
-        self.hasActiveItem = hasActiveItem
-        self.activeFinishedResponseItemId = activeFinishedResponseItemId
+        self.activeItem = activeItem
         self.setupPhases = setupPhases
         self.waitingBackgroundTaskDescription = waitingBackgroundTaskDescription
         self.waitingHarnessUpdateName = waitingHarnessUpdateName
@@ -99,7 +98,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         case assistantPlanning(UUID)
         case plan(UUID)
         case assistantResult(UUID)
-        case active
+        case active(UUID)
         case setup
         case backgroundTask
         case updateGate
@@ -115,7 +114,9 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
             case let .assistantPlanning(id): "message:\(id.uuidString):planning"
             case let .plan(id): "message:\(id.uuidString):plan"
             case let .assistantResult(id): "message:\(id.uuidString):result"
-            case .active: "special:active"
+            // An ordinary assistant keeps the same native host and measurement
+            // when it moves from the live slot into settled history.
+            case let .active(id): "message:\(id.uuidString)"
             case .setup: "special:setup"
             case .backgroundTask: "special:background"
             case .updateGate: "special:update-gate"
@@ -139,6 +140,10 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         public var isPlanDocument: Bool {
             if case .plan = self { true } else { false }
         }
+
+        public var isActiveRow: Bool {
+            if case .active = self { true } else { false }
+        }
     }
 
     public enum Content: Equatable, Sendable {
@@ -146,7 +151,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         case assistantPlanning(AssistantMessage)
         case planDocument(String)
         case assistantResult(AssistantMessage, waitingOnBackgroundTask: String?)
-        case active
+        case active(ConversationItem)
         case setup([SessionSetupPhase])
         case optimistic(UserMessage, showsStartingAgent: Bool)
         case backgroundTask(String)
@@ -200,10 +205,39 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
                     if case let .assistant(message) = item { message.id } else { nil }
                 case let .assistantResult(message, waitingOnBackgroundTask: _):
                     message.id
+                case let .active(item):
+                    if case let .assistant(message) = item, !message.turn.isGenerating {
+                        message.id
+                    } else {
+                        nil
+                    }
                 default:
                     nil
                 }
         }
+    }
+}
+
+/// Resolves the value rendered by one identity-bound active row. A token flush
+/// may use the live item, but a row from an older projection must keep showing
+/// its own assistant after the model starts the next turn.
+public enum TranscriptActiveItemResolver {
+    public static func resolve(
+        projected: ConversationItem,
+        live: ConversationItem?,
+        settled: [ConversationItem]
+    ) -> ConversationItem {
+        if live?.id == projected.id, let live {
+            return live
+        }
+        if let settled = settled.last(where: { $0.id == projected.id }) {
+            return settled
+        }
+        // A provider can replace the locally-created active id with its
+        // canonical transcript id before the next projection arrives. Unlike
+        // a turn boundary, the projected id is not settled in that case, so
+        // keep rendering the live bubble instead of flashing its old snapshot.
+        return live ?? projected
     }
 }
 
@@ -355,13 +389,12 @@ public actor TranscriptRowProjectionCache {
                     estimatedHeight: 80
                 ))
         }
-        if input.hasActiveItem {
+        if let activeItem = input.activeItem {
             rows.append(
                 .init(
-                    id: .active,
-                    content: .active,
-                    estimatedHeight: 320,
-                    finishedResponseItemId: input.activeFinishedResponseItemId
+                    id: .active(activeItem.id),
+                    content: .active(activeItem),
+                    estimatedHeight: 320
                 ))
         }
         if !pendingIsOpeningRow, let message = pendingMessage {

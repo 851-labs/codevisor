@@ -267,6 +267,29 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
     }
 }
 
+/// Presentation-only displacement for rows retained across a send.
+///
+/// The scroll view commits the new layout and jumps to its bottom immediately.
+/// A retained row can then start at this translation and animate to zero,
+/// producing the visual "make room" motion without animating scroll state or
+/// compromising the virtual layout's authoritative geometry.
+public enum TranscriptSendHistoryTransition {
+    public static func translationY(
+        forKey key: String,
+        from previous: VirtualTranscriptLayout,
+        to current: VirtualTranscriptLayout
+    ) -> CGFloat? {
+        guard let previousIndex = previous.indexByKey[key],
+            let currentIndex = current.indexByKey[key]
+        else { return nil }
+        let previousBottomAnchoredY =
+            previous.topOffsets[previousIndex] - previous.totalHeight
+        let currentBottomAnchoredY =
+            current.topOffsets[currentIndex] - current.totalHeight
+        return previousBottomAnchoredY - currentBottomAnchoredY
+    }
+}
+
 /// Insets-aware scroll coordinates for the native transcript adapters.
 ///
 /// UIKit represents the fully scrolled-to-top position as a negative content

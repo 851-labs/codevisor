@@ -61,7 +61,16 @@ public final class SessionModel {
     /// settling happens lazily when the NEXT bubble starts — so finalize
     /// keeps the row's view identity (collapse animation, hover state).
     public internal(set) var activeItem: ConversationItem? {
-        didSet { activeItemRevision &+= 1 }
+        didSet {
+            activeItemRevision &+= 1
+            // Token flushes keep one identity and stay on the isolated active
+            // host. Identity adoption and turn replacement need a new projected
+            // row identity, otherwise a stale active row can bind to the next
+            // assistant while its off-main projection is still pending.
+            if activeItem?.id != oldValue?.id, hasActiveItem {
+                transcriptProjectionRevision &+= 1
+            }
+        }
     }
     /// Cheap monotonic signal for the native row host. The active bubble is
     /// deliberately observed inside its own SwiftUI subtree, so its AppKit

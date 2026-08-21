@@ -88,6 +88,8 @@ final class TranscriptRowHost: UIView {
         // is unchanged; only reused hosts may discard another row's animation.
         if representsDifferentRow {
             layer.removeAnimation(forKey: "codevisor.user-send")
+            layer.removeAnimation(forKey: "codevisor.send-history-shift")
+            layer.opacity = 1
         }
         contentController.installRootView(rootView)
     }

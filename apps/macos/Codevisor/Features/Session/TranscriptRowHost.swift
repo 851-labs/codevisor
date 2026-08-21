@@ -20,6 +20,12 @@ final class TranscriptRowHost: NSView {
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        // The virtualizer is the only owner of row geometry. Until a natural
+        // height has been committed, keep hosted content inside the current
+        // ledger frame so an estimate can never paint over its neighbor.
+        layer?.masksToBounds = true
         contentHost.translatesAutoresizingMaskIntoConstraints = false
         contentController.sizingOptions = [.intrinsicContentSize]
         contentHost.setContentHuggingPriority(.required, for: .vertical)
@@ -76,6 +82,8 @@ final class TranscriptRowHost: NSView {
 
     func prepareForMountedRow() {
         layer?.removeAnimation(forKey: "codevisor.user-send")
+        layer?.removeAnimation(forKey: "codevisor.send-history-shift")
+        layer?.opacity = 1
         isPresentationReady = false
         isAttachmentGeometryReady = true
         contentController.resetReportedHeight()
@@ -110,17 +118,12 @@ final class TranscriptRowHost: NSView {
     }
 
     private func contentHeightDidChange(_ height: CGFloat) {
-        // SwiftUI can lay out beyond this wrapper's estimated height before the
-        // virtualizer consumes the measurement. Keep the AppKit wrapper in sync
-        // immediately so its visible content and pointer hit-test bounds never
-        // disagree during that window.
+        // Keep the hosted content's natural height current, but never resize
+        // this wrapper independently. The callback commits this height,
+        // following offsets, document size, and every mounted frame in one
+        // non-animated virtual-layout transaction before AppKit paints.
         if abs(contentHeightConstraint.constant - height) > 0.5 {
             contentHeightConstraint.constant = height
-        }
-        if abs(frame.height - height) > 0.5 {
-            var nextFrame = frame
-            nextFrame.size.height = height
-            frame = nextFrame
         }
         isPresentationReady = true
         onHeightChange?(height)

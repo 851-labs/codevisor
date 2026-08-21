@@ -45,8 +45,7 @@ extension SessionController {
         return TranscriptProjectionInput(
             settledConversation: settledConversation,
             pendingUserMessage: pendingUserMessage,
-            hasActiveItem: hasActiveItem,
-            activeFinishedResponseItemId: activeFinishedResponseItemId,
+            activeItem: activeItem,
             setupPhases: setupPhases,
             waitingBackgroundTaskDescription: waitingBackgroundTaskDescription,
             waitingHarnessUpdateName: waitingHarnessUpdateName,
