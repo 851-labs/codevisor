@@ -133,6 +133,25 @@ struct AppEnvironmentTests {
                 == ["/Users/me/src/Codevisor", "/Users/me/src/website"])
     }
 
+    @Test("Onboarding publishes completion after registering projects")
+    func onboardingPublishesCompletionLast() async {
+        let events = OnboardingCompletionEvents()
+        let environment = AppEnvironment(
+            projectRepository: OnboardingProjectRepository(events: events),
+            sessionRepository: DefaultSessionRepository(store: InMemoryStore()),
+            configCache: ConfigOptionCache(store: InMemoryStore()),
+            settings: AppSettingsModel(
+                store: OnboardingSettingsStore(events: events)
+            )
+        )
+
+        _ = await environment.finishOnboarding(projectFolders: [
+            URL(fileURLWithPath: "/Users/me/src/website")
+        ])
+
+        #expect(events.snapshot == ["projects registered", "onboarding completed"])
+    }
+
     @Test("Importable sessions are scoped to the folder and exclude known ones")
     func importableSessionsScopedToFolder() async {
         let environment = AppEnvironment.preview(seedProjects: [])
@@ -276,5 +295,51 @@ struct AppEnvironmentTests {
         #expect(restored?.id == workspace.id)
         #expect(restored?.name == workspace.name)
     }
+}
 
+private final class OnboardingCompletionEvents: @unchecked Sendable {
+    private let lock = NSLock()
+    private var events: [String] = []
+
+    var snapshot: [String] { lock.withLock { events } }
+
+    func record(_ event: String) {
+        lock.withLock { events.append(event) }
+    }
+}
+
+private struct OnboardingProjectRepository: ProjectRepository {
+    let events: OnboardingCompletionEvents
+
+    func load() -> [Project] { [] }
+
+    func save(_ projects: [Project]) {
+        if !projects.isEmpty { events.record("projects registered") }
+    }
+}
+
+private final class OnboardingSettingsStore: PersistenceStore, @unchecked Sendable {
+    private let backing = InMemoryStore()
+    private let events: OnboardingCompletionEvents
+
+    init(events: OnboardingCompletionEvents) {
+        self.events = events
+    }
+
+    func loadData(forKey key: String) -> Data? {
+        backing.loadData(forKey: key)
+    }
+
+    func saveData(_ data: Data, forKey key: String) throws {
+        try backing.saveData(data, forKey: key)
+        guard key == "settings",
+            let settings = try? JSONDecoder().decode(AppSettings.self, from: data),
+            settings.hasCompletedOnboarding
+        else { return }
+        events.record("onboarding completed")
+    }
+
+    func removeData(forKey key: String) throws {
+        try backing.removeData(forKey: key)
+    }
 }

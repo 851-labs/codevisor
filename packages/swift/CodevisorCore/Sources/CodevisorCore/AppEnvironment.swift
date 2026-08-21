@@ -513,11 +513,14 @@ public final class AppEnvironment {
 
     /// Applies the user's onboarding choice and imports if requested.
     public func finishOnboarding(importExternalSessions: Bool) async {
-        settings.completeOnboarding(importExternalSessions: importExternalSessions)
+        settings.setImportExternalSessions(importExternalSessions)
         projectList.showsImportedSessions = importExternalSessions
         if importExternalSessions {
             await importSessions()
         }
+        // This flag replaces onboarding with the main UI. Publish it only
+        // after every value that first render consumes is ready.
+        settings.completeOnboarding(importExternalSessions: importExternalSessions)
     }
 
     /// Completes onboarding, importing if requested, and adds the chosen project
@@ -525,9 +528,9 @@ public final class AppEnvironment {
     /// new chat in it.
     @discardableResult
     public func finishOnboarding(importExternalSessions: Bool, projectFolder: URL?) async -> Project? {
+        let project = projectFolder.map { projectList.addProject(folderURL: $0) }
         await finishOnboarding(importExternalSessions: importExternalSessions)
-        guard let projectFolder else { return nil }
-        return projectList.addProject(folderURL: projectFolder)
+        return project
     }
 
     /// Completes onboarding for the chosen project folders: adds each as a
@@ -537,13 +540,12 @@ public final class AppEnvironment {
     /// reads as clutter; importing stays an explicit action.
     @discardableResult
     public func finishOnboarding(projectFolders: [URL]) async -> Project? {
-        settings.completeOnboarding(importExternalSessions: false)
-        projectList.showsImportedSessions = settings.importExternalSessions
         var first: Project?
         for folder in projectFolders {
             let project = projectList.addProject(folderURL: folder)
             if first == nil { first = project }
         }
+        await finishOnboarding(importExternalSessions: false)
         return first
     }
 
