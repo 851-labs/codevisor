@@ -31,10 +31,17 @@ export interface PluginIndexEntry {
   name: string
   version: string
   description?: string
+  /// Manifest artwork path on the plugin's own server — only fetchable once
+  /// the plugin is installed and running, so browse UIs prefer
+  /// `ownerAvatarUrl`.
+  iconPath?: string
   panes: readonly PluginPaneDescriptor[]
   tools?: readonly PluginToolDescriptor[]
   /// GitHub "owner/name" — the directory always shows the real repo owner.
   repo: string
+  /// GitHub avatar of the repo owner — the only artwork renderable before
+  /// install.
+  ownerAvatarUrl?: string
   stars: number
   pushedAt: string
   /// Curation groundwork: reserved for first-party verification of an entry.
@@ -71,7 +78,7 @@ interface GitHubSearchRepo {
   default_branch: string
   stargazers_count: number
   pushed_at: string
-  owner: { login: string } | null
+  owner: { login: string; avatar_url?: string } | null
 }
 
 const githubHeaders = (token: string | undefined): Record<string, string> => ({
@@ -170,6 +177,10 @@ const toEntry = (manifest: PluginManifest, repo: GitHubSearchRepo): PluginIndexE
   panes: manifest.panes,
   ...(manifest.tools !== undefined ? { tools: manifest.tools } : {}),
   repo: repo.full_name,
+  // The owner's GitHub avatar rides along so browse UIs can show artwork
+  // without running anything — search results already carry it, so this
+  // costs zero extra requests.
+  ...(repo.owner?.avatar_url !== undefined ? { ownerAvatarUrl: repo.owner.avatar_url } : {}),
   stars: repo.stargazers_count,
   pushedAt: repo.pushed_at
 })

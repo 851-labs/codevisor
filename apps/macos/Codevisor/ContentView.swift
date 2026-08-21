@@ -340,6 +340,9 @@ struct RootView: View {
         // path when sign-in ran in the default browser instead of the
         // ASWebAuthenticationSession sheet.
         .modifier(CloudAuthDeeplinkHandling())
+        // codevisor://install-plugin deeplinks — the web plugin directory's
+        // "Open in Codevisor" button.
+        .modifier(PluginInstallDeeplinkHandling())
         .task(id: environment.machines.selectedMachineId) {
             // Warm the harness config cache in the background so the composer
             // pickers are populated instantly.
@@ -630,6 +633,25 @@ private struct CloudAuthDeeplinkHandling: ViewModifier {
                 guard let deeplink = CloudAuthDeeplink.parse(url) else { return }
                 Task { await environment.cloud.completeSignIn(ott: deeplink.ott) }
                 SettingsRouter.shared.showMachines()
+                openSettings()
+            }
+    }
+}
+
+/// codevisor://install-plugin deeplink handling: routes to the selected
+/// machine's Plugins settings page with the linked repo staged as a pending
+/// install. Never auto-installs — the plugins pane opens the standard
+/// discover→consent sheet, so the verbatim commands are always shown before
+/// anything runs.
+private struct PluginInstallDeeplinkHandling: ViewModifier {
+    @Environment(\.openSettings) private var openSettings
+
+    func body(content: Content) -> some View {
+        content
+            .onOpenURL { url in
+                guard let deeplink = PluginInstallDeeplink.parse(url) else { return }
+                SettingsRouter.shared.pendingPluginInstallSource = deeplink.repo
+                SettingsRouter.shared.showPlugins()
                 openSettings()
             }
     }

@@ -4,6 +4,16 @@ public enum CodevisorAppVariant: Sendable {
     public static let productionPort = 49_361
     public static let developmentPort = 49_362
 
+    /// The URL scheme this build registered (Info.plist CFBundleURLTypes).
+    /// Per-worktree dev builds suffix the scheme with their instance hash, so
+    /// anything that generates a deeplink back to *this* app must use the
+    /// registered value verbatim rather than assuming `codevisor-dev`.
+    public static var registeredURLScheme: String? {
+        (Bundle.main.infoDictionary?["CFBundleURLTypes"] as? [[String: Any]])?
+            .compactMap { ($0["CFBundleURLSchemes"] as? [String])?.first }
+            .first
+    }
+
     private static let stashedEnvironmentKey = "dev.launchEnvironment"
 
     /// A development instance is configured entirely through CODEVISOR_*
@@ -110,11 +120,13 @@ public enum CodevisorAppVariant: Sendable {
         /// Value for MachineController.addRemote (which defaults the port).
         public var hostWithPort: String { "\(host):\(port)" }
 
-        /// A codevisor-dev deeplink that adds this machine, for testing the
-        /// deeplink flow by opening it.
+        /// A dev-scheme deeplink that adds this machine, for testing the
+        /// deeplink flow by opening it. Uses the scheme this build actually
+        /// registered (per-worktree dev instances suffix it), falling back to
+        /// the plain dev scheme.
         public var deeplink: String {
             var components = URLComponents()
-            components.scheme = "codevisor-dev"
+            components.scheme = CodevisorAppVariant.registeredURLScheme ?? "codevisor-dev"
             components.host = "add-machine"
             components.queryItems = [
                 URLQueryItem(name: "host", value: host),

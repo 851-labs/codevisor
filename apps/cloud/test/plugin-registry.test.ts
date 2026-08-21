@@ -50,7 +50,7 @@ const searchItem = (repo: RepoFixture): Record<string, unknown> => ({
   default_branch: repo.branch ?? "main",
   stargazers_count: repo.stars ?? 0,
   pushed_at: repo.pushedAt ?? "2026-08-01T00:00:00Z",
-  owner: { login: repo.owner }
+  owner: { login: repo.owner, avatar_url: `https://avatars.github.test/${repo.owner}` }
 })
 
 interface StubFetch {
@@ -171,6 +171,7 @@ describe("refreshPluginIndex", () => {
       panes: [{ type: "notes", title: "Notes", path: "/notes/" }],
       tools: [{ name: "notes_add", description: "Add a note", path: "/tools/add" }],
       repo: "octocat/notes",
+      ownerAvatarUrl: "https://avatars.github.test/octocat",
       stars: 3,
       pushedAt: "2026-08-01T00:00:00Z"
     })

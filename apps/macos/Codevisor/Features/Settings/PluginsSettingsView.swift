@@ -52,6 +52,15 @@ struct PluginsSettingsView: View {
             .onChange(of: environment.pluginStateRevision(for: serverId)) { _, _ in
                 Task { await refreshList() }
             }
+            // A codevisor://install-plugin deeplink staged a source before
+            // routing here: consume it into the standard discover→consent
+            // install sheet.
+            .onChange(of: SettingsRouter.shared.pendingPluginInstallSource, initial: true) {
+                _, source in
+                guard let source else { return }
+                SettingsRouter.shared.pendingPluginInstallSource = nil
+                activeSheet = .install(initialSource: source)
+            }
             .sheet(item: $activeSheet) { sheet in
                 switch sheet {
                 case .install(let initialSource):
@@ -137,24 +146,23 @@ struct PluginsSettingsView: View {
         }
     }
 
+    // Custom empty state (not ContentUnavailableView): it packs its actions
+    // right against the title.
     private var emptyState: some View {
-        ContentUnavailableView {
-            Label("No Plugins", systemImage: "puzzlepiece")
-        } description: {
-            Text("Plugins add custom panes to your workspaces, served by this machine.")
-        } actions: {
-            Button {
-                activeSheet = .browse
-            } label: {
-                Label("Browse Plugins…", systemImage: "magnifyingglass")
+        VStack(spacing: 16) {
+            Image(systemName: "puzzlepiece")
+                .font(.system(size: 42))
+                .foregroundStyle(.tertiary)
+            Text("No Plugins Installed")
+                .font(.title3.weight(.semibold))
+            HStack(spacing: 10) {
+                Button("Browse Plugins") { activeSheet = .browse }
+                    .buttonStyle(.borderedProminent)
+                    .settingsActionTint(theme)
+                Button("Install Plugin…") { activeSheet = .install(initialSource: nil) }
+                    .settingsActionTint(theme)
             }
-            .settingsActionTint(theme)
-            Button {
-                activeSheet = .install(initialSource: nil)
-            } label: {
-                Label("Install Plugin…", systemImage: "plus")
-            }
-            .settingsActionTint(theme)
+            .padding(.top, 8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 40)
@@ -332,81 +340,28 @@ private struct PluginInstallSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             Form {
-                Section("Install Plugin") {
-                    // Verbatim prompt: the LocalizedStringKey initializer
-                    // would markdown-link a bare repo prompt.
-                    TextField(
-                        "Source",
-                        text: $source,
-                        prompt: Text(verbatim: "owner/repo, a git URL, or a local path")
-                    )
-                    .onSubmit { Task { await find() } }
-                    .disabled(discovery != nil)
-                }
-                .listRowBackground(themedFormRowBackground)
-                if let discovery {
+                // The source field only exists while typing one — once a
+                // plugin is found, the consent stage shows the plugin itself
+                // (Back returns here to edit).
+                if discovery == nil {
                     Section {
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack(spacing: 6) {
-                                Text(discovery.name)
-                                Text(discovery.version)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Text(discovery.id)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            if let description = discovery.description {
-                                Text(description)
-                                    .font(.callout)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        if !discovery.panes.isEmpty {
-                            VStack(alignment: .leading, spacing: 2) {
-                                ForEach(discovery.panes) { pane in
-                                    Label(pane.title, systemImage: "puzzlepiece")
-                                        .font(.callout)
-                                }
-                            }
-                        }
-                        // Declared agent tools are part of what the user
-                        // consents to, next to the verbatim commands below.
-                        if let tools = discovery.tools, !tools.isEmpty {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Adds \(tools.count) agent tool\(tools.count == 1 ? "" : "s"):")
-                                    .font(.callout)
-                                ForEach(tools) { tool in
-                                    Text(verbatim: "\(tool.name) — \(tool.description)")
-                                        .font(.callout)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                        if discovery.alreadyInstalled {
-                            Label(
-                                "A plugin with this id is already installed; installing will update it.",
-                                systemImage: "arrow.triangle.2.circlepath"
-                            )
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                        }
-                    } header: {
-                        Text("Plugin")
-                    }
-                    .listRowBackground(themedFormRowBackground)
-                    Section {
-                        commandsBox(discovery)
-                        Label(
-                            "This will run these commands on your machine.",
-                            systemImage: "exclamationmark.triangle"
+                        // Verbatim prompt: the LocalizedStringKey initializer
+                        // would markdown-link a bare repo prompt.
+                        TextField(
+                            "Source",
+                            text: $source,
+                            prompt: Text(verbatim: "owner/repo, a git URL, or a local path")
                         )
-                        .font(.callout)
-                        .foregroundStyle(theme.isSystem ? AnyShapeStyle(.secondary) : AnyShapeStyle(theme.statusWarn))
+                        .onSubmit { Task { await find() } }
                     } header: {
-                        Text("Commands")
+                        Text("Install Plugin")
+                    } footer: {
+                        Text("A public GitHub repo, a git URL, or a path on this machine.")
                     }
                     .listRowBackground(themedFormRowBackground)
+                }
+                if let discovery {
+                    discoverySections(discovery)
                 }
                 if let errorMessage {
                     Text(errorMessage).foregroundStyle(theme.statusError)
@@ -414,6 +369,7 @@ private struct PluginInstallSheet: View {
             }
             .formStyle(.grouped)
             .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
+            .disabled(isWorking)
             Divider()
                 .overlay(theme.isSystem ? Color.clear : theme.separator)
             HStack {
@@ -423,31 +379,40 @@ private struct PluginInstallSheet: View {
                         errorMessage = nil
                     }
                     .settingsActionTint(theme)
+                    .disabled(isWorking)
                 }
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .settingsActionTint(theme)
                     .keyboardShortcut(.cancelAction)
-                if discovery == nil {
-                    Button(isWorking ? "Finding…" : "Find Plugin") {
+                    .disabled(isWorking)
+                // HIG loading state: the default action is replaced by an
+                // indeterminate spinner while it runs — never a relabeled,
+                // still-tappable-looking button.
+                if isWorking {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(theme.isSystem ? nil : theme.accent)
+                        .padding(.horizontal, 12)
+                } else if discovery == nil {
+                    Button("Find Plugin") {
                         Task { await find() }
                     }
                     .settingsActionTint(theme)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(source.trimmingCharacters(in: .whitespaces).isEmpty || isWorking)
+                    .disabled(source.trimmingCharacters(in: .whitespaces).isEmpty)
                 } else {
-                    Button(isWorking ? "Installing…" : "Install") {
+                    Button("Install") {
                         Task { await runInstall() }
                     }
                     .settingsActionTint(theme)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(isWorking)
                 }
             }
             .padding()
             .themedSurface(.sheet)
         }
-        .frame(width: 480, height: discovery == nil ? 200 : 480)
+        .frame(width: 480, height: discovery == nil ? 220 : 480)
         .themedSurface(.sheet)
         .task {
             if let initialSource, discovery == nil {
@@ -457,23 +422,86 @@ private struct PluginInstallSheet: View {
         }
     }
 
-    /// The verbatim manifest commands in a code box — exactly what will run,
-    /// never a summary.
-    private func commandsBox(_ discovery: ServerPluginRemoteDiscovery) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if let install = discovery.installCommand {
-                Text(verbatim: "install: \(install)")
+    /// The consent stage, structured like the registry detail page: what the
+    /// plugin is, what it adds, and — verbatim — what it will run.
+    @ViewBuilder
+    private func discoverySections(_ discovery: ServerPluginRemoteDiscovery) -> some View {
+        Section {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(discovery.name)
+                        .font(.headline)
+                    Text(discovery.version)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                if let description = discovery.description, !description.isEmpty {
+                    Text(description)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
             }
-            Text(verbatim: "run: \(discovery.runCommand)")
+            .padding(.vertical, 2)
+            if discovery.alreadyInstalled {
+                Label("Already installed — installing updates it.", systemImage: "arrow.triangle.2.circlepath")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
         }
-        .font(.body.monospaced())
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(8)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(theme.isSystem ? AnyShapeStyle(.quaternary) : AnyShapeStyle(theme.cardQuietBackground))
-        )
-        .textSelection(.enabled)
+        .listRowBackground(themedFormRowBackground)
+        Section("Details") {
+            LabeledContent("Source", value: source.trimmingCharacters(in: .whitespaces))
+            if !discovery.panes.isEmpty {
+                LabeledContent(
+                    "Panes",
+                    value: discovery.panes.map(\.title).joined(separator: ", ")
+                )
+            }
+        }
+        .listRowBackground(themedFormRowBackground)
+        // Declared agent tools are part of what the user consents to, next
+        // to the verbatim commands below.
+        if let tools = discovery.tools, !tools.isEmpty {
+            Section("Agent Tools") {
+                ForEach(tools) { tool in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(tool.name)
+                            .font(.callout.monospaced())
+                        Text(tool.description)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                    .padding(.vertical, 1)
+                }
+            }
+            .listRowBackground(themedFormRowBackground)
+        }
+        Section {
+            // The verbatim manifest commands — exactly what will run, never
+            // a summary.
+            if let install = discovery.installCommand {
+                commandRow(title: "Install", command: install)
+            }
+            commandRow(title: "Run", command: discovery.runCommand)
+        } header: {
+            Text("Commands")
+        } footer: {
+            Text("Installing runs these commands on this machine.")
+        }
+        .listRowBackground(themedFormRowBackground)
+    }
+
+    private func commandRow(title: String, command: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Text(verbatim: command)
+                .font(.footnote.monospaced())
+                .textSelection(.enabled)
+        }
+        .padding(.vertical, 1)
     }
 
     private var themedFormRowBackground: Color? {

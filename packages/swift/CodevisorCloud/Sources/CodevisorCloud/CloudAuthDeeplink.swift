@@ -12,11 +12,10 @@ public struct CloudAuthDeeplink: Equatable, Sendable {
         self.ott = ott
     }
 
-    /// Accepts `codevisor://` and `codevisor-dev://` so a development build
-    /// can handle a link generated for production installs.
+    /// Accepts the whole Codevisor scheme family (production, dev, and
+    /// per-instance dev schemes) so a build handles any link routed to it.
     public static func parse(_ url: URL) -> CloudAuthDeeplink? {
-        guard let scheme = url.scheme?.lowercased(),
-            scheme == "codevisor" || scheme == "codevisor-dev",
+        guard CodevisorDeeplinkScheme.matches(url.scheme),
             url.host()?.lowercased() == "cloud-auth",
             let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
             let ott = components.queryItems?

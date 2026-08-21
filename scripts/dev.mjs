@@ -54,6 +54,11 @@ const instanceHash = createHash("sha256").update(repoRoot).digest("hex").slice(0
 const worktreeHash = createHash("sha256").update(worktreeName).digest("hex")
 const developmentIconColor = colorFromHash(worktreeHash)
 const instanceName = `${worktreeName}-${instanceHash}`
+// Per-instance URL scheme, mirroring the per-instance bundle identifier:
+// every dev worktree registering plain codevisor-dev:// would leave
+// LaunchServices routing deeplinks to an arbitrary one of them. The Swift
+// deeplink parsers accept the whole codevisor-dev-* family.
+const urlScheme = `codevisor-dev-${instanceHash}`
 const appName = `Codevisor (${worktreeName})`
 const layout = developmentLayout(repoRoot)
 const tmpRoot = layout.tmpRoot
@@ -230,6 +235,7 @@ try {
       `CODEVISOR_DEV_PRODUCT_NAME=${appName}`,
       `CODEVISOR_DEV_DISPLAY_NAME=${appName}`,
       `CODEVISOR_DEV_BUNDLE_IDENTIFIER=com.851labs.Codevisor.Development.${instanceHash}`,
+      `CODEVISOR_URL_SCHEME=${urlScheme}`,
       "ASSETCATALOG_COMPILER_APPICON_NAME=AppIconDevGenerated",
       "INFOPLIST_KEY_CFBundleIconFile=AppIconDevGenerated",
       "INFOPLIST_KEY_CFBundleIconName=AppIconDevGenerated",
@@ -262,8 +268,11 @@ const sharedEnvironment = {
   // GitHub OAuth setup.
   CODEVISOR_DEV_CLOUD_URL: cloudUrl,
   // Vite only exposes VITE_-prefixed vars to app code (import.meta.env);
-  // the www plugin directory uses this to hit the dev cloud registry.
+  // the www plugin directory uses these to hit the dev cloud registry and to
+  // deeplink into this instance's app (not some other worktree's).
   VITE_CODEVISOR_DEV_CLOUD_URL: cloudUrl,
+  CODEVISOR_DEV_URL_SCHEME: urlScheme,
+  VITE_CODEVISOR_DEV_URL_SCHEME: urlScheme,
   CODEVISOR_DEV_CLOUD_TOKEN: ""
 }
 const databasePath = join(dataDirectory, "codevisor-server.sqlite")
@@ -452,7 +461,7 @@ async function announceDevRemote() {
   }
   // Hand the token to the app for the one-click "add test remote" action.
   sharedEnvironment.CODEVISOR_DEV_REMOTE_TOKEN = token
-  const deeplink = `codevisor-dev://add-machine?host=127.0.0.1&port=${remotePort}&token=${token}&name=${encodeURIComponent(remoteName)}`
+  const deeplink = `${urlScheme}://add-machine?host=127.0.0.1&port=${remotePort}&token=${token}&name=${encodeURIComponent(remoteName)}`
   console.log("")
   console.log(`Dev remote server ready — add it in ${appName}:`)
   console.log(`  Settings → Machines → Add Remote Machine`)

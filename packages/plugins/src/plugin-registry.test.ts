@@ -93,6 +93,27 @@ describe("makePluginRegistryClient", () => {
     expect(calls).toBe(2)
   })
 
+  it("never caches a never-generated index (generatedAt null)", async () => {
+    // The cloud serves { generatedAt: null } before its first poll. Pinning
+    // that empty answer for a TTL would show "no plugins published" for 10
+    // minutes on fresh dev environments, so it is served but not cached.
+    let calls = 0
+    const client = makePluginRegistryClient({
+      baseUrl: "https://registry.example",
+      fetchImpl: async () => {
+        calls += 1
+        return calls === 1
+          ? jsonResponse({ entries: [], generatedAt: null, rejected: [] })
+          : jsonResponse(index("first-poll"))
+      },
+      now: () => 0
+    })
+    expect((await client.fetchIndex()).generatedAt).toBeNull()
+    // Same instant, no TTL elapsed: the empty answer was not cached.
+    expect((await client.fetchIndex()).generatedAt).toBe("first-poll")
+    expect(calls).toBe(2)
+  })
+
   it("serves the stale index when a refresh fails", async () => {
     let clock = 0
     let calls = 0

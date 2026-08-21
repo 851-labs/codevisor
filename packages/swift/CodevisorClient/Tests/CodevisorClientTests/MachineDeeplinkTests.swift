@@ -34,6 +34,14 @@ struct MachineDeeplinkTests {
         #expect(deeplink?.displayName == "10.0.0.5")
     }
 
+    @Test("Accepts per-instance dev schemes")
+    func parsesInstanceScheme() {
+        // `bun run dev` registers codevisor-dev-<instance hash> so parallel
+        // dev worktrees never race for one handler.
+        let url = URL(string: "codevisor-dev-ab12cd34ef://add-machine?host=10.0.0.5&token=hm_x")!
+        #expect(MachineDeeplink.parse(url) == MachineDeeplink(host: "10.0.0.5", token: "hm_x"))
+    }
+
     @Test("Rejects foreign schemes, other actions, and missing pairing data")
     func rejectsInvalidLinks() {
         let rejected = [

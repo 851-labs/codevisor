@@ -213,6 +213,10 @@ export const PluginRegistryEntry = Schema.Struct({
   /// GitHub "owner/name" — the directory always shows the real repo owner.
   /// Feed this to the discover→consent→install flow as the plugin source.
   repo: Schema.String,
+  /// GitHub avatar of the repo owner — the only artwork renderable before
+  /// install (a plugin's own iconPath is served by its running server, so it
+  /// is unreachable for a not-yet-installed plugin).
+  ownerAvatarUrl: Schema.optional(Schema.String),
   stars: Schema.Number,
   pushedAt: Schema.String,
   /// Curation groundwork: reserved for first-party verification of an entry.

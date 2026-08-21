@@ -3,7 +3,9 @@ import SwiftUI
 import CodevisorUI
 
 /// Browse the public plugin registry: a searchable list of GitHub-indexed
-/// plugins served through this machine (`GET /v1/plugins/registry`). Purely
+/// plugins served through this machine (`GET /v1/plugins/registry`). The list
+/// stays scannable — artwork, name, one-line description, Install — and a
+/// click on a row pushes the full story (panes, tools, repo facts). Purely
 /// discovery — Install hands the entry's repo to the existing install sheet,
 /// so consent (verbatim commands + declared tools) is unchanged.
 struct PluginRegistryBrowseSheet: View {
@@ -16,6 +18,7 @@ struct PluginRegistryBrowseSheet: View {
     @State private var entries: [ServerPluginRegistryEntry]?
     @State private var errorMessage: String?
     @State private var query = ""
+    @State private var selectedEntry: ServerPluginRegistryEntry?
 
     private var filtered: [ServerPluginRegistryEntry] {
         PluginRegistryBrowsing.filter(entries ?? [], query: query)
@@ -23,7 +26,19 @@ struct PluginRegistryBrowseSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            content
+            NavigationStack {
+                content
+                    .navigationDestination(item: $selectedEntry) { entry in
+                        PluginRegistryDetailView(
+                            entry: entry,
+                            isInstalled: PluginRegistryBrowsing.isInstalled(
+                                entry,
+                                installedIds: installedIds
+                            ),
+                            onInstall: { onInstall(entry) }
+                        )
+                    }
+            }
             Divider()
                 .overlay(theme.isSystem ? Color.clear : theme.separator)
             HStack {
@@ -35,7 +50,7 @@ struct PluginRegistryBrowseSheet: View {
             .padding()
             .themedSurface(.sheet)
         }
-        .frame(width: 520, height: 480)
+        .frame(width: 520, height: 520)
         .themedSurface(.sheet)
         .task { await load() }
     }
@@ -48,14 +63,13 @@ struct PluginRegistryBrowseSheet: View {
                     TextField(
                         "Search",
                         text: $query,
-                        prompt: Text(verbatim: "Search plugins by name, description, or repo")
+                        prompt: Text(verbatim: "Search plugins")
                     )
                 }
                 .listRowBackground(themedFormRowBackground)
                 Section {
                     if entries.isEmpty {
-                        Text("No plugins have been published yet.")
-                            .foregroundStyle(.secondary)
+                        emptyRegistryText
                     } else if filtered.isEmpty {
                         Text("No plugins match “\(query)”.")
                             .foregroundStyle(.secondary)
@@ -89,48 +103,51 @@ struct PluginRegistryBrowseSheet: View {
         }
     }
 
+    private var emptyRegistryText: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("No plugins have been published yet.")
+                .foregroundStyle(.secondary)
+            Text(
+                "Publish yours by tagging a public GitHub repo with the codevisor-plugin topic."
+            )
+            .font(.callout)
+            .foregroundStyle(.tertiary)
+        }
+    }
+
+    /// One glanceable line per plugin: artwork, name, what it does, Install.
+    /// Everything else (version, repo, stars, capabilities) lives on the
+    /// detail page behind the row.
     private func entryRow(_ entry: ServerPluginRegistryEntry) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: "puzzlepiece")
-                .foregroundStyle(.secondary)
-                .frame(width: 20)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(entry.name).foregroundStyle(.primary)
-                    Text(entry.version)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if PluginRegistryBrowsing.isInstalled(entry, installedIds: installedIds) {
-                        installedChip
-                    }
-                }
-                Text(subtitle(entry))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+            PluginRegistryAvatarView(urlString: entry.ownerAvatarUrl, size: 30)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.name).foregroundStyle(.primary)
                 if let description = entry.description, !description.isEmpty {
                     Text(description)
                         .font(.callout)
                         .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                        .lineLimit(1)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Button("Install…") { onInstall(entry) }
-                .settingsActionTint(theme)
+            if PluginRegistryBrowsing.isInstalled(entry, installedIds: installedIds) {
+                installedChip
+            } else {
+                Button("Install") { onInstall(entry) }
+                    .settingsActionTint(theme)
+            }
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
         }
+        .contentShape(Rectangle())
+        .onTapGesture { selectedEntry = entry }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(entry.name), \(subtitle(entry))")
-    }
-
-    /// One line, densest first: the real repo owner, what installing adds,
-    /// and the GitHub stars that anchor the entry's reputation.
-    private func subtitle(_ entry: ServerPluginRegistryEntry) -> String {
-        let capabilities = PluginRegistryBrowsing.capabilitySummary(for: entry)
-        let stars = "\(entry.stars) star\(entry.stars == 1 ? "" : "s")"
-        return ([entry.repo, capabilities, stars].filter { !$0.isEmpty }).joined(separator: " · ")
+        .accessibilityLabel(Text(entry.name))
+        .accessibilityHint(Text("Shows details for \(entry.name)"))
+        .accessibilityAddTraits(.isButton)
     }
 
     private var installedChip: some View {
@@ -156,5 +173,96 @@ struct PluginRegistryBrowseSheet: View {
         } catch {
             errorMessage = ErrorReporter.userFacingMessage(for: error)
         }
+    }
+}
+
+/// Everything the list row leaves out, shown before any commitment: what the
+/// plugin adds (panes, agent tools) and the GitHub facts that anchor it to a
+/// real owner (repo, stars, last push). Install goes through the same
+/// discover→consent flow as everywhere else.
+private struct PluginRegistryDetailView: View {
+    @Environment(\.theme) private var theme
+    let entry: ServerPluginRegistryEntry
+    let isInstalled: Bool
+    let onInstall: () -> Void
+
+    var body: some View {
+        Form {
+            Section {
+                HStack(spacing: 12) {
+                    PluginRegistryAvatarView(urlString: entry.ownerAvatarUrl, size: 44)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(entry.name)
+                            .font(.headline)
+                        Text("by \(PluginRegistryBrowsing.owner(of: entry))")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    if isInstalled {
+                        Text("Installed")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Button("Install…") { onInstall() }
+                            .settingsActionTint(theme)
+                    }
+                }
+                if let description = entry.description, !description.isEmpty {
+                    Text(description)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .listRowBackground(themedFormRowBackground)
+            if let tools = entry.tools, !tools.isEmpty {
+                Section("Agent Tools") {
+                    ForEach(tools) { tool in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(tool.name)
+                                .font(.body.monospaced())
+                            Text(tool.description)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .listRowBackground(themedFormRowBackground)
+            }
+            Section("Information") {
+                // Pane titles as plain text: pane artwork is served by the
+                // plugin's own server, which isn't running pre-install.
+                if !entry.panes.isEmpty {
+                    LabeledContent(
+                        "Panes",
+                        value: entry.panes.map(\.title).joined(separator: ", ")
+                    )
+                }
+                LabeledContent("Version", value: entry.version)
+                LabeledContent("Stars", value: PluginRegistryBrowsing.starsText(for: entry))
+                if let updated = PluginRegistryBrowsing.updatedText(for: entry) {
+                    LabeledContent("Updated", value: updated)
+                }
+                if let url = URL(string: "https://github.com/\(entry.repo)") {
+                    Link(destination: url) {
+                        LabeledContent("GitHub") {
+                            HStack(spacing: 4) {
+                                Text(entry.repo)
+                                Image(systemName: "arrow.up.right")
+                                    .font(.caption2)
+                            }
+                        }
+                    }
+                    .foregroundStyle(.primary)
+                }
+            }
+            .listRowBackground(themedFormRowBackground)
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
+        .navigationTitle(entry.name)
+    }
+
+    private var themedFormRowBackground: Color? {
+        theme.isSystem ? nil : theme.cardQuietBackground
     }
 }

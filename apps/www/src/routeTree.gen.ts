@@ -14,6 +14,7 @@ import { Route as PluginsRouteImport } from './routes/plugins'
 import { Route as LlmsDottxtRouteImport } from './routes/llms[.]txt'
 import { Route as DocsDotmdRouteImport } from './routes/docs[.]md'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as PluginsPluginIdRouteImport } from './routes/plugins_.$pluginId'
 import { Route as DownloadMacosRouteImport } from './routes/download.macos'
 import { Route as DocsChar123Char125DotmdRouteImport } from './routes/docs/{$}[.]md'
 import { Route as DocsLlmsDottxtRouteImport } from './routes/docs/llms[.]txt'
@@ -43,6 +44,11 @@ const DocsDotmdRoute = DocsDotmdRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PluginsPluginIdRoute = PluginsPluginIdRouteImport.update({
+  id: '/plugins_/$pluginId',
+  path: '/plugins/$pluginId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DownloadMacosRoute = DownloadMacosRouteImport.update({
@@ -82,6 +88,7 @@ export interface FileRoutesByFullPath {
   '/docs/llms.txt': typeof DocsLlmsDottxtRoute
   '/docs/{$}.md': typeof DocsChar123Char125DotmdRoute
   '/download/macos': typeof DownloadMacosRoute
+  '/plugins/$pluginId': typeof PluginsPluginIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -94,6 +101,7 @@ export interface FileRoutesByTo {
   '/docs/llms.txt': typeof DocsLlmsDottxtRoute
   '/docs/{$}.md': typeof DocsChar123Char125DotmdRoute
   '/download/macos': typeof DownloadMacosRoute
+  '/plugins/$pluginId': typeof PluginsPluginIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -107,6 +115,7 @@ export interface FileRoutesById {
   '/docs/llms.txt': typeof DocsLlmsDottxtRoute
   '/docs/{$}.md': typeof DocsChar123Char125DotmdRoute
   '/download/macos': typeof DownloadMacosRoute
+  '/plugins_/$pluginId': typeof PluginsPluginIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -121,6 +130,7 @@ export interface FileRouteTypes {
     | '/docs/llms.txt'
     | '/docs/{$}.md'
     | '/download/macos'
+    | '/plugins/$pluginId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -133,6 +143,7 @@ export interface FileRouteTypes {
     | '/docs/llms.txt'
     | '/docs/{$}.md'
     | '/download/macos'
+    | '/plugins/$pluginId'
   id:
     | '__root__'
     | '/'
@@ -145,6 +156,7 @@ export interface FileRouteTypes {
     | '/docs/llms.txt'
     | '/docs/{$}.md'
     | '/download/macos'
+    | '/plugins_/$pluginId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -158,6 +170,7 @@ export interface RootRouteChildren {
   DocsLlmsDottxtRoute: typeof DocsLlmsDottxtRoute
   DocsChar123Char125DotmdRoute: typeof DocsChar123Char125DotmdRoute
   DownloadMacosRoute: typeof DownloadMacosRoute
+  PluginsPluginIdRoute: typeof PluginsPluginIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -195,6 +208,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/plugins_/$pluginId': {
+      id: '/plugins_/$pluginId'
+      path: '/plugins/$pluginId'
+      fullPath: '/plugins/$pluginId'
+      preLoaderRoute: typeof PluginsPluginIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/download/macos': {
@@ -246,6 +266,7 @@ const rootRouteChildren: RootRouteChildren = {
   DocsLlmsDottxtRoute: DocsLlmsDottxtRoute,
   DocsChar123Char125DotmdRoute: DocsChar123Char125DotmdRoute,
   DownloadMacosRoute: DownloadMacosRoute,
+  PluginsPluginIdRoute: PluginsPluginIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

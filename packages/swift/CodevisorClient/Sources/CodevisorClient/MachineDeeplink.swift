@@ -27,11 +27,10 @@ public struct MachineDeeplink: Equatable, Sendable {
         name ?? host
     }
 
-    /// Accepts `codevisor://` and `codevisor-dev://` so a development build
-    /// can handle a link generated for production installs.
+    /// Accepts the whole Codevisor scheme family (production, dev, and
+    /// per-instance dev schemes) so a build handles any link routed to it.
     public static func parse(_ url: URL) -> MachineDeeplink? {
-        guard let scheme = url.scheme?.lowercased(),
-            scheme == "codevisor" || scheme == "codevisor-dev",
+        guard CodevisorDeeplinkScheme.matches(url.scheme),
             url.host()?.lowercased() == "add-machine",
             let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         else { return nil }

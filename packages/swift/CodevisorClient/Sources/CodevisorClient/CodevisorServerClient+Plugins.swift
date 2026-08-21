@@ -3,7 +3,7 @@ import Foundation
 /// One pane a plugin contributes (mirrors `PluginPaneDescriptor` in
 /// packages/api). `path` is the plugin-server path the pane's webview loads
 /// through the proxy.
-public struct ServerPluginPaneDescriptor: Codable, Equatable, Identifiable, Sendable {
+public struct ServerPluginPaneDescriptor: Codable, Hashable, Identifiable, Sendable {
     /// Pane type, unique within the plugin (e.g. "diff").
     public var type: String
     public var title: String
@@ -27,7 +27,7 @@ public struct ServerPluginPaneDescriptor: Codable, Equatable, Identifiable, Send
 /// server when an agent invokes the tool. The descriptor's opaque
 /// `inputSchema` (a JSON Schema for the arguments) is not decoded
 /// client-side — consent and settings surfaces only need name + description.
-public struct ServerPluginToolDescriptor: Codable, Equatable, Identifiable, Sendable {
+public struct ServerPluginToolDescriptor: Codable, Hashable, Identifiable, Sendable {
     /// Tool name, unique within the plugin (lowercase letters, digits,
     /// underscores).
     public var name: String
@@ -137,7 +137,7 @@ public struct ServerPluginRemoteDiscovery: Codable, Equatable, Sendable {
 /// One plugin in the public registry index (mirrors `PluginRegistryEntry` in
 /// packages/api): manifest metadata renderable without running anything, plus
 /// the GitHub facts (repo, stars, push time) that anchor it to a real owner.
-public struct ServerPluginRegistryEntry: Codable, Equatable, Identifiable, Sendable {
+public struct ServerPluginRegistryEntry: Codable, Hashable, Identifiable, Sendable {
     /// Owner-namespaced plugin id, lowercase `owner.name`.
     public var id: String
     public var name: String
@@ -149,6 +149,10 @@ public struct ServerPluginRegistryEntry: Codable, Equatable, Identifiable, Senda
     /// GitHub "owner/name" — the directory always shows the real repo owner.
     /// Feed this to the discover→consent→install flow as the plugin source.
     public var repo: String
+    /// GitHub avatar of the repo owner — the only artwork renderable before
+    /// install (`iconPath` is served by the plugin's own server, which isn't
+    /// running yet). Absent from older indexes.
+    public var ownerAvatarUrl: String?
     public var stars: Int
     public var pushedAt: String
     /// Curation groundwork: reserved for first-party verification of an
@@ -164,6 +168,7 @@ public struct ServerPluginRegistryEntry: Codable, Equatable, Identifiable, Senda
         panes: [ServerPluginPaneDescriptor] = [],
         tools: [ServerPluginToolDescriptor]? = nil,
         repo: String,
+        ownerAvatarUrl: String? = nil,
         stars: Int,
         pushedAt: String,
         verified: Bool? = nil
@@ -176,6 +181,7 @@ public struct ServerPluginRegistryEntry: Codable, Equatable, Identifiable, Senda
         self.panes = panes
         self.tools = tools
         self.repo = repo
+        self.ownerAvatarUrl = ownerAvatarUrl
         self.stars = stars
         self.pushedAt = pushedAt
         self.verified = verified

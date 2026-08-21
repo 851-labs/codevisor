@@ -48,6 +48,9 @@ struct HomeView: View {
     @State private var path: [HomeRoute] = []
     @State private var pendingDeeplink: MachineDeeplink?
     @State private var deeplinkError: String?
+    /// A codevisor://install-plugin deeplink (the web plugin directory's
+    /// "Open in Codevisor" button), staged until the install sheet presents.
+    @State private var pendingPluginInstall: PendingPluginInstall?
     @State private var isPointerInsideSidebar = false
     @GestureState private var isTouchingSidebar = false
     /// Group reordering uses a dedicated flat List. The disclosure
@@ -399,8 +402,28 @@ struct HomeView: View {
                     Task { await environment.cloud.completeSignIn(ott: auth.ott) }
                     return
                 }
+                // codevisor://install-plugin deeplinks — the web plugin
+                // directory's "Open in Codevisor" button. Never auto-installs:
+                // the sheet runs the standard discover→consent flow, so the
+                // verbatim commands are always shown before anything runs.
+                if let install = PluginInstallDeeplink.parse(url) {
+                    pendingPluginInstall = PendingPluginInstall(repo: install.repo)
+                    return
+                }
                 guard let link = MachineDeeplink.parse(url) else { return }
                 pendingDeeplink = link
+            }
+            .sheet(item: $pendingPluginInstall) { pending in
+                let client = machines.client(for: machines.selectedMachineId)
+                PluginInstallSheet(
+                    initialSource: pending.repo,
+                    discover: { source in
+                        try await client.discoverRemotePlugin(source: source)
+                    },
+                    onInstall: { source in
+                        _ = try await client.importRemotePlugin(source: source)
+                    }
+                )
             }
             .modifier(
                 MachineDeeplinkAlerts(
@@ -1721,6 +1744,14 @@ struct HomeView: View {
             newChatSheetPath.removeLast(newChatSheetPath.count)
         }
     }
+}
+
+/// Sheet-presentation wrapper for a parsed install-plugin deeplink: the repo
+/// is the identity, so a second tap on the same link while the sheet is up
+/// doesn't re-present it.
+private struct PendingPluginInstall: Identifiable {
+    let repo: String
+    var id: String { repo }
 }
 
 #Preview {

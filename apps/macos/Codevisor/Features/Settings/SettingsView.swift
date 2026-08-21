@@ -124,6 +124,23 @@ final class SettingsRouter {
         }
         machinesPath = [.machine(id), .harnesses(id)]
     }
+
+    /// Opens the plugins page of the given machine, defaulting to the app's
+    /// selected machine.
+    func showPlugins(machineId: String? = nil) {
+        selectedTab = .machines
+        guard let id = machineId ?? selectedMachineIdProvider() else {
+            machinesPath = []
+            return
+        }
+        machinesPath = [.machine(id), .plugins(id)]
+    }
+
+    /// A plugin source handed in from outside the settings window (the
+    /// `codevisor://install-plugin` deeplink). The plugins pane consumes it
+    /// and opens the install sheet — discover→consent still runs; a link can
+    /// never skip the consent step.
+    var pendingPluginInstallSource: String?
 }
 
 /// The native back/forward control (System Settings, Xcode): a `ControlGroup`

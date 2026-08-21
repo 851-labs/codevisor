@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router"
 
 import { InstallCommand } from "../components/install-command"
+import { SiteNav } from "../components/site-nav"
 
 export const Route = createFileRoute("/")({
   component: Home
@@ -9,7 +10,7 @@ export const Route = createFileRoute("/")({
 function Home() {
   return (
     <div className="marketing-shell min-h-screen">
-      <Nav />
+      <SiteNav />
       <main>
         <Hero />
         <Screenshot
@@ -33,33 +34,6 @@ function Home() {
       </main>
       <Footer />
     </div>
-  )
-}
-
-function Nav() {
-  return (
-    <header className="fixed inset-x-0 top-0 z-40 border-b border-hairline bg-black/80 backdrop-blur-xl">
-      <nav className="mx-auto flex h-11 max-w-5xl items-center justify-between px-6 text-xs">
-        <a href="/" className="flex items-center gap-2 font-semibold tracking-tight text-text">
-          <img src="/codevisor-icon.png" alt="" className="size-6 rounded" />
-          Codevisor
-        </a>
-        <div className="flex items-center gap-6 text-muted">
-          <a href="/plugins" className="transition-colors hover:text-text">
-            Plugins
-          </a>
-          <a href="/docs" className="transition-colors hover:text-text">
-            Docs
-          </a>
-          <a
-            href="#install"
-            className="rounded-full bg-text px-3 py-1 font-medium text-black transition-opacity hover:opacity-90"
-          >
-            Install
-          </a>
-        </div>
-      </nav>
-    </header>
   )
 }
 

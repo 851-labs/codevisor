@@ -67,7 +67,13 @@ export const makePluginRegistryClient = (
           throw new Error(`registry answered with status ${response.status}`)
         }
         const index = decode(PluginRegistryIndex)(await response.json())
-        cached = { fetchedAt: now(), index }
+        // A never-generated index (generatedAt null — the cloud's first poll
+        // hasn't run yet) is served but not cached: the registry may fill in
+        // any moment, and pinning its empty answer for a whole TTL would show
+        // "no plugins published" for 10 minutes on fresh dev environments.
+        if (index.generatedAt !== null) {
+          cached = { fetchedAt: now(), index }
+        }
         return index
       } catch (cause) {
         // Stale-while-error: an expired cache entry still beats an outage.
