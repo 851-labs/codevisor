@@ -70,7 +70,7 @@ public final class WorkspaceSyncModel {
         let generation = refreshGeneration
         do {
             var records: [ServerWorkspace]
-            let paneSnapshot: [ServerWorkspacePane]?
+            var paneSnapshot: [ServerWorkspacePane]?
             let usesCoherentSnapshot: Bool
             if let snapshot = try await client.workspaceSnapshot() {
                 records = snapshot.workspaces
@@ -104,6 +104,32 @@ public final class WorkspaceSyncModel {
             )
             records = adoption.records
             assignments = adoption.assignments
+            guard adoption.canReconcile else { return }
+
+            // Adoption writes a workspace, its pane identities, and session
+            // membership after the coherent snapshot above was captured. Do
+            // not reconcile that pre-adoption pane list: it can be empty and
+            // would evict the live local pane before the server's resulting
+            // events arrive. Re-read the atomic snapshot so the repository
+            // crosses the ownership boundary in one coherent commit.
+            if adoption.didMutateServer {
+                guard projectList.selectedServerId == serverId,
+                    generation == refreshGeneration
+                else { return }
+                if usesCoherentSnapshot {
+                    guard let refreshed = try await client.workspaceSnapshot() else { return }
+                    records = refreshed.workspaces
+                    paneSnapshot = refreshed.panes
+                } else {
+                    async let workspaceRequest = client.listWorkspaces()
+                    async let paneRequest = client.listWorkspacePanes()
+                    guard let refreshedRecords = try await workspaceRequest,
+                        let refreshedPanes = try await paneRequest
+                    else { return }
+                    records = refreshedRecords
+                    paneSnapshot = refreshedPanes
+                }
+            }
 
             var protectedLocalPaneIds = Set<UUID>()
             let panes: [ServerWorkspacePane]?
@@ -690,6 +716,8 @@ public final class WorkspaceSyncModel {
     private struct WorkspaceAdoptionResult {
         var records: [ServerWorkspace]
         var assignments: [UUID: UUID]
+        var didMutateServer: Bool
+        var canReconcile: Bool
     }
 
     /// Promotes legacy client-only workspaces into the server registry. If
@@ -706,6 +734,7 @@ public final class WorkspaceSyncModel {
         var records = snapshot
         var assignments = initialAssignments
         var remoteIds = Set(records.compactMap { UUID(uuidString: $0.id) })
+        var didMutateServer = false
 
         for workspace in repository.loadAll()
         where workspace.serverId == serverId && !workspace.isServerSynced {
@@ -733,6 +762,7 @@ public final class WorkspaceSyncModel {
                     }
                     records.append(uploaded)
                     remoteIds.insert(uploadedId)
+                    didMutateServer = true
                 } catch {
                     Log.sync.error(
                         "Failed to adopt workspace \(workspace.id, privacy: .public): \(String(describing: error), privacy: .public)"
@@ -745,27 +775,87 @@ public final class WorkspaceSyncModel {
                 continue
             }
 
-            for chatId in chatIds where assignments[chatId] != targetWorkspaceId {
-                guard
-                    let session = projectList.sessions.first(where: {
-                        $0.serverId == serverId && $0.id == chatId
-                    })
-                else { continue }
+            let sessions = chatIds.compactMap { chatId in
+                projectList.sessions.first(where: {
+                    $0.serverId == serverId && $0.id == chatId
+                })
+            }
+
+            // A new local workspace owns its pane identities. Publish them
+            // before membership invokes the server's compatibility bridge;
+            // otherwise the bridge creates a replacement pane keyed by the
+            // session id and the native transcript host is torn down.
+            if assignedTargets.isEmpty, targetWorkspaceId == workspace.id {
+                do {
+                    for session in sessions {
+                        _ = try await client.upsertSession(session)
+                        didMutateServer = true
+                    }
+                    for localPane in Self.allPanes(in: workspace) {
+                        guard
+                            try await client.upsertWorkspacePane(
+                                Self.serverPane(
+                                    from: localPane,
+                                    workspaceId: targetWorkspaceId,
+                                    createdAt: workspace.createdAt
+                                )
+                            ) != nil
+                        else {
+                            throw WorkspaceAdoptionError.panePublicationUnavailable
+                        }
+                        repository.markMigrationPerformed(
+                            Self.panePublicationKey(
+                                serverId: workspace.serverId,
+                                paneId: localPane.id
+                            )
+                        )
+                        didMutateServer = true
+                    }
+                } catch {
+                    Log.sync.error(
+                        "Failed to publish panes while adopting workspace \(workspace.id, privacy: .public): \(String(describing: error), privacy: .public)"
+                    )
+                    return WorkspaceAdoptionResult(
+                        records: records,
+                        assignments: assignments,
+                        didMutateServer: didMutateServer,
+                        canReconcile: false
+                    )
+                }
+            }
+
+            for session in sessions where assignments[session.id] != targetWorkspaceId {
                 do {
                     _ = try await client.upsertSession(
                         session,
                         workspaceId: targetWorkspaceId
                     )
-                    assignments[chatId] = targetWorkspaceId
+                    assignments[session.id] = targetWorkspaceId
+                    didMutateServer = true
                 } catch {
                     Log.sync.error(
-                        "Failed to adopt chat \(chatId, privacy: .public) into workspace \(targetWorkspaceId, privacy: .public): \(String(describing: error), privacy: .public)"
+                        "Failed to adopt chat \(session.id, privacy: .public) into workspace \(targetWorkspaceId, privacy: .public): \(String(describing: error), privacy: .public)"
+                    )
+                    return WorkspaceAdoptionResult(
+                        records: records,
+                        assignments: assignments,
+                        didMutateServer: didMutateServer,
+                        canReconcile: false
                     )
                 }
             }
         }
 
-        return WorkspaceAdoptionResult(records: records, assignments: assignments)
+        return WorkspaceAdoptionResult(
+            records: records,
+            assignments: assignments,
+            didMutateServer: didMutateServer,
+            canReconcile: true
+        )
+    }
+
+    private enum WorkspaceAdoptionError: Error {
+        case panePublicationUnavailable
     }
 
     /// Establishes a server workspace before any pane mutation references it.

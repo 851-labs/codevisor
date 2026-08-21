@@ -839,7 +839,7 @@ struct MachineControllerTests {
         }
     }
 
-    @Test("Legacy workspace adoption publishes membership before its panes")
+    @Test("New workspace adoption preserves pane identity across a coherent refresh")
     func legacyWorkspacePaneAdoption() async throws {
         let projectId = UUID()
         let workspaceId = UUID()
@@ -886,6 +886,9 @@ struct MachineControllerTests {
         )
         let repository = DefaultWorkspaceRepository(store: InMemoryStore())
         var chatState = PaneGroupState.centerInitial(sessionId: sessionId)
+        let chatPaneId = try #require(
+            chatState.panes.first(where: { $0.chatSessionId == sessionId })?.id
+        )
         let placeholder = chatState.addNewTabPane()
         repository.save(
             Workspace(
@@ -914,8 +917,13 @@ struct MachineControllerTests {
             fake.sessions.first { UUID(uuidString: $0.id) == sessionId }?.workspaceId
                 .flatMap(UUID.init(uuidString:)) == workspaceId
         )
-        #expect(fake.workspacePanes?.contains { UUID(uuidString: $0.id) == placeholder.id } == false)
+        #expect(fake.workspacePanes?.contains { UUID(uuidString: $0.id) == chatPaneId } == true)
+        #expect(fake.workspacePanes?.contains { UUID(uuidString: $0.id) == placeholder.id } == true)
+        #expect(fake.workspacePanes?.contains { UUID(uuidString: $0.id) == sessionId } == false)
+        #expect(repository.workspace(id: workspaceId)?.pane(containingChat: sessionId)?.id == chatPaneId)
+        #expect(repository.workspace(id: workspaceId)?.tabId(containingPane: placeholder.id) != nil)
         #expect(repository.workspace(id: workspaceId)?.isServerSynced == true)
+        #expect(fake.workspaceSnapshotCallCount == 2)
     }
 
     @Test("A stale placeholder snapshot cannot repaint an optimistic chat promotion")
@@ -1385,6 +1393,7 @@ private final class SyncFakeServerClient: CodevisorServerClienting, @unchecked S
     private var emittedEvents: [ServerEventEnvelope] = []
     private var nextEventId = 1
     private var _listSessionCallCount = 0
+    private var _workspaceSnapshotCallCount = 0
     private var _paneUpsertDelayNanoseconds: UInt64 = 0
     private var _panePromotionDelayNanoseconds: UInt64 = 0
     private var _paneCloseDelayNanoseconds: UInt64 = 0
@@ -1431,6 +1440,7 @@ private final class SyncFakeServerClient: CodevisorServerClienting, @unchecked S
     }
 
     var listSessionCallCount: Int { lock.withLock { _listSessionCallCount } }
+    var workspaceSnapshotCallCount: Int { lock.withLock { _workspaceSnapshotCallCount } }
     var sessions: [ServerSession] { lock.withLock { _sessions } }
     var workspaces: [ServerWorkspace] { lock.withLock { _workspaces } }
     var workspacePanes: [ServerWorkspacePane]? { lock.withLock { _panes } }
@@ -1480,6 +1490,7 @@ private final class SyncFakeServerClient: CodevisorServerClienting, @unchecked S
     func listWorkspaces() async throws -> [ServerWorkspace]? { lock.withLock { _workspaces } }
     func workspaceSnapshot() async throws -> ServerWorkspaceSnapshot? {
         lock.withLock {
+            _workspaceSnapshotCallCount += 1
             guard let panes = _panes else { return nil }
             return ServerWorkspaceSnapshot(workspaces: _workspaces, panes: panes)
         }
@@ -1679,7 +1690,16 @@ private final class SyncFakeServerClient: CodevisorServerClienting, @unchecked S
     func updateProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }
     func deleteProject(id: UUID) async throws {}
     func sessionDetail(id: UUID) async throws -> ServerSessionDetail { fatalError("unused") }
-    func upsertSession(_ session: ChatSession) async throws -> ServerSession { fatalError("unused") }
+    func upsertSession(_ session: ChatSession) async throws -> ServerSession {
+        lock.withLock {
+            guard
+                let index = _sessions.firstIndex(where: {
+                    UUID(uuidString: $0.id) == session.id
+                })
+            else { fatalError("Missing fake session") }
+            return _sessions[index]
+        }
+    }
     func upsertSession(_ session: ChatSession, workspaceId: UUID?) async throws -> ServerSession {
         lock.withLock {
             guard
@@ -1688,6 +1708,25 @@ private final class SyncFakeServerClient: CodevisorServerClienting, @unchecked S
                 })
             else { fatalError("Missing fake session") }
             _sessions[index].workspaceId = workspaceId?.uuidString
+            if let workspaceId, _panes != nil,
+                _panes?.contains(where: {
+                    $0.resourceKind == "session"
+                        && $0.resourceId?.caseInsensitiveCompare(session.id.uuidString) == .orderedSame
+                }) == false
+            {
+                _panes?.append(
+                    ServerWorkspacePane(
+                        id: session.id.uuidString,
+                        workspaceId: workspaceId.uuidString,
+                        providerId: "codevisor",
+                        paneType: "chat",
+                        title: _sessions[index].title,
+                        resourceKind: "session",
+                        resourceId: session.id.uuidString,
+                        createdAt: _sessions[index].createdAt
+                    )
+                )
+            }
             return _sessions[index]
         }
     }
