@@ -12,7 +12,10 @@ extension NewChatView {
     /// Projects offered by the picker (scratch backing projects, when a
     /// server has any, are internal and never listed).
     private var pickerProjects: [Project] {
-        projects.filter { !$0.isScratch }
+        environment.projectList.activeProjectsByWorkspaceRecency(
+            environment.workspaces.loadAll()
+        )
+        .filter { !$0.isScratch }
     }
 
     /// The live project record. The controller holds a snapshot from when
