@@ -24,7 +24,59 @@ struct TranscriptStreamingTextAnimationTests {
         #expect(
             ids == [
                 "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE:main:t0",
+                "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE:main:t0:0",
                 "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE:subagent:agent-1:t0",
             ])
+    }
+
+    @Test("Navigation settles every mounted Markdown slice of the existing final answer")
+    func settledResponseSegments() {
+        let turnID = UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!
+        let attachment = Attachment(
+            fileId: "file-1",
+            name: "plot.png",
+            mimeType: "image/png",
+            sizeBytes: 42,
+            kind: .image
+        )
+        let turn = AssistantTurn(
+            entries: [
+                .text(
+                    id: "answer",
+                    markdown: "Before ![plot](https://attachments.codevisor.invalid/file-1) after"
+                )
+            ],
+            attachments: [attachment],
+            isGenerating: true
+        )
+
+        let ids = Set(
+            TranscriptStreamingTextIdentity.settledStreamIDs(
+                turn: turn,
+                turnID: turnID
+            )
+        )
+
+        #expect(
+            ids.contains(
+                TranscriptStreamingTextIdentity.mainResponseSegment(
+                    turnID: turnID,
+                    entryID: "answer",
+                    segmentIndex: 0
+                )))
+        #expect(
+            ids.contains(
+                TranscriptStreamingTextIdentity.mainResponseSegment(
+                    turnID: turnID,
+                    entryID: "answer",
+                    segmentIndex: 2
+                )))
+        #expect(
+            !ids.contains(
+                TranscriptStreamingTextIdentity.mainResponseSegment(
+                    turnID: turnID,
+                    entryID: "answer",
+                    segmentIndex: 1
+                )))
     }
 }

@@ -160,7 +160,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Self.onMain { self?.interruptSendPresentation() }
+            Self.onMain { [weak self] in self?.interruptSendPresentation() }
         }
     }
 

@@ -262,9 +262,10 @@ struct AssistantTurnView: View {
                         StreamingMarkdownView(
                             value,
                             isComplete: !turn.isGenerating,
-                            streamID: TranscriptStreamingTextIdentity.main(
+                            streamID: TranscriptStreamingTextIdentity.mainResponseSegment(
                                 turnID: turnID,
-                                entryID: "\(entryID):\(index)"
+                                entryID: entryID,
+                                segmentIndex: index
                             ),
                             animationPresentation: textAnimationPresentation
                         )

@@ -10,6 +10,18 @@ public enum TranscriptStreamingTextIdentity {
         "\(turnID.uuidString):main:\(entryID)"
     }
 
+    /// Final answers may be split around inline attachment previews. Each
+    /// Markdown slice owns a separate native streaming surface, so its
+    /// identity must include the same segment index in both the navigation
+    /// baseline and the platform renderers.
+    public static func mainResponseSegment(
+        turnID: UUID,
+        entryID: String,
+        segmentIndex: Int
+    ) -> String {
+        main(turnID: turnID, entryID: "\(entryID):\(segmentIndex)")
+    }
+
     public static func subagent(
         turnID: UUID,
         parentToolCallID: String,
@@ -25,6 +37,24 @@ public enum TranscriptStreamingTextIdentity {
         var result = turn.entries.compactMap { entry -> String? in
             guard case let .text(id, _) = entry else { return nil }
             return main(turnID: turnID, entryID: id)
+        }
+        if let finalTextIndex = turn.finalTextIndex,
+            case let .text(entryID, markdown) = turn.entries[finalTextIndex]
+        {
+            let segments = assistantMarkdownSegments(
+                markdown,
+                attachments: turn.attachments,
+                includeServerPaths: !turn.isGenerating
+            )
+            for (index, segment) in segments.enumerated() {
+                guard case let .markdown(value) = segment, !value.isEmpty else { continue }
+                result.append(
+                    mainResponseSegment(
+                        turnID: turnID,
+                        entryID: entryID,
+                        segmentIndex: index
+                    ))
+            }
         }
         for (parentToolCallID, transcript) in turn.subagents {
             result.append(

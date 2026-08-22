@@ -178,9 +178,10 @@ struct AssistantTurnBody: View {
                         StreamingMarkdownView(
                             value,
                             isComplete: !isGenerating,
-                            streamID: TranscriptStreamingTextIdentity.main(
+                            streamID: TranscriptStreamingTextIdentity.mainResponseSegment(
                                 turnID: turnId,
-                                entryID: "\(entryID):\(index)"
+                                entryID: entryID,
+                                segmentIndex: index
                             ),
                             animationPresentation: textAnimationPresentation
                         )
