@@ -116,6 +116,13 @@ http
 - Style with the injected `--codevisor-*` CSS variables so panes match the
   app theme (full reference under "Styling panes"); every `var()` needs a
   fallback: `var(--codevisor-bg, Canvas)`.
+- **Treat the pane document as content, not a standalone app shell.** Codevisor
+  already renders native chrome above the webview with the pane icon, title,
+  and controls. Do not repeat the plugin icon, plugin name, or pane title, and
+  do not add a top bar solely for branding. Start with the useful content. Add
+  an in-pane toolbar only for content-specific context or actions (such as
+  tabs, filters, breadcrumbs, or status); use `window.codevisor.setTitle()` to
+  change the title in the native chrome.
 - **Keep ALL state in your plugin server** — in memory for ephemera, under
   `$CODEVISOR_PLUGIN_DATA_DIR` for anything durable (never in the plugin
   folder). The same pane renders on multiple devices at once (Mac, iPhone,
@@ -232,6 +239,10 @@ fallbacks theme-correct too — the git-diff reference plugin
 it renders the same pane the user sees — an independent view backed by the
 same plugin server, so state and interactions are shared both ways. Good
 for screenshotting a pane after a change or driving its UI end to end.
+
+This browser view shows the pane document without Codevisor's surrounding
+native chrome. The missing icon/title bar in this preview is expected; do not
+add a replacement top bar to the document to compensate for it.
 
 A pane opened this way runs without the native clients' injections — no
 `window.codevisor` bridge, no `--codevisor-*` CSS variables (those come
