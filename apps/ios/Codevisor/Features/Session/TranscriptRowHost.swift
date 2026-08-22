@@ -89,9 +89,20 @@ final class TranscriptRowHost: UIView {
         if representsDifferentRow {
             layer.removeAnimation(forKey: "codevisor.user-send")
             layer.removeAnimation(forKey: "codevisor.send-history-shift")
+            layer.removeAnimation(forKey: "codevisor.send-assistant-hold")
             layer.opacity = 1
         }
         contentController.installRootView(rootView)
+    }
+
+    /// A parked host may still carry presentation-only send animations from
+    /// its previous mount. Re-mounting always starts from visible model state;
+    /// the virtualizer can reapply a current hold after installation if needed.
+    func prepareForMountedRow() {
+        layer.removeAnimation(forKey: "codevisor.user-send")
+        layer.removeAnimation(forKey: "codevisor.send-history-shift")
+        layer.removeAnimation(forKey: "codevisor.send-assistant-hold")
+        layer.opacity = 1
     }
 
     func requestContentMeasurement(forceReport: Bool = true) {

@@ -83,6 +83,7 @@ final class TranscriptRowHost: NSView {
     func prepareForMountedRow() {
         layer?.removeAnimation(forKey: "codevisor.user-send")
         layer?.removeAnimation(forKey: "codevisor.send-history-shift")
+        layer?.removeAnimation(forKey: "codevisor.send-assistant-hold")
         layer?.opacity = 1
         isPresentationReady = false
         isAttachmentGeometryReady = true

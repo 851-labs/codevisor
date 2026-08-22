@@ -37,6 +37,7 @@ struct TranscriptSendAnimationTests {
         #expect(plan.fadeDuration == 0.12)
         #expect(plan.controlPoint1 == CGPoint(x: 0.22, y: 1))
         #expect(plan.controlPoint2 == CGPoint(x: 0.36, y: 1))
+        #expect(TranscriptSendAnimationContract.presentationSafetyDuration == 0.71)
     }
 
     @Test("Reduce Motion and non-upward travel do not create a lift")
@@ -57,5 +58,45 @@ struct TranscriptSendAnimationTests {
                 sourceY: 120,
                 targetY: 136
             ) == nil)
+    }
+
+    @Test("Presentation completion is token scoped and idempotent")
+    func tokenScopedCompletion() {
+        var lifecycle = TranscriptSendPresentationLifecycle()
+        lifecycle.begin(token: 1, at: 10)
+        lifecycle.begin(token: 2, at: 10.1)
+
+        let staleCompletion = lifecycle.complete(token: 1)
+        #expect(!staleCompletion)
+        #expect(lifecycle.activeToken == 2)
+        let currentCompletion = lifecycle.complete(token: 2)
+        #expect(currentCompletion)
+        let repeatedCompletion = lifecycle.complete(token: 2)
+        #expect(!repeatedCompletion)
+        #expect(lifecycle.activeToken == nil)
+    }
+
+    @Test("Presentation watchdog uses an injected deterministic clock")
+    func deterministicWatchdog() {
+        var lifecycle = TranscriptSendPresentationLifecycle()
+        let deadline = lifecycle.begin(token: 7, at: 20)
+
+        #expect(deadline == 20.71)
+        #expect(!lifecycle.isExpired(token: 7, at: deadline - 0.001))
+        #expect(lifecycle.isExpired(token: 7, at: deadline))
+        #expect(!lifecycle.isExpired(token: 8, at: deadline + 1))
+    }
+
+    @Test("Cancellation returns ownership once and leaves the lifecycle idle")
+    func cancellationIsIdempotent() {
+        var lifecycle = TranscriptSendPresentationLifecycle()
+        lifecycle.begin(token: 11, at: 30)
+
+        let cancellation = lifecycle.cancel()
+        #expect(cancellation == 11)
+        let repeatedCancellation = lifecycle.cancel()
+        #expect(repeatedCancellation == nil)
+        #expect(lifecycle.activeToken == nil)
+        #expect(lifecycle.deadline == nil)
     }
 }

@@ -98,7 +98,7 @@ struct NativeTranscriptView: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ nsView: VirtualizedTranscriptScrollView, coordinator: Void) {
-        nsView.persistViewport()
+        nsView.prepareForDismantle()
     }
 
     private func reportInitialPresentationReady() {

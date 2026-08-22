@@ -23,6 +23,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     private static let atBottomThreshold: CGFloat = 2
     private static let maxMeasurementCacheCount = 3
     private static let maxParkedHostCount = 16
+    private static let sendAssistantHoldAnimationKey = "codevisor.send-assistant-hold"
     private let canvasView = UIView()
     private let paginationLoadingIndicator = UIHostingConfiguration {
         ShimmeringText(text: "Loading older messages...")
@@ -96,7 +97,8 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     private var onSendAnimationCompleted: ((UserSendAnimationRequest) -> Void)?
     private var activeSendAnimationRequest: UserSendAnimationRequest?
     private var activeSendSourceLayout: VirtualTranscriptLayout?
-    private var hiddenSendAssistantRowKeys: Set<String> = []
+    private var sendPresentationLifecycle = TranscriptSendPresentationLifecycle()
+    private var sendPresentationWatchdog: Task<Void, Never>?
     private var sendAnimationCompletion: TranscriptSendAnimationCompletion?
     private var presentationRole: TranscriptPresentationRole = .foreground
     private var reduceMotion = false
@@ -120,6 +122,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     private var onFollowStateChange: ((Bool) -> Void)?
     private var onNearTop: (() -> Void)?
     private var onOlderHistoryPresented: ((UInt64) -> Void)?
+    private var applicationObserver: NSObjectProtocol?
 
     private var isNativeScrollInteractionActive: Bool {
         isTracking || isDragging || isDecelerating || isExplicitUserScroll
@@ -152,6 +155,13 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         canvasView.alpha = 0
         canvasView.accessibilityElementsHidden = true
         isScrollEnabled = false
+        applicationObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Self.onMain { self?.interruptSendPresentation() }
+        }
     }
 
     convenience init() {
@@ -163,9 +173,21 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         fatalError("init(coder:) has not been implemented")
     }
 
+    nonisolated private static func onMain(_ work: @escaping @MainActor () -> Void) {
+        if Thread.isMainThread {
+            MainActor.assumeIsolated(work)
+        } else {
+            DispatchQueue.main.async(execute: work)
+        }
+    }
+
     deinit {
         measurementCommitTask?.cancel()
         disclosureAnchorReleaseTask?.cancel()
+        sendPresentationWatchdog?.cancel()
+        if let applicationObserver {
+            NotificationCenter.default.removeObserver(applicationObserver)
+        }
     }
 
     override func safeAreaInsetsDidChange() {
@@ -176,6 +198,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     override func didMoveToWindow() {
         if window == nil, superview != nil {
             republishLastStableScrollState()
+            interruptSendPresentation()
             isDetaching = true
         } else if window != nil {
             isDetaching = false
@@ -298,9 +321,16 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         let becameForeground =
             presentationRole != .foreground
             && newPresentationRole == .foreground
+        let leftForeground =
+            presentationRole == .foreground
+            && newPresentationRole != .foreground
         presentationRole = newPresentationRole
+        if leftForeground {
+            interruptSendPresentation()
+        }
 
         if newSendAnimationRequest?.token != receivedSendAnimationToken {
+            finishSendPresentation(notifyCompletion: true)
             receivedSendAnimationToken = newSendAnimationRequest?.token
             pendingSendAnimationRequest = newSendAnimationRequest
             pendingSendAnimationRowKey = nil
@@ -387,10 +417,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         deferredRowsDuringScroll = nil
         olderHistoryPresentationTarget = nil
         disclosureAnchorReleaseTask?.cancel()
-        sendAnimationCompletion = nil
-        activeSendAnimationRequest = nil
-        activeSendSourceLayout = nil
-        hiddenSendAssistantRowKeys.removeAll(keepingCapacity: false)
+        interruptSendPresentation()
         for host in mountedHosts.values {
             host.removeFromSuperview()
             host.detachFromParent()
@@ -1017,6 +1044,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             let key = virtualLayout.keys[index]
             guard mountedHosts[key] == nil, let row = rowByKey[key] else { continue }
             let host = takeParkedHost(for: key) ?? TranscriptRowHost(parent: hostingParent)
+            host.prepareForMountedRow()
             host.onMeasuredHeight = { [weak self] measurement in
                 self?.recordMeasuredHeight(measurement)
             }
@@ -1469,7 +1497,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         host.layer.removeAnimation(forKey: "codevisor.user-send")
         beginSendPresentation(request: request, sourceLayout: sourceLayout)
         if usesExternalFlight {
-            host.layer.opacity = 0
+            holdSendPresentation(for: host)
         }
         let group = TranscriptSendAnimationMetrics.layerAnimation(
             plan: plan,
@@ -1477,12 +1505,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         )
         activeSendAnimationRequest = request
         let completion = TranscriptSendAnimationCompletion { [weak self] _ in
-            guard let self,
-                self.activeSendAnimationRequest?.token == request.token
-            else { return }
-            host.layer.opacity = 1
-            self.finishSendPresentation()
-            self.onSendAnimationCompleted?(request)
+            self?.finishSendPresentation(token: request.token, notifyCompletion: true)
         }
         sendAnimationCompletion = completion
         group.delegate = completion
@@ -1496,6 +1519,9 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         finishSendPresentation()
         activeSendAnimationRequest = request
         activeSendSourceLayout = sourceLayout
+        let now = CACurrentMediaTime()
+        let deadline = sendPresentationLifecycle.begin(token: request.token, at: now)
+        scheduleSendPresentationWatchdog(token: request.token, deadline: deadline, now: now)
 
         if let sourceLayout {
             for (key, host) in mountedHosts {
@@ -1528,25 +1554,97 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
 
     private func synchronizeSendAssistantVisibility() {
         guard presentationRole == .foreground else { return }
-        let sourceLayout = activeSendSourceLayout ?? pendingSendSourceLayout
-        guard activeSendAnimationRequest != nil || pendingSendAnimationRequest != nil else { return }
+        guard activeSendAnimationRequest != nil else { return }
+        let sourceLayout = activeSendSourceLayout
         for (key, host) in mountedHosts {
             guard rowByKey[key]?.id.isActiveRow == true,
                 sourceLayout?.indexByKey[key] == nil
             else { continue }
-            host.layer.opacity = 0
-            hiddenSendAssistantRowKeys.insert(key)
+            holdSendPresentation(for: host)
         }
     }
 
-    private func finishSendPresentation() {
-        for key in hiddenSendAssistantRowKeys {
-            mountedHosts[key]?.layer.opacity = 1
+    private func finishSendPresentation(notifyCompletion: Bool = false) {
+        _ = sendPresentationLifecycle.cancel()
+        let request = activeSendAnimationRequest
+        clearSendPresentationVisuals()
+        if notifyCompletion, let request {
+            onSendAnimationCompleted?(request)
         }
-        hiddenSendAssistantRowKeys.removeAll(keepingCapacity: true)
+    }
+
+    private func finishSendPresentation(token: UInt64, notifyCompletion: Bool) {
+        guard sendPresentationLifecycle.complete(token: token) else { return }
+        let request =
+            activeSendAnimationRequest?.token == token
+            ? activeSendAnimationRequest
+            : nil
+        clearSendPresentationVisuals()
+        if notifyCompletion, let request {
+            onSendAnimationCompleted?(request)
+        }
+    }
+
+    private func clearSendPresentationVisuals() {
+        sendPresentationWatchdog?.cancel()
+        sendPresentationWatchdog = nil
+        for host in Array(mountedHosts.values) + Array(parkedHosts.values) {
+            host.layer.removeAnimation(forKey: "codevisor.user-send")
+            host.layer.removeAnimation(forKey: "codevisor.send-history-shift")
+            host.layer.removeAnimation(forKey: Self.sendAssistantHoldAnimationKey)
+            host.layer.opacity = 1
+            assert(host.layer.opacity == 1)
+        }
         activeSendAnimationRequest = nil
         activeSendSourceLayout = nil
         sendAnimationCompletion = nil
+    }
+
+    private func holdSendPresentation(for host: TranscriptRowHost) {
+        // The model layer is authoritative content state and must never become
+        // invisible. This finite presentation animation delays painting only;
+        // interruption or expiry reveals the model value automatically.
+        host.layer.opacity = 1
+        assert(host.layer.opacity == 1)
+        if host.layer.animation(forKey: Self.sendAssistantHoldAnimationKey) == nil {
+            let hold = CABasicAnimation(keyPath: "opacity")
+            hold.fromValue = 0
+            hold.toValue = 0
+            hold.duration = TranscriptSendAnimationContract.presentationSafetyDuration
+            hold.isRemovedOnCompletion = true
+            host.layer.add(hold, forKey: Self.sendAssistantHoldAnimationKey)
+        }
+    }
+
+    private func scheduleSendPresentationWatchdog(
+        token: UInt64,
+        deadline: TimeInterval,
+        now: TimeInterval
+    ) {
+        sendPresentationWatchdog?.cancel()
+        sendPresentationWatchdog = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(max(0, deadline - now)))
+            guard !Task.isCancelled, let self,
+                self.sendPresentationLifecycle.isExpired(
+                    token: token,
+                    at: CACurrentMediaTime()
+                )
+            else { return }
+            self.finishSendPresentation(token: token, notifyCompletion: true)
+        }
+    }
+
+    private func interruptSendPresentation() {
+        if presentationRole == .foreground,
+            let pendingSendAnimationRequest,
+            let claimSendAnimation
+        {
+            _ = claimSendAnimation(pendingSendAnimationRequest)
+        }
+        pendingSendAnimationRequest = nil
+        pendingSendAnimationRowKey = nil
+        pendingSendSourceLayout = nil
+        finishSendPresentation(notifyCompletion: true)
     }
 
     private func sendHistoryDestinationIsReady(
