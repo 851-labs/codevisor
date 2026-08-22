@@ -155,33 +155,14 @@ private extension ModelConfigMenu {
 
     private func modelRow(_ model: SessionConfigSelectOption, in group: HarnessGroup) -> some View {
         let isSelected = isCurrent(model, in: group)
-        return Button {
+        return ModelMenuRow(
+            model: model,
+            isSelected: isSelected,
+            isDisabled: isSwitchingHarness
+        ) {
             guard !isSelected else { return }
             choose(model: model.value, in: group)
-        } label: {
-            HStack(spacing: 9) {
-                Text(model.name)
-                    .lineLimit(1)
-                    .foregroundStyle(.primary)
-                Spacer(minLength: 8)
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.tint)
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 7)
-                    .fill(isSelected ? Color.accentColor.opacity(0.14) : .clear)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 7))
         }
-        .buttonStyle(.plain)
-        .disabled(isSwitchingHarness)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     @ViewBuilder
@@ -497,5 +478,47 @@ private extension ModelConfigMenu {
                 .foregroundStyle(.tertiary)
         }
         .contentShape(Rectangle())
+    }
+}
+
+private struct ModelMenuRow: View {
+    let model: SessionConfigSelectOption
+    let isSelected: Bool
+    let isDisabled: Bool
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                Text(model.name)
+                    .lineLimit(1)
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 8)
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tint)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(backgroundColor)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 7))
+        }
+        .buttonStyle(.plain)
+        .disabled(isDisabled)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .onHover { isHovered = $0 }
+    }
+
+    private var backgroundColor: Color {
+        if isSelected { return Color.accentColor.opacity(0.14) }
+        return isHovered ? Color.primary.opacity(0.06) : .clear
     }
 }
