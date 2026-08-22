@@ -2,7 +2,7 @@
 import type { PluginRegistryEntry } from "@codevisor/api"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { createServerFn } from "@tanstack/react-start"
-import { InstallButton, PluginAvatar, registryBaseUrl } from "../components/plugin-directory"
+import { PluginAvatar, registryBaseUrl } from "../components/plugin-directory"
 import { SiteNav } from "../components/site-nav"
 
 /// codevisor.dev/plugins — the public face of the plugin registry. Renders
@@ -87,7 +87,7 @@ function PluginsDirectory() {
           ) : entries.length === 0 ? (
             <EmptyDirectory />
           ) : (
-            <ul className="grid gap-x-10 gap-y-8 sm:grid-cols-2">
+            <ul className="grid grid-cols-1 gap-x-10 gap-y-8 sm:grid-cols-2">
               {entries.map((entry) => (
                 <PluginRow key={entry.id} entry={entry} />
               ))}
@@ -112,7 +112,7 @@ function EmptyDirectory() {
   )
 }
 
-/// One glanceable row per plugin: artwork, name, what it does, Install.
+/// One glanceable row per plugin: artwork, name, and what it does.
 /// Everything else (version, repo, stars, capabilities) lives on the detail
 /// page behind the row.
 function PluginRow({ entry }: { entry: DirectoryEntry }) {
@@ -135,7 +135,6 @@ function PluginRow({ entry }: { entry: DirectoryEntry }) {
           </span>
         </span>
       </Link>
-      <InstallButton repo={entry.repo} />
     </li>
   )
 }
