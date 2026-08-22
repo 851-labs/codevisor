@@ -25,7 +25,10 @@ struct ModelConfigMenu: View {
     }
 
     var body: some View {
-        if controller.isLoadingModelMenu {
+        // A background revalidation must not replace an already-usable model
+        // control (or dismiss its open popover) with a spinner. Reserve the
+        // loading placeholder only for a true cache miss.
+        if controller.isLoadingModelMenu, modelGroups.isEmpty {
             ProgressView()
                 .controlSize(.small)
                 .frame(minWidth: 96)

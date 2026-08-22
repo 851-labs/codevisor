@@ -30,9 +30,10 @@ extension SessionController {
     private static let serverWaitFailureThreshold: Duration = .seconds(10)
     private static let serverWaitRetryInterval: Duration = .milliseconds(500)
 
-    /// Eagerly connects the selected harness (without sending) so model and
-    /// reasoning config options are available in the composer before the first
-    /// message. Safe to call repeatedly.
+    /// Connects or resumes the selected harness after a chat has started. New
+    /// chat pickers come from capability inspection; a deferred durable record
+    /// must not create its real agent until the first send is accepted. Safe to
+    /// call repeatedly.
     ///
     /// A server that refuses connections here is usually just booting — after
     /// an update the app relaunches before its managed server is listening
@@ -40,6 +41,10 @@ extension SessionController {
     /// (softened past 5s) and only surface the failure banner — with its
     /// Restart remedy — after 10s without contact.
     public func connectIfNeeded() async {
+        // Central lifecycle invariant: callers such as focus routing and view
+        // setup are deliberately broad. Even if one reaches this method for a
+        // deferred record, only first send may cross the draft/runtime boundary.
+        guard hasSentFirst || hasExistingAgentSession else { return }
         // The connect attempt is CONTROLLER-owned, not a child of the view
         // task that called this. Controllers are cached beyond any single
         // mount, and the first open of a remotely created chat re-hosts its
@@ -230,10 +235,13 @@ extension SessionController {
         if session.harnessId.isEmpty {
             session.harnessId = harnessId
         }
-        if session.agentSessionId == nil, let resumeAgentSessionId {
+        if !session.hasAgentSession,
+            let resumeAgentSessionId,
+            !resumeAgentSessionId.isEmpty
+        {
             session.agentSessionId = resumeAgentSessionId
         }
-        let loadsExistingHistory = session.agentSessionId?.isEmpty == false
+        let loadsExistingHistory = session.hasAgentSession
         if loadsExistingHistory {
             isLoadingInitialHistory = true
             initialHistoryLoadStartedAt =
@@ -282,7 +290,7 @@ extension SessionController {
         self.serverSession = session
 
         connectedHarnessId = harnessId
-        if let agentSessionId = session.agentSessionId {
+        if session.hasAgentSession, let agentSessionId = session.agentSessionId {
             connectedAgentSessionId = agentSessionId
             onAgentSessionCreated?(agentSessionId)
         }
@@ -296,7 +304,7 @@ extension SessionController {
         let sessionId = session.id
         let runtimeConnectStartedAt = ProcessInfo.processInfo.systemUptime
         let runtimeConnect: Task<ServerSessionRuntimeMetadata?, Error>? =
-            session.agentSessionId?.isEmpty == false
+            session.hasAgentSession
             ? Task { try await serverClient.connectSession(id: sessionId) }
             : nil
 

@@ -100,14 +100,13 @@ struct ChatPaneContentView: View {
     /// setup explicitly returns here without deleting the session or workspace.
     private func isUnstarted(_ chatSession: ChatSession) -> Bool {
         guard let live = store.activeController(for: chatSession) else {
-            return chatSession.agentSessionId == nil
+            return !chatSession.hasAgentSession
         }
-        // New Chat eagerly connects so its model/reasoning controls are ready.
-        // Only an accepted first send — never that preparation connection —
-        // moves the pane into the transcript.
+        // Capability preparation may finish before the first send, but only an
+        // accepted send moves the pane into the transcript.
         if live.shouldShowNewChatComposer { return true }
         if live.hasAcceptedFirstSend { return false }
-        guard chatSession.agentSessionId == nil else { return false }
+        guard !chatSession.hasAgentSession else { return false }
         return
             !(live.isConnected
             || live.isConnecting

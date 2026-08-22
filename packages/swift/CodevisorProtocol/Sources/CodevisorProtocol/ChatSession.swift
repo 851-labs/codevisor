@@ -93,6 +93,14 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     public var actionRequiredKind: String?
     public var pendingPlanApproval: Bool
 
+    /// Whether the harness has created a resumable agent-side session.
+    /// Deferred server records use an empty string on the wire, while local
+    /// drafts use nil; presentation and connection code must treat both as
+    /// the same not-yet-started state.
+    public var hasAgentSession: Bool {
+        agentSessionId?.isEmpty == false
+    }
+
     public init(
         id: UUID = UUID(),
         projectId: UUID,

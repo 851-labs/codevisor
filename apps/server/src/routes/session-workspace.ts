@@ -399,6 +399,7 @@ const restoreSessionConfigSelections = async (
 ): Promise<AgentSessionMetadata> => {
   const saved = await run(services.db.getSessionConfigSelections(sessionId))
   let configOptions = metadata.configOptions
+  let restoreFailed = false
   const ordered = Object.entries(saved).sort(([leftId], [rightId]) => {
     const left = configOptions.find((option) => option.id === leftId)
     const right = configOptions.find((option) => option.id === rightId)
@@ -420,14 +421,18 @@ const restoreSessionConfigSelections = async (
       )
     } catch {
       // A harness can reject a value between advertising it and applying it.
-      // Session open must still succeed; its current value becomes the durable
-      // fallback below.
+      // Session open must still succeed. Keep its current value for this
+      // runtime, but retain the user's saved snapshot so the
+      // next reconnect can retry instead of turning a transient startup race
+      // into a permanent preference change.
+      restoreFailed = true
     }
   }
+  const resolvedSelections = configSelectionsFromOptions(configOptions)
   await run(
     services.db.replaceSessionConfigSelections(
       sessionId,
-      configSelectionsFromOptions(configOptions)
+      restoreFailed ? { ...resolvedSelections, ...saved } : resolvedSelections
     )
   )
   return { ...metadata, configOptions }

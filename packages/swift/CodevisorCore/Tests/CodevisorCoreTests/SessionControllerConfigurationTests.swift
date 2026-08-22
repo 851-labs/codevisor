@@ -24,8 +24,8 @@ struct SessionControllerConfigurationTests {
         #expect(!controller.hasModelMenu)
     }
 
-    @Test("Catalog invalidation clears a mounted draft before its refresh")
-    func invalidationClearsMountedDraft() {
+    @Test("Catalog invalidation keeps a mounted draft usable during refresh")
+    func invalidationPreservesMountedDraft() {
         let cache = ConfigOptionCache(store: InMemoryStore())
         let capability = capability(model: "stale-model")
         let controller = SessionController(
@@ -45,13 +45,13 @@ struct SessionControllerConfigurationTests {
         #expect(controller.hasModelMenu)
         controller.invalidateHarnessCapabilities()
 
-        #expect(controller.harnesses.isEmpty)
-        #expect(controller.configOptions.isEmpty)
-        #expect(controller.modeState == nil)
-        #expect(!controller.supportsGoals)
-        #expect(controller.preparationState == .loading)
+        #expect(controller.harnesses == [capability.harness])
+        #expect(controller.configOptions == capability.configOptions)
+        #expect(controller.modeState?.currentModeId == "default")
+        #expect(controller.supportsGoals)
+        #expect(controller.preparationState == .ready)
         #expect(controller.isRefreshingHarnessCapabilities)
-        #expect(controller.isLoadingModelMenu)
+        #expect(!controller.isLoadingModelMenu)
     }
 
     @Test("Remote attention metadata does not republish the controller session")
@@ -120,6 +120,29 @@ struct SessionControllerConfigurationTests {
         #expect(controller.reconcileExistingSession(session))
         #expect(controller.serverSession == session)
         #expect(controller.selectedHarnessId == session.harnessId)
+    }
+
+    @Test("A deferred durable chat cannot connect before first send")
+    func deferredChatDoesNotConnect() async {
+        var deferred = session()
+        deferred.agentSessionId = ""
+        let project = Project.fromFolder(
+            URL(fileURLWithPath: "/remote/project"),
+            id: deferred.projectId,
+            serverId: deferred.serverId
+        )
+        let controller = SessionController(
+            project: project,
+            configCache: ConfigOptionCache(store: InMemoryStore()),
+            serverClient: FakeSessionServerClient(sessionId: deferred.id)
+        )
+        controller.configureExistingSession(deferred)
+
+        await controller.connectIfNeeded()
+
+        #expect(controller.model == nil)
+        #expect(!controller.isConnecting)
+        #expect(controller.connectedAgentSessionId == nil)
     }
 
     private func controller(for session: ChatSession) -> SessionController {

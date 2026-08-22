@@ -19,22 +19,26 @@ extension SessionController {
         }
         if seedFromCachedServerCapabilities() {
             preparationState = .ready
-            let refresh = beginHarnessCapabilityRefresh()
+            guard
+                configCache.needsCapabilityRevalidation(
+                    forServer: project.serverId,
+                    cwd: project.folderURL.path
+                )
+            else { return }
+            let requestRevision = beginHarnessCapabilityRefresh()
             Task {
                 await self.prepareFromServerCapabilities(
                     serverClient,
-                    requestRevision: refresh.request,
-                    cacheRevision: refresh.cache
+                    requestRevision: requestRevision
                 )
             }
             return
         }
         preparationState = .loading
-        let refresh = beginHarnessCapabilityRefresh()
+        let requestRevision = beginHarnessCapabilityRefresh()
         _ = await prepareFromServerCapabilities(
             serverClient,
-            requestRevision: refresh.request,
-            cacheRevision: refresh.cache
+            requestRevision: requestRevision
         )
     }
 
@@ -111,17 +115,17 @@ extension SessionController {
             isRefreshingHarnessCapabilities = false
             return
         }
-        let refresh = beginHarnessCapabilityRefresh()
+        let requestRevision = beginHarnessCapabilityRefresh()
         _ = await prepareFromServerCapabilities(
             serverClient,
-            requestRevision: refresh.request,
-            cacheRevision: refresh.cache
+            requestRevision: requestRevision,
+            force: true
         )
     }
 
-    /// Immediately removes capability-derived state from a draft when
-    /// Settings changes harness authentication, accounts, enablement, or
-    /// discovery. The following refresh repopulates it from the server.
+    /// Marks a mounted draft stale after authentication, account, enablement,
+    /// or discovery changes. Keep the last usable picker mounted while the
+    /// replacement loads; only a draft with no snapshot needs blocking UI.
     /// Connected sessions keep their runtime-owned configuration.
     public func invalidateHarnessCapabilities() {
         harnessCapabilityRequestRevision &+= 1
@@ -129,11 +133,7 @@ extension SessionController {
         modelConfigurationResolutionRevision &+= 1
         isResolvingModelConfiguration = false
         isRefreshingHarnessCapabilities = true
-        preparationState = .loading
-        harnesses = []
-        configOptionsByHarness = [:]
-        modeStateByHarness = [:]
-        supportsGoalsByHarness = [:]
+        preparationState = harnesses.isEmpty ? .loading : .ready
     }
 
     static func configurationAdjustmentMessage(
@@ -156,11 +156,20 @@ extension SessionController {
         if let (previousValue, model) = changed.first(where: {
             $0.1.category == SessionConfigOption.Category.model || $0.1.id == "model"
         }) {
-            // `configSelections` persists values, not names. Resolve the display
-            // name when the value is still listed (a plain switch); a genuinely
-            // withdrawn model leaves only its raw value to show.
-            let previousName = model.options.first { $0.value == previousValue }?.name ?? previousValue
-            return "\(previousName) is no longer available. Using \(model.currentName)."
+            // A different current value does not prove the saved model was
+            // withdrawn. Providers can advertise a model while transiently
+            // rejecting its automatic restore; the picker may successfully
+            // apply that same value moments later.
+            if let previous = model.options.first(where: { $0.value == previousValue }) {
+                return "\(previous.name) couldn’t be restored. Using \(model.currentName)."
+            }
+            return "\(previousValue) is no longer available. Using \(model.currentName)."
+        }
+        let hasUnavailableValue = changed.contains { previousValue, option in
+            !option.options.contains { $0.value == previousValue }
+        }
+        if !hasUnavailableValue {
+            return "Some saved settings couldn’t be restored. Current harness values are being used."
         }
         return "Some saved settings are no longer available. Current harness defaults are being used."
     }
@@ -206,44 +215,42 @@ extension SessionController {
         )
     }
 
-    private func beginHarnessCapabilityRefresh() -> (request: UInt64, cache: UInt64) {
+    private func beginHarnessCapabilityRefresh() -> UInt64 {
         harnessCapabilityRequestRevision &+= 1
         isRefreshingHarnessCapabilities = true
-        return (
-            harnessCapabilityRequestRevision,
-            configCache.capabilityRevision(forServer: project.serverId)
-        )
+        return harnessCapabilityRequestRevision
     }
 
     @discardableResult
     private func prepareFromServerCapabilities(
         _ serverClient: any CodevisorServerClienting,
         requestRevision: UInt64,
-        cacheRevision: UInt64
+        force: Bool = false
     ) async -> Bool {
         do {
-            let response = try await serverClient.capabilities(cwd: project.folderURL.path)
-            let capabilities = response.harnesses.filter { capability in
-                capability.harness.enabled && capability.harness.isReady
-            }
-            guard requestRevision == harnessCapabilityRequestRevision,
-                cacheRevision == configCache.capabilityRevision(forServer: project.serverId)
-            else { return false }
+            let cwd = project.folderURL.path
             guard
-                configCache.store(
-                    capabilities,
+                let capabilities = try await configCache.revalidateCapabilities(
                     forServer: project.serverId,
-                    ifRevision: cacheRevision
+                    cwd: cwd,
+                    force: force,
+                    fetch: {
+                        let response = try await serverClient.capabilities(cwd: cwd)
+                        return response.harnesses.filter { capability in
+                            capability.harness.enabled && capability.harness.isReady
+                        }
+                    }
                 )
-            else { return false }
+            else {
+                return false
+            }
+            guard requestRevision == harnessCapabilityRequestRevision else { return false }
             applyHarnessCapabilities(capabilities)
             preparationState = .ready
             isRefreshingHarnessCapabilities = false
             return true
         } catch {
-            guard requestRevision == harnessCapabilityRequestRevision,
-                cacheRevision == configCache.capabilityRevision(forServer: project.serverId)
-            else { return false }
+            guard requestRevision == harnessCapabilityRequestRevision else { return false }
             Log.session.error("capability fetch failed: \(String(describing: error), privacy: .public)")
             if harnesses.isEmpty {
                 preparationState = .failed
@@ -266,7 +273,7 @@ extension SessionController {
 
     private func applyHarnessCapabilities(_ capabilities: [ServerHarnessCapability]) {
         let available = capabilities.map(\.harness)
-        let isNewChat = resumeAgentSessionId == nil
+        let isNewChat = resumeAgentSessionId?.isEmpty != false
         // Capabilities come from the project server and have already been
         // filtered to enabled, ready harnesses. Applying the app's legacy
         // global harness preference here leaks one machine's choice into all
@@ -293,6 +300,11 @@ extension SessionController {
             if selectedHarnessId == nil || !harnesses.contains(where: { $0.id == selectedHarnessId }) {
                 selectedHarnessId = harnesses.first?.id
             }
+            // Capability inspection describes fresh-session defaults. Paint
+            // this draft's pending/remembered choices back over that snapshot
+            // so a background refresh cannot move an open picker underneath
+            // the user.
+            seedRememberedConfig()
         } else if selectedHarnessId == nil {
             selectedHarnessId = harnesses.first?.id
         }

@@ -62,6 +62,7 @@ export const makeAgents = (): AgentRuntimeService & {
   readonly closes: Array<string>
   readonly modes: Array<readonly [string, string]>
   readonly configs: Array<readonly [string, string, string]>
+  readonly configFailures: Array<readonly [string, string, string]>
   readonly goals: Array<readonly [string, SetGoalUpdate]>
   readonly goalClears: Array<string>
   readonly questionAnswers: Array<readonly [string, string, QuestionAnswer]>
@@ -78,6 +79,7 @@ export const makeAgents = (): AgentRuntimeService & {
   const closes: Array<string> = []
   const modes: Array<readonly [string, string]> = []
   const configs: Array<readonly [string, string, string]> = []
+  const configFailures: Array<readonly [string, string, string]> = []
   const goals: Array<readonly [string, SetGoalUpdate]> = []
   const goalClears: Array<string> = []
   const questionAnswers: Array<readonly [string, string, QuestionAnswer]> = []
@@ -156,6 +158,7 @@ export const makeAgents = (): AgentRuntimeService & {
     closes,
     modes,
     configs,
+    configFailures,
     goals,
     goalClears,
     questionAnswers,
@@ -398,6 +401,14 @@ export const makeAgents = (): AgentRuntimeService & {
     setConfigOption: (sessionId, configId, value) =>
       Effect.promise(async () => {
         configs.push([sessionId, configId, value])
+        const failureIndex = configFailures.findIndex(
+          ([wantedSession, wantedConfig, wantedValue]) =>
+            wantedSession === sessionId && wantedConfig === configId && wantedValue === value
+        )
+        if (failureIndex >= 0) {
+          configFailures.splice(failureIndex, 1)
+          throw new Error(`Transient config failure: ${configId}`)
+        }
         const current = configOptionsBySession.get(sessionId) ?? []
         let configOptions: ReadonlyArray<SessionConfigOption>
         if (dependencyConfigSessions.has(sessionId) && configId === "model") {

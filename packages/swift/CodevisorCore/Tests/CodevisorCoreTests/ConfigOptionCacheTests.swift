@@ -134,7 +134,7 @@ struct ConfigOptionCacheTests {
         #expect(cache.options(forHarness: "claude-code", onServer: "local").first?.currentValue == "sonnet")
     }
 
-    @Test("Invalidating one server drops all picker data for that server")
+    @Test("Invalidating one server retains stale picker data while requiring revalidation")
     func invalidatesPickerDataPerServer() {
         let store = InMemoryStore()
         let cache = ConfigOptionCache(store: store)
@@ -143,14 +143,15 @@ struct ConfigOptionCacheTests {
 
         cache.invalidateCapabilities(forServer: "local")
 
-        #expect(cache.capabilities(forServer: "local").isEmpty)
-        #expect(cache.options(forHarness: "codex", onServer: "local").isEmpty)
+        #expect(cache.capabilities(forServer: "local").first?.configOptions.first?.currentValue == "local")
+        #expect(cache.options(forHarness: "codex", onServer: "local").first?.currentValue == "local")
+        #expect(cache.needsCapabilityRevalidation(forServer: "local", cwd: "/project"))
         #expect(cache.capabilities(forServer: "remote").first?.configOptions.first?.currentValue == "remote")
         #expect(cache.options(forHarness: "codex", onServer: "remote").first?.currentValue == "remote")
 
         let reopened = ConfigOptionCache(store: store)
-        #expect(reopened.capabilities(forServer: "local").isEmpty)
-        #expect(reopened.options(forHarness: "codex", onServer: "local").isEmpty)
+        #expect(reopened.capabilities(forServer: "local").first?.configOptions.first?.currentValue == "local")
+        #expect(reopened.options(forHarness: "codex", onServer: "local").first?.currentValue == "local")
     }
 
     @Test("A response started before invalidation cannot restore stale capabilities")
@@ -162,7 +163,76 @@ struct ConfigOptionCacheTests {
 
         #expect(!cache.store([capability(model: "stale")], forServer: "local", ifRevision: revision))
         #expect(cache.capabilities(forServer: "local").isEmpty)
-        #expect(cache.options(forHarness: "codex", onServer: "local").isEmpty)
+    }
+
+    @Test("Concurrent drafts share one live capability refresh")
+    func coalescesRefreshes() async throws {
+        let cache = ConfigOptionCache(store: InMemoryStore())
+        let counter = CapabilityRefreshCounter()
+        let response = [capability(model: "fresh")]
+
+        async let first = cache.revalidateCapabilities(
+            forServer: "local",
+            cwd: "/project",
+            fetch: {
+                await counter.increment()
+                try await Task.sleep(for: .milliseconds(30))
+                return response
+            }
+        )
+        async let second = cache.revalidateCapabilities(
+            forServer: "local",
+            cwd: "/project",
+            fetch: {
+                await counter.increment()
+                try await Task.sleep(for: .milliseconds(30))
+                return response
+            }
+        )
+
+        _ = try await (first, second)
+        #expect(await counter.value == 1)
+        #expect(!cache.needsCapabilityRevalidation(forServer: "local", cwd: "/project"))
+    }
+
+    @Test("A failed empty inspection keeps the last usable picker options")
+    func emptyInspectionPreservesStaleOptions() async throws {
+        let cache = ConfigOptionCache(store: InMemoryStore())
+        let stale = capability(model: "fable")
+        cache.store([stale], forServer: "local")
+        var empty = stale
+        empty.configOptions = []
+        let emptyResponse = [empty]
+
+        let refreshed = try await cache.revalidateCapabilities(
+            forServer: "local",
+            cwd: "/project",
+            fetch: { emptyResponse }
+        )
+
+        #expect(refreshed?.first?.configOptions.first?.currentValue == "fable")
+        #expect(cache.options(forHarness: "codex", onServer: "local").first?.currentValue == "fable")
+    }
+
+    @Test("A refresh in another project makes the server-wide snapshot stale here")
+    func projectSpecificFreshnessTracksStoredSnapshot() async throws {
+        let cache = ConfigOptionCache(store: InMemoryStore())
+        let response = [capability(model: "fresh")]
+
+        _ = try await cache.revalidateCapabilities(
+            forServer: "local",
+            cwd: "/project-a",
+            fetch: { response }
+        )
+        #expect(!cache.needsCapabilityRevalidation(forServer: "local", cwd: "/project-a"))
+
+        _ = try await cache.revalidateCapabilities(
+            forServer: "local",
+            cwd: "/project-b",
+            fetch: { response }
+        )
+        #expect(cache.needsCapabilityRevalidation(forServer: "local", cwd: "/project-a"))
+        #expect(!cache.needsCapabilityRevalidation(forServer: "local", cwd: "/project-b"))
     }
 
     private func capability(model: String) -> ServerHarnessCapability {
@@ -179,5 +249,13 @@ struct ConfigOptionCacheTests {
             modes: nil,
             configOptions: [option(model)]
         )
+    }
+}
+
+private actor CapabilityRefreshCounter {
+    private(set) var value = 0
+
+    func increment() {
+        value += 1
     }
 }

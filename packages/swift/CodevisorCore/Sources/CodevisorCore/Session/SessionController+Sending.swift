@@ -48,7 +48,7 @@ extension SessionController {
         // resumed session's transcript shouldn't grow one retroactively.
         let showsSetupPhases =
             (pendingNewChatAnalytics || (!hasSentFirst && onFirstSend != nil))
-            && resumeAgentSessionId == nil
+            && resumeAgentSessionId?.isEmpty != false
         // Clear the durable draft before mounting any first-send destination.
         // The source UIKit editor keeps its already-rendered pixels until the
         // transition surface covers it, while every newly mounted composer

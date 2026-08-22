@@ -1142,7 +1142,7 @@ public final class ProjectListModel {
         // refresh cannot clear the legacy cache out from underneath the job.
         let legacyProjects = projects.filter { $0.serverId == serverId }
         let legacySessions = sessions.filter {
-            $0.serverId == serverId && !$0.harnessId.isEmpty && $0.agentSessionId != nil
+            $0.serverId == serverId && !$0.harnessId.isEmpty && $0.hasAgentSession
         }
         let task = Task { @MainActor in
             let knownProjects = Set(try await client.listProjects().compactMap { UUID(uuidString: $0.id) })

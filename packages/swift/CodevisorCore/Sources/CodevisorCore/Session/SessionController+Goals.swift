@@ -77,7 +77,7 @@ extension SessionController {
         isSubmitting = true
         let showsSetupPhases =
             (pendingNewChatAnalytics || (!hasSentFirst && onFirstSend != nil))
-            && resumeAgentSessionId == nil
+            && resumeAgentSessionId?.isEmpty != false
         // Navigate first, exactly like a first prompt send.
         if !hasSentFirst {
             hasSentFirst = true

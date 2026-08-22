@@ -245,9 +245,8 @@ struct NewChatView: View {
         // the live capabilities snapshot when that machine's catalog changes.
         .onChange(of: harnessCatalogRevision) { _, _ in
             guard let controller else { return }
-            // Remove the mounted draft's snapshot synchronously. Waiting for
-            // the async request to start leaves the old model visible until
-            // the replacement arrives, which makes account changes look late.
+            // Mark the mounted draft stale synchronously, but retain its usable
+            // picker values until the replacement arrives.
             controller.invalidateHarnessCapabilities()
             Task { await controller.refreshHarnessCapabilities() }
         }
@@ -470,11 +469,6 @@ struct NewChatView: View {
         self.controller = controller
         Task {
             await controller.prepare()
-            if !AppPreview.isRunning,
-                !controller.showsNewChatAfterSetupFailure
-            {
-                await controller.connectIfNeeded()
-            }
         }
     }
 

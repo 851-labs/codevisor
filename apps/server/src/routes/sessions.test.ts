@@ -361,6 +361,25 @@ describe("sessions routes", () => {
       speed: "standard",
       tone: "brief"
     })
+
+    await run(
+      services.db.replaceSessionConfigSelections(session.id, {
+        model: "model-saved"
+      })
+    )
+    agents.configFailures.push(["agent-session-config", "model", "model-saved"])
+    const transientFallback = (
+      await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })
+    ).body as { readonly configOptions: ReadonlyArray<SessionConfigOption> }
+    expect(configSelectionsFromTestOptions(transientFallback.configOptions).model).toBe(
+      "model-default"
+    )
+    expect(await run(services.db.getSessionConfigSelections(session.id))).toEqual({
+      model: "model-saved",
+      reasoning: "low",
+      speed: "standard",
+      tone: "brief"
+    })
   })
 
   it("terminalizes a durably claimed prompt instead of losing or replaying it after restart", async () => {

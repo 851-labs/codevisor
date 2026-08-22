@@ -75,8 +75,8 @@ extension SessionController {
             && !hasActiveItem
             && pendingUserMessage == nil
             && !isConnecting
-            && serverSession?.agentSessionId == nil
-            && resumeAgentSessionId == nil
+            && serverSession?.hasAgentSession != true
+            && resumeAgentSessionId?.isEmpty != false
     }
 
     /// Transcript-view lifecycle, forwarded to the model to tune its stream

@@ -113,7 +113,7 @@ struct CreateSessionBody: Encodable {
         self.workspaceId = workspaceId?.uuidString
         createdAt = ServerDateCoding.string(from: session.createdAt)
         updatedAt = session.updatedAt.map(ServerDateCoding.string)
-        deferAgentSession = session.agentSessionId == nil ? true : nil
+        deferAgentSession = session.hasAgentSession ? nil : true
     }
 }
 

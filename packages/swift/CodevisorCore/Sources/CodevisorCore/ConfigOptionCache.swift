@@ -3,10 +3,21 @@ import ACPKit
 
 /// A persisted cache of an agent's selectable config options (model, reasoning
 /// effort, …) keyed by server and harness id. Enables a stale-while-revalidate flow: the
-/// composer shows the last-known options instantly, then the live session
-/// refreshes them once the agent connects.
+/// composer shows the last-known options instantly, then background capability
+/// inspection refreshes them when the snapshot is stale.
 @MainActor
 public final class ConfigOptionCache {
+    private struct CapabilityRefreshKey: Hashable {
+        let serverId: String
+        let cwd: String
+    }
+
+    private struct CapabilityRefresh {
+        let id: UUID
+        let revision: UInt64
+        let task: Task<[ServerHarnessCapability], any Error>
+    }
+
     private let store: any PersistenceStore
     private let key: String
     private let capabilitiesKey: String
@@ -17,6 +28,13 @@ public final class ConfigOptionCache {
     /// after invalidation. They do not need persistence: no request survives
     /// a process launch.
     private var capabilityRevisions: [String: UInt64] = [:]
+    /// Capability inspection can launch a temporary CLI process. Share one
+    /// request across every draft for the same machine/directory and keep a
+    /// short in-memory freshness window so opening tabs is a cache read, not
+    /// another process launch.
+    private var capabilityRefreshes: [CapabilityRefreshKey: CapabilityRefresh] = [:]
+    private var capabilityValidatedAt: [CapabilityRefreshKey: Date] = [:]
+    private static let capabilityFreshnessInterval: TimeInterval = 5 * 60
     /// In-memory catalog-only seeds used to make the first composer render
     /// immediately. They are intentionally not persisted and may be replaced
     /// by the speculative onboarding warm.
@@ -63,6 +81,70 @@ public final class ConfigOptionCache {
         if let revision = capabilityRevisions[serverId] { return revision }
         capabilityRevisions[serverId] = 0
         return 0
+    }
+
+    /// Whether the stale snapshot should be revalidated for this project.
+    /// Freshness is intentionally process-local: relaunching performs one
+    /// live check, while subsequent tabs share that result for a few minutes.
+    func needsCapabilityRevalidation(forServer serverId: String, cwd: String) -> Bool {
+        let key = CapabilityRefreshKey(serverId: serverId, cwd: cwd)
+        guard !capabilities(forServer: serverId).isEmpty,
+            let validatedAt = capabilityValidatedAt[key]
+        else { return true }
+        return Date().timeIntervalSince(validatedAt) >= Self.capabilityFreshnessInterval
+    }
+
+    /// Fetches one live capability snapshot per machine/directory at a time.
+    /// Empty inspection results retain usable stale picker definitions: the
+    /// server uses an empty option list for both "no options" and a best-effort
+    /// inspection failure, so replacing a populated snapshot would make an
+    /// open picker disappear even though its models may still work.
+    func revalidateCapabilities(
+        forServer serverId: String,
+        cwd: String,
+        force: Bool = false,
+        fetch: @escaping @Sendable () async throws -> [ServerHarnessCapability]
+    ) async throws -> [ServerHarnessCapability]? {
+        let key = CapabilityRefreshKey(serverId: serverId, cwd: cwd)
+        if !force, !needsCapabilityRevalidation(forServer: serverId, cwd: cwd) {
+            return capabilities(forServer: serverId)
+        }
+
+        let refresh: CapabilityRefresh
+        if let existing = capabilityRefreshes[key] {
+            refresh = existing
+        } else {
+            let created = CapabilityRefresh(
+                id: UUID(),
+                revision: capabilityRevision(forServer: serverId),
+                task: Task { try await fetch() }
+            )
+            capabilityRefreshes[key] = created
+            refresh = created
+        }
+
+        do {
+            let fetched = try await refresh.task.value
+            guard capabilityRevision(forServer: serverId) == refresh.revision else {
+                removeCapabilityRefresh(refresh, for: key)
+                return nil
+            }
+            let merged = preservingUsablePickerData(in: fetched, forServer: serverId)
+            store(merged, forServer: serverId)
+            // The persisted snapshot is server-wide. A project-specific
+            // refresh therefore makes other directories stale rather than
+            // pretending their previous validation still describes the newly
+            // stored snapshot.
+            capabilityValidatedAt = capabilityValidatedAt.filter {
+                $0.key.serverId != serverId || $0.key == key
+            }
+            capabilityValidatedAt[key] = Date()
+            removeCapabilityRefresh(refresh, for: key)
+            return merged
+        } catch {
+            removeCapabilityRefresh(refresh, for: key)
+            throw error
+        }
     }
 
     /// Seeds the picker from a harness catalog that is already on screen. The
@@ -163,15 +245,18 @@ public final class ConfigOptionCache {
         return true
     }
 
-    /// Drops every capability-derived picker value for one server.
-    /// Authentication, account selection, enablement, and discovery can all
-    /// change both the harness catalog and each harness's model definitions.
+    /// Marks one server's snapshot stale without deleting it. Authentication,
+    /// account selection, enablement, and discovery all require a live check,
+    /// but mounted composers keep rendering their last usable values until the
+    /// replacement arrives.
     public func invalidateCapabilities(forServer serverId: String) {
         capabilityRevisions[serverId, default: 0] &+= 1
-        cache.removeValue(forKey: serverId)
-        capabilitiesCache.removeValue(forKey: serverId)
-        provisionalCapabilityServers.remove(serverId)
-        persist()
+        capabilityValidatedAt = capabilityValidatedAt.filter { $0.key.serverId != serverId }
+        let matching = capabilityRefreshes.filter { $0.key.serverId == serverId }
+        for (key, refresh) in matching {
+            refresh.task.cancel()
+            capabilityRefreshes[key] = nil
+        }
     }
 
     /// Clears all cached config (used by "Delete all data").
@@ -182,10 +267,40 @@ public final class ConfigOptionCache {
         for serverId in servers {
             capabilityRevisions[serverId, default: 0] &+= 1
         }
+        for refresh in capabilityRefreshes.values { refresh.task.cancel() }
+        capabilityRefreshes = [:]
+        capabilityValidatedAt = [:]
         cache = [:]
         capabilitiesCache = [:]
         provisionalCapabilityServers = []
         persist()
+    }
+
+    private func removeCapabilityRefresh(
+        _ refresh: CapabilityRefresh,
+        for key: CapabilityRefreshKey
+    ) {
+        guard capabilityRefreshes[key]?.id == refresh.id else { return }
+        capabilityRefreshes[key] = nil
+    }
+
+    private func preservingUsablePickerData(
+        in refreshed: [ServerHarnessCapability],
+        forServer serverId: String
+    ) -> [ServerHarnessCapability] {
+        let stale = Dictionary(
+            uniqueKeysWithValues: capabilities(forServer: serverId).map { ($0.harness.id, $0) }
+        )
+        return refreshed.map { capability in
+            guard let previous = stale[capability.harness.id] else { return capability }
+            var merged = capability
+            if merged.configOptions.isEmpty, !previous.configOptions.isEmpty {
+                merged.configOptions = previous.configOptions
+            }
+            if merged.modes == nil { merged.modes = previous.modes }
+            if merged.supportsGoals == nil { merged.supportsGoals = previous.supportsGoals }
+            return merged
+        }
     }
 
     private func persist() {

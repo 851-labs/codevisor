@@ -191,7 +191,7 @@ struct SessionContainerView: View {
                 // yet) must not connect here: connecting launches an agent with
                 // the DEFAULT harness, silently making the choice their new-chat
                 // composer still offers. Their first send owns the connection.
-                guard session.agentSessionId != nil || controller.isConnected else { return }
+                guard session.hasAgentSession || controller.isConnected else { return }
                 if !controller.isPrepared && !controller.isConnected {
                     await controller.prepare()
                 }
