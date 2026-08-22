@@ -86,6 +86,23 @@ struct HomeView: View {
         machines.allMachines.contains { !$0.isLocal }
     }
 
+    private var navigationSyncFailed: Bool {
+        if case .stale = machines.selectedNavigationSyncState { return true }
+        return false
+    }
+
+    /// Cached rows are intentionally hidden until lifecycle recovery has
+    /// reconciled them. Ordinary live events and pull to refresh remain on the
+    /// current presentation and therefore never enter this blocking state.
+    private var needsNavigationLoadingState: Bool {
+        switch machines.selectedNavigationSyncState {
+        case .cached, .catchingUp:
+            return true
+        case .current, .stale:
+            return false
+        }
+    }
+
     /// Onboarding presents itself whenever no machine is paired. There is no
     /// in-flow skip (the app is useless without a machine); the dismissed
     /// flag only records programmatic closes — e.g. pairing while the cover
@@ -246,10 +263,8 @@ struct HomeView: View {
             Group {
                 if !hasRemoteMachines {
                     noMachineState
-                } else if visibleSessions.isEmpty {
-                    emptyState
                 } else {
-                    sessionList
+                    refreshableNavigationContent
                 }
             }
             .onHover { isPointerInsideSidebar = $0 }
@@ -308,7 +323,11 @@ struct HomeView: View {
                 }
             }
             .safeAreaInset(edge: .bottom, alignment: .trailing, spacing: 0) {
-                if hasRemoteMachines, groupReorderOrganization == nil {
+                if hasRemoteMachines,
+                    !navigationSyncFailed,
+                    !needsNavigationLoadingState,
+                    groupReorderOrganization == nil
+                {
                     newChatButton
                 }
             }
@@ -327,9 +346,6 @@ struct HomeView: View {
                         preferredChatSessionId: preferredChatSessionId
                     )
                 }
-            }
-            .refreshable {
-                await machines.refreshSelectedNavigationState()
             }
             .sheet(isPresented: $isShowingSettings) {
                 SettingsSheet()
@@ -509,6 +525,58 @@ struct HomeView: View {
 
     // MARK: - Lists
 
+    /// Keep pull to refresh available in every connected-machine state. A
+    /// refresh action only installs a refresh control when it reaches a
+    /// supported scroll container, so loading, empty, and unavailable states
+    /// each need a real ScrollView rather than a static replacement view.
+    @ViewBuilder
+    private var refreshableNavigationContent: some View {
+        if navigationSyncFailed {
+            refreshableState {
+                HomeNavigationSyncView(
+                    state: .failed(machineName: machines.selectedMachine.name),
+                    retry: {
+                        Task { await machines.retrySelectedMachine() }
+                    }
+                )
+            }
+        } else if needsNavigationLoadingState {
+            refreshableState {
+                HomeNavigationSyncView(
+                    state: .loading(machineName: machines.selectedMachine.name)
+                )
+            }
+        } else if visibleSessions.isEmpty {
+            refreshableState {
+                emptyState
+            }
+        } else {
+            sessionList
+        }
+    }
+
+    /// A full-height native scroll surface preserves centered state content
+    /// while allowing the standard iOS pull-to-refresh gesture even when
+    /// there are no rows to make the content scroll naturally.
+    private func refreshableState<Content: View>(
+        @ViewBuilder content: @escaping () -> Content
+    ) -> some View {
+        GeometryReader { proxy in
+            ScrollView {
+                content()
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: proxy.size.height)
+            }
+            .refreshable {
+                await refreshNavigation()
+            }
+        }
+    }
+
+    private func refreshNavigation() async {
+        await machines.refreshSelectedNavigationState()
+    }
+
     @ViewBuilder
     private var sessionList: some View {
         if let groupReorderOrganization {
@@ -568,6 +636,9 @@ struct HomeView: View {
         .scrollContentBackground(.hidden)
         .background(Color(.systemBackground))
         .contentMargins(.bottom, 64, for: .scrollContent)
+        .refreshable {
+            await refreshNavigation()
+        }
         .onChange(of: organizationRaw) { _, _ in
             clearGroupReorderPresentation()
         }
@@ -620,6 +691,9 @@ struct HomeView: View {
         .scrollContentBackground(.hidden)
         .background(Color(.systemBackground))
         .contentMargins(.bottom, 24, for: .scrollContent)
+        .refreshable {
+            await refreshNavigation()
+        }
     }
 
     /// Workspaces use the same native grouping pattern as projects. Collapsed

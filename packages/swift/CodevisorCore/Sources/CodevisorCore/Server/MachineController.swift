@@ -84,6 +84,7 @@ public final class MachineController {
     public private(set) var statusByMachineId: [String: MachineStatus] = [:]
     public private(set) var updateInfoByMachineId: [String: ServerUpdateInfo] = [:]
     public private(set) var availabilityByMachineId: [String: ServerAvailability] = [:]
+    public internal(set) var navigationSyncStateByMachineId: [String: NavigationSyncState] = [:]
     /// The release feed remote server update checks follow — mirrors the
     /// app's alpha-updates setting. AppEnvironment keeps it in sync.
     public var serverUpdateChannel: ServerUpdateChannel = .stable
@@ -96,8 +97,8 @@ public final class MachineController {
     /// token behavior for isolated previews/tests that do not have a device
     /// credential store.
     private let credentialStore: (any MachineCredentialStore)?
-    private let projectList: ProjectListModel
-    private let workspaceSync: WorkspaceSyncModel?
+    let projectList: ProjectListModel
+    let workspaceSync: WorkspaceSyncModel?
     private let localServer: (any LocalServerControlling)?
     private let clientFactory: ClientFactory
     private let requestGate: ServerRequestGate
@@ -107,11 +108,14 @@ public final class MachineController {
     private let updatePollInterval: Duration
     private let updatePollAttempts: Int
     @ObservationIgnored private var credentialReadFailures: Set<String> = []
-    @ObservationIgnored private var eventSyncTask: Task<Void, Never>?
-    @ObservationIgnored private var pendingRefreshTask: Task<Void, Never>?
+    @ObservationIgnored var eventSyncTask: Task<Void, Never>?
+    @ObservationIgnored var pendingRefreshTask: Task<Void, Never>?
     @ObservationIgnored private var preparationMachineId: String?
     @ObservationIgnored private var preparationToken: UUID?
     @ObservationIgnored private var preparationTask: Task<Void, Never>?
+    @ObservationIgnored var navigationSyncMachineId: String?
+    @ObservationIgnored var navigationSyncToken: UUID?
+    @ObservationIgnored var navigationSyncTask: Task<Void, Never>?
     /// Invoked when a `harness.lifecycle.updated` event arrives for a machine
     /// — the AppEnvironment bridges it to its harness-catalog revision so
     /// mounted pickers and settings panes refetch.
@@ -309,6 +313,10 @@ public final class MachineController {
         availabilityByMachineId[selectedMachineId] ?? .ready
     }
 
+    public var selectedNavigationSyncState: NavigationSyncState {
+        navigationSyncStateByMachineId[selectedMachineId] ?? .cached
+    }
+
     public func machine(for id: String) -> CodevisorMachine? {
         allMachines.first { $0.id == id }
     }
@@ -385,7 +393,14 @@ public final class MachineController {
         registry.selectedMachineId = machine.id
         beginWaiting(for: machine.id, reason: machine.isLocal ? .starting : .connecting)
         persist()
-        projectList.selectServer(serverId: machine.id, serverClient: client(for: machine.id))
+        // Machine preparation owns the one authoritative refresh. Starting a
+        // second fire-and-forget refresh here lets two snapshots invalidate
+        // each other as soon as the request gate opens.
+        projectList.selectServer(
+            serverId: machine.id,
+            serverClient: client(for: machine.id),
+            refresh: false
+        )
     }
 
     /// When the user hasn't made an explicit choice yet and only the local
@@ -457,8 +472,10 @@ public final class MachineController {
         persist()
         projectList.selectServer(
             serverId: CodevisorMachine.local.id,
-            serverClient: client(for: CodevisorMachine.local.id)
+            serverClient: client(for: CodevisorMachine.local.id),
+            refresh: false
         )
+        Task { await prepareSelectedMachine() }
     }
 
     @discardableResult
@@ -477,7 +494,11 @@ public final class MachineController {
             registry.selectedMachineId = existing.id
             beginWaiting(for: existing.id, reason: .connecting)
             persist()
-            projectList.selectServer(serverId: existing.id, serverClient: client(for: existing.id))
+            projectList.selectServer(
+                serverId: existing.id,
+                serverClient: client(for: existing.id),
+                refresh: false
+            )
             Task { await prepareSelectedMachine() }
             return existing
         }
@@ -494,7 +515,11 @@ public final class MachineController {
         registry.selectedMachineId = machine.id
         beginWaiting(for: machine.id, reason: .connecting)
         persist()
-        projectList.selectServer(serverId: machine.id, serverClient: client(for: machine.id))
+        projectList.selectServer(
+            serverId: machine.id,
+            serverClient: client(for: machine.id),
+            refresh: false
+        )
         // Probe right away so a freshly added machine shows its real status
         // instead of waiting for the next periodic refresh.
         Task { await prepareSelectedMachine() }
@@ -557,10 +582,16 @@ public final class MachineController {
         statusByMachineId[id] = nil
         updateInfoByMachineId[id] = nil
         availabilityByMachineId[id] = nil
+        navigationSyncStateByMachineId[id] = nil
         if registry.selectedMachineId == id {
             registry.selectedMachineId = CodevisorMachine.local.id
             beginWaiting(for: CodevisorMachine.local.id, reason: .starting)
-            projectList.selectServer(serverId: CodevisorMachine.local.id, serverClient: selectedClient)
+            projectList.selectServer(
+                serverId: CodevisorMachine.local.id,
+                serverClient: selectedClient,
+                refresh: false
+            )
+            Task { await prepareSelectedMachine() }
         }
         persist()
     }
@@ -580,6 +611,7 @@ public final class MachineController {
             statusByMachineId[machine.id] = nil
             updateInfoByMachineId[machine.id] = nil
             availabilityByMachineId[machine.id] = nil
+            navigationSyncStateByMachineId[machine.id] = nil
         }
         credentialReadFailures.removeAll()
         registry = MachineRegistry()
@@ -587,8 +619,10 @@ public final class MachineController {
         persist()
         projectList.selectServer(
             serverId: CodevisorMachine.local.id,
-            serverClient: selectedClient
+            serverClient: selectedClient,
+            refresh: false
         )
+        Task { await prepareSelectedMachine() }
     }
 
     public func prepareSelectedMachine() async {
@@ -625,6 +659,7 @@ public final class MachineController {
         client: any CodevisorServerClienting
     ) async {
         let machineId = machine.id
+        navigationSyncStateByMachineId[machineId] = .catchingUp
 
         if machine.isLocal, let localServer {
             let serverState = await localServer.ensureRunning()
@@ -665,184 +700,17 @@ public final class MachineController {
         markReady(for: machineId)
         await refreshStatus(for: machineId)
         guard machineId == selectedMachineId else { return }
-        // Capture the durable shell-log tip BEFORE fetching navigation. Any
-        // event racing either snapshot is then replayed from this cursor.
-        let navigationCursor = (try? await client.latestShellEventCursor()) ?? 0
-        await refreshNavigationState(serverId: machineId, client: client)
-        guard machineId == selectedMachineId else { return }
-        startEventSync(since: navigationCursor)
+        await synchronizeNavigationState(
+            serverId: machineId,
+            client: client,
+            presentation: .catchUp
+        )
     }
 
     public func retrySelectedMachine() async {
         let machine = selectedMachine
         beginWaiting(for: machine.id, reason: machine.isLocal ? .starting : .connecting)
         await prepareSelectedMachine()
-    }
-
-    // MARK: - Live sync
-
-    /// The only event kinds `handleSyncEvent` acts on. Everything else on the
-    /// global socket — most of it per-token `session.output` chunks from every
-    /// streaming session — is filtered inside the client's stream task so it
-    /// never pays a main-actor hop just to hit the `default:` case below.
-    static let shellSyncEventKinds: Set<String> = [
-        "project.created", "project.updated", "project.deleted",
-        "worktree.created",
-        "session.created", "session.updated", "session.deleted",
-        "session.attention.updated", "session.archived", "session.unarchived",
-        "workspace.updated", "workspace.deleted",
-        "workspace.pane.updated", "workspace.pane.deleted",
-        "harness.lifecycle.updated",
-        "plugin.state.updated",
-        "plugin.updated",
-    ]
-
-    /// Follows the selected server's event stream so projects and sessions
-    /// stay in sync across every client connected to that server. Replaces any
-    /// previous subscription (e.g. after switching machines).
-    public func startEventSync(since initialCursor: Int = 0) {
-        eventSyncTask?.cancel()
-        let serverId = selectedMachine.id
-        let client = selectedClient
-        eventSyncTask = Task { [weak self] in
-            var cursor = max(0, initialCursor)
-            while !Task.isCancelled {
-                do {
-                    for try await event in client.shellEventStream(
-                        since: cursor,
-                        handledKinds: Self.shellSyncEventKinds
-                    ) {
-                        guard let self, !Task.isCancelled else { return }
-                        cursor = max(cursor, event.id)
-                        await self.handleSyncEvent(
-                            event,
-                            serverId: serverId,
-                            client: client
-                        )
-                    }
-                    return
-                } catch {
-                    Log.machines.error(
-                        "Event sync for \(serverId, privacy: .public) failed; resubscribing: \(String(describing: error), privacy: .public)"
-                    )
-                    guard let self, !Task.isCancelled else { return }
-                    // Capture before reconciling, then replay everything that
-                    // raced the authoritative snapshot. This also skips a
-                    // malformed event instead of retrying it forever.
-                    cursor = (try? await client.latestShellEventCursor()) ?? cursor
-                    await self.refreshNavigationState(serverId: serverId, client: client)
-                }
-            }
-        }
-    }
-
-    public func stopEventSync() {
-        eventSyncTask?.cancel()
-        eventSyncTask = nil
-        pendingRefreshTask?.cancel()
-        pendingRefreshTask = nil
-    }
-
-    private func handleSyncEvent(
-        _ event: ServerEventEnvelope,
-        serverId: String,
-        client: any CodevisorServerClienting
-    ) async {
-        guard serverId == selectedMachine.id else { return }
-        DiagnosticsClient.shared.noteSyncEvent(
-            machineIsLocal: selectedMachine.isLocal,
-            kind: event.kind
-        )
-        switch event.kind {
-        case "project.deleted":
-            if let id = UUID(uuidString: event.subjectId) {
-                projectList.removeProjectLocally(id: id, serverId: serverId)
-            }
-        case "session.deleted":
-            if let id = UUID(uuidString: event.subjectId) {
-                let membershipChanged = projectList.removeSessionLocally(
-                    id: id,
-                    serverId: serverId
-                )
-                if membershipChanged {
-                    await workspaceSync?.refreshFromServer(
-                        serverId: serverId,
-                        client: client
-                    )
-                }
-            }
-        case "workspace.deleted":
-            if let id = UUID(uuidString: event.subjectId) {
-                workspaceSync?.removeWorkspace(id: id, serverId: serverId)
-            }
-        case "session.created", "session.updated", "session.attention.updated",
-            "session.archived", "session.unarchived":
-            switch await projectList.applyServerSessionEvent(event, serverId: serverId) {
-            case let .applied(workspaceMembershipChanged):
-                if workspaceMembershipChanged {
-                    await workspaceSync?.refreshFromServer(
-                        serverId: serverId,
-                        client: client
-                    )
-                }
-            case .requiresFullRefresh:
-                // Older servers may emit only an event marker. Retain a
-                // compatibility path, but keep it off the ordinary hot path.
-                scheduleNavigationRefresh()
-            }
-        case "workspace.updated", "workspace.pane.updated", "workspace.pane.deleted":
-            await workspaceSync?.refreshFromServer(serverId: serverId, client: client)
-        case "project.created", "project.updated", "worktree.created":
-            scheduleNavigationRefresh()
-        case "harness.lifecycle.updated":
-            // Update detection / install progress changed a harness — bump
-            // the catalog revision so mounted pickers and settings refetch.
-            onHarnessLifecycleChanged?(serverId)
-        case "plugin.state.updated":
-            // A plugin started, stopped, crashed, or the installed list
-            // changed — bump the revision so state chips and cards refetch.
-            onPluginStateChanged?(serverId)
-        case "plugin.updated":
-            // The plugin's code/install changed (restart, re-import, link) —
-            // open panes reload. Deliberately NOT driven off
-            // plugin.state.updated: routine runtime transitions must not
-            // reload the plugin's pane content.
-            onPluginUpdated?(serverId, event.subjectId)
-        default:
-            // Prompt/queue/error events are handled by the session transports.
-            break
-        }
-    }
-
-    /// Coalesces bursts of events (including the initial replay) into a single
-    /// refresh from the server.
-    private func scheduleNavigationRefresh() {
-        guard pendingRefreshTask == nil else { return }
-        pendingRefreshTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(300))
-            guard let self, !Task.isCancelled else { return }
-            self.pendingRefreshTask = nil
-            let serverId = self.selectedMachine.id
-            let client = self.selectedClient
-            await self.refreshNavigationState(serverId: serverId, client: client)
-        }
-    }
-
-    /// One shared authoritative navigation refresh. Workspace reconciliation
-    /// follows the session snapshot because membership is carried by sessions.
-    public func refreshSelectedNavigationState() async {
-        let serverId = selectedMachine.id
-        await refreshNavigationState(serverId: serverId, client: selectedClient)
-    }
-
-    private func refreshNavigationState(
-        serverId: String,
-        client: any CodevisorServerClienting
-    ) async {
-        guard serverId == selectedMachine.id else { return }
-        await projectList.refreshFromServer()
-        guard serverId == selectedMachine.id else { return }
-        await workspaceSync?.refreshFromServer(serverId: serverId, client: client)
     }
 
     public func refreshStatus(for id: String) async {
@@ -1010,10 +878,17 @@ public final class MachineController {
     }
 
     private func beginWaiting(for machineId: String, reason: ServerWaitingReason) {
+        if let navigationSyncMachineId, navigationSyncMachineId != machineId {
+            navigationSyncTask?.cancel()
+            self.navigationSyncMachineId = nil
+            navigationSyncToken = nil
+            navigationSyncTask = nil
+        }
         if machineId == selectedMachineId {
             stopEventSync()
         }
         availabilityByMachineId[machineId] = .waiting(reason)
+        navigationSyncStateByMachineId[machineId] = .catchingUp
         requestGate.beginWaiting(for: machineId)
     }
 
@@ -1024,6 +899,7 @@ public final class MachineController {
 
     private func markFailed(for machineId: String, message: String) {
         availabilityByMachineId[machineId] = .failed(message)
+        navigationSyncStateByMachineId[machineId] = .stale(message)
         requestGate.markFailed(for: machineId, message: message)
     }
 

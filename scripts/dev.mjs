@@ -11,12 +11,25 @@ import { bootstrapDevelopment } from "./dev-bootstrap.mjs"
 import {
   developmentLayout,
   ensureDevelopmentDirectories,
+  iosDevelopmentBundleIdentifier,
   localDevelopmentEnvironment,
   remoteDevelopmentEnvironment
 } from "./dev-layout.mjs"
+import {
+  buildIOSDevelopmentApp,
+  launchIOSDevelopmentApp,
+  terminateIOSDevelopmentApp
+} from "./dev-ios-target.mjs"
+import { claimDevelopmentRunner, releaseDevelopmentRunner } from "./dev-runtime.mjs"
 import { runXcodebuild } from "./xcodebuild.mjs"
 
 const repoRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)))
+const arguments_ = process.argv.slice(2)
+const unknownArguments = arguments_.filter((argument) => argument !== "--ios")
+if (unknownArguments.length > 0) {
+  throw new Error(`Unknown development runner argument: ${unknownArguments.join(", ")}`)
+}
+const includesIOS = arguments_.includes("--ios")
 
 // Sanitize ambient Codevisor variables before anything inherits our env.
 // This script is often launched from inside a running Codevisor instance
@@ -60,15 +73,20 @@ const instanceName = `${worktreeName}-${instanceHash}`
 // deeplink parsers accept the whole codevisor-dev-* family.
 const urlScheme = `codevisor-dev-${instanceHash}`
 const appName = `Codevisor (${worktreeName})`
+const macOSBundleIdentifier = `com.851labs.Codevisor.Development.${instanceHash}`
+const iOSBundleIdentifier = iosDevelopmentBundleIdentifier(repoRoot)
 const layout = developmentLayout(repoRoot)
 const tmpRoot = layout.tmpRoot
 const derivedDataPath = layout.build.macos.derivedData
+const appBundle = join(derivedDataPath, "Build", "Products", "Debug", `${appName}.app`)
+const appExecutable = join(appBundle, "Contents", "MacOS", appName)
 // The local dev instance and a standalone "remote" server each get their own
 // production-shaped roots under tmp/: codevisor mirrors ~/codevisor and
 // .codevisor mirrors ~/.codevisor. The fake remote repeats that layout.
 const dataDirectory = layout.local.data
 const remoteDataDirectory = layout.remote.data
 const worktreesDirectory = layout.local.worktrees
+const simulatorName = process.env.CODEVISOR_IOS_SIMULATOR ?? "iPhone 17 Pro"
 
 const preferredPort = 51_000 + (Number.parseInt(instanceHash.slice(0, 8), 16) % 10_000)
 const requestedPort = parsePort(
@@ -157,6 +175,13 @@ if (
 }
 
 await ensureDevelopmentDirectories(layout)
+const runnerManifest = {
+  kind: includesIOS ? "all" : "macos",
+  pid: process.pid,
+  repoRoot,
+  startedAt: new Date().toISOString()
+}
+await claimDevelopmentRunner(layout.runtime.manifest, runnerManifest)
 Object.assign(process.env, localDevelopmentEnvironment(layout, process.env))
 
 console.log(`Codevisor development instance: ${worktreeName}`)
@@ -168,6 +193,7 @@ console.log(`  cloud:    ${cloudUrl}`)
 console.log(`  data:     ${dataDirectory}`)
 console.log(`  worktrees:${worktreesDirectory}`)
 console.log(`  icon:     ${developmentIconColor.hex}`)
+if (includesIOS) console.log(`  targets:  macOS + iOS (${simulatorName})`)
 
 await bootstrapDevelopment(repoRoot, { environment: process.env, ghostty: true })
 await run("bun", ["run", "--cwd", "apps/server", "build"])
@@ -234,7 +260,7 @@ try {
       "Debug",
       `CODEVISOR_DEV_PRODUCT_NAME=${appName}`,
       `CODEVISOR_DEV_DISPLAY_NAME=${appName}`,
-      `CODEVISOR_DEV_BUNDLE_IDENTIFIER=com.851labs.Codevisor.Development.${instanceHash}`,
+      `CODEVISOR_DEV_BUNDLE_IDENTIFIER=${macOSBundleIdentifier}`,
       `CODEVISOR_URL_SCHEME=${urlScheme}`,
       "ASSETCATALOG_COMPILER_APPICON_NAME=AppIconDevGenerated",
       "INFOPLIST_KEY_CFBundleIconFile=AppIconDevGenerated",
@@ -246,6 +272,19 @@ try {
   )
 } finally {
   await rm(generatedIconDirectory, { recursive: true, force: true })
+}
+let iosTarget
+if (includesIOS) {
+  iosTarget = await buildIOSDevelopmentApp({
+    repoRoot,
+    layout,
+    simulatorName,
+    appDisplayName: appName,
+    bundleIdentifier: iOSBundleIdentifier,
+    urlScheme,
+    developmentIconColor,
+    environment: process.env
+  })
 }
 const developmentBrowserIconDirectory = await createDevelopmentBrowserExtensionIcons()
 
@@ -348,17 +387,13 @@ const remoteServer = spawn(
 )
 
 let app
-let launchedAppName
 let stopping = false
 
 const stop = async (exitCode = 0) => {
   if (stopping) return
   stopping = true
-  if (launchedAppName !== undefined) {
-    spawn("/usr/bin/killall", ["-TERM", launchedAppName], {
-      stdio: "ignore"
-    }).unref()
-  }
+  terminateExactDevelopmentApp(appExecutable)
+  terminateIOSDevelopmentApp(iosTarget)
   app?.kill("SIGTERM")
   www.kill("SIGTERM")
   cloud.kill("SIGTERM")
@@ -378,7 +413,7 @@ const stop = async (exitCode = 0) => {
   for (const child of [server, remoteServer]) {
     if (child.exitCode === null) child.kill("SIGTERM")
   }
-  await rm(layout.runtime.manifest, { force: true })
+  await releaseDevelopmentRunner(layout.runtime.manifest, runnerManifest)
   process.exitCode = exitCode
 }
 
@@ -411,14 +446,9 @@ void waitForExit(cloud).then((result) => {
 })
 
 try {
-  await writeFile(
-    layout.runtime.manifest,
-    `${JSON.stringify({ kind: "macos", pid: process.pid, repoRoot, startedAt: new Date().toISOString() }, null, 2)}\n`
-  )
   await waitForHealth(port, server)
   await waitForHealth(remotePort, remoteServer)
-  await announceDevRemote()
-  const appBundle = join(derivedDataPath, "Build", "Products", "Debug", `${appName}.app`)
+  const remoteToken = await announceDevRemote()
   const launchEnvironment = Object.entries(sharedEnvironment).filter(
     ([key]) =>
       key === "TMPDIR" ||
@@ -435,12 +465,29 @@ try {
   // LaunchServices gives the app its own macOS responsibility identity. A
   // direct child executable inherits the invoking terminal/agent identity,
   // making an enabled Accessibility toggle appear denied after an update.
-  launchedAppName = appName
   app = spawn("/usr/bin/open", openArguments, {
     cwd: repoRoot,
     env: process.env,
     stdio: "inherit"
   })
+  if (iosTarget !== undefined) {
+    const cloudToken = sharedEnvironment.CODEVISOR_DEV_CLOUD_TOKEN
+    await launchIOSDevelopmentApp({
+      repoRoot,
+      target: iosTarget,
+      environment: process.env,
+      worktreeName,
+      instanceName,
+      developmentIconColor,
+      remoteHost: "127.0.0.1",
+      remotePort,
+      remoteToken,
+      remoteName,
+      urlScheme,
+      cloudSession: cloudToken === "" ? undefined : { url: cloudUrl, token: cloudToken }
+    })
+    console.log("Press Ctrl+C to stop both apps and their shared development services.")
+  }
   const result = await waitForExit(app)
   if (!stopping) await stop(result.code ?? 0)
   await serverExit
@@ -469,6 +516,7 @@ async function announceDevRemote() {
   console.log(`  Token:   ${token}`)
   console.log(`  Or open: ${deeplink}`)
   console.log("")
+  return token
 }
 
 // Wait for the cloud Worker, sign in as the dev user, and hand the session
@@ -668,6 +716,43 @@ function capture(command, arguments_) {
     if (result.code === 0) return output
     throw new Error(`${command} failed (${describeExit(result)})`)
   })
+}
+
+function terminateExactDevelopmentApp(executable) {
+  const pattern = `^${escapeRegularExpression(executable)}$`
+  let processIDs
+  try {
+    processIDs = execFileSync("/usr/bin/pgrep", ["-f", pattern], { encoding: "utf8" })
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map(Number)
+  } catch (error) {
+    if (error?.status === 1) return
+    throw error
+  }
+
+  for (const processID of processIDs) {
+    let command
+    try {
+      command = execFileSync("/bin/ps", ["-p", String(processID), "-o", "command="], {
+        encoding: "utf8"
+      }).trim()
+    } catch (error) {
+      if (error?.status === 1) continue
+      throw error
+    }
+    if (command !== executable) continue
+    try {
+      process.kill(processID, "SIGTERM")
+    } catch (error) {
+      if (error?.code !== "ESRCH") throw error
+    }
+  }
+}
+
+function escapeRegularExpression(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }
 
 async function resolveDevelopmentSigningArguments() {

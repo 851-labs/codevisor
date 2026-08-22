@@ -1,12 +1,12 @@
+import { createHash } from "node:crypto"
 import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
 
 export const IOS_DEVELOPMENT_BUNDLE_IDENTIFIER = "com.851labs.Codevisor.Development.iOS"
 
-export function legacyIOSDevelopmentBundleIdentifiers(listAppsOutput) {
-  return [
-    ...listAppsOutput.matchAll(/^\s*"?(com\.dylanplayer\.codevisor\.ios\.[0-9a-f]{10})"?\s*=/gim)
-  ].map((match) => match[1])
+export function iosDevelopmentBundleIdentifier(repoRoot) {
+  const instanceHash = createHash("sha256").update(repoRoot).digest("hex").slice(0, 10)
+  return `${IOS_DEVELOPMENT_BUNDLE_IDENTIFIER}.${instanceHash}`
 }
 
 export function developmentLayout(repoRoot, environment = process.env) {

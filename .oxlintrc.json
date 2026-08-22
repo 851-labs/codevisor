@@ -84,7 +84,6 @@
         "packages/terminal/src/index.test.ts",
         "packages/terminal/src/index.ts",
         "packages/worktrees/src/worktree-names.ts",
-        "scripts/dev-ios.mjs",
         "scripts/dev.mjs"
       ],
       "rules": {

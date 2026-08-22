@@ -5,7 +5,7 @@
 // client of the dev remote.
 import { createHash } from "node:crypto"
 import { spawn } from "node:child_process"
-import { access, cp, mkdir, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises"
+import { access, cp, mkdir, readdir, readFile, realpath, rm } from "node:fs/promises"
 import { createServer } from "node:net"
 import { basename, join, resolve } from "node:path"
 import process from "node:process"
@@ -15,19 +15,22 @@ import { bootstrapDevelopment } from "./dev-bootstrap.mjs"
 import {
   developmentLayout,
   ensureDevelopmentDirectories,
-  IOS_DEVELOPMENT_BUNDLE_IDENTIFIER,
-  legacyIOSDevelopmentBundleIdentifiers,
+  iosDevelopmentBundleIdentifier,
   localDevelopmentEnvironment,
   remoteDevelopmentEnvironment
 } from "./dev-layout.mjs"
-import { runXcodebuild } from "./xcodebuild.mjs"
+import {
+  buildIOSDevelopmentApp,
+  launchIOSDevelopmentApp,
+  terminateIOSDevelopmentApp
+} from "./dev-ios-target.mjs"
+import { claimDevelopmentRunner, releaseDevelopmentRunner } from "./dev-runtime.mjs"
 
 const repoRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)))
 const worktreeName = basename(repoRoot)
 const instanceHash = createHash("sha256").update(repoRoot).digest("hex").slice(0, 10)
 const instanceName = `${worktreeName}-${instanceHash}`
 const layout = developmentLayout(repoRoot)
-const derivedDataPath = layout.build.ios.derivedData
 // Shared with scripts/dev.mjs's dev remote so the simulator talks to the same
 // "Dev Remote" machine (same data, same stable token) either way.
 const remoteDataDirectory = layout.remote.data
@@ -37,9 +40,8 @@ const remoteName = `Dev Remote (${worktreeName})`
 const worktreeHash = createHash("sha256").update(worktreeName).digest("hex")
 const developmentIconColor = colorFromHash(worktreeHash)
 const appDisplayName = `Codevisor (${worktreeName})`
-// One development bundle id means each install replaces the prior worktree's
-// app instead of leaving another simulator container behind.
-const bundleIdentifier = IOS_DEVELOPMENT_BUNDLE_IDENTIFIER
+const bundleIdentifier = iosDevelopmentBundleIdentifier(repoRoot)
+const urlScheme = `codevisor-dev-${instanceHash}`
 const simulatorName = process.env.CODEVISOR_IOS_SIMULATOR ?? "iPhone 17 Pro"
 
 const preferredPort = 51_000 + (Number.parseInt(instanceHash.slice(0, 8), 16) % 10_000)
@@ -84,6 +86,13 @@ if (
 }
 
 await ensureDevelopmentDirectories(layout)
+const runnerManifest = {
+  kind: "ios",
+  pid: process.pid,
+  repoRoot,
+  startedAt: new Date().toISOString()
+}
+await claimDevelopmentRunner(layout.runtime.manifest, runnerManifest)
 Object.assign(process.env, localDevelopmentEnvironment(layout, process.env))
 
 console.log(`Codevisor iOS development instance: ${worktreeName}`)
@@ -191,16 +200,12 @@ const server = spawn(
 )
 
 let stopping = false
-let simulatorUdid
+let iosTarget
 
 const stop = async (exitCode = 0) => {
   if (stopping) return
   stopping = true
-  if (simulatorUdid !== undefined) {
-    spawn("xcrun", ["simctl", "terminate", simulatorUdid, bundleIdentifier], {
-      stdio: "ignore"
-    }).unref()
-  }
+  terminateIOSDevelopmentApp(iosTarget)
   try {
     await fetch(`${serverURL}/v1/shutdown`, { method: "POST" })
   } catch {
@@ -209,7 +214,7 @@ const stop = async (exitCode = 0) => {
   cloud?.kill("SIGTERM")
   await Promise.race([waitForExit(server), delay(2_000)])
   if (server.exitCode === null) server.kill("SIGTERM")
-  await rm(layout.runtime.manifest, { force: true })
+  await releaseDevelopmentRunner(layout.runtime.manifest, runnerManifest)
   process.exitCode = exitCode
 }
 
@@ -225,125 +230,40 @@ const serverExit = waitForExit(server).then(async (result) => {
 })
 
 try {
-  await writeFile(
-    layout.runtime.manifest,
-    `${JSON.stringify({ kind: "ios", pid: process.pid, repoRoot, startedAt: new Date().toISOString() }, null, 2)}\n`
-  )
-  const simulator = await selectSimulator(simulatorName)
-  simulatorUdid = simulator.udid
-  console.log(`  device:    ${simulator.name} (${simulator.runtime}) ${simulator.udid}`)
-
-  // Commands such as listapps require a booted simulator. Boot before doing
-  // any per-device inspection so dev:ios also works from a fresh shutdown.
-  await run("xcrun", ["simctl", "bootstatus", simulator.udid, "-b"])
-  await openSimulatorUserInterface()
-
-  const installedApps = await capture("xcrun", ["simctl", "listapps", simulator.udid])
-  for (const legacyBundleIdentifier of legacyIOSDevelopmentBundleIdentifiers(installedApps)) {
-    console.log(`Removing legacy Codevisor iOS development app ${legacyBundleIdentifier}`)
-    await run("xcrun", ["simctl", "uninstall", simulator.udid, legacyBundleIdentifier])
-  }
-
-  const generatedIconDirectory = await createDevelopmentAppIcon()
-  try {
-    await runXcodebuild(
-      repoRoot,
-      "ios",
-      [
-        "-project",
-        "apps/ios/Codevisor.xcodeproj",
-        "-scheme",
-        "Codevisor",
-        "-configuration",
-        "Debug",
-        "-destination",
-        `platform=iOS Simulator,id=${simulator.udid}`,
-        `CODEVISOR_IOS_BUNDLE_IDENTIFIER=${bundleIdentifier}`,
-        `INFOPLIST_KEY_CFBundleDisplayName=${appDisplayName}`,
-        "ASSETCATALOG_COMPILER_APPICON_NAME=AppIconDevGenerated",
-        "INFOPLIST_KEY_CFBundleIconName=AppIconDevGenerated",
-        "build"
-      ],
-      { environment: process.env, layout }
-    )
-  } finally {
-    await rm(generatedIconDirectory, { recursive: true, force: true })
-  }
+  iosTarget = await buildIOSDevelopmentApp({
+    repoRoot,
+    layout,
+    simulatorName,
+    appDisplayName,
+    bundleIdentifier,
+    urlScheme,
+    developmentIconColor,
+    environment: process.env
+  })
 
   await waitForHealth(remotePort, server)
   const token = await readConnectionToken()
 
-  // Install and launch with the dev server's coordinates in the app's environment.
-  const appBundle = join(
-    derivedDataPath,
-    "Build",
-    "Products",
-    "Debug-iphonesimulator",
-    "Codevisor.app"
-  )
-  await run("xcrun", ["simctl", "install", simulator.udid, appBundle])
-  spawn("xcrun", ["simctl", "terminate", simulator.udid, bundleIdentifier], { stdio: "ignore" })
-  await delay(500)
-  // Same contract as the macOS dev app (CodevisorAppVariant): identify this
-  // as a configured development launch so the app stashes the remote and cloud
-  // environment for later simulator-icon relaunches. The app offers the remote
-  // as a one-tap quick add instead of pairing automatically, and gets the same
-  // dev-cloud session the server booted with.
-  const cloudEnvironment =
-    cloudSession === undefined
-      ? {}
-      : {
-          SIMCTL_CHILD_CODEVISOR_DEV_CLOUD_URL: cloudSession.url,
-          SIMCTL_CHILD_CODEVISOR_DEV_CLOUD_TOKEN: cloudSession.token
-        }
-  await runWithEnvironment("xcrun", ["simctl", "launch", simulator.udid, bundleIdentifier], {
-    ...process.env,
-    ...cloudEnvironment,
-    SIMCTL_CHILD_CODEVISOR_DEV_WORKTREE: worktreeName,
-    SIMCTL_CHILD_CODEVISOR_DEV_INSTANCE_ID: instanceName,
-    SIMCTL_CHILD_CODEVISOR_DEV_ICON_COLOR: developmentIconColor.hex,
-    SIMCTL_CHILD_CODEVISOR_DEV_REMOTE_HOST: "127.0.0.1",
-    SIMCTL_CHILD_CODEVISOR_DEV_REMOTE_PORT: String(remotePort),
-    SIMCTL_CHILD_CODEVISOR_DEV_REMOTE_TOKEN: token,
-    SIMCTL_CHILD_CODEVISOR_DEV_REMOTE_NAME: remoteName
+  await launchIOSDevelopmentApp({
+    repoRoot,
+    target: iosTarget,
+    environment: process.env,
+    worktreeName,
+    instanceName,
+    developmentIconColor,
+    remoteHost: "127.0.0.1",
+    remotePort,
+    remoteToken: token,
+    remoteName,
+    urlScheme,
+    cloudSession
   })
-
-  console.log("")
-  console.log(`Codevisor iOS is running on ${simulator.name} against the dev remote:`)
-  console.log(`  Address: 127.0.0.1:${remotePort}`)
-  console.log(`  Token:   ${token}`)
-  console.log(
-    `  Or open: codevisor-dev://add-machine?host=127.0.0.1&port=${remotePort}&token=${token}&name=${encodeURIComponent(remoteName)}`
-  )
-  console.log("")
   console.log("Press Ctrl+C to stop the server (the simulator stays open).")
 
   await serverExit
 } catch (error) {
   console.error(error instanceof Error ? error.message : error)
   await stop(1)
-}
-
-// Make the simulator window visible. The UI app ships inside the selected
-// Xcode and is not reliably registered with LaunchServices by name: older
-// Xcodes have Developer/Applications/Simulator.app, Xcode 27+ replaced it with
-// Contents/Applications/DeviceHub.app.
-async function openSimulatorUserInterface() {
-  const developerDirectory = (await capture("xcode-select", ["-p"])).trim()
-  const xcodeContents = join(developerDirectory, "..")
-  const candidates = [
-    join(developerDirectory, "Applications", "Simulator.app"),
-    join(xcodeContents, "Applications", "DeviceHub.app")
-  ]
-  for (const candidate of candidates) {
-    if (await pathExists(candidate)) {
-      await run("open", [candidate])
-      return
-    }
-  }
-  console.warn(
-    "No simulator UI app (Simulator.app or DeviceHub.app) was found in the selected Xcode; the app is running headless. Open the simulator UI manually to see it."
-  )
 }
 
 function colorFromHash(hash) {
@@ -372,67 +292,6 @@ function colorFromHash(hash) {
     hex: `#${bytes.map((byte) => byte.toString(16).padStart(2, "0")).join("")}`,
     composer: `extended-srgb:${channels.map((channel) => channel.toFixed(5)).join(",")},1.00000`
   }
-}
-
-// Same worktree-colored Icon Composer icon as the macOS dev build, generated
-// from the shared template into the iOS target's Resources.
-async function createDevelopmentAppIcon() {
-  const templateDirectory = join(
-    repoRoot,
-    "apps",
-    "macos",
-    "Codevisor",
-    "Resources",
-    "AppIconDev.icon"
-  )
-  const generatedDirectory = join(
-    repoRoot,
-    "apps",
-    "ios",
-    "Codevisor",
-    "Resources",
-    "AppIconDevGenerated.icon"
-  )
-  await rm(generatedDirectory, { recursive: true, force: true })
-  await mkdir(join(generatedDirectory, "Assets"), { recursive: true })
-  const manifest = JSON.parse(await readFile(join(templateDirectory, "icon.json"), "utf8"))
-  manifest.fill = { "automatic-gradient": developmentIconColor.composer }
-  await writeFile(join(generatedDirectory, "icon.json"), `${JSON.stringify(manifest, null, 2)}\n`)
-  await cp(
-    join(templateDirectory, "Assets", "icon-v2.svg"),
-    join(generatedDirectory, "Assets", "icon-v2.svg")
-  )
-  return generatedDirectory
-}
-
-async function selectSimulator(name) {
-  const listing = JSON.parse(
-    await capture("xcrun", ["simctl", "list", "devices", "available", "--json"])
-  )
-  const candidates = []
-  for (const [runtimeIdentifier, devices] of Object.entries(listing.devices)) {
-    const match = runtimeIdentifier.match(/iOS-(\d+)-(\d+)$/)
-    if (match === null) continue
-    const version = Number(match[1]) * 100 + Number(match[2])
-    for (const device of devices) {
-      if (device.name !== name) continue
-      candidates.push({
-        udid: device.udid,
-        name: device.name,
-        runtime: `iOS ${match[1]}.${match[2]}`,
-        version,
-        booted: device.state === "Booted"
-      })
-    }
-  }
-  if (candidates.length === 0) {
-    throw new Error(
-      `No available simulator named "${name}" was found. Set CODEVISOR_IOS_SIMULATOR to one of the devices in \`xcrun simctl list devices available\`.`
-    )
-  }
-  // Prefer an already-booted device, then the newest runtime.
-  candidates.sort((a, b) => Number(b.booted) - Number(a.booted) || b.version - a.version)
-  return candidates[0]
 }
 
 async function readConnectionToken() {
@@ -476,15 +335,6 @@ function isPortAvailable(port) {
 function run(command, arguments_, cwd = repoRoot, environment = process.env) {
   console.log(`\n$ ${command} ${arguments_.join(" ")}`)
   const child = spawn(command, arguments_, { cwd, env: environment, stdio: "inherit" })
-  return waitForExit(child).then((result) => {
-    if (result.code === 0) return
-    throw new Error(`${command} failed (${describeExit(result)})`)
-  })
-}
-
-function runWithEnvironment(command, arguments_, environment) {
-  console.log(`\n$ ${command} ${arguments_.join(" ")}`)
-  const child = spawn(command, arguments_, { cwd: repoRoot, env: environment, stdio: "inherit" })
   return waitForExit(child).then((result) => {
     if (result.code === 0) return
     throw new Error(`${command} failed (${describeExit(result)})`)

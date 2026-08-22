@@ -24,7 +24,7 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>codevisor</string>
-				<string>codevisor-dev</string>
+				<string>$(CODEVISOR_URL_SCHEME)</string>
 			</array>
 		</dict>
 	</array>

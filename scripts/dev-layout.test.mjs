@@ -8,7 +8,7 @@ import {
   developmentLayout,
   ensureBuildDirectories,
   IOS_DEVELOPMENT_BUNDLE_IDENTIFIER,
-  legacyIOSDevelopmentBundleIdentifiers,
+  iosDevelopmentBundleIdentifier,
   localDevelopmentEnvironment,
   remoteDevelopmentEnvironment
 } from "./dev-layout.mjs"
@@ -31,15 +31,12 @@ test("development layout mirrors production roots inside tmp", () => {
   assert.equal(IOS_DEVELOPMENT_BUNDLE_IDENTIFIER, "com.851labs.Codevisor.Development.iOS")
 })
 
-test("legacy iOS dev app cleanup matches only the former hashed bundle ids", () => {
-  const listing = `{
-    "com.dylanplayer.codevisor.ios.0123abcdef" = {};
-    "com.851labs.Codevisor.Development.iOS" = {};
-    "com.example.unrelated" = {};
-  }`
-  assert.deepEqual(legacyIOSDevelopmentBundleIdentifiers(listing), [
-    "com.dylanplayer.codevisor.ios.0123abcdef"
-  ])
+test("iOS dev bundle identifiers are stable and isolated by worktree", () => {
+  const cayenne = iosDevelopmentBundleIdentifier("/repo/worktrees/cayenne")
+
+  assert.match(cayenne, /^com\.851labs\.Codevisor\.Development\.iOS\.[0-9a-f]{10}$/)
+  assert.equal(cayenne, iosDevelopmentBundleIdentifier("/repo/worktrees/cayenne"))
+  assert.notEqual(cayenne, iosDevelopmentBundleIdentifier("/repo/worktrees/quark"))
 })
 
 test("build-only setup does not create runtime state roots", async () => {

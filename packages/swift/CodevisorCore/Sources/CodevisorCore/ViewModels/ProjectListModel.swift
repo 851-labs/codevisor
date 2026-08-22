@@ -121,9 +121,6 @@ public final class ProjectListModel {
     /// machine id. Pane layout stays in `WorkspaceRepository`; this mapping is
     /// refreshed with the same authoritative session snapshot as the sidebar.
     @ObservationIgnored private var workspaceAssignmentsByServer: [String: [UUID: UUID]] = [:]
-    /// Prevents an older overlapping network response from overwriting a newer
-    /// event-triggered navigation snapshot.
-    @ObservationIgnored private var refreshGeneration: UInt64 = 0
     /// Sessions created locally while a server client is active, but not yet
     /// observed in an authoritative server snapshot. A metadata refresh can
     /// race the slow first agent startup; preserving these rows prevents the
@@ -833,8 +830,6 @@ public final class ProjectListModel {
     /// client's event); intentionally does not call back to the server.
     @discardableResult
     public func removeSessionLocally(id: UUID, serverId: String) -> Bool {
-        // This event is newer than any full snapshot currently in flight.
-        refreshGeneration &+= 1
         let previousWorkspace = workspaceAssignmentsByServer[serverId]?.removeValue(forKey: id)
         guard sessions.contains(where: { $0.serverId == serverId && $0.id == id }) else {
             return previousWorkspace != nil
@@ -849,8 +844,6 @@ public final class ProjectListModel {
 
     /// Applies a project deletion that already happened on the server.
     public func removeProjectLocally(id: UUID, serverId: String) {
-        // This event is newer than any full snapshot currently in flight.
-        refreshGeneration &+= 1
         guard projects.contains(where: { $0.serverId == serverId && $0.id == id }) else { return }
         let removedSessionIds = sessions.lazy
             .filter { $0.serverId == serverId && $0.projectId == id }
@@ -934,16 +927,17 @@ public final class ProjectListModel {
         Task { await refreshFromServer() }
     }
 
-    public func refreshFromServer() async {
-        guard let serverClient else { return }
+    @discardableResult
+    public func refreshFromServer() async -> ServerNavigationRefreshResult {
+        guard let serverClient else {
+            return .failed("No server client is configured.")
+        }
         // Snapshot the target server: the fetches below are network
         // round-trips, and the user can switch machines while one is in
         // flight. Every fetched record must be stamped with the server it
         // actually came from — reading the live `selectedServerId` after the
         // awaits would tag one machine's projects with another machine's id.
         let serverId = selectedServerId
-        refreshGeneration &+= 1
-        let generation = refreshGeneration
         do {
             try await migrateLegacyCacheIfNeeded(serverId: serverId, client: serverClient)
             async let projectRecords = serverClient.listProjects()
@@ -961,8 +955,7 @@ public final class ProjectListModel {
             // the stale response. The newly selected machine triggers its own
             // refresh, and this one would merge (and persist) another
             // machine's projects into the wrong sidebar.
-            guard serverId == selectedServerId else { return }
-            guard generation == refreshGeneration else { return }
+            guard serverId == selectedServerId else { return .superseded }
             for failure in prepared.failures {
                 Log.sync.error(
                     "Dropping server \(failure.kind, privacy: .public) \(failure.id, privacy: .public) that failed to map: \(failure.description, privacy: .public)"
@@ -987,11 +980,13 @@ public final class ProjectListModel {
                 sessions = nextSessions
                 persistSessions()
             }
+            return .committed
         } catch {
             // Keep the last successful snapshot while the server is unreachable.
             Log.sync.error(
                 "Failed to refresh projects/sessions from server: \(String(describing: error), privacy: .public)"
             )
+            return .failed(String(describing: error))
         }
     }
 
@@ -1003,8 +998,6 @@ public final class ProjectListModel {
         serverId: String
     ) async -> ServerSessionEventApplication {
         guard serverId == selectedServerId else { return .requiresFullRefresh }
-        // Supersede a full snapshot fetched before this event arrived.
-        refreshGeneration &+= 1
         guard
             let update = await ServerNavigationSnapshotBuilder.sessionUpdate(
                 from: event,
