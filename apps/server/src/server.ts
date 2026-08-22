@@ -26,6 +26,7 @@ import {
   type RouteState,
   type RunningCodevisorServer
 } from "./server-context.js"
+import { makeAttentionSettleScheduler } from "./infra/attention-settle.js"
 import { routeBrowserUse } from "./routes/browser-use.js"
 import { routeCloud } from "./routes/cloud.js"
 import { handleEvents, handleUpgrade } from "./routes/events.js"
@@ -96,6 +97,13 @@ export const makeCodevisorServerApp = (
     void reconcileStaleStreamingTurns(services, fanout, routeState, config.id).catch(swallowError)
   }, 60_000)
   staleTurnSweep.unref()
+  // Deferred attention settling: a turn that ended while a subagent was
+  // still running parks its unread bump; this scheduler fires it once the
+  // grace deadline passes without the agent being re-invoked. Recovery also
+  // drains parked finishes stranded by a previous process (startup
+  // reconciliation has already cleared their stale task snapshots).
+  const attentionSettle = makeAttentionSettleScheduler(services.db, fanout)
+  void attentionSettle.recover().catch(swallowError)
   const activeSessionIds = new Set<string>()
   const unsubscribeSessionActivity = config.sessionActivity
     ? fanout.subscribe((event) => {
@@ -165,6 +173,7 @@ export const makeCodevisorServerApp = (
     },
     close: serverAttempt("closeApp", () => {
       clearInterval(staleTurnSweep)
+      attentionSettle.close()
       unsubscribeSessionActivity?.()
       activeSessionIds.clear()
       config.sessionActivity?.stop()

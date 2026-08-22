@@ -133,13 +133,15 @@ final class ChatNotificationManager: NSObject, ChatNotificationDelivering, UNUse
         }
     }
 
-    func deliver(_ event: ChatAttentionEvent, sessionIsOpen: Bool) {
+    func deliver(_ event: ChatAttentionEvent) {
         guard let settings = settingsModel?.settings, settings.notificationsEnabled else { return }
         clearNotifications(for: event.sessionId)
 
         if NSApp.isActive {
-            // The visible chat is already the best presentation surface.
-            guard !sessionIsOpen, settings.notificationSoundsEnabled else { return }
+            // The app is frontmost, so a banner would be noise — a sound is
+            // enough. The coordinator never delivers for the focused chat, so
+            // this is always about a chat the user is not looking at.
+            guard settings.notificationSoundsEnabled else { return }
             playSound(at: soundPath(for: event.kind, settings: settings))
             return
         }

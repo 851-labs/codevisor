@@ -41,26 +41,6 @@ public enum SessionSidebarState: String, Sendable, Codable, Equatable {
     }
 }
 
-public enum SessionAttentionKind: String, Sendable, Codable, Equatable {
-    case finished
-    case actionRequired = "action_required"
-}
-
-/// An unread server attention sequence and the transcript item whose actual
-/// presentation may acknowledge it. `chatItemId` is nil for legacy or
-/// error-only completions that produced no assistant row.
-public struct SessionAttentionTarget: Sendable, Codable, Equatable {
-    public var sequence: Int
-    public var kind: SessionAttentionKind
-    public var chatItemId: UUID?
-
-    public init(sequence: Int, kind: SessionAttentionKind, chatItemId: UUID?) {
-        self.sequence = sequence
-        self.kind = kind
-        self.chatItemId = chatItemId
-    }
-}
-
 /// Codevisor's metadata overlay for a session. The harness is the source of truth
 /// for the transcript (restored via `session/load`); this stores only what
 /// Codevisor needs: the link to the agent session, grouping, archive state, and a
@@ -103,11 +83,12 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     public var sidebarState: SessionSidebarState
     public var sidebarStateChangedAt: Date
     /// Server-owned attention state shared by every client of this session.
+    /// `latestAttentionSequence` is a monotonic revision (every settled turn
+    /// advances it); unread = revision ahead of `lastSeenAttentionSequence`.
     public var latestAttentionSequence: Int
     public var lastSeenAttentionSequence: Int
     public var unreadCount: Int
     public var hasUnreadError: Bool
-    public var unreadAttentionTargets: [SessionAttentionTarget]
     public var actionRequired: Bool
     public var actionRequiredKind: String?
     public var pendingPlanApproval: Bool
@@ -134,7 +115,6 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
         lastSeenAttentionSequence: Int = 0,
         unreadCount: Int = 0,
         hasUnreadError: Bool = false,
-        unreadAttentionTargets: [SessionAttentionTarget] = [],
         actionRequired: Bool = false,
         actionRequiredKind: String? = nil,
         pendingPlanApproval: Bool = false
@@ -160,7 +140,6 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
         self.lastSeenAttentionSequence = lastSeenAttentionSequence
         self.unreadCount = unreadCount
         self.hasUnreadError = hasUnreadError
-        self.unreadAttentionTargets = unreadAttentionTargets
         self.actionRequired = actionRequired
         self.actionRequiredKind = actionRequiredKind
         self.pendingPlanApproval = pendingPlanApproval
@@ -171,7 +150,6 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
         case worktreeName, cwd, configSelections, createdAt, updatedAt
         case sidebarState, sidebarStateChangedAt
         case latestAttentionSequence, lastSeenAttentionSequence, unreadCount, hasUnreadError
-        case unreadAttentionTargets
         case actionRequired, actionRequiredKind, pendingPlanApproval
         /// Pre-rename persisted sessions used this key for `projectId`.
         case workspaceId
@@ -208,8 +186,6 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
         lastSeenAttentionSequence = try container.decodeIfPresent(Int.self, forKey: .lastSeenAttentionSequence) ?? 0
         unreadCount = try container.decodeIfPresent(Int.self, forKey: .unreadCount) ?? 0
         hasUnreadError = try container.decodeIfPresent(Bool.self, forKey: .hasUnreadError) ?? false
-        unreadAttentionTargets =
-            try container.decodeIfPresent([SessionAttentionTarget].self, forKey: .unreadAttentionTargets) ?? []
         actionRequired = try container.decodeIfPresent(Bool.self, forKey: .actionRequired) ?? false
         actionRequiredKind = try container.decodeIfPresent(String.self, forKey: .actionRequiredKind)
         pendingPlanApproval = try container.decodeIfPresent(Bool.self, forKey: .pendingPlanApproval) ?? false
@@ -238,7 +214,6 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
         try container.encode(lastSeenAttentionSequence, forKey: .lastSeenAttentionSequence)
         try container.encode(unreadCount, forKey: .unreadCount)
         try container.encode(hasUnreadError, forKey: .hasUnreadError)
-        try container.encode(unreadAttentionTargets, forKey: .unreadAttentionTargets)
         try container.encode(actionRequired, forKey: .actionRequired)
         try container.encodeIfPresent(actionRequiredKind, forKey: .actionRequiredKind)
         try container.encode(pendingPlanApproval, forKey: .pendingPlanApproval)

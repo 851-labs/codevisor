@@ -4,7 +4,7 @@ import { makeDatabase } from "./index.js"
 import { run, tempDatabase } from "./test-support.js"
 
 describe("@codevisor/db", () => {
-  it("persists cross-device unread cursors and intrinsic action-required state", async () => {
+  it("tracks unread as a revision cursor with intrinsic action-required state", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     const project = await run(db.createProject({ folderPath: "/tmp/session-attention" }))
     const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
@@ -23,6 +23,7 @@ describe("@codevisor/db", () => {
         turnState: "started"
       })
     )
+    expect((await run(db.getSessionSummary(session.id))).sidebarState).toBe("inProgress")
     await run(
       db.appendEvent("session.output", session.id, {
         role: "assistant",
@@ -38,29 +39,18 @@ describe("@codevisor/db", () => {
         turnState: "ended"
       })
     )
-    const firstUnread = await run(db.getSessionSummary(session.id))
-    const firstAssistant = (await run(db.getSessionDetail(session.id))).conversation.find(
-      (item) => item.role === "assistant"
-    )
-    expect(firstAssistant).toBeDefined()
-    expect(firstUnread).toMatchObject({
+    expect(await run(db.getSessionSummary(session.id))).toMatchObject({
       latestAttentionSequence: 1,
       lastSeenAttentionSequence: 0,
       unreadCount: 1,
-      unreadAttentionTargets: [
-        {
-          sequence: 1,
-          kind: "finished",
-          chatItemId: firstAssistant?.id
-        }
-      ]
+      sidebarState: "unread"
     })
 
     await run(db.markSessionRead(session.id, 1))
     expect(await run(db.getSessionSummary(session.id))).toMatchObject({
       lastSeenAttentionSequence: 1,
       unreadCount: 0,
-      unreadAttentionTargets: []
+      sidebarState: "idle"
     })
 
     // A stale client may acknowledge only what it rendered. That must not
@@ -86,14 +76,16 @@ describe("@codevisor/db", () => {
       lastSeenAttentionSequence: 1,
       unreadCount: 1
     })
-    // A client acknowledges the exact cursor it rendered.
-    await run(db.markSessionRead(session.id, 2))
+    // Overshooting clamps to the newest revision instead of running ahead.
+    await run(db.markSessionRead(session.id, 99))
     expect(await run(db.getSessionSummary(session.id))).toMatchObject({
       latestAttentionSequence: 2,
       lastSeenAttentionSequence: 2,
       unreadCount: 0
     })
 
+    // A question is intrinsic blocking state, not unread: no revision bump,
+    // and reading the chat does not resolve it.
     const question = {
       questionId: "question-1",
       questions: [
@@ -110,15 +102,14 @@ describe("@codevisor/db", () => {
     expect(await run(db.getSessionSummary(session.id))).toMatchObject({
       actionRequired: true,
       actionRequiredKind: "question",
-      latestAttentionSequence: 3,
-      unreadCount: 1
+      latestAttentionSequence: 2,
+      unreadCount: 0,
+      sidebarState: "waitingForUser"
     })
-
-    // Reading is shared but does not resolve the underlying blocking action.
-    await run(db.markSessionRead(session.id, 3))
+    await run(db.markSessionRead(session.id, 2))
     expect(await run(db.getSessionSummary(session.id))).toMatchObject({
       actionRequired: true,
-      unreadCount: 0
+      sidebarState: "waitingForUser"
     })
     await run(
       db.appendEvent("session.output", session.id, {
@@ -133,23 +124,25 @@ describe("@codevisor/db", () => {
       unreadCount: 0
     })
 
+    // A manual unread reads as at least one until the next mark-read.
     await run(db.markSessionUnread(session.id))
-    expect((await run(db.getSessionSummary(session.id))).unreadCount).toBe(1)
+    expect(await run(db.getSessionSummary(session.id))).toMatchObject({
+      unreadCount: 1,
+      sidebarState: "unread"
+    })
+    await run(db.markSessionRead(session.id, 2))
+    expect(await run(db.getSessionSummary(session.id))).toMatchObject({
+      unreadCount: 0,
+      sidebarState: "idle"
+    })
     await Effect.runPromise(db.close)
   })
 
-  it("advances native sidebar ordering only when the visible state changes", async () => {
+  it("counts a turn ended with only background shells as finished", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
-    const project = await run(db.createProject({ folderPath: "/tmp/sidebar-state" }))
-    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/shell-finish" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "claude-code" }))
 
-    const initial = await run(db.getSessionSummary(session.id))
-    expect(initial).toMatchObject({
-      sidebarState: "idle",
-      sidebarStateChangedAt: initial.createdAt
-    })
-
-    await new Promise((resolve) => setTimeout(resolve, 2))
     await run(
       db.appendEvent("session.updated", session.id, {
         initiatedBy: "user",
@@ -157,28 +150,24 @@ describe("@codevisor/db", () => {
         turnState: "started"
       })
     )
-    const started = await run(db.getSessionSummary(session.id))
-    expect(started.sidebarState).toBe("inProgress")
-    expect(started.sidebarStateChangedAt).not.toBe(initial.sidebarStateChangedAt)
-
-    await run(
-      db.appendEvent("session.output", session.id, {
-        role: "assistant",
-        text: "streaming"
-      })
-    )
-    expect((await run(db.getSessionSummary(session.id))).sidebarStateChangedAt).toBe(
-      started.sidebarStateChangedAt
-    )
-
+    // A dev server left running for the user: a terminal-backed shell and a
+    // codex-style shell task. Neither holds the finish — whatever the agent
+    // left running is FOR the user to look at.
     await run(
       db.appendEvent("session.updated", session.id, {
         backgroundTasks: [
           {
-            id: "subagent-1",
-            description: "Investigate",
+            id: "dev-server",
+            description: "bun run dev",
             status: "running",
-            taskType: "subagent"
+            taskType: "task",
+            terminalKey: "session:bg:tool-1"
+          },
+          {
+            id: "checks",
+            description: "Run checks",
+            status: "running",
+            taskType: "shell"
           }
         ]
       })
@@ -191,103 +180,190 @@ describe("@codevisor/db", () => {
         turnState: "ended"
       })
     )
-    const waitingOnBackground = await run(db.getSessionSummary(session.id))
-    expect(waitingOnBackground.sidebarState).toBe("inProgress")
-    expect(waitingOnBackground.sidebarStateChangedAt).toBe(started.sidebarStateChangedAt)
-
-    await new Promise((resolve) => setTimeout(resolve, 2))
-    await run(db.appendEvent("session.updated", session.id, { backgroundTasks: [] }))
-    const unread = await run(db.getSessionSummary(session.id))
-    const completedAssistant = (await run(db.getSessionDetail(session.id))).conversation.find(
-      (item) => item.role === "assistant"
-    )
-    expect(unread.sidebarState).toBe("unread")
-    expect(unread.sidebarStateChangedAt).not.toBe(started.sidebarStateChangedAt)
-    expect(unread.unreadAttentionTargets).toEqual([
-      {
-        sequence: 1,
-        kind: "finished",
-        chatItemId: completedAssistant?.id
-      }
-    ])
-
-    await run(
-      db.appendEvent("session.output", session.id, {
-        role: "assistant",
-        text: "late detail"
-      })
-    )
-    expect((await run(db.getSessionSummary(session.id))).sidebarStateChangedAt).toBe(
-      unread.sidebarStateChangedAt
-    )
-
-    await new Promise((resolve) => setTimeout(resolve, 2))
-    await run(db.markSessionRead(session.id, unread.latestAttentionSequence ?? 0))
-    const idle = await run(db.getSessionSummary(session.id))
-    expect(idle.sidebarState).toBe("idle")
-    expect(idle.sidebarStateChangedAt).not.toBe(unread.sidebarStateChangedAt)
-
+    expect(await run(db.getSessionSummary(session.id))).toMatchObject({
+      latestAttentionSequence: 1,
+      unreadCount: 1,
+      sidebarState: "unread"
+    })
     await Effect.runPromise(db.close)
   })
 
-  it("waits for agent continuations and normalizes unknown runtime states", async () => {
-    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
-    const project = await run(db.createProject({ folderPath: "/tmp/continued-attention" }))
-    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+  it("holds a finished turn while a subagent runs and settles it exactly once", async () => {
+    const db = await run(
+      makeDatabase({ filename: tempDatabase(), serverId: "local", attentionSettleGraceMs: 0 })
+    )
+    const project = await run(db.createProject({ folderPath: "/tmp/subagent-hold" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "claude-code" }))
 
-    // A terminal callback with no user-owned epoch is only continuation
-    // bookkeeping. It must not invent unread attention.
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        initiatedBy: "user",
+        turnId: "turn-1",
+        turnState: "started"
+      })
+    )
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        backgroundTasks: [
+          { id: "agent-1", description: "Research", status: "running", taskType: "subagent" }
+        ]
+      })
+    )
+    // The main loop yields while the subagent runs: not ready for the user.
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        initiatedBy: "user",
+        stopReason: "end_turn",
+        turnId: "turn-1",
+        turnState: "ended"
+      })
+    )
+    expect(await run(db.getSessionSummary(session.id))).toMatchObject({
+      latestAttentionSequence: 0,
+      unreadCount: 0,
+      sidebarState: "inProgress"
+    })
+
+    // Subagent completes; the harness re-invokes the agent before the grace
+    // elapses. The parked finish survives the continuation without bumping.
+    await run(db.appendEvent("session.updated", session.id, { backgroundTasks: [] }))
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        initiatedBy: "agent",
+        turnId: "turn-2",
+        turnState: "started"
+      })
+    )
+    expect(await run(db.getSessionSummary(session.id))).toMatchObject({
+      latestAttentionSequence: 0,
+      sidebarState: "inProgress"
+    })
+
+    // Second subagent in the chain, then the final clean end.
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        backgroundTasks: [
+          { id: "agent-2", description: "Verify", status: "running", taskType: "subagent" }
+        ]
+      })
+    )
     await run(
       db.appendEvent("session.updated", session.id, {
         initiatedBy: "agent",
         stopReason: "end_turn",
-        turnId: "orphan-continuation",
+        turnId: "turn-2",
         turnState: "ended"
       })
     )
-    expect((await run(db.getSessionSummary(session.id))).unreadCount).toBe(0)
+    expect((await run(db.getSessionSummary(session.id))).sidebarState).toBe("inProgress")
+    await run(db.appendEvent("session.updated", session.id, { backgroundTasks: [] }))
+
+    // The grace elapsed (zero in this test) with no re-invocation: the whole
+    // chain settles into exactly one unread revision.
+    const settled = await run(db.settleSessionAttention(session.id))
+    expect(settled.settled).toBe(true)
+    expect(await run(db.getSessionSummary(session.id))).toMatchObject({
+      latestAttentionSequence: 1,
+      unreadCount: 1,
+      sidebarState: "unread"
+    })
+    // Settling is idempotent.
+    expect((await run(db.settleSessionAttention(session.id))).settled).toBe(false)
+    await Effect.runPromise(db.close)
+  })
+
+  it("defers a released hold until its grace deadline", async () => {
+    const db = await run(
+      makeDatabase({ filename: tempDatabase(), serverId: "local", attentionSettleGraceMs: 60_000 })
+    )
+    const project = await run(db.createProject({ folderPath: "/tmp/settle-grace" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "claude-code" }))
 
     await run(
       db.appendEvent("session.updated", session.id, {
-        runtimeState: "running",
-        turnId: "user-turn",
+        initiatedBy: "user",
+        turnId: "turn-1",
         turnState: "started"
+      })
+    )
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        backgroundTasks: [
+          { id: "agent-1", description: "Research", status: "running", taskType: "subagent" }
+        ]
       })
     )
     await run(
       db.appendEvent("session.updated", session.id, {
         initiatedBy: "user",
         stopReason: "end_turn",
-        turnId: "user-turn",
+        turnId: "turn-1",
         turnState: "ended"
       })
     )
-    expect((await run(db.getSessionSummary(session.id))).unreadCount).toBe(0)
+    await run(db.appendEvent("session.updated", session.id, { backgroundTasks: [] }))
 
-    // Agent-owned terminal events preserve the pending user epoch while the
-    // harness is still running. Unknown future runtime values degrade to idle,
-    // which safely releases that epoch instead of leaving it stuck forever.
+    // The hold released moments ago: the settle is armed but not due yet.
+    const early = await run(db.settleSessionAttention(session.id))
+    expect(early.settled).toBe(false)
+    expect(early.nextDueAt).toBeDefined()
+    expect(await run(db.getAttentionSettleDeadline(session.id))).toBe(early.nextDueAt)
+    expect((await run(db.getSessionSummary(session.id))).sidebarState).toBe("inProgress")
+    expect(await run(db.listPendingAttentionSettles)).toEqual([
+      { sessionId: session.id, dueAt: early.nextDueAt }
+    ])
+
+    // A new turn cancels the deadline but keeps the parked finish.
     await run(
       db.appendEvent("session.updated", session.id, {
         initiatedBy: "agent",
-        stopReason: "end_turn",
-        turnId: "agent-continuation",
+        turnId: "turn-2",
+        turnState: "started"
+      })
+    )
+    expect(await run(db.getAttentionSettleDeadline(session.id))).toBeUndefined()
+    expect((await run(db.getSessionSummary(session.id))).latestAttentionSequence).toBe(0)
+    await Effect.runPromise(db.close)
+  })
+
+  it("marks errored turns action-required until read or user activity", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/errored-attention" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "claude-code" }))
+
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        initiatedBy: "user",
+        turnId: "turn-1",
+        turnState: "started"
+      })
+    )
+    await run(
+      db.appendEvent("session.updated", session.id, {
+        initiatedBy: "user",
+        stopReason: "failed",
+        stopDetail: "The provider crashed",
+        turnId: "turn-1",
         turnState: "ended"
       })
     )
-    expect((await run(db.getSessionSummary(session.id))).unreadCount).toBe(0)
-    await run(
-      db.appendEvent("session.updated", session.id, {
-        runtimeState: "future-runtime-state"
-      })
-    )
     expect(await run(db.getSessionSummary(session.id))).toMatchObject({
+      hasUnreadError: true,
       latestAttentionSequence: 1,
-      unreadCount: 1
+      unreadCount: 1,
+      sidebarState: "errored"
     })
 
-    // An agent-initiated failure is independently noteworthy even when there
-    // is no pending user epoch.
+    // An error is the urgent flavor of unread: reading through the latest
+    // revision acknowledges it.
+    await run(db.markSessionRead(session.id, 1))
+    expect(await run(db.getSessionSummary(session.id))).toMatchObject({
+      hasUnreadError: false,
+      unreadCount: 0,
+      sidebarState: "idle"
+    })
+
+    // A second error clears when the user acts in the chat instead.
     await run(
       db.appendEvent("session.error", session.id, {
         initiatedBy: "agent",
@@ -295,205 +371,51 @@ describe("@codevisor/db", () => {
       })
     )
     expect(await run(db.getSessionSummary(session.id))).toMatchObject({
+      hasUnreadError: true,
       latestAttentionSequence: 2,
-      unreadCount: 2,
-      unreadAttentionTargets: [
-        { sequence: 1, kind: "finished" },
-        { sequence: 2, kind: "finished" }
-      ]
+      sidebarState: "errored"
     })
-    expect(
-      (await run(db.getSessionSummary(session.id))).unreadAttentionTargets?.[1]
-    ).not.toHaveProperty("chatItemId")
-
+    // A stale mark-read from before the error must not acknowledge it.
+    await run(db.markSessionRead(session.id, 1))
+    expect((await run(db.getSessionSummary(session.id))).hasUnreadError).toBe(true)
+    await run(
+      db.appendEvent("session.output", session.id, {
+        role: "user",
+        text: "try again"
+      })
+    )
+    expect((await run(db.getSessionSummary(session.id))).hasUnreadError).toBe(false)
     await Effect.runPromise(db.close)
   })
 
-  it("restores attention and shared read state after a server restart", async () => {
-    const filename = tempDatabase()
-    const first = await run(makeDatabase({ filename, serverId: "local" }))
-    const project = await run(first.createProject({ folderPath: "/tmp/restart-attention" }))
-    const session = await run(
-      first.createSession({ projectId: project.id, harnessId: "claude-code" })
-    )
-    await run(
-      first.appendEvent("session.output", session.id, {
-        questionId: "question-after-restart",
-        questions: [
-          {
-            id: "choice",
-            question: "Continue?",
-            options: [{ label: "Yes" }],
-            allowsOther: false
-          }
-        ],
-        sessionUpdate: "question"
-      })
-    )
-    await run(first.markSessionRead(session.id, 1))
-    await Effect.runPromise(first.close)
-
-    const reopened = await run(makeDatabase({ filename, serverId: "local" }))
-    expect(await run(reopened.getSessionSummary(session.id))).toMatchObject({
-      actionRequired: true,
-      actionRequiredKind: "question",
-      latestAttentionSequence: 1,
-      lastSeenAttentionSequence: 1,
-      unreadCount: 0
-    })
-    expect(await run(reopened.getSessionDetail(session.id))).toMatchObject({
-      pendingQuestion: { questionId: "question-after-restart" }
-    })
-    await Effect.runPromise(reopened.close)
-  })
-
-  it("persists Codex plan approval as a server-owned action", async () => {
+  it("bumps the revision for agent-initiated completions", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
-    const project = await run(db.createProject({ folderPath: "/tmp/plan-attention" }))
-    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/agent-completion" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "claude-code" }))
 
-    await run(db.appendEvent("session.updated", session.id, { modeId: "plan" }))
+    // Autonomous work that finishes is something new to look at. Ping noise
+    // is the client's problem (edge-triggered notifications), not a reason to
+    // hide the badge.
     await run(
       db.appendEvent("session.updated", session.id, {
-        initiatedBy: "user",
-        turnId: "turn-plan",
+        initiatedBy: "agent",
+        turnId: "cron-1",
         turnState: "started"
       })
     )
     await run(
-      db.appendEvent("session.output", session.id, {
-        markdown: "# Plan\n\nBuild it.",
-        sessionUpdate: "plan_document"
-      })
-    )
-    await run(
       db.appendEvent("session.updated", session.id, {
-        initiatedBy: "user",
+        initiatedBy: "agent",
         stopReason: "end_turn",
-        turnId: "turn-plan",
+        turnId: "cron-1",
         turnState: "ended"
       })
     )
-
     expect(await run(db.getSessionSummary(session.id))).toMatchObject({
-      actionRequired: true,
-      actionRequiredKind: "planApproval",
-      pendingPlanApproval: true,
-      unreadCount: 1
+      latestAttentionSequence: 1,
+      unreadCount: 1,
+      sidebarState: "unread"
     })
-    expect(await run(db.getTranscriptPage(session.id, undefined, 8))).toMatchObject({
-      pendingPlanApproval: true
-    })
-
-    await run(db.clearSessionPlanApproval(session.id))
-    expect(await run(db.getSessionSummary(session.id))).toMatchObject({
-      actionRequired: false,
-      pendingPlanApproval: false
-    })
-    expect(await run(db.getSessionDetail(session.id))).toMatchObject({
-      pendingPlanApproval: false
-    })
-    expect(await run(db.getTranscriptPage(session.id, undefined, 8))).toMatchObject({
-      pendingPlanApproval: false
-    })
-    await Effect.runPromise(db.close)
-  })
-  it("snapshots a pending question with the session cursor and clears it terminally", async () => {
-    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
-    const project = await run(db.createProject({ folderPath: "/tmp/pending-question" }))
-    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
-    const question = {
-      sessionUpdate: "question" as const,
-      questionId: "question-1",
-      questions: [
-        {
-          id: "choice",
-          question: "Continue?",
-          options: [{ label: "Yes" }, { label: "No" }],
-          allowsOther: false
-        }
-      ]
-    }
-
-    await run(
-      db.appendEvent("session.updated", session.id, {
-        initiatedBy: "user",
-        turnId: "turn-1",
-        turnState: "started"
-      })
-    )
-    await run(db.appendEvent("session.output", session.id, question))
-
-    expect(await run(db.getTranscriptPage(session.id, undefined, 8))).toMatchObject({
-      eventCursor: 2,
-      pendingQuestion: question
-    })
-    expect((await run(db.getSessionDetail(session.id))).pendingQuestion).toEqual(question)
-    const backgroundTasks = [
-      {
-        id: "task-1",
-        description: "Run checks",
-        status: "running",
-        taskType: "shell"
-      }
-    ]
-    await run(db.appendEvent("session.updated", session.id, { backgroundTasks }))
-    expect(await run(db.getTranscriptPage(session.id, undefined, 8))).toMatchObject({
-      pendingQuestion: question,
-      backgroundTasks
-    })
-    expect((await run(db.getSessionDetail(session.id))).backgroundTasks).toEqual(backgroundTasks)
-    // A stale resolution must not release a newer pending continuation.
-    await run(
-      db.appendEvent("session.output", session.id, {
-        sessionUpdate: "question_resolved",
-        questionId: "different-question",
-        outcome: "cancelled",
-        questions: []
-      })
-    )
-    expect((await run(db.getTranscriptPage(session.id, undefined, 8))).pendingQuestion).toEqual(
-      question
-    )
-
-    await run(
-      db.appendEvent("session.output", session.id, {
-        sessionUpdate: "question_resolved",
-        questionId: question.questionId,
-        outcome: "answered",
-        questions: question.questions
-      })
-    )
-    expect(
-      (await run(db.getTranscriptPage(session.id, undefined, 8))).pendingQuestion
-    ).toBeUndefined()
-    // Resolution delivery is idempotent even after the blocking snapshot has
-    // already been cleared.
-    await run(
-      db.appendEvent("session.output", session.id, {
-        sessionUpdate: "question_resolved",
-        questionId: question.questionId,
-        outcome: "answered",
-        questions: question.questions
-      })
-    )
-    await run(db.appendEvent("session.output", session.id, question))
-
-    await run(db.appendEvent("session.updated", session.id, { backgroundTasks: [] }))
-    expect((await run(db.getTranscriptPage(session.id, undefined, 8))).backgroundTasks).toEqual([])
-
-    await run(
-      db.appendEvent("session.updated", session.id, {
-        initiatedBy: "user",
-        turnId: "turn-1",
-        turnState: "ended",
-        stopReason: "interrupted"
-      })
-    )
-    expect(
-      (await run(db.getTranscriptPage(session.id, undefined, 8))).pendingQuestion
-    ).toBeUndefined()
-    expect((await run(db.getSessionDetail(session.id))).pendingQuestion).toBeUndefined()
     await Effect.runPromise(db.close)
   })
 })

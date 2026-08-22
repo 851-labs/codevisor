@@ -10,6 +10,10 @@ import CodevisorTheming
 @Observable
 public final class AppEnvironment {
     public let projectList: ProjectListModel
+    /// App-wide attention policy: focus auto-read + edge-triggered
+    /// notifications. Platforms feed it focus (`updateFocus`) and, on macOS,
+    /// assign `notificationDelivery` after launch.
+    public let attentionCoordinator: SessionAttentionCoordinator
     public let configCache: ConfigOptionCache
     public let composerDefaults: ComposerDefaultsStore
     public let composerDrafts: ComposerDraftStore
@@ -108,6 +112,7 @@ public final class AppEnvironment {
             sessionRepository: sessionRepository,
             legacyMigrationStore: legacyCacheMigrationStore
         )
+        self.attentionCoordinator = SessionAttentionCoordinator(projectList: projectList)
         self.workspaceSync = WorkspaceSyncModel(
             repository: workspaces,
             projectList: projectList

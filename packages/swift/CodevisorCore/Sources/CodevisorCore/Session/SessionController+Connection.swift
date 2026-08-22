@@ -319,12 +319,6 @@ extension SessionController {
             self?.noteTurnEndedForPlanApproval()
             self?.onTurnEnded?()
         }
-        model.onRuntimeStateChanged = { [weak self] in
-            self?.onRuntimeStateChanged?()
-        }
-        model.onGoalChanged = { [weak self] in
-            self?.onGoalChanged?()
-        }
         model.onPromptAccepted = { [weak self, weak model] attachmentCount, isQueued in
             self?.configurationAdjustmentMessage = nil
             self?.captureMessageSent(model: model, attachmentCount: attachmentCount, isQueued: isQueued)
@@ -336,12 +330,6 @@ extension SessionController {
         model.onQueuedPromptPromoted = { [weak self] messageID in
             guard let messageID else { return }
             self?.requestUserSendAnimation(for: messageID)
-        }
-        model.onQueuedPromptsChanged = { [weak self] in
-            self?.onQueuedPromptsChanged?()
-        }
-        model.onActionRequired = { [weak self] in
-            self?.onActionRequired?()
         }
         model.onPlanApprovalChanged = { [weak self] required in
             self?.pendingPlanApproval = required

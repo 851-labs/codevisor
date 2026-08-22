@@ -54,6 +54,9 @@ export interface CodevisorDatabaseConfig {
   /// every durable batch. The app-hosted server writes this to a sidecar file
   /// that remains readable while the HTTP server is still booting.
   readonly onDataUpgradeProgress?: (progress: DataUpgradeProgress) => void
+  /// Test override for the grace between a released attention hold and the
+  /// unread revision bump. Production uses ATTENTION_SETTLE_GRACE_MS.
+  readonly attentionSettleGraceMs?: number
 }
 
 export interface CodevisorDatabaseService {
@@ -140,6 +143,19 @@ export interface CodevisorDatabaseService {
   ) => Effect.Effect<SessionSummary, DatabaseError>
   readonly markSessionUnread: (id: string) => Effect.Effect<SessionSummary, DatabaseError>
   readonly clearSessionPlanApproval: (id: string) => Effect.Effect<SessionSummary, DatabaseError>
+  /// Settles a parked turn finish into an unread revision bump once its grace
+  /// deadline has passed. Idempotent and re-validating: races with a turn
+  /// that restarted (or a subagent that reappeared) are no-ops.
+  readonly settleSessionAttention: (
+    id: string
+  ) => Effect.Effect<{ readonly settled: boolean; readonly nextDueAt?: string }, DatabaseError>
+  readonly listPendingAttentionSettles: Effect.Effect<
+    ReadonlyArray<{ readonly sessionId: string; readonly dueAt: string | null }>,
+    DatabaseError
+  >
+  readonly getAttentionSettleDeadline: (
+    id: string
+  ) => Effect.Effect<string | undefined, DatabaseError>
   readonly getSessionConfigSelections: (
     id: string
   ) => Effect.Effect<Readonly<Record<string, string>>, DatabaseError>

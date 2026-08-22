@@ -40,6 +40,9 @@ struct SessionContainerView: View {
     @State private var workspaceRevision = 0
     /// Suppresses per-leaf dissolve while a whole top tab is closing.
     @State private var closingCenterTabId: UUID?
+    /// The chat this container last published as focused, so `onDisappear`
+    /// releases only its own focus (see the modifier in `body`).
+    @State private var publishedFocusCandidate: UUID?
 
     var body: some View {
         contentColumn
@@ -77,6 +80,24 @@ struct SessionContainerView: View {
             }
             .onChange(of: environment.workspaceSync.revision, initial: true) { _, _ in
                 synchronizeMountedPaneGroups()
+            }
+            // Read = focus: publish the chat pane facing the user in this
+            // window (selected pane of the active split leaf). The store
+            // combines it with window-key state and feeds the app-wide
+            // attention coordinator, which marks the focused chat read.
+            .onChange(of: focusedChatCandidate, initial: true) { _, candidate in
+                publishedFocusCandidate = candidate
+                store.setFocusedChat(candidate, serverId: session.serverId)
+            }
+            // Release only the focus this container published. Navigating to
+            // another workspace mounts the new container (which publishes its
+            // chat) BEFORE this one disappears; an unconditional clear here
+            // would erase the new focus and leave that chat unread while the
+            // user is looking straight at it.
+            .onDisappear {
+                if let candidate = publishedFocusCandidate {
+                    store.clearFocusedChat(ifCurrent: candidate)
+                }
             }
             .task(id: session.id) {
                 splitDragCoordinator.canResolve = { sourceLeafId, resolution, canvasSize in
@@ -804,30 +825,25 @@ struct SessionContainerView: View {
                     session: session,
                     project: project,
                     store: store,
-                    environment: environment,
-                    isReadEligible: isReadAcknowledgementEligible(
-                        descriptor,
-                        inLeaf: leafId
-                    )
+                    environment: environment
                 ))
         }
         return model
     }
 
-    /// A mounted transcript may acknowledge attention only when navigation
-    /// and the active split agree that it is the chat facing the user.
-    private func isReadAcknowledgementEligible(
-        _ descriptor: PaneDescriptorState,
-        inLeaf leafId: UUID
-    ) -> Bool {
-        guard let chatSessionId = descriptor.chatSessionId else { return false }
-        return store.workspace(for: session, project: project)
-            .isReadAcknowledgementEligible(
-                forChat: chatSessionId,
-                inLeaf: leafId,
-                routedSessionId: session.id,
-                activeLeafId: activeLeafId
-            )
+    /// The chat pane facing the user: the selected pane of the active split
+    /// leaf, when it is a chat. Reads the live group model so pane selection
+    /// changes re-evaluate the publisher above.
+    private var focusedChatCandidate: UUID? {
+        let workspace = store.workspace(for: session, project: project)
+        guard let leafId = activeLeafId ?? workspace.selectedCenterTab?.activeLeafId else {
+            return nil
+        }
+        let model = store.centerGroup(
+            leafId: leafId, workspace: workspace, session: session, project: project
+        )
+        guard let pane = model.state.selectedPane, pane.kind == .chat else { return nil }
+        return pane.chatSessionId
     }
 
     /// "New Chat" from a New tab page: creates the SESSION eagerly — a real

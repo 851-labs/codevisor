@@ -17,8 +17,6 @@ struct TranscriptScrollCommand: Equatable {
 /// observation-ignored viewport snapshot.
 struct NativeTranscriptView: NSViewRepresentable {
     let rows: [TranscriptVirtualRow]
-    let unreadAttentionTargets: [SessionAttentionTarget]
-    let isReadEligible: Bool
     let initialState: SessionScrollState?
     let followsLatest: Bool
     let hasOlderHistory: Bool
@@ -37,7 +35,6 @@ struct NativeTranscriptView: NSViewRepresentable {
     let onFollowStateChange: @MainActor (Bool) -> Void
     let onNearTop: @MainActor () -> Void
     let onOlderHistoryPresented: @MainActor (UInt64) -> Void
-    let onAttentionPresented: @MainActor (SessionAttentionTarget) -> Void
     var onInitialPresentationReady: (@MainActor () -> Void)? = nil
     /// Called once with the underlying scroll view so the session's focus
     /// controller can park keyboard focus on the chat history when it is
@@ -50,8 +47,6 @@ struct NativeTranscriptView: NSViewRepresentable {
         onScrollViewReady?(view)
         view.configure(
             rows: rows,
-            unreadAttentionTargets: unreadAttentionTargets,
-            isReadEligible: isReadEligible,
             initialState: initialState,
             followsLatest: followsLatest,
             hasOlderHistory: hasOlderHistory,
@@ -69,8 +64,7 @@ struct NativeTranscriptView: NSViewRepresentable {
             onBottomStateChange: onBottomStateChange,
             onFollowStateChange: onFollowStateChange,
             onNearTop: onNearTop,
-            onOlderHistoryPresented: onOlderHistoryPresented,
-            onAttentionPresented: onAttentionPresented
+            onOlderHistoryPresented: onOlderHistoryPresented
         )
         return view
     }
@@ -79,8 +73,6 @@ struct NativeTranscriptView: NSViewRepresentable {
         nsView.onInitialPresentationReady = reportInitialPresentationReady
         nsView.configure(
             rows: rows,
-            unreadAttentionTargets: unreadAttentionTargets,
-            isReadEligible: isReadEligible,
             initialState: initialState,
             followsLatest: followsLatest,
             hasOlderHistory: hasOlderHistory,
@@ -98,8 +90,7 @@ struct NativeTranscriptView: NSViewRepresentable {
             onBottomStateChange: onBottomStateChange,
             onFollowStateChange: onFollowStateChange,
             onNearTop: onNearTop,
-            onOlderHistoryPresented: onOlderHistoryPresented,
-            onAttentionPresented: onAttentionPresented
+            onOlderHistoryPresented: onOlderHistoryPresented
         )
         if nsView.isInitialPresentationReady {
             reportInitialPresentationReady()

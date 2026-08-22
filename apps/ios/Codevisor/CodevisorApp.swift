@@ -39,7 +39,12 @@ struct CodevisorApp: App {
                         .environment(environment)
                         .preferredColorScheme(colorScheme(for: environment))
                         .task { await bootstrap(environment: environment) }
-                        .onChange(of: scenePhase) { _, phase in
+                        .onChange(of: scenePhase, initial: true) { _, phase in
+                            // Read = focus: a backgrounded app must not mark
+                            // the open chat read while finishes land.
+                            environment.attentionCoordinator.setApplicationActive(
+                                phase == .active
+                            )
                             guard phase == .active, hasCompletedBootstrap else { return }
                             Task { await recoverAfterForeground(environment: environment) }
                         }

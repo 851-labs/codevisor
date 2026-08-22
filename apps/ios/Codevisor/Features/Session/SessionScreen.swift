@@ -110,6 +110,7 @@ struct SessionTranscriptView: View {
                 historyLoadTask?.cancel()
                 historyLoadTask = nil
                 olderHistoryPresentation.cancel()
+                publishAttentionFocus(isForeground: false)
                 if ownsVisibleTranscriptLifecycle {
                     ownsVisibleTranscriptLifecycle = false
                     controller.transcriptViewDidDisappear()
@@ -185,6 +186,7 @@ struct SessionTranscriptView: View {
 
     private func updateVisibleTranscriptLifecycle(for role: TranscriptPresentationRole) {
         let shouldOwnLifecycle = role == .foreground
+        publishAttentionFocus(isForeground: shouldOwnLifecycle)
         guard shouldOwnLifecycle != ownsVisibleTranscriptLifecycle else { return }
         ownsVisibleTranscriptLifecycle = shouldOwnLifecycle
         if shouldOwnLifecycle {
@@ -192,6 +194,19 @@ struct SessionTranscriptView: View {
         } else {
             controller.transcriptViewDidDisappear()
         }
+    }
+
+    /// Read = focus: the foregrounded chat screen is the focused chat. The
+    /// coordinator marks it read on open and continuously while open (gated
+    /// by scene activity), and never pings for it.
+    private func publishAttentionFocus(isForeground: Bool) {
+        guard let session = controller.serverSession else { return }
+        environment.attentionCoordinator.updateFocus(
+            owner: ObjectIdentifier(controller),
+            session: isForeground
+                ? SessionAttentionFocus(serverId: session.serverId, sessionId: session.id)
+                : nil
+        )
     }
 
     /// The watermark shows while the transcript has nothing to say at all — a
@@ -369,7 +384,6 @@ struct SessionTranscriptView: View {
     private var transcript: some View {
         return NativeTranscriptView(
             rows: projectedRows,
-            unreadAttentionTargets: unreadAttentionTargets,
             initialState: controller.scrollState,
             followsLatest: followsLatest,
             hasOlderHistory: controller.hasOlderHistory,
@@ -429,9 +443,6 @@ struct SessionTranscriptView: View {
                 DispatchQueue.main.async {
                     olderHistoryPresentation.didPresent(token: token)
                 }
-            },
-            onAttentionPresented: { target in
-                acknowledgePresentedAttention(target)
             }
         )
         // Match SwiftUI.ScrollView's navigation behavior: the scroll surface
@@ -442,22 +453,6 @@ struct SessionTranscriptView: View {
             followsLatest = true
             scrollCommand.token &+= 1
         }
-    }
-
-    private var unreadAttentionTargets: [SessionAttentionTarget] {
-        guard let session = controller.serverSession else { return [] }
-        return environment.projectList.sessions.first(where: {
-            $0.id == session.id && $0.serverId == session.serverId
-        })?.unreadAttentionTargets ?? []
-    }
-
-    private func acknowledgePresentedAttention(_ target: SessionAttentionTarget) {
-        guard let session = controller.serverSession else { return }
-        environment.projectList.acknowledgePresentedAttention(
-            session.id,
-            serverId: session.serverId,
-            target: target
-        )
     }
 
     private var transcriptProjectionRequest: TranscriptProjectionRequest {

@@ -55,21 +55,22 @@ final class SessionStore {
     /// composer), keyed by pane id. Promoted to the session cache on first
     /// send; discarded when the pane closes unsent.
     @ObservationIgnored private var paneDrafts: [UUID: SessionController] = [:]
-    /// One deferred attention outcome per user-created activity epoch. Agent
-    /// follow-ups merge into it; only stable quiescence consumes it, preventing
-    /// one alert per Claude background-task notification.
-    private var pendingAttentionErrors: [SessionKey: Bool] = [:]
     /// Invalidates views that observe aggregate activity across the cached
     /// controllers. A turn can finish without otherwise mutating this store
     /// (most notably when its session is open), so nested controller
     /// observation alone can leave cross-session UI such as update banners
     /// holding onto its previous value.
     private var activityRevision = 0
-    /// The session selected by navigation. It is used for controller retention
-    /// and notification suppression, never as proof that content was read.
+    /// The session selected by navigation. It is used for controller
+    /// retention, never as proof that content was read.
     private var openSessionKey: SessionKey?
+    /// The chat pane facing the user in this window: the selected chat pane
+    /// of the active split leaf. Combined with window key state below, this
+    /// is what the app-wide attention coordinator treats as "focused" — the
+    /// chat it marks read.
+    private var focusedChatKey: SessionKey?
     /// Whether this store's window is key. A selected chat behind Settings or
-    /// another Codevisor window is not the focused chat for sound suppression.
+    /// another Codevisor window is not the focused chat.
     private var isWindowFocused = false
     /// Session ids in access order, most recent last — drives controller
     /// eviction so browsing many sessions doesn't accumulate every transcript
@@ -160,11 +161,7 @@ final class SessionStore {
         controller.onTodosExpandedChange = { [weak self] isExpanded in
             self?.todoExpansionStates[key] = isExpanded
         }
-        controller.onTurnEnded = { [weak self] in self?.noteTurnEnded(for: key) }
-        controller.onRuntimeStateChanged = { [weak self] in self?.noteRuntimeStateChanged(for: key) }
-        controller.onGoalChanged = { [weak self] in self?.noteGoalChanged(for: key) }
-        controller.onQueuedPromptsChanged = { [weak self] in self?.noteQueuedPromptsChanged(for: key) }
-        controller.onActionRequired = { [weak self] in self?.noteActionRequired(for: key) }
+        controller.onTurnEnded = { [weak self] in self?.noteTurnEnded() }
         controllers[key] = controller
         return controller
     }
@@ -644,11 +641,6 @@ final class SessionStore {
             || controller.pendingPlanApproval
     }
 
-    private func isWaitingOnUser(_ key: SessionKey) -> Bool {
-        guard let controller = controllers[key] else { return false }
-        return controller.pendingQuestion != nil || controller.pendingPlanApproval
-    }
-
     // MARK: - Unread badges
 
     /// Finished-and-not-yet-acknowledged turns — the sidebar badge count.
@@ -667,10 +659,10 @@ final class SessionStore {
     }
 
     /// Manually clears a session's unread badge (sidebar context menu) without
-    /// making it the on-screen session.
+    /// making it the on-screen session. Banner clearing rides the resulting
+    /// read transition through the attention coordinator.
     func markRead(_ session: ChatSession) {
         environment.projectList.markSessionRead(session.id, serverId: session.serverId)
-        notificationDelivery.clearNotifications(for: session.id)
     }
 
     /// Tracks the selected session so its live controller stays in the cache.
@@ -687,88 +679,44 @@ final class SessionStore {
 
     func setWindowFocused(_ focused: Bool) {
         isWindowFocused = focused
+        publishFocus()
     }
 
-    private func noteTurnEnded(for key: SessionKey) {
-        activityRevision &+= 1
-        guard let controller = controllers[key] else { return }
-
-        let failed = controller.lastTurnEndedWithError || goalNeedsErrorAttention(controller.goal)
-        if controller.lastTurnInitiator == .user {
-            // A human turn starts (or refreshes) the one attention epoch that
-            // all of its autonomous continuations belong to.
-            pendingAttentionErrors[key] = (pendingAttentionErrors[key] ?? false) || failed
-        } else if pendingAttentionErrors[key] != nil {
-            pendingAttentionErrors[key] = (pendingAttentionErrors[key] ?? false) || failed
-        } else if failed {
-            // A late autonomous failure is still important even when its
-            // originating completion was already presented.
-            pendingAttentionErrors[key] = true
-        } else {
-            // Ordinary autonomous/task-notification completions never create a
-            // fresh unread badge or another sound by themselves.
-            return
-        }
-        deliverPendingAttentionIfQuiescent(for: key)
+    /// Publishes the chat pane facing the user in this window. Nil when a
+    /// non-chat pane (terminal, new tab) is selected. Closing or deactivating
+    /// the window publishes nil via `setWindowFocused` — resign-key always
+    /// fires before a window goes away.
+    func setFocusedChat(_ sessionId: UUID?, serverId: String) {
+        focusedChatKey = sessionId.map { SessionKey(serverId: serverId, sessionId: $0) }
+        publishFocus()
     }
 
-    private func noteRuntimeStateChanged(for key: SessionKey) {
-        deliverPendingAttentionIfQuiescent(for: key)
+    /// Clears focus only if `sessionId` still holds it. A container going
+    /// away must not clobber the focus a newly mounted container has already
+    /// published: SwiftUI mounts the incoming view (and fires its publisher)
+    /// before the outgoing view's `onDisappear` runs.
+    func clearFocusedChat(ifCurrent sessionId: UUID) {
+        guard focusedChatKey?.sessionId == sessionId else { return }
+        focusedChatKey = nil
+        publishFocus()
     }
 
-    private func noteGoalChanged(for key: SessionKey) {
-        deliverPendingAttentionIfQuiescent(for: key)
-    }
-
-    private func noteQueuedPromptsChanged(for key: SessionKey) {
-        deliverPendingAttentionIfQuiescent(for: key)
-    }
-
-    private func deliverPendingAttentionIfQuiescent(for key: SessionKey) {
-        guard var failed = pendingAttentionErrors[key], let controller = controllers[key] else { return }
-        // Active goals can contain many individually-ended turns. The epoch is
-        // intentionally held until the goal reaches a terminal status.
-        guard controller.goal?.status != .active else { return }
-        // Subagents/poll-and-resume tasks keep the epoch open. Terminal-backed
-        // work (for example a dev server) is excluded by the controller.
-        guard !controller.isWaitingOnBackgroundTasks, controller.isRuntimeIdle else { return }
-        // Prompts the user queued mid-stream are turns they already committed
-        // to, so the batch is one epoch: hold until the queue drains rather
-        // than notifying at every seam between queued turns. The server
-        // publishes the claim before running it, so only the last turn in a
-        // batch observes an empty queue.
-        guard controller.queuedPrompts.isEmpty else { return }
-
-        failed = failed || goalNeedsErrorAttention(controller.goal)
-        pendingAttentionErrors[key] = nil
-        let kind: ChatAttentionKind = isWaitingOnUser(key) ? .actionRequired : .finished
-        deliverNotification(for: key, kind: kind)
-    }
-
-    private func goalNeedsErrorAttention(_ goal: SessionGoal?) -> Bool {
-        guard let status = goal?.status else { return false }
-        return status == .blocked || status == .usageLimited || status == .budgetLimited
-    }
-
-    private func noteActionRequired(for key: SessionKey) {
-        deliverNotification(for: key, kind: .actionRequired)
-    }
-
-    private func deliverNotification(for key: SessionKey, kind: ChatAttentionKind) {
-        guard
-            let session = environment.projectList.sessions.first(where: {
-                $0.serverId == key.serverId && $0.id == key.sessionId
-            })
-        else { return }
-        notificationDelivery.deliver(
-            ChatAttentionEvent(
-                sessionId: session.id,
-                serverId: session.serverId,
-                sessionTitle: session.title,
-                kind: kind
-            ),
-            sessionIsOpen: key == openSessionKey && isWindowFocused
+    private func publishFocus() {
+        environment.attentionCoordinator.updateFocus(
+            owner: ObjectIdentifier(self),
+            session: isWindowFocused
+                ? focusedChatKey.map {
+                    SessionAttentionFocus(serverId: $0.serverId, sessionId: $0.sessionId)
+                }
+                : nil
         )
+    }
+
+    /// Notifications and unread state are handled by the server-side attention
+    /// projection + `SessionAttentionCoordinator`; a finished turn here only
+    /// invalidates aggregate-activity observers.
+    private func noteTurnEnded() {
+        activityRevision &+= 1
     }
 
     /// Registers a draft controller under a newly created session id and
@@ -785,11 +733,7 @@ final class SessionStore {
         controller.onTodosExpandedChange = { [weak self] isExpanded in
             self?.todoExpansionStates[key] = isExpanded
         }
-        controller.onTurnEnded = { [weak self] in self?.noteTurnEnded(for: key) }
-        controller.onRuntimeStateChanged = { [weak self] in self?.noteRuntimeStateChanged(for: key) }
-        controller.onGoalChanged = { [weak self] in self?.noteGoalChanged(for: key) }
-        controller.onQueuedPromptsChanged = { [weak self] in self?.noteQueuedPromptsChanged(for: key) }
-        controller.onActionRequired = { [weak self] in self?.noteActionRequired(for: key) }
+        controller.onTurnEnded = { [weak self] in self?.noteTurnEnded() }
         controllers[key] = controller
         if draftsByServer[controller.project.serverId] === controller {
             draftsByServer[controller.project.serverId] = nil
@@ -830,7 +774,6 @@ final class SessionStore {
         ephemeralWorkspaces[session.id] = nil
         detachBottomGroup(for: session)
         detachCenterLeaves(for: session)
-        pendingAttentionErrors[key] = nil
         scrollStates[key] = nil
         todoExpansionStates[key] = nil
         accessOrder.removeAll { $0 == key }

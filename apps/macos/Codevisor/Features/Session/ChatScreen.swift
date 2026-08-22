@@ -25,8 +25,6 @@ struct ChatScreen: View {
     @Bindable var controller: SessionController
     /// The session screen's focus coordinator (shared with the terminals).
     let focus: TerminalFocusController
-    /// Navigation-level authority to acknowledge a response presented here.
-    let isReadEligible: Bool
     @State private var isAtBottom = true
     @State private var autoFollow = true
     @State private var composerHeight: CGFloat = 96
@@ -141,8 +139,6 @@ struct ChatScreen: View {
             if isTranscriptMounted {
                 NativeTranscriptView(
                     rows: projectedRows,
-                    unreadAttentionTargets: unreadAttentionTargets,
-                    isReadEligible: isReadEligible,
                     initialState: controller.scrollState,
                     followsLatest: autoFollow,
                     hasOlderHistory: controller.hasOlderHistory,
@@ -195,9 +191,6 @@ struct ChatScreen: View {
                             olderHistoryPresentation.didPresent(token: token)
                         }
                     },
-                    onAttentionPresented: { target in
-                        acknowledgePresentedAttention(target)
-                    },
                     onInitialPresentationReady: {
                         isInitialTranscriptReady = true
                     },
@@ -218,22 +211,6 @@ struct ChatScreen: View {
                 }
             }
         }
-    }
-
-    private var unreadAttentionTargets: [SessionAttentionTarget] {
-        guard let session = controller.serverSession else { return [] }
-        return environment.projectList.sessions.first(where: {
-            $0.id == session.id && $0.serverId == session.serverId
-        })?.unreadAttentionTargets ?? []
-    }
-
-    private func acknowledgePresentedAttention(_ target: SessionAttentionTarget) {
-        guard let session = controller.serverSession else { return }
-        environment.projectList.acknowledgePresentedAttention(
-            session.id,
-            serverId: session.serverId,
-            target: target
-        )
     }
 
     @ViewBuilder

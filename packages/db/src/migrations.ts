@@ -1116,5 +1116,108 @@ export const migrations: ReadonlyArray<Migration> = [
       create index prompt_queue_items_session_state_position_idx
         on prompt_queue_items(session_id, state, position, created_at);
     `
+  },
+  {
+    id: 42,
+    name: "revision-counter session attention",
+    /// Replaces the attention-event ledger + pending-epoch reducer with a
+    /// single monotonic revision counter per session. Unread = revision ahead
+    /// of the shared read cursor (`session_read_state` survives unchanged —
+    /// its `last_seen_sequence` points into the same sequence space, so
+    /// existing cursors carry over exactly). `errored` becomes an intrinsic
+    /// flag (the urgent flavor of the action-required tier) instead of a
+    /// property of unread ledger rows. `pending_finish`/`settle_due_at` park a
+    /// finished turn while a subagent or goal still holds it in progress.
+    sql: `
+      create table session_attention (
+        session_id text primary key references sessions(id) on delete cascade,
+        attention_revision integer not null default 0,
+        turn_active integer not null default 0 check(turn_active in (0, 1)),
+        runtime_state text not null default 'idle'
+          check(runtime_state in ('running', 'idle', 'requires_action')),
+        has_runtime_state integer not null default 0 check(has_runtime_state in (0, 1)),
+        current_mode_id text,
+        pending_plan_approval integer not null default 0
+          check(pending_plan_approval in (0, 1)),
+        errored integer not null default 0 check(errored in (0, 1)),
+        pending_finish integer not null default 0 check(pending_finish in (0, 1)),
+        settle_due_at text
+      );
+
+      insert into session_attention (
+        session_id, attention_revision, turn_active, runtime_state, has_runtime_state,
+        current_mode_id, pending_plan_approval, errored, pending_finish
+      )
+      select s.id,
+        coalesce((
+          select max(ae.sequence) from session_attention_events ae where ae.session_id = s.id
+        ), 0),
+        coalesce(ast.turn_active, 0),
+        coalesce(ast.runtime_state, 'idle'),
+        coalesce(ast.has_runtime_state, 0),
+        ast.current_mode_id,
+        coalesce(ast.pending_plan_approval, 0),
+        case when exists (
+          select 1 from session_attention_events ae
+          where ae.session_id = s.id and ae.has_error = 1
+            and ae.sequence > coalesce((
+              select last_seen_sequence from session_read_state rs
+              where rs.session_id = s.id and rs.reader_id = 'owner'
+            ), 0)
+        ) then 1 else 0 end,
+        -- Sessions the old reducer left holding an unreleased epoch — most
+        -- prominently every "dev server pinned this chat inProgress forever"
+        -- case — become a parked finish that restart recovery settles.
+        coalesce(ast.pending_epoch, 0)
+      from sessions s
+      left join session_attention_state ast on ast.session_id = s.id;
+
+      drop index if exists session_attention_events_unread_idx;
+      drop table if exists session_attention_events;
+      drop table if exists session_attention_state;
+    `,
+    run: (sqlite) => {
+      // Recompute the denormalized sidebar snapshot under the new precedence,
+      // bumping the ordering clock only where the visible value changed.
+      const nextState = `
+        case
+          when (select errored from session_attention sa where sa.session_id = sessions.id) = 1
+            then 'errored'
+          when sessions.pending_question is not null
+            or (select pending_plan_approval from session_attention sa
+                where sa.session_id = sessions.id) = 1
+            then 'waitingForUser'
+          when (select turn_active from session_attention sa where sa.session_id = sessions.id) = 1
+            or (select pending_finish from session_attention sa
+                where sa.session_id = sessions.id) = 1
+            or exists (
+              select 1 from json_each(sessions.background_tasks)
+              where json_extract(value, '$.taskType') = 'subagent'
+            )
+            or (select case when has_runtime_state = 1 and runtime_state = 'running'
+                  then 1 else 0 end
+                from session_attention sa where sa.session_id = sessions.id) = 1
+            then 'inProgress'
+          when coalesce((
+              select manually_unread from session_read_state rs
+              where rs.session_id = sessions.id and rs.reader_id = 'owner'
+            ), 0) = 1
+            or (select attention_revision from session_attention sa
+                where sa.session_id = sessions.id) > coalesce((
+              select last_seen_sequence from session_read_state rs
+              where rs.session_id = sessions.id and rs.reader_id = 'owner'
+            ), 0)
+            then 'unread'
+          else 'idle'
+        end`
+      sqlite.exec(`
+        update sessions
+        set sidebar_state_changed_at = case
+              when sidebar_state = (${nextState}) then sidebar_state_changed_at
+              else coalesce(updated_at, created_at, sidebar_state_changed_at)
+            end,
+            sidebar_state = (${nextState});
+      `)
+    }
   }
 ]

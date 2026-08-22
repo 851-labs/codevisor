@@ -163,18 +163,6 @@ public struct ServerHarnessUsageLimits: Decodable, Equatable, Sendable {
     public var fetchedAt: String
 }
 
-public struct ServerSessionAttentionTarget: Decodable, Equatable, Sendable {
-    public var sequence: Int
-    public var kind: SessionAttentionKind
-    public var chatItemId: String?
-
-    public init(sequence: Int, kind: SessionAttentionKind, chatItemId: String?) {
-        self.sequence = sequence
-        self.kind = kind
-        self.chatItemId = chatItemId
-    }
-}
-
 public struct ServerSession: Decodable, Equatable, Sendable {
     public var id: String
     public var projectId: String
@@ -200,7 +188,6 @@ public struct ServerSession: Decodable, Equatable, Sendable {
     public var lastSeenAttentionSequence: Int? = nil
     public var unreadCount: Int? = nil
     public var hasUnreadError: Bool? = nil
-    public var unreadAttentionTargets: [ServerSessionAttentionTarget]? = nil
     public var actionRequired: Bool? = nil
     public var actionRequiredKind: String? = nil
     public var pendingPlanApproval: Bool? = nil
@@ -251,13 +238,6 @@ public struct ServerSession: Decodable, Equatable, Sendable {
             lastSeenAttentionSequence: lastSeenAttentionSequence ?? 0,
             unreadCount: unreadCount ?? 0,
             hasUnreadError: hasUnreadError ?? false,
-            unreadAttentionTargets: (unreadAttentionTargets ?? []).map { target in
-                SessionAttentionTarget(
-                    sequence: target.sequence,
-                    kind: target.kind,
-                    chatItemId: target.chatItemId.flatMap(UUID.init(uuidString:))
-                )
-            },
             actionRequired: actionRequired ?? false,
             actionRequiredKind: actionRequiredKind,
             pendingPlanApproval: pendingPlanApproval ?? false
@@ -288,7 +268,6 @@ public struct ServerSession: Decodable, Equatable, Sendable {
         lastSeenAttentionSequence: Int? = nil,
         unreadCount: Int? = nil,
         hasUnreadError: Bool? = nil,
-        unreadAttentionTargets: [ServerSessionAttentionTarget]? = nil,
         actionRequired: Bool? = nil,
         actionRequiredKind: String? = nil,
         pendingPlanApproval: Bool? = nil
@@ -316,7 +295,6 @@ public struct ServerSession: Decodable, Equatable, Sendable {
         self.lastSeenAttentionSequence = lastSeenAttentionSequence
         self.unreadCount = unreadCount
         self.hasUnreadError = hasUnreadError
-        self.unreadAttentionTargets = unreadAttentionTargets
         self.actionRequired = actionRequired
         self.actionRequiredKind = actionRequiredKind
         self.pendingPlanApproval = pendingPlanApproval

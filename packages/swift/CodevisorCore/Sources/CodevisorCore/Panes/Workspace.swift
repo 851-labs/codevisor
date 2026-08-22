@@ -250,30 +250,27 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
         centerTabs.lazy.compactMap { $0.root.group(id: leafId)?.selectedPane }.first
     }
 
-    /// Whether this pane is the one chat allowed to acknowledge rendered
-    /// attention. The routed chat and the selected pane of the active leaf
-    /// must agree; merely remaining mounted in another split is insufficient.
-    public func isReadAcknowledgementEligible(
-        forChat chatSessionId: UUID,
-        inLeaf leafId: UUID,
-        routedSessionId: UUID,
-        activeLeafId: UUID?
-    ) -> Bool {
-        guard chatSessionId == routedSessionId,
-            let selectedTab = selectedCenterTab
-        else { return false }
-
+    /// The one chat this workspace currently puts in front of the user: the
+    /// selected pane of the active split leaf of the selected center tab,
+    /// when that pane is a chat. This is the focus signal for read state —
+    /// merely remaining mounted in another split is insufficient.
+    ///
+    /// `activeLeafId` is the window's live active leaf; nil falls back to the
+    /// tab's persisted value. First-responder focus routes through leaf
+    /// activation + sidebar selection before reaching here, so
+    /// pane-selection-level focus is the source of truth.
+    public func focusedChatId(activeLeafId: UUID?) -> UUID? {
+        guard let selectedTab = selectedCenterTab else { return nil }
         let resolvedActiveLeafId: UUID
-        if let activeLeafId {
-            guard selectedTab.root.group(id: activeLeafId) != nil else { return false }
+        if let activeLeafId, selectedTab.root.group(id: activeLeafId) != nil {
             resolvedActiveLeafId = activeLeafId
         } else {
             resolvedActiveLeafId = selectedTab.activeLeafId
         }
-        guard resolvedActiveLeafId == leafId,
-            let pane = selectedTab.root.group(id: leafId)?.selectedPane
-        else { return false }
-        return pane.kind == .chat && pane.chatSessionId == chatSessionId
+        guard let pane = selectedTab.root.group(id: resolvedActiveLeafId)?.selectedPane,
+            pane.kind == .chat
+        else { return nil }
+        return pane.chatSessionId
     }
 
     /// The pane that owns a chat session reference, if it is still open.

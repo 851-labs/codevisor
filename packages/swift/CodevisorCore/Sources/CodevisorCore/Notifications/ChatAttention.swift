@@ -38,12 +38,13 @@ public struct ChatAttentionEvent: Sendable {
     }
 }
 
-/// Platform notification delivery, injected into shared session code. The
-/// macOS implementation is `ChatNotificationManager` (AppKit sounds + app
-/// activation); iOS supplies its own.
+/// Platform notification delivery, driven by `SessionAttentionCoordinator`.
+/// The macOS implementation is `ChatNotificationManager` (AppKit sounds + app
+/// activation); iOS has none. The coordinator never delivers for the focused
+/// chat, so implementations only decide banner-vs-sound presentation.
 @MainActor
 public protocol ChatNotificationDelivering: AnyObject {
-    func deliver(_ event: ChatAttentionEvent, sessionIsOpen: Bool)
+    func deliver(_ event: ChatAttentionEvent)
     func clearNotifications(for sessionId: UUID)
     /// Requests notification authorization the first time it becomes useful
     /// (a turn just started that may finish while the user is elsewhere).

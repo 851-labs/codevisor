@@ -4,22 +4,20 @@ import Testing
 
 @MainActor
 extension ProjectListModelTests {
-    @Test("Only presentation of the exact finished response acknowledges attention")
-    func exactPresentedResponseOwnsReadAcknowledgement() async throws {
-        let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/visibility-lease"))
+    @Test("Repeated mark-read calls with nothing unseen send no extra requests")
+    func repeatedMarkReadIsIdempotent() async throws {
+        let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/idempotent-read"))
         let session = ChatSession(
-            id: UUID(), projectId: project.id, harnessId: "codex", title: "Visible"
+            id: UUID(), projectId: project.id, harnessId: "codex", title: "Focused"
         )
         let fakeServer = FakeServerClient(
             projects: [serverProject(from: project)],
             sessions: [serverSession(from: session)]
         )
-        let responseItemId = UUID()
         await fakeServer.setSessionAttention(
             id: session.id,
             latestSequence: 1,
-            lastSeenSequence: 0,
-            finishedChatItemId: responseItemId
+            lastSeenSequence: 0
         )
         let model = ProjectListModel(
             projectRepository: DefaultProjectRepository(store: InMemoryStore()),
@@ -30,46 +28,19 @@ extension ProjectListModelTests {
             model.sessions.first(where: { $0.id == session.id })?.unreadCount == 1
         }
 
-        model.acknowledgePresentedAttention(
-            session.id,
-            serverId: session.serverId,
-            target: SessionAttentionTarget(
-                sequence: 1,
-                kind: .finished,
-                chatItemId: UUID()
-            )
-        )
-        try await Task.sleep(for: .milliseconds(10))
-        #expect(await fakeServer.snapshot().readRequests.isEmpty)
-
-        model.acknowledgePresentedAttention(
-            session.id,
-            serverId: session.serverId,
-            target: SessionAttentionTarget(
-                sequence: 1,
-                kind: .finished,
-                chatItemId: responseItemId
-            )
-        )
-        try await waitUntil {
-            model.sessions.first(where: { $0.id == session.id })?.lastSeenAttentionSequence == 1
-        }
+        model.markSessionRead(session.id, serverId: session.serverId, throughSequence: 1)
         try await waitUntilAsync {
             await fakeServer.snapshot().readRequests.count == 1
         }
-        let firstReadRequests = await fakeServer.snapshot().readRequests
-        #expect(firstReadRequests.map(\.throughSequence) == [1])
+        #expect(model.sessions.first(where: { $0.id == session.id })?.unreadCount == 0)
 
-        await fakeServer.setSessionAttention(
-            id: session.id,
-            latestSequence: 2,
-            lastSeenSequence: 1,
-            finishedChatItemId: UUID()
-        )
-        await model.refreshFromServer()
-        #expect(model.sessions.first(where: { $0.id == session.id })?.unreadCount == 1)
-        let finalReadRequests = await fakeServer.snapshot().readRequests
-        #expect(finalReadRequests.count == 1)
+        // Focus-read fires continuously while a chat stays focused; repeated
+        // triggers with nothing unseen must not spam the server.
+        model.markSessionRead(session.id, serverId: session.serverId, throughSequence: 1)
+        model.markSessionRead(session.id, serverId: session.serverId)
+        try await Task.sleep(for: .milliseconds(20))
+        let readRequests = await fakeServer.snapshot().readRequests
+        #expect(readRequests.map(\.throughSequence) == [1])
     }
 
     @Test("A delayed read response cannot overwrite newer unread attention")

@@ -1,117 +1,71 @@
-import type { SessionSidebarState } from "@codevisor/api"
+import type { BackgroundTask, SessionSidebarState } from "@codevisor/api"
 import type Database from "better-sqlite3"
 import { sessionGoalSnapshot } from "./chat-items.js"
 import type { JsonRecord } from "./event-payloads.js"
 import { backgroundTasksFromRaw, conversationEventPayload, jsonRecord } from "./event-payloads.js"
 import type { SessionEventRow } from "./rows.js"
 
+/// How long a released hold (subagent finished, goal cleared) may sit quiet
+/// before the turn counts as finished and the unread revision advances. The
+/// Claude harness re-invokes the agent via a task notification seconds after a
+/// subagent completes; this grace absorbs that gap (and gaps between
+/// sequential subagents) so a chain of agent turns settles exactly once.
+export const ATTENTION_SETTLE_GRACE_MS = 12_000
+
 export const ensureSessionAttentionState = (sqlite: Database.Database, sessionId: string): void => {
   sqlite
-    .prepare("insert into session_attention_state (session_id) values (?) on conflict do nothing")
+    .prepare("insert into session_attention (session_id) values (?) on conflict do nothing")
     .run(sessionId)
 }
 
-const appendSessionAttention = (
-  sqlite: Database.Database,
-  event: SessionEventRow,
-  kind: "finished" | "action_required",
-  hasError: boolean
-): void => {
-  const directTarget = sqlite
-    .prepare("select chat_item_id from session_events where session_id = ? and revision = ?")
-    .get(event.session_id, event.revision) as { readonly chat_item_id: string | null }
-  const chatItemId =
-    directTarget.chat_item_id ??
-    (
-      sqlite
-        .prepare(
-          `select se.chat_item_id
-           from session_events se
-           join chat_items ci on ci.id = se.chat_item_id and ci.role = 'assistant'
-           where se.session_id = ? and se.revision <= ?
-             and json_extract(se.payload, '$.turnState') = 'started'
-             and se.revision > coalesce((
-               select max(previous.source_revision)
-               from session_attention_events previous
-               where previous.session_id = ?
-             ), 0)
-           order by se.revision desc limit 1`
-        )
-        .get(event.session_id, event.revision, event.session_id) as
-        | { readonly chat_item_id: string }
-        | undefined
-    )?.chat_item_id
-  const next = sqlite
-    .prepare(
-      "select coalesce(max(sequence), 0) + 1 as sequence from session_attention_events where session_id = ?"
-    )
-    .get(event.session_id) as { readonly sequence: number }
-  sqlite
-    .prepare(
-      `insert into session_attention_events (
-         session_id, sequence, source_revision, kind, has_error, created_at, chat_item_id
-       ) values (?, ?, ?, ?, ?, ?, ?)
-       on conflict(session_id, source_revision, kind) do nothing`
-    )
-    .run(
-      event.session_id,
-      next.sequence,
-      event.revision,
-      kind,
-      hasError ? 1 : 0,
-      event.created_at,
-      chatItemId ?? null
-    )
+interface AttentionRow {
+  readonly attention_revision: number
+  readonly turn_active: number
+  readonly runtime_state: string
+  readonly has_runtime_state: number
+  readonly current_mode_id: string | null
+  readonly pending_plan_approval: number
+  readonly errored: number
+  readonly pending_finish: number
+  readonly settle_due_at: string | null
 }
+
+const attentionRow = (sqlite: Database.Database, sessionId: string): AttentionRow | undefined =>
+  sqlite.prepare("select * from session_attention where session_id = ?").get(sessionId) as
+    | AttentionRow
+    | undefined
 
 const sessionHasActiveGoal = (sqlite: Database.Database, sessionId: string): boolean =>
   sessionGoalSnapshot(sqlite, sessionId)?.status === "active"
 
-const releasePendingSessionAttention = (
-  sqlite: Database.Database,
-  event: SessionEventRow
-): void => {
-  const state = sqlite
-    .prepare("select * from session_attention_state where session_id = ?")
-    .get(event.session_id) as
-    | {
-        readonly pending_epoch: number
-        readonly pending_error: number
-        readonly turn_active: number
-        readonly runtime_state: string
-        readonly has_runtime_state: number
-        readonly pending_plan_approval: number
-      }
-    | undefined
-  if (
-    state === undefined ||
-    state.pending_epoch !== 1 ||
-    state.turn_active === 1 ||
-    state.pending_plan_approval === 1 ||
-    sessionHasActiveGoal(sqlite, event.session_id)
-  ) {
-    return
-  }
+/// Only work that verifiably completes AND re-invokes the agent holds a
+/// finished turn in `inProgress`: running subagents. Background shells
+/// (`terminalKey` mirrors, codex/acp `shell` tasks) deliberately do not — a
+/// dev server left running must not pin a chat in progress forever. If a
+/// shell exit later re-invokes the agent, that continuation is its own turn
+/// and settles into one more unread revision.
+const holdsInProgress = (task: BackgroundTask): boolean => task.taskType === "subagent"
+
+const sessionIsHeld = (sqlite: Database.Database, sessionId: string): boolean => {
   const session = sqlite
-    .prepare("select background_tasks, pending_question from sessions where id = ?")
-    .get(event.session_id) as {
-    readonly background_tasks: string
-    readonly pending_question: string | null
-  }
-  const tasks = JSON.parse(session.background_tasks) as unknown
-  if (
-    (Array.isArray(tasks) && tasks.length > 0) ||
-    session.pending_question !== null ||
-    (state.has_runtime_state === 1 && state.runtime_state !== "idle")
-  ) {
-    return
-  }
-  appendSessionAttention(sqlite, event, "finished", state.pending_error === 1)
+    .prepare("select background_tasks from sessions where id = ?")
+    .get(sessionId) as { readonly background_tasks: string } | undefined
+  /* v8 ignore next -- attention rows cascade with their session; a missing
+     session row here is unreachable outside FK-disabled surgery. */
+  if (session === undefined) return false
+  return (
+    backgroundTasksFromRaw(session.background_tasks).some(holdsInProgress) ||
+    sessionHasActiveGoal(sqlite, sessionId)
+  )
+}
+
+const bumpAttentionRevision = (sqlite: Database.Database, sessionId: string): void => {
   sqlite
     .prepare(
-      "update session_attention_state set pending_epoch = 0, pending_error = 0 where session_id = ?"
+      `update session_attention set attention_revision = attention_revision + 1,
+         pending_finish = 0, settle_due_at = null where session_id = ?`
     )
-    .run(event.session_id)
+    .run(sessionId)
 }
 
 const terminalAttentionError = (event: SessionEventRow, payload: JsonRecord): boolean =>
@@ -121,13 +75,111 @@ const terminalAttentionError = (event: SessionEventRow, payload: JsonRecord): bo
     payload.stopReason !== "end_turn" &&
     payload.stopReason !== "cancelled")
 
+/// Re-evaluates a deferred finish. Runs at the end of every projection so the
+/// state converges even without the server-side timer: a hold re-appearing
+/// disarms the deadline, a released hold arms it, and an expired deadline
+/// settles in-transaction with whatever event happened to arrive next. The
+/// scheduler in apps/server only makes expiry prompt.
+const reevaluatePendingFinish = (
+  sqlite: Database.Database,
+  sessionId: string,
+  now: string,
+  graceMs: number
+): void => {
+  const state = attentionRow(sqlite, sessionId)
+  if (state === undefined || state.pending_finish !== 1 || state.turn_active === 1) return
+  if (sessionIsHeld(sqlite, sessionId)) {
+    if (state.settle_due_at !== null) {
+      sqlite
+        .prepare("update session_attention set settle_due_at = null where session_id = ?")
+        .run(sessionId)
+    }
+    return
+  }
+  if (state.settle_due_at === null) {
+    const dueAt = new Date(Date.parse(now) + graceMs).toISOString()
+    sqlite
+      .prepare("update session_attention set settle_due_at = ? where session_id = ?")
+      .run(dueAt, sessionId)
+    return
+  }
+  if (state.settle_due_at <= now) {
+    bumpAttentionRevision(sqlite, sessionId)
+  }
+}
+
+/// Attempts to settle a deferred finish into an unread revision bump. Called
+/// by the server's settle scheduler when a grace deadline fires; idempotent
+/// and re-validating, so a race with a turn that started (or a hold that
+/// re-appeared) after the timer was armed is harmless.
+export const settleSessionAttention = (
+  sqlite: Database.Database,
+  sessionId: string,
+  now: string,
+  graceMs: number = ATTENTION_SETTLE_GRACE_MS
+): { readonly settled: boolean; readonly nextDueAt?: string } => {
+  const state = attentionRow(sqlite, sessionId)
+  if (state === undefined || state.pending_finish !== 1 || state.turn_active === 1) {
+    return { settled: false }
+  }
+  if (sessionIsHeld(sqlite, sessionId)) {
+    sqlite
+      .prepare("update session_attention set settle_due_at = null where session_id = ?")
+      .run(sessionId)
+    return { settled: false }
+  }
+  const dueAt = state.settle_due_at ?? new Date(Date.parse(now) + graceMs).toISOString()
+  if (state.settle_due_at === null) {
+    sqlite
+      .prepare("update session_attention set settle_due_at = ? where session_id = ?")
+      .run(dueAt, sessionId)
+  }
+  if (dueAt > now) return { settled: false, nextDueAt: dueAt }
+  bumpAttentionRevision(sqlite, sessionId)
+  projectSessionSidebarState(sqlite, sessionId, now)
+  return { settled: true }
+}
+
+/// Sessions with a finish waiting to settle, for restart recovery. Startup
+/// reconciliation has already cleared stale background-task snapshots by the
+/// time recovery runs, so these settle (after their grace) rather than hang.
+export const listPendingAttentionSettles = (
+  sqlite: Database.Database
+): ReadonlyArray<{ readonly sessionId: string; readonly dueAt: string | null }> =>
+  (
+    sqlite
+      .prepare("select session_id, settle_due_at from session_attention where pending_finish = 1")
+      .all() as ReadonlyArray<{
+      readonly session_id: string
+      readonly settle_due_at: string | null
+    }>
+  ).map((row) => ({ sessionId: row.session_id, dueAt: row.settle_due_at }))
+
+export const attentionSettleDeadline = (
+  sqlite: Database.Database,
+  sessionId: string
+): string | undefined => {
+  const row = sqlite
+    .prepare(
+      "select settle_due_at from session_attention where session_id = ? and pending_finish = 1 and turn_active = 0"
+    )
+    .get(sessionId) as { readonly settle_due_at: string | null } | undefined
+  return row?.settle_due_at ?? undefined
+}
+
 /// Projects the append-only runtime log into durable, cross-device attention
 /// state. This runs in the same SQLite transaction as the source event, so a
-/// reconnect cannot observe a terminal/question event without its unread or
-/// action-required consequence.
+/// reconnect cannot observe a terminal event without its unread consequence.
+///
+/// The model: one monotonic `attention_revision` per session (unread =
+/// revision ahead of the shared read cursor), plus intrinsic flags for the
+/// action-required tier (`errored` here; question/plan-approval live on the
+/// session row). There is no event ledger and no receipt target — reading is
+/// a cursor advance, performed by clients when the chat is focused.
 export const projectSessionAttention = (
   sqlite: Database.Database,
-  event: SessionEventRow
+  event: SessionEventRow,
+  graceMs: number = ATTENTION_SETTLE_GRACE_MS
 ): void => {
   const payload = jsonRecord(JSON.parse(event.payload))
   if (payload === undefined) return
@@ -136,7 +188,7 @@ export const projectSessionAttention = (
   if (event.kind === "session.updated" && typeof payload.modeId === "string") {
     sqlite
       .prepare(
-        `update session_attention_state set current_mode_id = ?,
+        `update session_attention set current_mode_id = ?,
            pending_plan_approval = case when ? = 'plan' then pending_plan_approval else 0 end
          where session_id = ?`
       )
@@ -151,33 +203,33 @@ export const projectSessionAttention = (
         : "idle"
     sqlite
       .prepare(
-        `update session_attention_state
+        `update session_attention
          set runtime_state = ?, has_runtime_state = 1 where session_id = ?`
       )
       .run(state, event.session_id)
   }
   if (event.kind === "session.updated" && payload.turnState === "started") {
+    // A new turn cancels any armed grace deadline but keeps `pending_finish`:
+    // a chain of agent continuations settles once, at the end of the chain.
+    // A user-initiated turn is the user acting in this chat — it clears the
+    // errored flag (the user has unblocked it).
     sqlite
-      .prepare("update session_attention_state set turn_active = 1 where session_id = ?")
-      .run(event.session_id)
+      .prepare(
+        `update session_attention set turn_active = 1, settle_due_at = null,
+           errored = case when ? = 'user' then 0 else errored end
+         where session_id = ?`
+      )
+      .run(payload.initiatedBy === "agent" ? "agent" : "user", event.session_id)
   }
 
   const conversation =
     event.kind === "session.output" ? conversationEventPayload(payload) : undefined
   if (conversation?.role === "user") {
     sqlite
-      .prepare("update session_attention_state set pending_plan_approval = 0 where session_id = ?")
+      .prepare(
+        "update session_attention set pending_plan_approval = 0, errored = 0 where session_id = ?"
+      )
       .run(event.session_id)
-  }
-
-  const update = typeof payload.sessionUpdate === "string" ? payload.sessionUpdate : undefined
-  if (
-    event.kind === "session.output" &&
-    update === "question" &&
-    typeof payload.questionId === "string" &&
-    Array.isArray(payload.questions)
-  ) {
-    appendSessionAttention(sqlite, event, "action_required", false)
   }
 
   const terminal =
@@ -188,14 +240,14 @@ export const projectSessionAttention = (
     const initiatedBy = payload.initiatedBy === "agent" ? "agent" : "user"
     const failed = terminalAttentionError(event, payload)
     sqlite
-      .prepare("update session_attention_state set turn_active = 0 where session_id = ?")
+      .prepare("update session_attention set turn_active = 0 where session_id = ?")
       .run(event.session_id)
 
     const state = sqlite
       .prepare(
-        `select ast.current_mode_id, s.harness_id
-         from session_attention_state ast join sessions s on s.id = ast.session_id
-         where ast.session_id = ?`
+        `select sa.current_mode_id, s.harness_id
+         from session_attention sa join sessions s on s.id = sa.session_id
+         where sa.session_id = ?`
       )
       .get(event.session_id) as {
       readonly current_mode_id: string | null
@@ -220,55 +272,59 @@ export const projectSessionAttention = (
       state.current_mode_id === "plan" &&
       completedTurnPlan !== undefined
 
-    if (needsPlanApproval) {
+    if (failed) {
+      // Errors are the urgent flavor of unread: they rank in the
+      // action-required tier until acknowledged, and the revision bump makes
+      // the turn read normally once the errored flag clears.
+      sqlite
+        .prepare("update session_attention set errored = 1 where session_id = ?")
+        .run(event.session_id)
+      bumpAttentionRevision(sqlite, event.session_id)
+    } else if (needsPlanApproval) {
       sqlite
         .prepare(
-          `update session_attention_state set pending_plan_approval = 1,
-             pending_epoch = 0, pending_error = 0 where session_id = ?`
+          `update session_attention set pending_plan_approval = 1,
+             pending_finish = 0, settle_due_at = null where session_id = ?`
         )
         .run(event.session_id)
-      appendSessionAttention(sqlite, event, "action_required", failed)
-    } else if (initiatedBy === "user") {
+    } else if (sessionIsHeld(sqlite, event.session_id)) {
+      // Waiting on a subagent (or an active goal): the agent will continue.
+      // Not ready for the user yet — stay inProgress with the finish parked.
       sqlite
         .prepare(
-          `update session_attention_state set pending_epoch = 1,
-             pending_error = max(pending_error, ?) where session_id = ?`
+          "update session_attention set pending_finish = 1, settle_due_at = null where session_id = ?"
         )
-        .run(failed ? 1 : 0, event.session_id)
+        .run(event.session_id)
     } else {
-      const current = sqlite
-        .prepare("select pending_epoch from session_attention_state where session_id = ?")
-        .get(event.session_id) as { readonly pending_epoch: number }
-      if (current.pending_epoch === 1 || failed) {
-        sqlite
-          .prepare(
-            `update session_attention_state set pending_epoch = 1,
-               pending_error = max(pending_error, ?) where session_id = ?`
-          )
-          .run(failed ? 1 : 0, event.session_id)
-      }
+      // Finished — user- and agent-initiated turns alike. A turn that ends
+      // with only background shells running counts as finished: whatever the
+      // agent left running (a dev server) is FOR the user to look at.
+      bumpAttentionRevision(sqlite, event.session_id)
     }
   }
 
-  releasePendingSessionAttention(sqlite, event)
+  reevaluatePendingFinish(sqlite, event.session_id, event.created_at, graceMs)
 }
 
 /** Computes the one mutually exclusive state rendered by native sidebars.
- *  Classification mirrors the native icon precedence. In particular, unread
- *  activity buffered behind a still-running turn remains `inProgress` until
- *  the overall activity epoch settles. */
+ *  Precedence: actionRequired (errored, then waitingForUser) > inProgress >
+ *  unread > idle. A parked finish (`pending_finish`) renders as inProgress so
+ *  the settle grace never flashes idle between agent continuations. */
 const sessionSidebarState = (sqlite: Database.Database, sessionId: string): SessionSidebarState => {
   const state = sqlite
     .prepare(
       `select s.pending_question, s.background_tasks,
-         coalesce(ast.turn_active, 0) as turn_active,
-         coalesce(ast.runtime_state, 'idle') as runtime_state,
-         coalesce(ast.has_runtime_state, 0) as has_runtime_state,
-         coalesce(ast.pending_plan_approval, 0) as pending_plan_approval,
+         coalesce(sa.attention_revision, 0) as attention_revision,
+         coalesce(sa.turn_active, 0) as turn_active,
+         coalesce(sa.runtime_state, 'idle') as runtime_state,
+         coalesce(sa.has_runtime_state, 0) as has_runtime_state,
+         coalesce(sa.pending_plan_approval, 0) as pending_plan_approval,
+         coalesce(sa.errored, 0) as errored,
+         coalesce(sa.pending_finish, 0) as pending_finish,
          coalesce(rs.last_seen_sequence, 0) as last_seen_sequence,
          coalesce(rs.manually_unread, 0) as manually_unread
        from sessions s
-       left join session_attention_state ast on ast.session_id = s.id
+       left join session_attention sa on sa.session_id = s.id
        left join session_read_state rs
          on rs.session_id = s.id and rs.reader_id = 'owner'
        where s.id = ?`
@@ -276,40 +332,33 @@ const sessionSidebarState = (sqlite: Database.Database, sessionId: string): Sess
     .get(sessionId) as {
     readonly pending_question: string | null
     readonly background_tasks: string
+    readonly attention_revision: number
     readonly turn_active: number
     readonly runtime_state: string
     readonly has_runtime_state: number
     readonly pending_plan_approval: number
+    readonly errored: number
+    readonly pending_finish: number
     readonly last_seen_sequence: number
     readonly manually_unread: number
   }
 
-  const unread = sqlite
-    .prepare(
-      `select count(*) as count,
-         coalesce(max(case when has_error = 1 then 1 else 0 end), 0) as has_error
-       from session_attention_events
-       where session_id = ? and sequence > ?`
-    )
-    .get(sessionId, state.last_seen_sequence) as {
-    readonly count: number
-    readonly has_error: number
-  }
-  if (unread.has_error === 1) return "errored"
+  if (state.errored === 1) return "errored"
   if (state.pending_question !== null || state.pending_plan_approval === 1) {
     return "waitingForUser"
   }
-  const waitingOnBackgroundTasks = backgroundTasksFromRaw(state.background_tasks).some(
-    (task) => task.terminalKey === undefined
-  )
+  const held = backgroundTasksFromRaw(state.background_tasks).some(holdsInProgress)
   if (
     state.turn_active === 1 ||
-    waitingOnBackgroundTasks ||
+    state.pending_finish === 1 ||
+    held ||
     (state.has_runtime_state === 1 && state.runtime_state === "running")
   ) {
     return "inProgress"
   }
-  if (state.manually_unread === 1 || unread.count > 0) return "unread"
+  if (state.manually_unread === 1 || state.attention_revision > state.last_seen_sequence) {
+    return "unread"
+  }
   return "idle"
 }
 

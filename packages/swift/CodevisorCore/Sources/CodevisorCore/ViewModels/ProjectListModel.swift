@@ -105,6 +105,11 @@ public final class ProjectListModel {
     public private(set) var projects: [Project] = []
     public private(set) var sessions: [ChatSession] = []
     public private(set) var selectedServerId: String
+    /// Fires whenever a session's attention state changes, from every path
+    /// that can change it (live events, snapshot merges, local mutations).
+    /// `SessionAttentionCoordinator` consumes these to drive focus auto-read
+    /// and edge-triggered notifications.
+    @ObservationIgnored public var onAttentionTransition: ((SessionAttentionTransition) -> Void)?
     /// Whether imported (non-Codevisor) sessions are shown. Synced from settings.
     public var showsImportedSessions: Bool = true
 
@@ -527,8 +532,8 @@ public final class ProjectListModel {
     }
 
     /// Shares read state through the server. The network request always carries
-    /// the exact sequence this client presented, so a delayed request cannot
-    /// consume attention created after that response left the viewport.
+    /// the exact revision this client saw, so a delayed request cannot consume
+    /// attention created after it was sent.
     public func markSessionRead(
         _ sessionId: UUID,
         serverId: String,
@@ -539,10 +544,17 @@ public final class ProjectListModel {
                 $0.serverId == serverId && $0.id == sessionId
             })
         else { return }
+        let before = sessions[index]
         let rendered = min(
-            max(0, throughSequence ?? sessions[index].latestAttentionSequence),
-            sessions[index].latestAttentionSequence
+            max(0, throughSequence ?? before.latestAttentionSequence),
+            before.latestAttentionSequence
         )
+        // Focus-read fires continuously while a chat stays focused; repeated
+        // triggers with nothing unseen must not spam the server.
+        guard
+            before.unreadCount > 0 || before.hasUnreadError
+                || rendered > before.lastSeenAttentionSequence
+        else { return }
         sessions[index].lastSeenAttentionSequence = max(
             sessions[index].lastSeenAttentionSequence,
             rendered
@@ -551,7 +563,6 @@ public final class ProjectListModel {
             0,
             sessions[index].latestAttentionSequence - sessions[index].lastSeenAttentionSequence
         )
-        sessions[index].unreadAttentionTargets.removeAll { $0.sequence <= rendered }
         if sessions[index].unreadCount == 0 {
             sessions[index].hasUnreadError = false
             if sessions[index].actionRequired {
@@ -561,6 +572,7 @@ public final class ProjectListModel {
             }
         }
         persistSessions()
+        emitAttentionTransition(old: before, new: sessions[index], origin: .localMarkRead)
         guard let serverClient, serverId == selectedServerId else { return }
         Task {
             do {
@@ -579,33 +591,19 @@ public final class ProjectListModel {
         }
     }
 
-    /// Accepts a read receipt only while the exact finished target is still
-    /// unread. This makes repeated viewport callbacks harmless and prevents a
-    /// stale mounted row from acknowledging a newer response.
-    public func acknowledgePresentedAttention(
-        _ sessionId: UUID,
-        serverId: String,
-        target: SessionAttentionTarget
-    ) {
-        guard
-            target.kind == .finished,
-            target.chatItemId != nil,
-            let session = sessions.first(where: {
-                $0.serverId == serverId && $0.id == sessionId
-            }),
-            session.unreadAttentionTargets.contains(target)
-        else { return }
-        markSessionRead(sessionId, serverId: serverId, throughSequence: target.sequence)
-    }
-
     public func markSessionUnread(_ sessionId: UUID, serverId: String) {
         guard
             let index = sessions.firstIndex(where: {
                 $0.serverId == serverId && $0.id == sessionId
             })
         else { return }
+        let before = sessions[index]
         sessions[index].unreadCount = max(1, sessions[index].unreadCount)
+        if sessions[index].sidebarState == .idle {
+            sessions[index].sidebarState = .unread
+        }
         persistSessions()
+        emitAttentionTransition(old: before, new: sessions[index], origin: .localMarkUnread)
         guard let serverClient, serverId == selectedServerId else { return }
         Task {
             do {
@@ -629,8 +627,39 @@ public final class ProjectListModel {
             })
         else { return }
         guard !attentionIsNewer(sessions[index], than: mapped) else { return }
+        let before = sessions[index]
         copyAttention(from: mapped, to: &sessions[index])
         persistSessions()
+        emitAttentionTransition(old: before, new: sessions[index], origin: .snapshot)
+    }
+
+    private func emitAttentionTransition(
+        old: ChatSession?,
+        new: ChatSession,
+        origin: SessionAttentionTransition.Origin
+    ) {
+        let oldSummary = old.map(SessionAttentionSummary.init)
+        let newSummary = SessionAttentionSummary(new)
+        guard oldSummary != newSummary else { return }
+        onAttentionTransition?(
+            SessionAttentionTransition(
+                sessionId: new.id,
+                serverId: new.serverId,
+                old: oldSummary,
+                new: newSummary,
+                origin: origin
+            ))
+    }
+
+    private func emitAttentionTransitions(
+        from previous: [ChatSession],
+        to next: [ChatSession],
+        origin: SessionAttentionTransition.Origin
+    ) {
+        for session in next {
+            let old = previous.first { $0.serverId == session.serverId && $0.id == session.id }
+            emitAttentionTransition(old: old, new: session, origin: origin)
+        }
     }
 
     private func attentionIsNewer(_ lhs: ChatSession, than rhs: ChatSession) -> Bool {
@@ -650,7 +679,6 @@ public final class ProjectListModel {
         destination.lastSeenAttentionSequence = source.lastSeenAttentionSequence
         destination.unreadCount = source.unreadCount
         destination.hasUnreadError = source.hasUnreadError
-        destination.unreadAttentionTargets = source.unreadAttentionTargets
         destination.actionRequired = source.actionRequired
         destination.actionRequiredKind = source.actionRequiredKind
         destination.pendingPlanApproval = source.pendingPlanApproval
@@ -967,6 +995,7 @@ public final class ProjectListModel {
                 remote: prepared.projects,
                 serverId: serverId
             )
+            let previousSessions = sessions
             let nextSessions = mergeSessions(
                 local: sessions,
                 remote: prepared.sessions,
@@ -979,6 +1008,11 @@ public final class ProjectListModel {
             if nextSessions != sessions {
                 sessions = nextSessions
                 persistSessions()
+                emitAttentionTransitions(
+                    from: previousSessions,
+                    to: nextSessions,
+                    origin: .snapshot
+                )
             }
             return .committed
         } catch {
@@ -1037,10 +1071,12 @@ public final class ProjectListModel {
         workspaceAssignmentsByServer[serverId] = assignments
 
         var nextSessions = sessions
+        var attentionPrevious: ChatSession?
         if let index = nextSessions.firstIndex(where: {
             $0.serverId == serverId && $0.id == session.id
         }) {
             let previous = nextSessions[index]
+            attentionPrevious = previous
             if attentionIsNewer(previous, than: reconciled) {
                 copyAttention(from: previous, to: &reconciled)
             }
@@ -1060,6 +1096,8 @@ public final class ProjectListModel {
             sessions = nextSessions
             persistSessions()
         }
+        // The live event stream is the only origin allowed to ping.
+        emitAttentionTransition(old: attentionPrevious, new: reconciled, origin: .liveEvent)
         return .applied(
             workspaceMembershipChanged: previousWorkspace != update.workspaceId
         )

@@ -76,6 +76,10 @@ struct CodevisorApp: App {
         AnalyticsClient.shared.captureAppOpenedOnce()
         DiagnosticsClient.shared.configureFromMainBundle(enabled: environment.settings.shareCrashReports)
         ChatNotificationManager.shared.configure(settings: environment.settings)
+        // Attention pings and banner clearing are decided by the app-wide
+        // coordinator (edge-triggered, focused chat suppressed); the manager
+        // only presents them.
+        environment.attentionCoordinator.notificationDelivery = ChatNotificationManager.shared
         // Deep links that open machine-scoped Settings pages ("Manage
         // Harnesses…") resolve the selected machine through this.
         SettingsRouter.shared.selectedMachineIdProvider = { [weak environment] in

@@ -160,11 +160,13 @@ struct ProjectListModelTests {
             latestSequence: 1,
             lastSeenSequence: 0
         )
+        // The client knows of nothing unseen, so this read sends nothing at
+        // all — it cannot consume the newer tip it has not rendered yet.
         model.markSessionRead(session.id, serverId: session.serverId)
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(await fakeServer.snapshot().readRequests.isEmpty)
 
-        try await waitUntilAsync {
-            await fakeServer.snapshot().readRequests.count == 1
-        }
+        await model.refreshFromServer()
         try await waitUntil {
             guard let updated = model.sessions.first(where: { $0.id == session.id }) else {
                 return false
@@ -173,10 +175,6 @@ struct ProjectListModelTests {
                 && updated.lastSeenAttentionSequence == 0
                 && updated.unreadCount == 1
         }
-
-        let request = await fakeServer.snapshot().readRequests.first
-        #expect(request?.sessionId == session.id)
-        #expect(request?.throughSequence == 0)
     }
 
     @Test("Server refresh replaces stale local records without pushing them back")
@@ -1037,8 +1035,7 @@ actor FakeServerClient: CodevisorServerClienting {
     func setSessionAttention(
         id: UUID,
         latestSequence: Int,
-        lastSeenSequence: Int,
-        finishedChatItemId: UUID? = nil
+        lastSeenSequence: Int
     ) {
         guard let index = sessions.firstIndex(where: { $0.id == id.uuidString }) else {
             return
@@ -1046,16 +1043,6 @@ actor FakeServerClient: CodevisorServerClienting {
         sessions[index].latestAttentionSequence = latestSequence
         sessions[index].lastSeenAttentionSequence = lastSeenSequence
         sessions[index].unreadCount = max(0, latestSequence - lastSeenSequence)
-        sessions[index].unreadAttentionTargets =
-            latestSequence > lastSeenSequence
-            ? [
-                ServerSessionAttentionTarget(
-                    sequence: latestSequence,
-                    kind: .finished,
-                    chatItemId: finishedChatItemId?.uuidString
-                )
-            ]
-            : []
     }
 
     func setReadResponseDelay(_ delay: (@Sendable () async -> Void)?) {
@@ -1077,7 +1064,6 @@ actor FakeServerClient: CodevisorServerClienting {
             0,
             latest - (sessions[index].lastSeenAttentionSequence ?? 0)
         )
-        sessions[index].unreadAttentionTargets?.removeAll { $0.sequence <= requested }
         let response = sessions[index]
         if let readResponseDelay { await readResponseDelay() }
         return response
@@ -1156,14 +1142,7 @@ func serverSession(from session: ChatSession) -> ServerSession {
         latestAttentionSequence: session.latestAttentionSequence,
         lastSeenAttentionSequence: session.lastSeenAttentionSequence,
         unreadCount: session.unreadCount,
-        hasUnreadError: session.hasUnreadError,
-        unreadAttentionTargets: session.unreadAttentionTargets.map { target in
-            ServerSessionAttentionTarget(
-                sequence: target.sequence,
-                kind: target.kind,
-                chatItemId: target.chatItemId?.uuidString
-            )
-        }
+        hasUnreadError: session.hasUnreadError
     )
 }
 

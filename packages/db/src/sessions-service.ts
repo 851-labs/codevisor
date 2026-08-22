@@ -9,7 +9,13 @@ import { sessionFromRow } from "./row-mappers.js"
 import type { SessionRow } from "./rows.js"
 import type { CodevisorDatabaseService } from "./service.js"
 import { archivedStamp, type ServiceContext } from "./service-context.js"
-import { ensureSessionAttentionState, projectSessionSidebarState } from "./session-attention.js"
+import {
+  attentionSettleDeadline,
+  ensureSessionAttentionState,
+  listPendingAttentionSettles,
+  projectSessionSidebarState,
+  settleSessionAttention
+} from "./session-attention.js"
 
 export const makeSessionsService = (
   context: ServiceContext
@@ -21,6 +27,9 @@ export const makeSessionsService = (
   | "markSessionRead"
   | "markSessionUnread"
   | "clearSessionPlanApproval"
+  | "settleSessionAttention"
+  | "listPendingAttentionSettles"
+  | "getAttentionSettleDeadline"
   | "getSessionConfigSelections"
   | "updateSession"
   | "replaceSessionConfigSelections"
@@ -92,10 +101,10 @@ export const makeSessionsService = (
         const latest = (
           sqlite
             .prepare(
-              "select coalesce(max(sequence), 0) as sequence from session_attention_events where session_id = ?"
+              "select coalesce((select attention_revision from session_attention where session_id = ?), 0) as revision"
             )
-            .get(id) as { readonly sequence: number }
-        ).sequence
+            .get(id) as { readonly revision: number }
+        ).revision
         const requested = Math.max(0, Math.min(latest, Math.trunc(throughSequence)))
         const changedAt = isoTimestamp()
         sqlite.transaction(() => {
@@ -110,6 +119,14 @@ export const makeSessionsService = (
                  updated_at = excluded.updated_at`
             )
             .run(id, requested, changedAt)
+          // Reading through the newest revision acknowledges an error too:
+          // errored is the urgent flavor of unread, not a lock. A read that
+          // was in flight when a *newer* errored turn landed keeps the flag.
+          sqlite
+            .prepare(
+              "update session_attention set errored = 0 where session_id = ? and attention_revision <= ?"
+            )
+            .run(id, requested)
           projectSessionSidebarState(sqlite, id, changedAt)
         })()
         return getSession(id)
@@ -142,14 +159,26 @@ export const makeSessionsService = (
         sqlite.transaction(() => {
           ensureSessionAttentionState(sqlite, id)
           sqlite
-            .prepare(
-              "update session_attention_state set pending_plan_approval = 0 where session_id = ?"
-            )
+            .prepare("update session_attention set pending_plan_approval = 0 where session_id = ?")
             .run(id)
           projectSessionSidebarState(sqlite, id, changedAt)
         })()
         return getSession(id)
       }),
+    settleSessionAttention: (rawId) =>
+      attempt("settleSessionAttention", () => {
+        const id = canonicalUuid(rawId)
+        return sqlite.transaction(() =>
+          settleSessionAttention(sqlite, id, isoTimestamp(), config.attentionSettleGraceMs)
+        )()
+      }),
+    listPendingAttentionSettles: attempt("listPendingAttentionSettles", () =>
+      listPendingAttentionSettles(sqlite)
+    ),
+    getAttentionSettleDeadline: (rawId) =>
+      attempt("getAttentionSettleDeadline", () =>
+        attentionSettleDeadline(sqlite, canonicalUuid(rawId))
+      ),
     getSessionConfigSelections: (rawId) =>
       attempt("getSessionConfigSelections", () => {
         const id = canonicalUuid(rawId)

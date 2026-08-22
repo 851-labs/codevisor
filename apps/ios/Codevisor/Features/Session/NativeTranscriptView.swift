@@ -96,7 +96,6 @@ struct TranscriptSendAnimationTarget {
 /// surrounding navigation controller's containment tree.
 struct NativeTranscriptView: UIViewControllerRepresentable {
     let rows: [TranscriptVirtualRow]
-    let unreadAttentionTargets: [SessionAttentionTarget]
     let initialState: SessionScrollState?
     let followsLatest: Bool
     let hasOlderHistory: Bool
@@ -126,7 +125,6 @@ struct NativeTranscriptView: UIViewControllerRepresentable {
     let onFollowStateChange: @MainActor (Bool) -> Void
     let onNearTop: @MainActor () -> Void
     let onOlderHistoryPresented: @MainActor (UInt64) -> Void
-    let onAttentionPresented: @MainActor (SessionAttentionTarget) -> Void
 
     func makeUIViewController(context _: Context) -> TranscriptViewController {
         let controller = TranscriptViewController()
@@ -151,7 +149,6 @@ struct NativeTranscriptView: UIViewControllerRepresentable {
     private func configure(_ controller: TranscriptViewController) {
         controller.configure(
             rows: rows,
-            unreadAttentionTargets: unreadAttentionTargets,
             initialState: initialState,
             followsLatest: followsLatest,
             hasOlderHistory: hasOlderHistory,
@@ -175,7 +172,6 @@ struct NativeTranscriptView: UIViewControllerRepresentable {
             onFollowStateChange: onFollowStateChange,
             onNearTop: onNearTop,
             onOlderHistoryPresented: onOlderHistoryPresented,
-            onAttentionPresented: onAttentionPresented,
         )
     }
 }

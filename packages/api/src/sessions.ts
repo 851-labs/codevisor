@@ -72,15 +72,6 @@ export const SessionSidebarState = Schema.Literals([
 ])
 export type SessionSidebarState = typeof SessionSidebarState.Type
 
-/** One unread attention event and the transcript item that can prove it was
- * actually presented. Older/error-only events may not have a chat item. */
-export const SessionAttentionTarget = Schema.Struct({
-  sequence: Schema.Number,
-  kind: Schema.Literals(["finished", "action_required"]),
-  chatItemId: Schema.optional(Schema.String)
-})
-export type SessionAttentionTarget = typeof SessionAttentionTarget.Type
-
 export const SessionSummary = Schema.Struct({
   id: Schema.String,
   projectId: Schema.String,
@@ -108,17 +99,22 @@ export const SessionSummary = Schema.Struct({
   sidebarState: Schema.optional(SessionSidebarState),
   sidebarStateChangedAt: Schema.optional(Schema.String),
   usage: Schema.optional(SessionUsage),
-  /** Monotonic server-owned attention cursor. Optional for compatibility with
-   * servers that predate durable cross-device read state. */
+  /** Monotonic server-owned attention revision: every settled turn advances
+   * it by one. Unread = revision ahead of `lastSeenAttentionSequence`.
+   * Optional for compatibility with servers that predate durable
+   * cross-device read state. */
   latestAttentionSequence: Schema.optional(Schema.Number),
-  /** The latest attention sequence read by the owner on any device. */
+  /** The latest attention revision read by the owner on any device. Clients
+   * advance it when the chat is the focused pane (macOS) or the foregrounded
+   * screen (iOS) — there is no per-row read receipt. */
   lastSeenAttentionSequence: Schema.optional(Schema.Number),
   unreadCount: Schema.optional(Schema.Number),
+  /** The last settled turn errored and has not been acknowledged. Ranks in
+   * the action-required tier (sidebarState `errored`) but clears on read —
+   * it is the urgent flavor of unread, not a lock. */
   hasUnreadError: Schema.optional(Schema.Boolean),
-  /** Exact unread transcript targets. Native clients acknowledge a finished
-   * response only after its row intersects the real viewport. */
-  unreadAttentionTargets: Schema.optional(Schema.Array(SessionAttentionTarget)),
-  /** Intrinsic blocking state; reading the session does not clear it. */
+  /** Intrinsic blocking state (question/plan approval); reading the session
+   * does not clear it. */
   actionRequired: Schema.optional(Schema.Boolean),
   actionRequiredKind: Schema.optional(Schema.Literals(["question", "planApproval"])),
   /** Durable form of Codex's synthetic post-plan approval prompt. */

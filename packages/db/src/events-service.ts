@@ -56,7 +56,7 @@ export const makeEventsService = (
           })
           subjectRevision = sessionEvent.revision
           chatItemId = projectChatEvent(sqlite, sessionEvent)
-          projectSessionAttention(sqlite, sessionEvent)
+          projectSessionAttention(sqlite, sessionEvent, config.attentionSettleGraceMs)
           projectSessionSidebarState(sqlite, subjectId, createdAt)
           if (kind === "session.output") {
             sqlite

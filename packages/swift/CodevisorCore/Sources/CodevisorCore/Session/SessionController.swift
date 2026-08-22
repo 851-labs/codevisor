@@ -197,19 +197,10 @@ final public class SessionController {
     /// Called with the agent session id once a brand-new session is created.
     public var onAgentSessionCreated: ((String) -> Void)?
     /// Called each time a live turn ends — forwarded from the connected
-    /// `SessionModel` so the session store can badge unopened chats.
+    /// `SessionModel` so the session store can invalidate aggregate-activity
+    /// observers. Unread state and notifications are server-projected and
+    /// handled by `SessionAttentionCoordinator`.
     public var onTurnEnded: (() -> Void)?
-    /// Called for Claude runtime-state barriers so deferred attention can be
-    /// released only after the overall activity epoch becomes quiescent.
-    public var onRuntimeStateChanged: (() -> Void)?
-    /// Called when goal state changes so terminal goal outcomes can release a
-    /// deferred unread/notification epoch.
-    public var onGoalChanged: (() -> Void)?
-    /// Called when the prompt queue changes so a deferred attention epoch can
-    /// be released once the last queued prompt is claimed or removed.
-    public var onQueuedPromptsChanged: (() -> Void)?
-    /// Called when a live question pauses the agent for user input.
-    public var onActionRequired: (() -> Void)?
     /// The agent session id currently connected (resumed or newly created).
     public internal(set) var connectedAgentSessionId: String?
 

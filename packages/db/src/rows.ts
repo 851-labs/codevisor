@@ -122,7 +122,6 @@ export interface SessionRow {
   readonly attention_unread_count: number
   readonly attention_has_unread_error: number
   readonly attention_manually_unread: number
-  readonly attention_unread_targets: string
   readonly pending_plan_approval: number
 }
 

@@ -27,7 +27,6 @@ final class TranscriptViewController: UIViewController {
 
     func configure(
         rows: [TranscriptVirtualRow],
-        unreadAttentionTargets: [SessionAttentionTarget],
         initialState: SessionScrollState?,
         followsLatest: Bool,
         hasOlderHistory: Bool,
@@ -56,12 +55,10 @@ final class TranscriptViewController: UIViewController {
         onFollowStateChange: @escaping (Bool) -> Void,
         onNearTop: @escaping () -> Void,
         onOlderHistoryPresented: @escaping (UInt64) -> Void,
-        onAttentionPresented: @escaping (SessionAttentionTarget) -> Void,
     ) {
         loadViewIfNeeded()
         transcriptScrollView.configure(
             rows: rows,
-            unreadAttentionTargets: unreadAttentionTargets,
             initialState: initialState,
             followsLatest: followsLatest,
             hasOlderHistory: hasOlderHistory,
@@ -85,7 +82,6 @@ final class TranscriptViewController: UIViewController {
             onFollowStateChange: onFollowStateChange,
             onNearTop: onNearTop,
             onOlderHistoryPresented: onOlderHistoryPresented,
-            onAttentionPresented: onAttentionPresented,
         )
     }
 
