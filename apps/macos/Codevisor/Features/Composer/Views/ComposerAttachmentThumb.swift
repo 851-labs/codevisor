@@ -75,7 +75,7 @@ struct ComposerAttachmentThumb: View {
             transaction.disablesAnimations = true
             withTransaction(transaction) { isHovered = hovering }
         }
-        .task(id: attachment.id) {
+        .task(id: attachment.localData.count) {
             guard attachment.hasVisualPreview, thumbnail == nil else { return }
             let data = attachment.localData
             let name = attachment.name
@@ -110,6 +110,11 @@ struct ComposerAttachmentThumb: View {
     @ViewBuilder
     private var stateBadge: some View {
         switch attachment.state {
+        case .loading:
+            RoundedRectangle(cornerRadius: 8)
+                .fill(.black.opacity(0.25))
+                .overlay(ProgressView().controlSize(.small))
+                .allowsHitTesting(false)
         case .uploading:
             RoundedRectangle(cornerRadius: 8)
                 .fill(.black.opacity(0.25))

@@ -1,7 +1,47 @@
+import ACPKit
 import CodevisorCore
 import CodevisorUI
 import SwiftUI
 import UIKit
+
+struct ComposerPasteFailureNotice: Equatable {
+    enum Recovery: Equatable {
+        case files
+    }
+
+    let message: String
+    let recovery: Recovery?
+
+    init(failureMessage: String, kind: Attachment.Kind) {
+        if failureMessage.contains("too large to upload") {
+            message = failureMessage
+        } else if kind == .image {
+            message = "Couldn't paste this image. Copy it again or choose it from Photos."
+        } else {
+            message = "Couldn't paste this file. Copy it again or choose it from Files."
+        }
+        // The image message already explains the Photos fallback. Keep that
+        // banner compact and reserve an inline action for file recovery.
+        recovery = kind == .image ? nil : .files
+    }
+
+    static let attachmentLimit = Self(
+        message: "A message can carry at most \(SessionController.maxAttachments) attachments.",
+        recovery: nil
+    )
+
+    private init(message: String, recovery: Recovery?) {
+        self.message = message
+        self.recovery = recovery
+    }
+
+    var actionTitle: String? {
+        switch recovery {
+        case .files: "Choose File"
+        case nil: nil
+        }
+    }
+}
 
 extension ComposerBar {
     var remainingAttachmentSlots: Int {
@@ -11,15 +51,53 @@ extension ComposerBar {
     /// Routes file and image pasteboard content through the same staging paths
     /// as the attachment menu. The paste delegate consumes these items so it
     /// does not also insert a filename or object-replacement character.
-    func handlePastedAttachments(_ pasted: [PastedAttachment]) {
-        for item in pasted {
-            switch item {
+    func handlePasteAttachmentEvent(_ event: ComposerPasteEvent) {
+        switch event {
+        case let .began(id, name, mimeType, kind):
+            guard
+                controller.beginLoadingAttachment(
+                    id: id,
+                    name: name,
+                    mimeType: mimeType,
+                    kind: kind
+                )
+            else {
+                pasteFailureNotice = .attachmentLimit
+                return
+            }
+            pasteFailureNotice = nil
+        case let .resolved(id, attachment):
+            switch attachment {
             case let .fileURL(url):
-                ComposerAttachmentStaging.stage(pickedURLs: [url], into: controller)
-            case let .image(data, suggestedName):
-                controller.attachImageData(data, suggestedName: suggestedName)
+                ComposerAttachmentStaging.resolve(
+                    pastedURL: url,
+                    attachmentID: id,
+                    into: controller,
+                    onFailure: presentPasteFailure
+                )
+            case let .image(data, suggestedName, mimeType):
+                if let message = controller.resolveLoadingAttachment(
+                    id: id,
+                    name: suggestedName,
+                    mimeType: mimeType,
+                    kind: .image,
+                    data: data
+                ) {
+                    presentPasteFailure(message, .image)
+                }
+            }
+        case let .failed(id, message, kind):
+            if controller.discardLoadingAttachment(id: id) {
+                presentPasteFailure(message, kind)
             }
         }
+    }
+
+    func presentPasteFailure(_ message: String, _ kind: Attachment.Kind) {
+        pasteFailureNotice = ComposerPasteFailureNotice(
+            failureMessage: message,
+            kind: kind
+        )
     }
 
     var attachButton: some View {

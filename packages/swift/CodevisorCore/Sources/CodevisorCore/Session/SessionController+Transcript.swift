@@ -235,6 +235,7 @@ extension SessionController {
         (!composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !composerAttachments.isEmpty)
             && !isConnecting
+            && !composerAttachments.contains { $0.state == .loading }
             && configurationValidationState == .ready
             && (isConnected || selectedHarness != nil)
     }

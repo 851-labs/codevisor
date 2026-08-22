@@ -14,6 +14,7 @@ import UIKit
 /// already owns.
 final class HeightReportingTextView: UITextView {
     var onContentHeightChange: ((CGFloat) -> Void)?
+    var onPasteAttachmentEvent: ((ComposerPasteEvent) -> Void)?
     /// The composer's resize pan, reported in window coordinates so the
     /// view's own growth under the finger can't feed back into the
     /// translation.
@@ -57,6 +58,38 @@ final class HeightReportingTextView: UITextView {
     override func didMoveToWindow() {
         super.didMoveToWindow()
         fulfillPendingFocusRequestIfPossible()
+    }
+
+    /// Keyboard paste suggestions use the responder-level item-provider API
+    /// and do not consistently enter `UITextPasteDelegate`. Intercept only
+    /// attachment-capable providers here; ordinary text remains UIKit-owned.
+    override func paste(itemProviders: [NSItemProvider]) {
+        guard let onPasteAttachmentEvent else {
+            super.paste(itemProviders: itemProviders)
+            return
+        }
+        let attachmentProviders = itemProviders.filter {
+            ComposerPasteProviderLoader.canLoadAttachment(from: $0)
+        }
+        let defaultProviders = itemProviders.filter {
+            !ComposerPasteProviderLoader.canLoadAttachment(from: $0)
+        }
+
+        if !attachmentProviders.isEmpty {
+            ComposerPasteProviderLoader.logInvocation(
+                route: "responder",
+                providers: attachmentProviders
+            )
+            for provider in attachmentProviders {
+                ComposerPasteProviderLoader.startLoading(
+                    from: provider,
+                    onEvent: onPasteAttachmentEvent
+                )
+            }
+        }
+        if !defaultProviders.isEmpty {
+            super.paste(itemProviders: defaultProviders)
+        }
     }
 
     private func fulfillPendingFocusRequestIfPossible() {

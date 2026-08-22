@@ -10,7 +10,7 @@ struct ComposerTextView: UIViewRepresentable {
     var isEditable: Bool
     var focusRequest: UUID?
     var onFocusRequestFulfilled: ((UUID) -> Void)?
-    var onPasteAttachments: ([PastedAttachment]) -> Void
+    var onPasteAttachmentEvent: (ComposerPasteEvent) -> Void
     var isScrollEnabled: Bool
     @Binding var contentHeight: CGFloat
     var onResizePanChanged: (CGFloat) -> Void
@@ -124,6 +124,7 @@ struct ComposerTextView: UIViewRepresentable {
                 binding.wrappedValue = height
             }
         }
+        view.onPasteAttachmentEvent = onPasteAttachmentEvent
         // Only push text the view doesn't already have (a restored draft, a
         // send clearing the field) — and never while the keyboard holds an
         // active composition, which a programmatic set would tear down.
@@ -144,7 +145,7 @@ struct ComposerTextView: UIViewRepresentable {
             view.isEditable = isEditable
         }
         view.onFocusRequestFulfilled = onFocusRequestFulfilled
-        coordinator.onPasteAttachments = onPasteAttachments
+        coordinator.onPasteAttachmentEvent = onPasteAttachmentEvent
         view.requestInitialFocus(focusRequest)
         if view.isScrollEnabled != isScrollEnabled {
             view.isScrollEnabled = isScrollEnabled
@@ -159,24 +160,24 @@ struct ComposerTextView: UIViewRepresentable {
         Coordinator(
             text: $text,
             selection: $selection,
-            onPasteAttachments: onPasteAttachments
+            onPasteAttachmentEvent: onPasteAttachmentEvent
         )
     }
 
     final class Coordinator: NSObject, UITextViewDelegate, UITextPasteDelegate {
         private let text: Binding<String>
         private let selection: Binding<NSRange>
-        var onPasteAttachments: ([PastedAttachment]) -> Void
+        var onPasteAttachmentEvent: (ComposerPasteEvent) -> Void
         var isApplyingSwiftUIUpdate = false
 
         init(
             text: Binding<String>,
             selection: Binding<NSRange>,
-            onPasteAttachments: @escaping ([PastedAttachment]) -> Void
+            onPasteAttachmentEvent: @escaping (ComposerPasteEvent) -> Void
         ) {
             self.text = text
             self.selection = selection
-            self.onPasteAttachments = onPasteAttachments
+            self.onPasteAttachmentEvent = onPasteAttachmentEvent
         }
 
         func textViewDidChange(_ textView: UITextView) {
@@ -199,29 +200,25 @@ struct ComposerTextView: UIViewRepresentable {
             transform item: any UITextPasteItem
         ) {
             let provider = item.itemProvider
-            if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
-                item.setNoResult()
-                provider.loadObject(ofClass: NSURL.self) { [weak self] object, _ in
-                    guard let url = object as? NSURL else { return }
-                    Task { @MainActor [weak self] in
-                        self?.onPasteAttachments([.fileURL(url as URL)])
-                    }
-                }
+            guard ComposerPasteProviderLoader.canLoadAttachment(from: provider) else {
+                item.setDefaultResult()
                 return
             }
-            if provider.canLoadObject(ofClass: UIImage.self) {
-                item.setNoResult()
-                provider.loadObject(ofClass: UIImage.self) { [weak self] object, _ in
-                    guard let image = object as? UIImage,
-                        let data = image.pngData()
-                    else { return }
-                    Task { @MainActor [weak self] in
-                        self?.onPasteAttachments([.image(data: data, suggestedName: nil)])
+            ComposerPasteProviderLoader.logInvocation(route: "text-delegate", providers: [provider])
+            ComposerPasteProviderLoader.startLoading(
+                from: provider,
+                onEvent: onPasteAttachmentEvent,
+                onCompletion: { success in
+                    // Apple permits completing UITextPasteItem from the
+                    // provider's asynchronous callback. Do not publish a
+                    // cached no-result before we know we consumed the item.
+                    if success {
+                        item.setNoResult()
+                    } else {
+                        item.setDefaultResult()
                     }
                 }
-                return
-            }
-            item.setDefaultResult()
+            )
         }
     }
 }

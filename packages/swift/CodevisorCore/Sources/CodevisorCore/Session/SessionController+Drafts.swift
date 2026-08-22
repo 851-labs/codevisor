@@ -6,8 +6,9 @@ extension SessionController {
         ComposerDraftStore.Draft(
             projectId: project.id,
             composerText: composerText,
-            attachments: composerAttachments.map {
-                ComposerDraftStore.DraftAttachment(
+            attachments: composerAttachments.compactMap {
+                guard $0.state != .loading else { return nil }
+                return ComposerDraftStore.DraftAttachment(
                     id: $0.id,
                     name: $0.name,
                     mimeType: $0.mimeType,

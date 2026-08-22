@@ -93,6 +93,11 @@ struct ComposerBar: View {
     @State var isCapturingPhoto = false
     @State var isAddingProject = false
     @State var managedProject: Project?
+    /// Paste-provider failures have no attachment bytes left to anchor a
+    /// status to. Keep their recovery beside this composer instead of using
+    /// the session's connection/error channel.
+    @State var pasteFailureNotice: ComposerPasteFailureNotice?
+    @State private var pasteFailureNoticeHeight: CGFloat = 0
     /// Editing from the goal accessory requests focus through the same
     /// one-shot UIKit bridge as initial New Chat focus, without making
     /// ordinary view updates reclaim the keyboard.
@@ -114,6 +119,7 @@ struct ComposerBar: View {
             : !trimmed.isEmpty || !controller.composerAttachments.isEmpty)
             && !controller.isSubmitting
             && !controller.isConnecting
+            && !controller.composerAttachments.contains { $0.state == .loading }
             && !isClearingGoal
             && controller.configurationValidationState == .ready
     }
@@ -135,7 +141,11 @@ struct ComposerBar: View {
         // this same stack: a fully expanded card leaves them their room at
         // the top rather than growing the stack past `maxHeight`.
         let pickersOverhead = showsRunPickers ? runPickersHeight + 8 : 0
-        return max(Self.collapsedMaxEditorHeight, maxHeight - Self.cardChromeHeight - pickersOverhead)
+        let noticeOverhead = pasteFailureNotice == nil ? 0 : pasteFailureNoticeHeight + 8
+        return max(
+            Self.collapsedMaxEditorHeight,
+            maxHeight - Self.cardChromeHeight - pickersOverhead - noticeOverhead
+        )
     }
 
     /// Where the card rests when no drag is in flight.
@@ -165,7 +175,9 @@ struct ComposerBar: View {
     /// overlay at the root gives it a higher z-order than the run pickers;
     /// using the card edge makes the palette cover those chips while open.
     private var slashPaletteOffset: CGFloat {
-        let cardTop = showsRunPickers ? runPickersHeight + 8 : 0
+        let pickersHeight = showsRunPickers ? runPickersHeight + 8 : 0
+        let noticeHeight = pasteFailureNotice == nil ? 0 : pasteFailureNoticeHeight + 8
+        let cardTop = pickersHeight + noticeHeight
         return cardTop - slashPaletteHeight - ComposerGlassStyle.clusterSpacing
     }
 
@@ -202,6 +214,7 @@ struct ComposerBar: View {
                         }
                 }
             }
+            pasteFailureRail
             card
         }
         // The root-level overlay always draws above both children. On New
@@ -219,6 +232,7 @@ struct ComposerBar: View {
         // query filtering swaps rows immediately while filtering to zero (or
         // back from zero) still morphs the glass out of/into the composer.
         .animation(Motion.quick(reduceMotion: reduceMotion), value: showsSlashCommandPopup)
+        .animation(Motion.quick(reduceMotion: reduceMotion), value: pasteFailureNotice)
         .sheet(isPresented: $isAddingProject) {
             AddProjectSheet { project in
                 selectTargetProject(project)
@@ -335,6 +349,40 @@ struct ComposerBar: View {
                 ComposerAttachmentStaging.stage(cameraImage: image, into: controller)
             }
             .ignoresSafeArea()
+        }
+    }
+}
+
+extension ComposerBar {
+
+    @ViewBuilder
+    private var pasteFailureRail: some View {
+        if let notice = pasteFailureNotice {
+            if let recovery = notice.recovery, let actionTitle = notice.actionTitle {
+                ComposerNoticeRail(
+                    notice.message,
+                    kind: .error,
+                    actionTitle: actionTitle,
+                    action: { recoverFromPasteFailure(recovery) },
+                    onDismiss: { pasteFailureNotice = nil }
+                )
+                .pasteFailureNoticeMeasurement($pasteFailureNoticeHeight)
+            } else {
+                ComposerNoticeRail(
+                    notice.message,
+                    kind: .error,
+                    onDismiss: { pasteFailureNotice = nil }
+                )
+                .pasteFailureNoticeMeasurement($pasteFailureNoticeHeight)
+            }
+        }
+    }
+
+    private func recoverFromPasteFailure(_ recovery: ComposerPasteFailureNotice.Recovery) {
+        pasteFailureNotice = nil
+        switch recovery {
+        case .files:
+            isPickingFiles = true
         }
     }
 
@@ -458,7 +506,7 @@ struct ComposerBar: View {
                             || isClearingGoal),
                     focusRequest: goalEditFocusRequest ?? initialFocusRequest,
                     onFocusRequestFulfilled: fulfillFocusRequest,
-                    onPasteAttachments: handlePastedAttachments,
+                    onPasteAttachmentEvent: handlePasteAttachmentEvent,
                     // Scrolling stays off unless the text really overflows,
                     // so a drag on the card is never swallowed by the editor.
                     isScrollEnabled: editorHeight < measuredTextHeight,
@@ -629,6 +677,16 @@ struct ComposerBar: View {
     func setExpanded(_ expand: Bool) {
         withAnimation(.snappy(duration: 0.28)) {
             isExpanded = expand
+        }
+    }
+}
+
+private extension View {
+    func pasteFailureNoticeMeasurement(_ height: Binding<CGFloat>) -> some View {
+        onGeometryChange(for: CGFloat.self) {
+            $0.size.height
+        } action: { measuredHeight in
+            height.wrappedValue = measuredHeight
         }
     }
 }

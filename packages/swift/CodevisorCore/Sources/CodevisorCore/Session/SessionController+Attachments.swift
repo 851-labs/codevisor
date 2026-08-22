@@ -7,6 +7,10 @@ extension SessionController {
     // MARK: - Attachments
 
     static public let maxAttachments = 10
+    /// The cloud relay accepts request bodies up to 32 MiB. File uploads use
+    /// the attachment bytes as the raw body, so keep the shared staging limit
+    /// aligned with that transport boundary.
+    static public let maxAttachmentUploadBytes = 32 * 1024 * 1024
 
     public func attachFileURLs(_ urls: [URL]) {
         for url in urls {
@@ -49,9 +53,81 @@ extension SessionController {
         }
     }
 
-    public func attachImageData(_ data: Data, suggestedName: String? = nil) {
-        let name = suggestedName ?? "Pasted image \(Self.pastedImageFormatter.string(from: Date())).png"
-        stageAttachment(name: name, mimeType: "image/png", kind: .image, data: data)
+    public func attachImageData(
+        _ data: Data,
+        suggestedName: String? = nil,
+        mimeType: String = "image/png"
+    ) {
+        let ext = UTType(mimeType: mimeType)?.preferredFilenameExtension ?? "png"
+        let name =
+            suggestedName
+            ?? "Pasted image \(Self.pastedImageFormatter.string(from: Date())).\(ext)"
+        stageAttachment(name: name, mimeType: mimeType, kind: .image, data: data)
+    }
+
+    /// Adds the optimistic row synchronously, before an item provider starts
+    /// resolving its bytes. Returns false when the attachment limit is full.
+    @discardableResult
+    public func beginLoadingAttachment(
+        id: UUID,
+        name: String,
+        mimeType: String,
+        kind: Attachment.Kind
+    ) -> Bool {
+        guard composerAttachments.count < Self.maxAttachments else { return false }
+        composerAttachments.append(
+            ComposerAttachment(
+                id: id,
+                name: name,
+                mimeType: mimeType,
+                kind: kind,
+                localData: Data(),
+                state: .loading
+            )
+        )
+        return true
+    }
+
+    /// Replaces an optimistic placeholder in place, preserving its stable id,
+    /// then begins the normal eager upload.
+    @discardableResult
+    public func resolveLoadingAttachment(
+        id: UUID,
+        name: String,
+        mimeType: String,
+        kind: Attachment.Kind,
+        data: Data
+    ) -> String? {
+        guard let index = composerAttachments.firstIndex(where: { $0.id == id }),
+            composerAttachments[index].state == .loading
+        else { return nil }
+        guard data.count <= Self.maxAttachmentUploadBytes else {
+            let message = "“\(name)” is too large to upload. Choose a file smaller than 32 MB."
+            discardLoadingAttachment(id: id)
+            return message
+        }
+        var attachment = composerAttachments[index]
+        attachment.name = name
+        attachment.mimeType = mimeType
+        attachment.kind = kind
+        attachment.localData = data
+        attachment.state = .uploading
+        composerAttachments[index] = attachment
+        startUpload(attachment)
+        return nil
+    }
+
+    /// Provider failures cannot be retried without another paste operation,
+    /// so remove the empty placeholder. The platform composer that owns the
+    /// paste interaction presents the failure beside that composer instead
+    /// of turning it into a session-level connection failure.
+    @discardableResult
+    public func discardLoadingAttachment(id: UUID) -> Bool {
+        guard let index = composerAttachments.firstIndex(where: { $0.id == id }),
+            composerAttachments[index].state == .loading
+        else { return false }
+        composerAttachments.remove(at: index)
+        return true
     }
 
     public func removeAttachment(id: UUID) {
@@ -119,6 +195,10 @@ extension SessionController {
             status = .failed("A message can carry at most \(Self.maxAttachments) attachments.")
             return
         }
+        guard data.count <= Self.maxAttachmentUploadBytes else {
+            status = .failed("“\(name)” is too large to upload. Choose a file smaller than 32 MB.")
+            return
+        }
         var attachment = ComposerAttachment(
             id: UUID(),
             name: name,
@@ -152,6 +232,9 @@ extension SessionController {
                 self?.setAttachmentState(attachment.id, .uploaded(metadata.attachmentRef))
             } catch {
                 guard !Task.isCancelled else { return }
+                Log.attachments.error(
+                    "attachment upload failed for \(attachment.name, privacy: .public): \(String(describing: error), privacy: .public)"
+                )
                 self?.setAttachmentState(attachment.id, .failed(serverErrorMessage(error)))
             }
             self?.uploadTasks[attachment.id] = nil
@@ -179,6 +262,9 @@ extension SessionController {
                 return nil
             case .uploading:
                 // Unreachable: awaiting the tasks above settles every state.
+                return nil
+            case .loading:
+                status = .failed("An attachment is still loading. Wait for it to finish, then send again.")
                 return nil
             }
         }

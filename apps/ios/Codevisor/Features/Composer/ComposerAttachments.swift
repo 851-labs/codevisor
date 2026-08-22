@@ -1,14 +1,9 @@
 import CodevisorCore
+import CodevisorUI
 import PhotosUI
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
-
-/// Attachment-worthy content intercepted from the iOS composer's pasteboard.
-enum PastedAttachment {
-    case fileURL(URL)
-    /// PNG-normalized image bytes.
-    case image(data: Data, suggestedName: String?)
-}
 
 /// Staging picked media/files for the composer. Everything funnels through a
 /// temporary file and `SessionController.attachFileURLs`, so the shared
@@ -16,6 +11,73 @@ enum PastedAttachment {
 /// exactly as it does on macOS.
 @MainActor
 enum ComposerAttachmentStaging {
+    /// Resolves a pasted file URL into an existing optimistic placeholder.
+    static func resolve(
+        pastedURL url: URL,
+        attachmentID: UUID,
+        into controller: SessionController,
+        onFailure: @escaping @MainActor (String, Attachment.Kind) -> Void
+    ) {
+        let type = UTType(filenameExtension: url.pathExtension)
+        let mimeType = type?.preferredMIMEType ?? "application/octet-stream"
+        let kind: Attachment.Kind = type?.conforms(to: .image) == true ? .image : .file
+        Task {
+            let result = await Task.detached(priority: .userInitiated) {
+                let scoped = url.startAccessingSecurityScopedResource()
+                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                do {
+                    return Result<Data, Error>.success(try Data(contentsOf: url))
+                } catch {
+                    return Result<Data, Error>.failure(error)
+                }
+            }.value
+            switch result {
+            case let .success(data):
+                let name = url.lastPathComponent.isEmpty ? "Pasted file" : url.lastPathComponent
+                if kind == .image, let type {
+                    guard
+                        let prepared = await ComposerPasteProviderLoader.prepareImage(
+                            data: data,
+                            suggestedName: name,
+                            contentType: type
+                        )
+                    else {
+                        let message =
+                            "Couldn't prepare the pasted image. Try copying it again or choose it from Photos."
+                        if controller.discardLoadingAttachment(id: attachmentID) {
+                            onFailure(message, .image)
+                        }
+                        return
+                    }
+                    if let message = controller.resolveLoadingAttachment(
+                        id: attachmentID,
+                        name: prepared.name,
+                        mimeType: prepared.mimeType,
+                        kind: .image,
+                        data: prepared.data
+                    ) {
+                        onFailure(message, .image)
+                    }
+                    return
+                }
+                if let message = controller.resolveLoadingAttachment(
+                    id: attachmentID,
+                    name: name,
+                    mimeType: mimeType,
+                    kind: kind,
+                    data: data
+                ) {
+                    onFailure(message, kind)
+                }
+            case let .failure(error):
+                let message = "Couldn't read “\(url.lastPathComponent)”: \(error.localizedDescription)"
+                if controller.discardLoadingAttachment(id: attachmentID) {
+                    onFailure(message, kind)
+                }
+            }
+        }
+    }
+
     /// Copies security-scoped picker URLs into the app's temp directory (the
     /// shared staging path reads bytes asynchronously, after the scope would
     /// otherwise be released) and hands them to the controller. The reads and
@@ -129,13 +191,20 @@ private struct ComposerAttachmentChip: View {
     let onRetry: () -> Void
 
     @State private var thumbnail: UIImage?
+    @State private var quickLookURL: QuickLookURL?
 
-    private var isFailed: Bool {
-        if case .failed = attachment.state { return true }
-        return false
+    private var failureReason: String? {
+        if case let .failed(reason) = attachment.state { return reason }
+        return nil
     }
 
-    private var isUploading: Bool { attachment.state == .uploading }
+    private var isFailed: Bool {
+        failureReason != nil
+    }
+
+    private var isBusy: Bool {
+        attachment.state == .loading || attachment.state == .uploading
+    }
 
     var body: some View {
         Group {
@@ -147,71 +216,139 @@ private struct ComposerAttachmentChip: View {
         }
         .overlay(alignment: .topTrailing) { removeButton }
         .overlay {
-            if isUploading {
+            if isBusy {
                 ProgressView()
                     .controlSize(.small)
                     .padding(4)
                     .background(.ultraThinMaterial, in: Circle())
-            } else if isFailed {
-                Button(action: onRetry) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.caption2.weight(.bold))
-                        .padding(5)
-                        .background(.ultraThinMaterial, in: Circle())
-                }
-                .buttonStyle(.plain)
+                    .allowsHitTesting(false)
             }
         }
-        .task(id: attachment.id) {
+        .overlay(alignment: .bottom) {
+            if let reason = failureReason, attachment.hasVisualPreview {
+                visualRetryButton(reason: reason)
+                    .padding(6)
+            }
+        }
+        .task(id: attachment.localData.count) {
             guard attachment.hasVisualPreview, thumbnail == nil else { return }
             let data = attachment.localData
             thumbnail = await Task.detached(priority: .userInitiated) {
                 UIImage(data: data)?.preparingThumbnail(of: CGSize(width: 320, height: 320))
             }.value
         }
+        .sheet(item: $quickLookURL) { item in
+            QuickLookPreview(url: item.url)
+                .ignoresSafeArea()
+                .presentationDragIndicator(.visible)
+        }
     }
 
     private var thumbnailView: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color.secondary.opacity(0.12))
-            if let thumbnail {
-                Image(uiImage: thumbnail)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } else {
-                Image(systemName: attachment.isVideo ? "video" : "photo")
-                    .font(.title3)
-                    .foregroundStyle(.tertiary)
+        Button(action: preview) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color.secondary.opacity(0.12))
+                if let thumbnail {
+                    Image(uiImage: thumbnail)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    Image(systemName: attachment.isVideo ? "video" : "photo")
+                        .font(.title3)
+                        .foregroundStyle(.tertiary)
+                }
             }
+            .frame(width: 96, height: 96)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .contentShape(RoundedRectangle(cornerRadius: 16))
         }
-        .frame(width: 96, height: 96)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .buttonStyle(.plain)
+        .disabled(!canPreview)
         .opacity(isFailed ? 0.5 : 1)
-        .accessibilityLabel(attachment.name)
+        .accessibilityLabel("Preview \(attachment.name)")
+        .accessibilityValue(isFailed ? "Upload failed" : "")
+        .accessibilityHint(canPreview ? "Opens the attachment preview" : "Attachment is still loading")
     }
 
     private var fileChip: some View {
         HStack(spacing: 6) {
-            Image(systemName: "doc")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(attachment.name)
-                .font(.caption)
-                // At accessibility sizes, reflow to a second line and widen
-                // rather than truncating harder as text grows.
-                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-                .truncationMode(.middle)
-                .frame(
-                    maxWidth: dynamicTypeSize.isAccessibilitySize ? 240 : 140,
-                    alignment: .leading
-                )
+            Button(action: preview) {
+                HStack(spacing: 6) {
+                    Image(systemName: "doc")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(attachment.name)
+                        .font(.caption)
+                        // At accessibility sizes, reflow to a second line and widen
+                        // rather than truncating harder as text grows.
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                        .truncationMode(.middle)
+                        .frame(
+                            maxWidth: dynamicTypeSize.isAccessibilitySize ? 240 : 140,
+                            alignment: .leading
+                        )
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!canPreview)
+            .opacity(isFailed ? 0.5 : 1)
+            .accessibilityLabel("Preview \(attachment.name)")
+            .accessibilityValue(isFailed ? "Upload failed" : "")
+            .accessibilityHint(
+                canPreview ? "Opens the attachment preview" : "Attachment is still loading"
+            )
+
+            if let reason = failureReason {
+                fileRetryButton(reason: reason)
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
-        .opacity(isFailed ? 0.5 : 1)
-        .accessibilityLabel(attachment.name)
+    }
+
+    private var canPreview: Bool { !attachment.localData.isEmpty }
+
+    private func preview() {
+        guard canPreview else { return }
+        let data = attachment.localData
+        let name = attachment.name
+        Task {
+            guard let url = await materializeQuickLookURL(data: data, name: name) else { return }
+            quickLookURL = QuickLookURL(url: url)
+        }
+    }
+
+    private func visualRetryButton(reason: String) -> some View {
+        Button(action: onRetry) {
+            Label("Retry", systemImage: "exclamationmark.circle.fill")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 8)
+                .frame(height: 28)
+                .background(.black.opacity(0.72), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .expandedHitTarget(base: 28)
+        .accessibilityLabel("Retry uploading \(attachment.name)")
+        .accessibilityHint(reason)
+    }
+
+    private func fileRetryButton(reason: String) -> some View {
+        Button(action: onRetry) {
+            Label("Retry", systemImage: "exclamationmark.circle.fill")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.red)
+                .padding(.horizontal, 8)
+                .frame(height: 28)
+                .background(.red.opacity(0.1), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .expandedHitTarget(base: 28)
+        .accessibilityLabel("Retry uploading \(attachment.name)")
+        .accessibilityHint(reason)
     }
 
     private var removeButton: some View {
