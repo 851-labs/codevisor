@@ -11,7 +11,10 @@ One Cloudflare Worker contains the whole plane:
   api keys as machine credentials.
 - **`UserHub` Durable Object** — one per account. Apps and machines dial in
   over WebSockets (hibernation: idle machines cost ~nothing); the hub tracks
-  presence and routes relay frames between peers.
+  presence and routes relay frames between peers. Placement follows the first
+  device to touch the account: every hub access passes a location hint derived
+  from the request's geolocation (`src/location-hint.ts`), so hubs spawn near
+  their users instead of wherever Cloudflare's default placement lands.
 - **Relay protocol** — multiplexed channels (`@codevisor/api` cloud-protocol).
   Channel payloads are sealed end-to-end between devices
   (`@codevisor/cloud-crypto`: X25519 + XChaCha20-Poly1305); the hub only ever
@@ -86,9 +89,14 @@ trusting a server.
 ## Deploys (hosted instance)
 
 `.github/workflows/deploy-cloud.yml` deploys continuously from `main`
-(path-filtered): typecheck + tests → D1 migrations → `wrangler deploy` to
-`cloud.codevisor.dev`. Deploys drop all WebSockets by design;
-clients auto-reconnect and terminal sessions resume via seq replay.
+(path-filtered): typecheck + tests → D1 migrations → gradual rollout to
+`cloud.codevisor.dev` (`wrangler versions`: 10% canary, 10-minute soak, then
+100%). A deploy still restarts each hub and drops its WebSockets — Durable
+Object sockets cannot be drained — but the rollout spreads those drops across
+cohorts instead of hitting every user at once; clients auto-reconnect and
+terminal sessions resume via seq replay. Releases that add a Durable Object
+migration must use `workflow_dispatch` with `full_deploy` (all at once:
+`versions upload` cannot ship DO migrations).
 
 Schema changes must be **additive-only** (old code briefly runs against the
 new schema during a deploy). `UserHub`'s internal SQLite migrations live in

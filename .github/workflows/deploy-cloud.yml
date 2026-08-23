@@ -11,10 +11,16 @@ on:
       - "bun.lock"
       - ".github/workflows/deploy-cloud.yml"
   workflow_dispatch:
+    inputs:
+      full_deploy:
+        description: "Deploy all at once (required for releases that add a Durable Object
+          migration — `wrangler versions upload` cannot ship those)"
+        type: boolean
+        default: false
 
 concurrency:
   group: deploy-cloud
-  # Never cancel a run mid-migration; queued runs wait their turn.
+  # Never cancel a run mid-migration or mid-rollout; queued runs wait their turn.
   cancel-in-progress: false
 
 env:
@@ -43,8 +49,61 @@ jobs:
         run: bunx wrangler d1 migrations apply codevisor-cloud --remote
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      - name: Deploy to Cloudflare
+      - name: Build CSS
         working-directory: apps/cloud
-        run: bun run build:css && bunx wrangler deploy
+        run: bun run build:css
+      # Escape hatch: `versions upload` cannot ship new Durable Object
+      # migrations (wrangler.jsonc `migrations`), so a release that adds one
+      # must go out all at once via workflow_dispatch with full_deploy=true.
+      - name: Deploy to Cloudflare (all at once)
+        if: ${{ inputs.full_deploy }}
+        working-directory: apps/cloud
+        run: bunx wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      # Gradual deployment. A deploy restarts every UserHub Durable Object and
+      # drops its WebSockets (a platform behavior — DO sockets cannot be
+      # drained), so roll the new version out to 10% of hubs first, soak, then
+      # promote: cohort-sized reconnect blips instead of a global one. Clients
+      # auto-reconnect with jittered backoff and resume via seq replay.
+      # Consequence of the split rollout: for its duration, old-version DOs
+      # can serve requests routed through new-version Workers and vice versa,
+      # so Worker<->DO contract changes must be forwards and backwards
+      # compatible (same additive-only discipline as the D1 schema).
+      - name: Upload new version
+        if: ${{ !inputs.full_deploy }}
+        id: upload
+        working-directory: apps/cloud
+        run: |
+          bunx wrangler versions upload --message "${GITHUB_SHA}" | tee upload-output.txt
+          version_id="$(grep -ioE 'version id:[[:space:]]*[0-9a-f-]{36}' upload-output.txt | grep -ioE '[0-9a-f-]{36}' | head -n 1)"
+          if [ -z "$version_id" ]; then
+            version_id="$(grep -ioE '\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b' upload-output.txt | head -n 1)"
+          fi
+          if [ -z "$version_id" ]; then
+            echo "::error::could not parse the uploaded version id from wrangler output"
+            exit 1
+          fi
+          echo "version_id=$version_id" >> "$GITHUB_OUTPUT"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      - name: Canary at 10%
+        if: ${{ !inputs.full_deploy }}
+        working-directory: apps/cloud
+        # The previously deployed version keeps the remaining 90%.
+        run: bunx wrangler versions deploy "${{ steps.upload.outputs.version_id }}@10%" --yes
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      - name: Soak canary
+        if: ${{ !inputs.full_deploy }}
+        run: |
+          sleep 600
+          curl --fail --silent --show-error https://cloud.codevisor.dev/health
+      - name: Promote to 100%
+        if: ${{ !inputs.full_deploy }}
+        working-directory: apps/cloud
+        run: bunx wrangler versions deploy "${{ steps.upload.outputs.version_id }}@100%" --yes
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      - name: Verify deployed instance
+        run: curl --fail --silent --show-error https://cloud.codevisor.dev/health
