@@ -3,6 +3,7 @@ import { CLOUD_PROTOCOL_VERSION } from "@codevisor/api"
 import { Hono } from "hono"
 import { createAuth } from "./auth.js"
 import { DEV_USER, isDevAuthEnabled, type CloudEnv } from "./env.js"
+import { hubLocationHint } from "./location-hint.js"
 import { devLoginPage, devicePage, handoffPage, homePage, loginPage } from "./pages/pages.js"
 import { PLUGIN_INDEX_KEY, pluginEntryKey, refreshPluginIndex } from "./plugin-registry.js"
 import { HUB_DEVICE_ID_HEADER, HUB_KIND_HEADER, UserHub } from "./user-hub.js"
@@ -14,8 +15,16 @@ export { UserHub }
 
 type HonoEnv = { Bindings: CloudEnv }
 
-const hub = (env: CloudEnv, userId: string): DurableObjectStub<UserHub> =>
-  (env.USER_HUB as unknown as DurableObjectNamespace<UserHub>).getByName(userId)
+/// Every access passes a location hint derived from the caller's geolocation:
+/// hints only matter on the request that CREATES the hub (they are ignored
+/// afterward), so the first device to touch an account places its hub nearby.
+const hub = (env: CloudEnv, userId: string, cf: unknown): DurableObjectStub<UserHub> => {
+  const locationHint = hubLocationHint(cf)
+  return (env.USER_HUB as unknown as DurableObjectNamespace<UserHub>).getByName(
+    userId,
+    locationHint === undefined ? undefined : { locationHint }
+  )
+}
 
 const sessionUserId = async (env: CloudEnv, headers: Headers): Promise<string | undefined> => {
   const session = await createAuth(env).api.getSession({ headers })
@@ -105,7 +114,7 @@ app.get("/login/github", async (c) => {
 app.get("/api/machines", async (c) => {
   const userId = await sessionUserId(c.env, c.req.raw.headers)
   if (userId === undefined) return c.json({ error: "unauthorized" }, 401)
-  return c.json({ machines: await hub(c.env, userId).listMachines() })
+  return c.json({ machines: await hub(c.env, userId, c.req.raw.cf).listMachines() })
 })
 
 app.post("/api/machines/:deviceId/rename", async (c) => {
@@ -116,7 +125,10 @@ app.post("/api/machines/:deviceId/rename", async (c) => {
   if (name === undefined || name.length === 0 || name.length > 120) {
     return c.json({ error: "invalid name" }, 400)
   }
-  const renamed = await hub(c.env, userId).renameMachine(c.req.param("deviceId"), name)
+  const renamed = await hub(c.env, userId, c.req.raw.cf).renameMachine(
+    c.req.param("deviceId"),
+    name
+  )
   return renamed ? c.json({ ok: true }) : c.json({ error: "unknown machine" }, 404)
 })
 
@@ -134,7 +146,7 @@ app.delete("/api/machines/:deviceId", async (c) => {
       await auth.api.deleteApiKey({ body: { keyId: key.id }, headers: c.req.raw.headers })
     }
   }
-  const removed = await hub(c.env, session.user.id).removeMachine(deviceId)
+  const removed = await hub(c.env, session.user.id, c.req.raw.cf).removeMachine(deviceId)
   return removed ? c.json({ ok: true }) : c.json({ error: "unknown machine" }, 404)
 })
 
@@ -223,7 +235,7 @@ app.get("/connect", async (c) => {
     userId = sessionUser
     headers.set(HUB_KIND_HEADER, "app")
   }
-  return hub(c.env, userId).fetch(new Request(c.req.raw.url, { headers }))
+  return hub(c.env, userId, c.req.raw.cf).fetch(new Request(c.req.raw.url, { headers }))
 })
 
 // -- Pages (the only human-facing HTML in the system) -------------------------
