@@ -59,6 +59,28 @@ struct AssistantMarkdownAttachmentsTests {
             ) == [.markdown(markdown)])
     }
 
+    @Test("Streaming defers unreferenced terminal attachments")
+    func streamingUnreferencedAttachments() {
+        let markdown = "The response is still growing"
+        #expect(
+            assistantMarkdownSegments(
+                markdown,
+                attachments: [recording],
+                includeServerPaths: false,
+                includeUnreferencedAttachments: false
+            ) == [.markdown(markdown)])
+        #expect(
+            assistantMarkdownSegments(
+                markdown,
+                attachments: [recording],
+                includeServerPaths: false,
+                includeUnreferencedAttachments: true
+            ) == [
+                .markdown(markdown),
+                .file(PreviewFile(attachment: recording), label: recording.name),
+            ])
+    }
+
     @Test("Extensionless Markdown destinations remain links")
     func extensionlessFiles() {
         let markdown = "Open [the readme](README)."

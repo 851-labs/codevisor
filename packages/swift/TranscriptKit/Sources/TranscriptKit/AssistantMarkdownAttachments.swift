@@ -272,7 +272,8 @@ public func markdownLocalFilePath(_ target: String) -> String? {
 public func assistantMarkdownSegments(
     _ markdown: String,
     attachments: [Attachment],
-    includeServerPaths: Bool = true
+    includeServerPaths: Bool = true,
+    includeUnreferencedAttachments: Bool = true
 ) -> [AssistantMarkdownSegment] {
     let byID = Dictionary(uniqueKeysWithValues: attachments.map { ($0.fileId, $0) })
     var referenced = Set<String>()
@@ -317,8 +318,10 @@ public func assistantMarkdownSegments(
     if offset < markdown.endIndex {
         segments.append(.markdown(String(markdown[offset...])))
     }
-    for attachment in attachments where !referenced.contains(attachment.fileId) {
-        segments.append(.file(PreviewFile(attachment: attachment), label: attachment.name))
+    if includeUnreferencedAttachments {
+        for attachment in attachments where !referenced.contains(attachment.fileId) {
+            segments.append(.file(PreviewFile(attachment: attachment), label: attachment.name))
+        }
     }
     return segments
 }

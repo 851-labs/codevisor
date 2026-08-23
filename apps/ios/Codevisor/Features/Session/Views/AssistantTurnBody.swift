@@ -165,35 +165,19 @@ struct AssistantTurnBody: View {
 
     @ViewBuilder
     private func assistantResponse(entryID: String, markdown: String) -> some View {
-        let segments = assistantMarkdownSegments(
-            markdown,
+        StreamingAssistantResponseView(
+            turnID: turnId,
+            entryID: entryID,
+            markdown: markdown,
             attachments: turn.attachments,
-            includeServerPaths: !isGenerating
-        )
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(segments.enumerated()), id: \.offset) { index, segment in
-                switch segment {
-                case let .markdown(value):
-                    if !value.isEmpty {
-                        StreamingMarkdownView(
-                            value,
-                            isComplete: !isGenerating,
-                            streamID: TranscriptStreamingTextIdentity.mainResponseSegment(
-                                turnID: turnId,
-                                entryID: entryID,
-                                segmentIndex: index
-                            ),
-                            animationPresentation: textAnimationPresentation
-                        )
-                    }
-                case let .file(file, label):
-                    VStack(alignment: .leading, spacing: 4) {
-                        AttachmentThumbnailView(file: file, inline: true)
-                        Text(label)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+            isGenerating: isGenerating,
+            animationPresentation: textAnimationPresentation
+        ) { file, label in
+            VStack(alignment: .leading, spacing: 4) {
+                AttachmentThumbnailView(file: file, inline: true)
+                Text(label)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }

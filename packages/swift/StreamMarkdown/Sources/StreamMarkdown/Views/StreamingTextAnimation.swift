@@ -1,5 +1,7 @@
 import Foundation
+import Observation
 import QuartzCore
+import SwiftUI
 
 /// The native transcription of ChatGPT's streamed-markdown entrance timing.
 ///
@@ -59,8 +61,47 @@ public final class StreamingTextAnimationPresentation {
     /// Returns true only for a semantic stream first seen during this mounted
     /// presentation. A later native-view remount of the same stream baselines
     /// its current contents instead of replaying their entrance animation.
-    func claimInitialAnimation(for streamID: String) -> Bool {
+    public func claimInitialAnimation(for streamID: String) -> Bool {
         presentedStreamIDs.insert(streamID).inserted
+    }
+}
+
+/// A response-wide animation clock shared by multiple Markdown slices and
+/// native elements such as attachment previews. Sharing this object keeps
+/// every surface on one document-order cadence instead of restarting at each
+/// renderer boundary.
+@MainActor
+@Observable
+public final class StreamingContentAnimationCoordinator {
+    public private(set) var hasActiveEntranceAnimation = false
+    let timeline = StreamingTextAnimationTimeline()
+
+    public init() {
+        timeline.observeActivity { [weak self] active in
+            self?.hasActiveEntranceAnimation = active
+        }
+    }
+
+    public func waitUntilIdle() async throws {
+        try await timeline.waitUntilIdle()
+    }
+
+    public func scheduleElementEntrance() {
+        timeline.scheduleBlockEntrance()
+    }
+
+    public func reset() {
+        timeline.reset()
+    }
+
+    public static var elementEntranceAnimation: Animation {
+        .timingCurve(
+            StreamingTextAnimationSpec.fadeCurveX1,
+            StreamingTextAnimationSpec.fadeCurveY1,
+            StreamingTextAnimationSpec.fadeCurveX2,
+            StreamingTextAnimationSpec.fadeCurveY2,
+            duration: StreamingTextAnimationSpec.fadeDuration
+        )
     }
 }
 

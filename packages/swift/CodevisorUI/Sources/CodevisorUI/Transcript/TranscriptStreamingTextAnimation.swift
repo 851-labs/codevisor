@@ -44,7 +44,8 @@ public enum TranscriptStreamingTextIdentity {
             let segments = assistantMarkdownSegments(
                 markdown,
                 attachments: turn.attachments,
-                includeServerPaths: !turn.isGenerating
+                includeServerPaths: !turn.isGenerating,
+                includeUnreferencedAttachments: !turn.isGenerating
             )
             for (index, segment) in segments.enumerated() {
                 guard case let .markdown(value) = segment, !value.isEmpty else { continue }
@@ -55,6 +56,9 @@ public enum TranscriptStreamingTextIdentity {
                         segmentIndex: index
                     ))
             }
+        }
+        if turn.finalTextIndex == nil, !turn.attachments.isEmpty {
+            result.append(main(turnID: turnID, entryID: "attachments"))
         }
         for (parentToolCallID, transcript) in turn.subagents {
             result.append(

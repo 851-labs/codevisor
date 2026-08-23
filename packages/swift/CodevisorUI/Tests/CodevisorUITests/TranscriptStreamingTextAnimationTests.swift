@@ -79,4 +79,34 @@ struct TranscriptStreamingTextAnimationTests {
                     segmentIndex: 1
                 )))
     }
+
+    @Test("Attachment-only response surfaces are settled on navigation")
+    func settledAttachmentOnlyResponse() {
+        let turnID = UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!
+        let attachment = Attachment(
+            fileId: "file-1",
+            name: "plot.png",
+            mimeType: "image/png",
+            sizeBytes: 42,
+            kind: .image
+        )
+        let turn = AssistantTurn(
+            attachments: [attachment],
+            isGenerating: false
+        )
+
+        let ids = Set(
+            TranscriptStreamingTextIdentity.settledStreamIDs(
+                turn: turn,
+                turnID: turnID
+            )
+        )
+
+        #expect(
+            ids.contains(
+                TranscriptStreamingTextIdentity.main(
+                    turnID: turnID,
+                    entryID: "attachments"
+                )))
+    }
 }

@@ -65,6 +65,7 @@ public struct StreamingMarkdownView: View {
     private let foregroundColor: Color?
     private let streamID: String?
     private let animationPresentation: StreamingTextAnimationPresentation?
+    private let animationCoordinator: StreamingContentAnimationCoordinator?
     @Environment(\.markdownTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Per-view-identity incremental state (see `StreamingSegmenter`). A
@@ -90,13 +91,15 @@ public struct StreamingMarkdownView: View {
         isComplete: Bool = true,
         foregroundColor: Color? = nil,
         streamID: String? = nil,
-        animationPresentation: StreamingTextAnimationPresentation? = nil
+        animationPresentation: StreamingTextAnimationPresentation? = nil,
+        animationCoordinator: StreamingContentAnimationCoordinator? = nil
     ) {
         self.text = text
         self.isComplete = isComplete
         self.foregroundColor = foregroundColor
         self.streamID = streamID
         self.animationPresentation = animationPresentation
+        self.animationCoordinator = animationCoordinator
     }
 
     public var body: some View {
@@ -105,10 +108,11 @@ public struct StreamingMarkdownView: View {
             presentation: animationPresentation
         )
         let _ = animationMountRevision
+        let resolvedAnimationTimeline = animationCoordinator?.timeline ?? animationTimeline
         MarkdownSegmentListView(
             segments: segmenter.segments(for: text, isComplete: isComplete),
             foregroundColor: foregroundColor ?? theme.textForeground,
-            animationTimeline: isComplete ? nil : animationTimeline,
+            animationTimeline: isComplete ? nil : resolvedAnimationTimeline,
             animatesInitialContent: mount.animatesInitialContent,
             documentSource: text,
             // A reused SwiftUI/native surface must reset its word reconciler
@@ -118,22 +122,25 @@ public struct StreamingMarkdownView: View {
         )
         .preference(
             key: StreamingMarkdownEntranceAnimationPreferenceKey.self,
-            value: hasActiveEntranceAnimation
+            value: animationCoordinator?.hasActiveEntranceAnimation
+                ?? hasActiveEntranceAnimation
         )
         .onAppear {
-            animationTimeline.observeActivity { active in
+            guard animationCoordinator == nil else { return }
+            resolvedAnimationTimeline.observeActivity { active in
                 hasActiveEntranceAnimation = active
             }
         }
         .onDisappear {
-            animationTimeline.observeActivity(nil)
+            guard animationCoordinator == nil else { return }
+            resolvedAnimationTimeline.observeActivity(nil)
             hasActiveEntranceAnimation = false
         }
         .onChange(of: isComplete, initial: true) { _, complete in
-            if complete { animationTimeline.reset() }
+            if complete { resolvedAnimationTimeline.reset() }
         }
         .onChange(of: reduceMotion) { _, reduced in
-            if reduced { animationTimeline.reset() }
+            if reduced { resolvedAnimationTimeline.reset() }
         }
         .task(id: mount.activationToken) {
             guard mount.needsActivation else { return }
