@@ -80,6 +80,25 @@ export interface ExternalTerminalConfig {
 /// (dev servers); cap the replay buffer so memory stays bounded. Clients that
 /// reconnect past the trim point lose the oldest scrollback only.
 const EXTERNAL_TERMINAL_MAX_FRAMES = 20_000
+
+/// A serializable dump of one terminal's replay state, as captured by
+/// `snapshotTerminals` — everything `restoreTerminals` needs to keep
+/// scrollback readable and `lastOutputSeq` replay coherent across a host
+/// restart. The process itself never survives a restart, so restored
+/// terminals are process-less and closed.
+export interface TerminalSnapshotEntry {
+  readonly terminalId: string
+  readonly sessionId: string
+  readonly frames: ReadonlyArray<TerminalServerFrame>
+  readonly nextOutputSeq: number
+  readonly closed: boolean
+  readonly external: boolean
+}
+
+export interface TerminalSnapshot {
+  readonly version: 1
+  readonly terminals: ReadonlyArray<TerminalSnapshotEntry>
+}
 const GHOSTTY_TERM = "xterm-ghostty"
 const PORTABLE_TERM = "xterm-256color"
 const BUNDLED_GHOSTTY_TERMINFO_DIRECTORY = fileURLToPath(
@@ -157,6 +176,18 @@ export interface TerminalManagerService {
     config: ExternalTerminalConfig,
     process: TerminalProcess
   ) => ExternalTerminalHandle
+  /// Serializable dump of every terminal's replay buffer. Synchronous so the
+  /// server can call it from process exit handlers; frame counts are bounded
+  /// per terminal, so the snapshot is bounded too.
+  readonly snapshotTerminals: () => TerminalSnapshot
+  /// Restores a previous process's snapshot. Restored terminals are closed
+  /// and process-less: they replay scrollback (and a synthetic exit frame if
+  /// the process was still live at snapshot time) but never accept input.
+  /// External terminals reclaim their session mapping so `attachOnly` clients
+  /// still reach their scrollback; regular session shells do not, so the next
+  /// createTerminal for the session spawns a fresh shell as usual. Terminal
+  /// ids that already exist are skipped — call this before serving clients.
+  readonly restoreTerminals: (snapshot: TerminalSnapshot) => void
 }
 
 export class TerminalManager extends Context.Service<TerminalManager, TerminalManagerService>()(
@@ -419,6 +450,52 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
         }
         return closed
       }),
+    snapshotTerminals: () => ({
+      version: 1,
+      terminals: [...terminals.values()].map((terminal) => ({
+        terminalId: terminal.terminalId,
+        sessionId: terminal.sessionId,
+        // Regular terminals have no in-memory cap (they live and die with a
+        // session), so bound what we persist to the external-terminal cap.
+        frames: terminal.frames.slice(-EXTERNAL_TERMINAL_MAX_FRAMES),
+        nextOutputSeq: terminal.nextOutputSeq,
+        closed: terminal.closed,
+        external: terminal.external
+      }))
+    }),
+    restoreTerminals: (snapshot) => {
+      for (const entry of snapshot.terminals) {
+        if (terminals.has(entry.terminalId)) continue
+        const terminal: RunningTerminal = {
+          terminalId: entry.terminalId,
+          sessionId: entry.sessionId,
+          process: noopProcess,
+          sinks: new Set(),
+          frames: [...entry.frames],
+          // Input dedup state is irrelevant to a closed, process-less
+          // terminal: external ones ignore input, regular ones refuse it.
+          clientSeqs: new Map(),
+          nextOutputSeq: entry.nextOutputSeq,
+          closed: true,
+          external: entry.external
+        }
+        // The process died with the previous server; terminals that were
+        // still live at snapshot time replay a synthetic exit so attached
+        // clients learn the process is gone rather than waiting on it.
+        if (!entry.closed) {
+          terminal.frames.push(sequenceFrame(terminal.nextOutputSeq, { type: "exit" }))
+          terminal.nextOutputSeq += 1
+        }
+        terminals.set(entry.terminalId, terminal)
+        // Only external terminals reclaim their session key: their contract is
+        // "attachable after exit". A restored session shell must not claim it,
+        // or createTerminal would hand back dead scrollback instead of
+        // spawning the fresh shell the client expects.
+        if (entry.external && !terminalsBySession.has(entry.sessionId)) {
+          terminalsBySession.set(entry.sessionId, entry.terminalId)
+        }
+      }
+    },
     registerExternalTerminal: (config, process) => {
       const terminalId = randomUUID()
       const terminal: RunningTerminal = {
@@ -495,6 +572,16 @@ export const nodePtySpawner: TerminalSpawner = {
           message: cause instanceof Error ? cause.message : String(cause)
         })
     })
+}
+/* v8 ignore stop */
+
+/// Stand-in process for restored terminals: the real process died with the
+/// previous server, and restored terminals are closed, so nothing routes here.
+/* v8 ignore start -- restored terminals are closed; no code path reaches the stand-in process. */
+const noopProcess: TerminalProcess = {
+  write: () => undefined,
+  resize: () => undefined,
+  kill: () => undefined
 }
 /* v8 ignore stop */
 

@@ -55,6 +55,7 @@ import {
 import { makeHarnessLifecycleManager } from "@codevisor/harness-manager"
 import { defaultServerConfig, startCodevisorServer, type CodevisorServerUpdater } from "./server.js"
 import { acquireServerLease, type ServerLease } from "./infra/server-lease.js"
+import { makeTerminalPersistence } from "./infra/terminal-persistence.js"
 import { makeHarnessAuthManager } from "@codevisor/harness-manager"
 import { makeMcpManager } from "@codevisor/mcp"
 import { makeNativeMcpManager } from "@codevisor/mcp"
@@ -675,6 +676,16 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
             ]
           })
     const terminal = makeTerminalManager()
+    // Terminal scrollback and seq-replay survive host restarts (self-update
+    // handoffs, service restarts): restore the previous process's buffers,
+    // then flush on every graceful exit path.
+    const terminalPersistence = makeTerminalPersistence({
+      dataDir: dirname(databasePath),
+      terminal,
+      log: (line) => console.log(line)
+    })
+    terminalPersistence.restore()
+    terminalPersistence.installExitHooks()
     const backgroundTerminals = yield* Effect.promise(() => backgroundTerminalIntegration(terminal))
     // Cloud relay: when this machine is connected to a Codevisor Cloud
     // account (`codevisor auth login`, or dev auto-provisioning), hold a
