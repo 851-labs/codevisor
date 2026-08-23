@@ -13,6 +13,10 @@ enum StreamingTextAnimationSpec {
     static let maximumRegularQueueDelay: TimeInterval = 0.096
     static let catchUpMultiplier = 0.25
     static let minimumCatchUpDelay: TimeInterval = 0.001
+    static let fadeCurveX1 = 0.37
+    static let fadeCurveY1 = 0.55
+    static let fadeCurveX2 = 0.86
+    static let fadeCurveY2 = 0.88
 
     static var catchUpDelay: TimeInterval {
         max(minimumCatchUpDelay, segmentDelay * catchUpMultiplier)
@@ -82,6 +86,28 @@ final class StreamingTextAnimationTimeline {
         nextSegmentStartTime = start + step
         noteAnimation(until: start + StreamingTextAnimationSpec.fadeDuration, now: now)
         return start
+    }
+
+    /// Adds a whole native Markdown block to the same visual cadence as the
+    /// streamed glyphs. Callers wait for the timeline to become idle before
+    /// inserting the block, then wait again before mounting later content.
+    func scheduleBlockEntrance(at now: TimeInterval = CACurrentMediaTime()) {
+        let start = max(nextSegmentStartTime, now)
+        nextSegmentStartTime = start + StreamingTextAnimationSpec.segmentDelay
+        noteAnimation(until: start + StreamingTextAnimationSpec.fadeDuration, now: now)
+    }
+
+    /// Suspends through the current animation tail. Newly scheduled work can
+    /// extend that tail while this method sleeps, so the deadline is checked
+    /// again after every wakeup.
+    func waitUntilIdle() async throws {
+        await Task.yield()
+        while true {
+            try Task.checkCancellation()
+            let now = CACurrentMediaTime()
+            guard let latestAnimationEndTime, latestAnimationEndTime > now else { return }
+            try await Task.sleep(for: .seconds(latestAnimationEndTime - now))
+        }
     }
 
     func reset() {
@@ -433,10 +459,10 @@ enum StreamingWordSegmenter {
 /// fraction x. Newton iteration handles the common case; bisection makes the
 /// result deterministic near flat tangents.
 enum StreamingTextFadeCurve {
-    private static let x1 = 0.37
-    private static let y1 = 0.55
-    private static let x2 = 0.86
-    private static let y2 = 0.88
+    private static let x1 = StreamingTextAnimationSpec.fadeCurveX1
+    private static let y1 = StreamingTextAnimationSpec.fadeCurveY1
+    private static let x2 = StreamingTextAnimationSpec.fadeCurveX2
+    private static let y2 = StreamingTextAnimationSpec.fadeCurveY2
 
     static func value(at progress: Double) -> Double {
         let progress = min(1, max(0, progress))

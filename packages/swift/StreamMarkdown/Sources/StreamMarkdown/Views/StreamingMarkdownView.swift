@@ -194,21 +194,84 @@ struct MarkdownSegmentListView: View {
     let animationPath: String
     let reduceMotion: Bool
     @Environment(\.markdownTheme) private var theme
+    @State private var blockEntranceSequence = StreamingMarkdownBlockEntranceSequence()
+    @State private var blockEntranceRevision = 0
 
     var body: some View {
+        let resolution = blockEntranceSequence.resolve(
+            segments: segments,
+            animationPath: animationPath,
+            animationEnabled: animationTimeline != nil,
+            animatesInitialContent: animatesInitialContent,
+            reduceMotion: reduceMotion
+        )
+        let _ = blockEntranceRevision
         VStack(alignment: .leading, spacing: theme.blockSpacing) {
             ForEach(Array(segments.enumerated()), id: \.offset) { index, segment in
-                MarkdownSegmentView(
-                    segment: segment,
-                    foregroundColor: foregroundColor,
-                    animationTimeline: animationTimeline,
-                    animationEnabled: animationTimeline != nil,
-                    animatesInitialContent: animatesInitialContent,
-                    documentSource: documentSource,
-                    animationPath: "\(animationPath).\(index)",
-                    reduceMotion: reduceMotion
-                )
-                .equatable()
+                if index < resolution.visibleSegmentCount {
+                    MarkdownSegmentView(
+                        segment: segment,
+                        foregroundColor: foregroundColor,
+                        animationTimeline: animationTimeline,
+                        animationEnabled: animationTimeline != nil,
+                        animatesInitialContent: animatesInitialContent,
+                        documentSource: documentSource,
+                        animationPath: "\(animationPath).\(index)",
+                        reduceMotion: reduceMotion
+                    )
+                    .equatable()
+                    .transition(
+                        resolution.revealingSegmentIndex == index
+                            ? .opacity
+                            : .identity
+                    )
+                }
+            }
+        }
+        .preference(
+            key: StreamingMarkdownEntranceAnimationPreferenceKey.self,
+            value: resolution.hasActiveEntrance
+        )
+        .task(id: resolution.pendingBlockID) {
+            guard let blockID = resolution.pendingBlockID,
+                let animationTimeline
+            else { return }
+
+            do {
+                // Native text surfaces schedule their words during the render
+                // pass. Yield once so their exact deadline is on the shared
+                // timeline before deciding that the prefix has finished.
+                try await animationTimeline.waitUntilIdle()
+                switch blockEntranceSequence.beginReveal(blockID: blockID) {
+                case .started:
+                    animationTimeline.scheduleBlockEntrance()
+                    withAnimation(
+                        .timingCurve(
+                            StreamingTextAnimationSpec.fadeCurveX1,
+                            StreamingTextAnimationSpec.fadeCurveY1,
+                            StreamingTextAnimationSpec.fadeCurveX2,
+                            StreamingTextAnimationSpec.fadeCurveY2,
+                            duration: StreamingTextAnimationSpec.fadeDuration
+                        )
+                    ) {
+                        blockEntranceRevision &+= 1
+                    }
+                case .resumed:
+                    break
+                case .unavailable:
+                    return
+                }
+
+                // A quote may mount nested animated prose with its bar. Wait
+                // for both the block fade and any such child text before
+                // activating the following document segment.
+                try await animationTimeline.waitUntilIdle()
+                guard blockEntranceSequence.finishReveal(blockID: blockID) else { return }
+                blockEntranceRevision &+= 1
+            } catch is CancellationError {
+                return
+            } catch {
+                return
             }
         }
     }

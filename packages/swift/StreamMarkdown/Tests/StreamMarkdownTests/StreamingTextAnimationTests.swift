@@ -242,4 +242,147 @@ struct StreamingTextAnimationTests {
         #expect(!presentation.claimInitialAnimation(for: "existing"))
         #expect(presentation.claimInitialAnimation(for: "later"))
     }
+
+    @Test("Structural blocks reveal in document order between animated text runs")
+    func structuralBlockSequence() {
+        let sequence = StreamingMarkdownBlockEntranceSequence()
+        let segments: [MarkdownSegment] = [
+            .textRun([.paragraph("Before")]),
+            .block(.codeBlock(language: "swift", code: "let x = 1", isComplete: true)),
+            .textRun([.paragraph("Between")]),
+            .block(
+                .table(
+                    headers: ["Name"],
+                    alignments: [.leading],
+                    rows: [["Ada"]]
+                )),
+            .textRun([.paragraph("After")]),
+        ]
+
+        var resolution = sequence.resolve(
+            segments: segments,
+            animationPath: "stream.answer.root",
+            animationEnabled: true,
+            animatesInitialContent: true,
+            reduceMotion: false
+        )
+        #expect(resolution.visibleSegmentCount == 1)
+        let codeID = try! #require(resolution.pendingBlockID)
+
+        #expect(sequence.beginReveal(blockID: codeID) == .started)
+        resolution = sequence.resolve(
+            segments: segments,
+            animationPath: "stream.answer.root",
+            animationEnabled: true,
+            animatesInitialContent: true,
+            reduceMotion: false
+        )
+        #expect(resolution.visibleSegmentCount == 2)
+        #expect(resolution.revealingSegmentIndex == 1)
+
+        #expect(sequence.finishReveal(blockID: codeID))
+        resolution = sequence.resolve(
+            segments: segments,
+            animationPath: "stream.answer.root",
+            animationEnabled: true,
+            animatesInitialContent: true,
+            reduceMotion: false
+        )
+        #expect(resolution.visibleSegmentCount == 3)
+        let tableID = try! #require(resolution.pendingBlockID)
+        #expect(tableID != codeID)
+
+        #expect(sequence.beginReveal(blockID: tableID) == .started)
+        #expect(sequence.finishReveal(blockID: tableID))
+        resolution = sequence.resolve(
+            segments: segments,
+            animationPath: "stream.answer.root",
+            animationEnabled: true,
+            animatesInitialContent: true,
+            reduceMotion: false
+        )
+        #expect(resolution.visibleSegmentCount == segments.count)
+        #expect(resolution.pendingBlockID == nil)
+    }
+
+    @Test("Navigation and Reduce Motion settle structural blocks immediately")
+    func settledStructuralBlocks() {
+        let sequence = StreamingMarkdownBlockEntranceSequence()
+        let existing: [MarkdownSegment] = [
+            .textRun([.paragraph("Before")]),
+            .block(.codeBlock(language: nil, code: "old", isComplete: false)),
+        ]
+
+        var resolution = sequence.resolve(
+            segments: existing,
+            animationPath: "stream.answer.root",
+            animationEnabled: true,
+            animatesInitialContent: false,
+            reduceMotion: false
+        )
+        #expect(resolution.visibleSegmentCount == existing.count)
+        #expect(resolution.pendingBlockID == nil)
+
+        let appended =
+            existing + [
+                .textRun([.paragraph("Later")]),
+                .block(.table(headers: ["A"], alignments: [.none], rows: [["1"]])),
+            ]
+        resolution = sequence.resolve(
+            segments: appended,
+            animationPath: "stream.answer.root",
+            animationEnabled: true,
+            animatesInitialContent: true,
+            reduceMotion: false
+        )
+        #expect(resolution.visibleSegmentCount == 3)
+        #expect(resolution.pendingBlockID != nil)
+
+        resolution = sequence.resolve(
+            segments: appended,
+            animationPath: "stream.answer.root",
+            animationEnabled: true,
+            animatesInitialContent: true,
+            reduceMotion: true
+        )
+        #expect(resolution.visibleSegmentCount == appended.count)
+        #expect(resolution.pendingBlockID == nil)
+    }
+
+    @Test("Growing a structural block keeps one entrance identity")
+    func stableStructuralBlockIdentity() {
+        let sequence = StreamingMarkdownBlockEntranceSequence()
+        let first: [MarkdownSegment] = [
+            .block(.codeBlock(language: "swift", code: "let", isComplete: false))
+        ]
+        var resolution = sequence.resolve(
+            segments: first,
+            animationPath: "stream.answer.root",
+            animationEnabled: true,
+            animatesInitialContent: true,
+            reduceMotion: false
+        )
+        let blockID = try! #require(resolution.pendingBlockID)
+        #expect(sequence.beginReveal(blockID: blockID) == .started)
+        #expect(sequence.beginReveal(blockID: blockID) == .resumed)
+        #expect(sequence.finishReveal(blockID: blockID))
+
+        let grown: [MarkdownSegment] = [
+            .block(
+                .codeBlock(
+                    language: "swift",
+                    code: "let value = 1",
+                    isComplete: true
+                ))
+        ]
+        resolution = sequence.resolve(
+            segments: grown,
+            animationPath: "stream.answer.root",
+            animationEnabled: true,
+            animatesInitialContent: true,
+            reduceMotion: false
+        )
+        #expect(resolution.visibleSegmentCount == grown.count)
+        #expect(resolution.pendingBlockID == nil)
+    }
 }
