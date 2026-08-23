@@ -131,4 +131,71 @@ struct StreamingAssistantResponseEntranceSequenceTests {
         #expect(resolution.visibleSegmentCount == 1)
         #expect(resolution.pendingFileID == nil)
     }
+
+    @Test("Provider completion drains visual work before finalization")
+    func completionDrain() {
+        let presentation = StreamingAssistantResponsePresentationState(
+            providerIsGenerating: true
+        )
+        #expect(presentation.phase == .receiving)
+        #expect(!presentation.isComplete)
+        #expect(presentation.nextWork(pendingFileID: nil) == .idle)
+
+        #expect(presentation.observeProvider(isGenerating: false))
+        #expect(presentation.phase == .draining)
+        #expect(!presentation.isComplete)
+        #expect(
+            presentation.nextWork(pendingFileID: "file-1")
+                == .revealFile("file-1")
+        )
+        #expect(presentation.nextWork(pendingFileID: nil) == .finishPresentation)
+
+        #expect(presentation.finishPresentation())
+        #expect(presentation.phase == .complete)
+        #expect(presentation.isComplete)
+        #expect(presentation.nextWork(pendingFileID: nil) == .idle)
+    }
+
+    @Test("A settled mount starts finalized and a resumed provider stream can drain again")
+    func settledAndResumedPresentation() {
+        let presentation = StreamingAssistantResponsePresentationState(
+            providerIsGenerating: false
+        )
+        #expect(presentation.isComplete)
+        #expect(!presentation.observeProvider(isGenerating: false))
+
+        #expect(presentation.observeProvider(isGenerating: true))
+        #expect(presentation.phase == .receiving)
+        #expect(!presentation.isComplete)
+        #expect(presentation.observeProvider(isGenerating: false))
+        #expect(presentation.phase == .draining)
+        #expect(presentation.finishPresentation())
+        #expect(presentation.isComplete)
+    }
+
+    @Test("Reduce Motion removes pending entrances before the completion drain")
+    func reducedMotionCompletion() {
+        let sequence = StreamingAssistantResponseEntranceSequence()
+        let presentation = StreamingAssistantResponsePresentationState(
+            providerIsGenerating: true
+        )
+        let segments: [AssistantMarkdownSegment] = [
+            .markdown("Before"),
+            .file(firstFile, label: "Plot"),
+            .markdown("After"),
+        ]
+
+        let resolution = sequence.resolve(
+            segments: segments,
+            responseStreamID: "turn:main:answer",
+            animationEnabled: true,
+            animatesInitialContent: true,
+            reduceMotion: true
+        )
+        #expect(resolution.visibleSegmentCount == segments.count)
+        #expect(resolution.pendingFileID == nil)
+
+        #expect(presentation.observeProvider(isGenerating: false))
+        #expect(presentation.nextWork(pendingFileID: resolution.pendingFileID) == .finishPresentation)
+    }
 }

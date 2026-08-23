@@ -75,6 +75,24 @@ struct StreamingTextAnimationTests {
         #expect(reports.last == false)
     }
 
+    @Test("Response completion waits for pending structural entrances")
+    func responseCompletionBarrier() async throws {
+        let coordinator = StreamingContentAnimationCoordinator()
+        coordinator.setPendingEntrance(true, sourceID: "answer.0")
+        var finished = false
+        let waiter = Task { @MainActor in
+            try await coordinator.waitUntilFullyIdle()
+            finished = true
+        }
+
+        for _ in 0..<5 { await Task.yield() }
+        #expect(!finished)
+
+        coordinator.setPendingEntrance(false, sourceID: "answer.0")
+        try await waiter.value
+        #expect(finished)
+    }
+
     @Test("Fade curve is bounded, monotonic, and reaches both endpoints")
     func fadeCurve() {
         #expect(StreamingTextFadeCurve.value(at: 0) == 0)

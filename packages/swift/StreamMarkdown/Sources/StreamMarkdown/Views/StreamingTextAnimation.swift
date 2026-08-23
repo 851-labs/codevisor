@@ -75,6 +75,7 @@ public final class StreamingTextAnimationPresentation {
 public final class StreamingContentAnimationCoordinator {
     public private(set) var hasActiveEntranceAnimation = false
     let timeline = StreamingTextAnimationTimeline()
+    private var pendingEntranceSourceIDs: Set<String> = []
 
     public init() {
         timeline.observeActivity { [weak self] active in
@@ -86,12 +87,44 @@ public final class StreamingContentAnimationCoordinator {
         try await timeline.waitUntilIdle()
     }
 
+    /// Waits until the shared clock is idle and every mounted Markdown slice
+    /// has finished its pending structural entrances. The extra stable pass
+    /// lets SwiftUI deliver a newly-rendered child's preference before a
+    /// provider-completion task decides that the response can be finalized.
+    public func waitUntilFullyIdle() async throws {
+        await Task.yield()
+        while true {
+            try await timeline.waitUntilIdle()
+            try Task.checkCancellation()
+            await Task.yield()
+            guard pendingEntranceSourceIDs.isEmpty else {
+                try await Task.sleep(for: .milliseconds(1))
+                continue
+            }
+
+            await Task.yield()
+            try Task.checkCancellation()
+            guard pendingEntranceSourceIDs.isEmpty else { continue }
+            try await timeline.waitUntilIdle()
+            guard pendingEntranceSourceIDs.isEmpty else { continue }
+            return
+        }
+    }
+
     public func scheduleElementEntrance() {
         timeline.scheduleBlockEntrance()
     }
 
     public func reset() {
         timeline.reset()
+    }
+
+    func setPendingEntrance(_ pending: Bool, sourceID: String) {
+        if pending {
+            pendingEntranceSourceIDs.insert(sourceID)
+        } else {
+            pendingEntranceSourceIDs.remove(sourceID)
+        }
     }
 
     public static var elementEntranceAnimation: Animation {

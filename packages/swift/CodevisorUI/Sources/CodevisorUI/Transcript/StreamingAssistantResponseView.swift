@@ -71,13 +71,40 @@ private struct StreamingAssistantResponseContent<AttachmentContent: View>: View 
     @State private var animationMountRevision = 0
     @State private var entranceSequence = StreamingAssistantResponseEntranceSequence()
     @State private var entranceRevision = 0
+    @State private var presentationState: StreamingAssistantResponsePresentationState
+    @State private var presentationRevision = 0
+
+    init(
+        turnID: UUID,
+        entryID: String,
+        responseStreamID: String,
+        markdown: String,
+        attachments: [Attachment],
+        isGenerating: Bool,
+        animationPresentation: StreamingTextAnimationPresentation,
+        attachmentContent: @escaping (PreviewFile, String) -> AttachmentContent
+    ) {
+        self.turnID = turnID
+        self.entryID = entryID
+        self.responseStreamID = responseStreamID
+        self.markdown = markdown
+        self.attachments = attachments
+        self.isGenerating = isGenerating
+        self.animationPresentation = animationPresentation
+        self.attachmentContent = attachmentContent
+        _presentationState = State(
+            initialValue: StreamingAssistantResponsePresentationState(
+                providerIsGenerating: isGenerating
+            ))
+    }
 
     var body: some View {
+        let presentationComplete = presentationState.isComplete
         let segments = assistantMarkdownSegments(
             markdown,
             attachments: attachments,
-            includeServerPaths: !isGenerating,
-            includeUnreferencedAttachments: !isGenerating
+            includeServerPaths: presentationComplete,
+            includeUnreferencedAttachments: presentationComplete
         )
         let mount = animationMount.resolve(
             streamID: responseStreamID,
@@ -86,12 +113,16 @@ private struct StreamingAssistantResponseContent<AttachmentContent: View>: View 
         let entrance = entranceSequence.resolve(
             segments: segments,
             responseStreamID: responseStreamID,
-            animationEnabled: isGenerating,
+            animationEnabled: !presentationComplete,
             animatesInitialContent: mount.animatesInitialContent,
             reduceMotion: reduceMotion
         )
+        let presentationWork = presentationState.nextWork(
+            pendingFileID: entrance.pendingFileID
+        )
         let _ = animationMountRevision
         let _ = entranceRevision
+        let _ = presentationRevision
 
         VStack(alignment: .leading, spacing: 8) {
             ForEach(Array(segments.enumerated()), id: \.offset) { index, segment in
@@ -101,7 +132,7 @@ private struct StreamingAssistantResponseContent<AttachmentContent: View>: View 
                         if !value.isEmpty {
                             StreamingMarkdownView(
                                 value,
-                                isComplete: !isGenerating,
+                                isComplete: presentationComplete,
                                 streamID: TranscriptStreamingTextIdentity.mainResponseSegment(
                                     turnID: turnID,
                                     entryID: entryID,
@@ -134,10 +165,29 @@ private struct StreamingAssistantResponseContent<AttachmentContent: View>: View 
                 animationMountRevision &+= 1
             }
         }
-        .task(id: entrance.pendingFileID) {
-            guard let fileID = entrance.pendingFileID else { return }
-            do {
-                try await animationCoordinator.waitUntilIdle()
+        .task(id: presentationWork) {
+            await perform(presentationWork)
+        }
+        .onChange(of: isGenerating, initial: true) { _, generating in
+            if presentationState.observeProvider(isGenerating: generating) {
+                if generating { animationCoordinator.reset() }
+                presentationRevision &+= 1
+            }
+        }
+        .onChange(of: reduceMotion) { _, reduced in
+            if reduced { animationCoordinator.reset() }
+        }
+    }
+
+    private func perform(_ work: StreamingAssistantResponsePresentationWork) async {
+        do {
+            switch work {
+            case .idle:
+                return
+            case let .revealFile(fileID):
+                // A response-level attachment must also wait for structural
+                // entrances inside the preceding Markdown slice.
+                try await animationCoordinator.waitUntilFullyIdle()
                 switch entranceSequence.beginReveal(fileID: fileID) {
                 case .started:
                     animationCoordinator.scheduleElementEntrance()
@@ -153,16 +203,70 @@ private struct StreamingAssistantResponseContent<AttachmentContent: View>: View 
                 try await animationCoordinator.waitUntilIdle()
                 guard entranceSequence.finishReveal(fileID: fileID) else { return }
                 entranceRevision &+= 1
-            } catch {
-                return
+            case .finishPresentation:
+                // Provider completion freezes the input, but the streaming
+                // renderer remains mounted until all reserved visual work has
+                // drained. Only this transition enables the finalized merge.
+                try await animationCoordinator.waitUntilFullyIdle()
+                guard presentationState.finishPresentation() else { return }
+                presentationRevision &+= 1
             }
+        } catch is CancellationError {
+            return
+        } catch {
+            return
         }
-        .onChange(of: isGenerating, initial: true) { _, generating in
-            if !generating { animationCoordinator.reset() }
+    }
+}
+
+enum StreamingAssistantResponsePresentationWork: Hashable {
+    case idle
+    case revealFile(String)
+    case finishPresentation
+}
+
+@MainActor
+final class StreamingAssistantResponsePresentationState {
+    enum Phase: Equatable {
+        case receiving
+        case draining
+        case complete
+    }
+
+    private(set) var phase: Phase
+
+    init(providerIsGenerating: Bool) {
+        phase = providerIsGenerating ? .receiving : .complete
+    }
+
+    var isComplete: Bool { phase == .complete }
+
+    @discardableResult
+    func observeProvider(isGenerating: Bool) -> Bool {
+        let nextPhase: Phase
+        if isGenerating {
+            nextPhase = .receiving
+        } else if phase == .receiving {
+            nextPhase = .draining
+        } else {
+            nextPhase = phase
         }
-        .onChange(of: reduceMotion) { _, reduced in
-            if reduced { animationCoordinator.reset() }
-        }
+        guard nextPhase != phase else { return false }
+        phase = nextPhase
+        return true
+    }
+
+    func nextWork(pendingFileID: String?) -> StreamingAssistantResponsePresentationWork {
+        guard phase != .complete else { return .idle }
+        if let pendingFileID { return .revealFile(pendingFileID) }
+        return phase == .draining ? .finishPresentation : .idle
+    }
+
+    @discardableResult
+    func finishPresentation() -> Bool {
+        guard phase == .draining else { return false }
+        phase = .complete
+        return true
     }
 }
 

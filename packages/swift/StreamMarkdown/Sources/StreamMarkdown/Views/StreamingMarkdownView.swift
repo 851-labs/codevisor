@@ -132,9 +132,21 @@ public struct StreamingMarkdownView: View {
             }
         }
         .onDisappear {
-            guard animationCoordinator == nil else { return }
+            if let animationCoordinator {
+                animationCoordinator.setPendingEntrance(
+                    false,
+                    sourceID: streamID ?? "root"
+                )
+                return
+            }
             resolvedAnimationTimeline.observeActivity(nil)
             hasActiveEntranceAnimation = false
+        }
+        .onPreferenceChange(StreamingMarkdownPendingEntrancePreferenceKey.self) { pending in
+            animationCoordinator?.setPendingEntrance(
+                pending,
+                sourceID: streamID ?? "root"
+            )
         }
         .onChange(of: isComplete, initial: true) { _, complete in
             if complete { resolvedAnimationTimeline.reset() }
@@ -161,6 +173,14 @@ public struct StreamingMarkdownEntranceAnimationPreferenceKey: PreferenceKey {
     public static let defaultValue = false
 
     public static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = value || nextValue()
+    }
+}
+
+private struct StreamingMarkdownPendingEntrancePreferenceKey: PreferenceKey {
+    static let defaultValue = false
+
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
         value = value || nextValue()
     }
 }
@@ -237,6 +257,10 @@ struct MarkdownSegmentListView: View {
         }
         .preference(
             key: StreamingMarkdownEntranceAnimationPreferenceKey.self,
+            value: resolution.hasActiveEntrance
+        )
+        .preference(
+            key: StreamingMarkdownPendingEntrancePreferenceKey.self,
             value: resolution.hasActiveEntrance
         )
         .task(id: resolution.pendingBlockID) {
