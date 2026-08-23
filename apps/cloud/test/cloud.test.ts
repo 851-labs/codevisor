@@ -425,6 +425,99 @@ describe("hub relay", () => {
     expect(closeRelay.frame.t).toBe("close")
   })
 
+  it("routes opaque byte-stream data and credit through hibernatable sockets", async () => {
+    const token = await devLogin()
+    const machine = await connectMachine(token, "byte-stream-vps")
+    const app = await connectApp(token)
+    const channel = openChannel(app.keys.secretKey, machine.keys.publicKey)
+    const channelId = "bytes-1"
+    app.socket.send(
+      encodeCloudFrame({
+        t: "relay",
+        machineId: machine.deviceId,
+        frame: {
+          t: "open",
+          channelId,
+          seq: 0,
+          ephemeralKey: channel.ephemeralPublicKey,
+          sealed: sealJson(channel.cipher, channelId, "opener-to-responder", 0, {
+            channelType: "byte-stream",
+            params: { service: "codevisor-loopback", version: 1 }
+          })
+        }
+      })
+    )
+    const opened = (await machine.reader.next()) as Extract<HubToMachine, { t: "relay" }>
+    const openFrame = opened.frame as Extract<typeof opened.frame, { t: "open" }>
+    const responder = acceptChannel(
+      machine.keys.secretKey,
+      opened.peerPublicKey!,
+      openFrame.ephemeralKey
+    )
+
+    const requestBytes = new Uint8Array([0, 255, 13, 10, 128, 1])
+    app.socket.send(
+      encodeCloudFrame({
+        t: "relay",
+        machineId: machine.deviceId,
+        frame: {
+          t: "data",
+          channelId,
+          seq: 1,
+          sealed: channel.cipher.seal(channelId, "opener-to-responder", 1, requestBytes)
+        }
+      })
+    )
+    const request = (await machine.reader.next()) as Extract<HubToMachine, { t: "relay" }>
+    const requestFrame = request.frame as Extract<typeof request.frame, { t: "data" }>
+    expect([
+      ...responder.open(channelId, "opener-to-responder", requestFrame.seq, requestFrame.sealed)
+    ]).toEqual([...requestBytes])
+
+    machine.socket.send(
+      encodeCloudFrame({
+        t: "relay",
+        peerId: opened.peerId,
+        frame: { t: "credit", channelId, seq: 0, bytes: requestFrame.sealed.box.length }
+      })
+    )
+    const credit = (await app.reader.next()) as Extract<HubToApp, { t: "relay" }>
+    expect(credit.frame).toEqual({
+      t: "credit",
+      channelId,
+      seq: 0,
+      bytes: requestFrame.sealed.box.length
+    })
+
+    // Protocol pings are answered by the WebSocket auto-response pair used
+    // by the hibernation API; the byte stream remains routable afterwards.
+    app.socket.send(encodeCloudFrame({ t: "ping" }))
+    expect((await app.reader.next()).t).toBe("pong")
+    const responseBytes = new Uint8Array([9, 8, 7, 0, 255])
+    machine.socket.send(
+      encodeCloudFrame({
+        t: "relay",
+        peerId: opened.peerId,
+        frame: {
+          t: "data",
+          channelId,
+          seq: 1,
+          sealed: responder.seal(channelId, "responder-to-opener", 1, responseBytes)
+        }
+      })
+    )
+    const response = (await app.reader.next()) as Extract<HubToApp, { t: "relay" }>
+    const responseFrame = response.frame as Extract<typeof response.frame, { t: "data" }>
+    expect([
+      ...channel.cipher.open(
+        channelId,
+        "responder-to-opener",
+        responseFrame.seq,
+        responseFrame.sealed
+      )
+    ]).toEqual([...responseBytes])
+  })
+
   it("carries an http channel round-trip through sealed frames", async () => {
     const token = await devLogin()
     const machine = await connectMachine(token, "http-vps")

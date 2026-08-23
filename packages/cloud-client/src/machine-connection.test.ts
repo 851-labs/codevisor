@@ -479,9 +479,93 @@ describe("incoming channels", () => {
       frame: { t: "close", channelId: "ch-1", seq: 3, reason: "done" }
     })
     expect(closes).toEqual(["done"])
-    // Send after close is a no-op: still just the two data frames.
+    // Every outbound operation after close is a no-op: still just the two data frames.
     channel.send({ late: true })
+    expect(channel.sendBytes(new Uint8Array([1]))).toBeUndefined()
+    channel.deferInboundCredit()
+    channel.grantCredit(1)
     expect(socket.sent.filter((f) => f.t === "relay")).toHaveLength(2)
+  })
+
+  it("relays opaque bytes with explicit receive credit", () => {
+    const channels: IncomingChannel[] = []
+    const h = harness({
+      handlers: {
+        echo: (channel) => {
+          channels.push(channel)
+          channel.deferInboundCredit()
+          channel.grantCredit(100)
+        }
+      }
+    })
+    const socket = connect(h)
+    const { opened } = openEcho(socket, "peer-1", "ch-bytes")
+    const channel = channels[0]!
+    const received: { bytes: number[]; cost: number }[] = []
+    channel.onBytes = (bytes, cost) => received.push({ bytes: [...bytes], cost })
+
+    const sealed = opened.cipher.seal(
+      "ch-bytes",
+      "opener-to-responder",
+      1,
+      new Uint8Array([0, 1, 255])
+    )
+    socket.receive({
+      t: "relay",
+      peerId: "peer-1",
+      frame: { t: "data", channelId: "ch-bytes", seq: 1, sealed }
+    })
+    expect(received).toEqual([{ bytes: [0, 1, 255], cost: sealed.box.length }])
+
+    const sentCost = channel.sendBytes(new Uint8Array([9, 8, 7]))
+    const relayFrames = socket.sent
+      .filter((frame): frame is Extract<MachineToHub, { t: "relay" }> => frame.t === "relay")
+      .map((frame) => frame.frame)
+    expect(relayFrames[0]).toEqual({
+      t: "credit",
+      channelId: "ch-bytes",
+      seq: 0,
+      bytes: 100
+    })
+    const response = relayFrames[1] as Extract<RelayFrame, { t: "data" }>
+    expect(response.seq).toBe(1)
+    expect(sentCost).toBe(response.sealed.box.length)
+    expect([
+      ...opened.cipher.open("ch-bytes", "responder-to-opener", response.seq, response.sealed)
+    ]).toEqual([9, 8, 7])
+  })
+
+  it("closes a byte channel that exceeds its granted receive window", () => {
+    const channels: IncomingChannel[] = []
+    const h = harness({
+      handlers: {
+        echo: (channel) => {
+          channels.push(channel)
+          channel.deferInboundCredit()
+          channel.grantCredit(1)
+          channel.onBytes = () => undefined
+        }
+      }
+    })
+    const socket = connect(h)
+    const { opened } = openEcho(socket, "peer-1", "ch-overrun")
+    const closes: string[] = []
+    channels[0]!.onClosed = (reason) => closes.push(reason)
+    socket.receive({
+      t: "relay",
+      peerId: "peer-1",
+      frame: {
+        t: "data",
+        channelId: "ch-overrun",
+        seq: 1,
+        sealed: opened.cipher.seal("ch-overrun", "opener-to-responder", 1, new Uint8Array([1]))
+      }
+    })
+    expect(closes).toEqual(["protocol-error"])
+    expect((socket.sent.at(-1) as Extract<MachineToHub, { t: "relay" }>).frame).toMatchObject({
+      t: "close",
+      reason: "protocol-error"
+    })
   })
 
   it("machine-side close notifies the peer once", () => {

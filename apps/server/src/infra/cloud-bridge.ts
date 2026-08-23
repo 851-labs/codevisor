@@ -7,6 +7,7 @@ import {
   type TerminalServerFrame
 } from "@codevisor/api"
 import {
+  BYTE_STREAM_CHANNEL_TYPE,
   CloudMachineConnection,
   provisionMachine,
   type ChannelHandler,
@@ -14,6 +15,7 @@ import {
   type MachineConnectionState,
   type MachineCredentials
 } from "@codevisor/cloud-client"
+import { byteStreamChannelHandler } from "./cloud-byte-stream.js"
 import type { TerminalManagerService } from "@codevisor/terminal"
 import { Effect } from "effect"
 import { WebSocket } from "ws"
@@ -46,7 +48,8 @@ export interface CloudBridgeOptions {
   readonly machineName: string
   readonly appVersion: string
   /// Loopback origin of this server's own HTTP API (http://127.0.0.1:port);
-  /// the generic "http"/"ws" channels replay app requests against it.
+  /// structured request channels replay against it, while raw byte-stream
+  /// channels connect only to this exact listener.
   readonly localBaseUrl: string
   readonly terminal: TerminalManagerService
   readonly env: Readonly<Record<string, string | undefined>>
@@ -327,6 +330,7 @@ const makeBridge = (
     },
     socketFactory,
     channelHandlers: {
+      [BYTE_STREAM_CHANNEL_TYPE]: byteStreamChannelHandler(options.localBaseUrl, options.log),
       [TERMINAL_CHANNEL_TYPE]: terminalChannelHandler(options.terminal, options.log),
       [HTTP_CHANNEL_TYPE]: httpChannelHandler(options.localBaseUrl, options.log),
       [WS_CHANNEL_TYPE]: wsChannelHandler(options.localBaseUrl)

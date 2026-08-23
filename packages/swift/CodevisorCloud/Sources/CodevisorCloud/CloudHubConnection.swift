@@ -2,149 +2,6 @@ import ACPKit
 import CodevisorClient
 import Foundation
 
-// MARK: - Wire protocol (packages/api/src/cloud-protocol.ts, app plane)
-
-/// Why a relay channel ended, as carried in `close` frames.
-public enum CloudChannelCloseReason: String, Codable, Sendable {
-    case done
-    case rejected
-    case unsupported
-    case peerDisconnected = "peer-disconnected"
-    case protocolError = "protocol-error"
-    case cryptoError = "crypto-error"
-}
-
-/// A ChaCha20-Poly1305 box (base64url ciphertext ‖ tag).
-public struct CloudSealedPayload: Codable, Sendable, Equatable {
-    public var box: String
-
-    public init(box: String) {
-        self.box = box
-    }
-}
-
-/// One frame of a relay channel. The hub never parses payloads; `channelType`
-/// itself lives inside the sealed open payload.
-public enum CloudRelayFrame: Sendable, Equatable {
-    case open(channelId: String, seq: UInt64, ephemeralKey: String, sealed: CloudSealedPayload)
-    case data(channelId: String, seq: UInt64, sealed: CloudSealedPayload)
-    case credit(channelId: String, seq: UInt64, bytes: Int)
-    case close(channelId: String, seq: UInt64, reason: CloudChannelCloseReason)
-
-    public var channelId: String {
-        switch self {
-        case let .open(channelId, _, _, _), let .data(channelId, _, _),
-            let .credit(channelId, _, _), let .close(channelId, _, _):
-            channelId
-        }
-    }
-
-    public var seq: UInt64 {
-        switch self {
-        case let .open(_, seq, _, _), let .data(_, seq, _),
-            let .credit(_, seq, _), let .close(_, seq, _):
-            seq
-        }
-    }
-}
-
-extension CloudRelayFrame: Codable {
-    private enum CodingKeys: String, CodingKey {
-        case t, channelId, seq, ephemeralKey, sealed, bytes, reason
-    }
-
-    public init(from decoder: any Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let type = try container.decode(String.self, forKey: .t)
-        let channelId = try container.decode(String.self, forKey: .channelId)
-        let seq = try container.decode(UInt64.self, forKey: .seq)
-        switch type {
-        case "open":
-            self = .open(
-                channelId: channelId,
-                seq: seq,
-                ephemeralKey: try container.decode(String.self, forKey: .ephemeralKey),
-                sealed: try container.decode(CloudSealedPayload.self, forKey: .sealed)
-            )
-        case "data":
-            self = .data(
-                channelId: channelId,
-                seq: seq,
-                sealed: try container.decode(CloudSealedPayload.self, forKey: .sealed)
-            )
-        case "credit":
-            self = .credit(
-                channelId: channelId,
-                seq: seq,
-                bytes: try container.decode(Int.self, forKey: .bytes)
-            )
-        case "close":
-            self = .close(
-                channelId: channelId,
-                seq: seq,
-                reason: try container.decode(CloudChannelCloseReason.self, forKey: .reason)
-            )
-        default:
-            throw DecodingError.dataCorruptedError(
-                forKey: .t, in: container, debugDescription: "Unknown relay frame type \(type)"
-            )
-        }
-    }
-
-    public func encode(to encoder: any Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(channelId, forKey: .channelId)
-        try container.encode(seq, forKey: .seq)
-        switch self {
-        case let .open(_, _, ephemeralKey, sealed):
-            try container.encode("open", forKey: .t)
-            try container.encode(ephemeralKey, forKey: .ephemeralKey)
-            try container.encode(sealed, forKey: .sealed)
-        case let .data(_, _, sealed):
-            try container.encode("data", forKey: .t)
-            try container.encode(sealed, forKey: .sealed)
-        case let .credit(_, _, bytes):
-            try container.encode("credit", forKey: .t)
-            try container.encode(bytes, forKey: .bytes)
-        case let .close(_, _, reason):
-            try container.encode("close", forKey: .t)
-            try container.encode(reason, forKey: .reason)
-        }
-    }
-}
-
-/// Errors the hub connection can surface to channel openers.
-public enum CloudHubConnectionError: Error, Equatable, Sendable, LocalizedError {
-    /// The hub closed the socket with a fatal code (4200 bad token, 4201
-    /// unsupported protocol) — reconnecting cannot help.
-    case rejected(closeCode: Int)
-    case notSignedIn
-    case credentialsUnavailable
-    case machineUnavailable
-    case disconnected
-    case timedOut
-    case channelClosed
-
-    public var errorDescription: String? {
-        switch self {
-        case let .rejected(code):
-            "Codevisor Cloud rejected the connection (code \(code)). Sign in again."
-        case .notSignedIn:
-            "Not signed in to Codevisor Cloud."
-        case .credentialsUnavailable:
-            "Codevisor couldn't load its cloud credentials."
-        case .machineUnavailable:
-            "The cloud machine is offline."
-        case .disconnected:
-            "The Codevisor Cloud connection is offline."
-        case .timedOut:
-            "Timed out connecting to Codevisor Cloud."
-        case .channelClosed:
-            "The relay channel is closed."
-        }
-    }
-}
-
 // MARK: - Hub connection
 
 /// The app's one WebSocket to its Codevisor Cloud hub: hello/welcome handshake,
@@ -164,28 +21,28 @@ public actor CloudHubConnection {
     private let serverURL: URL
     private let credentialStore: any CloudCredentialStore
     private let webSocketTransport: any ServerWebSocketTransport
-    private let deviceName: String
-    private let deviceOS: String
-    private let appVersion: String?
+    let deviceName: String
+    let deviceOS: String
+    let appVersion: String?
     private let readyTimeout: Duration
     private let heartbeatInterval: Duration
-    private let heartbeatTimeout: Duration
-    private let decoder = JSONDecoder()
-    private let encoder = JSONEncoder()
+    let heartbeatTimeout: Duration
+    let decoder = JSONDecoder()
+    let encoder = JSONEncoder()
 
     private var runTask: Task<Void, Never>?
-    private var socket: (any ServerWebSocketConnecting)?
-    private var socketID: UUID?
-    private var isWelcomed = false
-    private var heartbeatTimeoutTask: Task<Void, Never>?
-    private var awaitingPongOnSocketID: UUID?
+    var socket: (any ServerWebSocketConnecting)?
+    var socketID: UUID?
+    var isWelcomed = false
+    var heartbeatTimeoutTask: Task<Void, Never>?
+    var awaitingPongOnSocketID: UUID?
     private var fatalFailure: CloudHubConnectionError?
     private var waiterSeq = 0
-    private var readyWaiters: [Int: CheckedContinuation<Void, any Error>] = [:]
+    var readyWaiters: [Int: CheckedContinuation<Void, any Error>] = [:]
     private var machineWaiterSeq = 0
     private var machineOnlineWaiters: [Int: (machineId: String, continuation: CheckedContinuation<Void, any Error>)] =
         [:]
-    private var channels: [String: ChannelState] = [:]
+    var channels: [String: ChannelState] = [:]
     /// Keychain-backed values are immutable for this hub's lifetime. The
     /// account controller destroys the hub on sign-out/server switch, so no
     /// channel or reconnect should ever return to the credential store.
@@ -193,29 +50,36 @@ public actor CloudHubConnection {
     private var cachedIdentity: Result<CloudAppDeviceIdentity, CloudHubConnectionError>?
     /// Serializes outbound socket writes so relay frames hit the wire in seq
     /// order even when several tasks send concurrently.
-    private var sendChain: Task<Void, Never> = Task {}
+    var sendChain: Task<Void, Never> = Task {}
     /// The machine presence list from welcome, kept fresh by presence frames.
-    public private(set) var machines: [CloudMachine] = []
+    public internal(set) var machines: [CloudMachine] = []
 
-    private final class ChannelState {
+    final class ChannelState {
         let machineDeviceId: String
         let cipher: CloudChannelCipher
         var nextOutboundSeq: UInt64
         var nextInboundSeq: UInt64 = 0
-        let onMessage: @Sendable (Data) -> Void
+        let flowControlled: Bool
+        var inboundCredit = 0
+        let onMessage: @Sendable (Data, Int) -> Void
+        let onCredit: @Sendable (Int) -> Void
         let onClosed: @Sendable (CloudChannelCloseReason?) -> Void
 
         init(
             machineDeviceId: String,
             cipher: CloudChannelCipher,
             nextOutboundSeq: UInt64,
-            onMessage: @escaping @Sendable (Data) -> Void,
+            flowControlled: Bool,
+            onMessage: @escaping @Sendable (Data, Int) -> Void,
+            onCredit: @escaping @Sendable (Int) -> Void,
             onClosed: @escaping @Sendable (CloudChannelCloseReason?) -> Void
         ) {
             self.machineDeviceId = machineDeviceId
             self.cipher = cipher
             self.nextOutboundSeq = nextOutboundSeq
+            self.flowControlled = flowControlled
             self.onMessage = onMessage
+            self.onCredit = onCredit
             self.onClosed = onClosed
         }
     }
@@ -437,7 +301,7 @@ public actor CloudHubConnection {
         return try result.get()
     }
 
-    private func appDeviceIdentity() throws -> CloudAppDeviceIdentity {
+    func appDeviceIdentity() throws -> CloudAppDeviceIdentity {
         if let cachedIdentity { return try cachedIdentity.get() }
         let result: Result<CloudAppDeviceIdentity, CloudHubConnectionError>
         do {
@@ -454,7 +318,7 @@ public actor CloudHubConnection {
     /// failure. Park channel openers until presence says it is back instead of
     /// letting every event stream and terminal create an independent retry
     /// loop. Cancellation removes the parked request promptly.
-    private func waitUntilMachineOnline(_ machineId: String) async throws {
+    func waitUntilMachineOnline(_ machineId: String) async throws {
         guard let machine = machines.first(where: { $0.deviceId == machineId }) else {
             throw CloudHubConnectionError.machineUnavailable
         }
@@ -482,7 +346,7 @@ public actor CloudHubConnection {
         machineOnlineWaiters.removeValue(forKey: id)?.continuation.resume(throwing: CancellationError())
     }
 
-    private func resumeMachineWaiters(for machineId: String) {
+    func resumeMachineWaiters(for machineId: String) {
         let ready = machineOnlineWaiters.filter { $0.value.machineId == machineId }
         for (id, waiter) in ready {
             machineOnlineWaiters.removeValue(forKey: id)
@@ -490,7 +354,7 @@ public actor CloudHubConnection {
         }
     }
 
-    private func failAllChannels() {
+    func failAllChannels() {
         let open = channels.values
         channels.removeAll()
         for channel in open {
@@ -529,470 +393,4 @@ public actor CloudHubConnection {
         return url
     }
 
-    // MARK: Outbound
-
-    private struct HelloMessage: Encodable {
-        struct Device: Encodable {
-            var deviceId: String
-            var kind: String
-            var name: String
-            var os: String
-            var appVersion: String?
-            var publicKey: String
-        }
-
-        var t = "hello"
-        var protocolVersion = CloudHubConnection.protocolVersion
-        var device: Device
-
-        enum CodingKeys: String, CodingKey {
-            case t
-            case protocolVersion = "protocol"
-            case device
-        }
-    }
-
-    private struct RelayMessage: Encodable {
-        var t = "relay"
-        var machineId: String
-        var frame: CloudRelayFrame
-    }
-
-    private func sendHello(identity: CloudAppDeviceIdentity) throws {
-        let hello = HelloMessage(
-            device: HelloMessage.Device(
-                deviceId: identity.deviceId,
-                kind: "app",
-                name: deviceName,
-                os: deviceOS,
-                appVersion: appVersion,
-                publicKey: identity.publicKey
-            ))
-        try enqueueSend(hello)
-    }
-
-    /// Sends one protocol ping and arms a bounded pong deadline. A half-open
-    /// URLSession socket does not necessarily make `receive()` throw, so the
-    /// deadline explicitly tears it down and lets the run loop reconnect.
-    private func sendKeepalivePing(on expectedSocketID: UUID) {
-        guard socketID == expectedSocketID, isWelcomed else { return }
-        struct Ping: Encodable {
-            var t = "ping"
-        }
-        awaitingPongOnSocketID = expectedSocketID
-        heartbeatTimeoutTask?.cancel()
-        let timeout = heartbeatTimeout
-        heartbeatTimeoutTask = Task { [weak self] in
-            try? await Task.sleep(for: timeout)
-            guard !Task.isCancelled else { return }
-            await self?.expireHeartbeat(on: expectedSocketID)
-        }
-        do {
-            try enqueueSend(Ping())
-        } catch {
-            handleSocketFailure(on: expectedSocketID, error: error)
-        }
-    }
-
-    private func receivePong() {
-        guard awaitingPongOnSocketID == socketID else { return }
-        heartbeatTimeoutTask?.cancel()
-        heartbeatTimeoutTask = nil
-        awaitingPongOnSocketID = nil
-    }
-
-    private func expireHeartbeat(on expectedSocketID: UUID) {
-        guard socketID == expectedSocketID,
-            awaitingPongOnSocketID == expectedSocketID
-        else { return }
-        handleSocketFailure(on: expectedSocketID, error: CloudHubConnectionError.timedOut)
-    }
-
-    private func resetHeartbeat() {
-        heartbeatTimeoutTask?.cancel()
-        heartbeatTimeoutTask = nil
-        awaitingPongOnSocketID = nil
-    }
-
-    private func handleSocketFailure(on expectedSocketID: UUID, error: any Error) {
-        guard socketID == expectedSocketID else { return }
-        Log.cloud.error(
-            "Cloud hub socket is unhealthy; reconnecting: \(String(describing: error), privacy: .public)"
-        )
-        isWelcomed = false
-        resetHeartbeat()
-        failAllChannels()
-        socket?.cancel(with: .goingAway, reason: nil)
-    }
-
-    private func sendRelay(machineId: String, frame: CloudRelayFrame) throws {
-        guard socket != nil else { throw CloudHubConnectionError.disconnected }
-        try enqueueSend(RelayMessage(machineId: machineId, frame: frame))
-    }
-
-    /// Chained sends keep wire order aligned with seq allocation order —
-    /// concurrent senders must not overtake each other between allocating a
-    /// seq and the frame reaching the socket.
-    private func enqueueSend(_ message: some Encodable) throws {
-        guard let socket, let socketID else { throw CloudHubConnectionError.disconnected }
-        let text = String(decoding: try encoder.encode(message), as: UTF8.self)
-        sendChain = Task { [weak self, previous = sendChain] in
-            await previous.value
-            do {
-                try await socket.send(.string(text))
-            } catch {
-                await self?.handleSocketFailure(on: socketID, error: error)
-            }
-        }
-    }
-
-    // MARK: Channels
-
-    /// Opens an end-to-end encrypted channel to a machine. `onMessage` gets
-    /// each decrypted inbound payload; `onClosed` fires once when the channel
-    /// ends (with the peer's close reason, or nil on connection loss). Both
-    /// may be invoked before this returns.
-    public func openChannel(
-        machineDeviceId: String,
-        machinePublicKey: String,
-        channelType: String,
-        params: JSONValue?,
-        onMessage: @escaping @Sendable (Data) -> Void,
-        onClosed: @escaping @Sendable (CloudChannelCloseReason?) -> Void
-    ) async throws -> CloudRelayChannel {
-        #if DEBUG || NAVIGATION_DIAGNOSTICS
-            let diagnosticMachine = machines.first(where: { $0.deviceId == machineDeviceId })
-            Log.cloud.notice(
-                "CLOUDRELAYDBG channel.open.begin type=\(channelType, privacy: .public) welcomed=\(self.isWelcomed) machineKnown=\(diagnosticMachine != nil) machineOnline=\(diagnosticMachine?.online ?? false)"
-            )
-        #endif
-        try await waitUntilReady()
-        #if DEBUG || NAVIGATION_DIAGNOSTICS
-            Log.cloud.notice(
-                "CLOUDRELAYDBG channel.open.ready type=\(channelType, privacy: .public)"
-            )
-        #endif
-        try await waitUntilMachineOnline(machineDeviceId)
-        #if DEBUG || NAVIGATION_DIAGNOSTICS
-            Log.cloud.notice(
-                "CLOUDRELAYDBG channel.open.machineReady type=\(channelType, privacy: .public)"
-            )
-        #endif
-        let identity = try appDeviceIdentity()
-        let opened = try CloudChannelCrypto.openChannel(
-            openerSecretKey: identity.secretKey,
-            responderPublicKey: machinePublicKey
-        )
-        let channelId = UUID().uuidString.lowercased()
-        var payload: [String: JSONValue] = ["channelType": .string(channelType)]
-        if let params {
-            payload["params"] = params
-        }
-        let plaintext = try encoder.encode(JSONValue.object(payload))
-        let sealed = try opened.cipher.seal(
-            plaintext,
-            channelId: channelId,
-            direction: .openerToResponder,
-            seq: 0
-        )
-        let state = ChannelState(
-            machineDeviceId: machineDeviceId,
-            cipher: opened.cipher,
-            nextOutboundSeq: 1,
-            onMessage: onMessage,
-            onClosed: onClosed
-        )
-        channels[channelId] = state
-        #if DEBUG || NAVIGATION_DIAGNOSTICS
-            Log.cloud.notice(
-                "CLOUDRELAYDBG channel.open type=\(channelType, privacy: .public) id=\(String(channelId.prefix(8)), privacy: .public) active=\(self.channels.count)"
-            )
-        #endif
-        do {
-            try sendRelay(
-                machineId: machineDeviceId,
-                frame: .open(
-                    channelId: channelId,
-                    seq: 0,
-                    ephemeralKey: opened.ephemeralPublicKey,
-                    sealed: CloudSealedPayload(box: sealed)
-                ))
-        } catch {
-            channels.removeValue(forKey: channelId)
-            throw error
-        }
-        return CloudRelayChannel(id: channelId, hub: self)
-    }
-
-    func send(channelId: String, plaintext: Data) throws {
-        guard let state = channels[channelId] else {
-            throw CloudHubConnectionError.channelClosed
-        }
-        let seq = state.nextOutboundSeq
-        state.nextOutboundSeq += 1
-        #if DEBUG || NAVIGATION_DIAGNOSTICS
-            Log.cloud.notice(
-                "CLOUDRELAYDBG channel.send id=\(String(channelId.prefix(8)), privacy: .public) seq=\(seq) bytes=\(plaintext.count)"
-            )
-        #endif
-        let sealed = try state.cipher.seal(
-            plaintext,
-            channelId: channelId,
-            direction: .openerToResponder,
-            seq: seq
-        )
-        try sendRelay(
-            machineId: state.machineDeviceId,
-            frame: .data(
-                channelId: channelId,
-                seq: seq,
-                sealed: CloudSealedPayload(box: sealed)
-            ))
-    }
-
-    /// Closes a channel from this side. `onClosed` is not invoked for
-    /// self-initiated closes.
-    func closeChannel(_ channelId: String, reason: CloudChannelCloseReason) {
-        guard let state = channels.removeValue(forKey: channelId) else { return }
-        let seq = state.nextOutboundSeq
-        state.nextOutboundSeq += 1
-        #if DEBUG || NAVIGATION_DIAGNOSTICS
-            Log.cloud.notice(
-                "CLOUDRELAYDBG channel.close id=\(String(channelId.prefix(8)), privacy: .public) seq=\(seq) reason=\(reason.rawValue, privacy: .public) active=\(self.channels.count)"
-            )
-        #endif
-        try? sendRelay(
-            machineId: state.machineDeviceId,
-            frame: .close(
-                channelId: channelId,
-                seq: seq,
-                reason: reason
-            ))
-    }
-
-    /// Aborts a misbehaving channel: notifies the peer and the local owner.
-    private func abortChannel(_ channelId: String, reason: CloudChannelCloseReason) {
-        guard let state = channels.removeValue(forKey: channelId) else { return }
-        let seq = state.nextOutboundSeq
-        state.nextOutboundSeq += 1
-        try? sendRelay(
-            machineId: state.machineDeviceId,
-            frame: .close(
-                channelId: channelId,
-                seq: seq,
-                reason: reason
-            ))
-        state.onClosed(reason)
-    }
-
-    // MARK: Inbound
-
-    private struct TypeProbe: Decodable {
-        var t: String
-    }
-
-    private struct WelcomeMessage: Decodable {
-        var connectionId: String
-        var machines: [CloudMachine]
-    }
-
-    private struct PresenceMessage: Decodable {
-        var machine: CloudMachine
-    }
-
-    private struct InboundRelayMessage: Decodable {
-        var machineId: String
-        var frame: CloudRelayFrame
-    }
-
-    private struct MachineResetMessage: Decodable {
-        var machineId: String
-    }
-
-    private struct ErrorMessage: Decodable {
-        var code: String
-        var message: String
-        var machineId: String?
-        var channelId: String?
-    }
-
-    private func handle(_ message: ServerWebSocketMessage) async {
-        let data: Data
-        switch message {
-        case let .data(payload):
-            data = payload
-        case let .string(text):
-            data = Data(text.utf8)
-        }
-        guard let probe = try? decoder.decode(TypeProbe.self, from: data) else { return }
-        switch probe.t {
-        case "welcome":
-            guard let welcome = try? decoder.decode(WelcomeMessage.self, from: data) else { return }
-            Log.cloud.info("Cloud hub welcomed this device (\(welcome.machines.count) machines)")
-            machines = welcome.machines
-            for machine in welcome.machines where machine.online {
-                resumeMachineWaiters(for: machine.deviceId)
-            }
-            isWelcomed = true
-            let waiters = readyWaiters.values
-            readyWaiters.removeAll()
-            for waiter in waiters {
-                waiter.resume()
-            }
-        case "presence":
-            guard let presence = try? decoder.decode(PresenceMessage.self, from: data) else { return }
-            if let index = machines.firstIndex(where: { $0.deviceId == presence.machine.deviceId }) {
-                machines[index] = presence.machine
-            } else {
-                machines.append(presence.machine)
-            }
-            if presence.machine.online {
-                resumeMachineWaiters(for: presence.machine.deviceId)
-            } else {
-                // The machine's hub socket is gone, and its channel state is
-                // in-memory only — existing channels cannot survive its
-                // reconnect. Close them now so relayed streams fail fast and
-                // resume from their cursors instead of hanging forever on a
-                // channel the machine no longer knows about.
-                closeChannels(for: presence.machine.deviceId)
-            }
-        case "relay":
-            guard let relay = try? decoder.decode(InboundRelayMessage.self, from: data) else { return }
-            handleRelay(relay.frame)
-        case "machine-reset":
-            guard let reset = try? decoder.decode(MachineResetMessage.self, from: data) else { return }
-            // The machine completed a fresh hello: its in-memory channel
-            // state is gone, so every channel toward it is dead even though
-            // the machine is online. Close them; consumers re-open on the
-            // machine's fresh socket (the online presence follows this frame).
-            closeChannels(for: reset.machineId)
-        case "error":
-            guard let failure = try? decoder.decode(ErrorMessage.self, from: data) else { return }
-            Log.cloud.error(
-                """
-                Cloud hub error \(failure.code, privacy: .public): \(failure.message, privacy: .public) \
-                (machine \(failure.machineId ?? "-", privacy: .public), channel \(failure.channelId ?? "-", privacy: .public))
-                """
-            )
-            if failure.code == "machine-offline", let machineId = failure.machineId {
-                markMachineOffline(machineId)
-                closeChannels(for: machineId)
-            } else if let channelId = failure.channelId {
-                channels.removeValue(forKey: channelId)?.onClosed(nil)
-            } else if let machineId = failure.machineId {
-                closeChannels(for: machineId)
-            }
-        case "pong":
-            receivePong()
-        default:
-            // Future message kinds.
-            break
-        }
-    }
-
-    private func markMachineOffline(_ machineId: String) {
-        guard let index = machines.firstIndex(where: { $0.deviceId == machineId }) else { return }
-        machines[index].online = false
-    }
-
-    private func closeChannels(for machineId: String) {
-        let affected = channels.filter { $0.value.machineDeviceId == machineId }
-        for (id, state) in affected {
-            channels.removeValue(forKey: id)
-            state.onClosed(nil)
-        }
-    }
-
-    private func handleRelay(_ frame: CloudRelayFrame) {
-        guard let state = channels[frame.channelId] else {
-            #if DEBUG || NAVIGATION_DIAGNOSTICS
-                Log.cloud.notice(
-                    "CLOUDRELAYDBG channel.inbound.unknown id=\(String(frame.channelId.prefix(8)), privacy: .public) seq=\(frame.seq)"
-                )
-            #endif
-            return
-        }
-        #if DEBUG || NAVIGATION_DIAGNOSTICS
-            let kind =
-                switch frame {
-                case .open: "open"
-                case .data: "data"
-                case .credit: "credit"
-                case .close: "close"
-                }
-            Log.cloud.notice(
-                "CLOUDRELAYDBG channel.inbound kind=\(kind, privacy: .public) id=\(String(frame.channelId.prefix(8)), privacy: .public) seq=\(frame.seq) expected=\(state.nextInboundSeq)"
-            )
-        #endif
-        // Per-direction seqs are strictly monotonic from 0; a gap or repeat
-        // is a protocol error and kills the channel.
-        guard frame.seq == state.nextInboundSeq else {
-            abortChannel(frame.channelId, reason: .protocolError)
-            return
-        }
-        state.nextInboundSeq += 1
-        switch frame {
-        case .open:
-            // Machines never open channels toward the app.
-            abortChannel(frame.channelId, reason: .protocolError)
-        case let .data(channelId, seq, sealed):
-            do {
-                let plaintext = try state.cipher.open(
-                    sealed.box,
-                    channelId: channelId,
-                    direction: .responderToOpener,
-                    seq: seq
-                )
-                state.onMessage(plaintext)
-                // Replenish the peer's flow-control window as we consume.
-                let creditSeq = state.nextOutboundSeq
-                state.nextOutboundSeq += 1
-                try? sendRelay(
-                    machineId: state.machineDeviceId,
-                    frame: .credit(
-                        channelId: channelId,
-                        seq: creditSeq,
-                        bytes: sealed.box.utf8.count
-                    ))
-            } catch {
-                abortChannel(channelId, reason: .cryptoError)
-            }
-        case .credit:
-            // Inbound credit grants budget for our sends; sends are currently
-            // small enough (chunked request bodies, input frames) that the
-            // initial window suffices, so grants are accepted silently.
-            break
-        case let .close(channelId, _, reason):
-            channels.removeValue(forKey: channelId)
-            state.onClosed(reason)
-        }
-    }
-}
-
-/// A handle to one open relay channel. All I/O goes through the hub actor;
-/// the handle just carries the id.
-public final class CloudRelayChannel: Sendable {
-    public let id: String
-    private let hub: CloudHubConnection
-
-    init(id: String, hub: CloudHubConnection) {
-        self.id = id
-        self.hub = hub
-    }
-
-    /// Seals and sends one JSON payload on the channel.
-    public func sendJSON(_ value: some Encodable & Sendable) async throws {
-        try await hub.send(channelId: id, plaintext: JSONEncoder().encode(value))
-    }
-
-    /// Seals and sends raw plaintext bytes on the channel.
-    public func send(plaintext: Data) async throws {
-        try await hub.send(channelId: id, plaintext: plaintext)
-    }
-
-    /// Closes the channel toward the peer. The channel's `onClosed` callback
-    /// does not fire for self-initiated closes.
-    public func close(reason: CloudChannelCloseReason) async {
-        await hub.closeChannel(id, reason: reason)
-    }
 }

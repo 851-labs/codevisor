@@ -12,10 +12,10 @@ public protocol CloudMachineProviding: AnyObject {
     /// this machine — nil when the relay isn't available (signed out).
     func relayServerConfig(for machine: CloudMachine) -> CodevisorServerConfig?
     /// A real `http://127.0.0.1:<port>` base URL for this machine, served by
-    /// an in-app loopback bridge that forwards plain HTTP/WebSocket onto the
-    /// relay — for baseURL consumers that spawn external processes (the
-    /// terminal proxy). Calling this may lazily start the bridge; nil until
-    /// it is listening (or when the implementation doesn't bridge).
+    /// an in-app loopback bridge that forwards a transparent TCP byte stream
+    /// onto the relay — for baseURL consumers that spawn external processes
+    /// (the terminal proxy). Calling this may lazily start the bridge; nil
+    /// until it is listening (or when the implementation doesn't bridge).
     func loopbackBaseURL(for machine: CloudMachine) -> URL?
     /// Registers the machine this app runs on with the signed-in account.
     /// Nudged from local status refreshes so a server that starts after

@@ -6,4 +6,6 @@
 /// Node/Bun (apps/server and development tooling) and other future runtimes.
 export * from "./login.js"
 export * from "./machine-connection.js"
+export * from "./incoming-channel.js"
 export * from "./cloud-proxy.js"
+export * from "./byte-stream.js"

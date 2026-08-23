@@ -6,6 +6,7 @@ import {
   type RelayFrame
 } from "@codevisor/api"
 import { acceptChannel, openJson, sealJson, type ChannelCipher } from "@codevisor/cloud-crypto"
+import type { ChannelHandler, IncomingChannel } from "./incoming-channel.js"
 import type { MachineCredentials } from "./login.js"
 
 /// Minimal WebSocket surface both `ws` (Node/Bun) and the browser API can be
@@ -32,22 +33,6 @@ export type MachineConnectionState =
   /// Fatal states — the hub told us not to come back with these credentials.
   | "revoked"
   | "unsupported-protocol"
-
-/// An app-opened channel as seen by machine-side handlers. Payloads are
-/// sealed/opened transparently; handlers only ever see plaintext values.
-export interface IncomingChannel {
-  channelId: string
-  peerId: string
-  channelType: string
-  params: unknown
-  send(value: unknown): void
-  close(reason: ChannelCloseReason): void
-  onData: ((value: unknown) => void) | null
-  onCredit: ((bytes: number) => void) | null
-  onClosed: ((reason: ChannelCloseReason | "peer-gone") => void) | null
-}
-
-export type ChannelHandler = (channel: IncomingChannel) => void
 
 export type MachineDisconnectReason =
   | { kind: "socket-closed"; code: number }
@@ -87,6 +72,8 @@ interface LiveChannel {
   channel: IncomingChannel
   nextReceiveSeq: number
   nextSendSeq: number
+  flowControlled: boolean
+  inboundCredit: number
 }
 
 export class CloudMachineConnection {
@@ -98,7 +85,6 @@ export class CloudMachineConnection {
   #cancelWelcomeTimeout: CancelTimeout | undefined
   #cancelHeartbeat: CancelTimeout | undefined
   #cancelPongTimeout: CancelTimeout | undefined
-  /// Keyed by `${peerId}/${channelId}`.
   #channels = new Map<string, LiveChannel>()
 
   constructor(private readonly options: MachineConnectionOptions) {}
@@ -326,6 +312,8 @@ export class CloudMachineConnection {
         cipher,
         nextReceiveSeq: 1,
         nextSendSeq: 0,
+        flowControlled: false,
+        inboundCredit: 0,
         channel: {
           channelId: frame.channelId,
           peerId,
@@ -355,6 +343,47 @@ export class CloudMachineConnection {
               })
             )
           },
+          sendBytes: (value) => {
+            const current = this.#channels.get(key)
+            if (current === undefined || this.#socket === undefined) return undefined
+            const seq = current.nextSendSeq
+            current.nextSendSeq += 1
+            const sealed = current.cipher.seal(frame.channelId, "responder-to-opener", seq, value)
+            this.#socket.send(
+              encodeCloudFrame({
+                t: "relay",
+                peerId,
+                frame: { t: "data", channelId: frame.channelId, seq, sealed }
+              })
+            )
+            return sealed.box.length
+          },
+          deferInboundCredit: () => {
+            const current = this.#channels.get(key)
+            if (current !== undefined) current.flowControlled = true
+          },
+          grantCredit: (bytes) => {
+            const current = this.#channels.get(key)
+            if (
+              current === undefined ||
+              this.#socket === undefined ||
+              !Number.isSafeInteger(bytes) ||
+              bytes <= 0 ||
+              current.inboundCredit > Number.MAX_SAFE_INTEGER - bytes
+            ) {
+              return
+            }
+            current.inboundCredit += bytes
+            const seq = current.nextSendSeq
+            current.nextSendSeq += 1
+            this.#socket.send(
+              encodeCloudFrame({
+                t: "relay",
+                peerId,
+                frame: { t: "credit", channelId: frame.channelId, seq, bytes }
+              })
+            )
+          },
           close: (reason) => {
             const current = this.#channels.get(key)
             if (current === undefined) return
@@ -373,6 +402,7 @@ export class CloudMachineConnection {
             )
           },
           onData: null,
+          onBytes: null,
           onCredit: null,
           onClosed: null
         }
@@ -403,7 +433,11 @@ export class CloudMachineConnection {
     // seqs from the same counter as data seqs, so skipping credit here would
     // make the next data frame look like a gap and kill a healthy channel.
     if (frame.t === "credit") {
-      if (frame.seq !== live.nextReceiveSeq) {
+      if (
+        frame.seq !== live.nextReceiveSeq ||
+        !Number.isSafeInteger(frame.bytes) ||
+        frame.bytes <= 0
+      ) {
         this.#channels.delete(key)
         this.#refuse(socket, peerId, frame.channelId, "protocol-error")
         live.channel.onClosed?.("protocol-error")
@@ -422,15 +456,29 @@ export class CloudMachineConnection {
     }
     let value: unknown
     try {
-      value = openJson(live.cipher, frame.channelId, "opener-to-responder", frame.seq, frame.sealed)
+      value =
+        live.channel.onBytes === null
+          ? openJson(live.cipher, frame.channelId, "opener-to-responder", frame.seq, frame.sealed)
+          : live.cipher.open(frame.channelId, "opener-to-responder", frame.seq, frame.sealed)
     } catch {
       this.#channels.delete(key)
       this.#refuse(socket, peerId, frame.channelId, "crypto-error")
       live.channel.onClosed?.("crypto-error")
       return
     }
+    const sealedBytes = frame.sealed.box.length
+    if (live.flowControlled) {
+      if (sealedBytes > live.inboundCredit) {
+        this.#channels.delete(key)
+        this.#refuse(socket, peerId, frame.channelId, "protocol-error")
+        live.channel.onClosed?.("protocol-error")
+        return
+      }
+      live.inboundCredit -= sealedBytes
+    }
     live.nextReceiveSeq += 1
-    live.channel.onData?.(value)
+    if (value instanceof Uint8Array) live.channel.onBytes?.(value, sealedBytes)
+    else live.channel.onData?.(value)
   }
 
   #refuse(

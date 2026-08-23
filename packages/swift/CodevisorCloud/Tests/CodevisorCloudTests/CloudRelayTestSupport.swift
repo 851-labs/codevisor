@@ -323,6 +323,15 @@ final class ScriptedRelayMachine: @unchecked Sendable {
         return .data(channelId: channelId, seq: seq, sealed: CloudSealedPayload(box: box))
     }
 
+    func creditFrame(channelId: String, bytes: Int) -> CloudRelayFrame {
+        guard let channel = channel(channelId) else {
+            return .credit(channelId: channelId, seq: 0, bytes: bytes)
+        }
+        let seq = channel.nextOutboundSeq
+        channel.nextOutboundSeq += 1
+        return .credit(channelId: channelId, seq: seq, bytes: bytes)
+    }
+
     func closeFrame(channelId: String, reason: CloudChannelCloseReason) -> CloudRelayFrame {
         guard let channel = channel(channelId) else {
             return .close(channelId: channelId, seq: 0, reason: reason)

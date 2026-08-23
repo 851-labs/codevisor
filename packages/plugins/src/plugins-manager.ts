@@ -332,9 +332,9 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
         const pluginId = decodeURIComponent(match[1] ?? "")
         const subPath = match[2] ?? "/"
         const plugin = findPluginOrFail(scan(), pluginId)
-        // Relay WS channels carry only a path — no cookies — and always
-        // arrive from the in-process loopback bridge, so loopback is an
-        // accepted principal exactly like the server's own auth exemption.
+        // Remote plugin sockets arrive through the restricted relay byte
+        // tunnel as a loopback connection, so loopback is an accepted
+        // principal exactly like the server's own auth exemption.
         const authenticated = authenticate(pluginId, request, url)
         if (authenticated === undefined && !isLoopback(request.socket.remoteAddress)) {
           socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n")
