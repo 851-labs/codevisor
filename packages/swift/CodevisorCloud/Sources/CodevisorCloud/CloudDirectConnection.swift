@@ -44,6 +44,11 @@ public actor CloudDirectConnection {
     private var readyWaiters: [Int: CheckedContinuation<Void, any Error>] = [:]
     private var heartbeatTask: Task<Void, Never>?
     private var pongDeadlineTask: Task<Void, Never>?
+    /// When the outstanding keepalive ping left, for RTT measurement.
+    private var pingSentAt: ContinuousClock.Instant?
+    /// Direct-pipe round-trip time from the most recent keepalive ping/pong —
+    /// path-latency observability, never used for routing decisions.
+    public private(set) var lastRttMillis: Int?
     /// Serializes outbound writes so relay frames hit the wire in seq order
     /// even when several tasks send concurrently (same scheme as the hub).
     private var sendChain: Task<Void, Never> = Task {}
@@ -267,6 +272,10 @@ public actor CloudDirectConnection {
                     waiter.resume()
                 }
             case "pong":
+                if let pingSentAt {
+                    lastRttMillis = Int(pingSentAt.duration(to: .now) / .milliseconds(1))
+                    self.pingSentAt = nil
+                }
                 pongDeadlineTask?.cancel()
                 pongDeadlineTask = nil
             default:
@@ -304,6 +313,7 @@ public actor CloudDirectConnection {
             guard !Task.isCancelled else { return }
             await self?.expireHeartbeat()
         }
+        pingSentAt = .now
         do {
             try enqueueSend(.string(String(decoding: try encoder.encode(Ping()), as: UTF8.self)))
         } catch {

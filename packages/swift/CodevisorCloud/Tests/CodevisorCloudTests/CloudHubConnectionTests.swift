@@ -255,6 +255,28 @@ struct CloudHubConnectionTests {
         await hub.shutdown()
     }
 
+    @Test("Keepalive pongs record the relay RTT")
+    func keepaliveMeasuresRtt() async throws {
+        let scripted = ScriptedCloudHub()
+        let hub = CloudHubConnection(
+            serverURL: URL(string: "https://cloud.example.com")!,
+            credentialStore: InMemoryCloudCredentialStore(token: "session-token"),
+            deviceName: "Test App",
+            deviceOS: "macOS",
+            webSocketTransport: FakeWebSocketTransport { _ in scripted.socket },
+            readyTimeout: .seconds(2),
+            heartbeatInterval: .milliseconds(20),
+            heartbeatTimeout: .seconds(2)
+        )
+
+        try await hub.waitUntilReady()
+        #expect(await hub.lastRttMillis == nil)
+        #expect(await waitUntil { await hub.lastRttMillis != nil })
+        let rtt = try #require(await hub.lastRttMillis)
+        #expect(rtt >= 0)
+        await hub.shutdown()
+    }
+
     @Test("An outbound send failure replaces the hub socket")
     func sendFailureReconnects() async throws {
         let machine = ScriptedRelayMachine()

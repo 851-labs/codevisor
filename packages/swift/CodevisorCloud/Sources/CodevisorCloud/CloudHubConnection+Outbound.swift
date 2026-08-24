@@ -54,6 +54,7 @@ extension CloudHubConnection {
             var t = "ping"
         }
         awaitingPongOnSocketID = expectedSocketID
+        pingSentAt = .now
         heartbeatTimeoutTask?.cancel()
         let timeout = heartbeatTimeout
         heartbeatTimeoutTask = Task { [weak self] in
@@ -70,6 +71,11 @@ extension CloudHubConnection {
 
     func receivePong() {
         guard awaitingPongOnSocketID == socketID else { return }
+        if let pingSentAt {
+            lastRttMillis = Int(pingSentAt.duration(to: .now) / .milliseconds(1))
+            self.pingSentAt = nil
+            Log.cloud.debug("Relay RTT \(self.lastRttMillis ?? -1, privacy: .public)ms")
+        }
         heartbeatTimeoutTask?.cancel()
         heartbeatTimeoutTask = nil
         awaitingPongOnSocketID = nil
@@ -86,6 +92,8 @@ extension CloudHubConnection {
         heartbeatTimeoutTask?.cancel()
         heartbeatTimeoutTask = nil
         awaitingPongOnSocketID = nil
+        // Never time a pong against a ping from a previous socket.
+        pingSentAt = nil
     }
 
     private func handleSocketFailure(on expectedSocketID: UUID, error: any Error) {

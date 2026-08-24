@@ -125,6 +125,7 @@ interface Harness {
   timeouts: ScheduledTimeout[]
   disconnects: MachineDisconnectReason[]
   channels: IncomingChannel[]
+  welcomes: { resumed: boolean; replayedFrames: number }[]
 }
 
 const harness = (
@@ -136,6 +137,7 @@ const harness = (
     relayCoalesceMs?: number
     compressPayload?: (bytes: Uint8Array) => Uint8Array | undefined
     decompressPayload?: (bytes: Uint8Array) => Uint8Array
+    now?: () => number
   } = {}
 ): Harness => {
   const sockets: FakeSocket[] = []
@@ -146,6 +148,7 @@ const harness = (
   const timeouts: ScheduledTimeout[] = []
   const disconnects: MachineDisconnectReason[] = []
   const channels: IncomingChannel[] = []
+  const welcomes: { resumed: boolean; replayedFrames: number }[] = []
   const connection = new CloudMachineConnection({
     credentials,
     device: overrides.device ?? { name: "vps", os: "linux", appVersion: "1.0.0" },
@@ -172,6 +175,8 @@ const harness = (
       : { decompressPayload: overrides.decompressPayload }),
     onStateChange: (state) => states.push(state),
     onDisconnect: (reason) => disconnects.push(reason),
+    onWelcome: (info) => welcomes.push(info),
+    ...(overrides.now === undefined ? {} : { now: overrides.now }),
     scheduleReconnect: (callback, delayMs) => reconnects.push({ callback, delayMs }),
     scheduleTimeout: (callback, delayMs) => {
       const timeout: ScheduledTimeout = {
@@ -204,7 +209,8 @@ const harness = (
     reconnects,
     timeouts,
     disconnects,
-    channels
+    channels,
+    welcomes
   }
 }
 
@@ -339,6 +345,23 @@ describe("connection lifecycle", () => {
     expect(h.reconnects).toHaveLength(0)
     activeTimeout(h, 30_000).run()
     expect(socket.sent.filter((frame) => frame.t === "ping")).toHaveLength(2)
+  })
+
+  it("measures relay RTT from heartbeat ping/pong", () => {
+    let now = 10_000
+    const h = harness({ now: () => now })
+    const socket = connect(h)
+    expect(h.connection.lastRttMs).toBeUndefined()
+
+    activeTimeout(h, 30_000).run() // heartbeat ping leaves at t=10s
+    now += 42
+    socket.receive({ t: "pong" })
+    expect(h.connection.lastRttMs).toBe(42)
+
+    // An unsolicited pong never fabricates a measurement.
+    now += 100
+    socket.receive({ t: "pong" })
+    expect(h.connection.lastRttMs).toBe(42)
   })
 
   it("reconnects when a socket never completes the welcome handshake", () => {
@@ -1015,6 +1038,11 @@ describe("session resume", () => {
       revived.sentRelay.filter((envelope) => envelope.header.frame.t === "data").at(-1)!.header
         .frame.seq
     ).toEqual(2)
+    // Observability: both welcomes reported, with the resume attributed.
+    expect(h.welcomes).toEqual([
+      { resumed: false, replayedFrames: 0 },
+      { resumed: true, replayedFrames: 2 }
+    ])
   })
 
   it("drains a coalescing outbox into the retention buffer on suspend", () => {

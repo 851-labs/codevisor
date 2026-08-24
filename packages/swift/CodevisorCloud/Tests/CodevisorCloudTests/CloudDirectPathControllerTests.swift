@@ -145,6 +145,66 @@ struct CloudDirectPathControllerTests {
         #expect(script.probes == ["m1", "m1"])
     }
 
+    @Test("LAN→relay failover: a dead direct pipe routes the next open over the relay")
+    func lanToRelayFailover() async throws {
+        // One machine, two pipes: a scripted LAN listener and a scripted
+        // relay machine behind a scripted hub, sharing the device id.
+        let direct = ScriptedDirectMachine()
+        let deviceId = direct.machine.deviceId
+        let relayMachine = ScriptedRelayMachine(deviceId: deviceId)
+        let scriptedHub = ScriptedCloudHub(machines: [relayMachine.presence])
+        scriptedHub.onRelay = { envelope in
+            guard let appKey = scriptedHub.appPublicKey else { return }
+            _ = try? relayMachine.receive(
+                envelope.frame, payload: envelope.payload, appPublicKey: appKey)
+        }
+        let hub = CloudHubConnection(
+            serverURL: URL(string: "https://cloud.example.com")!,
+            credentialStore: InMemoryCloudCredentialStore(token: "session-token"),
+            deviceName: "Test App",
+            deviceOS: "macOS",
+            webSocketTransport: FakeWebSocketTransport { _ in scriptedHub.socket },
+            readyTimeout: .seconds(2)
+        )
+        let relayEndpoint = CloudRelayEndpoint(
+            hub: hub,
+            machineDeviceId: deviceId,
+            machinePublicKey: relayMachine.publicKey
+        )
+
+        let script = ProbeScript()
+        script.answer(deviceId, with: direct)
+        let controller = makePathController(script: script)
+        controller.reconcile(
+            machines: [testMachine(deviceId, publicKey: direct.machine.publicKey)]
+        ) { UnusedTransport(machineDeviceId: $0.deviceId) }
+        await settle(controller)
+        #expect(controller.machineIds.contains(deviceId))
+
+        // The one transport every consumer would hold: best pipe per open.
+        let key = direct.machine.publicKey
+        let transport = SwitchingChannelTransport(machineDeviceId: deviceId) {
+            await controller.transport(for: deviceId, publicKey: key) ?? relayEndpoint
+        }
+
+        // While the direct pipe is up, channels land on the LAN listener.
+        let overDirect = try await transport.openChannel(
+            channelType: "http", params: nil, compressed: false,
+            onMessage: { _ in }, onClosed: { _ in })
+        #expect(await waitUntil { direct.machine.channel(overDirect.id) != nil })
+        #expect(relayMachine.channel(overDirect.id) == nil)
+
+        // WiFi gone: the pipe dies, and the very next open rides the relay.
+        direct.socket.disconnect()
+        #expect(await waitUntil { await MainActor.run { controller.machineIds.isEmpty } })
+        let overRelay = try await transport.openChannel(
+            channelType: "http", params: nil, compressed: false,
+            onMessage: { _ in }, onClosed: { _ in })
+        #expect(await waitUntil { relayMachine.channel(overRelay.id) != nil })
+        #expect(direct.machine.channel(overRelay.id) == nil)
+        await hub.shutdown()
+    }
+
     @Test("Removed machines and key changes drop their pipe; dropAll clears everything")
     func teardown() async throws {
         let script = ProbeScript()

@@ -55,12 +55,17 @@ export interface MachineConnectionOptions {
   /// compressed inbound frames are refused (the app only compresses when the
   /// machine advertises support via this pair being wired up).
   decompressPayload?: (bytes: Uint8Array) => Uint8Array
+  /// Observability: fired on every completed welcome so integrators can log
+  /// resume outcomes (a resumed session replays its held frames silently).
+  onWelcome?: (info: { resumed: boolean; replayedFrames: number }) => void
   scheduleReconnect?: (callback: () => void, delayMs: number) => void
   scheduleTimeout?: (callback: () => void, delayMs: number) => CancelTimeout
   welcomeTimeoutMs?: number
   heartbeatIntervalMs?: number
   pongTimeoutMs?: number
   random?: () => number
+  /// Clock for RTT measurement; injectable for tests.
+  now?: () => number
 }
 
 export class CloudMachineConnection {
@@ -82,6 +87,9 @@ export class CloudMachineConnection {
   #connectionId: string | undefined
   #retained: { header: unknown; payload: Uint8Array }[] = []
   #retainedBytes = 0
+  /// Relay round-trip time observed on the last heartbeat ping/pong.
+  #pingSentAt: number | undefined
+  #lastRttMs: number | undefined
 
   constructor(private readonly options: MachineConnectionOptions) {
     this.#receiver = new ChannelReceiver({
@@ -106,6 +114,13 @@ export class CloudMachineConnection {
 
   get state(): MachineConnectionState {
     return this.#state
+  }
+
+  /// The relay RTT from the most recent heartbeat, in milliseconds —
+  /// undefined until the first pong. Path-latency observability for
+  /// integrators; never used for routing decisions.
+  get lastRttMs(): number | undefined {
+    return this.#lastRttMs
   }
 
   start(): void {
@@ -215,6 +230,7 @@ export class CloudMachineConnection {
         this.#cancelWelcomeTimeout = undefined
         this.#resumeToken = frame.resume
         const resumed = frame.resumed === true && frame.connectionId === this.#connectionId
+        const replayedFrames = this.#retained.length
         this.#connectionId = frame.connectionId
         if (resumed) {
           // Same identity on both ends: replay what was sealed while away,
@@ -232,10 +248,20 @@ export class CloudMachineConnection {
           this.#receiver.dropAll("peer-gone")
         }
         this.#setState("connected")
+        this.options.onWelcome?.({
+          resumed,
+          replayedFrames: resumed ? replayedFrames : 0
+        })
+        // A pong must never be timed against a ping from a previous socket.
+        this.#pingSentAt = undefined
         this.#scheduleHeartbeat(socket)
         return
       }
       case "pong":
+        if (this.#pingSentAt !== undefined) {
+          this.#lastRttMs = (this.options.now ?? Date.now)() - this.#pingSentAt
+          this.#pingSentAt = undefined
+        }
         if (this.#cancelPongTimeout !== undefined) {
           this.#cancelPongTimeout()
           this.#cancelPongTimeout = undefined
@@ -257,6 +283,7 @@ export class CloudMachineConnection {
       if (this.#socket !== socket || this.#state !== "connected") return
       try {
         socket.send(encodeCloudFrame({ t: "ping" }))
+        this.#pingSentAt = (this.options.now ?? Date.now)()
       } catch {
         this.#forceReconnect(socket, { kind: "send-failed", phase: "heartbeat" })
         return

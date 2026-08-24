@@ -279,6 +279,11 @@ const makeBridge = (
     },
     socketFactory,
     channelHandlers,
+    onWelcome: ({ resumed, replayedFrames }) => {
+      if (resumed) {
+        options.log(`Cloud: resumed relay session (${replayedFrames} held frames replayed)`)
+      }
+    },
     onStateChange: (state) => {
       if (state === "connected") options.log(`Cloud: connected to ${credentials.serverUrl}`)
       if (state === "reconnecting") options.log("Cloud: reconnecting to relay")

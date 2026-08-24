@@ -40,6 +40,11 @@ public actor CloudHubConnection {
     var isWelcomed = false
     var heartbeatTimeoutTask: Task<Void, Never>?
     var awaitingPongOnSocketID: UUID?
+    /// When the outstanding keepalive ping left, for RTT measurement.
+    var pingSentAt: ContinuousClock.Instant?
+    /// Relay round-trip time from the most recent keepalive ping/pong —
+    /// path-latency observability, never used for routing decisions.
+    public internal(set) var lastRttMillis: Int?
     private var fatalFailure: CloudHubConnectionError?
     private var waiterSeq = 0
     var readyWaiters: [Int: CheckedContinuation<Void, any Error>] = [:]

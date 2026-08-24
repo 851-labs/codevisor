@@ -9,10 +9,11 @@ import {
   isoTimestamp,
   MAX_RELAY_MESSAGE_BYTES,
   type CloudMachinePresence,
-  type HubToMachine,
   type WireRelayEnvelope
 } from "@codevisor/api"
 import type { CloudEnv } from "./env.js"
+import { HubMetrics } from "./hub-metrics.js"
+import { announceExpired, bufferOrAbandon, type HubNoticesPort } from "./hub-notices.js"
 import {
   HUB_MIGRATIONS,
   machinePresence,
@@ -22,11 +23,7 @@ import {
 } from "./hub-schema.js"
 import { HubSockets } from "./hub-sockets.js"
 import { routeAppRelay, routeMachineRelay, type RelayHubPort } from "./relay-routing.js"
-import {
-  DEFAULT_RESUME_GRACE_MS,
-  ResumeSessions,
-  type ResumeSessionRow
-} from "./resume-sessions.js"
+import { DEFAULT_RESUME_GRACE_MS, ResumeSessions } from "./resume-sessions.js"
 
 /// One hub per account (`getByName(userId)`): the rendezvous point every one
 /// of the user's app and machine sockets dials into. The hub is a dumb router:
@@ -66,6 +63,7 @@ const MAX_FRAME_LENGTH = 64 * 1024
 export class UserHub extends DurableObject<CloudEnv> {
   readonly #resume: ResumeSessions
   readonly #net: HubSockets
+  readonly #metrics = new HubMetrics()
 
   constructor(ctx: DurableObjectState, env: CloudEnv) {
     super(ctx, env)
@@ -192,6 +190,7 @@ export class UserHub extends DurableObject<CloudEnv> {
         this.#net.error(socket, "invalid-frame", "malformed relay message")
         return
       }
+      this.#metrics.countRelay(attachment.connectionId, message.byteLength)
       if (attachment.kind === "app") {
         routeAppRelay(this.#relayPort(), socket, attachment, envelopes)
       } else {
@@ -358,14 +357,23 @@ export class UserHub extends DurableObject<CloudEnv> {
       }
     )
     attachment.connectionId = adopted.connectionId
+    this.#metrics.hello(kind, adopted.resumed, frame.resume !== undefined)
     return adopted
   }
 
   /// Hands a resumed connection everything relayed while it was away.
   #replayBuffers(socket: WebSocket, connectionId: string): void {
+    let replayed = 0
     for (const message of this.#resume.drainBuffers(connectionId)) {
-      if (!this.#net.send(socket, message)) return
+      if (!this.#net.send(socket, message)) break
+      replayed += 1
     }
+    this.#metrics.replayed(connectionId, replayed)
+  }
+
+  /// Dependencies for the deferred death notices (hub-notices.ts).
+  #notices(): HubNoticesPort {
+    return { net: this.#net, resume: this.#resume, sql: this.ctx.storage.sql }
   }
 
   /// The narrow surface relay routing (relay-routing.ts) uses to reach this
@@ -387,25 +395,15 @@ export class UserHub extends DurableObject<CloudEnv> {
       send: (socket, message) => this.#net.send(socket, message),
       bufferForMachine: (machineId, message) => {
         const session = this.#resume.machineGraceSession(machineId, Date.now())
-        return session === undefined ? false : this.#bufferOrAbandon(session, message)
+        return session === undefined ? false : bufferOrAbandon(this.#notices(), session, message)
       },
       bufferForPeer: (peerId, message) => {
         const session = this.#resume.appGraceSession(peerId, Date.now())
-        return session === undefined ? false : this.#bufferOrAbandon(session, message)
+        return session === undefined ? false : bufferOrAbandon(this.#notices(), session, message)
       },
       appGraceExists: (peerId) => this.#resume.appGraceSession(peerId, Date.now()) !== undefined,
       error: (socket, code, message, context) => this.#net.error(socket, code, message, context)
     }
-  }
-
-  /// Buffers for a grace session, or — on overflow — abandons it: frames are
-  /// being dropped, so a later resume could not be seamless anyway. The
-  /// deferred death notices fire immediately, restoring pre-resume behavior.
-  #bufferOrAbandon(session: ResumeSessionRow, message: Uint8Array): boolean {
-    if (this.#resume.buffer(session.connection_id, message)) return true
-    this.#resume.delete(session.connection_id)
-    this.#announceExpired(session)
-    return false
   }
 
   #onGone(socket: WebSocket): void {
@@ -424,6 +422,9 @@ export class UserHub extends DurableObject<CloudEnv> {
         attachment.deviceId!
       )
     }
+    // One traffic summary per socket leg; a resumed connection accumulates
+    // (and later reports) a fresh run under the same connection id.
+    this.#metrics.sessionEnd(attachment)
     // Start the resume grace window instead of announcing death; the alarm
     // delivers the deferred peer-gone/offline signals only if nobody resumes.
     const deadline = this.#resume.markDisconnected(attachment.connectionId, Date.now())
@@ -432,7 +433,7 @@ export class UserHub extends DurableObject<CloudEnv> {
       return
     }
     // No resumable session (it was abandoned or removed): announce now.
-    this.#announceExpired({
+    announceExpired(this.#notices(), {
       connection_id: attachment.connectionId,
       kind: attachment.kind,
       device_id: attachment.deviceId ?? "",
@@ -446,7 +447,8 @@ export class UserHub extends DurableObject<CloudEnv> {
     const now = Date.now()
     for (const session of this.#resume.expired(now)) {
       this.#resume.delete(session.connection_id)
-      this.#announceExpired(session)
+      this.#metrics.resumeExpired(session)
+      announceExpired(this.#notices(), session)
     }
     const next = this.#resume.nextExpiry()
     if (next !== undefined) await this.ctx.storage.setAlarm(Math.max(next, now + 250))
@@ -456,41 +458,6 @@ export class UserHub extends DurableObject<CloudEnv> {
     const current = await this.ctx.storage.getAlarm()
     if (current === null || current > deadline) {
       await this.ctx.storage.setAlarm(deadline)
-    }
-  }
-
-  /// The deferred death notices for a session nobody resumed — byte-for-byte
-  /// the announcements #onGone used to make immediately.
-  #announceExpired(session: ResumeSessionRow): void {
-    if (session.kind === "machine") {
-      const deviceId = session.device_id
-      const stillConnected = this.#net
-        .machine(deviceId)
-        .some((candidate) => this.#net.attachment(candidate)?.helloDone === true)
-      if (stillConnected) return
-      const row = machineRow(this.ctx.storage.sql, deviceId)
-      if (row !== undefined) {
-        this.#net.broadcastToApps({ t: "presence", machine: machinePresence(row, false) })
-      }
-      // Also broadcast the machine-offline error apps already understand
-      // from failed relay attempts: their channels toward this machine are
-      // dead, and a receive-only stream would otherwise never find out
-      // (it sends nothing, so it can never provoke the reactive error).
-      this.#net.broadcastToApps({
-        t: "error",
-        code: "machine-offline",
-        message: "machine disconnected from the relay",
-        machineId: deviceId
-      })
-      return
-    }
-    // App gone (for good): let machines tear down that peer's channels.
-    if (this.#net.byConnectionId(session.connection_id).length > 0) return
-    const gone: HubToMachine = { t: "peer-gone", peerId: session.connection_id }
-    for (const machineSocket of this.#net.byTag("machine")) {
-      if (this.#net.attachment(machineSocket)?.helloDone === true) {
-        machineSocket.send(encodeCloudFrame(gone))
-      }
     }
   }
 }

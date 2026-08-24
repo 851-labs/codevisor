@@ -57,6 +57,13 @@ extension CloudHubConnection {
             suspensionTask?.cancel()
             suspensionTask = nil
             let resumed = welcome.resumed == true && welcome.connectionId == lastConnectionId
+            // Resume observability: success keeps channels; a declined resume
+            // (expired grace, rotated token) degrades to the plain teardown.
+            if resumed {
+                Log.cloud.info("Cloud hub resumed this session; held channels continue")
+            } else if resumeToken != nil {
+                Log.cloud.info("Cloud hub declined the resume; starting a fresh session")
+            }
             resumeToken = welcome.resume
             lastConnectionId = welcome.connectionId
             if !resumed {

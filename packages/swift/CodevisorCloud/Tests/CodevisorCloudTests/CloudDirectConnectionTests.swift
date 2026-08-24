@@ -190,6 +190,22 @@ struct CloudDirectConnectionTests {
         #expect(downs.messages.count == 1)
     }
 
+    @Test("Keepalive pongs record the direct-pipe RTT")
+    func keepaliveMeasuresRtt() async throws {
+        let scripted = ScriptedDirectMachine()
+        let connection = makeDirectConnection(
+            to: scripted,
+            heartbeatInterval: .milliseconds(20),
+            heartbeatTimeout: .seconds(2)
+        )
+        try await connection.waitUntilReady()
+        #expect(await connection.lastRttMillis == nil)
+        #expect(await waitUntil { await connection.lastRttMillis != nil })
+        let rtt = try #require(await connection.lastRttMillis)
+        #expect(rtt >= 0)
+        await connection.shutdown()
+    }
+
     @Test("A missed pong deadline tears the pipe down")
     func heartbeatDeadline() async throws {
         let scripted = ScriptedDirectMachine()

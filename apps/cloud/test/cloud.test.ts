@@ -936,6 +936,80 @@ describe("session resume", () => {
 
 // -- Environment gating --------------------------------------------------------
 
+// -- Hub: resilience matrix ----------------------------------------------------
+
+/// The deploy/failure scenarios the relay must ride out. The rest of the
+/// matrix lives beside the features: resume expiry with deferred death
+/// notices and buffer overflow ("session resume"), protocol version skew
+/// ("closes connections that speak an unsupported protocol"), and LAN→relay
+/// failover on the app side (CloudDirectPathControllerTests in Swift).
+describe("resilience matrix", () => {
+  it("rolling deploy: both sockets drop mid-stream and the stream resumes seamlessly", async () => {
+    const token = await devLogin()
+    const machine = await connectMachine(token, "deploy-stream-vps")
+    const app = await connectApp(token)
+
+    // A stream in flight, machine → app.
+    sendRelay(
+      machine.socket,
+      { peerId: app.welcome.connectionId, frame: { t: "data", channelId: "st", seq: 0 } },
+      new Uint8Array([0])
+    )
+    expect([...(await app.reader.nextEnvelope()).payload]).toEqual([0])
+
+    // The deploy: every edge socket closes at once.
+    machine.socket.close(1000, "deploy")
+    app.socket.close(1000, "deploy")
+
+    // The machine reconnects first and keeps streaming; the app is still
+    // away, so the frame lands in its resume buffer.
+    const machine2 = await connectMachine(token, "deploy-stream-vps", machine.deviceId, {
+      apiKey: machine.apiKey,
+      keys: machine.keys,
+      resume: machine.welcome.resume!
+    })
+    expect(machine2.welcome.resumed).toBe(true)
+    sendRelay(
+      machine2.socket,
+      { peerId: app.welcome.connectionId, frame: { t: "data", channelId: "st", seq: 1 } },
+      new Uint8Array([1])
+    )
+
+    const app2 = await connectApp(token, {
+      keys: app.keys,
+      deviceId: app.deviceId,
+      resume: app.welcome.resume!
+    })
+    expect(app2.welcome.resumed).toBe(true)
+    // Presence never flapped: the machine shows online in the new welcome.
+    expect(app2.welcome.machines.find((m) => m.deviceId === machine.deviceId)?.online).toBe(true)
+    // The mid-deploy frame replays, then the live stream just continues.
+    expect([...(await app2.reader.nextEnvelope()).payload]).toEqual([1])
+    sendRelay(
+      machine2.socket,
+      { peerId: app.welcome.connectionId, frame: { t: "data", channelId: "st", seq: 2 } },
+      new Uint8Array([2])
+    )
+    expect([...(await app2.reader.nextEnvelope()).payload]).toEqual([2])
+    // Upstream still routes with the original addressing.
+    sendRelay(app2.socket, {
+      machineId: machine.deviceId,
+      frame: { t: "credit", channelId: "st", seq: 0, bytes: 3 }
+    })
+    expect((await machine2.reader.nextEnvelope()).header).toMatchObject({
+      peerId: app.welcome.connectionId,
+      frame: { t: "credit", bytes: 3 }
+    })
+
+    // Neither side ever heard a death notice: a ping round-trips with
+    // nothing queued ahead of the pong.
+    app2.socket.send(encodeCloudFrame({ t: "ping" }))
+    expect(((await app2.reader.next()) as { t: string }).t).toBe("pong")
+    machine2.socket.send(encodeCloudFrame({ t: "ping" }))
+    expect(((await machine2.reader.next()) as { t: string }).t).toBe("pong")
+  })
+})
+
 describe("machine credential probe", () => {
   it("confirms valid keys and rejects missing or invalid ones", async () => {
     const token = await devLogin()
