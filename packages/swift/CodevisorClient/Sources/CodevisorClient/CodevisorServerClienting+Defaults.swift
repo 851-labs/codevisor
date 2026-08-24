@@ -47,6 +47,15 @@ public extension CodevisorServerClienting {
     ) async throws -> ServerSyncDocument {
         ServerSyncDocument(namespace: namespace, entries: entries)
     }
+    func reconcileSkillsSync() async throws -> ServerSkillsSyncStatus {
+        ServerSkillsSyncStatus(published: [], applied: [], removed: [], missingBlobs: [])
+    }
+    func syncBlob(id: String) async throws -> Data {
+        throw CodevisorServerClientError.invalidResponse
+    }
+    func putSyncBlob(id: String, bytes: Data) async throws {
+        throw CodevisorServerClientError.invalidResponse
+    }
 
     /// Compatibility fallback for test doubles and pre-tailnet servers: no
     /// discovery. The HTTP client overrides this with the real request.

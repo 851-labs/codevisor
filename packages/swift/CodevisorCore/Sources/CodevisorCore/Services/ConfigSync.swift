@@ -13,7 +13,7 @@ import Observation
 @Observable
 public final class ConfigSync {
     /// The namespaces this client gossips. Grows as stores onboard.
-    public static let namespaces = ["settings"]
+    public static let namespaces = ["settings", "skills"]
 
     private let machines: MachineController
     private let store: any PersistenceStore
@@ -127,6 +127,60 @@ public final class ConfigSync {
         where machines.connectionsById[machine.id]?.status?.isReachable == true {
             await synchronize(machineId: machine.id)
         }
+        await synchronizeSkills()
+    }
+
+    // MARK: - Skills ferry
+
+    /// Skills replicate as metadata (the "skills" namespace, gossiped
+    /// above) plus content-addressed archives servers cannot fetch from
+    /// each other. This client is the courier: reconcile everywhere,
+    /// collect who is missing which blob, carry each blob from any machine
+    /// that serves it, then reconcile the needy machines again so they
+    /// apply what just arrived.
+    public func synchronizeSkills() async {
+        let reachable = machines.allMachines.filter {
+            machines.connectionsById[$0.id]?.status?.isReachable == true
+        }
+        var missing: [(machineId: String, hash: String)] = []
+        for machine in reachable {
+            guard
+                let status = try? await machines.client(for: machine.id).reconcileSkillsSync()
+            else { continue }
+            for item in status.missingBlobs {
+                missing.append((machine.id, item.hash))
+            }
+        }
+        guard !missing.isEmpty else { return }
+        var blobCache: [String: Data] = [:]
+        var ferried: Set<String> = []
+        for item in missing {
+            var bytes = blobCache[item.hash]
+            if bytes == nil {
+                let donors = reachable.map(\.id).filter { $0 != item.machineId }
+                bytes = await firstBlob(hash: item.hash, from: donors)
+                if let bytes { blobCache[item.hash] = bytes }
+            }
+            guard let bytes else { continue }
+            if (try? await machines.client(for: item.machineId).putSyncBlob(
+                id: item.hash,
+                bytes: bytes
+            )) != nil {
+                ferried.insert(item.machineId)
+            }
+        }
+        for machineId in ferried {
+            _ = try? await machines.client(for: machineId).reconcileSkillsSync()
+        }
+    }
+
+    private func firstBlob(hash: String, from machineIds: [String]) async -> Data? {
+        for machineId in machineIds {
+            if let bytes = try? await machines.client(for: machineId).syncBlob(id: hash) {
+                return bytes
+            }
+        }
+        return nil
     }
 
     private func pushEverywhere(namespace: String) {

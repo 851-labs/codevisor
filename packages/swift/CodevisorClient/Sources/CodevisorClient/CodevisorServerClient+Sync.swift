@@ -43,6 +43,37 @@ public struct ServerSyncDocument: Codable, Equatable, Sendable {
     }
 }
 
+public struct ServerSkillsSyncMissingBlob: Codable, Equatable, Sendable {
+    public var directoryName: String
+    public var hash: String
+
+    public init(directoryName: String, hash: String) {
+        self.directoryName = directoryName
+        self.hash = hash
+    }
+}
+
+/// Outcome of one skills reconcile pass on a machine — most importantly the
+/// blobs it cannot apply until a client ferries them over.
+public struct ServerSkillsSyncStatus: Codable, Equatable, Sendable {
+    public var published: [String]
+    public var applied: [String]
+    public var removed: [String]
+    public var missingBlobs: [ServerSkillsSyncMissingBlob]
+
+    public init(
+        published: [String],
+        applied: [String],
+        removed: [String],
+        missingBlobs: [ServerSkillsSyncMissingBlob]
+    ) {
+        self.published = published
+        self.applied = applied
+        self.removed = removed
+        self.missingBlobs = missingBlobs
+    }
+}
+
 extension CodevisorServerClient {
     public func syncDocument(namespace: String) async throws -> ServerSyncDocument {
         try await get("/v1/sync/\(namespace)")
@@ -58,5 +89,22 @@ extension CodevisorServerClient {
             let entries: [ServerSyncEntry]
         }
         return try await send("/v1/sync/\(namespace)", method: "PUT", body: Body(entries: entries))
+    }
+
+    public func reconcileSkillsSync() async throws -> ServerSkillsSyncStatus {
+        try await send("/v1/sync/skills/reconcile", method: "POST", body: Optional<EmptyBody>.none)
+    }
+
+    public func syncBlob(id: String) async throws -> Data {
+        try await performRaw("/v1/sync/blobs/\(id)", method: "GET", body: nil, contentType: nil)
+    }
+
+    public func putSyncBlob(id: String, bytes: Data) async throws {
+        _ = try await performRaw(
+            "/v1/sync/blobs/\(id)",
+            method: "PUT",
+            body: bytes,
+            contentType: "application/gzip"
+        )
     }
 }

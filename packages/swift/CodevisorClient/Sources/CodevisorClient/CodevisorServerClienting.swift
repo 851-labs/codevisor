@@ -28,6 +28,13 @@ public protocol CodevisorServerClienting: Sendable {
         namespace: String,
         entries: [ServerSyncEntry]
     ) async throws -> ServerSyncDocument
+    /// Runs one skills reconcile pass on the machine and reports what it
+    /// published, applied, removed — and which blobs it still needs.
+    func reconcileSkillsSync() async throws -> ServerSkillsSyncStatus
+    /// Raw config-plane blob transfer, for ferrying skill archives between
+    /// machines.
+    func syncBlob(id: String) async throws -> Data
+    func putSyncBlob(id: String, bytes: Data) async throws
     func issuePairingToken() async throws -> ServerPairingToken
     /// The machine's stable connection token (unchanged across restarts and
     /// updates until rotated). Preferred over `issuePairingToken` for showing

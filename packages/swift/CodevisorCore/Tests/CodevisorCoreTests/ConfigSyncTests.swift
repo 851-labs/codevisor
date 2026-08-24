@@ -164,6 +164,36 @@ struct ConfigSyncTests {
         #expect(environment.machines.serverUpdateChannel == .stable)
     }
 
+    @Test("The ferry moves skill blobs from havers to needers")
+    func skillsFerry() async throws {
+        let remoteA = makeRemote("remote-a")
+        let remoteB = makeRemote("remote-b")
+        let fakeA = SyncFakeServerClient(projects: [], sessions: [])
+        let fakeB = SyncFakeServerClient(projects: [], sessions: [])
+        let hash = String(repeating: "a", count: 64)
+        fakeA.configureWantedSkill(directoryName: "deploy", hash: hash)
+        fakeA.seedSkillBlob(hash: hash, Data("archive-bytes".utf8))
+        fakeB.configureWantedSkill(directoryName: "deploy", hash: hash)
+        let controller = try makeController(
+            fakes: [
+                "local": SyncFakeServerClient(projects: [], sessions: []),
+                remoteA.id: fakeA,
+                remoteB.id: fakeB,
+            ],
+            remotes: [remoteA, remoteB]
+        )
+        await controller.refreshStatus(for: remoteA.id)
+        await controller.refreshStatus(for: remoteB.id)
+        let sync = ConfigSync(machines: controller, store: InMemoryStore())
+
+        await sync.synchronizeSkills()
+
+        // B received A's archive and the follow-up reconcile applied it.
+        #expect(fakeB.skillBlob(hash: hash) == Data("archive-bytes".utf8))
+        #expect(fakeB.appliedSkills == ["deploy"])
+        #expect(fakeA.appliedSkills == ["deploy"])
+    }
+
     @Test("Tombstones remove values and win over older writes")
     func tombstonesWin() throws {
         let controller = try makeController(
