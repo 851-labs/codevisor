@@ -228,16 +228,20 @@ extension SyncFakeServerClient {
             )
         }
     }
+    func configureInfoId(_ id: String) {
+        lock.withLock { _infoId = id }
+    }
+
     func info() async throws -> ServerInfo {
-        let version: String = try lock.withLock {
+        let (version, id): (String, String) = try lock.withLock {
             if downtimeRemaining > 0 {
                 downtimeRemaining -= 1
                 throw ServerDownError()
             }
-            return currentVersion
+            return (currentVersion, _infoId)
         }
         return ServerInfo(
-            id: "local", name: "Local", kind: "local", version: version, platform: "darwin", bindHost: "127.0.0.1")
+            id: id, name: "Local", kind: "local", version: version, platform: "darwin", bindHost: "127.0.0.1")
     }
     func updateInfo(refresh: Bool, channel: ServerUpdateChannel) async throws -> ServerUpdateInfo {
         lock.withLock {

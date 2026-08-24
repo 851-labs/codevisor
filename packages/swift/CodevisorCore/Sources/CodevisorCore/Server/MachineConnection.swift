@@ -143,6 +143,34 @@ extension MachineController {
         navigationSyncStateByMachineId[selectedMachineId] ?? .cached
     }
 
+    public var selectedMachineId: String {
+        registry.selectedMachineId
+    }
+
+    public var selectedMachine: CodevisorMachine {
+        machine(for: registry.selectedMachineId) ?? CodevisorMachine.local
+    }
+
+    public var selectedClient: any CodevisorServerClienting {
+        client(for: selectedMachine.id)
+    }
+
+    public var machines: [CodevisorMachine] {
+        [CodevisorMachine.local] + registry.remoteMachines
+    }
+
+    public func machine(for id: String) -> CodevisorMachine? {
+        allMachines.first { $0.id == id }
+    }
+
+    /// The cloud presence entry backing a `cloud:` machine id, if any.
+    public func cloudMachine(forMachineId id: String) -> CloudMachine? {
+        guard let deviceId = CodevisorMachine.cloudDeviceId(forMachineId: id),
+            let cloudProvider, cloudProvider.isCloudSignedIn
+        else { return nil }
+        return cloudProvider.cloudMachines.first { $0.deviceId == deviceId }
+    }
+
     /// This machine's stable connection token (the loopback call is exempt
     /// from token auth), for pasting into another device's Add Remote Machine
     /// sheet. Stable across restarts so the copied value keeps working.

@@ -220,6 +220,7 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
     var updateApplied = false
     var bootId = "boot-before-update"
     var downtimeRemaining = 0
+    var _infoId = "local"
     var _appliedUpdates = 0
     var _updateInfoChannels: [ServerUpdateChannel] = []
     var _updateInfoRefreshes: [Bool] = []

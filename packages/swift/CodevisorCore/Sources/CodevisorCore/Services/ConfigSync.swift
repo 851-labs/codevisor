@@ -13,7 +13,7 @@ import Observation
 @Observable
 public final class ConfigSync {
     /// The namespaces this client gossips. Grows as stores onboard.
-    public static let namespaces = ["settings", "skills", "mcps", "harness-accounts"]
+    public static let namespaces = ["settings", "skills", "mcps", "harness-accounts", "machines"]
 
     private let machines: MachineController
     private let store: any PersistenceStore

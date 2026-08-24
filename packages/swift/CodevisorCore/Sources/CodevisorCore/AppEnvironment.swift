@@ -28,6 +28,7 @@ public final class AppEnvironment {
     public let updateCenter: UpdateCenter
     /// The config plane's client half: local replica + cross-machine gossip.
     public let configSync: ConfigSync
+    public let fleetRoster: FleetRoster
     /// Set at launch when an already-onboarded install is missing the system
     /// permissions Computer Use needs (typically right after an update).
     /// While true, the root view presents the blocking permissions gate
@@ -122,6 +123,7 @@ public final class AppEnvironment {
         )
         updateCenter = UpdateCenter(machines: machines, appUpdate: self.appUpdate)
         configSync = ConfigSync(machines: machines)
+        fleetRoster = FleetRoster(machines: machines, configSync: configSync)
         // Previews/tests without a device credential store stay hermetic: an
         // in-memory store, and no networking until someone calls bootstrap().
         self.cloud = CloudAccountController(
@@ -148,12 +150,13 @@ public final class AppEnvironment {
         machines.onSyncChanged = { [weak self] in
             self?.configSync.applyRemoteChange(namespace: $1.namespace, entries: $1.entries)
         }
-        configSync.onNamespaceChanged = { [weak self] namespace in
-            guard namespace == "settings" else { return }
-            self?.applySyncedSettings()
-        }
+        configSync.onNamespaceChanged = { [weak self] in self?.applySyncedNamespace($0) }
         machines.onMachineConnected = { [weak self] in self?.noteMachineConnected($0) }
-        applySyncedSettings()
+        machines.onMachineAdded = { [weak self] in self?.fleetRoster.publishMachine($0) }
+        machines.onMachineRemoved = { [weak self] in
+            self?.fleetRoster.publishRemoval(localMachineId: $0)
+        }
+        applyBootSyncState()
         machines.onPluginStateChanged = { [weak self] in self?.pluginStateDidChange(onServer: $0) }
         machines.onPluginUpdated = { [weak self] in self?.pluginDidUpdate(onServer: $0, pluginId: $1) }
         // One-time split of pre-"1 workspace == 1 directory" workspaces whose
@@ -358,12 +361,6 @@ public final class AppEnvironment {
                 )
             }
         }
-    }
-
-    /// Starts the selected machine if it is local, then refreshes cached server
-    /// state. Remote machines are never auto-started.
-    public func prepareSelectedMachine() async {
-        await machines.prepareSelectedMachine()
     }
 
     /// Best-effort first-run warm for the new-chat composer. Onboarding has

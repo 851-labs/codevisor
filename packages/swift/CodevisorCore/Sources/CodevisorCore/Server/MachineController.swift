@@ -136,6 +136,11 @@ public final class MachineController {
     /// prepared, or a background stream opened) — ConfigSync converges it
     /// immediately instead of waiting for the next periodic sweep.
     @ObservationIgnored public var onMachineConnected: ((String) -> Void)?
+    /// Invoked after a remote machine is added or re-tokened (sheet,
+    /// deeplink, or roster apply) — the fleet roster publishes it.
+    @ObservationIgnored public var onMachineAdded: ((CodevisorMachine) -> Void)?
+    /// Invoked after a machine is removed locally — the roster tombstones it.
+    @ObservationIgnored public var onMachineRemoved: ((String) -> Void)?
 
     public init(
         store: any PersistenceStore,
@@ -249,10 +254,6 @@ public final class MachineController {
     /// back the clients for `cloud:` machine ids.
     @ObservationIgnored public var cloudProvider: (any CloudMachineProviding)?
 
-    public var machines: [CodevisorMachine] {
-        [CodevisorMachine.local] + registry.remoteMachines
-    }
-
     /// Every machine the app can reach, however it arrives: the configured
     /// (local + remote) machines plus one synthesized entry per cloud machine
     /// that no configured machine already represents.
@@ -294,30 +295,6 @@ public final class MachineController {
         return cloudProvider.cloudMachines.filter {
             !knownCloudIds.contains($0.deviceId) && !knownNames.contains($0.name)
         }
-    }
-
-    /// The cloud presence entry backing a `cloud:` machine id, if any.
-    public func cloudMachine(forMachineId id: String) -> CloudMachine? {
-        guard let deviceId = CodevisorMachine.cloudDeviceId(forMachineId: id),
-            let cloudProvider, cloudProvider.isCloudSignedIn
-        else { return nil }
-        return cloudProvider.cloudMachines.first { $0.deviceId == deviceId }
-    }
-
-    public var selectedMachineId: String {
-        registry.selectedMachineId
-    }
-
-    public var selectedMachine: CodevisorMachine {
-        machine(for: registry.selectedMachineId) ?? CodevisorMachine.local
-    }
-
-    public var selectedClient: any CodevisorServerClienting {
-        client(for: selectedMachine.id)
-    }
-
-    public func machine(for id: String) -> CodevisorMachine? {
-        allMachines.first { $0.id == id }
     }
 
     public func client(for machineId: String) -> any CodevisorServerClienting {
@@ -481,7 +458,14 @@ public final class MachineController {
     }
 
     @discardableResult
-    public func addRemote(host input: String, name: String? = nil, token: String? = nil) throws -> CodevisorMachine {
+    /// `select: false` is the roster-apply path: the machine joins the list
+    /// quietly, without stealing the user's current selection.
+    public func addRemote(
+        host input: String,
+        name: String? = nil,
+        token: String? = nil,
+        select: Bool = true
+    ) throws -> CodevisorMachine {
         let baseURL = try Self.normalizedRemoteURL(from: input)
         let customName = Self.normalizedName(name)
         let normalizedToken = Self.normalizedName(token)
@@ -493,15 +477,18 @@ public final class MachineController {
                 registry.remoteMachines[index].token = normalizedToken
             }
             let existing = registry.remoteMachines[index]
-            registry.selectedMachineId = existing.id
-            beginWaiting(for: existing.id, reason: .connecting)
+            if select { registry.selectedMachineId = existing.id }
             persist()
-            projectList.selectServer(
-                serverId: existing.id,
-                serverClient: client(for: existing.id),
-                refresh: false
-            )
-            Task { await prepareSelectedMachine() }
+            if select {
+                beginWaiting(for: existing.id, reason: .connecting)
+                projectList.selectServer(
+                    serverId: existing.id,
+                    serverClient: client(for: existing.id),
+                    refresh: false
+                )
+                Task { await prepareSelectedMachine() }
+            }
+            onMachineAdded?(existing)
             return existing
         }
         let baseId = Self.remoteId(for: baseURL)
@@ -514,17 +501,20 @@ public final class MachineController {
             token: normalizedToken
         )
         registry.remoteMachines.append(machine)
-        registry.selectedMachineId = machine.id
-        beginWaiting(for: machine.id, reason: .connecting)
+        if select { registry.selectedMachineId = machine.id }
         persist()
-        projectList.selectServer(
-            serverId: machine.id,
-            serverClient: client(for: machine.id),
-            refresh: false
-        )
-        // Probe right away so a freshly added machine shows its real status
-        // instead of waiting for the next periodic refresh.
-        Task { await prepareSelectedMachine() }
+        if select {
+            beginWaiting(for: machine.id, reason: .connecting)
+            projectList.selectServer(
+                serverId: machine.id,
+                serverClient: client(for: machine.id),
+                refresh: false
+            )
+            // Probe right away so a freshly added machine shows its real
+            // status instead of waiting for the next periodic refresh.
+            Task { await prepareSelectedMachine() }
+        }
+        onMachineAdded?(machine)
         return machine
     }
 
@@ -572,6 +562,7 @@ public final class MachineController {
 
     public func removeMachine(_ id: String) throws {
         guard id != CodevisorMachine.local.id else { throw MachineControllerError.cannotRemoveLocal }
+        onMachineRemoved?(id)
         try credentialStore?.removeToken(forMachineID: id)
         registry.remoteMachines.removeAll { $0.id == id }
         removeConnection(for: id)

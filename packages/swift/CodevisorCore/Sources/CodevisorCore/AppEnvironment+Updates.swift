@@ -9,10 +9,28 @@ extension AppEnvironment {
         harnessService(for: machines.selectedMachineId)
     }
 
+    /// Starts the selected machine if it is local, then refreshes cached server
+    /// state. Remote machines are never auto-started.
+    public func prepareSelectedMachine() async {
+        await machines.prepareSelectedMachine()
+    }
+
     /// A machine's connection just came up: converge it with the config
     /// plane now rather than on the next periodic sweep.
     func noteMachineConnected(_ machineId: String) {
         Task { await configSync.synchronizeMachine(machineId) }
+    }
+
+    /// Change-driven application of replicated namespaces.
+    func applySyncedNamespace(_ namespace: String) {
+        if namespace == "settings" { applySyncedSettings() }
+        if namespace == FleetRoster.namespace { Task { await fleetRoster.applyRoster() } }
+    }
+
+    /// Applies everything the local replica already knows at startup.
+    func applyBootSyncState() {
+        applySyncedSettings()
+        Task { await fleetRoster.applyRoster() }
     }
 
     public var sessionImporter: SessionImporter {
