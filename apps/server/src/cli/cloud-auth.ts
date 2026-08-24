@@ -7,6 +7,7 @@ import {
   type FetchLike,
   type MachineCredentials
 } from "@codevisor/cloud-client"
+import { applySyncParticipation } from "./sync.js"
 import type { CliDeps } from "./support.js"
 
 /// `codevisor auth …` — connect this machine to a Codevisor Cloud account via
@@ -43,6 +44,27 @@ export interface CloudAuthOptions {
   readonly server?: string
   readonly fetchImpl?: FetchLike
   readonly machineName?: string
+  /// Explicit config-sync choice (--no-sync); wins over the prompt.
+  readonly syncConfig?: boolean
+  /// Interactive fallback: ask after a successful login. Absent (plus no
+  /// explicit choice) leaves the server's default — participating — alone.
+  readonly promptSyncConfig?: () => Promise<boolean>
+}
+
+/// The onboarding opt-in: after connecting to a cloud account, record
+/// whether this machine joins config sync. The flag lives in the local
+/// server's database, so it survives the restart that follows login; when
+/// the server is not running yet, point at `codevisor sync` instead.
+const applyLoginSyncChoice = async (deps: CliDeps, options: CloudAuthOptions): Promise<void> => {
+  const wanted =
+    options.syncConfig ??
+    (options.promptSyncConfig === undefined ? undefined : await options.promptSyncConfig())
+  if (wanted === undefined) return
+  if (await applySyncParticipation(deps, wanted)) {
+    deps.log(`Config sync is ${wanted ? "on" : "off"} for this machine.`)
+    return
+  }
+  deps.log(`The server isn't running yet; apply it with: codevisor sync ${wanted ? "on" : "off"}`)
 }
 
 const resolveServer = (deps: CliDeps, options: CloudAuthOptions): string =>
@@ -108,6 +130,7 @@ export const authLoginCommand = async (
       deps.log("")
       deps.log(`✓ Connected as ${machineName}.`)
       deps.log("It will appear in your Codevisor apps once the server (re)starts.")
+      await applyLoginSyncChoice(deps, options)
       return 0
     }
   } catch (error) {

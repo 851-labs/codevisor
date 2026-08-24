@@ -19,6 +19,7 @@ export default defineConfig({
         "src/main.ts",
         "src/serve.ts",
         "src/cli.ts",
+        "src/cli/wiring.ts",
         "src/bg-wrap.ts",
         "src/terminal-proxy.ts",
         // The cloud bridge is an integration boundary over `ws`, live

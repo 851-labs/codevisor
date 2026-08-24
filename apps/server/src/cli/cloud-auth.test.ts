@@ -303,3 +303,77 @@ describe("authLogoutCommand", () => {
     expect(disconnected.logs.join("\n")).toContain("not connected")
   })
 })
+
+describe("auth login sync choice", () => {
+  const loginScript = () =>
+    scriptedFetch({
+      "/.well-known/codevisor": [jsonResponse(instanceBody)],
+      "/api/auth/device/code": [jsonResponse(grantBody())],
+      "/api/auth/device/token": [jsonResponse({ access_token: "session" })],
+      "/api/auth/api-key/create": [jsonResponse({ key: "api-key" })]
+    })
+
+  it("applies a prompted opt-out through the local server", async () => {
+    const world = makeWorld()
+    const calls: Array<{ url: string; body?: unknown }> = []
+    const deps: CliDeps = {
+      ...world.deps,
+      fetchJson: (url, init) => {
+        calls.push({ url, body: init?.body })
+        return Promise.resolve({ status: 200, body: { enabled: false } })
+      }
+    }
+    const code = await authLoginCommand(deps, {
+      server: "https://cloud.example",
+      fetchImpl: loginScript(),
+      promptSyncConfig: () => Promise.resolve(false)
+    })
+    expect(code).toBe(0)
+    expect(calls[0]?.url).toContain("/v1/sync-participation")
+    expect(calls[0]?.body).toEqual({ enabled: false })
+    expect(world.logs.join("\n")).toContain("Config sync is off")
+  })
+
+  it("prefers the explicit flag over the prompt and hints when the server is down", async () => {
+    const world = makeWorld()
+    let prompted = false
+    const code = await authLoginCommand(world.deps, {
+      server: "https://cloud.example",
+      fetchImpl: loginScript(),
+      syncConfig: false,
+      promptSyncConfig: () => {
+        prompted = true
+        return Promise.resolve(true)
+      }
+    })
+    expect(code).toBe(0)
+    expect(prompted).toBe(false)
+    expect(world.logs.join("\n")).toContain("codevisor sync off")
+
+    // The hint mirrors an explicit opt-in the same way.
+    const optIn = makeWorld()
+    expect(
+      await authLoginCommand(optIn.deps, {
+        server: "https://cloud.example",
+        fetchImpl: loginScript(),
+        syncConfig: true
+      })
+    ).toBe(0)
+    expect(optIn.logs.join("\n")).toContain("codevisor sync on")
+  })
+
+  it("confirms a prompted opt-in", async () => {
+    const world = makeWorld()
+    const deps: CliDeps = {
+      ...world.deps,
+      fetchJson: () => Promise.resolve({ status: 200, body: { enabled: true } })
+    }
+    const code = await authLoginCommand(deps, {
+      server: "https://cloud.example",
+      fetchImpl: loginScript(),
+      promptSyncConfig: () => Promise.resolve(true)
+    })
+    expect(code).toBe(0)
+    expect(world.logs.join("\n")).toContain("Config sync is on")
+  })
+})

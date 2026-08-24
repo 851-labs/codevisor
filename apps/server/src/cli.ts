@@ -12,7 +12,15 @@ import { mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:f
 import { hostname } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { authLoginCommand, authLogoutCommand, authStatusCommand } from "./cli/cloud-auth.js"
+import { authLoginCommand } from "./cli/cloud-auth.js"
+import {
+  makeAuthCommand,
+  makeSyncCommand,
+  optionalString,
+  portFlag,
+  runPrompt,
+  syncConfigPrompt
+} from "./cli/wiring.js"
 import {
   pluginInstallCommand,
   pluginLinkCommand,
@@ -121,18 +129,10 @@ const makeDeps = (): CliDeps => ({
   error: (line) => console.error(line)
 })
 
-const portFlag = Flag.integer("port").pipe(
-  Flag.withDescription("Server port (defaults to CODEVISOR_PORT, the systemd unit, or 49361)"),
-  Flag.optional
-)
-
 const runCli = (command: (deps: CliDeps) => Promise<number>): Effect.Effect<void> =>
   Effect.promise(async () => {
     process.exitCode = await command(makeDeps())
   })
-
-const optionalString = (name: string, description: string) =>
-  Flag.string(name).pipe(Flag.withDescription(description), Flag.optional)
 
 const serve = Command.make(
   "serve",
@@ -231,18 +231,6 @@ const logs = Command.make(
   ({ follow }) => runCli((deps) => logsCommand(deps, { follow }))
 ).pipe(Command.withDescription("Show server logs (journalctl or the log file)"))
 
-/// Interactive prompts, each provided its own platform services so they can
-/// run from inside the Promise-based command seam. Ctrl-C exits like a shell
-/// interrupt would.
-const runPrompt = async <A>(prompt: Prompt.Prompt<A>): Promise<A> => {
-  try {
-    return await Effect.runPromise(Prompt.run(prompt).pipe(Effect.provide(NodeServices.layer)))
-  } catch {
-    console.error("\nCancelled.")
-    return process.exit(130)
-  }
-}
-
 const makeSetupDeps = (): SetupDeps => ({
   ...makeDeps(),
   hostname: hostname(),
@@ -262,7 +250,10 @@ const setup = Command.make("setup", { port: portFlag }, ({ port }) =>
       // its credentials at boot).
       cloudLogin: async () => {
         const deps = makeDeps()
-        const result = await authLoginCommand(deps, { machineName: hostname() })
+        const result = await authLoginCommand(deps, {
+          machineName: hostname(),
+          promptSyncConfig: syncConfigPrompt
+        })
         if (result === 0) {
           await restartCommand(deps, { port: Option.getOrUndefined(port) })
         }
@@ -439,38 +430,8 @@ const plugin = Command.make("plugin").pipe(
   ])
 )
 
-const authLogin = Command.make(
-  "login",
-  {
-    server: optionalString(
-      "server",
-      "Cloud instance base URL (self-hosted or dev; defaults to Codevisor Cloud)"
-    ),
-    name: optionalString("name", "Display name for this machine (defaults to the hostname)")
-  },
-  ({ server, name }) =>
-    runCli((deps) =>
-      authLoginCommand(deps, {
-        ...(Option.isSome(server) ? { server: server.value } : {}),
-        machineName: Option.getOrElse(name, () => hostname())
-      })
-    )
-).pipe(
-  Command.withDescription("Connect this machine to your Codevisor Cloud account (device code)")
-)
-
-const authStatus = Command.make("status", {}, () => runCli((deps) => authStatusCommand(deps))).pipe(
-  Command.withDescription("Show this machine's cloud account connection")
-)
-
-const authLogout = Command.make("logout", {}, () => runCli((deps) => authLogoutCommand(deps))).pipe(
-  Command.withDescription("Disconnect this machine from its cloud account")
-)
-
-const auth = Command.make("auth").pipe(
-  Command.withDescription("Connect this machine to a Codevisor Cloud account"),
-  Command.withSubcommands([authLogin, authStatus, authLogout])
-)
+const auth = makeAuthCommand(runCli)
+const sync = makeSyncCommand(runCli)
 
 const root = Command.make("codevisor").pipe(
   Command.withDescription("Control the Codevisor server on this machine"),
@@ -486,6 +447,7 @@ const root = Command.make("codevisor").pipe(
     status,
     token,
     update,
+    sync,
     logs
   ])
 )
