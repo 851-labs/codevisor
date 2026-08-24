@@ -90,8 +90,24 @@ jobs:
       - name: Canary at 10%
         if: ${{ !inputs.full_deploy }}
         working-directory: apps/cloud
-        # The previously deployed version keeps the remaining 90%.
-        run: bunx wrangler versions deploy "${{ steps.upload.outputs.version_id }}@10%" --yes
+        # Wrangler requires the named versions to sum to exactly 100% — it
+        # does NOT leave the remainder on the live version. Name the version
+        # currently carrying the most traffic at 90% beside the canary at
+        # 10%. First-ever deploys (no live version to keep) go straight to
+        # 100%; the soak still gates the run's success.
+        run: |
+          bunx wrangler deployments status | tee status-output.txt
+          current_id="$(grep -ioE '\([0-9]+%\)[[:space:]]*[0-9a-f-]{36}' status-output.txt \
+            | sort -t'(' -k2 -rn \
+            | grep -ioE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' \
+            | head -n 1)"
+          new_id="${{ steps.upload.outputs.version_id }}"
+          if [ -z "$current_id" ] || [ "$current_id" = "$new_id" ]; then
+            echo "No distinct live version to keep; deploying the new version at 100%."
+            bunx wrangler versions deploy "${new_id}@100%" --yes
+          else
+            bunx wrangler versions deploy "${current_id}@90%" "${new_id}@10%" --yes
+          fi
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       - name: Soak canary
