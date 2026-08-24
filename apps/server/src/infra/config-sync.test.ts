@@ -50,7 +50,12 @@ describe("config sync", () => {
       // Secrets never enter the replica.
       expect(JSON.stringify(firstA.changedEntries)).not.toContain("secret-token")
       // Idempotent second pass.
-      expect((await reconcileMcps(a)).status).toEqual({ published: [], applied: [], removed: [] })
+      expect((await reconcileMcps(a)).status).toEqual({
+        published: [],
+        applied: [],
+        removed: [],
+        renamed: []
+      })
 
       // B adopts the definitions.
       await run(machineB.db.mergeSyncEntries(MCPS_SYNC_NAMESPACE, firstA.changedEntries))
@@ -146,7 +151,7 @@ describe("config sync", () => {
       now: () => 1_000,
       serverId: "server-c"
     })
-    expect(result.status).toEqual({ published: [], applied: [], removed: [] })
+    expect(result.status).toEqual({ published: [], applied: [], removed: [], renamed: [] })
 
     // A structurally valid entry with junk in args keeps only the strings,
     // and one without args at all defaults to none.
@@ -274,4 +279,62 @@ describe("config sync", () => {
     expect(roster.accounts.some((account) => account.label === "Personal")).toBe(true)
     expect(roster.accounts.find((account) => account.label === "Work")?.email).toBeUndefined()
   })
+
+  it(
+    "adopts identical and renames conflicting first-contact definitions",
+    { timeout: 30_000 },
+    async () => {
+      const { services } = await makeServices("server-d")
+      if (services.mcp === undefined) throw new Error("mcp unavailable")
+      const deps = { db: services.db, mcp: services.mcp, serverId: "server-d" }
+      const base = { authType: "none" as const, enabled: false, transport: "http" as const }
+
+      // Never-synced local definitions: a conflicting GitHub, a decoy
+      // occupying a rename candidate, an identical Same, and a name the
+      // replica only remembers as a tombstone.
+      await services.mcp.create({ ...base, name: "GitHub", url: "https://local.example/mcp" })
+      await services.mcp.create({ ...base, name: "GitHub-3", url: "https://decoy.example/mcp" })
+      await services.mcp.create({ ...base, name: "Same", url: "https://same.example/mcp" })
+      await services.mcp.create({ ...base, name: "Ghost", url: "https://ghost.example/mcp" })
+      const value = (name: string, url: string) => ({
+        name,
+        transport: "http",
+        url,
+        args: [],
+        enabled: false,
+        authType: "none"
+      })
+      const at = (wallMs: number) => ({ wallMs, counter: 0, deviceId: "elsewhere" })
+      await run(
+        services.db.mergeSyncEntries(MCPS_SYNC_NAMESPACE, [
+          {
+            key: "GitHub",
+            value: value("GitHub", "https://fleet.example/mcp"),
+            timestamp: at(10)
+          },
+          {
+            key: "GitHub-2",
+            value: value("GitHub-2", "https://fleet2.example/mcp"),
+            timestamp: at(11)
+          },
+          { key: "Same", value: value("Same", "https://same.example/mcp"), timestamp: at(12) },
+          { key: "Ghost", value: null, deleted: true, timestamp: at(13) }
+        ])
+      )
+
+      const result = await reconcileMcps(deps)
+
+      // GitHub-2 is taken in the replica and GitHub-3 locally, so the
+      // local copy became GitHub-4; Same was adopted in place; Ghost
+      // republished over the stale tombstone.
+      expect(result.status.renamed).toEqual([{ from: "GitHub", to: "GitHub-4" }])
+      expect([...result.status.published].sort()).toEqual(["Ghost", "GitHub-3", "GitHub-4"])
+      expect([...result.status.applied].sort()).toEqual(["GitHub", "GitHub-2"])
+      const list = await services.mcp.list()
+      expect(list.find((s) => s.name === "GitHub-4")?.url).toBe("https://local.example/mcp")
+      expect(list.find((s) => s.name === "GitHub")?.url).toBe("https://fleet.example/mcp")
+      expect(list.find((s) => s.name === "GitHub-2")?.url).toBe("https://fleet2.example/mcp")
+      expect(list.filter((s) => s.name === "Same")).toHaveLength(1)
+    }
+  )
 })

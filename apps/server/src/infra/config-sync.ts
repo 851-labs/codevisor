@@ -1,6 +1,7 @@
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import type { McpManager } from "@codevisor/mcp"
 import {
+  freeSyncKey,
   latestSyncTimestamp,
   nextSyncTimestamp,
   type SyncEntryRecord,
@@ -24,6 +25,9 @@ export interface McpSyncStatus {
   readonly published: ReadonlyArray<string>
   readonly applied: ReadonlyArray<string>
   readonly removed: ReadonlyArray<string>
+  /// First-contact collisions: a never-synced local definition whose name
+  /// the replica already held with different content moved aside to `to`.
+  readonly renamed: ReadonlyArray<{ readonly from: string; readonly to: string }>
 }
 
 interface SyncedMcpValue {
@@ -121,6 +125,7 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
   const published: Array<string> = []
   const applied: Array<string> = []
   const removed: Array<string> = []
+  const renamed: Array<{ from: string; to: string }> = []
   const replicaWrites: Array<SyncEntryRecord> = []
   const appliedWrites: Array<SyncEntryRecord> = []
   let clock: SyncTimestampValue | undefined = latestSyncTimestamp([...replica, ...appliedEntries])
@@ -129,14 +134,37 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
     return clock
   }
 
-  // Local creations and edits publish.
-  for (const [name, server] of localByName) {
-    const value = syncedValue(server)
+  // Local creations and edits publish. First contact is the exception:
+  // when the replica already holds a name this machine never applied, an
+  // identical definition is adopted in place and a different one is
+  // renamed aside — a join never silently overwrites either side (the
+  // fleet definition applies under the original name below).
+  for (const [name, server] of [...localByName]) {
+    let value = syncedValue(server)
     if (appliedByKey.get(name) === fingerprint(value)) continue
-    replicaWrites.push({ key: name, value, timestamp: stamp() })
-    appliedWrites.push({ key: name, value: fingerprint(value), timestamp: stamp() })
-    appliedByKey.set(name, fingerprint(value))
-    published.push(name)
+    let key = name
+    const existing = replicaByKey.get(name)
+    const wanted = existing?.deleted === true ? undefined : parseSyncedValue(existing?.value)
+    if (!appliedByKey.has(name) && wanted !== undefined) {
+      if (fingerprint(wanted) === fingerprint(value)) {
+        appliedWrites.push({ key: name, value: fingerprint(value), timestamp: stamp() })
+        appliedByKey.set(name, fingerprint(value))
+        continue
+      }
+      key = freeSyncKey(
+        name,
+        (candidate) => localByName.has(candidate) || replicaByKey.has(candidate)
+      )
+      await deps.mcp.update(server.id, { name: key })
+      localByName.delete(name)
+      localByName.set(key, { ...server, name: key })
+      value = { ...value, name: key }
+      renamed.push({ from: name, to: key })
+    }
+    replicaWrites.push({ key, value, timestamp: stamp() })
+    appliedWrites.push({ key, value: fingerprint(value), timestamp: stamp() })
+    appliedByKey.set(key, fingerprint(value))
+    published.push(key)
   }
   // Local deletions publish tombstones.
   for (const [name] of appliedByKey) {
@@ -204,7 +232,7 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
   if (appliedWrites.length > 0) {
     await run(deps.db.mergeSyncEntries(MCPS_APPLIED_NAMESPACE, appliedWrites))
   }
-  return { status: { published, applied, removed }, changedEntries }
+  return { status: { published, applied, removed, renamed }, changedEntries }
 }
 
 export interface AccountsRosterDeps {

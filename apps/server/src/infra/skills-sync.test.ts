@@ -48,6 +48,7 @@ describe("skills sync", () => {
       published: [],
       applied: [],
       removed: [],
+      renamed: [],
       missingBlobs: []
     })
 
@@ -170,5 +171,52 @@ describe("skills sync", () => {
     })
     expect(result.status.published).toEqual(["cached"])
     expect(blobs.has(hash)).toBe(true)
+  })
+
+  it("adopts identical and renames conflicting first-contact skills", async () => {
+    const { services } = await makeServices("server-d")
+    const skills = makeSkills()
+    const blobs = makeBlobs()
+    const deps = { db: services.db, skills, blobs, serverId: "server-d" }
+
+    // Never-synced local skills: one colliding with the fleet, one whose
+    // content matches the fleet exactly, one the replica only remembers
+    // as a tombstone.
+    await skills.create({ name: "Deploy", description: "local flavor" })
+    await skills.create({ name: "Deploy 2", description: "same everywhere" })
+    await skills.create({ name: "Ghost", description: "returns" })
+    const scan = await skills.list()
+    const deploy2Path = scan.global.find((s) => s.directoryName === "deploy-2")?.path ?? ""
+    const sameHash = await skillTreeHash(deploy2Path)
+    const at = (wallMs: number) => ({ wallMs, counter: 0, deviceId: "elsewhere" })
+    await run(
+      services.db.mergeSyncEntries(SKILLS_SYNC_NAMESPACE, [
+        { key: "deploy", value: { hash: "a".repeat(64), name: "Deploy" }, timestamp: at(10) },
+        { key: "deploy-2", value: { hash: sameHash, name: "Deploy 2" }, timestamp: at(11) },
+        { key: "deploy-3", value: { hash: "b".repeat(64), name: "Deploy 3" }, timestamp: at(12) },
+        { key: "ghost", value: null, deleted: true, timestamp: at(13) }
+      ])
+    )
+
+    const result = await reconcileSkills(deps)
+
+    // The conflicting copy moved aside (deploy-2 is local and deploy-3 is
+    // taken in the replica, so deploy-4), the identical one was adopted in
+    // place, and the tombstoned name republished as a plain creation.
+    expect(result.status.renamed).toEqual([{ from: "deploy", to: "deploy-4" }])
+    expect([...result.status.published].sort()).toEqual(["deploy-4", "ghost"])
+    expect(result.status.applied).toEqual([])
+    expect([...result.status.missingBlobs].map((b) => b.directoryName).sort()).toEqual([
+      "deploy",
+      "deploy-3"
+    ])
+    const names = (await skills.list()).global.map((s) => s.directoryName).sort()
+    expect(names).toEqual(["deploy-2", "deploy-4", "ghost"])
+    // The renamed content survived intact and republished under its new
+    // name with the original tree hash.
+    const republished = result.changedEntries.find((e) => e.key === "deploy-4")
+    expect(await skillTreeHash(join(scan.canonicalDir, "deploy-4"))).toBe(
+      (republished?.value as { hash: string }).hash
+    )
   })
 })

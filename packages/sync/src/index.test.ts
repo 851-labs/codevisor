@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   compareSyncTimestamps,
+  freeSyncKey,
   isValidSyncNamespace,
   latestSyncTimestamp,
   mergeSyncEntries,
@@ -107,5 +108,12 @@ describe("isValidSyncNamespace", () => {
     expect(isValidSyncNamespace("Settings")).toBe(false)
     expect(isValidSyncNamespace("a/b")).toBe(false)
     expect(isValidSyncNamespace("a".repeat(65))).toBe(false)
+  })
+})
+
+describe("freeSyncKey", () => {
+  it("returns the first untaken -N suffix", () => {
+    expect(freeSyncKey("deploy", () => false)).toBe("deploy-2")
+    expect(freeSyncKey("deploy", (candidate) => candidate !== "deploy-4")).toBe("deploy-4")
   })
 })

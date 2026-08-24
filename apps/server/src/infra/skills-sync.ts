@@ -1,6 +1,7 @@
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import type { SkillsManager } from "@codevisor/skills"
 import {
+  freeSyncKey,
   latestSyncTimestamp,
   nextSyncTimestamp,
   treeHash,
@@ -9,7 +10,7 @@ import {
 } from "@codevisor/sync"
 import { Effect } from "effect"
 import { spawn } from "node:child_process"
-import { cp, mkdtemp, rm } from "node:fs/promises"
+import { cp, mkdtemp, rename, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -34,6 +35,9 @@ export interface SkillsSyncStatus {
   readonly applied: ReadonlyArray<string>
   /// Local skills removed because a newer tombstone won.
   readonly removed: ReadonlyArray<string>
+  /// First-contact collisions: a never-synced local skill whose name the
+  /// replica already held with different content moved aside to `to`.
+  readonly renamed: ReadonlyArray<{ readonly from: string; readonly to: string }>
   /// Replica entries this machine cannot apply until a client ferries the
   /// blob here from a machine that has it.
   readonly missingBlobs: ReadonlyArray<{
@@ -125,6 +129,7 @@ export const reconcileSkills = async (deps: SkillsSyncDeps): Promise<SkillsSyncR
   const published: Array<string> = []
   const applied: Array<string> = []
   const removed: Array<string> = []
+  const renamed: Array<{ from: string; to: string }> = []
   const missingBlobs: Array<{ directoryName: string; hash: string }> = []
   const replicaWrites: Array<SyncEntryRecord> = []
   const appliedWrites: Array<SyncEntryRecord> = []
@@ -136,20 +141,47 @@ export const reconcileSkills = async (deps: SkillsSyncDeps): Promise<SkillsSyncR
 
   // Local state drives publications: a skill whose content differs from
   // what this machine last published/applied is a local creation or edit.
-  for (const [directoryName, skill] of localSkills) {
+  // First contact is the exception: when the replica already names a skill
+  // this machine never applied, an identical copy is adopted in place and
+  // a different one moves aside — a join never silently overwrites either
+  // side (the fleet version applies under the original name below).
+  for (const [directoryName, skill] of [...localSkills]) {
     const localHash = localHashes.get(directoryName) as string
     if (appliedByKey.get(directoryName) === localHash) continue
+    let key = directoryName
+    let path = skill.path
+    const existing = replicaByKey.get(directoryName)
+    const replicaHash = existing === undefined ? undefined : entryHash(existing)
+    if (!appliedByKey.has(directoryName) && replicaHash !== undefined) {
+      if (replicaHash === localHash) {
+        appliedWrites.push({ key: directoryName, value: localHash, timestamp: stamp() })
+        appliedByKey.set(directoryName, localHash)
+        continue
+      }
+      key = freeSyncKey(
+        directoryName,
+        (candidate) => localSkills.has(candidate) || replicaByKey.has(candidate)
+      )
+      path = join(scan.canonicalDir, key)
+      await rename(join(scan.canonicalDir, directoryName), path)
+      localSkills.delete(directoryName)
+      localHashes.delete(directoryName)
+      localSkills.set(key, { ...skill, directoryName: key, path })
+      localHashes.set(key, localHash)
+      await deps.skills.sync({ directoryNames: [key] })
+      renamed.push({ from: directoryName, to: key })
+    }
     if (!deps.blobs.has(localHash)) {
-      deps.blobs.write(localHash, await packSkillArchive(skill.path))
+      deps.blobs.write(localHash, await packSkillArchive(path))
     }
     replicaWrites.push({
-      key: directoryName,
+      key,
       value: { hash: localHash, name: skill.name },
       timestamp: stamp()
     })
-    appliedWrites.push({ key: directoryName, value: localHash, timestamp: stamp() })
-    appliedByKey.set(directoryName, localHash)
-    published.push(directoryName)
+    appliedWrites.push({ key, value: localHash, timestamp: stamp() })
+    appliedByKey.set(key, localHash)
+    published.push(key)
   }
 
   // A skill this machine once had (applied is recorded) that is gone from
@@ -216,7 +248,7 @@ export const reconcileSkills = async (deps: SkillsSyncDeps): Promise<SkillsSyncR
     await run(deps.db.mergeSyncEntries(APPLIED_NAMESPACE, appliedWrites))
   }
   return {
-    status: { published, applied, removed, missingBlobs },
+    status: { published, applied, removed, renamed, missingBlobs },
     changedEntries
   }
 }

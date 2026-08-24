@@ -93,3 +93,12 @@ export const mergeSyncEntries = (
 export const isValidSyncNamespace = (value: string): boolean => /^[a-z][a-z0-9-]{0,63}$/.test(value)
 export * from "./blob-store.js"
 export * from "./tree-hash.js"
+
+/// First free "-N" suffix (N from 2) for a base key: join-time collision
+/// handling renames a machine's copy aside rather than letting either side
+/// silently overwrite the other. The caller decides what counts as taken.
+export const freeSyncKey = (base: string, taken: (candidate: string) => boolean): string => {
+  let suffix = 2
+  while (taken(`${base}-${suffix}`)) suffix += 1
+  return `${base}-${suffix}`
+}
