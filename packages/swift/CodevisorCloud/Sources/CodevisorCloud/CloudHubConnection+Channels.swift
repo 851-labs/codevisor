@@ -129,7 +129,7 @@ extension CloudHubConnection {
             channels.removeValue(forKey: channelId)
             throw error
         }
-        return CloudRelayChannel(id: channelId, hub: self)
+        return CloudRelayChannel(id: channelId, host: self)
     }
 
     func send(channelId: String, plaintext: Data) throws -> Int {

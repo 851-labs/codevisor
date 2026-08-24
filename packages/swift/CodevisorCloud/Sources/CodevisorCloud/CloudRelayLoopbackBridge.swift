@@ -21,7 +21,7 @@ public final class CloudRelayLoopbackBridge: @unchecked Sendable {
     static let maximumChunkBytes = 64 * 1024
     static let initialCreditBytes = 1024 * 1024
 
-    private let endpoint: CloudRelayEndpoint
+    private let endpoint: any CloudChannelTransport
     private let queue = DispatchQueue(label: "com.codevisor.cloud-loopback-bridge")
     private let lock = NSLock()
     private var listener: NWListener?
@@ -29,7 +29,7 @@ public final class CloudRelayLoopbackBridge: @unchecked Sendable {
     private var connections: [ObjectIdentifier: LoopbackConnection] = [:]
     public private(set) var port: UInt16?
 
-    public init(endpoint: CloudRelayEndpoint) {
+    public init(endpoint: any CloudChannelTransport) {
         self.endpoint = endpoint
     }
 
@@ -145,10 +145,10 @@ private final class LoopbackConnection: @unchecked Sendable {
     }
 
     private let connection: NWConnection
-    private let endpoint: CloudRelayEndpoint
+    private let endpoint: any CloudChannelTransport
     private let queue: DispatchQueue
 
-    init(connection: NWConnection, endpoint: CloudRelayEndpoint, queue: DispatchQueue) {
+    init(connection: NWConnection, endpoint: any CloudChannelTransport, queue: DispatchQueue) {
         self.connection = connection
         self.endpoint = endpoint
         self.queue = queue
@@ -166,9 +166,7 @@ private final class LoopbackConnection: @unchecked Sendable {
         let (credits, creditContinuation) = AsyncStream<Int>.makeStream()
         let channel: CloudRelayChannel
         do {
-            channel = try await endpoint.hub.openFlowControlledChannel(
-                machineDeviceId: endpoint.machineDeviceId,
-                machinePublicKey: endpoint.machinePublicKey,
+            channel = try await endpoint.openFlowControlledChannel(
                 channelType: CloudRelayLoopbackBridge.channelType,
                 params: .object([
                     "service": .string(CloudRelayLoopbackBridge.service),

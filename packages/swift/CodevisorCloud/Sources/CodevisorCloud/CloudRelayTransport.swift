@@ -2,20 +2,6 @@ import ACPKit
 import CodevisorClient
 import Foundation
 
-/// One machine reachable over the cloud relay: which hub to go through and
-/// the machine's pinned identity.
-public struct CloudRelayEndpoint: Sendable {
-    public let hub: CloudHubConnection
-    public let machineDeviceId: String
-    public let machinePublicKey: String
-
-    public init(hub: CloudHubConnection, machineDeviceId: String, machinePublicKey: String) {
-        self.hub = hub
-        self.machineDeviceId = machineDeviceId
-        self.machinePublicKey = machinePublicKey
-    }
-}
-
 public enum CloudRelayTransportError: Error, Equatable, Sendable, LocalizedError {
     case invalidRequest
     case invalidFrame
@@ -53,10 +39,13 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
     /// instead of hanging its caller (and any UI gated on it) forever.
     public static let defaultTimeout: Duration = .seconds(30)
 
-    private let endpoint: CloudRelayEndpoint
+    private let endpoint: any CloudChannelTransport
     private let timeout: Duration
 
-    public init(endpoint: CloudRelayEndpoint, timeout: Duration = CloudRelayRequestTransport.defaultTimeout) {
+    public init(
+        endpoint: any CloudChannelTransport,
+        timeout: Duration = CloudRelayRequestTransport.defaultTimeout
+    ) {
         self.endpoint = endpoint
         self.timeout = timeout
     }
@@ -111,9 +100,7 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
 
         let (frames, continuation) = AsyncThrowingStream<MachineFrame, any Error>.makeStream()
         let decoder = JSONDecoder()
-        let channel = try await endpoint.hub.openChannel(
-            machineDeviceId: endpoint.machineDeviceId,
-            machinePublicKey: endpoint.machinePublicKey,
+        let channel = try await endpoint.openChannel(
             channelType: "http",
             params: params,
             compressed: true,
@@ -196,9 +183,9 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
 /// sibling of `CloudRelayRequestTransport`, used for event streams and
 /// terminals.
 public struct CloudRelayWebSocketTransport: ServerWebSocketTransport {
-    private let endpoint: CloudRelayEndpoint
+    private let endpoint: any CloudChannelTransport
 
-    public init(endpoint: CloudRelayEndpoint) {
+    public init(endpoint: any CloudChannelTransport) {
         self.endpoint = endpoint
     }
 
@@ -245,7 +232,7 @@ final class CloudRelayWebSocketConnection: ServerWebSocketConnecting, @unchecked
     private var iterator: AsyncThrowingStream<ServerWebSocketMessage, any Error>.Iterator
     private var cancelled = false
 
-    init(endpoint: CloudRelayEndpoint, request: URLRequest) {
+    init(endpoint: any CloudChannelTransport, request: URLRequest) {
         let (messages, continuation) = AsyncThrowingStream<ServerWebSocketMessage, any Error>.makeStream()
         iterator = messages.makeAsyncIterator()
 
@@ -267,9 +254,7 @@ final class CloudRelayWebSocketConnection: ServerWebSocketConnecting, @unchecked
         // serialized through the hub actor, so plain state suffices.
         let pendingParts = PartAccumulator()
         openTask = Task {
-            let channel = try await endpoint.hub.openChannel(
-                machineDeviceId: endpoint.machineDeviceId,
-                machinePublicKey: endpoint.machinePublicKey,
+            let channel = try await endpoint.openChannel(
                 channelType: "ws",
                 params: .object(["path": .string(path)]),
                 compressed: true,
