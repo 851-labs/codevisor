@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { PutSyncRequest, SyncDocument } from "./sync.js"
+import { PutSyncRequest, SyncDocument, SyncParticipation } from "./sync.js"
 
 import {
   AgentSessionSummary,
@@ -141,6 +141,8 @@ export const endpoints = [
   "POST /v1/sync/skills/reconcile",
   "POST /v1/sync/mcps/reconcile",
   "POST /v1/sync/accounts/publish",
+  "GET /v1/sync-participation",
+  "PUT /v1/sync-participation",
   "POST /v1/shutdown",
   "GET /v1/capabilities",
   "POST /v1/auth/pairing-token",
@@ -317,6 +319,7 @@ const requestSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> => ({
   "POST /v1/plugins/:pluginId/tools/:toolName": InvokePluginToolRequest,
   "POST /v1/plugins/:pluginId/update/apply": ApplyPluginUpdateRequest,
   "PUT /v1/sync/:namespace": PutSyncRequest,
+  "PUT /v1/sync-participation": SyncParticipation,
   "POST /v1/plugins/:pluginId/set-enabled": SetPluginEnabledRequest,
   "POST /v1/mcps": CreateMcpServerRequest,
   "POST /v1/mcps/detect-auth": DetectMcpAuthRequest,
@@ -356,6 +359,8 @@ const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> => ({
   "GET /v1/update": UpdateInfo,
   "GET /v1/sync/:namespace": SyncDocument,
   "PUT /v1/sync/:namespace": SyncDocument,
+  "GET /v1/sync-participation": SyncParticipation,
+  "PUT /v1/sync-participation": SyncParticipation,
   "GET /v1/capabilities": ServerCapabilities,
   "POST /v1/auth/pairing-token": PairingTokenResponse,
   "GET /v1/auth/connection-token": PairingTokenResponse,

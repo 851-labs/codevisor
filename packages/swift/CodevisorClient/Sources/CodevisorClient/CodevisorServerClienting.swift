@@ -39,6 +39,10 @@ public protocol CodevisorServerClienting: Sendable {
     /// machines.
     func syncBlob(id: String) async throws -> Data
     func putSyncBlob(id: String, bytes: Data) async throws
+    /// Whether the machine participates in the config plane at all —
+    /// server-enforced; every sync surface refuses while this is off.
+    func syncParticipation() async throws -> ServerSyncParticipation
+    func setSyncParticipation(enabled: Bool) async throws -> ServerSyncParticipation
     func issuePairingToken() async throws -> ServerPairingToken
     /// The machine's stable connection token (unchanged across restarts and
     /// updates until rotated). Preferred over `issuePairingToken` for showing

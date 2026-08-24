@@ -611,3 +611,13 @@ public extension CodevisorServerClienting {
         throw CodevisorServerClientError.invalidResponse
     }
 }
+
+public extension CodevisorServerClienting {
+    func syncParticipation() async throws -> ServerSyncParticipation {
+        ServerSyncParticipation(enabled: true)
+    }
+
+    func setSyncParticipation(enabled: Bool) async throws -> ServerSyncParticipation {
+        ServerSyncParticipation(enabled: enabled)
+    }
+}

@@ -41,3 +41,13 @@ export const PutSyncRequest = Schema.Struct({
   entries: Schema.Array(SyncEntry)
 })
 export type PutSyncRequest = typeof PutSyncRequest.Type
+
+/// GET/PUT /v1/sync-participation: whether this machine participates in
+/// the config plane at all. When off, every /v1/sync/* endpoint refuses
+/// with 403 — enforced server-side so no client can gossip past the
+/// owner's choice. The path deliberately lives outside /v1/sync/ so it can
+/// never collide with a namespace.
+export const SyncParticipation = Schema.Struct({
+  enabled: Schema.Boolean
+})
+export type SyncParticipation = typeof SyncParticipation.Type
