@@ -1219,5 +1219,21 @@ export const migrations: ReadonlyArray<Migration> = [
             sidebar_state = (${nextState});
       `)
     }
+  },
+  {
+    id: 43,
+    name: "config-plane sync entries",
+    sql: `
+      create table if not exists sync_entries (
+        namespace text not null,
+        key text not null,
+        value text not null,
+        deleted integer not null default 0,
+        ts_wall integer not null,
+        ts_counter integer not null,
+        ts_device text not null,
+        primary key (namespace, key)
+      );
+    `
   }
 ]

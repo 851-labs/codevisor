@@ -14,6 +14,7 @@ import type { CodevisorDatabaseConfig, CodevisorDatabaseService } from "./servic
 import { createServiceContext } from "./service-context.js"
 import { makeSessionsService } from "./sessions-service.js"
 import { makeTranscriptService } from "./transcript-service.js"
+import { makeSyncService } from "./sync-service.js"
 import { makeUpdatesService } from "./updates-service.js"
 import { makeWorkspacesService } from "./workspaces-service.js"
 import { makeWorktreesService } from "./worktrees-service.js"
@@ -89,6 +90,7 @@ export const createService = (
     ...makeHarnessService(context),
     ...makeMcpService(context),
     ...makeAuthService(context),
-    ...makeUpdatesService(context)
+    ...makeUpdatesService(context),
+    ...makeSyncService(context)
   }
 }

@@ -5,13 +5,5 @@
     "outDir": "dist",
     "rootDir": "src"
   },
-  "include": ["src/**/*.ts"],
-  "references": [
-    {
-      "path": "../api"
-    },
-    {
-      "path": "../sync"
-    }
-  ]
+  "include": ["src/**/*.ts"]
 }

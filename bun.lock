@@ -83,6 +83,7 @@
         "@codevisor/mcp": "workspace:*",
         "@codevisor/plugins": "workspace:*",
         "@codevisor/skills": "workspace:*",
+        "@codevisor/sync": "workspace:*",
         "@codevisor/terminal": "workspace:*",
         "@codevisor/updater": "workspace:*",
         "@codevisor/worktrees": "workspace:*",
@@ -267,6 +268,7 @@
       "name": "@codevisor/db",
       "dependencies": {
         "@codevisor/api": "workspace:*",
+        "@codevisor/sync": "workspace:*",
         "better-sqlite3": "12.9.0",
         "effect": "4.0.0-beta.92",
       },
@@ -333,6 +335,12 @@
         "@codevisor/api": "workspace:*",
         "yaml": "2.9.0",
       },
+      "devDependencies": {
+        "vitest": "4.1.6",
+      },
+    },
+    "packages/sync": {
+      "name": "@codevisor/sync",
       "devDependencies": {
         "vitest": "4.1.6",
       },
@@ -561,6 +569,8 @@
     "@codevisor/server": ["@codevisor/server@workspace:apps/server"],
 
     "@codevisor/skills": ["@codevisor/skills@workspace:packages/skills"],
+
+    "@codevisor/sync": ["@codevisor/sync@workspace:packages/sync"],
 
     "@codevisor/terminal": ["@codevisor/terminal@workspace:packages/terminal"],
 

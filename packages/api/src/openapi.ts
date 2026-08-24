@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import { PutSyncRequest, SyncDocument } from "./sync.js"
 
 import {
   AgentSessionSummary,
@@ -133,6 +134,8 @@ export const endpoints = [
   "GET /v1/openapi.json",
   "GET /v1/update",
   "POST /v1/update/apply",
+  "GET /v1/sync/:namespace",
+  "PUT /v1/sync/:namespace",
   "POST /v1/shutdown",
   "GET /v1/capabilities",
   "POST /v1/auth/pairing-token",
@@ -308,6 +311,7 @@ const requestSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> => ({
   "POST /v1/plugins/:pluginId/panes/:paneId/token": PluginPaneTokenRequest,
   "POST /v1/plugins/:pluginId/tools/:toolName": InvokePluginToolRequest,
   "POST /v1/plugins/:pluginId/update/apply": ApplyPluginUpdateRequest,
+  "PUT /v1/sync/:namespace": PutSyncRequest,
   "POST /v1/plugins/:pluginId/set-enabled": SetPluginEnabledRequest,
   "POST /v1/mcps": CreateMcpServerRequest,
   "POST /v1/mcps/detect-auth": DetectMcpAuthRequest,
@@ -345,6 +349,8 @@ const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> => ({
   "GET /v1/info": ServerInfo,
   "GET /v1/tailnet/peers": TailnetPeersResponse,
   "GET /v1/update": UpdateInfo,
+  "GET /v1/sync/:namespace": SyncDocument,
+  "PUT /v1/sync/:namespace": SyncDocument,
   "GET /v1/capabilities": ServerCapabilities,
   "POST /v1/auth/pairing-token": PairingTokenResponse,
   "GET /v1/auth/connection-token": PairingTokenResponse,

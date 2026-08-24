@@ -32,6 +32,7 @@
     "@codevisor/mcp": "workspace:*",
     "@codevisor/plugins": "workspace:*",
     "@codevisor/skills": "workspace:*",
+    "@codevisor/sync": "workspace:*",
     "@codevisor/terminal": "workspace:*",
     "@codevisor/updater": "workspace:*",
     "@codevisor/worktrees": "workspace:*",

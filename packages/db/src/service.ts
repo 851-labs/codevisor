@@ -1,3 +1,4 @@
+import type { SyncEntryRecord } from "@codevisor/sync"
 import type {
   ArchivedWorktree,
   AttachmentKind,
@@ -390,6 +391,21 @@ export interface CodevisorDatabaseService {
     record: HarnessPendingUpdateRecord
   ) => Effect.Effect<HarnessPendingUpdateRecord, DatabaseError>
   readonly clearHarnessPendingUpdate: (harnessId: string) => Effect.Effect<void, DatabaseError>
+  /// Replicated config-plane documents (@codevisor/sync): this server's
+  /// per-namespace LWW replica, merged rather than overwritten.
+  readonly getSyncEntries: (
+    namespace: string
+  ) => Effect.Effect<ReadonlyArray<SyncEntryRecord>, DatabaseError>
+  readonly mergeSyncEntries: (
+    namespace: string,
+    entries: ReadonlyArray<SyncEntryRecord>
+  ) => Effect.Effect<
+    {
+      readonly merged: ReadonlyArray<SyncEntryRecord>
+      readonly changed: ReadonlyArray<SyncEntryRecord>
+    },
+    DatabaseError
+  >
 }
 
 export class CodevisorDatabase extends Context.Service<

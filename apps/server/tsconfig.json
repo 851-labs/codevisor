@@ -8,24 +8,6 @@
   "include": ["src/**/*.ts"],
   "references": [
     {
-      "path": "../../packages/api"
-    },
-    {
-      "path": "../../packages/db"
-    },
-    {
-      "path": "../../packages/agent-runtime"
-    },
-    {
-      "path": "../../packages/terminal"
-    },
-    {
-      "path": "../../packages/cloud-client"
-    },
-    {
-      "path": "../../packages/cloud-crypto"
-    },
-    {
       "path": "../../packages/adapter-acp"
     },
     {
@@ -41,25 +23,46 @@
       "path": "../../packages/adapter-grok-build"
     },
     {
-      "path": "../../packages/skills"
+      "path": "../../packages/agent-runtime"
     },
     {
-      "path": "../../packages/plugins"
-    },
-    {
-      "path": "../../packages/worktrees"
+      "path": "../../packages/api"
     },
     {
       "path": "../../packages/automation"
     },
     {
+      "path": "../../packages/cloud-client"
+    },
+    {
+      "path": "../../packages/cloud-crypto"
+    },
+    {
+      "path": "../../packages/db"
+    },
+    {
       "path": "../../packages/harness-manager"
+    },
+    {
+      "path": "../../packages/mcp"
+    },
+    {
+      "path": "../../packages/plugins"
+    },
+    {
+      "path": "../../packages/skills"
+    },
+    {
+      "path": "../../packages/sync"
+    },
+    {
+      "path": "../../packages/terminal"
     },
     {
       "path": "../../packages/updater"
     },
     {
-      "path": "../../packages/mcp"
+      "path": "../../packages/worktrees"
     }
   ]
 }

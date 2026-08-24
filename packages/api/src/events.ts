@@ -45,7 +45,11 @@ export const EventKind = Schema.Literals([
   "plugin.updated",
   "terminal.output",
   "terminal.exit",
-  "update.changed"
+  "update.changed",
+  /// A replicated config document changed on this server (subjectId =
+  /// namespace). Payload: { namespace, entries } with only the entries the
+  /// merge actually changed. Merging is idempotent, so replays are safe.
+  "sync.changed"
 ])
 export type EventKind = typeof EventKind.Type
 

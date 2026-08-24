@@ -45,6 +45,7 @@ import {
 } from "./routes/sessions.js"
 import { routePluginProxy, routePlugins } from "./routes/plugins.js"
 import { routeSkills } from "./routes/skills.js"
+import { routeSync } from "./routes/sync.js"
 import { routeTerminals } from "./routes/terminals.js"
 import { routeWorkspaces } from "./routes/workspaces.js"
 
@@ -556,6 +557,9 @@ const handleRequest = async (
       return
     }
     if (await routeSkills(services, request, response, url)) {
+      return
+    }
+    if (await routeSync(services, fanout, request, response, url)) {
       return
     }
     if (await routePlugins(services, fanout, request, response, url)) {

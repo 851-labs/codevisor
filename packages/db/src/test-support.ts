@@ -105,6 +105,17 @@ export const buildV4Fixture = (filename: string): void => {
       updated_at text not null
     );
 
+    create table sync_entries (
+      namespace text not null,
+      key text not null,
+      value text not null,
+      deleted integer not null default 0,
+      ts_wall integer not null,
+      ts_counter integer not null,
+      ts_device text not null,
+      primary key (namespace, key)
+    );
+
     create table session_actions (
       session_id text not null references sessions(id) on delete cascade,
       client_action_id text not null,

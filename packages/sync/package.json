@@ -1,5 +1,5 @@
 {
-  "name": "@codevisor/db",
+  "name": "@codevisor/sync",
   "private": true,
   "type": "module",
   "exports": {
@@ -14,14 +14,7 @@
     "test": "vitest run src --passWithNoTests",
     "test:coverage": "vitest run src --coverage"
   },
-  "dependencies": {
-    "@codevisor/api": "workspace:*",
-    "@codevisor/sync": "workspace:*",
-    "better-sqlite3": "12.9.0",
-    "effect": "4.0.0-beta.92"
-  },
   "devDependencies": {
-    "@types/better-sqlite3": "7.6.13",
     "vitest": "4.1.6"
   }
 }
