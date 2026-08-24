@@ -107,12 +107,10 @@ struct MachinesSettingsView: View {
         .settingsPaneFormStyle(theme)
     }
 
-    var body: some View {
+    /// Layer 1 of `body` (split so each expression stays inside the Release
+    /// type-checker's budget; one flat chain provably exceeds it in CI).
+    private var withDiscoveryTasks: some View {
         machinesForm
-            // Discover only while this pane is visible; no background polling.
-            // Keying on `isPollingActive` both stops the loop when the pane can't
-            // be seen and restarts it (immediate refresh included) when the
-            // section is re-selected or the window comes back.
             .task(id: isPollingActive) {
                 guard isPollingActive else { return }
                 while !Task.isCancelled {
@@ -123,6 +121,11 @@ struct MachinesSettingsView: View {
             .onChange(of: machines.machines.map(\.id)) { _, _ in
                 Task { await discovery.refresh(registeredHosts: registeredHosts) }
             }
+    }
+
+    /// Layer 2: cloud machine sheets and dialogs.
+    private var withCloudPresentations: some View {
+        withDiscoveryTasks
             .sheet(item: $renamingCloud) { machine in
                 RenameCloudMachineSheet(machine: machine) { name in
                     Task { await environment.cloud.rename(deviceId: machine.deviceId, name: name) }
@@ -162,6 +165,11 @@ struct MachinesSettingsView: View {
                     "“\(machine.name)” is presenting a different encryption key than the one this device remembers. That happens if the machine was re-provisioned — but it can also mean something between you and the machine is intercepting traffic. Only trust the new key if you expected this change."
                 )
             }
+    }
+
+    /// Layer 3: add/rename machine sheets.
+    private var withMachineSheets: some View {
+        withCloudPresentations
             .sheet(item: $addingDiscovered) { machine in
                 RemoteMachineSheet(name: machine.name, host: machine.host) { host, name, token in
                     await addMachine(host: host, name: name, token: token)
@@ -185,6 +193,10 @@ struct MachinesSettingsView: View {
                     }
                 }
             }
+    }
+
+    var body: some View {
+        withMachineSheets
             .confirmationDialog(
                 "Remove “\(removing?.name ?? "")”?",
                 isPresented: presenceBinding($removing),
