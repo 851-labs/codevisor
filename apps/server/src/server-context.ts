@@ -161,6 +161,15 @@ export interface RouteState {
   /// Sessions whose prompt dispatch is held by a harness update gate, keyed
   /// to the harness they wait on. Cleared (and re-drained) on gate release.
   readonly gatedSessions: Map<string, string>
+  /// Sessions with a live turn, tracked from `turnState` lifecycle events on
+  /// the fanout. Unlike `activePromptSessions` (turns this process
+  /// dispatched), this also sees turns the harness starts on its own — a
+  /// task-notification follow-up after a background task finishes. Prompt
+  /// dispatch holds while a session is in here.
+  readonly activeTurnSessions: Set<string>
+  /// Sessions whose queue drain was held because a turn was active.
+  /// Re-drained when that turn's terminal event arrives.
+  readonly turnHeldSessions: Set<string>
 }
 
 export class CodevisorServer extends Context.Service<CodevisorServer, CodevisorServerServices>()(

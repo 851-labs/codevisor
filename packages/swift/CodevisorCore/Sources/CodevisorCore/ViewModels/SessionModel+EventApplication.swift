@@ -158,29 +158,31 @@ extension SessionModel {
             if promotedFromQueue {
                 onQueuedPromptPromoted?(id.flatMap(UUID.init(uuidString:)))
             }
-        case let .finished(stopReason, stopDetail, retryable, initiatedBy):
-            finish(
+        case let .finished(stopReason, stopDetail, retryable, initiatedBy, chatItemId):
+            let activeTurnContinues = finish(
                 stopReason: stopReason,
                 outcome: stopReason == .cancelled ? .cancelled : .completed,
                 stopDetail: stopDetail,
-                retryable: retryable
+                retryable: retryable,
+                chatItemId: chatItemId
             )
             lastTurnInitiator = initiatedBy
             lastTurnEndedWithError =
                 stopDetail != nil
                 || (stopReason != .endTurn && stopReason != .cancelled)
-            endTurn()
-        case let .failed(message, retryable):
+            if !activeTurnContinues { endTurn() }
+        case let .failed(message, retryable, chatItemId):
             errorMessage = message
-            finish(
+            let activeTurnContinues = finish(
                 stopReason: nil,
                 outcome: .failed,
                 stopDetail: message,
-                retryable: retryable
+                retryable: retryable,
+                chatItemId: chatItemId
             )
             lastTurnInitiator = .user
             lastTurnEndedWithError = true
-            endTurn()
+            if !activeTurnContinues { endTurn() }
         case let .authenticationRequired(message):
             errorMessage = message
             harnessAuthenticationErrorMessage = message
@@ -224,30 +226,80 @@ extension SessionModel {
     /// The single choke point for ending a turn: marks it finished and settles
     /// any tool calls that never received a terminal status, so in-progress
     /// indicators can't outlive the turn.
+    ///
+    /// Terminal events are routed by the server-owned chat-item identity when
+    /// one is present — the same `turn:{turnId}` → item routing the server
+    /// projection uses. A bubble that was settled while still generating
+    /// (e.g. a user row interleaved with an agent-initiated turn) is closed
+    /// in place instead of stranding its "Worked for…" spinner forever.
+    /// Returns true when the closure landed on a settled bubble while a
+    /// NEWER active bubble is still generating — the session is still busy,
+    /// so the caller must not clear the sending state.
+    @discardableResult
     func finish(
         stopReason: StopReason?,
         outcome: TranscriptReducer.TurnOutcome,
         stopDetail: String? = nil,
-        retryable: Bool = false
-    ) {
+        retryable: Bool = false,
+        chatItemId: UUID? = nil
+    ) -> Bool {
+        if let chatItemId,
+            activeItem?.id != chatItemId,
+            let index = settledIndexById[chatItemId],
+            case .assistant(var settled) = settledConversation[index]
+        {
+            closeTurn(
+                &settled.turn,
+                stopReason: stopReason,
+                outcome: outcome,
+                stopDetail: stopDetail,
+                retryable: retryable
+            )
+            settledConversation[index] = .assistant(settled)
+            // The active bubble belongs to a newer turn: leave the session-
+            // level state (pending question, sending flag) to that turn's own
+            // terminal event.
+            if case let .assistant(active) = activeItem, active.turn.isGenerating {
+                return true
+            }
+            pendingQuestion = nil
+            return false
+        }
         // A question can't outlive its turn; providers emit the resolution,
         // but a dropped event must not leave the picker stuck.
         pendingQuestion = nil
-        guard case .assistant(var message) = activeItem else { return }
-        message.turn.isGenerating = false
-        message.turn.isThinking = false
-        message.turn.retryStatus = nil
-        message.turn.stopReason = stopReason
-        // Present only when the turn ended abnormally; drives the per-turn reason
-        // line so a non-clean stop is never silent.
-        message.turn.stopDetail = stopDetail
-        message.turn.retryable = retryable
-        message.turn.endedAt = now()
-        TranscriptReducer.settleToolCalls(&message.turn, outcome: outcome)
+        guard case .assistant(var message) = activeItem else { return false }
+        closeTurn(
+            &message.turn,
+            stopReason: stopReason,
+            outcome: outcome,
+            stopDetail: stopDetail,
+            retryable: retryable
+        )
         // Stays the active item: settling happens when the next bubble
         // starts, so the row keeps its view identity through the finalize
         // collapse.
         activeItem = .assistant(message)
+        return false
+    }
+
+    private func closeTurn(
+        _ turn: inout AssistantTurn,
+        stopReason: StopReason?,
+        outcome: TranscriptReducer.TurnOutcome,
+        stopDetail: String?,
+        retryable: Bool
+    ) {
+        turn.isGenerating = false
+        turn.isThinking = false
+        turn.retryStatus = nil
+        turn.stopReason = stopReason
+        // Present only when the turn ended abnormally; drives the per-turn reason
+        // line so a non-clean stop is never silent.
+        turn.stopDetail = stopDetail
+        turn.retryable = retryable
+        turn.endedAt = now()
+        TranscriptReducer.settleToolCalls(&turn, outcome: outcome)
     }
 
     /// Clears the sending flag and fires `onTurnEnded` — only when a turn was

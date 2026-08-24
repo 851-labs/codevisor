@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto"
-import type { RuntimeEvent } from "@codevisor/agent-runtime"
+import { normalizePromptInput, type RuntimeEvent } from "@codevisor/agent-runtime"
+import { claudeContent } from "./attachments.js"
 import { deferred } from "./internal.js"
 import type { ClaudeSession } from "./session.js"
 
@@ -87,9 +88,48 @@ export const finishActiveTurn = (
     } finally {
       session.interruptRequested = false
     }
+    // Only after the finished turn's terminal event is durable (and the
+    // interrupt flag is reset, so a cancelled turn cannot poison the next
+    // one): start the next prompt that was accepted while this turn ran.
+    await dispatchNextDeferredPrompt(session)
   }
   void finalize()
   return completion?.promise ?? Promise.resolve()
+}
+
+/// Starts the oldest prompt deferred while a turn was active as its own
+/// user-initiated turn. A session that can no longer run turns fails the
+/// whole backlog instead — every deferred prompt has a server-side drain
+/// awaiting it, and a silently dropped promise would wedge that drain (and
+/// the user's queue) forever.
+const dispatchNextDeferredPrompt = async (session: ClaudeSession): Promise<void> => {
+  if (session.deferredPrompts.length === 0) return
+  if (session.retired || session.streamEnded) {
+    failDeferredPrompts(session, new Error("Claude runtime was retired"))
+    return
+  }
+  const next = session.deferredPrompts.shift()
+  if (next === undefined) return
+  session.pendingPrompt = next.pending
+  try {
+    await ensureTurnStarted(session, "user")
+    session.input.push({
+      message: { content: claudeContent(normalizePromptInput(next.input)), role: "user" },
+      parent_tool_use_id: null,
+      session_id: session.sdkSessionId,
+      type: "user"
+    })
+  } catch (cause) {
+    if (session.pendingPrompt === next.pending) session.pendingPrompt = undefined
+    next.pending.reject(cause)
+  }
+}
+
+/// Rejects every deferred prompt (retire/close/stream death). Callers pass
+/// the reason the session can no longer run them.
+export const failDeferredPrompts = (session: ClaudeSession, cause: unknown): void => {
+  const pending = session.deferredPrompts.splice(0)
+  for (const prompt of pending) prompt.pending.reject(cause)
 }
 
 export const ensureTurnStarted = (

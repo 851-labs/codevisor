@@ -6,8 +6,23 @@ import type {
   SDKUserMessage
 } from "@anthropic-ai/claude-agent-sdk"
 import type { QuestionSpec, SessionGoal } from "@codevisor/api"
-import type { CancelResult, QuestionAnswer, RuntimeEmit } from "@codevisor/agent-runtime"
+import type {
+  CancelResult,
+  PromptInput,
+  QuestionAnswer,
+  RuntimeEmit
+} from "@codevisor/agent-runtime"
 import type { Deferred } from "./internal.js"
+
+/// A prompt accepted while another turn was still active. It is NOT bound to
+/// `pendingPrompt` (the active turn's terminal event would resolve it before
+/// the prompt ever ran) and its message is NOT pushed to the SDK yet (the SDK
+/// would fold it into the live turn). It dispatches as its own user turn when
+/// the active turn finishes.
+export interface DeferredClaudePrompt {
+  readonly input: string | PromptInput
+  readonly pending: Deferred<{ stopReason: string }>
+}
 
 export interface ClaudeTaskEntry {
   readonly subject: string
@@ -138,6 +153,10 @@ export interface ClaudeSession {
   turnId: string
   initiatedBy: "user" | "agent"
   pendingPrompt: Deferred<{ stopReason: string }> | undefined
+  /// Prompts that arrived while a turn (typically an agent-initiated
+  /// task-notification follow-up) was active. Drained FIFO by
+  /// `finishActiveTurn`, each as its own user-initiated turn.
+  readonly deferredPrompts: Array<DeferredClaudePrompt>
   /// Resolves only after the current turn's terminal event has passed through
   /// the ordered runtime sink. Retained after turnActive clears so a racing
   /// cancel can still wait for durable completion.

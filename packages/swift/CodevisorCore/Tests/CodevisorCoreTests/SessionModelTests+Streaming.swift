@@ -278,6 +278,65 @@ extension SessionModelTests {
         #expect(promotedMessageIDs == [queueItemId])
     }
 
+    @Test("A routed terminal event closes a settled bubble stranded mid-transcript")
+    func routedFinishClosesStrandedBubble() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.echoOnPrompt = false
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+
+        // The harness re-triggered itself off a finished background task: an
+        // agent-initiated turn starts and adopts the server item identity.
+        let agentItemId = UUID()
+        model.apply(.assistantItemStarted(agentItemId))
+        model.apply(
+            .update(
+                .agentMessageChunk(
+                    .text("Task finished, wrapping up."),
+                    messageId: "m-agent",
+                    parentToolCallId: nil,
+                    phase: nil
+                )))
+        #expect(model.isSending)
+
+        // A user message interleaves before the turn's terminal event —
+        // it settles the still-generating agent bubble mid-transcript.
+        model.apply(.userMessage(id: UUID().uuidString, text: "and another thing", attachments: []))
+
+        // The agent turn's terminal event routes to its (now settled) bubble
+        // by identity instead of closing whatever happens to be active.
+        model.apply(
+            .finished(.endTurn, stopDetail: nil, initiatedBy: .agent, chatItemId: agentItemId))
+
+        let settledAgent = model.conversation.first { item in
+            if case let .assistant(message) = item { return message.id == agentItemId }
+            return false
+        }
+        guard case let .assistant(agentMessage)? = settledAgent else {
+            Issue.record("expected the agent bubble to remain in the conversation")
+            return
+        }
+        #expect(agentMessage.turn.isGenerating == false)
+        #expect(agentMessage.turn.stopReason == .endTurn)
+        // The user's follow-up turn is still live: the session stays busy.
+        #expect(model.isSending)
+
+        // The follow-up's own terminal event clears the session busy state.
+        model.apply(
+            .update(
+                .agentMessageChunk(
+                    .text("Answer."),
+                    messageId: "m-user",
+                    parentToolCallId: nil,
+                    phase: nil
+                )))
+        model.apply(.finished(.endTurn, stopDetail: nil))
+        #expect(model.isSending == false)
+    }
+
     @Test("Identical queued prompts remain distinct transcript rows")
     func identicalQueuedPromptsRemainDistinct() async throws {
         let sessionId = UUID()

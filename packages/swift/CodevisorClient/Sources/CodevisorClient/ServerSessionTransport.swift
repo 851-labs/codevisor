@@ -50,12 +50,16 @@ public enum ServerSessionStreamEvent: Equatable, Sendable {
     case queueUpdated([ServerPromptQueueItem])
     /// A turn ended. `stopDetail` is a short human-readable reason present only
     /// when the ending was abnormal (error / limit / refusal / gave-up
-    /// truncation); the client renders it as a per-turn line.
+    /// truncation); the client renders it as a per-turn line. `chatItemId` is
+    /// the server-owned identity of the assistant item this turn belongs to —
+    /// the same routing the server projection uses — so the closure lands on
+    /// that bubble even when it is no longer the active one.
     case finished(
         StopReason,
         stopDetail: String?,
         retryable: Bool = false,
-        initiatedBy: SessionTurnInitiator = .user
+        initiatedBy: SessionTurnInitiator = .user,
+        chatItemId: UUID? = nil
     )
     /// A transient failure is being retried; the turn stays alive. Drives the
     /// visible reconnecting status, with progress when the harness provides it.
@@ -64,7 +68,7 @@ public enum ServerSessionStreamEvent: Equatable, Sendable {
     /// updates; `waiting: false` releases the marker. Replaceable: the
     /// latest event wins.
     case updateGate(waiting: Bool, harnessName: String)
-    case failed(String, retryable: Bool = false)
+    case failed(String, retryable: Bool = false, chatItemId: UUID? = nil)
     /// The harness rejected its credentials. Kept distinct from generic
     /// failures so clients can offer the relevant authentication settings.
     case authenticationRequired(String)
@@ -554,7 +558,9 @@ extension ServerSessionTransport {
                         stopDetail: event.payload["stopDetail"]?.stringValue,
                         retryable: event.payload["retryable"]?.boolValue == true,
                         initiatedBy: event.payload["initiatedBy"]?.stringValue
-                            .flatMap(SessionTurnInitiator.init(rawValue:)) ?? .user
+                            .flatMap(SessionTurnInitiator.init(rawValue:)) ?? .user,
+                        chatItemId: event.payload["chatItemId"]?.stringValue
+                            .flatMap(UUID.init(uuidString:))
                     )
                 ]
             }
@@ -575,7 +581,9 @@ extension ServerSessionTransport {
             return [
                 .failed(
                     errorMessage(from: event.payload),
-                    retryable: event.payload["retryable"]?.boolValue == true
+                    retryable: event.payload["retryable"]?.boolValue == true,
+                    chatItemId: event.payload["chatItemId"]?.stringValue
+                        .flatMap(UUID.init(uuidString:))
                 )
             ]
         case "session.authRequired":

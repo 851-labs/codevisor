@@ -1,4 +1,4 @@
-import type { AttachmentRef, PromptQueueItem } from "@codevisor/api"
+import type { AttachmentRef, EventEnvelope, PromptQueueItem } from "@codevisor/api"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import {
   appendAndPublish,
@@ -216,6 +216,44 @@ export const publishPromptQueue = async (
   return queue
 }
 
+/// Fanout listener that keeps `routeState.activeTurnSessions` current from
+/// turn lifecycle events. Unlike `activePromptSessions` (turns this process
+/// dispatched itself), this also sees turns the harness starts on its own —
+/// a task-notification follow-up after a background task finishes — so
+/// prompt dispatch can hold instead of injecting into the live turn.
+/// Terminal events re-drain any session whose dispatch was held. Synthetic
+/// terminal events (startup/stale-turn reconciliation) ride the same fanout,
+/// so a crashed harness can never wedge the hold.
+export const makeTurnDispatchListener =
+  (
+    services: CodevisorServerServices,
+    fanout: EventFanout,
+    routeState: RouteState,
+    serverId: string
+  ) =>
+  (event: EventEnvelope): void => {
+    if (event.kind !== "session.updated" && event.kind !== "session.error") return
+    const payload =
+      typeof event.payload === "object" && event.payload !== null && !Array.isArray(event.payload)
+        ? (event.payload as Record<string, unknown>)
+        : {}
+    if (event.kind === "session.updated" && payload.turnState === "started") {
+      routeState.activeTurnSessions.add(event.subjectId)
+      return
+    }
+    const terminal =
+      event.kind === "session.error" ||
+      payload.turnState === "ended" ||
+      typeof payload.stopReason === "string"
+    if (!terminal) return
+    routeState.activeTurnSessions.delete(event.subjectId)
+    if (routeState.turnHeldSessions.delete(event.subjectId)) {
+      void drainPromptQueue(services, fanout, routeState, serverId, event.subjectId).catch(
+        swallowError
+      )
+    }
+  }
+
 /// The session's harness id + display name when its harness update gate is
 /// closed; undefined when dispatch may proceed. Failures resolve open — a
 /// lookup error must never wedge prompt dispatch.
@@ -246,6 +284,17 @@ export const drainPromptQueue = async (
     // clients as queued. The first prompt takes the owner path below and is
     // claimed before any queue snapshot is published; otherwise every normal
     // send briefly flashes as a one-item queue before execution starts.
+    await publishPromptQueue(services.db, fanout, sessionId)
+    return
+  }
+  // A turn the harness started on its own (a task-notification follow-up
+  // after a background task finished) has no prompt drain to queue behind —
+  // without this hold the prompt would dispatch straight into the busy
+  // harness, and the active turn's terminal event would resolve it before it
+  // ever ran. Hold exactly like a queued-behind-a-drain prompt; the turn's
+  // terminal event re-drains via the fanout listener.
+  if (routeState.activeTurnSessions.has(sessionId)) {
+    routeState.turnHeldSessions.add(sessionId)
     await publishPromptQueue(services.db, fanout, sessionId)
     return
   }
@@ -301,6 +350,15 @@ export const drainPromptQueue = async (
         return
       }
       /* v8 ignore stop */
+      // Same hold mid-drain: a task-notification turn can begin between one
+      // claimed prompt finishing and the next claim. Dispatching the next
+      // item into that live turn would recreate the interleave this hold
+      // exists to prevent.
+      if (routeState.activeTurnSessions.has(sessionId)) {
+        routeState.turnHeldSessions.add(sessionId)
+        await publishPromptQueue(services.db, fanout, sessionId)
+        return
+      }
       const item = await run(services.db.claimPromptQueueItem(sessionId))
       if (item === undefined) {
         await publishPromptQueue(services.db, fanout, sessionId)

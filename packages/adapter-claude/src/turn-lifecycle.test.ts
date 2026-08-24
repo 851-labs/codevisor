@@ -121,4 +121,62 @@ describe("ClaudeProvider", () => {
       events.filter((event) => (event.payload as Record<string, unknown>).turnState === "ended")
     ).toHaveLength(1)
   })
+
+  it("defers a prompt sent during an agent-initiated turn until that turn ends", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const createPromise = run(
+      provider.createSession(definition, "/tmp", async (event) => {
+        events.push(event)
+      })
+    )
+    await settle()
+    fake.push(initMessage())
+    const created = await createPromise
+
+    // The harness re-triggered itself off a finished background task: output
+    // begins with no prompt in flight, opening an agent-initiated turn.
+    fake.push(streamEvent({ message: { id: "msg-bg" }, type: "message_start" }))
+    fake.push(
+      streamEvent({
+        delta: { text: "Task finished, wrapping up.", type: "text_delta" },
+        index: 0,
+        type: "content_block_delta"
+      })
+    )
+    await settle()
+
+    // A user prompt lands mid-turn. It must neither bind to the live agent
+    // turn (whose result would resolve it prematurely) nor be pushed into it.
+    let promptResolved = false
+    const prompt = run(created.handle.prompt("follow-up")).then((result) => {
+      promptResolved = true
+      return result
+    })
+    await settle()
+    expect(fake.userMessages).toHaveLength(0)
+
+    // The agent turn's own result closes only the agent turn, then the
+    // deferred prompt dispatches as its own user-initiated turn.
+    fake.push({ ...resultMessage(), origin: { kind: "task-notification" } } as never)
+    await settle()
+    expect(promptResolved).toBe(false)
+    const turnEvents = events
+      .map((event) => event.payload as Record<string, unknown>)
+      .filter((payload) => payload.turnState !== undefined)
+    expect(turnEvents).toMatchObject([
+      { initiatedBy: "agent", turnState: "started" },
+      { initiatedBy: "agent", turnState: "ended" },
+      { initiatedBy: "user", turnState: "started" }
+    ])
+    expect(fake.userMessages).toHaveLength(1)
+
+    fake.push(resultMessage())
+    await prompt
+    expect(promptResolved).toBe(true)
+    expect(
+      events.filter((event) => (event.payload as Record<string, unknown>).turnState === "ended")
+    ).toHaveLength(2)
+  })
 })

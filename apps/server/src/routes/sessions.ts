@@ -44,6 +44,7 @@ import {
 
 export {
   drainPromptQueue,
+  makeTurnDispatchListener,
   reconcileOrphanedSessionTurns,
   reconcileStaleStreamingTurns
 } from "./prompt-queue.js"

@@ -321,12 +321,12 @@ extension SessionModel {
                         attachments: attachments,
                         to: &turn
                     )
-                case let .finished(reason, detail, retryable, _):
+                case let .finished(reason, detail, retryable, _, _):
                     turn.stopReason = reason
                     turn.stopDetail = detail
                     turn.retryable = retryable
                     turn.isGenerating = false
-                case let .failed(message, retryable):
+                case let .failed(message, retryable, _):
                     turn.stopDetail = message
                     turn.retryable = retryable
                     turn.isGenerating = false
@@ -394,10 +394,17 @@ extension SessionModel {
         // The merged conversation's last item is the active bubble if present,
         // else the last settled one — read directly to avoid allocating the
         // whole merged array just for `.last`.
-        let last = activeItem ?? settledConversation.last
-        if case let .assistant(message) = last {
-            return message.turn.isGenerating
+        if case let .assistant(message) = activeItem {
+            if message.turn.isGenerating { return true }
         }
-        return false
+        // A generating bubble can also sit mid-transcript: a user row that
+        // landed after an agent-initiated turn's bubble pushes it off the
+        // tail while its turn is still live. Any generating bubble means the
+        // session is busy; the server heals genuinely stale rows itself, so
+        // this cannot latch on dead history.
+        return settledConversation.reversed().contains { item in
+            if case let .assistant(message) = item { return message.turn.isGenerating }
+            return false
+        }
     }
 }

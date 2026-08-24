@@ -37,6 +37,7 @@ import { routeMcps, routeMcpScopes, routeNativeMcps } from "./routes/mcps.js"
 import { routeProjects } from "./routes/projects.js"
 import {
   drainPromptQueue,
+  makeTurnDispatchListener,
   reconcileOrphanedSessionTurns,
   reconcileStaleStreamingTurns,
   routeSessions
@@ -84,10 +85,21 @@ export const makeCodevisorServerApp = (
 ): CodevisorServerApp => {
   const routeState: RouteState = {
     activePromptSessions: new Set(),
+    activeTurnSessions: new Set(),
     gatedSessions: new Map(),
     pendingPromptActions: new Set(),
-    pendingSessionCreates: new Map()
+    pendingSessionCreates: new Map(),
+    turnHeldSessions: new Set()
   }
+  // Turn lifecycle → prompt dispatch: a harness can start a turn on its own
+  // (task-notification follow-up after a background task finishes), which no
+  // prompt drain owns. Track live turns from the event stream so
+  // drainPromptQueue can hold, and re-drain held sessions the moment the
+  // turn settles. Synthetic terminal events (stale-turn reconciliation) flow
+  // through the same fanout, so a crashed harness can never wedge the hold.
+  const unsubscribeTurns = fanout.subscribe(
+    makeTurnDispatchListener(services, fanout, routeState, config.id)
+  )
   // Startup reconciliation only heals rows stranded by a dead process. Rows
   // stranded while this process keeps running (harness crash, lost terminal
   // event) would otherwise render as an endless in-progress turn to every
@@ -174,6 +186,7 @@ export const makeCodevisorServerApp = (
     close: serverAttempt("closeApp", () => {
       clearInterval(staleTurnSweep)
       attentionSettle.close()
+      unsubscribeTurns()
       unsubscribeSessionActivity?.()
       activeSessionIds.clear()
       config.sessionActivity?.stop()

@@ -8,6 +8,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
 import {
+  appendAndPublish,
   defaultServerConfig,
   makeEventFanout,
   reconcileOrphanedSessionTurns,
@@ -15,6 +16,7 @@ import {
   startCodevisorServer,
   type RouteState
 } from "../server.js"
+import { drainPromptQueue, makeTurnDispatchListener } from "./prompt-queue.js"
 import type { HarnessAuthManager } from "@codevisor/harness-manager"
 import {
   configSelectionsFromTestOptions,
@@ -549,9 +551,11 @@ describe("sessions routes", () => {
     tempDirs.push(folder)
     const emptyRouteState = (): RouteState => ({
       activePromptSessions: new Set(),
+      activeTurnSessions: new Set(),
       gatedSessions: new Map(),
       pendingPromptActions: new Set(),
-      pendingSessionCreates: new Map()
+      pendingSessionCreates: new Map(),
+      turnHeldSessions: new Set()
     })
 
     // Strand a turn "in the past": its harness died (or its terminal event
@@ -728,14 +732,134 @@ describe("sessions routes", () => {
     const fanout = await run(makeEventFanout)
     const routeState: RouteState = {
       activePromptSessions: new Set(),
+      activeTurnSessions: new Set(),
       gatedSessions: new Map(),
       pendingPromptActions: new Set(),
-      pendingSessionCreates: new Map()
+      pendingSessionCreates: new Map(),
+      turnHeldSessions: new Set()
     }
     expect(await reconcileStaleStreamingTurns(services, fanout, routeState, "server-a")).toBe(0)
     expect(await run(services.db.getTranscriptPage(session.id, undefined, 8))).toMatchObject({
       items: [{ role: "assistant", isGenerating: true }]
     })
+  })
+
+  it("holds prompt dispatch while a harness-initiated turn is active and re-drains when it ends", async () => {
+    const { agents, services } = await makeServices("server-a")
+    const folder = mkdtempSync(join(tmpdir(), "codevisor-turn-hold-project-"))
+    tempDirs.push(folder)
+    const project = await run(services.db.createProject({ folderPath: folder }))
+    const session = await run(
+      services.db.createSession({
+        projectId: project.id,
+        harnessId: "codex",
+        agentSessionId: "agent-turn-hold"
+      })
+    )
+    const fanout = await run(makeEventFanout)
+    const routeState: RouteState = {
+      activePromptSessions: new Set(),
+      activeTurnSessions: new Set(),
+      gatedSessions: new Map(),
+      pendingPromptActions: new Set(),
+      pendingSessionCreates: new Map(),
+      turnHeldSessions: new Set()
+    }
+    const unsubscribe = fanout.subscribe(
+      makeTurnDispatchListener(services, fanout, routeState, "server-a")
+    )
+
+    // The harness started a turn on its own (a task-notification follow-up
+    // after a background task finished) — no prompt drain owns it.
+    await appendAndPublish(services.db, fanout, "session.updated", session.id, {
+      initiatedBy: "agent",
+      turnId: "agent-turn-1",
+      turnState: "started"
+    })
+    expect(routeState.activeTurnSessions.has(session.id)).toBe(true)
+
+    // A prompt sent mid-turn stays queued instead of being injected into the
+    // live turn (where the turn's result would resolve it prematurely).
+    await run(services.db.createPromptQueueItem(session.id, "queued behind agent turn"))
+    await drainPromptQueue(services, fanout, routeState, "server-a", session.id)
+    expect(agents.prompts).toEqual([])
+    expect(routeState.turnHeldSessions.has(session.id)).toBe(true)
+    expect(await run(services.db.listPromptQueue(session.id))).toMatchObject([
+      { text: "queued behind agent turn" }
+    ])
+
+    // The turn's terminal event releases the hold and dispatches the prompt.
+    await appendAndPublish(services.db, fanout, "session.updated", session.id, {
+      initiatedBy: "agent",
+      stopReason: "end_turn",
+      turnId: "agent-turn-1",
+      turnState: "ended"
+    })
+    await waitFor(
+      () => agents.prompts.length === 1,
+      () => `prompts: ${JSON.stringify(agents.prompts)}`
+    )
+    expect(agents.prompts[0]).toEqual(["agent-turn-hold", "queued behind agent turn"])
+    await waitFor(async () => (await run(services.db.listPromptQueue(session.id))).length === 0)
+    expect(routeState.activeTurnSessions.has(session.id)).toBe(false)
+    expect(routeState.turnHeldSessions.has(session.id)).toBe(false)
+
+    // Malformed payloads are tolerated: a terminal event whose payload is not
+    // an object still clears the turn instead of throwing.
+    const listener = makeTurnDispatchListener(services, fanout, routeState, "server-a")
+    for (const malformed of ["boom", null, ["boom"]]) {
+      routeState.activeTurnSessions.add(session.id)
+      listener({
+        id: 999,
+        serverId: "server-a",
+        kind: "session.error",
+        subjectId: session.id,
+        createdAt: "2026-08-23T00:00:00.000Z",
+        payload: malformed
+      } as never)
+      expect(routeState.activeTurnSessions.has(session.id)).toBe(false)
+    }
+    unsubscribe()
+  })
+
+  it("holds the next queued prompt when a turn begins mid-drain", async () => {
+    const { agents, services } = await makeServices("server-a")
+    const folder = mkdtempSync(join(tmpdir(), "codevisor-middrain-hold-project-"))
+    tempDirs.push(folder)
+    const project = await run(services.db.createProject({ folderPath: folder }))
+    const session = await run(
+      services.db.createSession({
+        projectId: project.id,
+        harnessId: "codex",
+        agentSessionId: "agent-middrain-hold"
+      })
+    )
+    const fanout = await run(makeEventFanout)
+    const routeState: RouteState = {
+      activePromptSessions: new Set(),
+      activeTurnSessions: new Set(),
+      gatedSessions: new Map(),
+      pendingPromptActions: new Set(),
+      pendingSessionCreates: new Map(),
+      turnHeldSessions: new Set()
+    }
+    // Simulate a task-notification turn starting the instant the first
+    // dispatched turn ends — before the drain loop claims the next item.
+    const unsubscribe = fanout.subscribe((event) => {
+      const payload = event.payload as Record<string, unknown>
+      if (event.kind === "session.updated" && payload.turnState === "ended") {
+        routeState.activeTurnSessions.add(session.id)
+      }
+    })
+
+    await run(services.db.createPromptQueueItem(session.id, "first"))
+    await run(services.db.createPromptQueueItem(session.id, "second"))
+    await drainPromptQueue(services, fanout, routeState, "server-a", session.id)
+
+    expect(agents.prompts).toEqual([["agent-middrain-hold", "first"]])
+    expect(routeState.turnHeldSessions.has(session.id)).toBe(true)
+    expect(await run(services.db.listPromptQueue(session.id))).toMatchObject([{ text: "second" }])
+    unsubscribe()
   })
 
   it("adopts a client-supplied messageId as the queue item and echo id", async () => {

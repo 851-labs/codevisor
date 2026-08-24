@@ -18,7 +18,7 @@ import { applyClaudeModelFromProvider, currentClaudeModelFor, metadataFor } from
 import { holdClaudeApproval, holdClaudePlanApproval, holdClaudeQuestion } from "./questions.js"
 import { InputQueue, type ClaudeQueryFn, type ClaudeSession } from "./session.js"
 import { applyTaskCreate, emitTaskPlanUpdate } from "./tasks.js"
-import { finishActiveTurn } from "./turn-lifecycle.js"
+import { failDeferredPrompts, finishActiveTurn } from "./turn-lifecycle.js"
 
 /// Effort levels the CLI's flag settings accept. `max` is valid (verified
 /// against a live CLI) even though the SDK's `Settings` type lags its own
@@ -237,6 +237,7 @@ export const makeStartSession = (deps: StartSessionDeps) => {
       taskToolUses: new Map(),
       tasks: new Map(),
       pendingPrompt: undefined,
+      deferredPrompts: [],
       turnCompletion: undefined,
       cancelInFlight: undefined,
       pendingUserCommands: 0,
@@ -326,6 +327,7 @@ export const makeStartSession = (deps: StartSessionDeps) => {
         if (!created.turnActive) {
           created.pendingPrompt?.reject(runtimeError("prompt", cause))
           created.pendingPrompt = undefined
+          failDeferredPrompts(created, runtimeError("prompt", cause))
           void created.emit({
             kind: "session.error",
             payload: { message: failure },

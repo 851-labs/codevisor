@@ -13,7 +13,12 @@ import { deferred } from "./internal.js"
 import { effortLevelsFor, metadataFor, supportsFastMode } from "./models.js"
 import { answerClaudeQuestion, cancelClaudePendingQuestions } from "./questions.js"
 import type { ClaudeSession } from "./session.js"
-import { ensureObservedTurnStarted, ensureTurnStarted, finishActiveTurn } from "./turn-lifecycle.js"
+import {
+  ensureObservedTurnStarted,
+  ensureTurnStarted,
+  failDeferredPrompts,
+  finishActiveTurn
+} from "./turn-lifecycle.js"
 
 /// Session-handle wiring extracted from makeClaudeProvider as a deps-factory
 /// (the makeSkillsOperations pattern): the handleFor body is unchanged, its
@@ -78,6 +83,7 @@ export const makeClaudeSessionHandle = (cancelGraceMs: number) => {
         // before closing the poisoned query; retired sessions ignore late SDK
         // messages, preventing an observed/phantom follow-up turn.
         session.retired = true
+        failDeferredPrompts(session, new Error("Claude runtime was retired"))
         if (session.backgroundTasks.size > 0 || session.backgroundShellKeys.size > 0) {
           session.backgroundTasks.clear()
           session.backgroundShellKeys.clear()
@@ -104,6 +110,7 @@ export const makeClaudeSessionHandle = (cancelGraceMs: number) => {
     }),
     close: adapterPromise("close", async () => {
       session.retired = true
+      failDeferredPrompts(session, new Error("Claude runtime was retired"))
       await cancelClaudePendingQuestions(session)
       session.input.end()
       session.abort.abort()
@@ -121,6 +128,16 @@ export const makeClaudeSessionHandle = (cancelGraceMs: number) => {
           throw new Error("Claude runtime was retired")
         }
         const pending = deferred<{ stopReason: string }>()
+        // A turn is already running (typically an agent-initiated
+        // task-notification follow-up that the dispatcher raced). Binding
+        // `pendingPrompt` now would let that turn's terminal event resolve
+        // this prompt before it ever ran, and pushing the message now would
+        // fold it into the live turn. Defer instead: `finishActiveTurn`
+        // dispatches it as its own user-initiated turn.
+        if (session.turnActive) {
+          session.deferredPrompts.push({ input, pending })
+          return pending.promise
+        }
         session.pendingPrompt = pending
         await ensureTurnStarted(session, "user")
         session.input.push({
