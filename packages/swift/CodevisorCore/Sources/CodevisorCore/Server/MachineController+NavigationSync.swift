@@ -188,7 +188,7 @@ extension MachineController {
         guard serverId == selectedMachine.id else { return }
         if navigationSyncMachineId == serverId, let navigationSyncTask {
             if presentation == .catchUp {
-                navigationSyncStateByMachineId[serverId] = .catchingUp
+                connection(for: serverId).navigationSyncState = .catchingUp
             }
             await navigationSyncTask.value
             return
@@ -227,7 +227,7 @@ extension MachineController {
     ) async {
         guard serverId == selectedMachine.id, !Task.isCancelled else { return }
         if presentation == .catchUp {
-            navigationSyncStateByMachineId[serverId] = .catchingUp
+            connection(for: serverId).navigationSyncState = .catchingUp
         }
         stopEventSync()
 
@@ -253,7 +253,7 @@ extension MachineController {
             await workspaceSync?.refreshFromServer(serverId: serverId, client: client)
             guard serverId == selectedMachine.id, !Task.isCancelled else { return }
             startEventSync(serverId: serverId, client: client, since: cursor)
-            navigationSyncStateByMachineId[serverId] = .current
+            connection(for: serverId).navigationSyncState = .current
         case .superseded:
             return
         case let .failed(message):
@@ -261,7 +261,7 @@ extension MachineController {
             // cursor, but do not claim it is current. A retry or the stream's
             // own recovery will run this same reconciliation path again.
             startEventSync(serverId: serverId, client: client, since: cursor)
-            navigationSyncStateByMachineId[serverId] = .stale(message)
+            connection(for: serverId).navigationSyncState = .stale(message)
         }
     }
 }

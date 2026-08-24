@@ -81,10 +81,11 @@ public enum ServerUpdatePhase: Equatable, Sendable {
 @Observable
 public final class MachineController {
     public private(set) var registry: MachineRegistry
-    public private(set) var statusByMachineId: [String: MachineStatus] = [:]
-    public internal(set) var updateInfoByMachineId: [String: ServerUpdateInfo] = [:]
-    public private(set) var availabilityByMachineId: [String: ServerAvailability] = [:]
-    public internal(set) var navigationSyncStateByMachineId: [String: NavigationSyncState] = [:]
+    /// One connection record per machine this controller has touched — the
+    /// single home for a machine's live client-side state. The legacy
+    /// `*ByMachineId` dictionaries are read-only projections of these (see
+    /// MachineConnection.swift).
+    var connectionsById: [String: MachineConnection] = [:]
     /// The release feed remote server update checks follow — mirrors the
     /// app's alpha-updates setting. AppEnvironment keeps it in sync.
     public var serverUpdateChannel: ServerUpdateChannel = .stable
@@ -575,14 +576,7 @@ public final class MachineController {
         guard id != CodevisorMachine.local.id else { throw MachineControllerError.cannotRemoveLocal }
         try credentialStore?.removeToken(forMachineID: id)
         registry.remoteMachines.removeAll { $0.id == id }
-        // Drop the removed machine's in-memory state. Its status in
-        // particular carries the cloud device id that deduplicates the cloud
-        // machine list — left behind, it would keep hiding the machine's
-        // cloud twin from `allMachines`.
-        statusByMachineId[id] = nil
-        updateInfoByMachineId[id] = nil
-        availabilityByMachineId[id] = nil
-        navigationSyncStateByMachineId[id] = nil
+        removeConnection(for: id)
         if registry.selectedMachineId == id {
             registry.selectedMachineId = CodevisorMachine.local.id
             beginWaiting(for: CodevisorMachine.local.id, reason: .starting)
@@ -608,10 +602,7 @@ public final class MachineController {
             // Same as removeMachine: the app-data reset runs in-process, so
             // a removed machine's stale status (with its cloud device id)
             // would otherwise survive and dedup its cloud twin away.
-            statusByMachineId[machine.id] = nil
-            updateInfoByMachineId[machine.id] = nil
-            availabilityByMachineId[machine.id] = nil
-            navigationSyncStateByMachineId[machine.id] = nil
+            removeConnection(for: machine.id)
         }
         credentialReadFailures.removeAll()
         registry = MachineRegistry()
@@ -659,14 +650,17 @@ public final class MachineController {
         client: any CodevisorServerClienting
     ) async {
         let machineId = machine.id
-        navigationSyncStateByMachineId[machineId] = .catchingUp
+        connection(for: machineId).navigationSyncState = .catchingUp
 
         if machine.isLocal, let localServer {
             let serverState = await localServer.ensureRunning()
             guard machineId == selectedMachineId else { return }
             if case let .unavailable(message) = serverState {
                 markFailed(for: machineId, message: message)
-                statusByMachineId[machineId] = MachineStatus(isReachable: false, label: message)
+                connection(for: machineId).status = MachineStatus(
+                    isReachable: false,
+                    label: message
+                )
                 return
             }
             if serverState == .alreadyRunning {
@@ -691,7 +685,10 @@ public final class MachineController {
                 guard machineId == selectedMachineId else { return }
                 let message = serverErrorMessage(error)
                 markFailed(for: machineId, message: message)
-                statusByMachineId[machineId] = MachineStatus(isReachable: false, label: message)
+                connection(for: machineId).status = MachineStatus(
+                    isReachable: false,
+                    label: message
+                )
                 return
             }
         }
@@ -715,9 +712,10 @@ public final class MachineController {
 
     public func refreshStatus(for id: String) async {
         let client = client(for: id)
+        let connection = connection(for: id)
         do {
             let info = try await client.info()
-            statusByMachineId[id] = MachineStatus(
+            connection.status = MachineStatus(
                 isReachable: true,
                 label: "\(info.name) \(info.version)",
                 cloudDeviceId: info.cloudDeviceId
@@ -729,12 +727,12 @@ public final class MachineController {
                 cloudProvider?.registerLocalMachineIfNeeded()
             }
             do {
-                updateInfoByMachineId[id] = try await client.updateInfo(
+                connection.updateInfo = try await client.updateInfo(
                     refresh: true,
                     channel: serverUpdateChannel
                 )
             } catch {
-                updateInfoByMachineId[id] = nil
+                connection.updateInfo = nil
                 Log.machines.debug(
                     "Update info probe for \(id, privacy: .public) failed: \(String(describing: error), privacy: .public)"
                 )
@@ -743,15 +741,15 @@ public final class MachineController {
             // A local server that failed to start has a more useful story
             // than "Unreachable" — surface why instead.
             if id == CodevisorMachine.local.id, case let .unavailable(message) = localServer?.state {
-                statusByMachineId[id] = MachineStatus(isReachable: false, label: message)
+                connection.status = MachineStatus(isReachable: false, label: message)
             } else if case CodevisorServerClientError.httpStatus(401, _) = error {
                 // The server answered — the token is just wrong (or the
                 // machine was paired against a different server on that host).
                 // Say so, so the user fixes the token instead of chasing a
                 // phantom network problem.
-                statusByMachineId[id] = MachineStatus(isReachable: false, label: "Invalid connection token")
+                connection.status = MachineStatus(isReachable: false, label: "Invalid connection token")
             } else {
-                statusByMachineId[id] = MachineStatus(isReachable: false, label: "Unreachable")
+                connection.status = MachineStatus(isReachable: false, label: "Unreachable")
                 Log.machines.debug(
                     "Status probe for \(id, privacy: .public) failed: \(String(describing: error), privacy: .public)")
             }
@@ -768,19 +766,21 @@ public final class MachineController {
         if machineId == selectedMachineId {
             stopEventSync()
         }
-        availabilityByMachineId[machineId] = .waiting(reason)
-        navigationSyncStateByMachineId[machineId] = .catchingUp
+        let connection = connection(for: machineId)
+        connection.availability = .waiting(reason)
+        connection.navigationSyncState = .catchingUp
         requestGate.beginWaiting(for: machineId)
     }
 
     func markReady(for machineId: String) {
-        availabilityByMachineId[machineId] = .ready
+        connection(for: machineId).availability = .ready
         requestGate.markReady(for: machineId)
     }
 
     func markFailed(for machineId: String, message: String) {
-        availabilityByMachineId[machineId] = .failed(message)
-        navigationSyncStateByMachineId[machineId] = .stale(message)
+        let connection = connection(for: machineId)
+        connection.availability = .failed(message)
+        connection.navigationSyncState = .stale(message)
         requestGate.markFailed(for: machineId, message: message)
     }
 

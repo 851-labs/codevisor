@@ -19,7 +19,7 @@ extension MachineController {
             )
             // A machine switch can happen while the request is in flight.
             guard machineId == selectedMachineId else { return }
-            updateInfoByMachineId[machineId] = update
+            connection(for: machineId).updateInfo = update
         } catch {
             // A transient background failure should not erase a banner we
             // already know about. The next five-minute pass will retry.
@@ -70,7 +70,7 @@ extension MachineController {
             }
             // The pre-apply handoff report, so a stale failure left by an
             // earlier attempt is never mistaken for this one's outcome.
-            let initialApplyAt = updateInfoByMachineId[machineId]?.lastApply?.at
+            let initialApplyAt = connection(for: machineId).updateInfo?.lastApply?.at
             for _ in 0..<updatePollAttempts {
                 try? await Task.sleep(for: updatePollInterval)
                 // The user moved on to a different machine; stop waiting.
