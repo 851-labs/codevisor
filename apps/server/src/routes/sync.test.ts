@@ -110,14 +110,43 @@ describe("/v1/sync", () => {
       method: "PUT"
     })
     expect(mismatched.status).toBe(400)
+
+    // MCP reconcile and the roster publish ride the same surface: a real
+    // definition publishes (and emits sync.changed), and a repeat roster
+    // publish with nothing new stays silent.
+    await services.mcp?.create({
+      authType: "none",
+      enabled: false,
+      name: "Synced",
+      transport: "http",
+      url: "https://synced.example.com/mcp"
+    })
+    const mcpReconcile = await jsonRequest(server, "/v1/sync/mcps/reconcile", { method: "POST" })
+    expect(mcpReconcile.status).toBe(200)
+    expect(mcpReconcile.body).toMatchObject({ published: ["Synced"] })
+    // Idempotent: a second pass changes (and publishes) nothing.
+    expect(
+      (await jsonRequest(server, "/v1/sync/mcps/reconcile", { method: "POST" })).body
+    ).toMatchObject({ published: [] })
+    expect(
+      (await jsonRequest(server, "/v1/sync/accounts/publish", { method: "POST" })).status
+    ).toBe(200)
+    expect(
+      (await jsonRequest(server, "/v1/sync/accounts/publish", { method: "POST" })).body
+    ).toEqual({ published: false })
   })
 
-  it("responds 501 for blob and skills routes without the backing services", async () => {
+  it("responds 501 for sync routes without the backing services", async () => {
     const { services } = await makeServices("server-nosync")
-    const server = await startWithApp(services)
+    const { mcp, ...withoutMcp } = services
+    void mcp
+    const server = await startWithApp(withoutMcp)
     expect((await jsonRequest(server, `/v1/sync/blobs/${"0".repeat(64)}`)).status).toBe(501)
     expect(
       (await jsonRequest(server, "/v1/sync/skills/reconcile", { method: "POST" })).status
     ).toBe(501)
+    expect((await jsonRequest(server, "/v1/sync/mcps/reconcile", { method: "POST" })).status).toBe(
+      501
+    )
   })
 })

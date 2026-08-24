@@ -50,6 +50,10 @@ public extension CodevisorServerClienting {
     func reconcileSkillsSync() async throws -> ServerSkillsSyncStatus {
         ServerSkillsSyncStatus(published: [], applied: [], removed: [], missingBlobs: [])
     }
+    func reconcileMcpsSync() async throws -> ServerMcpSyncStatus {
+        ServerMcpSyncStatus(published: [], applied: [], removed: [])
+    }
+    func publishAccountsSync() async throws {}
     func syncBlob(id: String) async throws -> Data {
         throw CodevisorServerClientError.invalidResponse
     }

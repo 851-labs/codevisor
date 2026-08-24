@@ -1,6 +1,12 @@
 import { PutSyncRequest as PutSyncRequestSchema } from "@codevisor/api"
 import { isValidBlobId, isValidSyncNamespace } from "@codevisor/sync"
 import type { IncomingMessage, ServerResponse } from "node:http"
+import {
+  ACCOUNTS_SYNC_NAMESPACE,
+  MCPS_SYNC_NAMESPACE,
+  publishAccountsRoster,
+  reconcileMcps
+} from "../infra/config-sync.js"
 import { reconcileSkills, SKILLS_SYNC_NAMESPACE, verifySkillArchive } from "../infra/skills-sync.js"
 import {
   appendAndPublish,
@@ -83,6 +89,36 @@ export const routeSync = async (
       }).catch(swallowError)
     }
     writeJson(response, 200, result.status)
+    return true
+  }
+
+  if (url.pathname === "/v1/sync/mcps/reconcile" && request.method === "POST") {
+    const mcp = services.mcp
+    if (mcp === undefined) throw new HttpFailure(501, "MCP sync unavailable")
+    const result = await reconcileMcps({ db: services.db, mcp, serverId: config.id })
+    if (result.changedEntries.length > 0) {
+      void appendAndPublish(services.db, fanout, "sync.changed", MCPS_SYNC_NAMESPACE, {
+        namespace: MCPS_SYNC_NAMESPACE,
+        entries: result.changedEntries
+      }).catch(swallowError)
+    }
+    writeJson(response, 200, result.status)
+    return true
+  }
+
+  if (url.pathname === "/v1/sync/accounts/publish" && request.method === "POST") {
+    const result = await publishAccountsRoster({
+      db: services.db,
+      harnessIds: services.agents.catalog.map((definition) => definition.id),
+      serverId: config.id
+    })
+    if (result.changedEntries.length > 0) {
+      void appendAndPublish(services.db, fanout, "sync.changed", ACCOUNTS_SYNC_NAMESPACE, {
+        namespace: ACCOUNTS_SYNC_NAMESPACE,
+        entries: result.changedEntries
+      }).catch(swallowError)
+    }
+    writeJson(response, 200, { published: result.changedEntries.length > 0 })
     return true
   }
 

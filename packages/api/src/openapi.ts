@@ -139,6 +139,8 @@ export const endpoints = [
   "GET /v1/sync/blobs/:id",
   "PUT /v1/sync/blobs/:id",
   "POST /v1/sync/skills/reconcile",
+  "POST /v1/sync/mcps/reconcile",
+  "POST /v1/sync/accounts/publish",
   "POST /v1/shutdown",
   "GET /v1/capabilities",
   "POST /v1/auth/pairing-token",

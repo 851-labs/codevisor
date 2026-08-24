@@ -194,6 +194,24 @@ struct ConfigSyncTests {
         #expect(fakeA.appliedSkills == ["deploy"])
     }
 
+    @Test("Full sync passes reconcile MCPs and publish rosters per machine")
+    func fullPassReconciles() async throws {
+        let remote = makeRemote("remote-a")
+        let fake = SyncFakeServerClient(projects: [], sessions: [])
+        let controller = try makeController(
+            fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],
+            remotes: [remote]
+        )
+        await controller.refreshStatus(for: remote.id)
+        let sync = ConfigSync(machines: controller, store: InMemoryStore())
+
+        await sync.synchronizeAll()
+
+        #expect(fake.operationLog.contains("mcps.reconcile"))
+        #expect(fake.operationLog.contains("accounts.publish"))
+        #expect(fake.operationLog.contains("skills.reconcile"))
+    }
+
     @Test("Tombstones remove values and win over older writes")
     func tombstonesWin() throws {
         let controller = try makeController(

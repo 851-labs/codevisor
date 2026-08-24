@@ -43,6 +43,19 @@ public struct ServerSyncDocument: Codable, Equatable, Sendable {
     }
 }
 
+/// Outcome of one MCP-definitions reconcile pass on a machine.
+public struct ServerMcpSyncStatus: Codable, Equatable, Sendable {
+    public var published: [String]
+    public var applied: [String]
+    public var removed: [String]
+
+    public init(published: [String], applied: [String], removed: [String]) {
+        self.published = published
+        self.applied = applied
+        self.removed = removed
+    }
+}
+
 public struct ServerSkillsSyncMissingBlob: Codable, Equatable, Sendable {
     public var directoryName: String
     public var hash: String
@@ -93,6 +106,14 @@ extension CodevisorServerClient {
 
     public func reconcileSkillsSync() async throws -> ServerSkillsSyncStatus {
         try await send("/v1/sync/skills/reconcile", method: "POST", body: Optional<EmptyBody>.none)
+    }
+
+    public func reconcileMcpsSync() async throws -> ServerMcpSyncStatus {
+        try await send("/v1/sync/mcps/reconcile", method: "POST", body: Optional<EmptyBody>.none)
+    }
+
+    public func publishAccountsSync() async throws {
+        try await sendNoResponse("/v1/sync/accounts/publish", method: "POST")
     }
 
     public func syncBlob(id: String) async throws -> Data {

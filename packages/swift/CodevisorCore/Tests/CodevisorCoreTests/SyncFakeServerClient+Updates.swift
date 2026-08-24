@@ -201,6 +201,17 @@ extension SyncFakeServerClient {
         lock.withLock { _skillBlobs[id] = bytes }
     }
 
+    func reconcileMcpsSync() async throws -> ServerMcpSyncStatus {
+        lock.withLock {
+            _operationLog.append("mcps.reconcile")
+            return ServerMcpSyncStatus(published: [], applied: [], removed: [])
+        }
+    }
+
+    func publishAccountsSync() async throws {
+        lock.withLock { _operationLog.append("accounts.publish") }
+    }
+
     func health() async throws -> ServerHealth {
         lock.withLock {
             ServerHealth(
