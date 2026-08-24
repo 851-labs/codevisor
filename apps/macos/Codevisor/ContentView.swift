@@ -212,6 +212,7 @@ struct RootView: View {
     @ClientPreference("sidebar.collapsed", default: false) private var sidebarCollapsed
     @State private var store: SessionStore?
     @State private var preferredProjectId: UUID?
+    @State private var requiresInitialNewChatProjectResolution = false
     @State private var preparedMachineId: String?
     @State private var quickLook = QuickLookController()
     @State private var panelLayout = AdaptivePanelLayout()
@@ -227,10 +228,11 @@ struct RootView: View {
                     initialStep: OnboardingView.resumeStep(from: environment.settings)
                 ) { project in
                     preferredProjectId = project?.id
+                    requiresInitialNewChatProjectResolution = true
                     // Land on the new-workspace page (picker) rather than the
                     // quick-create fast path — the user should name/configure
                     // their first workspace, not get a random one auto-made.
-                    selection = .newChat(nil)
+                    selection = .newChat(project?.id)
                 }
             }
         }
@@ -359,6 +361,7 @@ struct RootView: View {
                 if let preparedMachineId, preparedMachineId != machineId {
                     selection = .newChat(nil)
                     preferredProjectId = nil
+                    requiresInitialNewChatProjectResolution = false
                 }
                 preparedMachineId = machineId
                 await environment.prepareSelectedMachine()
@@ -603,7 +606,11 @@ struct RootView: View {
             store: store,
             selection: $selection,
             preferredProjectId: projectId,
-            explicitProjectId: projectId
+            explicitProjectId: projectId,
+            requiresInitialProjectResolution: requiresInitialNewChatProjectResolution,
+            onInitialProjectResolutionCompleted: {
+                requiresInitialNewChatProjectResolution = false
+            }
         )
         .id(environment.machines.selectedMachineId)
     }

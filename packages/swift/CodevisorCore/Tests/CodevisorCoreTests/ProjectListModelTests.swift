@@ -223,6 +223,38 @@ struct ProjectListModelTests {
         #expect(model.sessions.filter { $0.id == session.id }.count == 1)
     }
 
+    @Test("Server refresh preserves a new local project until creation is acknowledged")
+    func serverRefreshPreservesPendingProject() async throws {
+        let fakeServer = FakeServerClient()
+        let projectUpload = Latch()
+        await fakeServer.setProjectUpsertDelay { await projectUpload.wait() }
+        let model = ProjectListModel(
+            projectRepository: DefaultProjectRepository(store: InMemoryStore()),
+            sessionRepository: DefaultSessionRepository(store: InMemoryStore()),
+            serverClient: fakeServer
+        )
+
+        // Adding a project updates the UI immediately, while its server upload
+        // remains blocked. An intervening empty snapshot must not make the
+        // first-project composer fall back to project setup.
+        let project = model.addProject(
+            folderURL: URL(fileURLWithPath: "/tmp/pending-project")
+        )
+        await model.refreshFromServer()
+        #expect(model.activeProjects.contains { $0.id == project.id })
+
+        // Once the server exposes the row, the pending marker retires and the
+        // normal authoritative copy replaces the optimistic one without a
+        // duplicate.
+        await projectUpload.open()
+        try await waitUntilAsync {
+            let snapshot = await fakeServer.snapshot()
+            return snapshot.upsertedProjectIDs.contains(project.id.uuidString)
+        }
+        await model.refreshFromServer()
+        #expect(model.projects.filter { $0.id == project.id }.count == 1)
+    }
+
     @Test("Stale server refresh cannot revive a pending archived session")
     func serverRefreshPreservesPendingArchive() async throws {
         let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/pending-archive"))
@@ -949,6 +981,7 @@ actor FakeServerClient: CodevisorServerClienting {
     /// When set, `listProjects` suspends on this first — lets tests hold a
     /// "network" call in flight while the app state changes underneath it.
     private var listDelay: (@Sendable () async -> Void)?
+    private var projectUpsertDelay: (@Sendable () async -> Void)?
     private var sessionUpsertDelay: (@Sendable () async -> Void)?
     /// When set, deleteProject/deleteSession suspend on this first — lets
     /// tests hold the server DELETE in flight while refreshes race it.
@@ -962,6 +995,10 @@ actor FakeServerClient: CodevisorServerClienting {
 
     func setListDelay(_ delay: @escaping @Sendable () async -> Void) {
         listDelay = delay
+    }
+
+    func setProjectUpsertDelay(_ delay: @escaping @Sendable () async -> Void) {
+        projectUpsertDelay = delay
     }
 
     func setSessionUpsertDelay(_ delay: @escaping @Sendable () async -> Void) {
@@ -996,6 +1033,7 @@ actor FakeServerClient: CodevisorServerClienting {
     }
 
     func upsertProject(_ project: Project) async throws -> ServerProject {
+        if let projectUpsertDelay { await projectUpsertDelay() }
         let serverProject = serverProject(from: project)
         upsertedProjectIDs.append(serverProject.id)
         projects.removeAll { $0.id == serverProject.id }

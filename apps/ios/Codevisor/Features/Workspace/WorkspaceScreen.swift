@@ -285,7 +285,10 @@ struct WorkspaceScreen: View {
                 }
             } else if missing {
                 ContentUnavailableView("Chat Not Found", systemImage: "questionmark.bubble")
-            } else if isDraft, draftController == nil || draftProjectCandidate == nil {
+            } else if isDraft, draftController == nil {
+                // Once created, the retained draft controller owns its project.
+                // Do not fall back to setup if an older global snapshot briefly
+                // omits that project while its server upsert is acknowledged.
                 if draftProjectCandidate == nil {
                     // Match macOS's stale-while-revalidate behavior: an empty
                     // persisted snapshot opens project setup immediately. If

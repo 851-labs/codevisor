@@ -22,6 +22,32 @@ private struct PaneClickZoneCapture: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
+/// Keeps a short project reconciliation invisible. If it outlives the normal
+/// 500 ms grace period, the blank surface becomes an explicit loading state.
+private struct DelayedNewChatLoadingView: View {
+    @State private var showsSpinner = false
+
+    var body: some View {
+        ZStack {
+            Color.clear
+            if showsSpinner {
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityLabel("Loading projects")
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task {
+            do {
+                try await Task.sleep(for: .milliseconds(500))
+            } catch {
+                return
+            }
+            showsSpinner = true
+        }
+    }
+}
+
 struct NewChatView: View {
     @Environment(AppEnvironment.self) var environment
     @Environment(\.theme) private var theme
@@ -51,6 +77,10 @@ struct NewChatView: View {
     /// working directory (worktree or project root), stamped onto the
     /// session at first send.
     var hostWorkspaceId: UUID? = nil
+    /// The one-shot handoff from onboarding waits for the authoritative
+    /// project refresh before deciding between setup and the composer.
+    var requiresInitialProjectResolution = false
+    var onInitialProjectResolutionCompleted: (() -> Void)? = nil
 
     @State private var controller: SessionController?
     @State var selectedProjectId: UUID?
@@ -69,7 +99,7 @@ struct NewChatView: View {
         projects.first { $0.id == selectedProjectId } ?? projects.first
     }
     private var setupIdentity: String {
-        "\(environment.machines.selectedMachineId):\(preferredProjectId?.uuidString ?? "default")"
+        "\(environment.machines.selectedMachineId):\(preferredProjectId?.uuidString ?? "default"):\(requiresInitialProjectResolution ? "resolving" : "ready")"
     }
     private var harnessCatalogRevision: UInt64 {
         environment.harnessCatalogRevision(for: environment.machines.selectedMachineId)
@@ -94,80 +124,84 @@ struct NewChatView: View {
 
     private var content: some View {
         VStack {
-            // 2:3 spacer split sits the composer slightly above true center.
-            Spacer()
-            Spacer()
-            VStack(spacing: 22) {
-                title
-                if showsProjectSetup {
-                    // Inline setup instead of pointing at the sidebar's "+":
-                    // onboarding's project step, adapted to the selected
-                    // machine. This is the first thing a user sees after
-                    // adding a fresh (often headless remote) machine.
-                    ProjectSetupPanel(model: projectSetup) { project in
-                        projectSetup = ProjectSetupModel()
-                        selectedProjectId = project.id
-                        selection = .newChat(project.id)
-                    }
-                } else if let controller {
-                    VStack(alignment: .leading, spacing: 8) {
-                        GlassEffectContainer(spacing: ComposerGlassStyle.clusterSpacing) {
-                            VStack(alignment: .leading, spacing: ComposerGlassStyle.clusterSpacing) {
-                                ComposerCard(
-                                    controller: controller,
-                                    placeholder: "Do anything",
-                                    onTextViewReady: { textView in
-                                        focus.composerTextView = textView
-                                        if let paneFocus, let chatId = preCreatedSession?.id {
-                                            // REGISTRATION ONLY, like ChatScreen:
-                                            // the container's keyed focus request
-                                            // (open sequence, pane/tab clicks)
-                                            // applies the moment this lands.
-                                            paneFocus.registerComposer(textView, forChat: chatId)
-                                        } else {
-                                            // Standalone page: the text view isn't
-                                            // attached to a window yet during
-                                            // makeNSView; focus once it is.
-                                            DispatchQueue.main.async { focus.focusComposer() }
-                                        }
-                                    },
-                                    focus: paneFocus ?? focus,
-                                    focusChatId: preCreatedSession?.id,
-                                    glassNamespace: composerGlassNamespace
-                                )
-                                if showsRunPickers {
-                                    HStack(spacing: 4) {
-                                        projectPicker(controller)
-                                        if liveProject(for: controller).isGitRepository {
-                                            Divider()
-                                                .frame(height: 14)
-                                                .accessibilityHidden(true)
-                                            runLocationPicker(controller)
-                                        }
-                                    }
-                                    .font(.callout)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .contentShape(Capsule())
-                                    .glassEffect(.regular.interactive(), in: Capsule())
-                                    .glassEffectID(
-                                        ComposerGlassElement.newChatConfiguration.rawValue,
-                                        in: composerGlassNamespace
+            if requiresInitialProjectResolution {
+                DelayedNewChatLoadingView()
+            } else {
+                // 2:3 spacer split sits the composer slightly above true center.
+                Spacer()
+                Spacer()
+                VStack(spacing: 22) {
+                    title
+                    if showsProjectSetup {
+                        // Inline setup instead of pointing at the sidebar's "+":
+                        // onboarding's project step, adapted to the selected
+                        // machine. This is the first thing a user sees after
+                        // adding a fresh (often headless remote) machine.
+                        ProjectSetupPanel(model: projectSetup) { project in
+                            projectSetup = ProjectSetupModel()
+                            selectedProjectId = project.id
+                            selection = .newChat(project.id)
+                        }
+                    } else if let controller {
+                        VStack(alignment: .leading, spacing: 8) {
+                            GlassEffectContainer(spacing: ComposerGlassStyle.clusterSpacing) {
+                                VStack(alignment: .leading, spacing: ComposerGlassStyle.clusterSpacing) {
+                                    ComposerCard(
+                                        controller: controller,
+                                        placeholder: "Do anything",
+                                        onTextViewReady: { textView in
+                                            focus.composerTextView = textView
+                                            if let paneFocus, let chatId = preCreatedSession?.id {
+                                                // REGISTRATION ONLY, like ChatScreen:
+                                                // the container's keyed focus request
+                                                // (open sequence, pane/tab clicks)
+                                                // applies the moment this lands.
+                                                paneFocus.registerComposer(textView, forChat: chatId)
+                                            } else {
+                                                // Standalone page: the text view isn't
+                                                // attached to a window yet during
+                                                // makeNSView; focus once it is.
+                                                DispatchQueue.main.async { focus.focusComposer() }
+                                            }
+                                        },
+                                        focus: paneFocus ?? focus,
+                                        focusChatId: preCreatedSession?.id,
+                                        glassNamespace: composerGlassNamespace
                                     )
-                                    .glassEffectTransition(.matchedGeometry)
+                                    if showsRunPickers {
+                                        HStack(spacing: 4) {
+                                            projectPicker(controller)
+                                            if liveProject(for: controller).isGitRepository {
+                                                Divider()
+                                                    .frame(height: 14)
+                                                    .accessibilityHidden(true)
+                                                runLocationPicker(controller)
+                                            }
+                                        }
+                                        .font(.callout)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .contentShape(Capsule())
+                                        .glassEffect(.regular.interactive(), in: Capsule())
+                                        .glassEffectID(
+                                            ComposerGlassElement.newChatConfiguration.rawValue,
+                                            in: composerGlassNamespace
+                                        )
+                                        .glassEffectTransition(.matchedGeometry)
+                                    }
                                 }
                             }
+                            statusLabel(controller)
                         }
-                        statusLabel(controller)
+                        .frame(maxWidth: 720)
                     }
-                    .frame(maxWidth: 720)
                 }
+                .frame(maxWidth: 720)
+                .padding()
+                Spacer()
+                Spacer()
+                Spacer()
             }
-            .frame(maxWidth: 720)
-            .padding()
-            Spacer()
-            Spacer()
-            Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // Pinned to the pane's top edge as an overlay: appearing or
@@ -223,13 +257,19 @@ struct NewChatView: View {
                 onArchive: { archiveManagedProject(project, controller: controller) }
             )
         }
-        // Stale-while-revalidate: the persisted project snapshot renders the
-        // page immediately, then the server re-probes folder capabilities in
-        // the background and publishes any changed Git status into this view.
+        // Established installs stay stale-while-revalidate. The one-shot
+        // onboarding handoff keeps its loading surface mounted until this
+        // same authoritative refresh finishes.
         .task {
             await environment.projectList.refreshFromServer()
+            if requiresInitialProjectResolution {
+                onInitialProjectResolutionCompleted?()
+            }
         }
-        .task(id: setupIdentity) { setUpController() }
+        .task(id: setupIdentity) {
+            guard !requiresInitialProjectResolution else { return }
+            setUpController()
+        }
         // A machine's projects can arrive after this view's initial task has
         // already returned. Retry when the active project set changes so the
         // composer does not remain hidden after the first project appears.
@@ -237,7 +277,9 @@ struct NewChatView: View {
             // Not while setup is staging: a clone registers its project
             // immediately, and eagerly connecting an agent there would be
             // premature — the user may confirm with a different selection.
-            guard controller == nil, !showsProjectSetup else { return }
+            guard controller == nil, !requiresInitialProjectResolution,
+                !showsProjectSetup
+            else { return }
             setUpController()
         }
         // Settings lives in a separate window, so this page can remain mounted

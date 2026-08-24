@@ -139,6 +139,16 @@ public final class ProjectListModel {
             persistPendingServerSessions()
         }
     }
+    /// Project upserts not yet observed in an authoritative server snapshot.
+    /// Upserts and list refreshes are independent requests, so an older
+    /// snapshot can otherwise erase a newly added project between the user's
+    /// add action and the server acknowledgement.
+    private var pendingServerProjectIds: Set<ScopedSessionID> = [] {
+        didSet {
+            guard pendingServerProjectIds != oldValue else { return }
+            persistPendingServerProjects()
+        }
+    }
     /// Archives are optimistic: the row leaves the sidebar before the server
     /// round-trip completes. Keep that local state authoritative until a
     /// server snapshot actually acknowledges `isArchived`, otherwise an
@@ -159,7 +169,36 @@ public final class ProjectListModel {
     private var pendingDeletedProjectIds: Set<ScopedSessionID> = []
 
     private static let pendingServerSessionsKey = "pending-server-sessions-v1"
+    private static let pendingServerProjectsKey = "pending-server-projects-v1"
     private static let pendingArchivedSessionsKey = "pending-archived-sessions-v1"
+
+    private func persistPendingServerProjects() {
+        guard let legacyMigrationStore else { return }
+        let snapshot = Array(pendingServerProjectIds)
+        let storageKey = Self.pendingServerProjectsKey
+        PersistenceEncoding.enqueueLatest(
+            owner: markerPersistenceOwner,
+            key: storageKey,
+            delay: 0.05
+        ) {
+            do {
+                let data = try PersistenceEncoding.encoder.encode(snapshot)
+                try legacyMigrationStore.saveData(data, forKey: storageKey)
+            } catch {
+                Log.sync.error(
+                    "Failed to persist pending project markers: \(String(describing: error), privacy: .public)"
+                )
+            }
+        }
+    }
+
+    private func loadPendingServerProjects() {
+        guard let legacyMigrationStore,
+            let data = legacyMigrationStore.loadData(forKey: Self.pendingServerProjectsKey),
+            let ids = try? JSONDecoder().decode([ScopedSessionID].self, from: data)
+        else { return }
+        pendingServerProjectIds = Set(ids)
+    }
 
     private func persistPendingServerSessions() {
         guard let legacyMigrationStore else { return }
@@ -239,8 +278,20 @@ public final class ProjectListModel {
         self.serverClient = serverClient
         self.legacyMigrationStore = legacyMigrationStore
         load()
+        loadPendingServerProjects()
         loadPendingServerSessions()
         loadPendingArchivedSessions()
+        // A project added just before the previous process exited remains
+        // protected from an older server snapshot and retries its upload.
+        for pending in pendingServerProjectIds {
+            if let project = projects.first(where: {
+                $0.serverId == pending.serverId && $0.id == pending.id
+            }) {
+                syncProject(project)
+            } else {
+                pendingServerProjectIds.remove(pending)
+            }
+        }
         // Unconfirmed local sessions survive relaunches AND retry their
         // sync (the fire-and-forget upsert may have died with the app).
         for pending in pendingServerSessionIds {
@@ -347,6 +398,9 @@ public final class ProjectListModel {
     /// the server describe one project instead of merging by folder later.
     @discardableResult
     public func adoptServerProject(id: UUID, folderURL: URL, name: String) -> Project {
+        pendingServerProjectIds.remove(
+            ScopedSessionID(serverId: selectedServerId, id: id)
+        )
         if let index = projects.firstIndex(where: { $0.serverId == selectedServerId && $0.id == id }) {
             projects[index].isArchived = false
             persistProjects()
@@ -374,6 +428,9 @@ public final class ProjectListModel {
     }
 
     public func removeProject(_ project: Project) {
+        pendingServerProjectIds.remove(
+            ScopedSessionID(serverId: project.serverId, id: project.id)
+        )
         pendingDeletedProjectIds.insert(
             ScopedSessionID(serverId: project.serverId, id: project.id)
         )
@@ -872,6 +929,9 @@ public final class ProjectListModel {
 
     /// Applies a project deletion that already happened on the server.
     public func removeProjectLocally(id: UUID, serverId: String) {
+        pendingServerProjectIds.remove(
+            ScopedSessionID(serverId: serverId, id: id)
+        )
         guard projects.contains(where: { $0.serverId == serverId && $0.id == id }) else { return }
         let removedSessionIds = sessions.lazy
             .filter { $0.serverId == serverId && $0.projectId == id }
@@ -891,6 +951,10 @@ public final class ProjectListModel {
     public func removeAll() {
         let projectIDs = projects.filter { $0.serverId == selectedServerId }.map(\.id)
         let sessionIDs = sessions.filter { $0.serverId == selectedServerId }.map(\.id)
+        pendingServerProjectIds.subtract(
+            projectIDs.map {
+                ScopedSessionID(serverId: selectedServerId, id: $0)
+            })
         pendingServerSessionIds.subtract(
             sessionIDs.map {
                 ScopedSessionID(serverId: selectedServerId, id: $0)
@@ -1166,13 +1230,26 @@ public final class ProjectListModel {
         // deletion; one that still does was fetched before the DELETE landed
         // and must not resurrect the row.
         let remoteIds = Set(remote.map { ScopedSessionID(serverId: serverId, id: $0.id) })
+        // Seeing the project in a snapshot is the durable acknowledgement.
+        // Until then, retain the optimistic local copy even when this snapshot
+        // was fetched before its upsert reached the server.
+        pendingServerProjectIds.subtract(remoteIds)
         pendingDeletedProjectIds = pendingDeletedProjectIds.filter {
             $0.serverId != serverId || remoteIds.contains($0)
+        }
+        let pending = local.filter {
+            $0.serverId == serverId
+                && pendingServerProjectIds.contains(
+                    ScopedSessionID(serverId: serverId, id: $0.id)
+                )
+                && !pendingDeletedProjectIds.contains(
+                    ScopedSessionID(serverId: serverId, id: $0.id)
+                )
         }
         let surviving = remote.filter {
             !pendingDeletedProjectIds.contains(ScopedSessionID(serverId: serverId, id: $0.id))
         }
-        return (otherServers + surviving).sorted { $0.createdAt > $1.createdAt }
+        return (otherServers + pending + surviving).sorted { $0.createdAt > $1.createdAt }
     }
 
     private func mergeSessions(
@@ -1226,6 +1303,9 @@ public final class ProjectListModel {
     /// pushed here.
     private func syncProject(_ project: Project) {
         guard let serverClient, project.serverId == selectedServerId else { return }
+        pendingServerProjectIds.insert(
+            ScopedSessionID(serverId: project.serverId, id: project.id)
+        )
         Task {
             do {
                 _ = try await serverClient.upsertProject(project)
