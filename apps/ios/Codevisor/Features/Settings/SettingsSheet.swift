@@ -11,6 +11,7 @@ import os
 /// Harnesses, MCPs, and Skills. Machine management (the old home-screen
 /// machine picker) lives in Machines.
 struct SettingsSheet: View {
+    @Environment(AppEnvironment.self) private var environment
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -28,6 +29,14 @@ struct SettingsSheet: View {
                         GeneralSettingsScreen()
                     } label: {
                         Label("General", systemImage: "gearshape")
+                    }
+                    NavigationLink {
+                        UpdatesSettingsScreen()
+                    } label: {
+                        // badge(0) hides itself — the ambient signal simply
+                        // is not there when everything is current.
+                        Label("Updates", systemImage: "arrow.down.circle")
+                            .badge(environment.updateCenter.availableCount)
                     }
                     NavigationLink {
                         AppearanceSettingsScreen()

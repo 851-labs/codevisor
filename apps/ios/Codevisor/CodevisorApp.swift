@@ -151,6 +151,9 @@ struct CodevisorApp: App {
             await environment.prepareSelectedMachine()
         }
         hasCompletedBootstrap = true
+        // Fleet update sweep off the critical path: the Settings badge and
+        // Updates screen read what this populates.
+        Task { await environment.updateCenter.refresh() }
     }
 
     /// iOS can preserve a half-open URLSession WebSocket across suspension or
@@ -162,6 +165,8 @@ struct CodevisorApp: App {
         defer { recoveryInProgress = false }
         await environment.cloud.reconnectHub()
         await environment.prepareSelectedMachine()
+        // Re-sweep fleet update state with transport restored.
+        Task { await environment.updateCenter.refresh() }
         // With transport restored, re-verify every in-flight chat against
         // durable history. Stream replay heals missed events on its own, but
         // not a turn whose state moved while the app was suspended in a way
