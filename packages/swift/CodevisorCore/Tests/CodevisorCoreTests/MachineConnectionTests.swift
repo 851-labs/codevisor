@@ -236,8 +236,11 @@ struct MachineConnectionTests {
 
         #expect(controller.updateInfoByMachineId[remoteA.id]?.latestVersion == "0.2.0")
         #expect(controller.updateInfoByMachineId[remoteB.id]?.latestVersion == "0.3.0")
-        #expect(fakeA.updateInfoRefreshes.contains(true))
-        #expect(fakeB.updateInfoRefreshes.contains(true))
+        // The periodic sweep reads each server's CACHED check — forcing is
+        // reserved for the user's explicit "Check Again", or every client
+        // would hammer the release origin on every pass.
+        #expect(fakeA.updateInfoRefreshes.last == false)
+        #expect(fakeB.updateInfoRefreshes.last == false)
         controller.stopEventSync()
     }
 

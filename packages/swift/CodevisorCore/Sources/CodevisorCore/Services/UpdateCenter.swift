@@ -209,7 +209,7 @@ public final class UpdateCenter {
         defer { isRefreshing = false }
         if force {
             await appUpdate.checkForUpdatesInBackground()
-            await machines.refreshServerUpdates()
+            await machines.refreshServerUpdates(force: true)
         }
         for machine in machines.allMachines {
             guard machines.connectionsById[machine.id]?.status?.isReachable == true else {

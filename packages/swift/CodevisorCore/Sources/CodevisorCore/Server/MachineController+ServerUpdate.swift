@@ -38,10 +38,13 @@ extension MachineController {
         }
     }
 
-    /// Force-checks release state for every reachable machine — the fleet
+    /// Sweeps release state for every reachable machine — the fleet
     /// counterpart to `refreshSelectedServerUpdate`. Machines mid-update are
-    /// skipped; `updateServer`'s own polling drives their state.
-    public func refreshServerUpdates() async {
+    /// skipped; `updateServer`'s own polling drives their state. `force`
+    /// bypasses each server's check cache and belongs to the user's explicit
+    /// "Check Again" — the periodic sweep must NOT force, or every client
+    /// hammers the release origin on every pass.
+    public func refreshServerUpdates(force: Bool = false) async {
         let machineIds = allMachines.map(\.id).filter { id in
             connectionsById[id]?.status?.isReachable == true
                 && connectionsById[id]?.updatePhase != .updating
@@ -50,7 +53,7 @@ extension MachineController {
             let client = client(for: machineId)
             guard
                 let update = try? await client.updateInfo(
-                    refresh: true,
+                    refresh: force,
                     channel: serverUpdateChannel
                 )
             else { continue }
