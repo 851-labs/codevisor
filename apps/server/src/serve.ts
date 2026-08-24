@@ -80,6 +80,7 @@ import {
   type ServerRelease,
   type ServerUpdateChannel
 } from "@codevisor/updater"
+import { makeBlobStore } from "@codevisor/sync"
 
 const SERVER_PROCESS_TITLE = "codevisor-server"
 /// Background cache only: clients checking on the user's behalf pass
@@ -823,6 +824,8 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
       })
     )
     const skills = initializeOptionalServerFeature("Skills", () => makeSkillsManager({ agents }))
+    // Content-addressed archives the config plane replicates skills through.
+    const syncBlobs = makeBlobStore(join(dirname(databasePath), "sync-blobs"))
     const pluginRegistryClient = initializeOptionalServerFeature("Plugin registry", () =>
       makePluginRegistryClient({ baseUrl: resolvePluginRegistryUrl(process.env) })
     )
@@ -932,7 +935,8 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
         ...(nativeMcp === undefined ? {} : { nativeMcp }),
         ...(plugins === undefined ? {} : { plugins }),
         ...(pluginRegistry === undefined ? {} : { pluginRegistry }),
-        ...(skills === undefined ? {} : { skills })
+        ...(skills === undefined ? {} : { skills }),
+        syncBlobs
       },
       defaultServerConfig({
         host,

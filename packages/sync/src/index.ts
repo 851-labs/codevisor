@@ -91,3 +91,5 @@ export const mergeSyncEntries = (
 
 /// Namespaces are path segments and database keys; keep them boring.
 export const isValidSyncNamespace = (value: string): boolean => /^[a-z][a-z0-9-]{0,63}$/.test(value)
+export * from "./blob-store.js"
+export * from "./tree-hash.js"

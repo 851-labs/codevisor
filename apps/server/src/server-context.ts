@@ -143,6 +143,10 @@ export interface CodevisorServerServices {
   /// browse plugins through their machine instead of the cloud. Absent on
   /// hosts that don't support it — the registry route 501s.
   readonly pluginRegistry?: PluginRegistryClient
+  /// Content-addressed archive store for the config plane's big payloads
+  /// (skill directories, keyed by tree hash). Absent on hosts without a
+  /// data directory — the blob routes 501.
+  readonly syncBlobs?: import("@codevisor/sync").BlobStore
 }
 
 export interface RunningCodevisorServer {

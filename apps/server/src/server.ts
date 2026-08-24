@@ -559,7 +559,7 @@ const handleRequest = async (
     if (await routeSkills(services, request, response, url)) {
       return
     }
-    if (await routeSync(services, fanout, request, response, url)) {
+    if (await routeSync(services, config, fanout, request, response, url)) {
       return
     }
     if (await routePlugins(services, fanout, request, response, url)) {

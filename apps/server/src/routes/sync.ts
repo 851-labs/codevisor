@@ -1,6 +1,7 @@
 import { PutSyncRequest as PutSyncRequestSchema } from "@codevisor/api"
-import { isValidSyncNamespace } from "@codevisor/sync"
+import { isValidBlobId, isValidSyncNamespace } from "@codevisor/sync"
 import type { IncomingMessage, ServerResponse } from "node:http"
+import { reconcileSkills, SKILLS_SYNC_NAMESPACE, verifySkillArchive } from "../infra/skills-sync.js"
 import {
   appendAndPublish,
   HttpFailure,
@@ -8,22 +9,83 @@ import {
   run,
   swallowError,
   writeJson,
+  type CodevisorServerConfig,
   type CodevisorServerServices,
   type EventFanout
 } from "../server-context.js"
 
-/// The config plane's replica endpoints. GET returns this server's document
-/// for a namespace; PUT merges entries in (last-writer-wins, hybrid logical
-/// clocks — see @codevisor/sync) and returns the merged document, so one
-/// round trip both pushes and pulls. Changes publish `sync.changed` so
-/// every connected client adopts them live.
+const readRawBody = async (request: IncomingMessage): Promise<Buffer> => {
+  const chunks: Array<Buffer> = []
+  for await (const chunk of request) {
+    /* v8 ignore next -- Node HTTP request body chunks are Buffers in this server. */
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string))
+  }
+  return Buffer.concat(chunks)
+}
+
+/// The config plane's endpoints: per-namespace replica documents, the
+/// content-addressed blob store clients ferry big payloads through, and
+/// the skills reconcile pass. GET/PUT of a namespace merge with
+/// last-writer-wins semantics (see @codevisor/sync); the PUT response is
+/// the merged document, so one round trip both pushes and pulls. Changes
+/// publish `sync.changed` so every connected client adopts them live.
 export const routeSync = async (
   services: CodevisorServerServices,
+  config: CodevisorServerConfig,
   fanout: EventFanout,
   request: IncomingMessage,
   response: ServerResponse,
   url: URL
 ): Promise<boolean> => {
+  const blobMatch = /^\/v1\/sync\/blobs\/([^/]+)$/.exec(url.pathname)
+  if (blobMatch !== null) {
+    const blobs = services.syncBlobs
+    if (blobs === undefined) throw new HttpFailure(501, "Sync blob storage unavailable")
+    const id = String(blobMatch[1])
+    if (!isValidBlobId(id)) throw new HttpFailure(400, "Invalid blob id")
+    if (request.method === "GET") {
+      if (!blobs.has(id)) throw new HttpFailure(404, "Blob not found")
+      response.writeHead(200, { "content-type": "application/gzip" })
+      response.end(await blobs.read(id))
+      return true
+    }
+    if (request.method === "PUT") {
+      const bytes = await readRawBody(request)
+      // The id IS the unpacked tree hash: bytes that do not reproduce it
+      // are rejected, so a ferrying client can never plant mismatched
+      // content under a trusted id.
+      if (!(await verifySkillArchive(id, bytes))) {
+        throw new HttpFailure(400, "Archive contents do not match the blob id")
+      }
+      blobs.write(id, bytes)
+      writeJson(response, 200, { stored: true })
+      return true
+    }
+    throw new HttpFailure(405, "Method not allowed")
+  }
+
+  if (url.pathname === "/v1/sync/skills/reconcile" && request.method === "POST") {
+    const blobs = services.syncBlobs
+    const skills = services.skills
+    if (blobs === undefined || skills === undefined) {
+      throw new HttpFailure(501, "Skills sync unavailable")
+    }
+    const result = await reconcileSkills({
+      db: services.db,
+      skills,
+      blobs,
+      serverId: config.id
+    })
+    if (result.changedEntries.length > 0) {
+      void appendAndPublish(services.db, fanout, "sync.changed", SKILLS_SYNC_NAMESPACE, {
+        namespace: SKILLS_SYNC_NAMESPACE,
+        entries: result.changedEntries
+      }).catch(swallowError)
+    }
+    writeJson(response, 200, result.status)
+    return true
+  }
+
   const match = /^\/v1\/sync\/([^/]+)$/.exec(url.pathname)
   if (match === null) return false
   const namespace = String(match[1])
