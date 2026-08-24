@@ -76,7 +76,10 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
       ? {}
       : { registerExternalTerminal: config.registerExternalTerminal }),
     ...(config.resolveEnv === undefined ? {} : { resolveEnv: config.resolveEnv }),
-    ...(config.spawnShell === undefined ? {} : { spawnShell: config.spawnShell })
+    ...(config.spawnShell === undefined ? {} : { spawnShell: config.spawnShell }),
+    ...(config.spawnArgv === undefined ? {} : { spawnArgv: config.spawnArgv }),
+    ...(config.codevisorVersion === undefined ? {} : { codevisorVersion: config.codevisorVersion }),
+    platform
   })
 
   /// A fresh scan per operation keeps "drop a folder in" installs live with

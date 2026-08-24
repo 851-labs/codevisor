@@ -766,6 +766,7 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
     const skills = initializeOptionalServerFeature("Skills", () => makeSkillsManager({ agents }))
     const plugins = initializeOptionalServerFeature("Plugins", () =>
       makePluginsManager({
+        ...(version === undefined ? {} : { codevisorVersion: version }),
         dataDir: dirname(databasePath),
         log: (message) => console.log(message),
         // Plugin process output streams into an attachable external terminal

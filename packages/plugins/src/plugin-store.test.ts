@@ -8,6 +8,7 @@ import {
   findPluginOrFail,
   scanPlugins
 } from "./plugin-store.js"
+import { writePluginInstallReceipt, type PluginInstallReceipt } from "./plugin-receipt.js"
 import { PluginsError } from "./plugins-error.js"
 
 const roots: Array<string> = []
@@ -58,6 +59,30 @@ describe("scanPlugins", () => {
       ["owner.linked", "linked"],
       ["owner.managed", "managed"]
     ])
+  })
+
+  it("attaches valid managed-install provenance and ignores mismatched receipts", async () => {
+    const root = makeRoot()
+    const managedPath = writePlugin(root, "managed-plugin", "owner.managed")
+    writeFileSync(join(managedPath, MANAGED_PLUGIN_MARKER), "")
+    const receipt: PluginInstallReceipt = {
+      installedAt: "2026-08-23T12:00:00.000Z",
+      installedVersion: "0.1.0",
+      pluginId: "owner.managed",
+      resolvedCommit: "a".repeat(40),
+      schemaVersion: 1,
+      source: {
+        kind: "github",
+        repo: "owner/managed",
+        tracking: "registry",
+        url: "https://github.com/owner/managed.git"
+      },
+      updatedAt: "2026-08-23T12:00:00.000Z"
+    }
+    await writePluginInstallReceipt(managedPath, receipt)
+    expect(scanPlugins(root).plugins[0]?.receipt).toEqual(receipt)
+    await writePluginInstallReceipt(managedPath, { ...receipt, pluginId: "owner.other" })
+    expect(scanPlugins(root).plugins[0]?.receipt).toBeUndefined()
   })
 
   it("resolves symlinked plugin directories", () => {

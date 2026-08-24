@@ -1,10 +1,14 @@
 import { Schema } from "effect"
 
-/// Wire protocol version a plugin manifest targets. The server rejects
-/// manifests whose protocolVersion it does not understand, so future breaking
-/// manifest changes bump this and old servers fail loudly instead of
-/// misreading the file.
-export const PLUGINS_PROTOCOL_VERSION = 1
+/// Latest wire protocol version a plugin manifest may target. Readers keep
+/// v1 support so installed plugins continue to work after v2 becomes the
+/// authoring default.
+export const PLUGINS_PROTOCOL_VERSION = 2
+
+export const SUPPORTED_PLUGIN_PROTOCOL_VERSIONS = [1, 2] as const
+
+export const isSupportedPluginProtocolVersion = (version: number): boolean =>
+  SUPPORTED_PLUGIN_PROTOCOL_VERSIONS.some((supported) => supported === version)
 
 /// One pane a plugin contributes. `path` is the plugin-server path the pane's
 /// webview loads through the proxy; it must both start and end with `/` so
@@ -22,10 +26,40 @@ export const PluginPaneDescriptor = Schema.Struct({
 })
 export type PluginPaneDescriptor = typeof PluginPaneDescriptor.Type
 
+/// Protocol v1 command. It runs through the user's login shell and remains
+/// supported for existing manifests.
 export const PluginCommand = Schema.Struct({
   command: Schema.String
 })
 export type PluginCommand = typeof PluginCommand.Type
+
+/// Protocol v2 command. Codevisor executes argv directly, so consent screens
+/// and process launch agree on every argument.
+export const PluginArgvCommand = Schema.Struct({
+  argv: Schema.Array(Schema.String)
+})
+export type PluginArgvCommand = typeof PluginArgvCommand.Type
+
+export const PluginSetupStep = Schema.Struct({
+  argv: Schema.Array(Schema.String),
+  /// process.platform allowlist for this step; absent means every platform.
+  platforms: Schema.optional(Schema.Array(Schema.String))
+})
+export type PluginSetupStep = typeof PluginSetupStep.Type
+
+export const PluginExecutableRequirement = Schema.Struct({
+  /// Executable name resolved from the same PATH used to launch the plugin.
+  name: Schema.String,
+  /// Concise guidance shown when the executable is missing.
+  installHint: Schema.optional(Schema.String),
+  helpUrl: Schema.optional(Schema.String)
+})
+export type PluginExecutableRequirement = typeof PluginExecutableRequirement.Type
+
+export const PluginRequirements = Schema.Struct({
+  executables: Schema.optional(Schema.Array(PluginExecutableRequirement))
+})
+export type PluginRequirements = typeof PluginRequirements.Type
 
 /// One agent tool a plugin contributes. When an agent invokes it, the server
 /// POSTs the JSON arguments to `path` on the plugin's loopback server. Unlike
@@ -45,12 +79,7 @@ export const PluginToolDescriptor = Schema.Struct({
 })
 export type PluginToolDescriptor = typeof PluginToolDescriptor.Type
 
-/// codevisor-plugin.json — the contract between a plugin directory and the
-/// server. Deliberately small: a plugin is any executable that serves HTTP on
-/// $PORT; everything else here is metadata the app renders without executing
-/// plugin code. Installed plugins run for the lifetime of the server.
-export const PluginManifest = Schema.Struct({
-  protocolVersion: Schema.Number,
+const PluginManifestBase = {
   /// Owner-namespaced id, lowercase `owner.name`. Validated against the
   /// install source on managed installs so a repo cannot impersonate another
   /// plugin.
@@ -63,21 +92,46 @@ export const PluginManifest = Schema.Struct({
   /// the plugin's loopback origin directly.
   iconPath: Schema.optional(Schema.String),
   panes: Schema.Array(PluginPaneDescriptor),
-  /// Agent tools this plugin exposes to the model through the MCP gateway.
-  /// Tool-only plugins (empty panes + tools) are first-class.
+  /// Agent tools this plugin exposes through the MCP gateway. Tool-only
+  /// plugins (empty panes + tools) are first-class.
   tools: Schema.optional(Schema.Array(PluginToolDescriptor)),
-  /// Run once at install/update time (dependency fetch, build). Absent for
-  /// zero-dependency plugins — the documented golden path.
-  install: Schema.optional(PluginCommand),
-  /// Launches the plugin server; receives PORT, CODEVISOR_PLUGIN_ID, and
-  /// CODEVISOR_PLUGIN_DATA_DIR in its environment.
-  run: PluginCommand,
   /// process.platform allowlist; absent means all platforms.
   platforms: Schema.optional(Schema.Array(Schema.String)),
   /// Optional HTTP readiness path (must return 2xx). Absent: a successful
   /// TCP connect to the assigned port counts as ready.
   healthPath: Schema.optional(Schema.String)
+}
+
+/// Original manifest contract. Shell command strings remain readable, but
+/// new plugins should publish protocol v2.
+export const PluginManifestV1 = Schema.Struct({
+  ...PluginManifestBase,
+  protocolVersion: Schema.Literal(1),
+  /// Run once at install/update time (dependency fetch, build). Absent for
+  /// zero-dependency plugins — the documented golden path.
+  install: Schema.optional(PluginCommand),
+  /// Launches the plugin server; receives PORT, CODEVISOR_PLUGIN_ID, and
+  /// CODEVISOR_PLUGIN_DATA_DIR in its environment.
+  run: PluginCommand
 })
+export type PluginManifestV1 = typeof PluginManifestV1.Type
+
+/// Current manifest contract. Structured commands remove shell ambiguity;
+/// compatibility and runtime requirements can be checked before setup.
+export const PluginManifestV2 = Schema.Struct({
+  ...PluginManifestBase,
+  protocolVersion: Schema.Literal(2),
+  setup: Schema.optional(Schema.Array(PluginSetupStep)),
+  run: PluginArgvCommand,
+  minCodevisorVersion: Schema.optional(Schema.String),
+  requirements: Schema.optional(PluginRequirements)
+})
+export type PluginManifestV2 = typeof PluginManifestV2.Type
+
+/// codevisor-plugin.json — the contract between a plugin directory and the
+/// server. A plugin is an executable that serves HTTP on $PORT; the manifest
+/// describes how Codevisor validates, prepares, launches, and presents it.
+export const PluginManifest = Schema.Union([PluginManifestV1, PluginManifestV2])
 export type PluginManifest = typeof PluginManifest.Type
 
 export const PluginRuntimeState = Schema.Literals([
@@ -173,6 +227,10 @@ export const DiscoverRemotePluginResult = Schema.Struct({
   /// Run once at install time, in the plugin directory. Absent for
   /// zero-dependency plugins.
   installCommand: Schema.optional(Schema.String),
+  /// Protocol v2 setup commands, preserved as argument arrays.
+  setupCommands: Schema.optional(Schema.Array(PluginSetupStep)),
+  minCodevisorVersion: Schema.optional(Schema.String),
+  requirements: Schema.optional(PluginRequirements),
   /// Runs the plugin server while Codevisor is running.
   runCommand: Schema.String,
   /// A plugin with this id is already installed on the machine; importing
@@ -206,6 +264,7 @@ export const PluginRegistryEntry = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   version: Schema.String,
+  protocolVersion: Schema.Number,
   description: Schema.optional(Schema.String),
   iconPath: Schema.optional(Schema.String),
   panes: Schema.Array(PluginPaneDescriptor),
@@ -213,6 +272,11 @@ export const PluginRegistryEntry = Schema.Struct({
   /// GitHub "owner/name" — the directory always shows the real repo owner.
   /// Feed this to the discover→consent→install flow as the plugin source.
   repo: Schema.String,
+  /// Exact default-branch commit from which the registry read the manifest.
+  commit: Schema.String,
+  minCodevisorVersion: Schema.optional(Schema.String),
+  requirements: Schema.optional(PluginRequirements),
+  platforms: Schema.optional(Schema.Array(Schema.String)),
   /// GitHub avatar of the repo owner — the only artwork renderable before
   /// install (a plugin's own iconPath is served by its running server, so it
   /// is unreachable for a not-yet-installed plugin).

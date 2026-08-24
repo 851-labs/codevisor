@@ -1,6 +1,7 @@
 import {
   decode,
-  PLUGINS_PROTOCOL_VERSION,
+  isSemanticVersion,
+  isSupportedPluginProtocolVersion,
   PluginManifest as PluginManifestSchema,
   type PluginManifest
 } from "@codevisor/api"
@@ -17,6 +18,7 @@ const PLUGIN_ID_PATTERN = /^[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9-]*$/
 /// Tool names appear as `plugin.<pluginId>.<toolName>` catalog paths, so they
 /// must never contain the dot the path grammar splits on.
 const PLUGIN_TOOL_NAME_PATTERN = /^[a-z0-9_]+$/
+const EXECUTABLE_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/
 
 const validateServerPath = (label: string, path: string): void => {
   if (!path.startsWith("/") || path.includes("..") || path.includes("?") || path.includes("#")) {
@@ -35,6 +37,16 @@ export const parsePluginManifest = (raw: string): PluginManifest => {
   } catch {
     throw new PluginsError("invalid", `${PLUGIN_MANIFEST_FILENAME} is not valid JSON`)
   }
+  const protocolVersion =
+    typeof json === "object" && json !== null && "protocolVersion" in json
+      ? (json as { readonly protocolVersion?: unknown }).protocolVersion
+      : undefined
+  if (typeof protocolVersion === "number" && !isSupportedPluginProtocolVersion(protocolVersion)) {
+    throw new PluginsError(
+      "invalid",
+      `Unsupported plugin protocolVersion ${protocolVersion} (this server supports 1 and 2)`
+    )
+  }
   let manifest: PluginManifest
   try {
     manifest = decode(PluginManifestSchema)(json)
@@ -43,20 +55,69 @@ export const parsePluginManifest = (raw: string): PluginManifest => {
     const message = cause instanceof Error ? cause.message : String(cause)
     throw new PluginsError("invalid", `Invalid plugin manifest: ${message}`)
   }
-  if (manifest.protocolVersion !== PLUGINS_PROTOCOL_VERSION) {
-    throw new PluginsError(
-      "invalid",
-      `Unsupported plugin protocolVersion ${manifest.protocolVersion} (this server supports ${PLUGINS_PROTOCOL_VERSION})`
-    )
-  }
   if (!PLUGIN_ID_PATTERN.test(manifest.id)) {
     throw new PluginsError(
       "invalid",
       `Plugin id must be lowercase "owner.name" (letters, digits, hyphens): ${manifest.id}`
     )
   }
-  if (manifest.run.command.trim().length === 0) {
-    throw new PluginsError("invalid", "Plugin run.command must not be empty")
+  if (manifest.protocolVersion === 1) {
+    if (manifest.run.command.trim().length === 0) {
+      throw new PluginsError("invalid", "Plugin run.command must not be empty")
+    }
+  } else {
+    if (!isSemanticVersion(manifest.version)) {
+      throw new PluginsError("invalid", `Plugin version must be valid SemVer: ${manifest.version}`)
+    }
+    validateArgv("Plugin run.argv", manifest.run.argv)
+    for (const [index, step] of (manifest.setup ?? []).entries()) {
+      validateArgv(`Plugin setup[${index}].argv`, step.argv)
+    }
+    if (
+      manifest.minCodevisorVersion !== undefined &&
+      !isSemanticVersion(manifest.minCodevisorVersion)
+    ) {
+      throw new PluginsError(
+        "invalid",
+        `Plugin minCodevisorVersion must be valid SemVer: ${manifest.minCodevisorVersion}`
+      )
+    }
+    const seenExecutables = new Set<string>()
+    for (const requirement of manifest.requirements?.executables ?? []) {
+      if (!EXECUTABLE_NAME_PATTERN.test(requirement.name)) {
+        throw new PluginsError(
+          "invalid",
+          `Required executable must be a command name without a path: ${requirement.name}`
+        )
+      }
+      if (seenExecutables.has(requirement.name)) {
+        throw new PluginsError("invalid", `Duplicate executable requirement: ${requirement.name}`)
+      }
+      seenExecutables.add(requirement.name)
+      if (requirement.installHint !== undefined && requirement.installHint.trim().length === 0) {
+        throw new PluginsError(
+          "invalid",
+          `Executable ${requirement.name} installHint must not be empty`
+        )
+      }
+      if (requirement.helpUrl !== undefined) {
+        let url: URL
+        try {
+          url = new URL(requirement.helpUrl)
+        } catch {
+          throw new PluginsError(
+            "invalid",
+            `Executable ${requirement.name} helpUrl must be an HTTP URL`
+          )
+        }
+        if (url.protocol !== "https:" && url.protocol !== "http:") {
+          throw new PluginsError(
+            "invalid",
+            `Executable ${requirement.name} helpUrl must be an HTTP URL`
+          )
+        }
+      }
+    }
   }
   if (manifest.iconPath !== undefined) {
     validateServerPath("Plugin iconPath", manifest.iconPath)
@@ -110,4 +171,10 @@ export const parsePluginManifest = (raw: string): PluginManifest => {
     }
   }
   return manifest
+}
+
+const validateArgv = (label: string, argv: ReadonlyArray<string>): void => {
+  if (argv.length === 0 || argv[0]?.trim().length === 0) {
+    throw new PluginsError("invalid", `${label} must name an executable`)
+  }
 }

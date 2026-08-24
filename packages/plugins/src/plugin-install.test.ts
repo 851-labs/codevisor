@@ -4,6 +4,8 @@ import { cp, readFile } from "node:fs/promises"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { makePluginInstaller, type PluginInstallerDeps } from "./plugin-install.js"
+import { PLUGIN_INSTALL_RECEIPT_FILENAME, readPluginInstallReceipt } from "./plugin-receipt.js"
+import type { ClonePluginSourceResult } from "./plugin-source.js"
 import { MANAGED_PLUGIN_MARKER, scanPlugins } from "./plugin-store.js"
 import type { PluginProcessHandle, PluginSpawnOptions } from "./plugin-supervisor.js"
 import { exampleManifest, makeDir, writePlugin } from "./test-support.js"
@@ -14,11 +16,12 @@ const copyClone = async (
   url: string,
   _ref: string | undefined,
   destination: string
-): Promise<void> => {
+): Promise<ClonePluginSourceResult> => {
   await cp(url, destination, { recursive: true })
+  return { resolvedCommit: "a".repeat(40) }
 }
 
-const failingClone = async (): Promise<void> => {
+const failingClone = async (): Promise<ClonePluginSourceResult> => {
   throw new Error("repository not found")
 }
 
@@ -73,6 +76,7 @@ const makeInstaller = (
   const stopped: Array<string> = []
   const installer = makePluginInstaller({
     clone: copyClone,
+    findExecutable: async (name) => `/usr/bin/${name}`,
     pluginsRoot: root,
     resolveEnv: async () => ({ PATH: "/usr/bin" }),
     stop: (pluginId) => stopped.push(pluginId),
@@ -110,6 +114,35 @@ describe("discoverRemote", () => {
     writePlugin(root, "already", exampleManifest)
     const second = await installer.discoverRemote({ source: fixture })
     expect(second.alreadyInstalled).toBe(true)
+  })
+
+  it("reports protocol v2 commands and compatibility metadata", async () => {
+    const fixture = makeFixture({
+      ...exampleManifest,
+      minCodevisorVersion: "1.2.0",
+      protocolVersion: 2,
+      requirements: { executables: [{ installHint: "Install Node.js.", name: "node" }] },
+      run: { argv: ["node", "file with spaces.js"] },
+      setup: [{ argv: ["npm", "ci"] }, { argv: ["make", "linux"], platforms: ["linux"] }]
+    })
+    const { installer } = makeInstaller({ platform: "darwin" })
+    expect(await installer.discoverRemote({ source: fixture })).toMatchObject({
+      installCommand: "npm ci",
+      minCodevisorVersion: "1.2.0",
+      requirements: { executables: [{ installHint: "Install Node.js.", name: "node" }] },
+      runCommand: 'node "file with spaces.js"',
+      setupCommands: [{ argv: ["npm", "ci"] }, { argv: ["make", "linux"], platforms: ["linux"] }]
+    })
+
+    const minimal = makeFixture({
+      ...exampleManifest,
+      protocolVersion: 2,
+      run: { argv: ["node", "server.js"] }
+    })
+    const discovered = await installer.discoverRemote({ source: minimal })
+    expect(discovered.setupCommands).toBeUndefined()
+    expect(discovered.minCodevisorVersion).toBeUndefined()
+    expect(discovered.requirements).toBeUndefined()
   })
 
   it("surfaces clone failures with the source coordinates", async () => {
@@ -193,7 +226,28 @@ describe("importRemote", () => {
     expect(existsSync(join(destination, "codevisor-plugin.json"))).toBe(true)
     expect(existsSync(join(destination, "server.js"))).toBe(true)
     expect(existsSync(join(destination, MANAGED_PLUGIN_MARKER))).toBe(true)
+    expect(existsSync(join(destination, PLUGIN_INSTALL_RECEIPT_FILENAME))).toBe(true)
+    expect(readPluginInstallReceipt(destination)).toMatchObject({
+      installedVersion: "0.1.0",
+      pluginId: "owner.example",
+      resolvedCommit: "a".repeat(40),
+      source: { kind: "local", tracking: "pinned", url: fixture }
+    })
     expect(scanPlugins(root).plugins[0]?.source).toBe("managed")
+  })
+
+  it("records explicit GitHub refs as pinned source identity", async () => {
+    const fixture = makeFixture({ ...exampleManifest, id: "acme.example" })
+    const { installer, root } = makeInstaller({
+      clone: (_url, _ref, destination) => copyClone(fixture, undefined, destination)
+    })
+    await installer.importRemote({ source: "acme/example#v2" })
+    expect(readPluginInstallReceipt(join(root, "acme.example"))?.source).toMatchObject({
+      kind: "github",
+      repo: "acme/example",
+      requestedRef: "v2",
+      tracking: "pinned"
+    })
   })
 
   it("runs the manifest install command in the plugin dir, streaming output", async () => {
@@ -227,6 +281,8 @@ describe("importRemote", () => {
     expect(spawn.calls[0]?.command).toBe("bun install")
     expect(spawn.calls[0]?.cwd).toBe(join(root, "owner.example"))
     expect(spawn.calls[0]?.env["CODEVISOR_PLUGIN_ID"]).toBe("owner.example")
+    expect(spawn.calls[0]?.env["CODEVISOR_PLUGIN_INSTALL_REASON"]).toBe("install")
+    expect(spawn.calls[0]?.env["CODEVISOR_PLUGIN_VERSION"]).toBe("0.1.0")
     expect(spawn.calls[0]?.env["PATH"]).toBe("/usr/bin")
     expect(frames.join("")).toContain("$ bun install")
     expect(frames.join("")).toContain("installed 3 packages")
@@ -237,7 +293,7 @@ describe("importRemote", () => {
     const fixture = makeFixture({ ...exampleManifest, install: { command: "bun install" } })
     const { installer, root } = makeInstaller({ spawnShell: makeInstallSpawn(1).spawnShell })
     await expect(installer.importRemote({ source: fixture })).rejects.toThrow(
-      /install command failed: install blew up/
+      /setup command failed: install blew up/
     )
     expect(existsSync(join(root, "owner.example"))).toBe(false)
     // Launch failures (null exit code) fail the same way, and the terminal
@@ -254,15 +310,19 @@ describe("importRemote", () => {
       spawnShell: makeInstallSpawn(null).spawnShell
     })
     await expect(spawnless.installer.importRemote({ source: fixture })).rejects.toThrow(
-      /install command failed/
+      /setup command failed/
     )
     expect(exits).toEqual([undefined])
   })
 
   it("updates an existing managed install in place, stopping it first", async () => {
     const fixture = makeFixture(exampleManifest)
-    const { installer, root, stopped } = makeInstaller()
+    const times = [new Date("2026-08-01T00:00:00Z"), new Date("2026-08-02T00:00:00Z")]
+    const { installer, root, stopped } = makeInstaller({
+      receiptNow: () => times.shift() as Date
+    })
     await installer.importRemote({ source: fixture })
+    const originalReceipt = readPluginInstallReceipt(join(root, "owner.example"))
     writeFileSync(join(root, "owner.example", "stale.txt"), "old")
     writeFileSync(
       join(fixture, "codevisor-plugin.json"),
@@ -274,6 +334,54 @@ describe("importRemote", () => {
     expect(existsSync(join(root, "owner.example", "stale.txt"))).toBe(false)
     const manifest = await readFile(join(root, "owner.example", "codevisor-plugin.json"), "utf8")
     expect(manifest).toContain("0.2.0")
+    expect(readPluginInstallReceipt(join(root, "owner.example"))).toMatchObject({
+      installedAt: originalReceipt?.installedAt,
+      installedVersion: "0.2.0",
+      updatedAt: "2026-08-02T00:00:00.000Z"
+    })
+  })
+
+  it("runs protocol v2 setup directly after deterministic preflights", async () => {
+    const fixture = makeFixture({
+      ...exampleManifest,
+      minCodevisorVersion: "1.2.0",
+      protocolVersion: 2,
+      requirements: { executables: [{ name: "node", installHint: "Install Node.js." }] },
+      run: { argv: ["node", "server.js"] },
+      setup: [{ argv: ["npm", "ci", "--ignore-scripts"] }]
+    })
+    const calls: Array<{ argv: ReadonlyArray<string>; env: NodeJS.ProcessEnv }> = []
+    const successful = makeInstallSpawn(0)
+    const { installer } = makeInstaller({
+      codevisorVersion: "1.3.0",
+      spawnArgv: (argv, options) => {
+        calls.push({ argv, env: options.env })
+        return successful.spawnShell(argv.join(" "), options)
+      }
+    })
+    await installer.importRemote({ source: fixture })
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.argv).toEqual(["npm", "ci", "--ignore-scripts"])
+    expect(calls[0]?.env["CODEVISOR_PLUGIN_INSTALL_REASON"]).toBe("install")
+  })
+
+  it("rejects missing Git and plugin executables before touching the install", async () => {
+    const fixture = makeFixture({
+      ...exampleManifest,
+      protocolVersion: 2,
+      requirements: { executables: [{ name: "node", installHint: "Install Node.js." }] },
+      run: { argv: ["node", "server.js"] }
+    })
+    const noGit = makeInstaller({ findExecutable: async () => undefined })
+    await expect(noGit.installer.importRemote({ source: fixture })).rejects.toThrow(/requires Git/)
+
+    const noNode = makeInstaller({
+      findExecutable: async (name) => (name === "git" ? "/usr/bin/git" : undefined)
+    })
+    await expect(noNode.installer.importRemote({ source: fixture })).rejects.toThrow(
+      /requires `node`.*Install Node\.js/
+    )
+    expect(existsSync(join(noNode.root, "owner.example"))).toBe(false)
   })
 
   it("refuses to overwrite directories Codevisor did not create", async () => {

@@ -76,20 +76,24 @@ const registryIndex: PluginRegistryIndex = {
   generatedAt: "2026-08-18T00:00:00.000Z",
   entries: [
     {
+      commit: "a".repeat(40),
       id: "acme.git-diff",
       name: "Git Diff",
       version: "0.1.0",
       description: "Live git diff viewer",
       panes: [{ path: "/panes/diff/", title: "Git Diff", type: "diff" }],
+      protocolVersion: 1,
       repo: "acme/git-diff",
       stars: 12,
       pushedAt: "2026-08-17T00:00:00Z"
     },
     {
+      commit: "b".repeat(40),
       id: "beta.notes",
       name: "Notes",
       version: "1.0.0",
       panes: [],
+      protocolVersion: 1,
       repo: "beta/notes",
       stars: 3,
       pushedAt: "2026-08-16T00:00:00Z"

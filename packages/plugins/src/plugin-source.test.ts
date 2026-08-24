@@ -15,16 +15,19 @@ describe("parsePluginSource", () => {
     expect(parsePluginSource("acme/tools")).toEqual({
       owner: "acme",
       ref: undefined,
+      repo: "acme/tools",
       url: "https://github.com/acme/tools.git"
     })
     expect(parsePluginSource("acme/tools#v1.2.0")).toEqual({
       owner: "acme",
       ref: "v1.2.0",
+      repo: "acme/tools",
       url: "https://github.com/acme/tools.git"
     })
     expect(parsePluginSource("acme/tools/plugins/diff#main")).toEqual({
       owner: "acme",
       ref: "main",
+      repo: "acme/tools",
       subpath: "plugins/diff",
       url: "https://github.com/acme/tools.git"
     })
@@ -37,6 +40,7 @@ describe("parsePluginSource", () => {
     expect(parsePluginSource("github:acme/tools")).toEqual({
       owner: "acme",
       ref: undefined,
+      repo: "acme/tools",
       url: "https://github.com/acme/tools.git"
     })
   })
@@ -79,16 +83,19 @@ describe("parsePluginSource", () => {
     expect(parsePluginSource("https://github.com/acme/tools")).toEqual({
       owner: "acme",
       ref: undefined,
+      repo: "acme/tools",
       url: "https://github.com/acme/tools.git"
     })
     expect(parsePluginSource("https://www.github.com/acme/tools.git#v2")).toEqual({
       owner: "acme",
       ref: "v2",
+      repo: "acme/tools",
       url: "https://github.com/acme/tools.git"
     })
     expect(parsePluginSource("https://github.com/acme/tools/tree/main/plugins/diff")).toEqual({
       owner: "acme",
       ref: "main",
+      repo: "acme/tools",
       subpath: "plugins/diff",
       url: "https://github.com/acme/tools.git"
     })
@@ -97,12 +104,14 @@ describe("parsePluginSource", () => {
     expect(parsePluginSource("https://github.com/acme/tools/tree/main#pinned")).toEqual({
       owner: "acme",
       ref: "pinned",
+      repo: "acme/tools",
       url: "https://github.com/acme/tools.git"
     })
     // Non-tree URL path segments become the subpath.
     expect(parsePluginSource("https://github.com/acme/tools/plugins/diff")).toEqual({
       owner: "acme",
       ref: undefined,
+      repo: "acme/tools",
       subpath: "plugins/diff",
       url: "https://github.com/acme/tools.git"
     })
@@ -136,8 +145,19 @@ describe("clonePluginSource", () => {
   it("shallow-clones a local repository, optionally pinned to a ref", async () => {
     const repo = initGitRepo({ "codevisor-plugin.json": "{}" })
     const destination = join(makeDir("codevisor-plugin-clone-"), "checkout")
-    await clonePluginSource(repo, "main", destination)
+    const cloned = await clonePluginSource(repo, "main", destination)
     expect(readdirSync(destination)).toContain("codevisor-plugin.json")
+    expect(cloned.resolvedCommit).toMatch(/^[0-9a-f]{40}$/)
+  })
+
+  it("fetches an exact commit without treating the SHA as a branch", async () => {
+    const repo = initGitRepo({ "codevisor-plugin.json": "{}" })
+    const commit = execFileSync("git", ["-C", repo, "rev-parse", "HEAD"], {
+      encoding: "utf8"
+    }).trim()
+    const destination = join(makeDir("codevisor-plugin-clone-"), "checkout")
+    const cloned = await clonePluginSource(repo, commit, destination)
+    expect(cloned.resolvedCommit).toBe(commit)
   })
 
   it("rejects with git's stderr when the clone fails", async () => {

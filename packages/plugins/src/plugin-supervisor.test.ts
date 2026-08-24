@@ -1,5 +1,6 @@
 import { createServer, type Server } from "node:http"
 import { describe, expect, it } from "vitest"
+import type { InstalledPlugin } from "./plugin-store.js"
 import {
   makePluginSupervisor,
   type PluginTerminalProcess,
@@ -24,6 +25,39 @@ describe("makePluginSupervisor", () => {
     expect(spawn.spawnCount()).toBe(1)
     supervisor.closeAll()
     expect(supervisor.state("owner.example")).toBe("stopped")
+  })
+
+  it("launches protocol v2 processes directly with preserved arguments", async () => {
+    const spawn = fakeSpawn()
+    const calls: Array<ReadonlyArray<string>> = []
+    const frames: Array<string> = []
+    const supervisor = makePluginSupervisor({
+      dataDir: makeDataDir(),
+      registerExternalTerminal: () => ({
+        exit: () => undefined,
+        output: (data) => frames.push(data),
+        terminalId: "terminal-v2"
+      }),
+      spawnArgv: (argv, options) => {
+        calls.push(argv)
+        return spawn.spawnShell("unused", options)
+      }
+    })
+    const legacy = plugin()
+    const target: InstalledPlugin = {
+      ...legacy,
+      manifest: {
+        id: legacy.id,
+        name: "Example",
+        panes: [],
+        protocolVersion: 2,
+        run: { argv: ["node", "file with spaces.js", "--serve"] },
+        version: "1.0.0"
+      }
+    }
+    await supervisor.ensureRunning(target)
+    expect(calls).toEqual([["node", "file with spaces.js", "--serve"]])
+    expect(frames[0]).toBe('$ node "file with spaces.js" --serve\r\n')
   })
 
   it("shares one start attempt across concurrent callers", async () => {
@@ -129,9 +163,32 @@ describe("makePluginSupervisor", () => {
     expect(await response.text()).toBe("ok")
     // Both stdio streams ride the observability terminal, after the command
     // header line.
-    expect(frames[0]).toContain(target.manifest.run.command)
+    expect(target.manifest.protocolVersion).toBe(1)
+    if (target.manifest.protocolVersion === 1) {
+      expect(frames[0]).toContain(target.manifest.run.command)
+    }
     await expect.poll(() => frames.join("")).toContain("plugin out")
     await expect.poll(() => frames.join("")).toContain("plugin boot")
+  })
+
+  it("launches real protocol v2 processes without a shell", async () => {
+    const supervisor = makePluginSupervisor({ dataDir: makeDataDir() })
+    const server = `const http = require("http"); http.createServer((q, s) => s.end("v2")).listen(process.env.PORT, "127.0.0.1")`
+    const legacy = plugin()
+    const target: InstalledPlugin = {
+      ...legacy,
+      manifest: {
+        id: legacy.id,
+        name: "Example",
+        panes: [],
+        protocolVersion: 2,
+        run: { argv: [process.execPath, "-e", server] },
+        version: "1.0.0"
+      }
+    }
+    cleanups.push(() => supervisor.closeAll())
+    const port = await supervisor.ensureRunning(target)
+    expect(await (await fetch(`http://127.0.0.1:${port}/`)).text()).toBe("v2")
   })
 
   it("streams fake process output through the terminal seam and closes it on exit", async () => {

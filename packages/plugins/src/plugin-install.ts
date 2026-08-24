@@ -8,8 +8,24 @@ import type {
 import { cp, lstat, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, isAbsolute, join, normalize, resolve, sep } from "node:path"
+import { displayPluginCommand, pluginRunCommand, pluginSetupCommands } from "./plugin-command.js"
 import { parsePluginManifest, PLUGIN_MANIFEST_FILENAME } from "./plugin-manifest.js"
-import { clonePluginSource, parsePluginSource } from "./plugin-source.js"
+import {
+  readPluginInstallReceipt,
+  writePluginInstallReceipt,
+  type PluginInstallSourceReceipt
+} from "./plugin-receipt.js"
+import {
+  assertGitAvailable,
+  assertPluginRequirements,
+  type FindExecutable
+} from "./plugin-requirements.js"
+import {
+  clonePluginSource,
+  parsePluginSource,
+  type ClonePluginSourceResult,
+  type ParsedPluginSource
+} from "./plugin-source.js"
 import {
   MANAGED_PLUGIN_MARKER,
   MANAGED_PLUGIN_MARKER_CONTENT,
@@ -21,7 +37,7 @@ import type {
   PluginSpawnOptions,
   RegisterPluginTerminal
 } from "./plugin-supervisor.js"
-import { defaultSpawnShell } from "./plugin-supervisor.js"
+import { defaultSpawnArgv, defaultSpawnShell } from "./plugin-supervisor.js"
 import { PluginsError } from "./plugins-error.js"
 
 /// The install pipeline behind `codevisor plugin install|link|remove` and the
@@ -34,10 +50,23 @@ export interface PluginInstallerDeps {
   readonly pluginsRoot: string
   /// Runs the manifest install command (login shell, cwd = plugin dir).
   readonly spawnShell?: (command: string, options: PluginSpawnOptions) => PluginProcessHandle
+  readonly spawnArgv?: (
+    argv: ReadonlyArray<string>,
+    options: PluginSpawnOptions
+  ) => PluginProcessHandle
   /// Login-shell environment for install commands; defaults to process.env.
   readonly resolveEnv?: () => Promise<NodeJS.ProcessEnv>
   /// Staged clone; defaults to a shallow `git clone`.
-  readonly clone?: (url: string, ref: string | undefined, destination: string) => Promise<void>
+  readonly clone?: (
+    url: string,
+    ref: string | undefined,
+    destination: string,
+    env: NodeJS.ProcessEnv
+  ) => Promise<ClonePluginSourceResult>
+  readonly findExecutable?: FindExecutable
+  readonly platform?: string
+  readonly codevisorVersion?: string
+  readonly receiptNow?: () => Date
   /// When present, install-command output streams into an attachable
   /// external terminal (sessionId `plugin-install:{id}`).
   readonly registerExternalTerminal?: RegisterPluginTerminal | undefined
@@ -71,26 +100,45 @@ const isPathSafe = (root: string, candidate: string): boolean => {
 interface StagedPlugin {
   readonly manifest: PluginManifest
   readonly root: string
+  readonly env: NodeJS.ProcessEnv
+  readonly resolvedCommit: string
+  readonly source: PluginInstallSourceReceipt
   readonly cleanup: () => Promise<void>
 }
+
+const receiptSource = (source: ParsedPluginSource): PluginInstallSourceReceipt => ({
+  kind: source.repo !== undefined ? "github" : source.local === true ? "local" : "git",
+  tracking: source.repo !== undefined && source.ref === undefined ? "registry" : "pinned",
+  url: source.url,
+  ...(source.repo === undefined ? {} : { repo: source.repo }),
+  ...(source.ref === undefined ? {} : { requestedRef: source.ref }),
+  ...(source.subpath === undefined ? {} : { subpath: source.subpath })
+})
 
 export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller => {
   const clone = deps.clone ?? clonePluginSource
   const spawnShell = deps.spawnShell ?? defaultSpawnShell
+  const spawnArgv = deps.spawnArgv ?? defaultSpawnArgv
   const resolveEnv = deps.resolveEnv ?? (() => Promise.resolve(process.env))
+  const platform = deps.platform ?? process.platform
+  const receiptNow = deps.receiptNow ?? (() => new Date())
 
   /// Stage a source into a fresh temp clone and read its manifest. The
   /// verbatim install/run commands surfaced from here are exactly what the
   /// consent UI shows — never derived, never normalized.
   const stage = async (source: string): Promise<StagedPlugin> => {
     const parsed = parsePluginSource(source)
+    const env = await resolveEnv()
+    await assertGitAvailable(env, deps.findExecutable)
     const staging = await mkdtemp(join(tmpdir(), "codevisor-plugin-install-"))
     const cleanup = async (): Promise<void> => {
       await rm(staging, { force: true, recursive: true })
     }
+    let resolvedCommit: string
     try {
       try {
-        await clone(parsed.url, parsed.ref, staging)
+        const cloned = await clone(parsed.url, parsed.ref, staging, env)
+        resolvedCommit = cloned.resolvedCommit
       } catch (cause) {
         throw new PluginsError(
           "invalid",
@@ -128,7 +176,14 @@ export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller 
           `Plugin id ${manifest.id} does not match the source owner — plugins from ${parsed.owner} must use ids starting with "${parsed.owner.toLowerCase()}."`
         )
       }
-      return { cleanup, manifest, root }
+      return {
+        cleanup,
+        env,
+        manifest,
+        resolvedCommit,
+        root,
+        source: receiptSource(parsed)
+      }
     } catch (cause) {
       await cleanup()
       throw cause
@@ -150,32 +205,56 @@ export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller 
     return destination
   }
 
-  /// Runs the manifest install command in the plugin directory, streaming
-  /// output through the observability terminal. Success is a zero exit code
-  /// from the spawner.
-  const runInstallCommand = (
+  /// Runs one setup command in the plugin directory, streaming output through
+  /// the observability terminal. Success is a zero exit code from the spawner.
+  const runSetupCommand = (
+    command: ReturnType<typeof pluginSetupCommands>[number],
     manifest: PluginManifest,
     directory: string,
     env: NodeJS.ProcessEnv
   ): Promise<{ readonly ok: boolean; readonly message: string }> =>
     new Promise((resolvePromise) => {
-      /* v8 ignore next -- callers gate on manifest.install; the ?? arm is a type guard. */
-      const command = manifest.install?.command ?? ""
-      const child = spawnShell(command, {
-        cwd: directory,
-        env: { ...env, CODEVISOR_PLUGIN_ID: manifest.id }
-      })
+      const child =
+        command.kind === "shell"
+          ? spawnShell(command.command, { cwd: directory, env })
+          : spawnArgv(command.argv, { cwd: directory, env })
       const terminal = deps.registerExternalTerminal?.(
         { normalizeNewlines: true, sessionId: `plugin-install:${manifest.id}` },
         { kill: () => child.kill(), resize: () => undefined, write: () => undefined }
       )
-      terminal?.output(`$ ${command}\r\n`)
+      terminal?.output(`$ ${displayPluginCommand(command)}\r\n`)
       child.onOutput?.((data) => terminal?.output(data))
       child.onExit((message, exitCode) => {
         terminal?.exit(exitCode ?? undefined)
         resolvePromise({ message, ok: exitCode === 0 })
       })
     })
+
+  const runSetup = async (
+    manifest: PluginManifest,
+    directory: string,
+    baseEnv: NodeJS.ProcessEnv,
+    previousVersion: string | undefined
+  ): Promise<void> => {
+    const env: NodeJS.ProcessEnv = {
+      ...baseEnv,
+      CODEVISOR_PLUGIN_ID: manifest.id,
+      CODEVISOR_PLUGIN_INSTALL_REASON: previousVersion === undefined ? "install" : "update",
+      CODEVISOR_PLUGIN_VERSION: manifest.version,
+      ...(previousVersion === undefined
+        ? {}
+        : { CODEVISOR_PLUGIN_PREVIOUS_VERSION: previousVersion })
+    }
+    for (const command of pluginSetupCommands(manifest, platform)) {
+      const outcome = await runSetupCommand(command, manifest, directory, env)
+      if (!outcome.ok) {
+        throw new PluginsError(
+          "invalid",
+          `Plugin ${manifest.id} setup command failed: ${outcome.message}`
+        )
+      }
+    }
+  }
 
   const importStaged = async (staged: StagedPlugin): Promise<void> => {
     const destination = managedDirectory(staged.manifest.id)
@@ -186,6 +265,15 @@ export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller 
         `Plugin ${staged.manifest.id} is already provided by ${existing.directoryName} (${existing.source})`
       )
     }
+    await assertPluginRequirements({
+      env: staged.env,
+      manifest: staged.manifest,
+      platform,
+      ...(deps.codevisorVersion === undefined ? {} : { codevisorVersion: deps.codevisorVersion }),
+      ...(deps.findExecutable === undefined ? {} : { findExecutable: deps.findExecutable })
+    })
+    const previousReceipt = readPluginInstallReceipt(destination)
+    const previousVersion = existing?.manifest.version
     let destinationStats
     try {
       destinationStats = await lstat(destination)
@@ -219,16 +307,22 @@ export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller 
       recursive: true
     })
     await writeFile(join(destination, MANAGED_PLUGIN_MARKER), MANAGED_PLUGIN_MARKER_CONTENT, "utf8")
-    if (staged.manifest.install !== undefined) {
-      const outcome = await runInstallCommand(staged.manifest, destination, await resolveEnv())
-      if (!outcome.ok) {
-        // A half-installed plugin must not linger as a managed install.
-        await rm(destination, { force: true, recursive: true })
-        throw new PluginsError(
-          "invalid",
-          `Plugin ${staged.manifest.id} install command failed: ${outcome.message}`
-        )
-      }
+    try {
+      await runSetup(staged.manifest, destination, staged.env, previousVersion)
+      const timestamp = receiptNow().toISOString()
+      await writePluginInstallReceipt(destination, {
+        installedAt: previousReceipt?.installedAt ?? timestamp,
+        installedVersion: staged.manifest.version,
+        pluginId: staged.manifest.id,
+        resolvedCommit: staged.resolvedCommit,
+        schemaVersion: 1,
+        source: staged.source,
+        updatedAt: timestamp
+      })
+    } catch (cause) {
+      // A half-installed plugin must not linger as a managed install.
+      await rm(destination, { force: true, recursive: true })
+      throw cause
     }
   }
 
@@ -237,16 +331,29 @@ export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller 
       const staged = await stage(request.source)
       try {
         const { manifest } = staged
+        const runCommand = pluginRunCommand(manifest)
+        const setupCommands = pluginSetupCommands(manifest, platform)
         return {
           alreadyInstalled: installedWithId(manifest.id) !== undefined,
           id: manifest.id,
           name: manifest.name,
           panes: manifest.panes,
-          runCommand: manifest.run.command,
+          runCommand: displayPluginCommand(runCommand),
           version: manifest.version,
           ...(manifest.description === undefined ? {} : { description: manifest.description }),
           ...(manifest.iconPath === undefined ? {} : { iconPath: manifest.iconPath }),
-          ...(manifest.install === undefined ? {} : { installCommand: manifest.install.command }),
+          ...(setupCommands.length === 0
+            ? {}
+            : { installCommand: setupCommands.map(displayPluginCommand).join(" && ") }),
+          ...(manifest.protocolVersion === 1 || manifest.setup === undefined
+            ? {}
+            : { setupCommands: manifest.setup }),
+          ...(manifest.protocolVersion === 1 || manifest.minCodevisorVersion === undefined
+            ? {}
+            : { minCodevisorVersion: manifest.minCodevisorVersion }),
+          ...(manifest.protocolVersion === 1 || manifest.requirements === undefined
+            ? {}
+            : { requirements: manifest.requirements }),
           ...(manifest.tools === undefined ? {} : { tools: manifest.tools })
         }
       } finally {

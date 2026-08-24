@@ -16,6 +16,8 @@ export interface ParsedPluginSource {
   /// github.com URL). Drives anti-impersonation: a managed install's
   /// manifest id must be namespaced under this owner.
   readonly owner?: string | undefined
+  /// Canonical GitHub owner/repository coordinate when known.
+  readonly repo?: string | undefined
   /// Local filesystem sources (dev installs) are exempt from the owner
   /// namespace check — there is no owner to validate against.
   readonly local?: boolean | undefined
@@ -66,6 +68,7 @@ export const parsePluginSource = (input: string): ParsedPluginSource => {
       if (marker === "tree" && treeRef !== undefined) {
         return {
           owner,
+          repo: `${owner}/${repo}`,
           ref: ref ?? treeRef,
           ...(rest.length === 0 ? {} : { subpath: rest.join("/") }),
           url: `https://github.com/${owner}/${repo}.git`
@@ -76,6 +79,7 @@ export const parsePluginSource = (input: string): ParsedPluginSource => {
       )
       return {
         owner,
+        repo: `${owner}/${repo}`,
         ref,
         ...(subpath.length === 0 ? {} : { subpath: subpath.join("/") }),
         url: `https://github.com/${owner}/${repo}.git`
@@ -98,6 +102,7 @@ export const parsePluginSource = (input: string): ParsedPluginSource => {
   }
   return {
     owner,
+    repo: `${owner}/${repo}`,
     ref,
     ...(subpath.length === 0 ? {} : { subpath: subpath.join("/") }),
     url: `https://github.com/${owner}/${repo}.git`
@@ -116,40 +121,60 @@ const splitRef = (source: string): readonly [string, string | undefined] => {
 /// Default clone: shallow, optionally pinned to a branch or tag, with
 /// interactive prompts disabled so a bad URL fails fast instead of hanging.
 /// Same discipline as skills' cloneSkillSource.
-export const clonePluginSource = (
+export interface ClonePluginSourceResult {
+  readonly resolvedCommit: string
+}
+
+export const clonePluginSource = async (
   url: string,
   ref: string | undefined,
-  destination: string
-): Promise<void> =>
+  destination: string,
+  env: NodeJS.ProcessEnv = process.env
+): Promise<ClonePluginSourceResult> => {
+  if (ref !== undefined && /^[0-9a-f]{40}$/i.test(ref)) {
+    await runGit(["init", "--quiet", destination], env)
+    await runGit(["-C", destination, "remote", "add", "origin", url], env)
+    await runGit(["-C", destination, "fetch", "--depth", "1", "origin", ref], env)
+    await runGit(["-C", destination, "checkout", "--quiet", "--detach", "FETCH_HEAD"], env)
+  } else {
+    await runGit(
+      ["clone", "--depth", "1", ...(ref === undefined ? [] : ["--branch", ref]), url, destination],
+      env
+    )
+  }
+  const resolvedCommit = (await runGit(["-C", destination, "rev-parse", "HEAD"], env)).trim()
+  /* v8 ignore next 3 -- a successful git rev-parse HEAD always returns a 40-character SHA. */
+  if (!/^[0-9a-f]{40}$/i.test(resolvedCommit)) {
+    throw new Error("git clone succeeded but HEAD could not be resolved")
+  }
+  return { resolvedCommit }
+}
+
+const runGit = (args: ReadonlyArray<string>, env: NodeJS.ProcessEnv): Promise<string> =>
   new Promise((resolvePromise, rejectPromise) => {
-    const args = [
-      "clone",
-      "--depth",
-      "1",
-      ...(ref === undefined ? [] : ["--branch", ref]),
-      url,
-      destination
-    ]
     const child = spawn("git", args, {
       env: {
-        ...process.env,
+        ...env,
         GIT_ASKPASS: "true",
-        GIT_SSH_COMMAND: process.env["GIT_SSH_COMMAND"] ?? "ssh -oBatchMode=yes",
+        GIT_SSH_COMMAND: env["GIT_SSH_COMMAND"] ?? "ssh -oBatchMode=yes",
         GIT_TERMINAL_PROMPT: "0"
       }
     })
     const stderr: Array<string> = []
+    const stdout: Array<string> = []
     child.stderr.setEncoding("utf8")
+    child.stdout.setEncoding("utf8")
     child.stderr.on("data", (chunk: string) => stderr.push(chunk))
+    child.stdout.on("data", (chunk: string) => stdout.push(chunk))
     /* v8 ignore next -- spawn-level failures (git missing) need an environment tests can't fake. */
     child.on("error", (cause) => rejectPromise(cause))
     child.on("close", (code) => {
       if (code === 0) {
-        resolvePromise()
+        resolvePromise(stdout.join(""))
         return
       }
       const reason = stderr.join("").trim()
       /* v8 ignore next -- git always writes a failure reason to stderr; exit-code fallback is a backstop. */
-      rejectPromise(new Error(reason === "" ? `git clone exited with ${code}` : reason))
+      rejectPromise(new Error(reason === "" ? `git exited with ${code}` : reason))
     })
   })

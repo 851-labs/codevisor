@@ -1,9 +1,11 @@
 // @boundaries-ignore intentionally resolved to package source: this app bundles @codevisor/api from src (tsconfig paths / vite alias)
 import {
   decode,
-  PLUGINS_PROTOCOL_VERSION,
+  isSemanticVersion,
+  isSupportedPluginProtocolVersion,
   PluginManifest,
   type PluginPaneDescriptor,
+  type PluginRequirements,
   type PluginToolDescriptor
 } from "@codevisor/api"
 import type { CloudEnv } from "./env.js"
@@ -30,6 +32,7 @@ export interface PluginIndexEntry {
   id: string
   name: string
   version: string
+  protocolVersion: number
   description?: string
   /// Manifest artwork path on the plugin's own server — only fetchable once
   /// the plugin is installed and running, so browse UIs prefer
@@ -39,6 +42,11 @@ export interface PluginIndexEntry {
   tools?: readonly PluginToolDescriptor[]
   /// GitHub "owner/name" — the directory always shows the real repo owner.
   repo: string
+  /// Exact commit used to fetch and validate this manifest.
+  commit: string
+  minCodevisorVersion?: string
+  requirements?: PluginRequirements
+  platforms?: readonly string[]
   /// GitHub avatar of the repo owner — the only artwork renderable before
   /// install.
   ownerAvatarUrl?: string
@@ -110,10 +118,27 @@ const searchTaggedRepos = async (
   return repos
 }
 
-/// Raw-content URL for the manifest on the repo's default branch — one
-/// unauthenticated CDN fetch per repo instead of a contents-API call.
-const manifestUrl = (repo: GitHubSearchRepo): string =>
-  `https://raw.githubusercontent.com/${repo.full_name}/${repo.default_branch}/${PLUGIN_MANIFEST_FILENAME}`
+const resolveDefaultBranchCommit = async (
+  fetchImpl: FetchLike,
+  token: string | undefined,
+  repo: GitHubSearchRepo
+): Promise<string> => {
+  const url = `https://api.github.com/repos/${repo.full_name}/commits/${encodeURIComponent(repo.default_branch)}`
+  const response = await fetchImpl(url, { headers: githubHeaders(token) })
+  if (!response.ok) {
+    throw new Error(`commit resolution failed with status ${response.status}`)
+  }
+  const body = (await response.json()) as { sha?: unknown }
+  if (typeof body.sha !== "string" || !/^[0-9a-f]{40}$/i.test(body.sha)) {
+    throw new Error("commit resolution returned an invalid SHA")
+  }
+  return body.sha
+}
+
+/// Fetch the manifest from the exact commit advertised in the index. This
+/// prevents a default-branch push from changing the candidate after consent.
+const manifestUrl = (repo: GitHubSearchRepo, commit: string): string =>
+  `https://raw.githubusercontent.com/${repo.full_name}/${commit}/${PLUGIN_MANIFEST_FILENAME}`
 
 // -- Manifest validation ---------------------------------------------------------
 
@@ -135,6 +160,16 @@ export const validateManifestForIndex = (raw: string, repoOwner: string): Manife
   } catch {
     return { ok: false, reason: `${PLUGIN_MANIFEST_FILENAME} is not valid JSON` }
   }
+  const protocolVersion =
+    typeof json === "object" && json !== null && "protocolVersion" in json
+      ? (json as { protocolVersion?: unknown }).protocolVersion
+      : undefined
+  if (typeof protocolVersion === "number" && !isSupportedPluginProtocolVersion(protocolVersion)) {
+    return {
+      ok: false,
+      reason: `unsupported plugin protocolVersion ${protocolVersion} (this index supports 1 and 2)`
+    }
+  }
   let manifest: PluginManifest
   try {
     manifest = decode(PluginManifest)(json)
@@ -142,11 +177,13 @@ export const validateManifestForIndex = (raw: string, repoOwner: string): Manife
     const message = cause instanceof Error ? cause.message : String(cause)
     return { ok: false, reason: `invalid plugin manifest: ${message}` }
   }
-  if (manifest.protocolVersion !== PLUGINS_PROTOCOL_VERSION) {
-    return {
-      ok: false,
-      reason: `unsupported plugin protocolVersion ${manifest.protocolVersion} (this index supports ${PLUGINS_PROTOCOL_VERSION})`
-    }
+  if (
+    manifest.protocolVersion === 2 &&
+    (!isSemanticVersion(manifest.version) ||
+      (manifest.minCodevisorVersion !== undefined &&
+        !isSemanticVersion(manifest.minCodevisorVersion)))
+  ) {
+    return { ok: false, reason: "protocol v2 version fields must use strict SemVer" }
   }
   if (!PLUGIN_ID_PATTERN.test(manifest.id)) {
     return {
@@ -168,14 +205,27 @@ export const validateManifestForIndex = (raw: string, repoOwner: string): Manife
 
 // -- Index refresh ---------------------------------------------------------------
 
-const toEntry = (manifest: PluginManifest, repo: GitHubSearchRepo): PluginIndexEntry => ({
+const toEntry = (
+  manifest: PluginManifest,
+  repo: GitHubSearchRepo,
+  commit: string
+): PluginIndexEntry => ({
+  commit,
   id: manifest.id,
   name: manifest.name,
   version: manifest.version,
+  protocolVersion: manifest.protocolVersion,
   ...(manifest.description !== undefined ? { description: manifest.description } : {}),
   ...(manifest.iconPath !== undefined ? { iconPath: manifest.iconPath } : {}),
   panes: manifest.panes,
   ...(manifest.tools !== undefined ? { tools: manifest.tools } : {}),
+  ...(manifest.platforms !== undefined ? { platforms: manifest.platforms } : {}),
+  ...(manifest.protocolVersion === 1 || manifest.minCodevisorVersion === undefined
+    ? {}
+    : { minCodevisorVersion: manifest.minCodevisorVersion }),
+  ...(manifest.protocolVersion === 1 || manifest.requirements === undefined
+    ? {}
+    : { requirements: manifest.requirements }),
   repo: repo.full_name,
   // The owner's GitHub avatar rides along so browse UIs can show artwork
   // without running anything — search results already carry it, so this
@@ -223,13 +273,23 @@ export const refreshPluginIndex = async (env: CloudEnv): Promise<PluginRefreshSu
       rejected.push({ repo: repo.full_name, reason: "repository has no owner" })
       continue
     }
-    const response = await fetchImpl(manifestUrl(repo), {
+    let commit: string
+    try {
+      commit = await resolveDefaultBranchCommit(fetchImpl, env.GITHUB_TOKEN, repo)
+    } catch (cause) {
+      rejected.push({
+        repo: repo.full_name,
+        reason: cause instanceof Error ? cause.message : String(cause)
+      })
+      continue
+    }
+    const response = await fetchImpl(manifestUrl(repo, commit), {
       headers: { "user-agent": "codevisor-cloud-plugin-indexer" }
     })
     if (response.status === 404) {
       rejected.push({
         repo: repo.full_name,
-        reason: `${PLUGIN_MANIFEST_FILENAME} not found on the default branch`
+        reason: `${PLUGIN_MANIFEST_FILENAME} not found at resolved commit ${commit}`
       })
       continue
     }
@@ -254,7 +314,7 @@ export const refreshPluginIndex = async (env: CloudEnv): Promise<PluginRefreshSu
       continue
     }
     claimed.set(validated.manifest.id, repo.full_name)
-    entries.push(toEntry(validated.manifest, repo))
+    entries.push(toEntry(validated.manifest, repo, commit))
   }
   entries.sort((a, b) => b.stars - a.stars || a.id.localeCompare(b.id))
   const index: PluginIndex = { generatedAt: new Date().toISOString(), entries, rejected }

@@ -41,7 +41,10 @@ describe("parsePluginManifest", () => {
         platforms: ["darwin"]
       })
     )
-    expect(manifest.install?.command).toBe("bun install")
+    expect(manifest.protocolVersion).toBe(1)
+    if (manifest.protocolVersion === 1) {
+      expect(manifest.install?.command).toBe("bun install")
+    }
     expect(manifest.iconPath).toBe("/assets/plugin.svg")
   })
 
@@ -54,7 +57,73 @@ describe("parsePluginManifest", () => {
   })
 
   it("rejects unsupported protocol versions", () => {
-    expectInvalid({ ...validManifest, protocolVersion: 2 }, "Unsupported plugin protocolVersion")
+    expectInvalid({ ...validManifest, protocolVersion: 99 }, "Unsupported plugin protocolVersion")
+  })
+
+  it("parses protocol v2 structured commands and requirements", () => {
+    const manifest = parsePluginManifest(
+      JSON.stringify({
+        ...validManifest,
+        minCodevisorVersion: "1.4.0",
+        protocolVersion: 2,
+        requirements: {
+          executables: [
+            {
+              helpUrl: "https://nodejs.org/",
+              installHint: "Install Node.js 22 or newer.",
+              name: "node"
+            }
+          ]
+        },
+        run: { argv: ["node", "server.js"] },
+        setup: [{ argv: ["npm", "ci"], platforms: ["darwin"] }]
+      })
+    )
+    expect(manifest.protocolVersion).toBe(2)
+    if (manifest.protocolVersion !== 2) expect.unreachable("expected v2")
+    expect(manifest.run.argv).toEqual(["node", "server.js"])
+    expect(manifest.setup?.[0]?.argv).toEqual(["npm", "ci"])
+    expect(manifest.requirements?.executables?.[0]?.name).toBe("node")
+  })
+
+  it("requires strict SemVer and valid argv in protocol v2", () => {
+    const v2 = {
+      ...validManifest,
+      protocolVersion: 2,
+      run: { argv: ["node", "server.js"] }
+    }
+    expectInvalid({ ...v2, version: "v1.2.3" }, "valid SemVer")
+    expectInvalid({ ...v2, minCodevisorVersion: "1.2" }, "minCodevisorVersion")
+    expectInvalid({ ...v2, run: { argv: [] } }, "must name an executable")
+    expectInvalid({ ...v2, setup: [{ argv: ["  "] }] }, "must name an executable")
+  })
+
+  it("validates executable requirement names and guidance", () => {
+    const v2 = {
+      ...validManifest,
+      protocolVersion: 2,
+      run: { argv: ["node", "server.js"] }
+    }
+    expectInvalid(
+      { ...v2, requirements: { executables: [{ name: "/usr/bin/node" }] } },
+      "without a path"
+    )
+    expectInvalid(
+      { ...v2, requirements: { executables: [{ name: "node" }, { name: "node" }] } },
+      "Duplicate executable"
+    )
+    expectInvalid(
+      { ...v2, requirements: { executables: [{ installHint: "  ", name: "node" }] } },
+      "installHint"
+    )
+    expectInvalid(
+      { ...v2, requirements: { executables: [{ helpUrl: "file:///tmp/node", name: "node" }] } },
+      "HTTP URL"
+    )
+    expectInvalid(
+      { ...v2, requirements: { executables: [{ helpUrl: "not a URL", name: "node" }] } },
+      "HTTP URL"
+    )
   })
 
   it("rejects ids that are not owner.name shaped", () => {

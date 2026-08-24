@@ -40,6 +40,8 @@ interface RepoFixture {
   stars?: number
   pushedAt?: string
   branch?: string
+  /// Resolved default-branch commit; a number returns that status.
+  commit?: string | number
   /// Raw manifest body served for this repo; a number means "respond with
   /// that HTTP status instead".
   manifest: string | number
@@ -73,6 +75,18 @@ const githubStub = (repos: RepoFixture[]): StubFetch => {
         const items = repos.slice((page - 1) * perPage, page * perPage).map(searchItem)
         return Promise.resolve(Response.json({ total_count: repos.length, items }))
       }
+      const commitMatch = /^\/repos\/([^/]+)\/([^/]+)\/commits\/(.+)$/.exec(url.pathname)
+      if (url.origin === "https://api.github.com" && commitMatch !== null) {
+        const repo = repos.find(
+          (candidate) =>
+            `${candidate.owner}/${candidate.name}` === `${commitMatch[1]}/${commitMatch[2]}`
+        )
+        if (repo === undefined) return Promise.resolve(new Response("not found", { status: 404 }))
+        if (typeof repo.commit === "number") {
+          return Promise.resolve(new Response("error", { status: repo.commit }))
+        }
+        return Promise.resolve(Response.json({ sha: repo.commit ?? "a".repeat(40) }))
+      }
       const match = /^https:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\//.exec(input)
       const repo = repos.find((r) => r.owner === match?.[1] && r.name === match?.[2])
       if (repo === undefined) return Promise.resolve(new Response("not found", { status: 404 }))
@@ -96,6 +110,24 @@ describe("manifest validation", () => {
   it("accepts a well-formed manifest owned by the repo owner", () => {
     const result = validateManifestForIndex(JSON.stringify(manifest()), "Octocat")
     expect(result).toMatchObject({ ok: true, manifest: { id: "octocat.notes" } })
+  })
+
+  it("accepts protocol v2 and enforces strict semantic versions", () => {
+    const current = manifest({
+      minCodevisorVersion: "1.4.0",
+      protocolVersion: 2,
+      requirements: { executables: [{ name: "node" }] },
+      run: { argv: ["node", "server.js"] }
+    })
+    expect(validateManifestForIndex(JSON.stringify(current), "Octocat").ok).toBe(true)
+    const invalid = validateManifestForIndex(
+      JSON.stringify({ ...current, version: "v1.2.0" }),
+      "Octocat"
+    )
+    expect(invalid).toEqual({
+      ok: false,
+      reason: "protocol v2 version fields must use strict SemVer"
+    })
   })
 
   it("rejects impersonation, bad ids, bad JSON, schema and protocol mismatches", () => {
@@ -164,11 +196,13 @@ describe("refreshPluginIndex", () => {
     // Sorted by stars descending.
     expect(index.entries.map((entry) => entry.id)).toEqual(["hubber.clock", "octocat.notes"])
     expect(index.entries[1]).toEqual({
+      commit: "a".repeat(40),
       id: "octocat.notes",
       name: "Notes",
       version: "1.2.0",
       description: "A notes pane",
       panes: [{ type: "notes", title: "Notes", path: "/notes/" }],
+      protocolVersion: 1,
       tools: [{ name: "notes_add", description: "Add a note", path: "/tools/add" }],
       repo: "octocat/notes",
       ownerAvatarUrl: "https://avatars.github.test/octocat",
@@ -181,7 +215,7 @@ describe("refreshPluginIndex", () => {
     const reasons = Object.fromEntries(index.rejected.map((r) => [r.repo, r.reason]))
     expect(reasons["evil/notes"]).toContain("must be namespaced under the repo owner")
     expect(reasons["octocat/notes-fork"]).toContain("already indexed from octocat/notes")
-    expect(reasons["octocat/untagged-manifest"]).toContain("not found on the default branch")
+    expect(reasons["octocat/untagged-manifest"]).toContain("not found at resolved commit")
     expect(reasons["octocat/flaky"]).toContain("failed with status 500")
     expect(reasons["octocat/broken"]).toContain("not valid JSON")
 
@@ -195,6 +229,20 @@ describe("refreshPluginIndex", () => {
     // The search carried the token and the topic query.
     const search = stub.requests.find((url) => url.startsWith(SEARCH_URL))
     expect(search).toContain(encodeURIComponent("topic:codevisor-plugin"))
+    expect(stub.requests).toContain(
+      `https://raw.githubusercontent.com/octocat/notes/${"a".repeat(40)}/codevisor-plugin.json`
+    )
+  })
+
+  it("rejects a repo when its exact default-branch commit cannot be resolved", async () => {
+    const stub = githubStub([
+      { owner: "octocat", name: "notes", commit: 503, manifest: JSON.stringify(manifest()) }
+    ])
+    const summary = await refreshPluginIndex({ ...env, GITHUB_FETCH: stub.fetch })
+    expect(summary).toMatchObject({ indexed: 0, rejected: 1 })
+    expect((await readIndex()).rejected[0]?.reason).toContain(
+      "commit resolution failed with status 503"
+    )
   })
 
   it("paginates the search until a short page", async () => {

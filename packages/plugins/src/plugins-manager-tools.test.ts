@@ -152,7 +152,10 @@ describe("tool discovery", () => {
     const fixture = makeDir("codevisor-plugin-tool-discover-")
     writeFileSync(join(fixture, "codevisor-plugin.json"), JSON.stringify(toolManifest))
     const { manager } = makeManager({
-      clone: (url, _ref, destination) => cp(url, destination, { recursive: true })
+      clone: async (url, _ref, destination) => {
+        await cp(url, destination, { recursive: true })
+        return { resolvedCommit: "a".repeat(40) }
+      }
     })
     const discovered = await manager.discoverRemote({ source: fixture })
     expect(discovered.tools).toHaveLength(7)
@@ -168,7 +171,10 @@ describe("installed-set subscription", () => {
       JSON.stringify({ ...exampleManifest, id: "owner.fresh", name: "Fresh" })
     )
     const { manager } = makeManager({
-      clone: (url, _ref, destination) => cp(url, destination, { recursive: true })
+      clone: async (url, _ref, destination) => {
+        await cp(url, destination, { recursive: true })
+        return { resolvedCommit: "a".repeat(40) }
+      }
     })
     let notified = 0
     const unsubscribe = manager.subscribeInstalled(() => {

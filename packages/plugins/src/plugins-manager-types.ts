@@ -11,6 +11,7 @@ import type {
 import type { IncomingMessage, ServerResponse } from "node:http"
 import type { Socket } from "node:net"
 import type { PluginIconAsset } from "./plugin-icon.js"
+import type { ClonePluginSourceResult } from "./plugin-source.js"
 import type { PluginSupervisorConfig } from "./plugin-supervisor.js"
 import type { PluginToolInvocationContext, PluginToolSummary } from "./plugin-tools.js"
 
@@ -34,7 +35,14 @@ export interface PluginsManagerConfig extends Omit<
   readonly isLocalhost?: (address: string | undefined) => boolean
   /// Staged-clone override for install tests; defaults to a shallow
   /// `git clone`.
-  readonly clone?: (url: string, ref: string | undefined, destination: string) => Promise<void>
+  readonly clone?: (
+    url: string,
+    ref: string | undefined,
+    destination: string,
+    env: NodeJS.ProcessEnv
+  ) => Promise<ClonePluginSourceResult>
+  /// Version used by protocol v2 compatibility checks.
+  readonly codevisorVersion?: string
 }
 
 /// Runtime state transition for one plugin, shaped for the server's event

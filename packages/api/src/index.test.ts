@@ -396,11 +396,13 @@ describe("@codevisor/api", () => {
       generatedAt: "2026-08-18T00:00:00.000Z",
       entries: [
         {
+          commit: "a".repeat(40),
           id: "acme.git-diff",
           name: "Git Diff",
           version: "0.1.0",
           description: "Live git diff viewer",
           panes: [{ type: "diff", title: "Git Diff", path: "/panes/diff/" }],
+          protocolVersion: 1,
           tools: [
             { name: "diff_summary", description: "Summarize the diff", path: "/tools/summary" }
           ],
@@ -410,10 +412,12 @@ describe("@codevisor/api", () => {
         },
         // Manifest description and tools stay optional, as in PluginSummary.
         {
+          commit: "b".repeat(40),
           id: "beta.notes",
           name: "Notes",
           version: "1.0.0",
           panes: [],
+          protocolVersion: 1,
           repo: "beta/notes",
           stars: 0,
           pushedAt: "2026-08-16T00:00:00Z"

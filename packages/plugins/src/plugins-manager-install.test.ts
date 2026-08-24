@@ -23,11 +23,25 @@ const freshManifest = {
 }
 
 describe("manager install pipeline", () => {
+  it("wires protocol v2 version and argv execution into the installer", async () => {
+    const spawn = fakeSpawn()
+    const { manager } = makeManager({
+      codevisorVersion: "1.0.0",
+      spawnArgv: (_argv, options) => spawn.spawnShell("unused", options)
+    })
+    await expect(manager.list()).resolves.toMatchObject({
+      plugins: [expect.objectContaining({ id: "owner.example" })]
+    })
+  })
+
   it("discovers, imports, and removes a plugin through the facade", async () => {
     const fixture = makeFixture(freshManifest)
     const events: Array<PluginStateEvent> = []
     const { manager, root } = makeManager({
-      clone: (url, _ref, destination) => cp(url, destination, { recursive: true }),
+      clone: async (url, _ref, destination) => {
+        await cp(url, destination, { recursive: true })
+        return { resolvedCommit: "a".repeat(40) }
+      },
       registerExternalTerminal: (_config, _process) => ({
         exit: () => undefined,
         output: () => undefined,

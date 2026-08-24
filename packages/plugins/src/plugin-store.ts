@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { parsePluginManifest, PLUGIN_MANIFEST_FILENAME } from "./plugin-manifest.js"
+import { readPluginInstallReceipt, type PluginInstallReceipt } from "./plugin-receipt.js"
 import { PluginsError } from "./plugins-error.js"
 
 /// Marks a plugin directory as installed (and therefore deletable) by
@@ -20,6 +21,9 @@ export interface InstalledPlugin {
   readonly path: string
   readonly source: PluginSource
   readonly manifest: PluginManifest
+  /// Managed installs created before receipts remain valid; they report no
+  /// provenance until reinstalled from a known source.
+  readonly receipt?: PluginInstallReceipt
 }
 
 /// A directory under the plugins root that could not be loaded as a plugin —
@@ -80,12 +84,14 @@ export const scanPlugins = (root: string = defaultPluginsRoot()): PluginScan => 
         continue
       }
       seenIds.set(manifest.id, entry)
+      const receipt = readPluginInstallReceipt(path)
       plugins.push({
         directoryName: entry,
         id: manifest.id,
         manifest,
         path,
-        source: existsSync(join(path, MANAGED_PLUGIN_MARKER)) ? "managed" : "linked"
+        source: existsSync(join(path, MANAGED_PLUGIN_MARKER)) ? "managed" : "linked",
+        ...(receipt === undefined || receipt.pluginId !== manifest.id ? {} : { receipt })
       })
     } catch (cause) {
       invalid.push({

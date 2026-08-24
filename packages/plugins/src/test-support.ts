@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach } from "vitest"
 import { WebSocketServer } from "ws"
+import type { PluginManifestV1 } from "@codevisor/api"
 import type { InstalledPlugin } from "./plugin-store.js"
 import type { PluginProcessHandle, PluginSpawnOptions } from "./plugin-supervisor.js"
 import { makePluginsManager, type PluginsManager } from "./plugins-manager.js"
@@ -36,7 +37,7 @@ export const delay = (ms: number): Promise<void> =>
 
 /// An InstalledPlugin handed straight to the supervisor without a manifest
 /// file on disk.
-export const plugin = (overrides: Partial<InstalledPlugin["manifest"]> = {}): InstalledPlugin => ({
+export const plugin = (overrides: Partial<PluginManifestV1> = {}): InstalledPlugin => ({
   directoryName: "example",
   id: "owner.example",
   manifest: {
@@ -103,7 +104,7 @@ export const exampleManifest = {
   id: "owner.example",
   name: "Example",
   panes: [{ path: "/panes/main/", title: "Main", type: "main" }],
-  protocolVersion: 1,
+  protocolVersion: 1 as const,
   run: { command: "run-me" },
   version: "0.1.0"
 }
@@ -115,7 +116,7 @@ export const toolManifest = {
   id: "owner.notes",
   name: "Notes",
   panes: [],
-  protocolVersion: 1,
+  protocolVersion: 1 as const,
   run: { command: "run-me" },
   tools: [
     {

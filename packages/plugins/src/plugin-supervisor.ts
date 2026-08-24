@@ -4,6 +4,7 @@ import { mkdirSync } from "node:fs"
 import { connect, createServer } from "node:net"
 import { join } from "node:path"
 import type { InstalledPlugin } from "./plugin-store.js"
+import { displayPluginCommand, pluginRunCommand } from "./plugin-command.js"
 import { PluginsError } from "./plugins-error.js"
 
 /// Minimal handle the supervisor needs over a plugin child process.
@@ -58,6 +59,10 @@ export interface PluginSupervisorConfig {
   /// Root for per-plugin writable state (CODEVISOR_PLUGIN_DATA_DIR).
   readonly dataDir: string
   readonly spawnShell?: (command: string, options: PluginSpawnOptions) => PluginProcessHandle
+  readonly spawnArgv?: (
+    argv: ReadonlyArray<string>,
+    options: PluginSpawnOptions
+  ) => PluginProcessHandle
   /// Login-shell environment for spawns; defaults to process.env.
   readonly resolveEnv?: () => Promise<NodeJS.ProcessEnv>
   readonly log?: (message: string) => void
@@ -130,10 +135,31 @@ export interface PluginSupervisor {
 export const defaultSpawnShell = (
   command: string,
   options: PluginSpawnOptions
+): PluginProcessHandle =>
+  spawnPluginProcess(
+    /* v8 ignore next -- SHELL is always set in practice; /bin/sh is the documented fallback. */
+    options.env["SHELL"] ?? process.env["SHELL"] ?? "/bin/sh",
+    ["-lc", command],
+    options
+  )
+
+/// Protocol v2 process runner. It launches the declared executable directly,
+/// preserving the argument boundaries shown on consent surfaces.
+export const defaultSpawnArgv = (
+  argv: ReadonlyArray<string>,
+  options: PluginSpawnOptions
 ): PluginProcessHandle => {
-  /* v8 ignore next -- SHELL is always set in practice; /bin/sh is the documented fallback. */
-  const shell = process.env["SHELL"] ?? "/bin/sh"
-  const child = spawn(shell, ["-lc", command], {
+  const [executable, ...args] = argv
+  /* v8 ignore next -- manifest validation requires a non-empty argv. */
+  return spawnPluginProcess(executable ?? "", args, options)
+}
+
+const spawnPluginProcess = (
+  executable: string,
+  args: ReadonlyArray<string>,
+  options: PluginSpawnOptions
+): PluginProcessHandle => {
+  const child = spawn(executable, args, {
     cwd: options.cwd,
     detached: process.platform !== "win32",
     env: options.env,
@@ -177,8 +203,7 @@ export const defaultSpawnShell = (
         return
       }
       try {
-        // The run command is a shell line; kill the whole group so the
-        // plugin's own children die with it.
+        // Kill the whole process group so the plugin's children die with it.
         process.kill(-pid, "SIGTERM")
       } catch {
         child.kill("SIGTERM")
@@ -233,6 +258,7 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
   const readyTimeoutMs = config.readyTimeoutMs ?? 15_000
   const now = config.now ?? Date.now
   const spawnShell = config.spawnShell ?? defaultSpawnShell
+  const spawnArgv = config.spawnArgv ?? defaultSpawnArgv
   const maxConsecutiveFailures = config.maxConsecutiveFailures ?? 5
   const backoffBaseMs = config.backoffBaseMs ?? 500
   const backoffCapMs = config.backoffCapMs ?? 30_000
@@ -290,7 +316,11 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
       PORT: String(port)
     }
     let exitMessage: string | undefined
-    const child = spawnShell(plugin.manifest.run.command, { cwd: plugin.path, env })
+    const runCommand = pluginRunCommand(plugin.manifest)
+    const child =
+      runCommand.kind === "shell"
+        ? spawnShell(runCommand.command, { cwd: plugin.path, env })
+        : spawnArgv(runCommand.argv, { cwd: plugin.path, env })
     // A restart re-registers under the same session key, replacing the old
     // terminal, so "Show Output" always shows the live process.
     const terminal = config.registerExternalTerminal?.(
@@ -298,7 +328,7 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
       { kill: () => child.kill(), resize: () => undefined, write: () => undefined }
     )
     if (terminal !== undefined) {
-      terminal.output(`$ ${plugin.manifest.run.command}\r\n`)
+      terminal.output(`$ ${displayPluginCommand(runCommand)}\r\n`)
       child.onOutput?.((data) => terminal.output(data))
     }
     child.onExit((message) => {
