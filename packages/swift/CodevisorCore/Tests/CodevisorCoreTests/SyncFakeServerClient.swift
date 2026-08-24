@@ -229,8 +229,16 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
     private var targetBuildNumber: Int?
     private var applyFailureMessage: String?
     private var lastApply: ServerUpdateApplyState?
+    private var _harnesses: [ServerHarness] = []
+    private var _pluginUpdates: [ServerPluginUpdateStatus] = []
+    private var _operationLog: [String] = []
 
     struct ServerDownError: Error {}
+}
+
+// MARK: - Simulated update surfaces (same file so `private` storage stays
+// reachable; a separate extension keeps the class body within size limits).
+extension SyncFakeServerClient {
 
     var appliedUpdates: Int { lock.withLock { _appliedUpdates } }
     var updateInfoChannels: [ServerUpdateChannel] { lock.withLock { _updateInfoChannels } }
@@ -267,6 +275,73 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
     /// nothing restarts and updateInfo starts reporting the failure.
     func configureApplyFailure(message: String) {
         lock.withLock { applyFailureMessage = message }
+    }
+
+    // MARK: - Simulated harness / plugin inventories
+
+    /// Every mutating update operation in call order, across kinds — the
+    /// update-all ordering assertions read this.
+    var operationLog: [String] { lock.withLock { _operationLog } }
+
+    func configureHarnesses(_ harnesses: [ServerHarness]) {
+        lock.withLock { _harnesses = harnesses }
+    }
+
+    func configurePluginUpdates(_ updates: [ServerPluginUpdateStatus]) {
+        lock.withLock { _pluginUpdates = updates }
+    }
+
+    func updateHarness(id: String) async throws -> ServerHarnessOperationStarted {
+        lock.withLock {
+            _operationLog.append("harness.update:\(id)")
+            return ServerHarnessOperationStarted(accepted: true)
+        }
+    }
+
+    func listPluginUpdates() async throws -> [ServerPluginUpdateStatus] {
+        lock.withLock { _pluginUpdates }
+    }
+
+    func preparePluginUpdate(pluginId: String) async throws -> ServerPluginUpdatePlan {
+        lock.withLock {
+            _operationLog.append("plugin.prepare:\(pluginId)")
+            let review = ServerPluginUpdateReview(
+                version: "1.1.0",
+                setupCommands: [],
+                runCommand: "run",
+                panes: []
+            )
+            return ServerPluginUpdatePlan(
+                planId: "plan-1",
+                pluginId: pluginId,
+                name: pluginId,
+                resolvedCommit: "abc123",
+                expiresAt: "2026-06-30T01:00:00.000Z",
+                current: review,
+                candidate: review,
+                paneChanges: ServerPluginNamedChanges(added: [], removed: [], changed: []),
+                toolChanges: ServerPluginNamedChanges(added: [], removed: [], changed: [])
+            )
+        }
+    }
+
+    func applyPluginUpdate(pluginId: String, planId: String) async throws -> ServerPluginSummary {
+        lock.withLock {
+            _operationLog.append("plugin.apply:\(pluginId)")
+            _pluginUpdates = _pluginUpdates.map { status in
+                var next = status
+                if status.pluginId == pluginId { next.state = .current }
+                return next
+            }
+            return ServerPluginSummary(
+                id: pluginId,
+                name: pluginId,
+                version: "1.1.0",
+                source: "managed",
+                path: "/tmp/\(pluginId)",
+                state: "running"
+            )
+        }
     }
 
     func health() async throws -> ServerHealth {
@@ -334,6 +409,7 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
                     targetBuildNumber: targetBuildNumber
                 )
             }
+            _operationLog.append("server.apply")
             // The server restarts: unreachable for a few probes, then back on
             // the new version.
             downtimeRemaining = 3
@@ -353,7 +429,7 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
         ServerPairingToken(token: "hm_test", createdAt: "2026-06-30T00:00:00.000Z")
     }
     func capabilities(cwd: String) async throws -> ServerCapabilities { ServerCapabilities(harnesses: []) }
-    func listHarnesses() async throws -> [ServerHarness] { [] }
+    func listHarnesses() async throws -> [ServerHarness] { lock.withLock { _harnesses } }
     func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness { fatalError("unused") }
     func upsertProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }
     func updateProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }
