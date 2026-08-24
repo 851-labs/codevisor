@@ -1,26 +1,26 @@
-import SwiftUI
 import AppKit
 import CodevisorCore
+import SwiftUI
 
 /// The app-menu "Check for Updates…" item, placed right below Settings.
-/// Sparkle owns the progress, release-notes, no-update, and error UI.
+/// Opens the update center — the one surface for everything updatable —
+/// with a fresh fleet-wide check under way.
 struct AppUpdateCommands: Commands {
-    let appUpdate: AppUpdateModel
+    let environment: AppEnvironment
 
     var body: some Commands {
         CommandGroup(after: .appSettings) {
-            CheckForUpdatesMenuItem(appUpdate: appUpdate)
+            CheckForUpdatesMenuItem(center: environment.updateCenter)
         }
     }
 }
 
 private struct CheckForUpdatesMenuItem: View {
-    let appUpdate: AppUpdateModel
+    let center: UpdateCenter
 
     var body: some View {
         Button("Check for Updates…") {
-            Task { await appUpdate.checkForUpdates() }
+            center.isPresented = true
         }
-        .disabled(appUpdate.phase == .checking || appUpdate.isUpdating)
     }
 }

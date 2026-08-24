@@ -205,27 +205,15 @@ struct NewChatView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // Pinned to the pane's top edge as an overlay: appearing or
-        // dismissing the update notice never shifts the composer's layout.
+        // dismissing the notice never shifts the composer's layout. Update
+        // notices moved to the update center; only setup failures remain
+        // contextual here.
         .overlay(alignment: .top) {
-            if let controller {
-                Group {
-                    if case let .failed(message) = controller.status {
-                        setupFailureBanner(message)
-                    } else {
-                        HarnessUpdateBannerView(
-                            controller: controller,
-                            hasRunningChats: controller.activeHarnessId.map { harnessId in
-                                store.hasActiveSessions(
-                                    forHarness: harnessId,
-                                    onServer: environment.machines.selectedMachineId
-                                )
-                            } ?? false
-                        )
-                    }
-                }
-                .frame(maxWidth: 720)
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
+            if let controller, case let .failed(message) = controller.status {
+                setupFailureBanner(message)
+                    .frame(maxWidth: 720)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
             }
         }
         // The whole pane is a click-to-focus zone, exactly like a started

@@ -69,8 +69,6 @@ struct SidebarView: View {
     @State private var isLoadingMoreArchived = false
     /// The item a click is asking to restore, driving the confirmation alert.
     @State private var restoreRequest: ArchivedRestoreRequest?
-    @ClientPreference("update.skippedVersion", default: "") private var skippedUpdateVersion
-    @ClientPreference("update.skippedServerVersion", default: "") private var skippedServerUpdate
 
     private var list: ProjectListModel { environment.projectList }
     private var organization: SidebarOrganization { SidebarOrganization(rawValue: organizationRaw) ?? .compact }
@@ -280,12 +278,6 @@ struct SidebarView: View {
 
     private var sidebarContent: some View {
         VStack(spacing: 0) {
-            SidebarUpdateBanners(
-                environment: environment,
-                store: store,
-                skippedUpdateVersion: skippedUpdateVersion,
-                skippedServerUpdate: skippedServerUpdate
-            )
             // Development identity + New chat + the Projects header stay
             // pinned; only the project/chat list itself scrolls.
             VStack(alignment: .leading, spacing: 1) {
@@ -388,6 +380,7 @@ struct SidebarView: View {
                 sidebarFilterMenuContent
             }
 
+            SidebarUpdateFooter(center: environment.updateCenter)
         }
     }
 

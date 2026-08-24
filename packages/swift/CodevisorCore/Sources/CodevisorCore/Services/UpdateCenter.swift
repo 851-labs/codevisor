@@ -43,6 +43,9 @@ public final class UpdateCenter {
     private let machines: MachineController
     private let appUpdate: AppUpdateModel
 
+    /// Whether the update surface (sheet/screen) is open. Lives here so the
+    /// menu item, sidebar footer, and settings entry all drive one flag.
+    public var isPresented = false
     public private(set) var isRefreshing = false
     public private(set) var isUpdatingAll = false
     public private(set) var lastRefreshedAt: Date?

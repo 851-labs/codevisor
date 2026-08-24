@@ -777,6 +777,7 @@ struct GeneralSettingsView: View {
     var body: some View {
         Form {
             Section {
+                UpdatesSettingsEntry()
                 Toggle(isOn: alphaUpdatesEnabled) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Alpha updates")

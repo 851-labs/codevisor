@@ -125,7 +125,7 @@ struct CodevisorApp: App {
         .windowIdealSize(.maximum)
         .commands {
             if let environment {
-                AppUpdateCommands(appUpdate: environment.appUpdate)
+                AppUpdateCommands(environment: environment)
                 FileCommands()
                 MachineCommands(machines: environment.machines)
                 TerminalCommands()
@@ -337,6 +337,10 @@ struct RootView: View {
                 await environment.cloud.bootstrap()
             }
         }
+        // The update center: the one surface for everything updatable,
+        // opened from the menu, the sidebar footer, or Settings. Also owns
+        // the fleet upkeep cadence.
+        .modifier(UpdateCenterPresentation())
         // codevisor://add-machine deeplinks, printed by `codevisor setup` on a
         // remote machine. Extracted into its own modifier: inlining the
         // alerts here pushed this already-large chain past the Swift type
@@ -368,19 +372,6 @@ struct RootView: View {
                 // Initialize the terminal runtime up front, in a clean context,
                 // so opening the terminal later can't re-enter its dispatch_once.
                 TerminalRuntime.prewarm()
-            }
-        }
-        .task {
-            // Fleet-wide upkeep, deliberately NOT keyed to the selected
-            // machine: every machine keeps its stream and release state
-            // current, so a release cut (or work finishing) on an unselected
-            // machine is still noticed.
-            guard !AppPreview.isRunning else { return }
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(5 * 60))
-                guard !Task.isCancelled else { return }
-                environment.machines.ensureBackgroundConnections()
-                await environment.machines.refreshServerUpdates()
             }
         }
     }
