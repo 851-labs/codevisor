@@ -152,8 +152,12 @@ struct CodevisorApp: App {
         }
         hasCompletedBootstrap = true
         // Fleet update sweep off the critical path: the Settings badge and
-        // Updates screen read what this populates.
-        Task { await environment.updateCenter.refresh() }
+        // Updates screen read what this populates. A pending update-all
+        // session (a run died mid-way) resumes first.
+        Task {
+            await environment.updateCenter.resumePendingSessionIfNeeded()
+            await environment.updateCenter.refresh()
+        }
     }
 
     /// iOS can preserve a half-open URLSession WebSocket across suspension or

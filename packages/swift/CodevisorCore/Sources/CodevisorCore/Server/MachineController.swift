@@ -92,7 +92,7 @@ public final class MachineController {
 
     public typealias ClientFactory = @MainActor (CodevisorMachine) -> any CodevisorServerClienting
 
-    private let store: any PersistenceStore
+    let store: any PersistenceStore
     /// Live apps keep bearer tokens in Keychain. Nil preserves the embedded
     /// token behavior for isolated previews/tests that do not have a device
     /// credential store.

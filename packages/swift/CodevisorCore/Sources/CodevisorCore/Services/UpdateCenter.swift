@@ -42,6 +42,11 @@ public struct UpdateComponent: Identifiable, Equatable, Sendable {
 public final class UpdateCenter {
     private let machines: MachineController
     private let appUpdate: AppUpdateModel
+    /// Durable home of the update-all session, so a run interrupted by the
+    /// app's own restart (its legitimate final step) or a crash resumes on
+    /// the next launch. Nil in previews/tests without persistence.
+    private let store: (any PersistenceStore)?
+    private static let sessionKey = "updateCenter.pendingSession"
 
     /// Whether the update surface (sheet/screen) is open. Lives here so the
     /// menu item, sidebar footer, and settings entry all drive one flag.
@@ -56,9 +61,16 @@ public final class UpdateCenter {
     /// lifecycle events take over).
     private var transientPhases: [String: UpdateComponent.Phase] = [:]
 
-    public init(machines: MachineController, appUpdate: AppUpdateModel) {
+    public init(
+        machines: MachineController,
+        appUpdate: AppUpdateModel,
+        store: (any PersistenceStore)? = nil
+    ) {
         self.machines = machines
         self.appUpdate = appUpdate
+        // Defaults to the machine controller's store, so production always
+        // persists without extra wiring; tests may inject their own.
+        self.store = store ?? machines.persistenceStore
     }
 
     // MARK: - Components
@@ -283,14 +295,61 @@ public final class UpdateCenter {
     /// — its update restarts this client, so everything it orchestrates must
     /// already be done.
     public func updateAll() async {
-        guard !isUpdatingAll else { return }
+        await run(components: components.filter(\.updateAvailable))
+    }
+
+    /// Installs the given components in order, persisting the remaining ids
+    /// before each step so an interrupted run can pick up where it stopped.
+    private func run(components snapshot: [UpdateComponent]) async {
+        guard !isUpdatingAll, !snapshot.isEmpty else { return }
         isUpdatingAll = true
         defer { isUpdatingAll = false }
-        let snapshot = components.filter(\.updateAvailable)
+        var remaining = Set(snapshot.map(\.id))
+        persistSession(remaining)
         for kind in [UpdateComponent.Kind.plugin, .harness, .server, .app] {
             for component in snapshot where component.kind == kind {
                 await update(component)
+                remaining.remove(component.id)
+                persistSession(remaining)
             }
         }
+        // An app component means Sparkle is restarting this client: leave
+        // the (empty) session for the relaunched app to consume — reopening
+        // this surface is the visible "it worked". Otherwise the run is
+        // simply over.
+        if !snapshot.contains(where: { $0.kind == .app }) {
+            clearSession()
+        }
+    }
+
+    /// Continues an update-all interrupted by the app's own restart (the
+    /// normal final step) or a crash: reopens the surface, refreshes, and
+    /// installs whatever is both still pending and still updatable.
+    public func resumePendingSessionIfNeeded() async {
+        guard let remaining = loadSession() else { return }
+        isPresented = true
+        await refresh(force: true)
+        let pending = components.filter { remaining.contains($0.id) && $0.updateAvailable }
+        if pending.isEmpty {
+            clearSession()
+        } else {
+            await run(components: pending)
+        }
+    }
+
+    private func persistSession(_ remaining: Set<String>) {
+        guard let store else { return }
+        try? store.saveData(JSONEncoder().encode(remaining.sorted()), forKey: Self.sessionKey)
+    }
+
+    private func loadSession() -> Set<String>? {
+        guard let store, let data = store.loadData(forKey: Self.sessionKey),
+            let ids = try? JSONDecoder().decode([String].self, from: data)
+        else { return nil }
+        return Set(ids)
+    }
+
+    private func clearSession() {
+        try? store?.removeData(forKey: Self.sessionKey)
     }
 }

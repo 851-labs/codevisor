@@ -43,6 +43,10 @@ public final class MachineConnection {
 }
 
 extension MachineController {
+    /// The controller's persistence store, shared with collaborators that
+    /// persist their own small records (the update center's session).
+    var persistenceStore: any PersistenceStore { store }
+
     /// The connection record for a machine, created on first touch.
     func connection(for machineId: String) -> MachineConnection {
         if let existing = connectionsById[machineId] { return existing }

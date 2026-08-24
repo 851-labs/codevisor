@@ -142,6 +142,88 @@ struct UpdateCenterTests {
         controller.stopEventSync()
     }
 
+    @Test("updateAll clears its session when no app restart is pending")
+    func sessionClearsWithoutAppRestart() async throws {
+        let remote = makeRemote("remote-a")
+        let fake = SyncFakeServerClient(projects: [], sessions: [])
+        fake.configureHarnesses([makeHarness(updateAvailable: true)])
+        let controller = try makeController(
+            fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],
+            remotes: [remote]
+        )
+        let store = InMemoryStore()
+        let center = UpdateCenter(
+            machines: controller,
+            appUpdate: AppUpdateModel(currentVersion: "1.0.0"),
+            store: store
+        )
+        await controller.refreshStatus(for: remote.id)
+        await center.refresh()
+
+        await center.updateAll()
+
+        #expect(store.loadData(forKey: "updateCenter.pendingSession") == nil)
+        controller.stopEventSync()
+    }
+
+    @Test("An app update leaves the session for the relaunched client")
+    func appUpdateLeavesSessionForRelaunch() async throws {
+        let controller = try makeController(
+            fakes: ["local": SyncFakeServerClient(projects: [], sessions: [])],
+            remotes: []
+        )
+        let store = InMemoryStore()
+        let appUpdate = AppUpdateModel(currentVersion: "1.0.0")
+        appUpdate.checkHandler = { _ in }
+        appUpdate.installHandler = { _ in }
+        appUpdate.reportAvailable(version: "2.0.0", releasePageURL: nil)
+        let center = UpdateCenter(machines: controller, appUpdate: appUpdate, store: store)
+
+        await center.updateAll()
+        // Sparkle is about to restart this client: the marker survives.
+        #expect(store.loadData(forKey: "updateCenter.pendingSession") != nil)
+
+        // The relaunched app consumes it: surface reopens, session clears.
+        let relaunched = UpdateCenter(
+            machines: controller,
+            appUpdate: AppUpdateModel(currentVersion: "2.0.0"),
+            store: store
+        )
+        await relaunched.resumePendingSessionIfNeeded()
+        #expect(relaunched.isPresented)
+        #expect(store.loadData(forKey: "updateCenter.pendingSession") == nil)
+        controller.stopEventSync()
+    }
+
+    @Test("A crashed run's session resumes what is still pending")
+    func resumesPendingSession() async throws {
+        let remote = makeRemote("remote-a")
+        let fake = SyncFakeServerClient(projects: [], sessions: [])
+        fake.configureHarnesses([makeHarness(updateAvailable: true)])
+        let controller = try makeController(
+            fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],
+            remotes: [remote]
+        )
+        let store = InMemoryStore()
+        try store.saveData(
+            JSONEncoder().encode(["harness:remote-a:claude-code"]),
+            forKey: "updateCenter.pendingSession"
+        )
+        let center = UpdateCenter(
+            machines: controller,
+            appUpdate: AppUpdateModel(currentVersion: "1.0.0"),
+            store: store
+        )
+        await controller.refreshStatus(for: remote.id)
+
+        await center.resumePendingSessionIfNeeded()
+
+        #expect(center.isPresented)
+        #expect(fake.operationLog.contains("harness.update:claude-code"))
+        #expect(store.loadData(forKey: "updateCenter.pendingSession") == nil)
+        controller.stopEventSync()
+    }
+
     @Test("Harness lifecycle changes re-read that machine's inventory")
     func lifecycleRefetch() async throws {
         let remote = makeRemote("remote-a")

@@ -19,6 +19,9 @@ struct UpdateCenterPresentation: ViewModifier {
                 // unselected machine is still noticed. One initial sweep
                 // populates the sidebar footer's count, then the cadence.
                 guard !AppPreview.isRunning else { return }
+                // A pending update-all session (the app update restarted
+                // this client, or a run died) reopens the surface first.
+                await environment.updateCenter.resumePendingSessionIfNeeded()
                 await environment.updateCenter.refresh()
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .seconds(5 * 60))
