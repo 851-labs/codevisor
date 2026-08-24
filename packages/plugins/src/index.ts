@@ -28,6 +28,13 @@ export {
   findExecutableOnPath,
   type FindExecutable
 } from "./plugin-requirements.js"
+export {
+  makePluginTransactionEngine,
+  type PluginTransactionDeps,
+  type PluginTransactionEngine,
+  type PluginTransactionPaths,
+  type PluginTransactionPhase
+} from "./plugin-transaction.js"
 export { clonePluginSource, parsePluginSource, type ParsedPluginSource } from "./plugin-source.js"
 export {
   makePluginInstaller,

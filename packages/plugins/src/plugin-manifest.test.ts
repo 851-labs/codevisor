@@ -146,6 +146,7 @@ describe("parsePluginManifest", () => {
       },
       "Pane x iconPath"
     )
+    expectInvalid({ ...validManifest, healthPath: "health" }, "Plugin healthPath")
   })
 
   it("rejects duplicate pane types", () => {

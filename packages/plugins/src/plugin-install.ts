@@ -7,7 +7,7 @@ import type {
 } from "@codevisor/api"
 import { cp, lstat, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { basename, isAbsolute, join, normalize, resolve, sep } from "node:path"
+import { basename, dirname, isAbsolute, join, normalize, resolve, sep } from "node:path"
 import { displayPluginCommand, pluginRunCommand, pluginSetupCommands } from "./plugin-command.js"
 import { parsePluginManifest, PLUGIN_MANIFEST_FILENAME } from "./plugin-manifest.js"
 import {
@@ -39,6 +39,7 @@ import type {
 } from "./plugin-supervisor.js"
 import { defaultSpawnArgv, defaultSpawnShell } from "./plugin-supervisor.js"
 import { PluginsError } from "./plugins-error.js"
+import { makePluginTransactionEngine } from "./plugin-transaction.js"
 
 /// The install pipeline behind `codevisor plugin install|link|remove` and the
 /// matching /v1/plugins routes, forked from packages/skills' staged-clone
@@ -67,6 +68,11 @@ export interface PluginInstallerDeps {
   readonly platform?: string
   readonly codevisorVersion?: string
   readonly receiptNow?: () => Date
+  /// Persistent state root (`<server-data>/plugin-data`). Transactional
+  /// updates snapshot the plugin's directory here before starting a candidate.
+  readonly pluginDataRoot: string
+  /// Starts the installed candidate and resolves only after readiness passes.
+  readonly verifyInstalled: (pluginId: string) => Promise<void>
   /// When present, install-command output streams into an attachable
   /// external terminal (sessionId `plugin-install:{id}`).
   readonly registerExternalTerminal?: RegisterPluginTerminal | undefined
@@ -81,6 +87,8 @@ export interface PluginInstaller {
   /// Installs (or updates a managed install of) the plugin the source
   /// provides and resolves its manifest.
   readonly importRemote: (request: ImportRemotePluginRequest) => Promise<PluginManifest>
+  /// Repairs or finishes any transaction journal left by a process crash.
+  readonly recover: () => Promise<void>
   /// Managed-marker-gated uninstall; linked plugins are never deleted.
   readonly remove: (pluginId: string) => Promise<void>
   /// Dev mode: symlink a local plugin directory into the plugins root.
@@ -99,6 +107,7 @@ const isPathSafe = (root: string, candidate: string): boolean => {
 
 interface StagedPlugin {
   readonly manifest: PluginManifest
+  readonly manifestRaw: string
   readonly root: string
   readonly env: NodeJS.ProcessEnv
   readonly resolvedCommit: string
@@ -122,6 +131,12 @@ export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller 
   const resolveEnv = deps.resolveEnv ?? (() => Promise.resolve(process.env))
   const platform = deps.platform ?? process.platform
   const receiptNow = deps.receiptNow ?? (() => new Date())
+  const transactions = makePluginTransactionEngine({
+    pluginDataRoot: deps.pluginDataRoot,
+    pluginsRoot: deps.pluginsRoot,
+    stop: deps.stop,
+    verifyInstalled: deps.verifyInstalled
+  })
 
   /// Stage a source into a fresh temp clone and read its manifest. The
   /// verbatim install/run commands surfaced from here are exactly what the
@@ -180,6 +195,7 @@ export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller 
         cleanup,
         env,
         manifest,
+        manifestRaw: raw,
         resolvedCommit,
         root,
         source: receiptSource(parsed)
@@ -257,73 +273,92 @@ export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller 
   }
 
   const importStaged = async (staged: StagedPlugin): Promise<void> => {
-    const destination = managedDirectory(staged.manifest.id)
-    const existing = installedWithId(staged.manifest.id)
-    if (existing !== undefined && resolve(existing.path) !== resolve(destination)) {
-      throw new PluginsError(
-        "conflict",
-        `Plugin ${staged.manifest.id} is already provided by ${existing.directoryName} (${existing.source})`
-      )
-    }
-    await assertPluginRequirements({
-      env: staged.env,
-      manifest: staged.manifest,
-      platform,
-      ...(deps.codevisorVersion === undefined ? {} : { codevisorVersion: deps.codevisorVersion }),
-      ...(deps.findExecutable === undefined ? {} : { findExecutable: deps.findExecutable })
-    })
-    const previousReceipt = readPluginInstallReceipt(destination)
-    const previousVersion = existing?.manifest.version
-    let destinationStats
-    try {
-      destinationStats = await lstat(destination)
-    } catch {
-      destinationStats = undefined
-    }
-    if (destinationStats !== undefined) {
-      // Only directories Codevisor provably created (a real directory —
-      // lstat, so links never qualify — carrying the managed marker) may be
-      // replaced; anything else — a linked dev plugin or a foreign
-      // directory — is the user's and stays untouched.
-      const managed =
-        destinationStats.isDirectory() &&
-        (await lstat(join(destination, MANAGED_PLUGIN_MARKER)).then(
-          () => true,
-          () => false
-        ))
-      if (!managed) {
+    await transactions.withLock(staged.manifest.id, async () => {
+      await transactions.recoverPlugin(staged.manifest.id)
+      const destination = managedDirectory(staged.manifest.id)
+      const existing = installedWithId(staged.manifest.id)
+      if (existing !== undefined && resolve(existing.path) !== resolve(destination)) {
         throw new PluginsError(
           "conflict",
-          `${destination} already exists and was not installed by Codevisor — remove or link it instead`
+          `Plugin ${staged.manifest.id} is already provided by ${existing.directoryName} (${existing.source})`
         )
       }
-      deps.stop(staged.manifest.id)
-      await rm(destination, { force: true, recursive: true })
-    }
-    await mkdir(deps.pluginsRoot, { recursive: true })
-    // The staged clone's .git directory is history, not plugin content.
-    await cp(staged.root, destination, {
-      filter: (source) => basename(source) !== ".git",
-      recursive: true
-    })
-    await writeFile(join(destination, MANAGED_PLUGIN_MARKER), MANAGED_PLUGIN_MARKER_CONTENT, "utf8")
-    try {
-      await runSetup(staged.manifest, destination, staged.env, previousVersion)
-      const timestamp = receiptNow().toISOString()
-      await writePluginInstallReceipt(destination, {
-        installedAt: previousReceipt?.installedAt ?? timestamp,
-        installedVersion: staged.manifest.version,
-        pluginId: staged.manifest.id,
-        resolvedCommit: staged.resolvedCommit,
-        schemaVersion: 1,
-        source: staged.source,
-        updatedAt: timestamp
+      await assertPluginRequirements({
+        env: staged.env,
+        manifest: staged.manifest,
+        platform,
+        ...(deps.codevisorVersion === undefined ? {} : { codevisorVersion: deps.codevisorVersion }),
+        ...(deps.findExecutable === undefined ? {} : { findExecutable: deps.findExecutable })
       })
-    } catch (cause) {
-      // A half-installed plugin must not linger as a managed install.
-      await rm(destination, { force: true, recursive: true })
-      throw cause
-    }
+      const previousReceipt = readPluginInstallReceipt(destination)
+      const previousVersion = existing?.manifest.version
+      let destinationStats
+      try {
+        destinationStats = await lstat(destination)
+      } catch {
+        destinationStats = undefined
+      }
+      if (destinationStats !== undefined) {
+        // Only directories Codevisor provably created (a real directory —
+        // lstat, so links never qualify — carrying the managed marker) may be
+        // replaced; anything else belongs to the user.
+        const managed =
+          destinationStats.isDirectory() &&
+          (await lstat(join(destination, MANAGED_PLUGIN_MARKER)).then(
+            () => true,
+            () => false
+          ))
+        if (!managed) {
+          throw new PluginsError(
+            "conflict",
+            `${destination} already exists and was not installed by Codevisor — remove or link it instead`
+          )
+        }
+      }
+
+      const transactionPaths = transactions.paths(staged.manifest.id)
+      await mkdir(dirname(transactionPaths.candidate), { recursive: true })
+      await rm(transactionPaths.candidate, { force: true, recursive: true })
+      try {
+        // Prepare under the plugins root so the final rename stays on one
+        // filesystem. The installed plugin remains live throughout setup.
+        await cp(staged.root, transactionPaths.candidate, {
+          filter: (source) => basename(source) !== ".git",
+          recursive: true
+        })
+        await writeFile(
+          join(transactionPaths.candidate, MANAGED_PLUGIN_MARKER),
+          MANAGED_PLUGIN_MARKER_CONTENT,
+          "utf8"
+        )
+        await runSetup(staged.manifest, transactionPaths.candidate, staged.env, previousVersion)
+        const preparedRaw = await readFile(
+          join(transactionPaths.candidate, PLUGIN_MANIFEST_FILENAME),
+          "utf8"
+        )
+        if (preparedRaw !== staged.manifestRaw) {
+          throw new PluginsError(
+            "invalid",
+            `Plugin ${staged.manifest.id} setup changed ${PLUGIN_MANIFEST_FILENAME}; setup must leave the reviewed manifest unchanged`
+          )
+        }
+        parsePluginManifest(preparedRaw)
+        const timestamp = receiptNow().toISOString()
+        await writePluginInstallReceipt(transactionPaths.candidate, {
+          installedAt: previousReceipt?.installedAt ?? timestamp,
+          installedVersion: staged.manifest.version,
+          pluginId: staged.manifest.id,
+          resolvedCommit: staged.resolvedCommit,
+          schemaVersion: 1,
+          source: staged.source,
+          updatedAt: timestamp
+        })
+        await transactions.apply(staged.manifest.id, destinationStats !== undefined)
+      } catch (cause) {
+        await rm(transactionPaths.candidate, { force: true, recursive: true })
+        throw cause
+      }
+    })
   }
 
   return {
@@ -369,6 +404,7 @@ export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller 
         await staged.cleanup()
       }
     },
+    recover: transactions.recover,
     link: async (request) => {
       if (!isAbsolute(request.path)) {
         throw new PluginsError("invalid", `Plugin link path must be absolute: ${request.path}`)
@@ -390,43 +426,49 @@ export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller 
         throw new PluginsError("invalid", `No ${PLUGIN_MANIFEST_FILENAME} found in ${request.path}`)
       }
       const manifest = parsePluginManifest(raw)
-      if (installedWithId(manifest.id) !== undefined) {
-        throw new PluginsError("conflict", `Plugin ${manifest.id} is already installed`)
-      }
-      const destination = managedDirectory(manifest.id)
-      try {
-        await lstat(destination)
-        throw new PluginsError(
-          "conflict",
-          `${destination} already exists — remove it before linking`
-        )
-      } catch (cause) {
-        if (cause instanceof PluginsError) {
-          throw cause
+      return transactions.withLock(manifest.id, async () => {
+        await transactions.recoverPlugin(manifest.id)
+        if (installedWithId(manifest.id) !== undefined) {
+          throw new PluginsError("conflict", `Plugin ${manifest.id} is already installed`)
         }
-        // ENOENT: the link path is free.
-      }
-      await mkdir(deps.pluginsRoot, { recursive: true })
-      await symlink(target, destination)
-      return manifest
+        const destination = managedDirectory(manifest.id)
+        try {
+          await lstat(destination)
+          throw new PluginsError(
+            "conflict",
+            `${destination} already exists — remove it before linking`
+          )
+        } catch (cause) {
+          if (cause instanceof PluginsError) {
+            throw cause
+          }
+          // ENOENT: the link path is free.
+        }
+        await mkdir(deps.pluginsRoot, { recursive: true })
+        await symlink(target, destination)
+        return manifest
+      })
     },
     remove: async (pluginId) => {
-      const plugin = installedWithId(pluginId)
-      if (plugin === undefined) {
-        throw new PluginsError("notFound", `Plugin not installed: ${pluginId}`)
-      }
-      // The iron rule (same as skills): uninstall deletes only directories
-      // Codevisor provably created. Links are the developer's — even one
-      // whose target happens to contain a marker.
-      const stats = await lstat(plugin.path)
-      if (stats.isSymbolicLink() || plugin.source !== "managed") {
-        throw new PluginsError(
-          "invalid",
-          `Plugin ${pluginId} is linked, not managed — remove the link from ${deps.pluginsRoot} yourself`
-        )
-      }
-      deps.stop(pluginId)
-      await rm(plugin.path, { force: true, recursive: true })
+      await transactions.withLock(pluginId, async () => {
+        await transactions.recoverPlugin(pluginId)
+        const plugin = installedWithId(pluginId)
+        if (plugin === undefined) {
+          throw new PluginsError("notFound", `Plugin not installed: ${pluginId}`)
+        }
+        // The iron rule (same as skills): uninstall deletes only directories
+        // Codevisor provably created. Links are the developer's — even one
+        // whose target happens to contain a marker.
+        const stats = await lstat(plugin.path)
+        if (stats.isSymbolicLink() || plugin.source !== "managed") {
+          throw new PluginsError(
+            "invalid",
+            `Plugin ${pluginId} is linked, not managed — remove the link from ${deps.pluginsRoot} yourself`
+          )
+        }
+        deps.stop(pluginId)
+        await rm(plugin.path, { force: true, recursive: true })
+      })
     }
   }
 }

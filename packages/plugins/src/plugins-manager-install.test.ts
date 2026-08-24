@@ -80,6 +80,24 @@ describe("manager install pipeline", () => {
     expect(linked.state).toBe("failed")
   })
 
+  it("rolls back a managed install that never becomes healthy", async () => {
+    const fixture = makeFixture(freshManifest)
+    const spawn = fakeSpawn({ listen: false })
+    const { manager, root } = makeManager({
+      clone: async (url, _ref, destination) => {
+        await cp(url, destination, { recursive: true })
+        return { resolvedCommit: "a".repeat(40) }
+      },
+      maxConsecutiveFailures: 1,
+      readyTimeoutMs: 200,
+      spawnShell: spawn.spawnShell
+    })
+    await expect(manager.importRemote({ source: fixture })).rejects.toThrow(
+      /did not start listening/
+    )
+    expect(existsSync(join(root, "owner.fresh"))).toBe(false)
+  })
+
   it("installs plugins for another platform without starting them", async () => {
     const fixture = makeFixture({ ...freshManifest, platforms: ["never-os"] })
     const { manager } = makeManager({ platform: "darwin" })

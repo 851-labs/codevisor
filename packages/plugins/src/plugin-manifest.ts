@@ -122,6 +122,9 @@ export const parsePluginManifest = (raw: string): PluginManifest => {
   if (manifest.iconPath !== undefined) {
     validateServerPath("Plugin iconPath", manifest.iconPath)
   }
+  if (manifest.healthPath !== undefined) {
+    validateServerPath("Plugin healthPath", manifest.healthPath)
+  }
   const seenPaneTypes = new Set<string>()
   for (const pane of manifest.panes) {
     if (seenPaneTypes.has(pane.type)) {

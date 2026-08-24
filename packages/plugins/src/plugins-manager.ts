@@ -48,6 +48,7 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
   const proxyTimeoutMs = config.proxyTimeoutMs ?? 30_000
   const toolTimeoutMs = config.toolTimeoutMs ?? 30_000
   const isLoopback = config.isLocalhost ?? defaultIsLocalhost
+  const pluginDataRoot = `${config.dataDir}/plugin-data`
   const tokens = makePaneTokenStore(config.now)
   const listeners = new Set<(event: PluginStateEvent) => void>()
   const installedListeners = new Set<() => void>()
@@ -64,24 +65,10 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
     // "plugin-data" (not "plugins") so per-plugin runtime state can never
     // collide with an installed-plugins root living in the same directory —
     // dev instances keep both directly under one flat data dir.
-    dataDir: `${config.dataDir}/plugin-data`,
+    dataDir: pluginDataRoot,
     onStateChange: (pluginId) => emitState(pluginId),
     onUnexpectedExit: (pluginId) => requestMaintenance(pluginId)
   })
-  const installer = makePluginInstaller({
-    pluginsRoot,
-    stop: (pluginId) => supervisor.stop(pluginId),
-    ...(config.clone === undefined ? {} : { clone: config.clone }),
-    ...(config.registerExternalTerminal === undefined
-      ? {}
-      : { registerExternalTerminal: config.registerExternalTerminal }),
-    ...(config.resolveEnv === undefined ? {} : { resolveEnv: config.resolveEnv }),
-    ...(config.spawnShell === undefined ? {} : { spawnShell: config.spawnShell }),
-    ...(config.spawnArgv === undefined ? {} : { spawnArgv: config.spawnArgv }),
-    ...(config.codevisorVersion === undefined ? {} : { codevisorVersion: config.codevisorVersion }),
-    platform
-  })
-
   /// A fresh scan per operation keeps "drop a folder in" installs live with
   /// no registration step; the scan is a handful of stats and manifest reads.
   const scan = (): PluginScan => {
@@ -94,6 +81,24 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
       )
     }
   }
+
+  const installer = makePluginInstaller({
+    pluginDataRoot,
+    pluginsRoot,
+    stop: (pluginId) => supervisor.stop(pluginId),
+    verifyInstalled: async (pluginId) => {
+      await supervisor.ensureRunning(findPluginOrFail(scan(), pluginId))
+    },
+    ...(config.clone === undefined ? {} : { clone: config.clone }),
+    ...(config.registerExternalTerminal === undefined
+      ? {}
+      : { registerExternalTerminal: config.registerExternalTerminal }),
+    ...(config.resolveEnv === undefined ? {} : { resolveEnv: config.resolveEnv }),
+    ...(config.spawnShell === undefined ? {} : { spawnShell: config.spawnShell }),
+    ...(config.spawnArgv === undefined ? {} : { spawnArgv: config.spawnArgv }),
+    ...(config.codevisorVersion === undefined ? {} : { codevisorVersion: config.codevisorVersion }),
+    platform
+  })
 
   const summarize = (plugin: InstalledPlugin): PluginSummary => ({
     id: plugin.id,
@@ -422,6 +427,7 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
       return summarize(plugin)
     },
     startAll: async () => {
+      await installer.recover()
       await Promise.all(scan().plugins.map(async (plugin) => maintain(plugin.id)))
     },
     subscribe: (listener) => {

@@ -87,6 +87,104 @@ describe("makePluginSupervisor", () => {
     expect(supervisor.state("owner.example")).toBe("failed")
   })
 
+  it("uses the manifest HTTP health path instead of accepting a TCP listener", async () => {
+    let server: Server | undefined
+    const paths: Array<string> = []
+    cleanups.push(() => server?.close())
+    const supervisor = makePluginSupervisor({
+      dataDir: makeDataDir(),
+      maxConsecutiveFailures: 1,
+      readyTimeoutMs: 350,
+      spawnShell: (_command, options) => {
+        server = createServer((request, response) => {
+          paths.push(request.url ?? "")
+          response.statusCode = 503
+          response.end("not ready")
+        })
+        server.listen(Number(options.env["PORT"]), "127.0.0.1")
+        return { kill: () => server?.close(), onExit: () => undefined, pid: 10 }
+      }
+    })
+    await expect(supervisor.ensureRunning(plugin({ healthPath: "/health/ready" }))).rejects.toThrow(
+      /did not start listening/
+    )
+    expect(paths.length).toBeGreaterThan(0)
+    expect(new Set(paths)).toEqual(new Set(["/health/ready"]))
+  })
+
+  it("accepts a successful HTTP health response", async () => {
+    let server: Server | undefined
+    cleanups.push(() => server?.close())
+    const supervisor = makePluginSupervisor({
+      dataDir: makeDataDir(),
+      spawnShell: (_command, options) => {
+        server = createServer((_request, response) => {
+          response.statusCode = 204
+          response.end()
+        })
+        server.listen(Number(options.env["PORT"]), "127.0.0.1")
+        return { kill: () => server?.close(), onExit: () => undefined, pid: 11 }
+      }
+    })
+    await expect(
+      supervisor.ensureRunning(plugin({ healthPath: "/health" }))
+    ).resolves.toBeGreaterThan(0)
+  })
+
+  it("keeps probing until an HTTP health endpoint becomes ready", async () => {
+    let server: Server | undefined
+    let probes = 0
+    cleanups.push(() => server?.close())
+    const supervisor = makePluginSupervisor({
+      dataDir: makeDataDir(),
+      readyTimeoutMs: 1_000,
+      spawnShell: (_command, options) => {
+        server = createServer((_request, response) => {
+          probes += 1
+          response.statusCode = probes === 1 ? 503 : 204
+          response.end()
+        })
+        server.listen(Number(options.env["PORT"]), "127.0.0.1")
+        return { kill: () => server?.close(), onExit: () => undefined, pid: 13 }
+      }
+    })
+    await expect(
+      supervisor.ensureRunning(plugin({ healthPath: "/health" }))
+    ).resolves.toBeGreaterThan(0)
+    expect(probes).toBe(2)
+  })
+
+  it("retries HTTP health connection errors until the readiness deadline", async () => {
+    const spawn = fakeSpawn({ listen: false })
+    const supervisor = makePluginSupervisor({
+      dataDir: makeDataDir(),
+      maxConsecutiveFailures: 1,
+      readyTimeoutMs: 250,
+      spawnShell: spawn.spawnShell
+    })
+    await expect(supervisor.ensureRunning(plugin({ healthPath: "/health" }))).rejects.toThrow(
+      /did not start listening/
+    )
+  })
+
+  it("times out an HTTP health endpoint that never answers", async () => {
+    let server: Server | undefined
+    cleanups.push(() => server?.close())
+    const supervisor = makePluginSupervisor({
+      dataDir: makeDataDir(),
+      maxConsecutiveFailures: 1,
+      readyTimeoutMs: 1_100,
+      spawnShell: (_command, options) => {
+        server = createServer(() => undefined)
+        server.listen(Number(options.env["PORT"]), "127.0.0.1")
+        return { kill: () => server?.close(), onExit: () => undefined, pid: 12 }
+      }
+    })
+    await expect(supervisor.ensureRunning(plugin({ healthPath: "/health" }))).rejects.toThrow(
+      /did not start listening/
+    )
+  })
+
   it("fails fast when the process exits before it is ready", async () => {
     const spawn = fakeSpawn({ listen: false })
     const supervisor = makePluginSupervisor({

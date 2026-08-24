@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process"
 import { existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs"
-import { cp, readFile } from "node:fs/promises"
+import { cp } from "node:fs/promises"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { makePluginInstaller, type PluginInstallerDeps } from "./plugin-install.js"
@@ -77,9 +77,11 @@ const makeInstaller = (
   const installer = makePluginInstaller({
     clone: copyClone,
     findExecutable: async (name) => `/usr/bin/${name}`,
+    pluginDataRoot: makeDir("codevisor-plugin-data-root-"),
     pluginsRoot: root,
     resolveEnv: async () => ({ PATH: "/usr/bin" }),
     stop: (pluginId) => stopped.push(pluginId),
+    verifyInstalled: async () => undefined,
     ...overrides
   })
   return { installer, root, stopped }
@@ -279,7 +281,9 @@ describe("importRemote", () => {
     expect(sessions).toEqual(["plugin-install:owner.example"])
     expect(spawn.calls).toHaveLength(1)
     expect(spawn.calls[0]?.command).toBe("bun install")
-    expect(spawn.calls[0]?.cwd).toBe(join(root, "owner.example"))
+    expect(spawn.calls[0]?.cwd).toBe(
+      join(root, ".codevisor-transactions", "owner.example.candidate")
+    )
     expect(spawn.calls[0]?.env["CODEVISOR_PLUGIN_ID"]).toBe("owner.example")
     expect(spawn.calls[0]?.env["CODEVISOR_PLUGIN_INSTALL_REASON"]).toBe("install")
     expect(spawn.calls[0]?.env["CODEVISOR_PLUGIN_VERSION"]).toBe("0.1.0")
@@ -313,32 +317,6 @@ describe("importRemote", () => {
       /setup command failed/
     )
     expect(exits).toEqual([undefined])
-  })
-
-  it("updates an existing managed install in place, stopping it first", async () => {
-    const fixture = makeFixture(exampleManifest)
-    const times = [new Date("2026-08-01T00:00:00Z"), new Date("2026-08-02T00:00:00Z")]
-    const { installer, root, stopped } = makeInstaller({
-      receiptNow: () => times.shift() as Date
-    })
-    await installer.importRemote({ source: fixture })
-    const originalReceipt = readPluginInstallReceipt(join(root, "owner.example"))
-    writeFileSync(join(root, "owner.example", "stale.txt"), "old")
-    writeFileSync(
-      join(fixture, "codevisor-plugin.json"),
-      JSON.stringify({ ...exampleManifest, version: "0.2.0" })
-    )
-    const updated = await installer.importRemote({ source: fixture })
-    expect(updated.version).toBe("0.2.0")
-    expect(stopped).toEqual(["owner.example"])
-    expect(existsSync(join(root, "owner.example", "stale.txt"))).toBe(false)
-    const manifest = await readFile(join(root, "owner.example", "codevisor-plugin.json"), "utf8")
-    expect(manifest).toContain("0.2.0")
-    expect(readPluginInstallReceipt(join(root, "owner.example"))).toMatchObject({
-      installedAt: originalReceipt?.installedAt,
-      installedVersion: "0.2.0",
-      updatedAt: "2026-08-02T00:00:00.000Z"
-    })
   })
 
   it("runs protocol v2 setup directly after deterministic preflights", async () => {
@@ -419,7 +397,12 @@ describe("importRemote", () => {
     const root = makeDir("codevisor-plugins-root-")
     // No injected clone/spawn/env: the default git clone and login-shell
     // install runner do the work end to end.
-    const installer = makePluginInstaller({ pluginsRoot: root, stop: () => undefined })
+    const installer = makePluginInstaller({
+      pluginDataRoot: makeDir("codevisor-plugin-data-root-"),
+      pluginsRoot: root,
+      stop: () => undefined,
+      verifyInstalled: async () => undefined
+    })
     const manifest = await installer.importRemote({ source: repo })
     expect(manifest.id).toBe("local.dev")
     expect(existsSync(join(root, "local.dev", "codevisor-plugin.json"))).toBe(true)

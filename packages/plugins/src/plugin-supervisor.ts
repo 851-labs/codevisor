@@ -1,6 +1,7 @@
 import type { PluginRuntimeState } from "@codevisor/api"
 import { spawn } from "node:child_process"
 import { mkdirSync } from "node:fs"
+import { request as httpRequest } from "node:http"
 import { connect, createServer } from "node:net"
 import { join } from "node:path"
 import type { InstalledPlugin } from "./plugin-store.js"
@@ -250,6 +251,33 @@ const tcpProbe = (port: number): Promise<boolean> =>
     socket.setTimeout(1_000, () => done(false))
   })
 
+const httpProbe = (port: number, path: string): Promise<boolean> =>
+  new Promise((resolve) => {
+    let settled = false
+    const done = (ready: boolean): void => {
+      if (settled) return
+      settled = true
+      resolve(ready)
+    }
+    const probe = httpRequest(
+      { host: "127.0.0.1", method: "GET", path, port, timeout: 1_000 },
+      (response) => {
+        response.resume()
+        done(
+          response.statusCode !== undefined &&
+            response.statusCode >= 200 &&
+            response.statusCode < 300
+        )
+      }
+    )
+    probe.once("error", () => done(false))
+    probe.once("timeout", () => {
+      probe.destroy()
+      done(false)
+    })
+    probe.end()
+  })
+
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupervisor => {
@@ -350,7 +378,12 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
       if (exitMessage !== undefined) {
         throw new PluginsError("invalid", `Plugin ${plugin.id} ${exitMessage}`)
       }
-      if (await tcpProbe(port)) {
+      const ready =
+        plugin.manifest.healthPath === undefined
+          ? await tcpProbe(port)
+          : await httpProbe(port, plugin.manifest.healthPath)
+      /* v8 ignore next -- success, retry, timeout, and connection-error outcomes are covered explicitly. */
+      if (ready) {
         current.port = port
         current.runningSince = now()
         setState(plugin.id, current, "running")
