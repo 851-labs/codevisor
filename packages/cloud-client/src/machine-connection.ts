@@ -8,47 +8,15 @@ import {
 import { acceptChannel, openJson, sealJson, type ChannelCipher } from "@codevisor/cloud-crypto"
 import type { ChannelHandler, IncomingChannel } from "./incoming-channel.js"
 import type { MachineCredentials } from "./login.js"
-
-/// Minimal WebSocket surface both `ws` (Node/Bun) and the browser API can be
-/// adapted to; injected so the connection logic is unit-testable.
-export interface CloudSocket {
-  send(data: string): void
-  close(code?: number, reason?: string): void
-  /// Immediately tears down the underlying transport. Node's `ws.terminate()`
-  /// is essential for half-open TCP connections where a graceful close can
-  /// wait forever; browser-style adapters may omit it and fall back to close.
-  terminate?: () => void
-  onopen: (() => void) | null
-  onmessage: ((data: string) => void) | null
-  onclose: ((code: number) => void) | null
-}
-
-export type SocketFactory = (url: string, headers: Record<string, string>) => CloudSocket
-
-export type MachineConnectionState =
-  | "connecting"
-  | "connected"
-  | "reconnecting"
-  | "stopped"
-  /// Fatal states — the hub told us not to come back with these credentials.
-  | "revoked"
-  | "unsupported-protocol"
-
-export type MachineDisconnectReason =
-  | { kind: "socket-closed"; code: number }
-  | { kind: "welcome-timeout" }
-  | { kind: "heartbeat-timeout" }
-  | { kind: "send-failed"; phase: "hello" | "heartbeat" }
-
-type CancelTimeout = () => void
-
-/// Exponential backoff with full jitter; exported for tests and reuse.
-export const reconnectDelayMs = (
-  attempt: number,
-  random: () => number,
-  baseMs = 500,
-  maxMs = 30_000
-): number => Math.floor(random() * Math.min(maxMs, baseMs * 2 ** Math.min(attempt, 10)))
+import {
+  reconnectDelayMs,
+  type CancelTimeout,
+  type CloudSocket,
+  type MachineConnectionState,
+  type MachineDisconnectReason,
+  type SocketFactory
+} from "./machine-socket.js"
+import type { PeerKeyPinStore } from "./peer-pins.js"
 
 export interface MachineConnectionOptions {
   credentials: MachineCredentials
@@ -59,6 +27,15 @@ export interface MachineConnectionOptions {
   channelHandlers: Record<string, ChannelHandler>
   onStateChange?: (state: MachineConnectionState) => void
   onDisconnect?: (reason: MachineDisconnectReason) => void
+  /// TOFU pin store for app-device keys. When provided, a channel open whose
+  /// `peerPublicKey` conflicts with the pinned key for its `peerDeviceId` is
+  /// refused ("rejected") — the hub is not trusted for key continuity. Keys
+  /// pin only after a successful open (proof the opener holds the matching
+  /// secret); opens without a device id (older hubs) proceed unpinned.
+  peerKeyPins?: PeerKeyPinStore
+  /// Fired on every refused open so integrators can log the substitution
+  /// attempt with enough detail to investigate.
+  onPeerKeyMismatch?: (info: { deviceId: string; pinned: string; presented: string }) => void
   scheduleReconnect?: (callback: () => void, delayMs: number) => void
   scheduleTimeout?: (callback: () => void, delayMs: number) => CancelTimeout
   welcomeTimeoutMs?: number
@@ -179,7 +156,7 @@ export class CloudMachineConnection {
         return
       }
       case "relay":
-        this.#onRelay(socket, frame.peerId, frame.frame, frame.peerPublicKey)
+        this.#onRelay(socket, frame.peerId, frame.frame, frame.peerPublicKey, frame.peerDeviceId)
         return
     }
   }
@@ -275,13 +252,30 @@ export class CloudMachineConnection {
     socket: CloudSocket,
     peerId: string,
     frame: RelayFrame,
-    peerPublicKey: string | undefined
+    peerPublicKey: string | undefined,
+    peerDeviceId: string | undefined
   ): void {
     const key = `${peerId}/${frame.channelId}`
     if (frame.t === "open") {
       if (peerPublicKey === undefined || this.#channels.has(key)) {
         this.#refuse(socket, peerId, frame.channelId, "protocol-error")
         return
+      }
+      // TOFU: a key that conflicts with the pin for this app device means the
+      // hub (or someone controlling it) substituted the opener's identity —
+      // refuse before any key agreement happens.
+      const pins = this.options.peerKeyPins
+      if (pins !== undefined && peerDeviceId !== undefined) {
+        const pinned = pins.get(peerDeviceId)
+        if (pinned !== undefined && pinned !== peerPublicKey) {
+          this.options.onPeerKeyMismatch?.({
+            deviceId: peerDeviceId,
+            pinned,
+            presented: peerPublicKey
+          })
+          this.#refuse(socket, peerId, frame.channelId, "rejected")
+          return
+        }
       }
       let cipher: ChannelCipher
       let payload: { channelType?: unknown; params?: unknown }
@@ -307,6 +301,12 @@ export class CloudMachineConnection {
       if (handler === undefined) {
         this.#refuse(socket, peerId, frame.channelId, "unsupported")
         return
+      }
+      // Pin only now: the sealed payload decrypted, so the opener provably
+      // holds the secret matching the presented key — a spoofed key can never
+      // get itself pinned by failing crypto.
+      if (pins !== undefined && peerDeviceId !== undefined) {
+        pins.set(peerDeviceId, peerPublicKey)
       }
       const live: LiveChannel = {
         cipher,

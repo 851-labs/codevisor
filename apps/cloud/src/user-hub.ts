@@ -250,8 +250,13 @@ export class UserHub extends DurableObject<CloudEnv> {
       t: "relay",
       peerId: attachment.connectionId,
       frame: frame.frame,
+      // Opens carry the opener's identity (key + stable device id) so the
+      // machine can complete key agreement and TOFU-pin the key per device.
       ...(frame.frame.t === "open" && attachment.publicKey !== undefined
         ? { peerPublicKey: attachment.publicKey }
+        : {}),
+      ...(frame.frame.t === "open" && attachment.deviceId !== undefined
+        ? { peerDeviceId: attachment.deviceId }
         : {})
     }
     if (!this.#send(machineSocket, encodeCloudFrame(relayed))) {

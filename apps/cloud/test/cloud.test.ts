@@ -118,10 +118,12 @@ interface AppSetup {
   socket: WebSocket
   reader: SocketReader<HubToApp>
   welcome: Extract<HubToApp, { t: "welcome" }>
+  deviceId: string
 }
 
 const connectApp = async (token: string): Promise<AppSetup> => {
   const keys = generateDeviceKeyPair()
+  const deviceId = crypto.randomUUID()
   const socket = await connectSocket(authed(token))
   const reader = new SocketReader(socket, decodeHubToApp)
   socket.send(
@@ -129,7 +131,7 @@ const connectApp = async (token: string): Promise<AppSetup> => {
       t: "hello",
       protocol: CLOUD_PROTOCOL_VERSION,
       device: {
-        deviceId: crypto.randomUUID(),
+        deviceId,
         kind: "app",
         name: "Test App",
         os: "macOS",
@@ -139,7 +141,7 @@ const connectApp = async (token: string): Promise<AppSetup> => {
   )
   const welcome = (await reader.next()) as AppSetup["welcome"]
   expect(welcome.t).toBe("welcome")
-  return { keys, socket, reader, welcome }
+  return { keys, socket, reader, welcome, deviceId }
 }
 
 // -- Discovery & pages -------------------------------------------------------
@@ -368,6 +370,9 @@ describe("hub relay", () => {
     const opened = (await machine.reader.next()) as Extract<HubToMachine, { t: "relay" }>
     expect(opened.t).toBe("relay")
     expect(opened.peerPublicKey).toBe(app.keys.publicKey)
+    // The opener's stable device id rides along so the machine can TOFU-pin
+    // the key under it.
+    expect(opened.peerDeviceId).toBe(app.deviceId)
     const openFrame = opened.frame as Extract<typeof opened.frame, { t: "open" }>
     // Machine authenticates the opener and decrypts the channel intent.
     const responder = acceptChannel(

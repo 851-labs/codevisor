@@ -230,6 +230,13 @@ export const HubRelayFromApp = Schema.Struct({
   /// The opener app device's static public key, attached by the hub to `open`
   /// relays so the machine can complete key agreement and (TOFU-)pin the app.
   peerPublicKey: Schema.optional(Schema.String),
+  /// The opener app device's stable self-assigned device id, attached by the
+  /// hub to `open` relays alongside `peerPublicKey`. This is the identity the
+  /// machine pins `peerPublicKey` under: a key change for a known device id is
+  /// refused, so a misbehaving hub cannot swap keys on an established pairing.
+  /// (The hub can still mint fresh device ids — TOFU trusts first sight — but
+  /// it can never impersonate a device the machine has already seen.)
+  peerDeviceId: Schema.optional(Schema.String),
   frame: RelayFrame
 })
 

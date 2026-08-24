@@ -10,11 +10,13 @@ import { generateDeviceKeyPair, openChannel, openJson, sealJson } from "@codevis
 import { describe, expect, it, vi } from "vitest"
 import {
   CloudMachineConnection,
+  makePeerKeyPinStore,
   reconnectDelayMs,
   type CloudSocket,
   type IncomingChannel,
   type MachineDisconnectReason,
-  type MachineConnectionState
+  type MachineConnectionState,
+  type PeerKeyPinStore
 } from "./index.js"
 
 class FakeSocket implements CloudSocket {
@@ -81,6 +83,8 @@ const harness = (
   overrides: {
     handlers?: Record<string, (channel: IncomingChannel) => void>
     device?: { name: string; os?: string; appVersion?: string }
+    peerKeyPins?: PeerKeyPinStore
+    onPeerKeyMismatch?: (info: { deviceId: string; pinned: string; presented: string }) => void
   } = {}
 ): Harness => {
   const sockets: FakeSocket[] = []
@@ -102,6 +106,10 @@ const harness = (
       return socket
     },
     channelHandlers: overrides.handlers ?? { echo: (channel) => channels.push(channel) },
+    ...(overrides.peerKeyPins === undefined ? {} : { peerKeyPins: overrides.peerKeyPins }),
+    ...(overrides.onPeerKeyMismatch === undefined
+      ? {}
+      : { onPeerKeyMismatch: overrides.onPeerKeyMismatch }),
     onStateChange: (state) => states.push(state),
     onDisconnect: (reason) => disconnects.push(reason),
     scheduleReconnect: (callback, delayMs) => reconnects.push({ callback, delayMs }),
@@ -161,14 +169,16 @@ const openEcho = (
   socket: FakeSocket,
   peerId: string,
   channelId: string,
-  params: unknown = { hello: true }
+  params: unknown = { hello: true },
+  identity: { appKeys?: ReturnType<typeof generateDeviceKeyPair>; peerDeviceId?: string } = {}
 ) => {
-  const appKeys = generateDeviceKeyPair()
+  const appKeys = identity.appKeys ?? generateDeviceKeyPair()
   const opened = openChannel(appKeys.secretKey, machineKeys.publicKey)
   socket.receive({
     t: "relay",
     peerId,
     peerPublicKey: appKeys.publicKey,
+    ...(identity.peerDeviceId === undefined ? {} : { peerDeviceId: identity.peerDeviceId }),
     frame: {
       t: "open",
       channelId,
@@ -862,5 +872,102 @@ describe("reconnectDelayMs", () => {
     expect(reconnectDelayMs(20, () => 1)).toBe(30_000)
     expect(reconnectDelayMs(2, () => 0)).toBe(0)
     expect(reconnectDelayMs(1, () => 0.25, 1000, 1500)).toBe(375)
+  })
+})
+
+describe("peer key pinning", () => {
+  const lastClose = (socket: FakeSocket): Extract<RelayFrame, { t: "close" }> => {
+    const relay = socket.sent.at(-1) as Extract<MachineToHub, { t: "relay" }>
+    return relay.frame as Extract<RelayFrame, { t: "close" }>
+  }
+
+  it("pins a key on first successful open and refuses a changed key", () => {
+    const persisted: Record<string, string>[] = []
+    const pins = makePeerKeyPinStore({ persist: (peers) => persisted.push({ ...peers }) })
+    const mismatches: { deviceId: string; pinned: string; presented: string }[] = []
+    const h = harness({ peerKeyPins: pins, onPeerKeyMismatch: (info) => mismatches.push(info) })
+    const socket = connect(h)
+
+    const first = openEcho(socket, "peer-1", "ch-1", { hello: true }, { peerDeviceId: "app-1" })
+    expect(h.channels).toHaveLength(1)
+    expect(pins.get("app-1")).toBe(first.appKeys.publicKey)
+    expect(persisted).toEqual([{ "app-1": first.appKeys.publicKey }])
+
+    // The same device re-opening with its pinned key stays welcome.
+    openEcho(
+      socket,
+      "peer-1",
+      "ch-2",
+      { hello: true },
+      { appKeys: first.appKeys, peerDeviceId: "app-1" }
+    )
+    expect(h.channels).toHaveLength(2)
+
+    // A different key under the pinned device id is a substitution: refused
+    // before any key agreement, and reported.
+    const attacker = generateDeviceKeyPair()
+    openEcho(
+      socket,
+      "peer-2",
+      "ch-3",
+      { hello: true },
+      { appKeys: attacker, peerDeviceId: "app-1" }
+    )
+    expect(h.channels).toHaveLength(2)
+    expect(lastClose(socket)).toMatchObject({ t: "close", channelId: "ch-3", reason: "rejected" })
+    expect(mismatches).toEqual([
+      { deviceId: "app-1", pinned: first.appKeys.publicKey, presented: attacker.publicKey }
+    ])
+    expect(pins.get("app-1")).toBe(first.appKeys.publicKey)
+  })
+
+  it("refuses silently when no mismatch listener is registered", () => {
+    const pins = makePeerKeyPinStore({ initial: { "app-1": "pinned-key" } })
+    const h = harness({ peerKeyPins: pins })
+    const socket = connect(h)
+    openEcho(socket, "peer-1", "ch-1", { hello: true }, { peerDeviceId: "app-1" })
+    expect(h.channels).toHaveLength(0)
+    expect(lastClose(socket)).toMatchObject({ t: "close", reason: "rejected" })
+  })
+
+  it("never pins a key from an open that fails crypto", () => {
+    const pins = makePeerKeyPinStore({})
+    const h = harness({ peerKeyPins: pins })
+    const socket = connect(h)
+
+    // The presented public key does not match the sealing secret: the sealed
+    // payload cannot decrypt, so nothing gets pinned for the device.
+    const sealer = generateDeviceKeyPair()
+    const presented = generateDeviceKeyPair()
+    const opened = openChannel(sealer.secretKey, machineKeys.publicKey)
+    socket.receive({
+      t: "relay",
+      peerId: "peer-1",
+      peerPublicKey: presented.publicKey,
+      peerDeviceId: "app-1",
+      frame: {
+        t: "open",
+        channelId: "ch-1",
+        seq: 0,
+        ephemeralKey: opened.ephemeralPublicKey,
+        sealed: sealJson(opened.cipher, "ch-1", "opener-to-responder", 0, { channelType: "echo" })
+      }
+    })
+    expect(lastClose(socket)).toMatchObject({ t: "close", reason: "crypto-error" })
+    expect(pins.get("app-1")).toBeUndefined()
+
+    // The legitimate device can still establish its pin afterwards.
+    const legit = openEcho(socket, "peer-1", "ch-2", { hello: true }, { peerDeviceId: "app-1" })
+    expect(h.channels).toHaveLength(1)
+    expect(pins.get("app-1")).toBe(legit.appKeys.publicKey)
+  })
+
+  it("opens without a device id (older hubs) proceed unpinned", () => {
+    const pins = makePeerKeyPinStore({ initial: { "app-1": "pinned-key" } })
+    const h = harness({ peerKeyPins: pins })
+    const socket = connect(h)
+    openEcho(socket, "peer-1", "ch-1")
+    expect(h.channels).toHaveLength(1)
+    expect(pins.get("app-1")).toBe("pinned-key")
   })
 })

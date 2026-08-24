@@ -9,17 +9,22 @@ import {
 import {
   BYTE_STREAM_CHANNEL_TYPE,
   CloudMachineConnection,
+  makePeerKeyPinStore,
+  parsePeerKeyPins,
   provisionMachine,
+  serializePeerKeyPins,
   type ChannelHandler,
   type CloudSocket,
   type MachineConnectionState,
-  type MachineCredentials
+  type MachineCredentials,
+  type PeerKeyPinStore
 } from "@codevisor/cloud-client"
 import { byteStreamChannelHandler } from "./cloud-byte-stream.js"
 import type { TerminalManagerService } from "@codevisor/terminal"
 import { Effect } from "effect"
 import { WebSocket } from "ws"
 import { readFile, rm, writeFile } from "node:fs/promises"
+import { dirname, join } from "node:path"
 import {
   appendBodyChunk,
   chunkFrames,
@@ -315,14 +320,46 @@ const validateOrReprovision = async (
   return (await devProvision(options)) ?? credentials
 }
 
+/// Where TOFU pins for app-device keys live, beside cloud.json. Deleting an
+/// entry (or the file) is the manual recovery path for a stale pin.
+const peerPinsPath = (credentialsPath: string): string =>
+  join(dirname(credentialsPath), "cloud-peers.json")
+
+/// Loads the persisted app-key pins into an in-memory store that writes back
+/// (best-effort) whenever a new device is pinned.
+const loadPeerKeyPins = async (options: CloudBridgeOptions): Promise<PeerKeyPinStore> => {
+  const path = peerPinsPath(options.credentialsPath)
+  const initial = parsePeerKeyPins(await readFile(path, "utf8").catch(() => ""))
+  return makePeerKeyPinStore({
+    initial,
+    persist: (peers) => {
+      writeFile(path, serializePeerKeyPins(peers), { mode: 0o600 }).catch((cause: unknown) => {
+        options.log(
+          `Cloud: failed to persist app key pins: ${cause instanceof Error ? cause.message : String(cause)}`
+        )
+      })
+    }
+  })
+}
+
 /// Constructs and starts the relay connection for known-good credentials.
 const makeBridge = (
   options: CloudBridgeOptions,
   credentials: MachineCredentials,
-  managedBy: CloudBridgeManagedBy
+  managedBy: CloudBridgeManagedBy,
+  peerKeyPins: PeerKeyPinStore
 ): CloudBridge => {
   const connection = new CloudMachineConnection({
     credentials,
+    peerKeyPins,
+    onPeerKeyMismatch: ({ deviceId, pinned, presented }) => {
+      options.log(
+        `Cloud: REFUSED channel from app device ${deviceId}: its key changed ` +
+          `(pinned ${pinned}, presented ${presented}). If this is expected ` +
+          `(e.g. the app was reinstalled without its keychain), remove the ` +
+          `device's entry from ${peerPinsPath(options.credentialsPath)} and retry.`
+      )
+    },
     device: {
       name: options.machineName === "" ? hostname() : options.machineName,
       os: process.platform,
@@ -374,11 +411,11 @@ export const startCloudBridge = async (
   const stored = await readCredentials(options.credentialsPath)
   if (stored !== undefined) {
     const credentials = await validateOrReprovision(options, stored.credentials)
-    return makeBridge(options, credentials, stored.managedBy)
+    return makeBridge(options, credentials, stored.managedBy, await loadPeerKeyPins(options))
   }
   const provisioned = await devProvision(options)
   if (provisioned === undefined) return undefined
-  return makeBridge(options, provisioned, "external")
+  return makeBridge(options, provisioned, "external", await loadPeerKeyPins(options))
 }
 
 /// Registers this machine on the signed-in user's account and starts the
@@ -402,12 +439,14 @@ export const connectCloudBridge = async (
     JSON.stringify({ ...credentials, managedBy: "app" }, null, 2),
     { mode: 0o600 }
   )
-  return makeBridge(options, credentials, "app")
+  return makeBridge(options, credentials, "app", await loadPeerKeyPins(options))
 }
 
 /// Forgets this machine's stored cloud credential (the caller stops the
 /// bridge). Revoking the api key server-side is the app's job — it holds the
-/// account session; this machine only holds its own credential.
+/// account session; this machine only holds its own credential. App key pins
+/// go with it: a disconnected machine starts its next pairing fresh.
 export const removeCloudCredentials = async (credentialsPath: string): Promise<void> => {
   await rm(credentialsPath, { force: true })
+  await rm(peerPinsPath(credentialsPath), { force: true })
 }
