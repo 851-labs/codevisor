@@ -1095,12 +1095,15 @@ public final class ProjectListModel {
         _ event: ServerEventEnvelope,
         serverId: String
     ) async -> ServerSessionEventApplication {
-        guard serverId == selectedServerId else { return .requiresFullRefresh }
+        // Deliberately NOT gated on `selectedServerId`: every machine's rows
+        // live in the same serverId-keyed repositories, and a background
+        // machine's live events must keep its sessions (and their attention
+        // state) current while another machine is on screen.
         guard
             let update = await ServerNavigationSnapshotBuilder.sessionUpdate(
                 from: event,
                 serverId: serverId
-            ), serverId == selectedServerId
+            )
         else {
             return .requiresFullRefresh
         }

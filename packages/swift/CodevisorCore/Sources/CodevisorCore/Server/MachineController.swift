@@ -102,14 +102,13 @@ public final class MachineController {
     let workspaceSync: WorkspaceSyncModel?
     private let localServer: (any LocalServerControlling)?
     private let clientFactory: ClientFactory
-    private let requestGate: ServerRequestGate
+    let requestGate: ServerRequestGate
     private let key = "machines"
     /// How long to wait between reachability probes while the remote server
     /// restarts into its updated version. Injectable so tests run fast.
     let updatePollInterval: Duration
     let updatePollAttempts: Int
     @ObservationIgnored private var credentialReadFailures: Set<String> = []
-    @ObservationIgnored var eventSyncTask: Task<Void, Never>?
     @ObservationIgnored var pendingRefreshTask: Task<Void, Never>?
     @ObservationIgnored private var preparationMachineId: String?
     @ObservationIgnored private var preparationToken: UUID?
@@ -461,6 +460,9 @@ public final class MachineController {
         // A fresh sign-in with machines but no explicit choice: adopt one so
         // the user isn't left on the local placeholder.
         autoSelectPreferredMachineIfNeeded()
+        // Newly arrived cloud machines get their background streams even
+        // when the selection did not move.
+        ensureBackgroundConnections()
     }
 
     /// Cloud entries only exist while signed in; when the account signs out
@@ -702,6 +704,9 @@ public final class MachineController {
             client: client,
             presentation: .catchUp
         )
+        // With the selected machine ready, bring every other machine's
+        // stream up so activity elsewhere stays visible.
+        ensureBackgroundConnections()
     }
 
     public func retrySelectedMachine() async {
@@ -754,34 +759,6 @@ public final class MachineController {
                     "Status probe for \(id, privacy: .public) failed: \(String(describing: error), privacy: .public)")
             }
         }
-    }
-
-    func beginWaiting(for machineId: String, reason: ServerWaitingReason) {
-        if let navigationSyncMachineId, navigationSyncMachineId != machineId {
-            navigationSyncTask?.cancel()
-            self.navigationSyncMachineId = nil
-            navigationSyncToken = nil
-            navigationSyncTask = nil
-        }
-        if machineId == selectedMachineId {
-            stopEventSync()
-        }
-        let connection = connection(for: machineId)
-        connection.availability = .waiting(reason)
-        connection.navigationSyncState = .catchingUp
-        requestGate.beginWaiting(for: machineId)
-    }
-
-    func markReady(for machineId: String) {
-        connection(for: machineId).availability = .ready
-        requestGate.markReady(for: machineId)
-    }
-
-    func markFailed(for machineId: String, message: String) {
-        let connection = connection(for: machineId)
-        connection.availability = .failed(message)
-        connection.navigationSyncState = .stale(message)
-        requestGate.markFailed(for: machineId, message: message)
     }
 
     public static func normalizedRemoteURL(from input: String) throws -> URL {

@@ -62,6 +62,8 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
     }
 
     var listSessionCallCount: Int { lock.withLock { _listSessionCallCount } }
+    /// How many event-stream subscriptions are currently attached.
+    var eventStreamSubscriberCount: Int { lock.withLock { continuations.count } }
     var workspaceSnapshotCallCount: Int { lock.withLock { _workspaceSnapshotCallCount } }
     var sessions: [ServerSession] { lock.withLock { _sessions } }
     var workspaces: [ServerWorkspace] { lock.withLock { _workspaces } }

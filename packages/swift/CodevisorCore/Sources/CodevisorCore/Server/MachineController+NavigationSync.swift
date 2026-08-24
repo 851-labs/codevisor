@@ -33,29 +33,33 @@ extension MachineController {
         client: any CodevisorServerClienting,
         since initialCursor: Int
     ) {
-        eventSyncTask?.cancel()
-        eventSyncTask = Task { [weak self] in
+        let connection = connection(for: serverId)
+        connection.eventSyncTask?.cancel()
+        connection.eventSyncTask = Task { [weak self] in
             var cursor = max(0, initialCursor)
-            while !Task.isCancelled {
-                do {
-                    for try await event in client.shellEventStream(
-                        since: cursor,
-                        handledKinds: Self.shellSyncEventKinds
-                    ) {
-                        guard let self, !Task.isCancelled else { return }
-                        cursor = max(cursor, event.id)
-                        await self.handleSyncEvent(
-                            event,
-                            serverId: serverId,
-                            client: client
-                        )
-                    }
-                    return
-                } catch {
-                    Log.machines.error(
-                        "Event sync for \(serverId, privacy: .public) failed; resubscribing: \(String(describing: error), privacy: .public)"
-                    )
+            do {
+                for try await event in client.shellEventStream(
+                    since: cursor,
+                    handledKinds: Self.shellSyncEventKinds
+                ) {
                     guard let self, !Task.isCancelled else { return }
+                    cursor = max(cursor, event.id)
+                    connection.reconnectFailures = 0
+                    await self.handleSyncEvent(
+                        event,
+                        serverId: serverId,
+                        client: client
+                    )
+                }
+                guard !Task.isCancelled else { return }
+                connection.eventSyncTask = nil
+            } catch {
+                Log.machines.error(
+                    "Event sync for \(serverId, privacy: .public) failed; resubscribing: \(String(describing: error), privacy: .public)"
+                )
+                guard let self, !Task.isCancelled else { return }
+                connection.eventSyncTask = nil
+                if serverId == self.selectedMachine.id {
                     // Re-enter the same serialized snapshot + replay path used
                     // by foreground recovery and manual refresh. Returning is
                     // important: reconciliation installs the replacement
@@ -65,17 +69,33 @@ extension MachineController {
                         client: client,
                         presentation: .catchUp
                     )
-                    return
+                } else {
+                    // A background machine reconnects on its own with backoff;
+                    // its full snapshot happens when it is next selected.
+                    connection.reconnectFailures += 1
+                    let delay = min(60, 1 << min(connection.reconnectFailures, 6))
+                    try? await Task.sleep(for: .seconds(delay))
+                    guard !Task.isCancelled else { return }
+                    await self.connectMachine(serverId)
                 }
             }
         }
     }
 
+    /// Stops every machine's event stream (app teardown and tests).
     public func stopEventSync() {
-        eventSyncTask?.cancel()
-        eventSyncTask = nil
+        for connection in connectionsById.values {
+            connection.eventSyncTask?.cancel()
+            connection.eventSyncTask = nil
+        }
         pendingRefreshTask?.cancel()
         pendingRefreshTask = nil
+    }
+
+    /// Stops one machine's event stream, leaving every other machine's alive.
+    func stopEventSync(for machineId: String) {
+        connectionsById[machineId]?.eventSyncTask?.cancel()
+        connectionsById[machineId]?.eventSyncTask = nil
     }
 
     private func handleSyncEvent(
@@ -83,9 +103,14 @@ extension MachineController {
         serverId: String,
         client: any CodevisorServerClienting
     ) async {
-        guard serverId == selectedMachine.id else { return }
+        // Events from EVERY machine apply: the row stores are serverId-keyed,
+        // so a background machine's sessions stay current while another
+        // machine is on screen. Only the full-snapshot refresh below stays
+        // selected-scoped — a background machine's snapshot happens when it
+        // is next selected.
+        let isSelected = serverId == selectedMachine.id
         DiagnosticsClient.shared.noteSyncEvent(
-            machineIsLocal: selectedMachine.isLocal,
+            machineIsLocal: serverId == CodevisorMachine.local.id,
             kind: event.kind
         )
         switch event.kind {
@@ -123,12 +148,12 @@ extension MachineController {
             case .requiresFullRefresh:
                 // Older servers may emit only an event marker. Retain a
                 // compatibility path, but keep it off the ordinary hot path.
-                scheduleNavigationRefresh()
+                if isSelected { scheduleNavigationRefresh() }
             }
         case "workspace.updated", "workspace.pane.updated", "workspace.pane.deleted":
             await workspaceSync?.refreshFromServer(serverId: serverId, client: client)
         case "project.created", "project.updated", "worktree.created":
-            scheduleNavigationRefresh()
+            if isSelected { scheduleNavigationRefresh() }
         case "harness.lifecycle.updated":
             // Update detection / install progress changed a harness — bump
             // the catalog revision so mounted pickers and settings refetch.
@@ -229,7 +254,7 @@ extension MachineController {
         if presentation == .catchUp {
             connection(for: serverId).navigationSyncState = .catchingUp
         }
-        stopEventSync()
+        stopEventSync(for: serverId)
 
         let cursor: Int
         do {
