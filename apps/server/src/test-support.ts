@@ -824,6 +824,48 @@ export const pluginsStub = (
     }
     return { ...pluginSummary, source: "managed" }
   },
+  listUpdates: async () => {
+    calls.push(["listUpdates"])
+    return {
+      updates: [
+        {
+          checkedAt: "2026-08-23T00:00:00.000Z",
+          installedVersion: "0.1.0",
+          pluginId: "owner.example",
+          registryVersion: "0.2.0",
+          state: "available"
+        }
+      ]
+    }
+  },
+  prepareUpdate: async (pluginId) => {
+    calls.push(["prepareUpdate", pluginId])
+    return {
+      candidate: {
+        panes: pluginSummary.panes,
+        runCommand: "node server.js",
+        setupCommands: ["npm ci"],
+        version: "0.2.0"
+      },
+      current: {
+        panes: pluginSummary.panes,
+        runCommand: "bun run start",
+        setupCommands: ["bun install"],
+        version: "0.1.0"
+      },
+      expiresAt: "2026-08-23T00:15:00.000Z",
+      name: "Example",
+      paneChanges: { added: [], changed: [], removed: [] },
+      planId: "plan-1",
+      pluginId,
+      resolvedCommit: "b".repeat(40),
+      toolChanges: { added: [], changed: [], removed: [] }
+    }
+  },
+  applyUpdate: async (pluginId, planId) => {
+    calls.push(["applyUpdate", pluginId, planId])
+    return { ...pluginSummary, source: "managed", version: "0.2.0" }
+  },
   fetchIcon: async (pluginId, paneType) => {
     calls.push(["fetchIcon", pluginId, paneType])
     return { contentType: "image/png", data: new Uint8Array([1, 2, 3]) }

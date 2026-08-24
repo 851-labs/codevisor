@@ -1,6 +1,7 @@
 import type { PluginSummary, WorkspacePane } from "@codevisor/api"
 import { filterPluginRegistryIndex } from "@codevisor/plugins"
 import {
+  ApplyPluginUpdateRequest as ApplyPluginUpdateRequestSchema,
   DiscoverRemotePluginRequest as DiscoverRemotePluginRequestSchema,
   ImportRemotePluginRequest as ImportRemotePluginRequestSchema,
   InvokePluginToolRequest as InvokePluginToolRequestSchema,
@@ -130,6 +131,11 @@ export const routePlugins = async (
     return true
   }
 
+  if (url.pathname === "/v1/plugins/updates" && request.method === "GET") {
+    writeJson(response, 200, await manager.listUpdates())
+    return true
+  }
+
   if (url.pathname === "/v1/plugins/discover-remote" && request.method === "POST") {
     writeJson(
       response,
@@ -226,6 +232,21 @@ export const routePlugins = async (
     // not reload a healthy webview unless the user explicitly restarts it.
     await appendAndPublish(services.db, fanout, "plugin.updated", restarted.id, restarted)
     writeJson(response, 200, restarted)
+    return true
+  }
+
+  const prepareUpdateId = matchRoute(url.pathname, "/v1/plugins/:pluginId/update/prepare")
+  if (prepareUpdateId !== undefined && request.method === "POST") {
+    writeJson(response, 201, await manager.prepareUpdate(prepareUpdateId))
+    return true
+  }
+
+  const applyUpdateId = matchRoute(url.pathname, "/v1/plugins/:pluginId/update/apply")
+  if (applyUpdateId !== undefined && request.method === "POST") {
+    const payload = await readSchema(request, ApplyPluginUpdateRequestSchema)
+    const updated = await manager.applyUpdate(applyUpdateId, payload.planId)
+    await appendAndPublish(services.db, fanout, "plugin.updated", updated.id, updated)
+    writeJson(response, 200, updated)
     return true
   }
 

@@ -20,6 +20,7 @@ import {
   type PluginScan
 } from "./plugin-store.js"
 import { makePluginSupervisor, type PluginSupervisorConfig } from "./plugin-supervisor.js"
+import { makePluginUpdates } from "./plugin-updates.js"
 import type {
   PluginsManager,
   PluginsManagerConfig,
@@ -98,6 +99,18 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
     ...(config.spawnArgv === undefined ? {} : { spawnArgv: config.spawnArgv }),
     ...(config.codevisorVersion === undefined ? {} : { codevisorVersion: config.codevisorVersion }),
     platform
+  })
+  const updates = makePluginUpdates({
+    installer,
+    listInstalled: () => scanPlugins(pluginsRoot).plugins,
+    platform,
+    ...(config.codevisorVersion === undefined ? {} : { codevisorVersion: config.codevisorVersion }),
+    ...(config.createUpdatePlanId === undefined ? {} : { createPlanId: config.createUpdatePlanId }),
+    ...(config.fetchPluginRegistry === undefined
+      ? {}
+      : { fetchRegistry: config.fetchPluginRegistry }),
+    ...(config.now === undefined ? {} : { now: config.now }),
+    ...(config.updatePlanTtlMs === undefined ? {} : { planTtlMs: config.updatePlanTtlMs })
   })
 
   const summarize = (plugin: InstalledPlugin): PluginSummary => ({
@@ -261,6 +274,12 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
     },
     importRemote: async (request) => {
       const manifest = await installer.importRemote(request)
+      return summarizeInstalled(manifest.id)
+    },
+    listUpdates: updates.list,
+    prepareUpdate: updates.prepare,
+    applyUpdate: async (pluginId, planId) => {
+      const manifest = await updates.apply(pluginId, planId)
       return summarizeInstalled(manifest.id)
     },
     link: async (request) => {

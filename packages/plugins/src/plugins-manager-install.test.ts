@@ -68,6 +68,51 @@ describe("manager install pipeline", () => {
     expect(existsSync(join(root, "owner.fresh"))).toBe(false)
   })
 
+  it("checks, prepares, and applies a registry update through the facade", async () => {
+    const fixture = makeFixture({ ...freshManifest, version: "1.0.0" })
+    const commit = "b".repeat(40)
+    const { manager } = makeManager({
+      clone: async (_url, ref, destination) => {
+        await cp(fixture, destination, { recursive: true })
+        return { resolvedCommit: ref ?? "a".repeat(40) }
+      },
+      createUpdatePlanId: () => "manager-plan",
+      fetchPluginRegistry: async () => ({
+        entries: [
+          {
+            commit,
+            id: "owner.fresh",
+            name: "Fresh",
+            panes: freshManifest.panes,
+            protocolVersion: 1,
+            pushedAt: "2026-08-23T00:00:00.000Z",
+            repo: "owner/fresh",
+            stars: 1,
+            version: "2.0.0"
+          }
+        ],
+        generatedAt: "2026-08-23T00:00:00.000Z",
+        rejected: []
+      }),
+      updatePlanTtlMs: 60_000
+    })
+    await manager.importRemote({ source: "owner/fresh" })
+    writeFileSync(
+      join(fixture, "codevisor-plugin.json"),
+      JSON.stringify({ ...freshManifest, version: "2.0.0" })
+    )
+
+    expect(
+      (await manager.listUpdates()).updates.find((item) => item.pluginId === "owner.fresh")
+    ).toMatchObject({ pluginId: "owner.fresh", state: "available" })
+    const plan = await manager.prepareUpdate("owner.fresh")
+    expect(plan).toMatchObject({ planId: "manager-plan", resolvedCommit: commit })
+    await expect(manager.applyUpdate("owner.fresh", plan.planId)).resolves.toMatchObject({
+      id: "owner.fresh",
+      version: "2.0.0"
+    })
+  })
+
   it("installs successfully even when the plugin immediately fails to start", async () => {
     const fixture = makeFixture(freshManifest)
     const spawn = fakeSpawn({ listen: false })

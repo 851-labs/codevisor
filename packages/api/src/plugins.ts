@@ -308,6 +308,72 @@ export const PluginRegistryIndex = Schema.Struct({
 })
 export type PluginRegistryIndex = typeof PluginRegistryIndex.Type
 
+/// Registry-update state for an installed plugin. These are deliberately
+/// exhaustive so clients never infer eligibility from missing fields.
+export const PluginUpdateState = Schema.Literals([
+  "current",
+  "available",
+  "pinned",
+  "incompatible",
+  "sourceUnknown",
+  "checkFailed"
+])
+export type PluginUpdateState = typeof PluginUpdateState.Type
+
+export const PluginUpdateStatus = Schema.Struct({
+  pluginId: Schema.String,
+  installedVersion: Schema.String,
+  state: PluginUpdateState,
+  checkedAt: Schema.String,
+  registryVersion: Schema.optional(Schema.String),
+  /// Human-readable explanation for states that need action or context.
+  reason: Schema.optional(Schema.String)
+})
+export type PluginUpdateStatus = typeof PluginUpdateStatus.Type
+
+export const PluginUpdatesResponse = Schema.Struct({
+  updates: Schema.Array(PluginUpdateStatus)
+})
+export type PluginUpdatesResponse = typeof PluginUpdatesResponse.Type
+
+/// The commands and capabilities on one side of an update review. Commands
+/// are display-safe renderings of the exact manifest values staged in the
+/// plan; the staged directory remains the execution authority.
+export const PluginUpdateReview = Schema.Struct({
+  version: Schema.String,
+  setupCommands: Schema.Array(Schema.String),
+  runCommand: Schema.String,
+  panes: Schema.Array(PluginPaneDescriptor),
+  tools: Schema.optional(Schema.Array(PluginToolDescriptor)),
+  requirements: Schema.optional(PluginRequirements)
+})
+export type PluginUpdateReview = typeof PluginUpdateReview.Type
+
+export const PluginNamedChanges = Schema.Struct({
+  added: Schema.Array(Schema.String),
+  removed: Schema.Array(Schema.String),
+  changed: Schema.Array(Schema.String)
+})
+export type PluginNamedChanges = typeof PluginNamedChanges.Type
+
+export const PluginUpdatePlan = Schema.Struct({
+  planId: Schema.String,
+  pluginId: Schema.String,
+  name: Schema.String,
+  resolvedCommit: Schema.String,
+  expiresAt: Schema.String,
+  current: PluginUpdateReview,
+  candidate: PluginUpdateReview,
+  paneChanges: PluginNamedChanges,
+  toolChanges: PluginNamedChanges
+})
+export type PluginUpdatePlan = typeof PluginUpdatePlan.Type
+
+export const ApplyPluginUpdateRequest = Schema.Struct({
+  planId: Schema.String
+})
+export type ApplyPluginUpdateRequest = typeof ApplyPluginUpdateRequest.Type
+
 /// Invoke one plugin-declared agent tool. `args` should match the tool's
 /// declared inputSchema — the server passes them through verbatim and the
 /// plugin validates. The response body is whatever the tool returns.

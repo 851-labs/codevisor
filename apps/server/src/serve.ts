@@ -764,6 +764,9 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
       })
     )
     const skills = initializeOptionalServerFeature("Skills", () => makeSkillsManager({ agents }))
+    const pluginRegistryClient = initializeOptionalServerFeature("Plugin registry", () =>
+      makePluginRegistryClient({ baseUrl: resolvePluginRegistryUrl(process.env) })
+    )
     const plugins = initializeOptionalServerFeature("Plugins", () =>
       makePluginsManager({
         ...(version === undefined ? {} : { codevisorVersion: version }),
@@ -773,18 +776,16 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
         // (sessionId `plugin:{id}`) so clients can offer "Show Output".
         registerExternalTerminal: (config, process) =>
           terminal.registerExternalTerminal(config, process),
-        resolveEnv: () => resolveShellEnv()
+        resolveEnv: () => resolveShellEnv(),
+        ...(pluginRegistryClient === undefined
+          ? {}
+          : { fetchPluginRegistry: pluginRegistryClient.fetchIndex })
       })
     )
     // Registry browsing only makes sense where the install pipeline exists,
     // so the read-through cache over the hosted index follows the manager's
     // availability. Env overrides (or the dev cloud) rewire the base URL.
-    const pluginRegistry =
-      plugins === undefined
-        ? undefined
-        : initializeOptionalServerFeature("Plugin registry", () =>
-            makePluginRegistryClient({ baseUrl: resolvePluginRegistryUrl(process.env) })
-          )
+    const pluginRegistry = plugins === undefined ? undefined : pluginRegistryClient
     // Keep the plugin-authoring skill in every harness's skills directory in
     // step with feature availability, so agents can author plugins without
     // rediscovering the contract. Fire-and-forget: skill sync must never

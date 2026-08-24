@@ -6,7 +6,10 @@ import type {
   PluginListResponse,
   PluginPaneTokenRequest,
   PluginPaneTokenResponse,
-  PluginSummary
+  PluginRegistryIndex,
+  PluginSummary,
+  PluginUpdatePlan,
+  PluginUpdatesResponse
 } from "@codevisor/api"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import type { Socket } from "node:net"
@@ -43,6 +46,10 @@ export interface PluginsManagerConfig extends Omit<
   ) => Promise<ClonePluginSourceResult>
   /// Version used by protocol v2 compatibility checks.
   readonly codevisorVersion?: string
+  /// Registry fetch used for update checks and exact prepared plans.
+  readonly fetchPluginRegistry?: () => Promise<PluginRegistryIndex>
+  readonly createUpdatePlanId?: () => string
+  readonly updatePlanTtlMs?: number
 }
 
 /// Runtime state transition for one plugin, shaped for the server's event
@@ -92,6 +99,9 @@ export interface PluginsManager {
   /// Installs (or updates a managed install of) the plugin the source
   /// provides, running its manifest install command.
   readonly importRemote: (request: ImportRemotePluginRequest) => Promise<PluginSummary>
+  readonly listUpdates: () => Promise<PluginUpdatesResponse>
+  readonly prepareUpdate: (pluginId: string) => Promise<PluginUpdatePlan>
+  readonly applyUpdate: (pluginId: string, planId: string) => Promise<PluginSummary>
   /// Dev mode: symlink a local plugin directory into the plugins root.
   readonly link: (request: LinkPluginRequest) => Promise<PluginSummary>
   /// Managed-marker-gated uninstall (stops the process first); linked

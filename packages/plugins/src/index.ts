@@ -41,6 +41,13 @@ export {
   type PluginInstaller,
   type PluginInstallerDeps
 } from "./plugin-install.js"
+export type { PreparedPluginUpdate, PreparePluginUpdateRequest } from "./plugin-install-types.js"
+export {
+  makePluginUpdates,
+  PLUGIN_UPDATE_PLAN_TTL_MS,
+  type PluginUpdates,
+  type PluginUpdatesDeps
+} from "./plugin-updates.js"
 export { PANE_TOKEN_QUERY_PARAM } from "./plugin-pane-auth.js"
 export {
   MAX_PLUGIN_ICON_BYTES,
