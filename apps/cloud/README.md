@@ -92,14 +92,14 @@ trusting a server.
 ## Deploys (hosted instance)
 
 `.github/workflows/deploy-cloud.yml` deploys continuously from `main`
-(path-filtered): typecheck + tests → D1 migrations → gradual rollout to
-`cloud.codevisor.dev` (`wrangler versions`: 10% canary, 10-minute soak, then
-100%). A deploy still restarts each hub and drops its WebSockets — Durable
-Object sockets cannot be drained — but the rollout spreads those drops across
-cohorts instead of hitting every user at once; clients auto-reconnect and
-terminal sessions resume via seq replay. Releases that add a Durable Object
-migration must use `workflow_dispatch` with `full_deploy` (all at once:
-`versions upload` cannot ship DO migrations).
+(path-filtered): typecheck + tests → D1 migrations → `wrangler deploy` to
+`cloud.codevisor.dev` → health check. A deploy restarts each hub and drops
+its WebSockets — Durable Object sockets cannot be drained — but clients ride
+that out on their own: they reconnect with jittered backoff and resume their
+sessions inside the hub's grace window, with frames buffered meanwhile
+replayed in order. (An earlier staged canary rollout was removed: session
+resume made the global reconnect blip invisible, and the orchestration wasn't
+worth its complexity.)
 
 Schema changes must be **additive-only** (old code briefly runs against the
 new schema during a deploy). `UserHub`'s internal SQLite migrations live in
