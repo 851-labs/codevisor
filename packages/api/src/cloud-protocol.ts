@@ -370,10 +370,14 @@ export type HubToMachine = typeof HubToMachine.Type
 
 /// Decrypted content of an open envelope's payload. `params` is
 /// channel-type-specific; terminal channels use TerminalChannelParams to
-/// reattach durable sessions.
+/// reattach durable sessions. `compress: true` negotiates prefix-framed
+/// payloads: every data plaintext in both directions starts with a framing
+/// byte (0 = raw, 1 = raw-DEFLATE body), letting the responder compress
+/// compressible bodies. Invisible to the hub, like everything else here.
 export const ChannelOpenPayload = Schema.Struct({
   channelType: Schema.String,
-  params: Schema.optional(Schema.Unknown)
+  params: Schema.optional(Schema.Unknown),
+  compress: Schema.optional(Schema.Boolean)
 })
 export type ChannelOpenPayload = typeof ChannelOpenPayload.Type
 

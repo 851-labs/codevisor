@@ -10,6 +10,7 @@ import {
   type RelayFrameHeader
 } from "@codevisor/api"
 import { generateDeviceKeyPair, openChannel, openJson, sealJson } from "@codevisor/cloud-crypto"
+import { deflateRawSync, inflateRawSync } from "node:zlib"
 import { describe, expect, it, vi } from "vitest"
 import {
   CloudMachineConnection,
@@ -133,6 +134,8 @@ const harness = (
     peerKeyPins?: PeerKeyPinStore
     onPeerKeyMismatch?: (info: { deviceId: string; pinned: string; presented: string }) => void
     relayCoalesceMs?: number
+    compressPayload?: (bytes: Uint8Array) => Uint8Array | undefined
+    decompressPayload?: (bytes: Uint8Array) => Uint8Array
   } = {}
 ): Harness => {
   const sockets: FakeSocket[] = []
@@ -161,6 +164,12 @@ const harness = (
     ...(overrides.relayCoalesceMs === undefined
       ? {}
       : { relayCoalesceMs: overrides.relayCoalesceMs }),
+    ...(overrides.compressPayload === undefined
+      ? {}
+      : { compressPayload: overrides.compressPayload }),
+    ...(overrides.decompressPayload === undefined
+      ? {}
+      : { decompressPayload: overrides.decompressPayload }),
     onStateChange: (state) => states.push(state),
     onDisconnect: (reason) => disconnects.push(reason),
     scheduleReconnect: (callback, delayMs) => reconnects.push({ callback, delayMs }),
@@ -221,7 +230,11 @@ const openEcho = (
   peerId: string,
   channelId: string,
   params: unknown = { hello: true },
-  identity: { appKeys?: ReturnType<typeof generateDeviceKeyPair>; peerDeviceId?: string } = {}
+  identity: {
+    appKeys?: ReturnType<typeof generateDeviceKeyPair>
+    peerDeviceId?: string
+    compress?: boolean
+  } = {}
 ) => {
   const appKeys = identity.appKeys ?? generateDeviceKeyPair()
   const opened = openChannel(appKeys.secretKey, machineKeys.publicKey)
@@ -232,7 +245,11 @@ const openEcho = (
       ...(identity.peerDeviceId === undefined ? {} : { peerDeviceId: identity.peerDeviceId }),
       frame: { t: "open", channelId, seq: 0, ephemeralKey: opened.ephemeralPublicKey }
     },
-    sealJson(opened.cipher, channelId, "opener-to-responder", 0, { channelType: "echo", params })
+    sealJson(opened.cipher, channelId, "opener-to-responder", 0, {
+      channelType: "echo",
+      params,
+      ...(identity.compress === true ? { compress: true } : {})
+    })
   )
   return { appKeys, opened }
 }
@@ -830,6 +847,116 @@ describe("relay coalescing", () => {
     // Even a queued flush callback firing late must not resurrect the frames.
     flushTimer.invoke()
     expect(socket.relayMessages).toHaveLength(0)
+  })
+})
+
+describe("negotiated compression", () => {
+  const framed = (prefix: number, body: Uint8Array): Uint8Array => {
+    const plaintext = new Uint8Array(body.byteLength + 1)
+    plaintext[0] = prefix
+    plaintext.set(body, 1)
+    return plaintext
+  }
+  const compressingHarness = () =>
+    harness({
+      compressPayload: (bytes) =>
+        bytes.byteLength > 64 ? new Uint8Array(deflateRawSync(bytes)) : undefined,
+      decompressPayload: (bytes) => new Uint8Array(inflateRawSync(bytes))
+    })
+
+  it("frames payloads in both directions and deflates large bodies", () => {
+    const h = compressingHarness()
+    const socket = connect(h)
+    const { opened } = openEcho(socket, "peer-1", "ch-z", { hello: true }, { compress: true })
+    const channel = h.channels[0]!
+    const received: unknown[] = []
+    channel.onData = (value) => received.push(value)
+
+    // Inbound RAW-framed and DEFLATE-framed payloads both decode.
+    socket.receiveRelay(
+      { peerId: "peer-1", frame: { t: "data", channelId: "ch-z", seq: 1 } },
+      opened.cipher.seal(
+        "ch-z",
+        "opener-to-responder",
+        1,
+        framed(0, new TextEncoder().encode(JSON.stringify({ input: "raw" })))
+      )
+    )
+    socket.receiveRelay(
+      { peerId: "peer-1", frame: { t: "data", channelId: "ch-z", seq: 2 } },
+      opened.cipher.seal(
+        "ch-z",
+        "opener-to-responder",
+        2,
+        framed(1, new Uint8Array(deflateRawSync(JSON.stringify({ input: "deflated" }))))
+      )
+    )
+    expect(received).toEqual([{ input: "raw" }, { input: "deflated" }])
+
+    // Outbound: a large repetitive body goes out DEFLATE-framed and smaller;
+    // a small one stays RAW.
+    channel.send({ output: "x".repeat(4096) })
+    channel.send({ output: "tiny" })
+    const [big, small] = socket.sentRelay
+    const bigPlain = opened.cipher.open("ch-z", "responder-to-opener", 0, big!.payload)
+    expect(bigPlain[0]).toBe(1)
+    expect(big!.payload.byteLength).toBeLessThan(1024)
+    expect(JSON.parse(inflateRawSync(bigPlain.subarray(1)).toString())).toEqual({
+      output: "x".repeat(4096)
+    })
+    const smallPlain = opened.cipher.open("ch-z", "responder-to-opener", 1, small!.payload)
+    expect(smallPlain[0]).toBe(0)
+    expect(JSON.parse(new TextDecoder().decode(smallPlain.subarray(1)))).toEqual({
+      output: "tiny"
+    })
+  })
+
+  it("honours the framing without a compressor and kills bad framing", () => {
+    // No compressor wired: outbound stays RAW-framed; inbound DEFLATE frames
+    // cannot be inflated and abort the channel like any undecodable payload.
+    const h = harness()
+    const socket = connect(h)
+    const { opened } = openEcho(socket, "peer-1", "ch-z", { hello: true }, { compress: true })
+    const channel = h.channels[0]!
+    const closes: string[] = []
+    channel.onClosed = (reason) => closes.push(reason)
+    channel.send({ output: "plain" })
+    const sent = opened.cipher.open("ch-z", "responder-to-opener", 0, socket.sentRelay[0]!.payload)
+    expect(sent[0]).toBe(0)
+
+    socket.receiveRelay(
+      { peerId: "peer-1", frame: { t: "data", channelId: "ch-z", seq: 1 } },
+      opened.cipher.seal(
+        "ch-z",
+        "opener-to-responder",
+        1,
+        framed(1, new Uint8Array(deflateRawSync("{}")))
+      )
+    )
+    expect(closes).toEqual(["crypto-error"])
+
+    // Unknown framing byte and empty plaintexts are refused the same way.
+    const again = compressingHarness()
+    const socket2 = connect(again)
+    const second = openEcho(socket2, "peer-1", "ch-y", { hello: true }, { compress: true })
+    const closes2: string[] = []
+    again.channels[0]!.onClosed = (reason) => closes2.push(reason)
+    socket2.receiveRelay(
+      { peerId: "peer-1", frame: { t: "data", channelId: "ch-y", seq: 1 } },
+      second.opened.cipher.seal("ch-y", "opener-to-responder", 1, framed(7, new Uint8Array(0)))
+    )
+    expect(closes2).toEqual(["crypto-error"])
+
+    const third = compressingHarness()
+    const socket3 = connect(third)
+    const gone = openEcho(socket3, "peer-1", "ch-x", { hello: true }, { compress: true })
+    const closes3: string[] = []
+    third.channels[0]!.onClosed = (reason) => closes3.push(reason)
+    socket3.receiveRelay(
+      { peerId: "peer-1", frame: { t: "data", channelId: "ch-x", seq: 1 } },
+      gone.opened.cipher.seal("ch-x", "opener-to-responder", 1, new Uint8Array(0))
+    )
+    expect(closes3).toEqual(["crypto-error"])
   })
 })
 

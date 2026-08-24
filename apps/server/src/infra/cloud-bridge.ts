@@ -25,6 +25,7 @@ import { Effect } from "effect"
 import { WebSocket } from "ws"
 import { readFile, rm, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
+import { deflateRawSync, inflateRawSync } from "node:zlib"
 import {
   appendBodyChunk,
   chunkFrames,
@@ -156,6 +157,20 @@ const socketFactory = (url: string, headers: Record<string, string>): CloudSocke
 /// and each envelope no longer has to be its own hub message (billed and
 /// radio-waking). 5ms is far below any relay round trip.
 const RELAY_COALESCE_MS = 5
+
+/// Below this, DEFLATE overhead eats the win (and the CPU isn't worth it).
+const COMPRESS_MIN_BYTES = 512
+
+/// Raw DEFLATE for channels whose opener negotiated compressible framing:
+/// terminal output and API/event JSON routinely shrink 3-10x. Skipped when
+/// it would not actually shrink the payload (already-compressed data).
+const compressPayload = (bytes: Uint8Array): Uint8Array | undefined => {
+  if (bytes.byteLength < COMPRESS_MIN_BYTES) return undefined
+  const deflated = deflateRawSync(bytes)
+  return deflated.byteLength < bytes.byteLength ? new Uint8Array(deflated) : undefined
+}
+
+const decompressPayload = (bytes: Uint8Array): Uint8Array => new Uint8Array(inflateRawSync(bytes))
 
 /// Serves one app-opened terminal channel: reattach via (terminalId,
 /// sinceSeq), stream frames out, apply client frames in. Channel payloads:
@@ -366,6 +381,8 @@ const makeBridge = (
     credentials,
     peerKeyPins,
     relayCoalesceMs: RELAY_COALESCE_MS,
+    compressPayload,
+    decompressPayload,
     onPeerKeyMismatch: ({ deviceId, pinned, presented }) => {
       options.log(
         `Cloud: REFUSED channel from app device ${deviceId}: its key changed ` +

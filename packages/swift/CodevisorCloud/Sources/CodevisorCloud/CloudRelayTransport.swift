@@ -116,6 +116,7 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
             machinePublicKey: endpoint.machinePublicKey,
             channelType: "http",
             params: params,
+            compressed: true,
             onMessage: { data in
                 if let frame = try? decoder.decode(MachineFrame.self, from: data) {
                     continuation.yield(frame)
@@ -271,6 +272,7 @@ final class CloudRelayWebSocketConnection: ServerWebSocketConnecting, @unchecked
                 machinePublicKey: endpoint.machinePublicKey,
                 channelType: "ws",
                 params: .object(["path": .string(path)]),
+                compressed: true,
                 onMessage: { data in
                     guard let frame = try? decoder.decode(WsFrame.self, from: data) else {
                         continuation.finish(throwing: CloudRelayTransportError.invalidFrame)

@@ -257,6 +257,8 @@ final class ScriptedRelayMachine: @unchecked Sendable {
         var openPayload: Data?
         var messages: [Data] = []
         var closeReason: CloudChannelCloseReason?
+        /// The opener negotiated prefix-framed (compressible) payloads.
+        var compressedFraming = false
 
         init(cipher: CloudChannelCipher) {
             self.cipher = cipher
@@ -305,6 +307,12 @@ final class ScriptedRelayMachine: @unchecked Sendable {
             channel.openPayload = try cipher.open(
                 payload, channelId: channelId, direction: .openerToResponder, seq: seq
             )
+            struct CompressProbe: Decodable { var compress: Bool? }
+            if let openPayload = channel.openPayload,
+                let probe = try? JSONDecoder().decode(CompressProbe.self, from: openPayload)
+            {
+                channel.compressedFraming = probe.compress == true
+            }
             lock.withLock { channels[channelId] = channel }
             return channel.openPayload
         case let .data(channelId, seq):
@@ -312,9 +320,15 @@ final class ScriptedRelayMachine: @unchecked Sendable {
                 throw CloudChannelCryptoError.openFailed
             }
             channel.nextInboundSeq += 1
-            let plaintext = try channel.cipher.open(
+            var plaintext = try channel.cipher.open(
                 payload, channelId: channelId, direction: .openerToResponder, seq: seq
             )
+            if channel.compressedFraming {
+                guard plaintext.first == CloudDeflate.framingRaw else {
+                    throw CloudChannelCryptoError.openFailed
+                }
+                plaintext = Data(plaintext.dropFirst())
+            }
             channel.messages.append(plaintext)
             return plaintext
         case let .credit(channelId, seq, _):
@@ -333,16 +347,34 @@ final class ScriptedRelayMachine: @unchecked Sendable {
         }
     }
 
-    /// Seals a machine→app data frame (header + ciphertext payload).
+    /// Seals a machine→app data frame (header + ciphertext payload). On
+    /// channels that negotiated compressible framing the body is RAW-framed.
     func sealData(
         channelId: String,
         payload: Data
     ) throws -> (frame: CloudRelayFrame, payload: Data) {
         guard let channel = channel(channelId) else { throw CloudChannelCryptoError.openFailed }
+        let body = channel.compressedFraming ? Data([CloudDeflate.framingRaw]) + payload : payload
         let seq = channel.nextOutboundSeq
         channel.nextOutboundSeq += 1
         let box = try channel.cipher.seal(
-            payload, channelId: channelId, direction: .responderToOpener, seq: seq
+            body, channelId: channelId, direction: .responderToOpener, seq: seq
+        )
+        return (frame: .data(channelId: channelId, seq: seq), payload: box)
+    }
+
+    /// Seals a machine→app data frame whose body is DEFLATE-framed — only
+    /// valid on channels that negotiated compressible framing.
+    func sealDeflated(
+        channelId: String,
+        payload: Data
+    ) throws -> (frame: CloudRelayFrame, payload: Data) {
+        guard let channel = channel(channelId) else { throw CloudChannelCryptoError.openFailed }
+        let body = try Data([CloudDeflate.framingDeflate]) + CloudDeflate.deflate(payload)
+        let seq = channel.nextOutboundSeq
+        channel.nextOutboundSeq += 1
+        let box = try channel.cipher.seal(
+            body, channelId: channelId, direction: .responderToOpener, seq: seq
         )
         return (frame: .data(channelId: channelId, seq: seq), payload: box)
     }

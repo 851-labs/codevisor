@@ -157,12 +157,15 @@ extension CloudHubConnection {
             abortChannel(frame.channelId, reason: .protocolError)
         case let .data(channelId, seq):
             do {
-                let plaintext = try state.cipher.open(
+                var plaintext = try state.cipher.open(
                     payload,
                     channelId: channelId,
                     direction: .responderToOpener,
                     seq: seq
                 )
+                if state.compressed {
+                    plaintext = try Self.unframe(plaintext)
+                }
                 let sealedBytes = payload.count
                 if state.flowControlled {
                     guard sealedBytes <= state.inboundCredit else {
@@ -189,6 +192,18 @@ extension CloudHubConnection {
         case let .close(channelId, _, reason):
             channels.removeValue(forKey: channelId)
             state.onClosed(reason)
+        }
+    }
+
+    /// Strips the negotiated framing byte, inflating DEFLATE bodies. Bad
+    /// framing surfaces as crypto-error, same as any undecodable payload.
+    private static func unframe(_ plaintext: Data) throws -> Data {
+        guard let framing = plaintext.first else { throw CloudDeflateError.corruptInput }
+        let body = plaintext.dropFirst()
+        switch framing {
+        case CloudDeflate.framingRaw: return Data(body)
+        case CloudDeflate.framingDeflate: return try CloudDeflate.inflate(Data(body))
+        default: throw CloudDeflateError.corruptInput
         }
     }
 }

@@ -60,6 +60,10 @@ public actor CloudHubConnection {
         var nextOutboundSeq: UInt64
         var nextInboundSeq: UInt64 = 0
         let flowControlled: Bool
+        /// Negotiated prefix-framed payloads: every data plaintext in both
+        /// directions starts with a framing byte and the machine may DEFLATE
+        /// bodies it deems worthwhile (see CloudDeflate).
+        let compressed: Bool
         var inboundCredit = 0
         let onMessage: @Sendable (Data, Int) -> Void
         let onCredit: @Sendable (Int) -> Void
@@ -70,6 +74,7 @@ public actor CloudHubConnection {
             cipher: CloudChannelCipher,
             nextOutboundSeq: UInt64,
             flowControlled: Bool,
+            compressed: Bool,
             onMessage: @escaping @Sendable (Data, Int) -> Void,
             onCredit: @escaping @Sendable (Int) -> Void,
             onClosed: @escaping @Sendable (CloudChannelCloseReason?) -> Void
@@ -78,6 +83,7 @@ public actor CloudHubConnection {
             self.cipher = cipher
             self.nextOutboundSeq = nextOutboundSeq
             self.flowControlled = flowControlled
+            self.compressed = compressed
             self.onMessage = onMessage
             self.onCredit = onCredit
             self.onClosed = onClosed

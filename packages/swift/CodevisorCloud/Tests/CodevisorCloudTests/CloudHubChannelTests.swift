@@ -146,6 +146,85 @@ struct CloudHubChannelTests {
         await hub.shutdown()
     }
 
+    @Test("Negotiated compression frames payloads and inflates DEFLATE bodies")
+    func compressedChannel() async throws {
+        let machine = ScriptedRelayMachine()
+        let scripted = ScriptedCloudHub(machines: [machine.presence])
+        scripted.onRelay = { [weak scripted] envelope in
+            guard let scripted, let appKey = scripted.appPublicKey else { return }
+            _ = try? machine.receive(envelope.frame, payload: envelope.payload, appPublicKey: appKey)
+        }
+        let (hub, _) = makeHub(scripted)
+        let recorder = Recorder()
+
+        let channel = try await hub.openChannel(
+            machineDeviceId: machine.deviceId,
+            machinePublicKey: machine.publicKey,
+            channelType: "test",
+            params: nil,
+            compressed: true,
+            onMessage: { recorder.record($0) },
+            onClosed: { recorder.recordClose($0) }
+        )
+        #expect(await waitUntil { machine.channel(channel.id)?.compressedFraming == true })
+
+        // App → machine payloads carry the RAW framing byte, which the
+        // scripted machine strips before recording.
+        try await channel.sendJSON(["kind": "request"])
+        #expect(await waitUntil { machine.channel(channel.id)?.messages.count == 1 })
+        let request = try #require(machine.channel(channel.id)?.messages.first)
+        #expect(try JSONDecoder().decode([String: String].self, from: request) == ["kind": "request"])
+
+        // Machine → app: RAW and DEFLATE framings both decode to plaintext.
+        let big = Data(String(repeating: "terminal output ", count: 256).utf8)
+        scripted.relayToApp(
+            machineId: machine.deviceId,
+            sealed: try machine.sealData(channelId: channel.id, payload: Data("plain".utf8))
+        )
+        scripted.relayToApp(
+            machineId: machine.deviceId,
+            sealed: try machine.sealDeflated(channelId: channel.id, payload: big)
+        )
+        #expect(await waitUntil { recorder.messages.count == 2 })
+        #expect(recorder.messages[0] == Data("plain".utf8))
+        #expect(recorder.messages[1] == big)
+        await hub.shutdown()
+    }
+
+    @Test("Bad framing on a compressed channel kills it as crypto-error")
+    func compressedChannelBadFraming() async throws {
+        let machine = ScriptedRelayMachine()
+        let scripted = ScriptedCloudHub(machines: [machine.presence])
+        scripted.onRelay = { [weak scripted] envelope in
+            guard let scripted, let appKey = scripted.appPublicKey else { return }
+            _ = try? machine.receive(envelope.frame, payload: envelope.payload, appPublicKey: appKey)
+        }
+        let (hub, _) = makeHub(scripted)
+        let recorder = Recorder()
+
+        let channel = try await hub.openChannel(
+            machineDeviceId: machine.deviceId,
+            machinePublicKey: machine.publicKey,
+            channelType: "test",
+            params: nil,
+            compressed: true,
+            onMessage: { recorder.record($0) },
+            onClosed: { recorder.recordClose($0) }
+        )
+        #expect(await waitUntil { machine.channel(channel.id) != nil })
+        // An unknown framing byte is refused like any undecodable payload.
+        let bogus = try machine.channel(channel.id)!.cipher.seal(
+            Data([7, 1, 2, 3]), channelId: channel.id, direction: .responderToOpener, seq: 0
+        )
+        scripted.relayToApp(
+            machineId: machine.deviceId,
+            frame: .data(channelId: channel.id, seq: 0),
+            payload: bogus
+        )
+        #expect(await waitUntil { recorder.closes == [.cryptoError] })
+        await hub.shutdown()
+    }
+
     @Test("Connection loss fails open channels with nil and channels die with the socket")
     func connectionLossFailsChannels() async throws {
         let machine = ScriptedRelayMachine()

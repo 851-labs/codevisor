@@ -9,7 +9,13 @@ import {
   type WireRelayEnvelope
 } from "@codevisor/api"
 import { acceptChannel, openJson, type ChannelCipher } from "@codevisor/cloud-crypto"
-import { makeLiveChannel, type ChannelHandler, type LiveChannel } from "./incoming-channel.js"
+import {
+  makeLiveChannel,
+  PLAINTEXT_DEFLATE,
+  PLAINTEXT_RAW,
+  type ChannelHandler,
+  type LiveChannel
+} from "./incoming-channel.js"
 import type { MachineCredentials } from "./login.js"
 import {
   RelayOutbox,
@@ -21,6 +27,8 @@ import {
   type SocketFactory
 } from "./machine-socket.js"
 import type { PeerKeyPinStore } from "./peer-pins.js"
+
+const utf8Decoder = new TextDecoder()
 
 export interface MachineConnectionOptions {
   credentials: MachineCredentials
@@ -43,6 +51,13 @@ export interface MachineConnectionOptions {
   /// Coalesce outgoing relay envelopes for up to this long (see RelayOutbox).
   /// Default 0: every frame goes out immediately.
   relayCoalesceMs?: number
+  /// Compresses an outgoing plaintext body on channels whose opener
+  /// negotiated compressible framing; return undefined when not worthwhile.
+  compressPayload?: (bytes: Uint8Array) => Uint8Array | undefined
+  /// Inflates a DEFLATE-framed inbound body on negotiated channels. Absent =
+  /// compressed inbound frames are refused (the app only compresses when the
+  /// machine advertises support via this pair being wired up).
+  decompressPayload?: (bytes: Uint8Array) => Uint8Array
   scheduleReconnect?: (callback: () => void, delayMs: number) => void
   scheduleTimeout?: (callback: () => void, delayMs: number) => CancelTimeout
   welcomeTimeoutMs?: number
@@ -324,7 +339,7 @@ export class CloudMachineConnection {
         }
       }
       let cipher: ChannelCipher
-      let openPayload: { channelType?: unknown; params?: unknown }
+      let openPayload: { channelType?: unknown; params?: unknown; compress?: unknown }
       try {
         cipher = acceptChannel(
           this.options.credentials.secretKey,
@@ -334,6 +349,7 @@ export class CloudMachineConnection {
         openPayload = openJson(cipher, frame.channelId, "opener-to-responder", 0, payload) as {
           channelType?: unknown
           params?: unknown
+          compress?: unknown
         }
       } catch {
         this.#refuse(peerId, frame.channelId, "crypto-error")
@@ -360,6 +376,12 @@ export class CloudMachineConnection {
         channelType: openPayload.channelType,
         params: openPayload.params,
         cipher,
+        // Prefix-framed (compressible) payloads are opener-negotiated; the
+        // responder honours the framing even without a compressor (RAW).
+        compressed: openPayload.compress === true,
+        ...(this.options.compressPayload === undefined
+          ? {}
+          : { compress: this.options.compressPayload }),
         current: () => this.#channels.get(key),
         remove: () => this.#channels.delete(key),
         ready: () => this.#outbox !== undefined,
@@ -411,10 +433,12 @@ export class CloudMachineConnection {
     }
     let value: unknown
     try {
+      let plaintext = live.cipher.open(frame.channelId, "opener-to-responder", frame.seq, payload)
+      if (live.compressed) plaintext = this.#unframe(plaintext)
       value =
         live.channel.onBytes === null
-          ? openJson(live.cipher, frame.channelId, "opener-to-responder", frame.seq, payload)
-          : live.cipher.open(frame.channelId, "opener-to-responder", frame.seq, payload)
+          ? (JSON.parse(utf8Decoder.decode(plaintext)) as unknown)
+          : plaintext
     } catch {
       this.#channels.delete(key)
       this.#refuse(peerId, frame.channelId, "crypto-error")
@@ -434,6 +458,19 @@ export class CloudMachineConnection {
     live.nextReceiveSeq += 1
     if (value instanceof Uint8Array) live.channel.onBytes?.(value, sealedBytes)
     else live.channel.onData?.(value)
+  }
+
+  /// Strips the negotiated framing byte, inflating DEFLATE bodies. Throws on
+  /// unknown framing or a missing/failing decompressor (surfaced to the peer
+  /// as crypto-error, same as any undecodable payload).
+  #unframe(plaintext: Uint8Array): Uint8Array {
+    if (plaintext.byteLength < 1) throw new Error("missing plaintext framing byte")
+    const body = plaintext.subarray(1)
+    if (plaintext[0] === PLAINTEXT_RAW) return body
+    if (plaintext[0] === PLAINTEXT_DEFLATE && this.options.decompressPayload !== undefined) {
+      return this.options.decompressPayload(body)
+    }
+    throw new Error("unsupported plaintext framing")
   }
 
   #refuse(peerId: string, channelId: string, reason: ChannelCloseReason): void {

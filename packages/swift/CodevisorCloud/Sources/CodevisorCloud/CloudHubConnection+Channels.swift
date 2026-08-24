@@ -12,6 +12,7 @@ extension CloudHubConnection {
         machinePublicKey: String,
         channelType: String,
         params: JSONValue?,
+        compressed: Bool = false,
         onMessage: @escaping @Sendable (Data) -> Void,
         onClosed: @escaping @Sendable (CloudChannelCloseReason?) -> Void
     ) async throws -> CloudRelayChannel {
@@ -21,6 +22,7 @@ extension CloudHubConnection {
             channelType: channelType,
             params: params,
             flowControlled: false,
+            compressed: compressed,
             onMessage: { data, _ in onMessage(data) },
             onCredit: { _ in },
             onClosed: onClosed
@@ -45,6 +47,7 @@ extension CloudHubConnection {
             channelType: channelType,
             params: params,
             flowControlled: true,
+            compressed: false,
             onMessage: onMessage,
             onCredit: onCredit,
             onClosed: onClosed
@@ -57,6 +60,7 @@ extension CloudHubConnection {
         channelType: String,
         params: JSONValue?,
         flowControlled: Bool,
+        compressed: Bool,
         onMessage: @escaping @Sendable (Data, Int) -> Void,
         onCredit: @escaping @Sendable (Int) -> Void,
         onClosed: @escaping @Sendable (CloudChannelCloseReason?) -> Void
@@ -89,6 +93,9 @@ extension CloudHubConnection {
         if let params {
             payload["params"] = params
         }
+        if compressed {
+            payload["compress"] = .bool(true)
+        }
         let plaintext = try encoder.encode(JSONValue.object(payload))
         let sealed = try opened.cipher.seal(
             plaintext,
@@ -101,6 +108,7 @@ extension CloudHubConnection {
             cipher: opened.cipher,
             nextOutboundSeq: 1,
             flowControlled: flowControlled,
+            compressed: compressed,
             onMessage: onMessage,
             onCredit: onCredit,
             onClosed: onClosed
@@ -135,8 +143,11 @@ extension CloudHubConnection {
                 "CLOUDRELAYDBG channel.send id=\(String(channelId.prefix(8)), privacy: .public) seq=\(seq) bytes=\(plaintext.count)"
             )
         #endif
+        // On negotiated channels every plaintext is prefix-framed; the app
+        // sends RAW (uploads are rare — the machine side does the deflating).
+        let body = state.compressed ? Data([CloudDeflate.framingRaw]) + plaintext : plaintext
         let sealed = try state.cipher.seal(
-            plaintext,
+            body,
             channelId: channelId,
             direction: .openerToResponder,
             seq: seq
