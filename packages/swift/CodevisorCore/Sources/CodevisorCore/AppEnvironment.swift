@@ -26,6 +26,8 @@ public final class AppEnvironment {
     /// The fleet-wide update fold (app + servers + harnesses + plugins
     /// across every machine) behind the update sheet and ambient indicator.
     public let updateCenter: UpdateCenter
+    /// The config plane's client half: local replica + cross-machine gossip.
+    public let configSync: ConfigSync
     /// Set at launch when an already-onboarded install is missing the system
     /// permissions Computer Use needs (typically right after an update).
     /// While true, the root view presents the blocking permissions gate
@@ -58,14 +60,6 @@ public final class AppEnvironment {
     private let clientDataResetter: (any ClientDataResetting)?
 
     public var serverClient: any CodevisorServerClienting { machines.selectedClient }
-
-    public var harnessService: any HarnessServicing {
-        harnessService(for: machines.selectedMachineId)
-    }
-
-    public var sessionImporter: SessionImporter {
-        SessionImporter(harnessService: harnessService)
-    }
 
     public init(
         projectRepository: any ProjectRepository,
@@ -129,6 +123,7 @@ public final class AppEnvironment {
             clientFactory: machineClientFactory
         )
         updateCenter = UpdateCenter(machines: machines, appUpdate: self.appUpdate)
+        configSync = ConfigSync(machines: machines)
         // Previews/tests without a device credential store stay hermetic: an
         // in-memory store, and no networking until someone calls bootstrap().
         self.cloud = CloudAccountController(
@@ -152,6 +147,9 @@ public final class AppEnvironment {
         projectList.showsImportedSessions = settings.importExternalSessions
         machines.serverUpdateChannel = settings.alphaUpdatesEnabled ? .alpha : .stable
         machines.onHarnessLifecycleChanged = { [weak self] in self?.noteHarnessLifecycle(onServer: $0) }
+        machines.onSyncChanged = { [weak self] in
+            self?.configSync.applyRemoteChange(namespace: $1.namespace, entries: $1.entries)
+        }
         machines.onPluginStateChanged = { [weak self] in self?.pluginStateDidChange(onServer: $0) }
         machines.onPluginUpdated = { [weak self] in self?.pluginDidUpdate(onServer: $0, pluginId: $1) }
         // One-time split of pre-"1 workspace == 1 directory" workspaces whose

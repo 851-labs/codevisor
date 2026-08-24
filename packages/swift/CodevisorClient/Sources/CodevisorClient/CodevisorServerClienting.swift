@@ -20,6 +20,14 @@ public protocol CodevisorServerClienting: Sendable {
     /// `refresh` bypasses the server's update-check cache; `channel` selects
     /// which release feed the server consults (older servers ignore both).
     func updateInfo(refresh: Bool, channel: ServerUpdateChannel) async throws -> ServerUpdateInfo
+    /// The machine's config-plane replica for a namespace (@codevisor/sync).
+    func syncDocument(namespace: String) async throws -> ServerSyncDocument
+    /// Merges entries into the machine's replica; the response is the merged
+    /// document, so one round trip both pushes and pulls.
+    func mergeSyncDocument(
+        namespace: String,
+        entries: [ServerSyncEntry]
+    ) async throws -> ServerSyncDocument
     func issuePairingToken() async throws -> ServerPairingToken
     /// The machine's stable connection token (unchanged across restarts and
     /// updates until rotated). Preferred over `issuePairingToken` for showing

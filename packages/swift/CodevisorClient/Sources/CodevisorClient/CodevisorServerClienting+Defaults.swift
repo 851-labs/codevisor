@@ -36,6 +36,18 @@ public extension CodevisorServerClienting {
         try await applyServerUpdate(channel: .stable)
     }
 
+    /// Defaults for fakes/older servers without the config plane: an empty
+    /// replica, and a merge that simply echoes what was pushed.
+    func syncDocument(namespace: String) async throws -> ServerSyncDocument {
+        ServerSyncDocument(namespace: namespace, entries: [])
+    }
+    func mergeSyncDocument(
+        namespace: String,
+        entries: [ServerSyncEntry]
+    ) async throws -> ServerSyncDocument {
+        ServerSyncDocument(namespace: namespace, entries: entries)
+    }
+
     /// Compatibility fallback for test doubles and pre-tailnet servers: no
     /// discovery. The HTTP client overrides this with the real request.
     func tailnetPeers() async throws -> ServerTailnetPeers {

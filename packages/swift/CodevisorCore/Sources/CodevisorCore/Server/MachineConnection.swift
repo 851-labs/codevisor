@@ -134,6 +134,10 @@ extension MachineController {
         }
     }
 
+    public var selectedServerAvailability: ServerAvailability {
+        availabilityByMachineId[selectedMachineId] ?? .ready
+    }
+
     // MARK: - Legacy projections
 
     /// Read-only per-machine projections retained for existing consumers;

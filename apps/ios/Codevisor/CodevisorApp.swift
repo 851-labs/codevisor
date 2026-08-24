@@ -157,6 +157,7 @@ struct CodevisorApp: App {
         Task {
             await environment.updateCenter.resumePendingSessionIfNeeded()
             await environment.updateCenter.refresh()
+            await environment.configSync.synchronizeAll()
         }
     }
 

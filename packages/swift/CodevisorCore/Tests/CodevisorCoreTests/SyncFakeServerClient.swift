@@ -232,6 +232,7 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
     private var _harnesses: [ServerHarness] = []
     private var _pluginUpdates: [ServerPluginUpdateStatus] = []
     private var _operationLog: [String] = []
+    private var _syncEntries: [String: [ServerSyncEntry]] = [:]
 
     struct ServerDownError: Error {}
 }
@@ -341,6 +342,36 @@ extension SyncFakeServerClient {
                 path: "/tmp/\(pluginId)",
                 state: "running"
             )
+        }
+    }
+
+    // MARK: - Simulated config-plane replica
+
+    func seedSyncEntries(namespace: String, _ entries: [ServerSyncEntry]) {
+        lock.withLock { _syncEntries[namespace] = entries }
+    }
+
+    func syncEntries(namespace: String) -> [ServerSyncEntry] {
+        lock.withLock { _syncEntries[namespace] ?? [] }
+    }
+
+    func syncDocument(namespace: String) async throws -> ServerSyncDocument {
+        lock.withLock {
+            ServerSyncDocument(namespace: namespace, entries: _syncEntries[namespace] ?? [])
+        }
+    }
+
+    func mergeSyncDocument(
+        namespace: String,
+        entries: [ServerSyncEntry]
+    ) async throws -> ServerSyncDocument {
+        lock.withLock {
+            let result = SyncClock.merge(_syncEntries[namespace] ?? [], entries)
+            _syncEntries[namespace] = result.merged
+            if !result.changed.isEmpty {
+                _operationLog.append("sync.merge:\(namespace)")
+            }
+            return ServerSyncDocument(namespace: namespace, entries: result.merged)
         }
     }
 

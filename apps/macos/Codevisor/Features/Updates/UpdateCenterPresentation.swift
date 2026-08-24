@@ -29,6 +29,7 @@ struct UpdateCenterPresentation: ViewModifier {
                     environment.machines.ensureBackgroundConnections()
                     await environment.machines.refreshServerUpdates()
                     await environment.updateCenter.refresh()
+                    await environment.configSync.synchronizeAll()
                 }
             }
     }

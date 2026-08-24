@@ -1,8 +1,16 @@
 import Foundation
 
-/// Update-related surface of the environment, split from the class body to
-/// keep AppEnvironment.swift within size limits.
+/// Environment surface split from the class body to keep
+/// AppEnvironment.swift within size limits.
 extension AppEnvironment {
+    public var harnessService: any HarnessServicing {
+        harnessService(for: machines.selectedMachineId)
+    }
+
+    public var sessionImporter: SessionImporter {
+        SessionImporter(harnessService: harnessService)
+    }
+
     /// True while an app self-update or a selected-server update is installing.
     /// Drives the composer lock so no new turn starts during the restart.
     public var isUpdateInProgress: Bool {

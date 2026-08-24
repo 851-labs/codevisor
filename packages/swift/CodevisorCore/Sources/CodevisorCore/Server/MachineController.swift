@@ -128,6 +128,10 @@ public final class MachineController {
     /// bridges it to a per-plugin revision so that plugin's open panes
     /// re-run their token→load flow. Arguments: (serverId, pluginId).
     @ObservationIgnored public var onPluginUpdated: ((String, String) -> Void)?
+    /// Invoked when a `sync.changed` event arrives — a machine's config
+    /// replica changed; ConfigSync adopts and re-gossips it. Arguments:
+    /// (serverId, changed document).
+    @ObservationIgnored public var onSyncChanged: ((String, ServerSyncDocument) -> Void)?
 
     public init(
         store: any PersistenceStore,
@@ -306,10 +310,6 @@ public final class MachineController {
 
     public var selectedClient: any CodevisorServerClienting {
         client(for: selectedMachine.id)
-    }
-
-    public var selectedServerAvailability: ServerAvailability {
-        availabilityByMachineId[selectedMachineId] ?? .ready
     }
 
     public var selectedNavigationSyncState: NavigationSyncState {

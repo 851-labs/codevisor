@@ -16,6 +16,7 @@ extension MachineController {
         "plugin.state.updated",
         "plugin.updated",
         "update.changed",
+        "sync.changed",
     ]
 
     /// Follows the selected server's event stream so projects and sessions
@@ -177,6 +178,14 @@ extension MachineController {
                 let info = try? JSONDecoder().decode(ServerUpdateInfo.self, from: data)
             {
                 connection(for: serverId).updateInfo = info
+            }
+        case "sync.changed":
+            // A machine's config replica changed: hand the changed entries
+            // to ConfigSync, which adopts and re-gossips them.
+            if let data = try? JSONEncoder().encode(event.payload),
+                let document = try? JSONDecoder().decode(ServerSyncDocument.self, from: data)
+            {
+                onSyncChanged?(serverId, document)
             }
         default:
             // Prompt/queue/error events are handled by the session transports.
