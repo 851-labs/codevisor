@@ -9,6 +9,8 @@ extension CloudHubConnection {
     private struct WelcomeMessage: Decodable {
         var connectionId: String
         var machines: [CloudMachine]
+        var resume: String?
+        var resumed: Bool?
     }
 
     private struct PresenceMessage: Decodable {
@@ -52,6 +54,15 @@ extension CloudHubConnection {
         case "welcome":
             guard let welcome = try? decoder.decode(WelcomeMessage.self, from: data) else { return }
             Log.cloud.info("Cloud hub welcomed this device (\(welcome.machines.count) machines)")
+            suspensionTask?.cancel()
+            suspensionTask = nil
+            let resumed = welcome.resumed == true && welcome.connectionId == lastConnectionId
+            resumeToken = welcome.resume
+            lastConnectionId = welcome.connectionId
+            if !resumed {
+                // Fresh identity: peer ids changed, so held channels are dead.
+                failAllChannels()
+            }
             machines = welcome.machines
             for machine in welcome.machines where machine.online {
                 resumeMachineWaiters(for: machine.deviceId)

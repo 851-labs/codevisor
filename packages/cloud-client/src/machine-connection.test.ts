@@ -960,6 +960,179 @@ describe("negotiated compression", () => {
   })
 })
 
+describe("session resume", () => {
+  const connectResumable = (h: Harness, token: string): FakeSocket => {
+    h.connection.start()
+    const socket = h.sockets.at(-1)!
+    socket.onopen?.()
+    socket.receive({
+      t: "welcome",
+      protocol: CLOUD_PROTOCOL_VERSION,
+      connectionId: "conn-m",
+      resume: token
+    })
+    return socket
+  }
+
+  it("holds channels across a resumed reconnect and replays retained frames in order", () => {
+    const h = harness()
+    const socket = connectResumable(h, "tok-1")
+    const { opened } = openEcho(socket, "peer-1", "ch-1")
+    const channel = h.channels[0]!
+    const closes: string[] = []
+    channel.onClosed = (reason) => closes.push(reason)
+
+    socket.onclose?.(1006)
+    // Suspended, not dead: sends keep sealing into the retention buffer.
+    channel.send({ output: "during-gap-1" })
+    channel.send({ output: "during-gap-2" })
+    expect(closes).toEqual([])
+
+    h.reconnects[0]!.callback()
+    const revived = h.sockets.at(-1)!
+    revived.onopen?.()
+    const hello = revived.sent[0] as Extract<MachineToHub, { t: "hello" }>
+    expect(hello.resume).toBe("tok-1")
+
+    revived.receive({
+      t: "welcome",
+      protocol: CLOUD_PROTOCOL_VERSION,
+      connectionId: "conn-m",
+      resume: "tok-2",
+      resumed: true
+    })
+    // The retained backlog replays on the new socket, in order.
+    const frames = revived.sentRelay.filter((envelope) => envelope.header.frame.t === "data")
+    expect(frames.map((envelope) => envelope.header.frame.seq)).toEqual([0, 1])
+    expect(openJson(opened.cipher, "ch-1", "responder-to-opener", 1, frames[1]!.payload)).toEqual({
+      output: "during-gap-2"
+    })
+    expect(closes).toEqual([])
+
+    // The channel keeps flowing with continuous seqs.
+    channel.send({ output: "after-resume" })
+    expect(
+      revived.sentRelay.filter((envelope) => envelope.header.frame.t === "data").at(-1)!.header
+        .frame.seq
+    ).toEqual(2)
+  })
+
+  it("drains a coalescing outbox into the retention buffer on suspend", () => {
+    const h = harness({ relayCoalesceMs: 5 })
+    const socket = connectResumable(h, "tok-1")
+    const { opened } = openEcho(socket, "peer-1", "ch-1")
+    const channel = h.channels[0]!
+
+    // Frames still sitting in the coalescing window when the socket dies...
+    channel.send({ output: "unflushed" })
+    expect(socket.relayMessages).toHaveLength(0)
+    const flushTimer = activeTimeout(h, 5)
+    socket.onclose?.(1006)
+    flushTimer.invoke()
+
+    // ...survive the gap and replay after the resumed welcome.
+    h.reconnects[0]!.callback()
+    const revived = h.sockets.at(-1)!
+    revived.onopen?.()
+    revived.receive({
+      t: "welcome",
+      protocol: CLOUD_PROTOCOL_VERSION,
+      connectionId: "conn-m",
+      resume: "tok-2",
+      resumed: true
+    })
+    activeTimeout(h, 5).run()
+    const frames = revived.sentRelay.filter((envelope) => envelope.header.frame.t === "data")
+    expect(frames).toHaveLength(1)
+    expect(openJson(opened.cipher, "ch-1", "responder-to-opener", 0, frames[0]!.payload)).toEqual({
+      output: "unflushed"
+    })
+  })
+
+  it("drops held channels when the reconnect lands a fresh identity", () => {
+    const h = harness()
+    const socket = connectResumable(h, "tok-1")
+    openEcho(socket, "peer-1", "ch-1")
+    const closes: string[] = []
+    h.channels[0]!.onClosed = (reason) => closes.push(reason)
+
+    socket.onclose?.(1006)
+    h.channels[0]!.send({ output: "never delivered" })
+    h.reconnects[0]!.callback()
+    const revived = h.sockets.at(-1)!
+    revived.onopen?.()
+    revived.receive({
+      t: "welcome",
+      protocol: CLOUD_PROTOCOL_VERSION,
+      connectionId: "conn-DIFFERENT",
+      resume: "tok-2"
+    })
+
+    expect(closes).toEqual(["peer-gone"])
+    // The retained backlog referenced dead peer ids; nothing replays.
+    expect(revived.sentRelay).toHaveLength(0)
+  })
+
+  it("overflowing the retention buffer falls back to plain teardown", () => {
+    const channels: IncomingChannel[] = []
+    const h = harness({
+      handlers: {
+        echo: (channel) => {
+          channels.push(channel)
+        }
+      }
+    })
+    const socket = connectResumable(h, "tok-1")
+    openEcho(socket, "peer-1", "ch-1")
+    const closes: string[] = []
+    channels[0]!.onClosed = (reason) => closes.push(reason)
+
+    socket.onclose?.(1006)
+    const chunk = new Uint8Array(60 * 1024)
+    for (let index = 0; index < 5; index += 1) {
+      channels[0]!.sendBytes(chunk)
+    }
+    expect(closes).toEqual(["peer-gone"])
+
+    // The next welcome is treated as fresh (resume state was discarded).
+    h.reconnects[0]!.callback()
+    const revived = h.sockets.at(-1)!
+    revived.onopen?.()
+    const hello = revived.sent[0] as Extract<MachineToHub, { t: "hello" }>
+    expect(hello.resume).toBeUndefined()
+  })
+
+  it("answers pre-welcome relay frames on the young socket", () => {
+    // No resume state and not yet welcomed: refusals go straight out on the
+    // fresh socket rather than into a retention buffer.
+    const h = harness()
+    h.connection.start()
+    const socket = h.sockets[0]!
+    socket.onopen?.()
+    socket.receiveRelay({
+      peerId: "p",
+      frame: { t: "credit", channelId: "orphan", seq: 0, bytes: 1 }
+    })
+    expect(socket.lastClose()).toMatchObject({
+      t: "close",
+      channelId: "orphan",
+      reason: "peer-disconnected"
+    })
+  })
+
+  it("stop() during suspension tears everything down", () => {
+    const h = harness()
+    const socket = connectResumable(h, "tok-1")
+    openEcho(socket, "peer-1", "ch-1")
+    const closes: string[] = []
+    h.channels[0]!.onClosed = (reason) => closes.push(reason)
+    socket.onclose?.(1006)
+    expect(closes).toEqual([])
+    h.connection.stop()
+    expect(closes).toEqual(["peer-gone"])
+  })
+})
+
 describe("defaults", () => {
   it("falls back to real timers and Math.random for reconnects", () => {
     vi.useFakeTimers()

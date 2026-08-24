@@ -109,7 +109,7 @@ final class ScriptedCloudHub: @unchecked Sendable {
     }
 
     private let lock = NSLock()
-    let socket = FakeWebSocketConnection()
+    private var scriptedSockets: [FakeWebSocketConnection] = []
     let machines: [CloudMachine]
     private var relayed: [RelayEnvelope] = []
     /// Called (synchronously, in send order) for every relay envelope the app
@@ -118,12 +118,49 @@ final class ScriptedCloudHub: @unchecked Sendable {
     private(set) var sawHello = false
     var appPublicKey: String?
     var respondsToPing = true
+    /// Session resume scripting: when true, welcomes carry rotating resume
+    /// tokens and a hello presenting the current token resumes (same
+    /// connection id + resumed flag) — unless `acceptResume` is off.
+    var issueResumeTokens = false
+    var acceptResume = true
+    private var issuedToken: String?
+    private var connectionCounter = 0
+    private var currentConnectionId = "conn-0"
 
     init(machines: [CloudMachine] = []) {
         self.machines = machines
+    }
+
+    /// The first scripted socket (created lazily so single-socket tests can
+    /// hand it to a transport before connecting).
+    var socket: FakeWebSocketConnection {
+        lock.withLock {
+            if scriptedSockets.isEmpty { scriptedSockets.append(wireSocket()) }
+            return scriptedSockets[0]
+        }
+    }
+
+    /// The socket the hub currently speaks through (reconnects switch it).
+    var currentSocket: FakeWebSocketConnection {
+        lock.withLock { scriptedSockets.last ?? scriptedSockets[0] }
+    }
+
+    /// A fresh scripted socket for reconnect tests; wire the transport with
+    /// `FakeWebSocketTransport { _ in scripted.makeSocket() }`.
+    func makeSocket() -> FakeWebSocketConnection {
+        lock.withLock {
+            let socket = wireSocket()
+            scriptedSockets.append(socket)
+            return socket
+        }
+    }
+
+    private func wireSocket() -> FakeWebSocketConnection {
+        let socket = FakeWebSocketConnection()
         socket.onSend = { [weak self] message in
             self?.handle(message)
         }
+        return socket
     }
 
     var relayEnvelopes: [RelayEnvelope] {
@@ -132,7 +169,7 @@ final class ScriptedCloudHub: @unchecked Sendable {
 
     func relayToApp(machineId: String, frame: CloudRelayFrame, payload: Data = Data()) {
         let header = try! JSONEncoder().encode(RelayHeader(machineId: machineId, frame: frame))
-        socket.push(
+        currentSocket.push(
             .data(CloudRelayWire.encode([CloudRelayEnvelope(header: header, payload: payload)]))
         )
     }
@@ -147,7 +184,7 @@ final class ScriptedCloudHub: @unchecked Sendable {
             var machine: CloudMachine
         }
         let data = try! JSONEncoder().encode(Envelope(machine: machine))
-        socket.push(.string(String(decoding: data, as: UTF8.self)))
+        currentSocket.push(.string(String(decoding: data, as: UTF8.self)))
     }
 
     func machineResetToApp(machineId: String) {
@@ -156,7 +193,7 @@ final class ScriptedCloudHub: @unchecked Sendable {
             var machineId: String
         }
         let data = try! JSONEncoder().encode(Envelope(machineId: machineId))
-        socket.push(.string(String(decoding: data, as: UTF8.self)))
+        currentSocket.push(.string(String(decoding: data, as: UTF8.self)))
     }
 
     func errorToApp(
@@ -179,7 +216,7 @@ final class ScriptedCloudHub: @unchecked Sendable {
                 machineId: machineId,
                 channelId: channelId
             ))
-        socket.push(.string(String(decoding: data, as: UTF8.self)))
+        currentSocket.push(.string(String(decoding: data, as: UTF8.self)))
     }
 
     private func handle(_ message: ServerWebSocketMessage) {
@@ -214,18 +251,36 @@ final class ScriptedCloudHub: @unchecked Sendable {
                 }
 
                 var device: Device
+                var resume: String?
             }
+            var payload = WelcomePayload(connectionId: "conn-0", machines: machines)
             if let hello = try? JSONDecoder().decode(Hello.self, from: data) {
                 lock.withLock {
                     sawHello = true
                     appPublicKey = hello.device.publicKey
+                    let resumed =
+                        issueResumeTokens && acceptResume && hello.resume != nil
+                        && hello.resume == issuedToken
+                    if !resumed {
+                        connectionCounter += 1
+                        currentConnectionId = "conn-\(connectionCounter)"
+                    }
+                    if issueResumeTokens {
+                        issuedToken = "resume-\(connectionCounter)-\(scriptedSockets.count)"
+                    }
+                    payload = WelcomePayload(
+                        connectionId: currentConnectionId,
+                        machines: machines,
+                        resume: issuedToken,
+                        resumed: resumed ? true : nil
+                    )
                 }
             }
-            let welcome = try! JSONEncoder().encode(WelcomePayload(machines: machines))
-            socket.push(.string(String(decoding: welcome, as: UTF8.self)))
+            let welcome = try! JSONEncoder().encode(payload)
+            currentSocket.push(.string(String(decoding: welcome, as: UTF8.self)))
         case "ping":
             if respondsToPing {
-                socket.pushJSON(#"{"t":"pong"}"#)
+                currentSocket.pushJSON(#"{"t":"pong"}"#)
             }
         default:
             break
@@ -235,8 +290,10 @@ final class ScriptedCloudHub: @unchecked Sendable {
     private struct WelcomePayload: Encodable {
         var t = "welcome"
         var `protocol` = 2
-        var connectionId = "conn-1"
+        var connectionId: String
         var machines: [CloudMachine]
+        var resume: String?
+        var resumed: Bool?
     }
 }
 

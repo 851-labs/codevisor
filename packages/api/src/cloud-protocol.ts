@@ -276,7 +276,13 @@ export const parseHubToAppRelayHeader = (value: unknown): HubToAppRelayHeader | 
 export const AppHello = Schema.Struct({
   t: Schema.Literal("hello"),
   protocol: Schema.Number,
-  device: CloudDeviceInfo
+  device: CloudDeviceInfo,
+  /// Resume token from a previous welcome: within the grace window the hub
+  /// restores the connection's identity (same connectionId → machines' peer
+  /// ids stay valid, channels survive) and replays frames it buffered while
+  /// this side was away. Opaque; its format is frozen independently of the
+  /// protocol version so it parses across deploy boundaries.
+  resume: Schema.optional(Schema.String)
 })
 
 export const AppPing = Schema.Struct({ t: Schema.Literal("ping") })
@@ -289,7 +295,12 @@ export const HubWelcome = Schema.Struct({
   protocol: Schema.Number,
   /// Hub-assigned id for this connection; also the peerId machines see.
   connectionId: Schema.String,
-  machines: Schema.Array(CloudMachinePresence)
+  machines: Schema.Array(CloudMachinePresence),
+  /// Fresh resume token for THIS connection (rotated every welcome).
+  resume: Schema.optional(Schema.String),
+  /// True when the hello's resume token was honoured: the previous
+  /// connection's identity carried over and channels survive.
+  resumed: Schema.optional(Schema.Boolean)
 })
 
 export const HubPresence = Schema.Struct({
@@ -339,7 +350,9 @@ export type HubToApp = typeof HubToApp.Type
 export const MachineHello = Schema.Struct({
   t: Schema.Literal("hello"),
   protocol: Schema.Number,
-  device: CloudDeviceInfo
+  device: CloudDeviceInfo,
+  /// See AppHello.resume.
+  resume: Schema.optional(Schema.String)
 })
 
 export const MachinePing = Schema.Struct({ t: Schema.Literal("ping") })
@@ -350,7 +363,11 @@ export type MachineToHub = typeof MachineToHub.Type
 export const HubMachineWelcome = Schema.Struct({
   t: Schema.Literal("welcome"),
   protocol: Schema.Number,
-  connectionId: Schema.String
+  connectionId: Schema.String,
+  /// Fresh resume token for THIS connection (rotated every welcome).
+  resume: Schema.optional(Schema.String),
+  /// True when the hello's resume token was honoured (see HubWelcome).
+  resumed: Schema.optional(Schema.Boolean)
 })
 
 /// Sent to a machine when an app connection vanishes so it can tear down that

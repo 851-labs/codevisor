@@ -104,9 +104,17 @@ export class RelayOutbox {
 
   /// Drops buffered envelopes without sending (the socket is gone).
   clear(): void {
+    this.drain()
+  }
+
+  /// Removes and returns the buffered envelopes without sending — the owner
+  /// can retain them for replay after a resumed reconnect.
+  drain(): { header: unknown; payload: Uint8Array }[] {
     this.#cancelFlush?.()
     this.#cancelFlush = undefined
+    const pending = this.#pending
     this.#pending = []
     this.#pendingBytes = 0
+    return pending
   }
 }

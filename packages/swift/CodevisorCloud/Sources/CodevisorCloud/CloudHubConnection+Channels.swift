@@ -136,6 +136,9 @@ extension CloudHubConnection {
         guard let state = channels[channelId] else {
             throw CloudHubConnectionError.channelClosed
         }
+        // Never book a seq the socket cannot carry: a suspended send fails
+        // fast, and the channel's counter stays gapless for after the resume.
+        guard socket != nil, isWelcomed else { throw CloudHubConnectionError.disconnected }
         let seq = state.nextOutboundSeq
         state.nextOutboundSeq += 1
         #if DEBUG || NAVIGATION_DIAGNOSTICS
@@ -168,6 +171,7 @@ extension CloudHubConnection {
             abortChannel(channelId, reason: .protocolError)
             throw CloudHubConnectionError.channelClosed
         }
+        guard socket != nil, isWelcomed else { throw CloudHubConnectionError.disconnected }
         if state.flowControlled {
             state.inboundCredit += bytes
         }

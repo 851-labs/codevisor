@@ -15,6 +15,9 @@ export default defineConfig(async () => {
             // The checked-in wrangler.jsonc carries production values; tests
             // run as a dev-auth instance.
             DEV_AUTH: "1",
+            // Short resume grace so expiry paths are testable (production
+            // default lives in resume-sessions.ts).
+            RESUME_GRACE_MS: "300",
             PUBLIC_BASE_URL: "http://localhost:8787",
             INSTANCE_NAME: "Codevisor Cloud (test)"
           }

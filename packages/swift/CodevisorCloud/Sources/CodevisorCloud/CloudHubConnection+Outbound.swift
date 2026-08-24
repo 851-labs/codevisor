@@ -15,11 +15,13 @@ extension CloudHubConnection {
         var t = "hello"
         var protocolVersion = CloudHubConnection.protocolVersion
         var device: Device
+        var resume: String?
 
         enum CodingKeys: String, CodingKey {
             case t
             case protocolVersion = "protocol"
             case device
+            case resume
         }
     }
 
@@ -37,7 +39,9 @@ extension CloudHubConnection {
                 os: deviceOS,
                 appVersion: appVersion,
                 publicKey: identity.publicKey
-            ))
+            ),
+            resume: resumeToken
+        )
         try enqueueSend(hello)
     }
 
@@ -91,7 +95,8 @@ extension CloudHubConnection {
         )
         isWelcomed = false
         resetHeartbeat()
-        failAllChannels()
+        // The run loop's teardown decides whether channels suspend (resume
+        // pending) or fail; killing the socket gets it there.
         socket?.cancel(with: .goingAway, reason: nil)
     }
 

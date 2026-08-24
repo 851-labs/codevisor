@@ -22,7 +22,7 @@ import {
   sealJson,
   toBase64Url
 } from "@codevisor/cloud-crypto"
-import { env, SELF } from "cloudflare:test"
+import { env, runDurableObjectAlarm, SELF } from "cloudflare:test"
 import { describe, expect, it } from "vitest"
 
 const BASE = "http://localhost:8787"
@@ -40,6 +40,18 @@ const devLogin = async (): Promise<string> => {
 const authed = (token: string): Record<string, string> => ({
   authorization: `Bearer ${token}`
 })
+
+/// Waits past the (test-shortened) resume grace window and runs the hub's
+/// expiry alarm so deferred death notices fire deterministically.
+const expireResumeGrace = async (token: string): Promise<void> => {
+  const session = await SELF.fetch(`${BASE}/api/auth/get-session`, { headers: authed(token) })
+  const body = (await session.json()) as { user?: { id?: string } } | null
+  const userId = body?.user?.id
+  if (userId === undefined) throw new Error("no session user for hub stub")
+  await new Promise((resolve) => setTimeout(resolve, 350))
+  const namespace = env.USER_HUB as unknown as DurableObjectNamespace
+  await runDurableObjectAlarm(namespace.get(namespace.idFromName(userId)))
+}
 
 /// Buffered async queue: items arrive before or after we await them.
 class Queue<Item> {
@@ -124,6 +136,7 @@ interface MachineSetup {
   keys: ReturnType<typeof generateDeviceKeyPair>
   socket: WebSocket
   reader: SocketReader<HubToMachine>
+  welcome: Extract<HubToMachine, { t: "welcome" }>
 }
 
 /// Full machine onboarding: session → api key with device metadata → hub
@@ -131,28 +144,37 @@ interface MachineSetup {
 const connectMachine = async (
   token: string,
   name: string,
-  deviceId = crypto.randomUUID()
+  deviceId = crypto.randomUUID(),
+  options: {
+    apiKey?: string
+    keys?: ReturnType<typeof generateDeviceKeyPair>
+    resume?: string
+  } = {}
 ): Promise<MachineSetup> => {
-  const keys = generateDeviceKeyPair()
-  const created = await SELF.fetch(`${BASE}/api/auth/api-key/create`, {
-    method: "POST",
-    headers: { "content-type": "application/json", ...authed(token) },
-    body: JSON.stringify({ name, metadata: { deviceId, publicKey: keys.publicKey } })
-  })
-  expect(created.status).toBe(200)
-  const { key } = (await created.json()) as { key: string }
-  const socket = await connectSocket({ "x-api-key": key })
+  const keys = options.keys ?? generateDeviceKeyPair()
+  let apiKey = options.apiKey
+  if (apiKey === undefined) {
+    const created = await SELF.fetch(`${BASE}/api/auth/api-key/create`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...authed(token) },
+      body: JSON.stringify({ name, metadata: { deviceId, publicKey: keys.publicKey } })
+    })
+    expect(created.status).toBe(200)
+    apiKey = ((await created.json()) as { key: string }).key
+  }
+  const socket = await connectSocket({ "x-api-key": apiKey })
   const reader = new SocketReader(socket, decodeHubToMachine)
   socket.send(
     encodeCloudFrame({
       t: "hello",
       protocol: CLOUD_PROTOCOL_VERSION,
-      device: { deviceId, kind: "machine", name, os: "linux", publicKey: keys.publicKey }
+      device: { deviceId, kind: "machine", name, os: "linux", publicKey: keys.publicKey },
+      ...(options.resume === undefined ? {} : { resume: options.resume })
     })
   )
-  const welcome = await reader.next()
+  const welcome = (await reader.next()) as MachineSetup["welcome"]
   expect(welcome).toMatchObject({ t: "welcome", protocol: CLOUD_PROTOCOL_VERSION })
-  return { token, apiKey: key, deviceId, keys, socket, reader }
+  return { token, apiKey, deviceId, keys, socket, reader, welcome }
 }
 
 interface AppSetup {
@@ -163,9 +185,16 @@ interface AppSetup {
   deviceId: string
 }
 
-const connectApp = async (token: string): Promise<AppSetup> => {
-  const keys = generateDeviceKeyPair()
-  const deviceId = crypto.randomUUID()
+const connectApp = async (
+  token: string,
+  options: {
+    keys?: ReturnType<typeof generateDeviceKeyPair>
+    deviceId?: string
+    resume?: string
+  } = {}
+): Promise<AppSetup> => {
+  const keys = options.keys ?? generateDeviceKeyPair()
+  const deviceId = options.deviceId ?? crypto.randomUUID()
   const socket = await connectSocket(authed(token))
   const reader = new SocketReader(socket, decodeHubToApp)
   socket.send(
@@ -178,7 +207,8 @@ const connectApp = async (token: string): Promise<AppSetup> => {
         name: "Test App",
         os: "macOS",
         publicKey: keys.publicKey
-      }
+      },
+      ...(options.resume === undefined ? {} : { resume: options.resume })
     })
   )
   const welcome = (await reader.next()) as AppSetup["welcome"]
@@ -315,8 +345,10 @@ describe("hub presence", () => {
     const listed = app.welcome.machines.find((m) => m.deviceId === machine.deviceId)
     expect(listed).toMatchObject({ name: "vps-1", online: true, publicKey: machine.keys.publicKey })
 
-    // Disconnect → offline presence broadcast.
+    // Disconnect → the offline broadcast is DEFERRED by the resume grace
+    // window; it fires only when nobody resumes before expiry.
     machine.socket.close(1000, "bye")
+    await expireResumeGrace(token)
     const presence = (await app.reader.next()) as Extract<HubToApp, { t: "presence" }>
     expect(presence.t).toBe("presence")
     expect(presence.machine).toMatchObject({ deviceId: machine.deviceId, online: false })
@@ -656,6 +688,8 @@ describe("hub relay", () => {
     const machine = await connectMachine(token, "flaky-vps")
     const app = await connectApp(token)
     machine.socket.close(1000, "gone")
+    // Nothing is announced until the resume grace expires unresumed.
+    await expireResumeGrace(token)
     expect((await app.reader.next()).t).toBe("presence")
     // The proactive broadcast: receive-only streams can never provoke the
     // reactive error below, so the hub reports the loss unprompted.
@@ -710,13 +744,15 @@ describe("hub relay", () => {
     })
   })
 
-  it("notifies machines when an app peer disconnects", async () => {
+  it("notifies machines when an app peer disconnects for good", async () => {
     const token = await devLogin()
     const machine = await connectMachine(token, "peer-vps")
     const app = await connectApp(token)
     app.socket.close(1000, "app quit")
+    // Deferred: the peer-gone arrives only after the grace expires unresumed.
+    await expireResumeGrace(token)
     const gone = (await machine.reader.next()) as Extract<HubToMachine, { t: "peer-gone" }>
-    expect(gone).toMatchObject({ t: "peer-gone" })
+    expect(gone).toMatchObject({ t: "peer-gone", peerId: app.welcome.connectionId })
   })
 
   it("answers protocol pings and rejects garbage frames", async () => {
@@ -747,6 +783,154 @@ describe("hub relay", () => {
     app.socket.send(encodeRelayEnvelopes([{ header: { nope: true }, payload: new Uint8Array(0) }]))
     const badHeader = (await app.reader.next()) as Extract<HubToApp, { t: "error" }>
     expect(badHeader.code).toBe("invalid-frame")
+  })
+})
+
+// -- Hub: session resume -------------------------------------------------------
+
+describe("session resume", () => {
+  it("an app resume keeps its peer identity and replays buffered frames", async () => {
+    const token = await devLogin()
+    const machine = await connectMachine(token, "resume-vps")
+    const app = await connectApp(token)
+    expect(typeof app.welcome.resume).toBe("string")
+
+    app.socket.close(1000, "subway tunnel")
+    // Machines are never told; frames they send meanwhile are buffered.
+    sendRelay(
+      machine.socket,
+      { peerId: app.welcome.connectionId, frame: { t: "data", channelId: "ch-r", seq: 0 } },
+      new Uint8Array([1, 2])
+    )
+    sendRelay(
+      machine.socket,
+      { peerId: app.welcome.connectionId, frame: { t: "data", channelId: "ch-r", seq: 1 } },
+      new Uint8Array([3])
+    )
+
+    const revived = await connectApp(token, {
+      keys: app.keys,
+      deviceId: app.deviceId,
+      resume: app.welcome.resume!
+    })
+    expect(revived.welcome.resumed).toBe(true)
+    expect(revived.welcome.connectionId).toBe(app.welcome.connectionId)
+    // Tokens rotate: the new welcome carries a fresh one.
+    expect(revived.welcome.resume).not.toBe(app.welcome.resume)
+
+    const first = await revived.reader.nextEnvelope()
+    const second = await revived.reader.nextEnvelope()
+    expect([...first.payload]).toEqual([1, 2])
+    expect([...second.payload]).toEqual([3])
+    // The machine never saw a peer-gone; it can keep relaying to the same id.
+    sendRelay(
+      machine.socket,
+      { peerId: app.welcome.connectionId, frame: { t: "data", channelId: "ch-r", seq: 2 } },
+      new Uint8Array([4])
+    )
+    expect([...(await revived.reader.nextEnvelope()).payload]).toEqual([4])
+  })
+
+  it("a machine resume is invisible to apps and replays buffered frames", async () => {
+    const token = await devLogin()
+    const machine = await connectMachine(token, "resume-machine")
+    const app = await connectApp(token)
+
+    machine.socket.close(1000, "worker deploy")
+    // The machine still lists as online, and app frames buffer silently.
+    const listed = await SELF.fetch(`${BASE}/api/machines`, { headers: authed(token) })
+    const machines = ((await listed.json()) as { machines: CloudMachinePresence[] }).machines
+    expect(machines.find((m) => m.deviceId === machine.deviceId)?.online).toBe(true)
+    sendRelay(
+      app.socket,
+      { machineId: machine.deviceId, frame: { t: "data", channelId: "ch-m", seq: 5 } },
+      new Uint8Array([9, 9])
+    )
+
+    const revived = await connectMachine(token, "resume-machine", machine.deviceId, {
+      apiKey: machine.apiKey,
+      keys: machine.keys,
+      resume: machine.welcome.resume!
+    })
+    expect(revived.welcome.resumed).toBe(true)
+    expect(revived.welcome.connectionId).toBe(machine.welcome.connectionId)
+    const replayed = await revived.reader.nextEnvelope()
+    expect([...replayed.payload]).toEqual([9, 9])
+    expect((replayed.header as HubToMachineRelayHeader).peerId).toBe(app.welcome.connectionId)
+
+    // Apps saw neither machine-reset nor presence churn: the next control
+    // frame the app receives is its own pong.
+    app.socket.send(encodeCloudFrame({ t: "ping" }))
+    expect((await app.reader.next()).t).toBe("pong")
+  })
+
+  it("a wrong token falls back to a fresh identity (machine-reset fires)", async () => {
+    const token = await devLogin()
+    const machine = await connectMachine(token, "fresh-vps")
+    const app = await connectApp(token)
+    machine.socket.close(1000, "restart")
+
+    const reborn = await connectMachine(token, "fresh-vps", machine.deviceId, {
+      apiKey: machine.apiKey,
+      keys: machine.keys,
+      resume: "not-a-valid-token"
+    })
+    expect(reborn.welcome.resumed).toBeUndefined()
+    expect(reborn.welcome.connectionId).not.toBe(machine.welcome.connectionId)
+    // Fresh hello → apps must drop their channels toward the machine.
+    expect((await app.reader.next()).t).toBe("machine-reset")
+    expect((await app.reader.next()).t).toBe("presence")
+  })
+
+  it("expired sessions deliver the deferred death notices exactly once", async () => {
+    const token = await devLogin()
+    const machine = await connectMachine(token, "expiry-vps")
+    const app = await connectApp(token)
+    machine.socket.close(1000, "gone for good")
+    await expireResumeGrace(token)
+    expect((await app.reader.next()).t).toBe("presence")
+    expect((await app.reader.next()).t).toBe("error")
+    // The expired token can no longer resume.
+    const reborn = await connectMachine(token, "expiry-vps", machine.deviceId, {
+      apiKey: machine.apiKey,
+      keys: machine.keys,
+      resume: machine.welcome.resume!
+    })
+    expect(reborn.welcome.resumed).toBeUndefined()
+  })
+
+  it("buffer overflow abandons the session and reports the machine offline", async () => {
+    const token = await devLogin()
+    const machine = await connectMachine(token, "overflow-vps")
+    const app = await connectApp(token)
+    machine.socket.close(1000, "away")
+
+    // Fill past the 256 KiB cap: five 64 KiB payloads.
+    const chunk = new Uint8Array(64 * 1024).fill(7)
+    for (let index = 0; index < 4; index += 1) {
+      sendRelay(
+        app.socket,
+        { machineId: machine.deviceId, frame: { t: "data", channelId: "big", seq: index } },
+        chunk
+      )
+    }
+    sendRelay(
+      app.socket,
+      { machineId: machine.deviceId, frame: { t: "data", channelId: "big", seq: 4 } },
+      chunk
+    )
+    // Abandoning the session fires the deferred death notices immediately
+    // (offline presence + broadcast error), then the sender's own error.
+    expect((await app.reader.next()).t).toBe("presence")
+    const overflow = (await app.reader.next()) as Extract<HubToApp, { t: "error" }>
+    expect(overflow).toMatchObject({ t: "error", machineId: machine.deviceId })
+    // The abandoned session cannot resume any more.
+    const reborn = await connectMachine(token, "overflow-vps", machine.deviceId, {
+      apiKey: machine.apiKey,
+      keys: machine.keys,
+      resume: machine.welcome.resume!
+    })
+    expect(reborn.welcome.resumed).toBeUndefined()
   })
 })
 

@@ -18,6 +18,9 @@ export interface CloudEnv extends Env {
   GITHUB_FETCH?: (input: string, init?: RequestInit) => Promise<Response>
   /// "1" only on local dev instances; never present in deployed config.
   DEV_AUTH?: string
+  /// Test seam: overrides the session-resume grace window (ms). Production
+  /// uses the default in resume-sessions.ts.
+  RESUME_GRACE_MS?: string
 }
 
 export const isDevAuthEnabled = (env: CloudEnv): boolean => env.DEV_AUTH === "1"

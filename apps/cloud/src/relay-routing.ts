@@ -24,6 +24,14 @@ export interface RelayHubPort {
   findAppSocket(peerId: string): WebSocket | undefined
   /// send() that reports failure instead of throwing (dead-but-not-closed).
   send(socket: WebSocket, message: string | Uint8Array): boolean
+  /// Buffers a message for a machine in its resume grace window. False = no
+  /// grace session (or its buffer overflowed and it was abandoned) — report
+  /// machine-offline exactly as before resume existed.
+  bufferForMachine(machineId: string, message: Uint8Array): boolean
+  /// Same for an app connection in grace; false → peer-gone as before.
+  bufferForPeer(peerId: string, message: Uint8Array): boolean
+  /// Whether an app connection id has a session in its resume grace window.
+  appGraceExists(peerId: string): boolean
   error(
     socket: WebSocket,
     code: "machine-offline" | "unknown-machine" | "invalid-frame",
@@ -38,27 +46,42 @@ export interface AppRelayOpener {
   deviceId?: string
 }
 
+type Destination =
+  | { kind: "socket"; socket: WebSocket; machineId: string }
+  | { kind: "grace"; machineId: string }
+
+const sameDestination = (a: Destination | undefined, b: Destination): boolean =>
+  a !== undefined &&
+  a.kind === b.kind &&
+  a.machineId === b.machineId &&
+  (a.kind !== "socket" || b.kind !== "socket" || a.socket === b.socket)
+
 export const routeAppRelay = (
   hub: RelayHubPort,
   socket: WebSocket,
   opener: AppRelayOpener,
   envelopes: WireRelayEnvelope[]
 ): void => {
-  let target: WebSocket | undefined
-  let targetMachineId: string | undefined
+  let target: Destination | undefined
   let batch: { header: HubToMachineRelayHeader; payload: Uint8Array }[] = []
   const flush = (): void => {
     if (target !== undefined && batch.length > 0) {
-      if (!hub.send(target, encodeRelayEnvelopes(batch))) {
-        // The chosen machine socket is dead but its close event has not
-        // fired yet. Report it like any other offline machine; the app
-        // closes every channel toward the machine on this error.
-        console.warn("relay to machine failed: socket dead before close event", {
-          machineId: targetMachineId,
+      const message = encodeRelayEnvelopes(batch)
+      const delivered =
+        target.kind === "socket"
+          ? hub.send(target.socket, message)
+          : hub.bufferForMachine(target.machineId, message)
+      if (!delivered) {
+        // Socket dead before its close event, or the grace buffer just
+        // overflowed and the session was abandoned. Either way: report it
+        // like any other offline machine; the app closes every channel
+        // toward the machine on this error.
+        console.warn("relay to machine failed", {
+          machineId: target.machineId,
           channelId: batch[0]!.header.frame.channelId
         })
-        hub.error(socket, "machine-offline", "machine relay socket failed", {
-          machineId: targetMachineId!,
+        hub.error(socket, "machine-offline", "machine relay delivery failed", {
+          machineId: target.machineId,
           channelId: batch[0]!.header.frame.channelId
         })
       }
@@ -72,20 +95,22 @@ export const routeAppRelay = (
       continue
     }
     const machineSocket = hub.findMachineSocket(header.machineId)
-    if (machineSocket === undefined) {
-      const known = hub.isKnownMachine(header.machineId)
-      hub.error(
-        socket,
-        known ? "machine-offline" : "unknown-machine",
-        known ? "machine is not connected" : "no such machine on this account",
-        { machineId: header.machineId, channelId: header.frame.channelId }
-      )
+    const destination: Destination | undefined =
+      machineSocket !== undefined
+        ? { kind: "socket", socket: machineSocket, machineId: header.machineId }
+        : hub.isKnownMachine(header.machineId)
+          ? { kind: "grace", machineId: header.machineId }
+          : undefined
+    if (destination === undefined) {
+      hub.error(socket, "unknown-machine", "no such machine on this account", {
+        machineId: header.machineId,
+        channelId: header.frame.channelId
+      })
       continue
     }
-    if (machineSocket !== target) {
+    if (!sameDestination(target, destination)) {
       flush()
-      target = machineSocket
-      targetMachineId = header.machineId
+      target = destination
     }
     batch.push({
       header: {
@@ -114,18 +139,23 @@ export const routeMachineRelay = (
   machineDeviceId: string,
   envelopes: WireRelayEnvelope[]
 ): void => {
-  let target: WebSocket | undefined
-  let targetPeerId: string | undefined
+  let target: { socket: WebSocket | undefined; peerId: string } | undefined
   let batch: { header: unknown; payload: Uint8Array }[] = []
+  const reportGone = (peerId: string): void => {
+    hub.send(socket, encodeCloudFrame({ t: "peer-gone", peerId }))
+  }
   const flush = (): void => {
     if (target !== undefined && batch.length > 0) {
-      if (!hub.send(target, encodeRelayEnvelopes(batch))) {
-        // The app socket is dead but its close event has not fired yet:
-        // tell the machine now, exactly as if the peer were already gone.
-        console.warn("relay to app failed: socket dead before close event", {
-          peerId: targetPeerId
-        })
-        hub.send(socket, encodeCloudFrame({ t: "peer-gone", peerId: targetPeerId! }))
+      const message = encodeRelayEnvelopes(batch)
+      const delivered =
+        target.socket !== undefined
+          ? hub.send(target.socket, message)
+          : hub.bufferForPeer(target.peerId, message)
+      if (!delivered) {
+        // Socket dead before its close event, or the grace buffer just
+        // overflowed: tell the machine the peer is gone so it drops channels.
+        console.warn("relay to app failed", { peerId: target.peerId })
+        reportGone(target.peerId)
       }
     }
     batch = []
@@ -138,18 +168,18 @@ export const routeMachineRelay = (
       continue
     }
     const peer = hub.findAppSocket(header.peerId)
-    if (peer === undefined) {
-      // The app socket vanished; tell the machine so it can drop channels.
+    if (peer === undefined && !hub.appGraceExists(header.peerId)) {
+      // The app vanished with no resumable session; tell the machine once so
+      // it drops that peer's channels.
       if (!reportedGone.has(header.peerId)) {
         reportedGone.add(header.peerId)
-        hub.send(socket, encodeCloudFrame({ t: "peer-gone", peerId: header.peerId }))
+        reportGone(header.peerId)
       }
       continue
     }
-    if (peer !== target) {
+    if (target === undefined || target.peerId !== header.peerId || target.socket !== peer) {
       flush()
-      target = peer
-      targetPeerId = header.peerId
+      target = { socket: peer, peerId: header.peerId }
     }
     batch.push({
       header: { machineId: machineDeviceId, frame: header.frame },

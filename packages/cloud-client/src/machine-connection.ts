@@ -21,6 +21,12 @@ import {
 } from "./machine-socket.js"
 import type { PeerKeyPinStore } from "./peer-pins.js"
 
+/// Envelopes sealed while the hub socket is away are retained (bounded) and
+/// replayed after a resumed welcome, so channel content — not just channel
+/// identity — survives a blip. Mirrors the hub's per-session buffer for the
+/// opposite direction. Overflow drops the channels (frames would gap anyway).
+const RESUME_RETAIN_CAP_BYTES = 256 * 1024
+
 export interface MachineConnectionOptions {
   credentials: MachineCredentials
   device: { name: string; os?: string; appVersion?: string }
@@ -70,6 +76,12 @@ export class CloudMachineConnection {
   /// The pipe-agnostic responder half of the channel protocol; this class is
   /// just the hub-relay pipe feeding it (socket, heartbeat, reconnect).
   readonly #receiver: ChannelReceiver
+  /// Session resume: the token from the last welcome, the identity it names,
+  /// and the envelopes retained while disconnected.
+  #resumeToken: string | undefined
+  #connectionId: string | undefined
+  #retained: { header: unknown; payload: Uint8Array }[] = []
+  #retainedBytes = 0
 
   constructor(private readonly options: MachineConnectionOptions) {
     this.#receiver = new ChannelReceiver({
@@ -86,7 +98,9 @@ export class CloudMachineConnection {
         ? {}
         : { decompressPayload: options.decompressPayload }),
       sendEnvelope: (peerId, frame, payload) => this.#sendEnvelope(peerId, frame, payload),
-      ready: () => this.#outbox !== undefined
+      // Channels may keep sealing while the socket is away: frames land in
+      // the retention buffer and replay after a resumed welcome.
+      ready: () => this.#outbox !== undefined || this.#resumable()
     })
   }
 
@@ -107,6 +121,7 @@ export class CloudMachineConnection {
     this.#setState("stopped")
     this.#clearLivenessTimers()
     this.#dropOutbox()
+    this.#discardResumeState()
     const socket = this.#socket
     this.#socket = undefined
     socket?.close(1000, "stopping")
@@ -153,7 +168,14 @@ export class CloudMachineConnection {
           : {})
       }
       try {
-        socket.send(encodeCloudFrame({ t: "hello", protocol: CLOUD_PROTOCOL_VERSION, device }))
+        socket.send(
+          encodeCloudFrame({
+            t: "hello",
+            protocol: CLOUD_PROTOCOL_VERSION,
+            device,
+            ...(this.#resumeToken === undefined ? {} : { resume: this.#resumeToken })
+          })
+        )
       } catch {
         this.#forceReconnect(socket, { kind: "send-failed", phase: "hello" })
       }
@@ -187,13 +209,32 @@ export class CloudMachineConnection {
     }
     const frame = decodeHubToMachine(data)
     switch (frame.t) {
-      case "welcome":
+      case "welcome": {
         this.#attempt = 0
         this.#cancelWelcomeTimeout?.()
         this.#cancelWelcomeTimeout = undefined
+        this.#resumeToken = frame.resume
+        const resumed = frame.resumed === true && frame.connectionId === this.#connectionId
+        this.#connectionId = frame.connectionId
+        if (resumed) {
+          // Same identity on both ends: replay what was sealed while away,
+          // in order, before anything new reaches the outbox.
+          const retained = this.#retained
+          this.#retained = []
+          this.#retainedBytes = 0
+          for (const envelope of retained) {
+            this.#outbox?.push(envelope.header, envelope.payload)
+          }
+        } else {
+          // Fresh identity: peer ids changed, so every held channel is dead.
+          this.#retained = []
+          this.#retainedBytes = 0
+          this.#receiver.dropAll("peer-gone")
+        }
         this.#setState("connected")
         this.#scheduleHeartbeat(socket)
         return
+      }
       case "pong":
         if (this.#cancelPongTimeout !== undefined) {
           this.#cancelPongTimeout()
@@ -237,14 +278,17 @@ export class CloudMachineConnection {
     if (this.#socket !== socket) return
     this.#socket = undefined
     this.#clearLivenessTimers()
-    this.#dropOutbox()
-    this.#receiver.dropAll("peer-gone")
+    this.#suspendOrDrop()
     this.options.onDisconnect?.({ kind: "socket-closed", code })
     if (code === 4201) {
+      this.#discardResumeState()
+      this.#receiver.dropAll("peer-gone")
       this.#setState("revoked")
       return
     }
     if (code === 4200) {
+      this.#discardResumeState()
+      this.#receiver.dropAll("peer-gone")
       this.#setState("unsupported-protocol")
       return
     }
@@ -255,8 +299,7 @@ export class CloudMachineConnection {
     if (this.#socket !== socket || this.#stopped) return
     this.#socket = undefined
     this.#clearLivenessTimers()
-    this.#dropOutbox()
-    this.#receiver.dropAll("peer-gone")
+    this.#suspendOrDrop()
     this.options.onDisconnect?.(reason)
     try {
       if (socket.terminate !== undefined) socket.terminate()
@@ -303,6 +346,44 @@ export class CloudMachineConnection {
     this.#outbox = undefined
   }
 
+  /// Socket loss with a resume token: hold the channels and move the outbox's
+  /// unsent envelopes into the retention buffer (their seqs are already
+  /// booked). Without a token: today's teardown.
+  #suspendOrDrop(): void {
+    if (this.#resumable()) {
+      /* v8 ignore next -- defensive: the outbox always exists while its socket does. */
+      const pending = this.#outbox?.drain() ?? []
+      this.#outbox = undefined
+      for (const envelope of pending) this.#retain(envelope.header, envelope.payload)
+      return
+    }
+    this.#dropOutbox()
+    this.#receiver.dropAll("peer-gone")
+  }
+
+  #resumable(): boolean {
+    return this.#resumeToken !== undefined && !this.#stopped
+  }
+
+  #discardResumeState(): void {
+    this.#resumeToken = undefined
+    this.#connectionId = undefined
+    this.#retained = []
+    this.#retainedBytes = 0
+  }
+
+  #retain(header: unknown, payload: Uint8Array): void {
+    if (this.#retainedBytes + payload.byteLength > RESUME_RETAIN_CAP_BYTES) {
+      // Frames are being dropped: a later resume would seq-gap anyway, so
+      // fall back to the plain teardown path now.
+      this.#discardResumeState()
+      this.#receiver.dropAll("peer-gone")
+      return
+    }
+    this.#retained.push({ header, payload })
+    this.#retainedBytes += payload.byteLength
+  }
+
   /// Queues one relay envelope toward the hub (empty payload for
   /// credit/close frames, whose parameters live in the header).
   #sendEnvelope(
@@ -310,6 +391,18 @@ export class CloudMachineConnection {
     frame: RelayFrameHeader,
     payload: Uint8Array = new Uint8Array(0)
   ): void {
+    // While connected, envelopes flow through the coalescing outbox. While
+    // suspended-with-resume, they are retained for replay after the resumed
+    // welcome — including pre-welcome sends on the new socket, which must
+    // not overtake the retained backlog.
+    if (this.#outbox !== undefined && this.#state === "connected") {
+      this.#outbox.push({ peerId, frame }, payload)
+      return
+    }
+    if (this.#resumable()) {
+      this.#retain({ peerId, frame }, payload)
+      return
+    }
     this.#outbox?.push({ peerId, frame }, payload)
   }
 }

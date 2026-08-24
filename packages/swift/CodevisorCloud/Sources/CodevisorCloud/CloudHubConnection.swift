@@ -27,6 +27,10 @@ public actor CloudHubConnection {
     private let readyTimeout: Duration
     private let heartbeatInterval: Duration
     let heartbeatTimeout: Duration
+    /// How long held channels survive a socket gap while a resume is pending
+    /// before degrading to the plain teardown (slightly above the hub's
+    /// 60s grace, so the hub — not a local timer — decides the outcome).
+    let resumeSuspensionTimeout: Duration
     let decoder = JSONDecoder()
     let encoder = JSONEncoder()
 
@@ -51,6 +55,11 @@ public actor CloudHubConnection {
     /// Serializes outbound socket writes so relay frames hit the wire in seq
     /// order even when several tasks send concurrently.
     var sendChain: Task<Void, Never> = Task {}
+    /// Session resume: the token from the last welcome, the identity it
+    /// names, and the deadline that bounds a suspension nobody resumes.
+    var resumeToken: String?
+    var lastConnectionId: String?
+    var suspensionTask: Task<Void, Never>?
     /// The machine presence list from welcome, kept fresh by presence frames.
     public internal(set) var machines: [CloudMachine] = []
 
@@ -99,7 +108,8 @@ public actor CloudHubConnection {
         webSocketTransport: any ServerWebSocketTransport = URLSessionWebSocketTransport(),
         readyTimeout: Duration = .seconds(15),
         heartbeatInterval: Duration = .seconds(30),
-        heartbeatTimeout: Duration = .seconds(10)
+        heartbeatTimeout: Duration = .seconds(10),
+        resumeSuspensionTimeout: Duration = .seconds(70)
     ) {
         self.serverURL = serverURL
         self.credentialStore = credentialStore
@@ -110,6 +120,7 @@ public actor CloudHubConnection {
         self.readyTimeout = readyTimeout
         self.heartbeatInterval = heartbeatInterval
         self.heartbeatTimeout = heartbeatTimeout
+        self.resumeSuspensionTimeout = resumeSuspensionTimeout
     }
 
     public static var defaultDeviceName: String {
@@ -144,6 +155,10 @@ public actor CloudHubConnection {
     public func shutdown() {
         runTask?.cancel()
         runTask = nil
+        suspensionTask?.cancel()
+        suspensionTask = nil
+        resumeToken = nil
+        lastConnectionId = nil
         resetHeartbeat()
         socket?.cancel(with: .goingAway, reason: nil)
         socket = nil
@@ -167,7 +182,8 @@ public actor CloudHubConnection {
         Log.cloud.info("Replacing the cloud hub connection")
         isWelcomed = false
         resetHeartbeat()
-        failAllChannels()
+        // Held channels ride through the replacement when the next welcome
+        // resumes; the run loop's teardown decides their fate otherwise.
         socket.cancel(with: .goingAway, reason: nil)
     }
 
@@ -254,8 +270,15 @@ public actor CloudHubConnection {
             socket = nil
             socketID = nil
             isWelcomed = false
-            failAllChannels()
-            if Self.fatalCloseCodes.contains(closeCode) {
+            let fatal = Self.fatalCloseCodes.contains(closeCode)
+            if fatal || resumeToken == nil {
+                failAllChannels()
+            } else {
+                // Suspend: channels ride out the gap awaiting a resumed
+                // welcome, bounded so nothing hangs if the hub forgets us.
+                armSuspensionDeadline()
+            }
+            if fatal {
                 becomeFatal(.rejected(closeCode: closeCode))
             }
             guard fatalFailure == nil, !Task.isCancelled else { break }
@@ -264,6 +287,21 @@ public actor CloudHubConnection {
             let base = min(5_000, 250 * (1 << min(failures, 5)))
             try? await Task.sleep(for: .milliseconds(base + Int.random(in: 0...250)))
         }
+    }
+
+    private func armSuspensionDeadline() {
+        suspensionTask?.cancel()
+        let timeout = resumeSuspensionTimeout
+        suspensionTask = Task { [weak self] in
+            try? await Task.sleep(for: timeout)
+            guard !Task.isCancelled else { return }
+            await self?.expireSuspension()
+        }
+    }
+
+    private func expireSuspension() {
+        guard !isWelcomed else { return }
+        failAllChannels()
     }
 
     private func becomeFatal(_ failure: CloudHubConnectionError) {
