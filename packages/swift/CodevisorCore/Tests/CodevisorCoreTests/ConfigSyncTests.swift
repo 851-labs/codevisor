@@ -194,6 +194,34 @@ struct ConfigSyncTests {
         #expect(fakeA.appliedSkills == ["deploy"])
     }
 
+    @Test("A machine connecting triggers an immediate targeted pass")
+    func machineArrivalSyncs() async throws {
+        let remote = makeRemote("remote-a")
+        let fake = SyncFakeServerClient(projects: [], sessions: [])
+        let controller = try makeController(
+            fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],
+            remotes: [remote]
+        )
+        let sync = ConfigSync(machines: controller, store: InMemoryStore())
+        var connected: [String] = []
+        controller.onMachineConnected = { machineId in
+            connected.append(machineId)
+            Task { await sync.synchronizeMachine(machineId) }
+        }
+
+        await controller.connectMachine(remote.id)
+
+        #expect(connected == [remote.id])
+        // The targeted pass reached the machine: gossip plus all three
+        // reconcile/publish calls, with no periodic sweep involved.
+        try await waitForSync {
+            fake.operationLog.contains("mcps.reconcile")
+                && fake.operationLog.contains("accounts.publish")
+                && fake.operationLog.contains("skills.reconcile")
+        }
+        controller.stopEventSync()
+    }
+
     @Test("Full sync passes reconcile MCPs and publish rosters per machine")
     func fullPassReconciles() async throws {
         let remote = makeRemote("remote-a")

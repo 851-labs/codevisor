@@ -59,8 +59,6 @@ public final class AppEnvironment {
     private var harnessLifecycleByServer: [String: [ServerHarness]] = [:]
     private let clientDataResetter: (any ClientDataResetting)?
 
-    public var serverClient: any CodevisorServerClienting { machines.selectedClient }
-
     public init(
         projectRepository: any ProjectRepository,
         sessionRepository: any SessionRepository,
@@ -154,6 +152,7 @@ public final class AppEnvironment {
             guard namespace == "settings" else { return }
             self?.applySyncedSettings()
         }
+        machines.onMachineConnected = { [weak self] in self?.noteMachineConnected($0) }
         applySyncedSettings()
         machines.onPluginStateChanged = { [weak self] in self?.pluginStateDidChange(onServer: $0) }
         machines.onPluginUpdated = { [weak self] in self?.pluginDidUpdate(onServer: $0, pluginId: $1) }

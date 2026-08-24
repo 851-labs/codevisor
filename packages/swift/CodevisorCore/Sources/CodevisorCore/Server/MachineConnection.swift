@@ -119,6 +119,7 @@ extension MachineController {
         // navigation sync owns the stream then.
         guard connection.eventSyncTask == nil else { return }
         startEventSync(serverId: machineId, client: client, since: cursor)
+        onMachineConnected?(machineId)
     }
 
     /// Ensures every registered machine has a live event stream. Safe to
@@ -136,6 +137,10 @@ extension MachineController {
 
     public var selectedServerAvailability: ServerAvailability {
         availabilityByMachineId[selectedMachineId] ?? .ready
+    }
+
+    public var selectedNavigationSyncState: NavigationSyncState {
+        navigationSyncStateByMachineId[selectedMachineId] ?? .cached
     }
 
     // MARK: - Legacy projections

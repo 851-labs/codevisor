@@ -121,6 +121,17 @@ public final class ConfigSync {
         }
     }
 
+    /// One machine's full pass — run the moment its connection comes up, so
+    /// a freshly joined (or newly reachable) machine converges immediately
+    /// instead of on the next periodic sweep.
+    public func synchronizeMachine(_ machineId: String) async {
+        let client = machines.client(for: machineId)
+        await synchronize(machineId: machineId)
+        _ = try? await client.reconcileMcpsSync()
+        try? await client.publishAccountsSync()
+        await synchronizeSkills()
+    }
+
     /// Every reachable machine. Safe to call often; merging is idempotent.
     public func synchronizeAll() async {
         for machine in machines.allMachines

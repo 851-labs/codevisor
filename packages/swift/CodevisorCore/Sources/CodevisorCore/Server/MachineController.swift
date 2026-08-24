@@ -132,6 +132,10 @@ public final class MachineController {
     /// replica changed; ConfigSync adopts and re-gossips it. Arguments:
     /// (serverId, changed document).
     @ObservationIgnored public var onSyncChanged: ((String, ServerSyncDocument) -> Void)?
+    /// Invoked when a machine's live connection comes up (selected machine
+    /// prepared, or a background stream opened) — ConfigSync converges it
+    /// immediately instead of waiting for the next periodic sweep.
+    @ObservationIgnored public var onMachineConnected: ((String) -> Void)?
 
     public init(
         store: any PersistenceStore,
@@ -310,10 +314,6 @@ public final class MachineController {
 
     public var selectedClient: any CodevisorServerClienting {
         client(for: selectedMachine.id)
-    }
-
-    public var selectedNavigationSyncState: NavigationSyncState {
-        navigationSyncStateByMachineId[selectedMachineId] ?? .cached
     }
 
     public func machine(for id: String) -> CodevisorMachine? {
@@ -706,6 +706,7 @@ public final class MachineController {
         // With the selected machine ready, bring every other machine's
         // stream up so activity elsewhere stays visible.
         ensureBackgroundConnections()
+        onMachineConnected?(machineId)
     }
 
     public func retrySelectedMachine() async {

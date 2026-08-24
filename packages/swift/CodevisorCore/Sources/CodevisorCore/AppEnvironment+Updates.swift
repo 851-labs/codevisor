@@ -3,8 +3,16 @@ import Foundation
 /// Environment surface split from the class body to keep
 /// AppEnvironment.swift within size limits.
 extension AppEnvironment {
+    public var serverClient: any CodevisorServerClienting { machines.selectedClient }
+
     public var harnessService: any HarnessServicing {
         harnessService(for: machines.selectedMachineId)
+    }
+
+    /// A machine's connection just came up: converge it with the config
+    /// plane now rather than on the next periodic sweep.
+    func noteMachineConnected(_ machineId: String) {
+        Task { await configSync.synchronizeMachine(machineId) }
     }
 
     public var sessionImporter: SessionImporter {
