@@ -47,7 +47,22 @@ struct MachinesSettingsView: View {
             && SettingsRouter.shared.machinesPath.isEmpty
     }
 
-    var body: some View {
+    /// A Bool presentation binding over optional state ("present while
+    /// non-nil"). Extracted from `body`: five of these inlined as closure
+    /// pairs were the heaviest part of the expression the Release
+    /// type-checker gave up on.
+    private func presenceBinding<Value>(_ state: Binding<Value?>) -> Binding<Bool> {
+        Binding(
+            get: { state.wrappedValue != nil },
+            set: { if !$0 { state.wrappedValue = nil } }
+        )
+    }
+
+    /// The machine list itself, separated from `body`'s presentation-modifier
+    /// chain: as one expression the two together exceeded the Release
+    /// type-checker's budget ("unable to type-check this expression in
+    /// reasonable time" in Alpha builds).
+    private var machinesForm: some View {
         Form {
             Section {
                 // One list for every machine, however it arrives: configured
@@ -90,154 +105,143 @@ struct MachinesSettingsView: View {
             }
         }
         .settingsPaneFormStyle(theme)
-        // Discover only while this pane is visible; no background polling.
-        // Keying on `isPollingActive` both stops the loop when the pane can't
-        // be seen and restarts it (immediate refresh included) when the
-        // section is re-selected or the window comes back.
-        .task(id: isPollingActive) {
-            guard isPollingActive else { return }
-            while !Task.isCancelled {
-                await discovery.refresh(registeredHosts: registeredHosts)
-                try? await Task.sleep(for: .seconds(30))
-            }
-        }
-        .onChange(of: machines.machines.map(\.id)) { _, _ in
-            Task { await discovery.refresh(registeredHosts: registeredHosts) }
-        }
-        .sheet(item: $renamingCloud) { machine in
-            RenameCloudMachineSheet(machine: machine) { name in
-                Task { await environment.cloud.rename(deviceId: machine.deviceId, name: name) }
-            }
-        }
-        .confirmationDialog(
-            "Disconnect “\(removingCloud?.name ?? "")”?",
-            isPresented: Binding(
-                get: { removingCloud != nil },
-                set: { if !$0 { removingCloud = nil } }
-            ),
-            titleVisibility: .visible,
-            presenting: removingCloud
-        ) { machine in
-            Button("Disconnect Machine", role: .destructive) {
-                Task { await environment.cloud.remove(deviceId: machine.deviceId) }
-            }
-            .settingsActionTint(theme)
-            Button("Cancel", role: .cancel) {}
-                .settingsActionTint(theme)
-        } message: { machine in
-            Text(
-                "“\(machine.name)” will be signed out of your cloud account. Nothing on the machine itself is changed — run `codevisor auth login` there to reconnect it."
-            )
-        }
-        .confirmationDialog(
-            "Trust the new key for “\(trustingKeyCloud?.name ?? "")”?",
-            isPresented: Binding(
-                get: { trustingKeyCloud != nil },
-                set: { if !$0 { trustingKeyCloud = nil } }
-            ),
-            titleVisibility: .visible,
-            presenting: trustingKeyCloud
-        ) { machine in
-            Button("Trust New Key", role: .destructive) {
-                environment.cloud.trustChangedMachineKey(deviceId: machine.deviceId)
-            }
-            .settingsActionTint(theme)
-            Button("Cancel", role: .cancel) {}
-                .settingsActionTint(theme)
-        } message: { machine in
-            Text(
-                "“\(machine.name)” is presenting a different encryption key than the one this device remembers. That happens if the machine was re-provisioned — but it can also mean something between you and the machine is intercepting traffic. Only trust the new key if you expected this change."
-            )
-        }
-        .sheet(item: $addingDiscovered) { machine in
-            RemoteMachineSheet(name: machine.name, host: machine.host) { host, name, token in
-                await addMachine(host: host, name: name, token: token)
-            }
-        }
-        .sheet(isPresented: $showingAdd) {
-            RemoteMachineSheet { host, name, token in
-                await addMachine(host: host, name: name, token: token)
-            }
-        }
-        .sheet(item: $renaming) { machine in
-            RenameMachineSheet(machine: machine) { name in
-                do {
-                    try machines.renameMachine(machine.id, to: name)
-                } catch {
-                    Log.machines.error("Renaming machine failed: \(String(describing: error), privacy: .public)")
-                    actionError = MachineActionError(
-                        title: "Couldn't Rename the Machine",
-                        message: ErrorReporter.userFacingMessage(for: error)
-                    )
+    }
+
+    var body: some View {
+        machinesForm
+            // Discover only while this pane is visible; no background polling.
+            // Keying on `isPollingActive` both stops the loop when the pane can't
+            // be seen and restarts it (immediate refresh included) when the
+            // section is re-selected or the window comes back.
+            .task(id: isPollingActive) {
+                guard isPollingActive else { return }
+                while !Task.isCancelled {
+                    await discovery.refresh(registeredHosts: registeredHosts)
+                    try? await Task.sleep(for: .seconds(30))
                 }
             }
-        }
-        .confirmationDialog(
-            "Remove “\(removing?.name ?? "")”?",
-            isPresented: Binding(
-                get: { removing != nil },
-                set: { if !$0 { removing = nil } }
-            ),
-            titleVisibility: .visible,
-            presenting: removing
-        ) { machine in
-            Button("Remove Machine", role: .destructive) {
-                do {
-                    try machines.removeMachine(machine.id)
-                    // A removed machine may be discoverable again — refetch so
-                    // it reappears under "On Your Network" right away.
-                    Task { await discovery.refresh(registeredHosts: registeredHosts) }
-                } catch {
-                    Log.machines.error("Removing machine failed: \(String(describing: error), privacy: .public)")
-                    actionError = MachineActionError(
-                        title: "Couldn't Remove the Machine",
-                        message: ErrorReporter.userFacingMessage(for: error)
-                    )
+            .onChange(of: machines.machines.map(\.id)) { _, _ in
+                Task { await discovery.refresh(registeredHosts: registeredHosts) }
+            }
+            .sheet(item: $renamingCloud) { machine in
+                RenameCloudMachineSheet(machine: machine) { name in
+                    Task { await environment.cloud.rename(deviceId: machine.deviceId, name: name) }
                 }
             }
-            .settingsActionTint(theme)
-            Button("Cancel", role: .cancel) {}
+            .confirmationDialog(
+                "Disconnect “\(removingCloud?.name ?? "")”?",
+                isPresented: presenceBinding($removingCloud),
+                titleVisibility: .visible,
+                presenting: removingCloud
+            ) { machine in
+                Button("Disconnect Machine", role: .destructive) {
+                    Task { await environment.cloud.remove(deviceId: machine.deviceId) }
+                }
                 .settingsActionTint(theme)
-        } message: { machine in
-            Text("Codevisor will forget “\(machine.name)”. Nothing on the machine itself is changed.")
-        }
-        // Keep statuses honest while the pane is open: a machine that was mid
-        // restart (or briefly offline) when first probed recovers on the next
-        // pass instead of staying stuck on "Unreachable". Gated exactly like
-        // discovery above — no probes while nobody is looking.
-        .task(id: isPollingActive) {
-            guard isPollingActive else { return }
-            while !Task.isCancelled {
-                await refreshStatuses()
-                try? await Task.sleep(for: .seconds(10))
+                Button("Cancel", role: .cancel) {}
+                    .settingsActionTint(theme)
+            } message: { machine in
+                Text(
+                    "“\(machine.name)” will be signed out of your cloud account. Nothing on the machine itself is changed — run `codevisor auth login` there to reconnect it."
+                )
             }
-        }
-        .alert(
-            "Connection Token",
-            isPresented: Binding(
-                get: { tokenNotice != nil },
-                set: { if !$0 { tokenNotice = nil } }
-            ),
-            presenting: tokenNotice
-        ) { _ in
-            Button("OK") {}
+            .confirmationDialog(
+                "Trust the new key for “\(trustingKeyCloud?.name ?? "")”?",
+                isPresented: presenceBinding($trustingKeyCloud),
+                titleVisibility: .visible,
+                presenting: trustingKeyCloud
+            ) { machine in
+                Button("Trust New Key", role: .destructive) {
+                    environment.cloud.trustChangedMachineKey(deviceId: machine.deviceId)
+                }
                 .settingsActionTint(theme)
-        } message: { notice in
-            Text(notice)
-        }
-        .alert(
-            actionError?.title ?? "",
-            isPresented: Binding(
-                get: { actionError != nil },
-                set: { if !$0 { actionError = nil } }
-            ),
-            presenting: actionError
-        ) { _ in
-            Button("OK") {}
+                Button("Cancel", role: .cancel) {}
+                    .settingsActionTint(theme)
+            } message: { machine in
+                Text(
+                    "“\(machine.name)” is presenting a different encryption key than the one this device remembers. That happens if the machine was re-provisioned — but it can also mean something between you and the machine is intercepting traffic. Only trust the new key if you expected this change."
+                )
+            }
+            .sheet(item: $addingDiscovered) { machine in
+                RemoteMachineSheet(name: machine.name, host: machine.host) { host, name, token in
+                    await addMachine(host: host, name: name, token: token)
+                }
+            }
+            .sheet(isPresented: $showingAdd) {
+                RemoteMachineSheet { host, name, token in
+                    await addMachine(host: host, name: name, token: token)
+                }
+            }
+            .sheet(item: $renaming) { machine in
+                RenameMachineSheet(machine: machine) { name in
+                    do {
+                        try machines.renameMachine(machine.id, to: name)
+                    } catch {
+                        Log.machines.error("Renaming machine failed: \(String(describing: error), privacy: .public)")
+                        actionError = MachineActionError(
+                            title: "Couldn't Rename the Machine",
+                            message: ErrorReporter.userFacingMessage(for: error)
+                        )
+                    }
+                }
+            }
+            .confirmationDialog(
+                "Remove “\(removing?.name ?? "")”?",
+                isPresented: presenceBinding($removing),
+                titleVisibility: .visible,
+                presenting: removing
+            ) { machine in
+                Button("Remove Machine", role: .destructive) {
+                    do {
+                        try machines.removeMachine(machine.id)
+                        // A removed machine may be discoverable again — refetch so
+                        // it reappears under "On Your Network" right away.
+                        Task { await discovery.refresh(registeredHosts: registeredHosts) }
+                    } catch {
+                        Log.machines.error("Removing machine failed: \(String(describing: error), privacy: .public)")
+                        actionError = MachineActionError(
+                            title: "Couldn't Remove the Machine",
+                            message: ErrorReporter.userFacingMessage(for: error)
+                        )
+                    }
+                }
                 .settingsActionTint(theme)
-        } message: { error in
-            Text(error.message)
-        }
+                Button("Cancel", role: .cancel) {}
+                    .settingsActionTint(theme)
+            } message: { machine in
+                Text("Codevisor will forget “\(machine.name)”. Nothing on the machine itself is changed.")
+            }
+            // Keep statuses honest while the pane is open: a machine that was mid
+            // restart (or briefly offline) when first probed recovers on the next
+            // pass instead of staying stuck on "Unreachable". Gated exactly like
+            // discovery above — no probes while nobody is looking.
+            .task(id: isPollingActive) {
+                guard isPollingActive else { return }
+                while !Task.isCancelled {
+                    await refreshStatuses()
+                    try? await Task.sleep(for: .seconds(10))
+                }
+            }
+            .alert(
+                "Connection Token",
+                isPresented: presenceBinding($tokenNotice),
+                presenting: tokenNotice
+            ) { _ in
+                Button("OK") {}
+                    .settingsActionTint(theme)
+            } message: { notice in
+                Text(notice)
+            }
+            .alert(
+                actionError?.title ?? "",
+                isPresented: presenceBinding($actionError),
+                presenting: actionError
+            ) { _ in
+                Button("OK") {}
+                    .settingsActionTint(theme)
+            } message: { error in
+                Text(error.message)
+            }
     }
 
     /// Issues a fresh token from this machine's server and puts it on the
