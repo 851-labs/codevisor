@@ -784,6 +784,8 @@ export const nativeMcpRemoval = {
 /// nativeMcpStub/skillsStub below): records calls and mirrors the real
 /// manager's typed failures.
 export const pluginSummary = {
+  canRestore: false,
+  enabled: true,
   id: "owner.example",
   name: "Example",
   panes: [{ path: "/panes/main/", title: "Main", type: "main" }],
@@ -956,6 +958,14 @@ export const pluginsStub = (
       throw new PluginsError("notFound", `Plugin not installed: ${pluginId}`)
     }
     return pluginSummary
+  },
+  restore: async (pluginId) => {
+    calls.push(["restore", pluginId])
+    return { ...pluginSummary, canRestore: true, source: "managed", version: "0.0.9" }
+  },
+  setEnabled: async (pluginId, enabled) => {
+    calls.push(["setEnabled", pluginId, enabled])
+    return { ...pluginSummary, enabled }
   },
   subscribe: (listener) => {
     listeners.push(listener)

@@ -18,6 +18,7 @@ struct PluginsSettingsView: View {
     @State private var actionError: String?
     @State private var activeSheet: PluginsSheet?
     @State private var pluginPendingRemoval: ServerPluginSummary?
+    @State private var pluginPendingRestore: ServerPluginSummary?
     @State private var isMutating = false
 
     /// One sheet slot for both flows, so "Install" inside the browse sheet
@@ -129,6 +130,32 @@ struct PluginsSettingsView: View {
             } message: {
                 Text(removalMessage(for: pluginPendingRemoval))
             }
+            .confirmationDialog(
+                "Restore " + (pluginPendingRestore?.name ?? "plugin") + "?",
+                isPresented: Binding(
+                    get: { pluginPendingRestore != nil },
+                    set: { if !$0 { pluginPendingRestore = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("Restore Previous Version") {
+                    guard let plugin = pluginPendingRestore else { return }
+                    Task {
+                        _ = try? await mutate {
+                            try await client.restorePlugin(pluginId: plugin.id)
+                        }
+                        pluginPendingRestore = nil
+                        await reload()
+                    }
+                }
+                .settingsActionTint(theme)
+                Button("Cancel", role: .cancel) { pluginPendingRestore = nil }
+                    .settingsActionTint(theme)
+            } message: {
+                Text(
+                    "This restores the verified pre-update code and data. The current version becomes the next restore point."
+                )
+            }
     }
 
     /// The uninstall consequences, including the panes the server will close
@@ -236,7 +263,7 @@ struct PluginsSettingsView: View {
                     Text(plugin.version)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    stateChip(plugin.state)
+                    stateChip(pluginRuntimeState(plugin))
                     if let update = updates[plugin.id] {
                         updateChip(update)
                     }
@@ -253,12 +280,25 @@ struct PluginsSettingsView: View {
                     Button("Update…") { prepareUpdate(plugin) }
                     Divider()
                 }
-                Button("Restart") {
-                    Task {
-                        _ = try? await mutate {
-                            try await client.restartPlugin(pluginId: plugin.id)
+                if updates[plugin.id]?.state == .sourceUnknown {
+                    Button("Reinstall to Enable Updates…") {
+                        activeSheet = .install(initialSource: nil)
+                    }
+                }
+                if plugin.canRestore == true {
+                    Button("Restore Previous Version…") { pluginPendingRestore = plugin }
+                }
+                Button(plugin.isEnabled ? "Disable" : "Enable") {
+                    setEnabled(plugin, enabled: !plugin.isEnabled)
+                }
+                if plugin.isEnabled {
+                    Button("Restart") {
+                        Task {
+                            _ = try? await mutate {
+                                try await client.restartPlugin(pluginId: plugin.id)
+                            }
+                            await refreshList()
                         }
-                        await refreshList()
                     }
                 }
                 if FileManager.default.fileExists(atPath: plugin.path) {
@@ -312,6 +352,15 @@ struct PluginsSettingsView: View {
         }
     }
 
+    private func setEnabled(_ plugin: ServerPluginSummary, enabled: Bool) {
+        Task {
+            _ = try? await mutate {
+                try await client.setPluginEnabled(pluginId: plugin.id, enabled: enabled)
+            }
+            await refreshList()
+        }
+    }
+
     private func updateChip(_ update: ServerPluginUpdateStatus) -> some View {
         Text(updateTitle(update))
             .font(.caption2.weight(.medium))
@@ -347,9 +396,9 @@ struct PluginsSettingsView: View {
 
     private func accessibilityLabel(for plugin: ServerPluginSummary) -> String {
         guard let update = updates[plugin.id] else {
-            return "\(plugin.name), \(plugin.state), \(sourceText(plugin))"
+            return "\(plugin.name), \(pluginRuntimeState(plugin)), \(sourceText(plugin))"
         }
-        return "\(plugin.name), \(plugin.state), \(updateTitle(update)), \(sourceText(plugin))"
+        return "\(plugin.name), \(pluginRuntimeState(plugin)), \(updateTitle(update)), \(sourceText(plugin))"
     }
 
     private func prepareUpdate(_ plugin: ServerPluginSummary) {
@@ -401,6 +450,10 @@ struct PluginsSettingsView: View {
             throw error
         }
     }
+}
+
+private func pluginRuntimeState(_ plugin: ServerPluginSummary) -> String {
+    plugin.isEnabled ? plugin.state : "disabled"
 }
 
 #Preview("Plugins Settings") {

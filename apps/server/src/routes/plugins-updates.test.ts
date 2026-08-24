@@ -38,5 +38,18 @@ describe("plugin update routes", () => {
     expect(await live).toContainEqual(
       expect.objectContaining({ kind: "plugin.updated", subjectId: "owner.example" })
     )
+
+    const restored = await jsonRequest(server, "/v1/plugins/owner.example/restore", {
+      method: "POST"
+    })
+    expect(restored).toMatchObject({ status: 200, body: { version: "0.0.9" } })
+
+    const disabled = await jsonRequest(server, "/v1/plugins/owner.example/set-enabled", {
+      body: JSON.stringify({ enabled: false }),
+      method: "POST"
+    })
+    expect(disabled).toMatchObject({ status: 200, body: { enabled: false } })
+    expect(calls).toContainEqual(["restore", "owner.example"])
+    expect(calls).toContainEqual(["setEnabled", "owner.example", false])
   })
 })

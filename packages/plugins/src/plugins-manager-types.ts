@@ -102,6 +102,10 @@ export interface PluginsManager {
   readonly listUpdates: () => Promise<PluginUpdatesResponse>
   readonly prepareUpdate: (pluginId: string) => Promise<PluginUpdatePlan>
   readonly applyUpdate: (pluginId: string, planId: string) => Promise<PluginSummary>
+  /// Swap to the retained known-good code/data backup.
+  readonly restore: (pluginId: string) => Promise<PluginSummary>
+  /// Persistently enable or disable runtime, pane, and tool access.
+  readonly setEnabled: (pluginId: string, enabled: boolean) => Promise<PluginSummary>
   /// Dev mode: symlink a local plugin directory into the plugins root.
   readonly link: (request: LinkPluginRequest) => Promise<PluginSummary>
   /// Managed-marker-gated uninstall (stops the process first); linked

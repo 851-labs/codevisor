@@ -3,6 +3,7 @@ import {
   ApplyPluginUpdateRequest,
   PluginUpdatePlan,
   PluginUpdatesResponse,
+  SetPluginEnabledRequest,
   decode
 } from "./index.js"
 
@@ -45,5 +46,9 @@ describe("plugin update API", () => {
         toolChanges: { added: [], changed: [], removed: [] }
       }).candidate.version
     ).toBe("2.0.0")
+  })
+
+  it("validates persistent enabled-state changes", () => {
+    expect(decode(SetPluginEnabledRequest)({ enabled: false })).toEqual({ enabled: false })
   })
 })

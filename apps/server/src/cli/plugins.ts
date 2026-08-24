@@ -28,6 +28,7 @@ interface DiscoveredPlugin {
 }
 
 interface PluginSummary {
+  readonly enabled?: boolean
   readonly id?: string
   readonly name?: string
   readonly version?: string
@@ -188,8 +189,9 @@ export const pluginListCommand = async (
     return 0
   }
   for (const plugin of plugins) {
+    const runtime = plugin.enabled === false ? "disabled" : (plugin.state ?? "")
     deps.log(
-      `${plugin.id}  ${plugin.version ?? ""}  ${plugin.source ?? ""}  ${plugin.state ?? ""}  ${plugin.name ?? ""}`
+      `${plugin.id}  ${plugin.version ?? ""}  ${plugin.source ?? ""}  ${runtime}  ${plugin.name ?? ""}`
     )
   }
   return 0
@@ -329,5 +331,50 @@ export const pluginUpdateCommand = async (
   }
   const summary = applied.body as PluginSummary
   deps.log(`Updated ${summary.id} ${summary.version ?? ""}`.trim())
+  return 0
+}
+
+export interface PluginIdOptions extends CommandOptions {
+  readonly pluginId: string
+}
+
+export const pluginRestoreCommand = async (
+  deps: PluginsCliDeps,
+  options: PluginIdOptions
+): Promise<number> => {
+  const port = await resolvePort(deps, options.port)
+  const restored = await deps.fetchJson(
+    `http://127.0.0.1:${port}/v1/plugins/${encodeURIComponent(options.pluginId)}/restore`,
+    { method: "POST", timeoutMs: INSTALL_TIMEOUT_MS }
+  )
+  if (restored === undefined) return notRunning(deps, port)
+  if (restored.status !== 200) {
+    deps.error(errorText(restored.body, `Restore failed (status ${restored.status})`))
+    return 1
+  }
+  const summary = restored.body as PluginSummary
+  deps.log(`Restored ${summary.id} ${summary.version ?? ""}`.trim())
+  return 0
+}
+
+export interface PluginSetEnabledOptions extends PluginIdOptions {
+  readonly enabled: boolean
+}
+
+export const pluginSetEnabledCommand = async (
+  deps: PluginsCliDeps,
+  options: PluginSetEnabledOptions
+): Promise<number> => {
+  const port = await resolvePort(deps, options.port)
+  const changed = await deps.fetchJson(
+    `http://127.0.0.1:${port}/v1/plugins/${encodeURIComponent(options.pluginId)}/set-enabled`,
+    { body: { enabled: options.enabled }, method: "POST" }
+  )
+  if (changed === undefined) return notRunning(deps, port)
+  if (changed.status !== 200) {
+    deps.error(errorText(changed.body, `Changing plugin state failed (status ${changed.status})`))
+    return 1
+  }
+  deps.log(`${options.enabled ? "Enabled" : "Disabled"} ${options.pluginId}`)
   return 0
 }

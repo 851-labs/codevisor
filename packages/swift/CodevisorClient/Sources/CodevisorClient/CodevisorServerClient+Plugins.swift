@@ -45,6 +45,10 @@ public struct ServerPluginToolDescriptor: Codable, Hashable, Identifiable, Senda
 
 /// A plugin installed on a machine (mirrors `PluginSummary` in packages/api).
 public struct ServerPluginSummary: Codable, Equatable, Identifiable, Sendable {
+    /// Absent on older servers, where installed plugins were always enabled.
+    public var enabled: Bool?
+    /// Whether the server retains a verified pre-update backup.
+    public var canRestore: Bool?
     public var id: String
     public var name: String
     public var version: String
@@ -64,10 +68,14 @@ public struct ServerPluginSummary: Codable, Equatable, Identifiable, Sendable {
     /// those panes will close. Absent from older servers.
     public var openPaneCount: Int?
 
+    public var isEnabled: Bool { enabled ?? true }
+
     public init(
         id: String,
         name: String,
         version: String,
+        enabled: Bool? = nil,
+        canRestore: Bool? = nil,
         description: String? = nil,
         iconPath: String? = nil,
         panes: [ServerPluginPaneDescriptor] = [],
@@ -77,6 +85,8 @@ public struct ServerPluginSummary: Codable, Equatable, Identifiable, Sendable {
         state: String,
         openPaneCount: Int? = nil
     ) {
+        self.enabled = enabled
+        self.canRestore = canRestore
         self.id = id
         self.name = name
         self.version = version
@@ -400,6 +410,10 @@ extension CodevisorServerClient {
         var planId: String
     }
 
+    struct PluginSetEnabledBody: Encodable {
+        var enabled: Bool
+    }
+
     public func listPlugins() async throws -> [ServerPluginSummary] {
         let response: PluginListResponse = try await get("/v1/plugins")
         return response.plugins
@@ -492,6 +506,22 @@ extension CodevisorServerClient {
             "/v1/plugins/\(pathComponent(pluginId))/restart",
             method: "POST",
             body: Optional<EmptyBody>.none
+        )
+    }
+
+    public func restorePlugin(pluginId: String) async throws -> ServerPluginSummary {
+        try await send(
+            "/v1/plugins/\(pathComponent(pluginId))/restore",
+            method: "POST",
+            body: Optional<EmptyBody>.none
+        )
+    }
+
+    public func setPluginEnabled(pluginId: String, enabled: Bool) async throws -> ServerPluginSummary {
+        try await send(
+            "/v1/plugins/\(pathComponent(pluginId))/set-enabled",
+            method: "POST",
+            body: PluginSetEnabledBody(enabled: enabled)
         )
     }
 

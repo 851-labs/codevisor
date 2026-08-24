@@ -24,6 +24,7 @@ struct PluginsSettingsScreen: View {
     @State private var errorMessage: String?
     @State private var actionError: String?
     @State private var activeSheet: PluginsSheet?
+    @State private var pluginPendingRestore: ServerPluginSummary?
     @State private var isMutating = false
 
     /// One sheet slot for both flows, so "Install" inside the browse sheet
@@ -146,6 +147,30 @@ struct PluginsSettingsScreen: View {
                 )
             }
         }
+        .confirmationDialog(
+            "Restore " + (pluginPendingRestore?.name ?? "plugin") + "?",
+            isPresented: Binding(
+                get: { pluginPendingRestore != nil },
+                set: { if !$0 { pluginPendingRestore = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Restore Previous Version") {
+                guard let plugin = pluginPendingRestore else { return }
+                Task {
+                    _ = try? await mutate {
+                        try await client.restorePlugin(pluginId: plugin.id)
+                    }
+                    pluginPendingRestore = nil
+                    await reload()
+                }
+            }
+            Button("Cancel", role: .cancel) { pluginPendingRestore = nil }
+        } message: {
+            Text(
+                "This restores the verified pre-update code and data. The current version becomes the next restore point."
+            )
+        }
     }
 
     private func pluginRow(_ plugin: ServerPluginSummary) -> some View {
@@ -166,7 +191,7 @@ struct PluginsSettingsScreen: View {
                     Text(plugin.version)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    stateChip(plugin.state)
+                    stateChip(pluginRuntimeState(plugin))
                     if let update = updates[plugin.id] {
                         updateChip(update)
                     }
@@ -206,10 +231,12 @@ struct PluginsSettingsScreen: View {
                     Label("Uninstall", systemImage: "trash")
                 }
             }
-            Button {
-                restart(plugin)
-            } label: {
-                Label("Restart", systemImage: "arrow.clockwise")
+            if plugin.isEnabled {
+                Button {
+                    restart(plugin)
+                } label: {
+                    Label("Restart", systemImage: "arrow.clockwise")
+                }
             }
         }
     }
@@ -225,10 +252,32 @@ struct PluginsSettingsScreen: View {
                 Label("Update…", systemImage: "arrow.down.circle")
             }
         }
+        if updates[plugin.id]?.state == .sourceUnknown {
+            Button {
+                activeSheet = .install(initialSource: nil)
+            } label: {
+                Label("Reinstall to Enable Updates…", systemImage: "arrow.clockwise.circle")
+            }
+        }
+        if plugin.canRestore == true {
+            Button {
+                pluginPendingRestore = plugin
+            } label: {
+                Label("Restore Previous Version…", systemImage: "clock.arrow.circlepath")
+            }
+        }
         Button {
-            restart(plugin)
+            setEnabled(plugin, enabled: !plugin.isEnabled)
         } label: {
-            Label("Restart", systemImage: "arrow.clockwise")
+            Label(
+                plugin.isEnabled ? "Disable" : "Enable", systemImage: plugin.isEnabled ? "pause.circle" : "play.circle")
+        }
+        if plugin.isEnabled {
+            Button {
+                restart(plugin)
+            } label: {
+                Label("Restart", systemImage: "arrow.clockwise")
+            }
         }
         // Only managed installs may be uninstalled — a linked dev plugin's
         // directory belongs to its author.
@@ -245,6 +294,15 @@ struct PluginsSettingsScreen: View {
         Task {
             _ = try? await mutate {
                 try await client.restartPlugin(pluginId: plugin.id)
+            }
+            await refreshList()
+        }
+    }
+
+    private func setEnabled(_ plugin: ServerPluginSummary, enabled: Bool) {
+        Task {
+            _ = try? await mutate {
+                try await client.setPluginEnabled(pluginId: plugin.id, enabled: enabled)
             }
             await refreshList()
         }
@@ -317,9 +375,9 @@ struct PluginsSettingsScreen: View {
 
     private func accessibilityLabel(for plugin: ServerPluginSummary) -> String {
         guard let update = updates[plugin.id] else {
-            return "\(plugin.name), \(plugin.state), \(sourceText(plugin))"
+            return "\(plugin.name), \(pluginRuntimeState(plugin)), \(sourceText(plugin))"
         }
-        return "\(plugin.name), \(plugin.state), \(updateTitle(update)), \(sourceText(plugin))"
+        return "\(plugin.name), \(pluginRuntimeState(plugin)), \(updateTitle(update)), \(sourceText(plugin))"
     }
 
     private func prepareUpdate(_ plugin: ServerPluginSummary) {
@@ -371,4 +429,8 @@ struct PluginsSettingsScreen: View {
             throw error
         }
     }
+}
+
+private func pluginRuntimeState(_ plugin: ServerPluginSummary) -> String {
+    plugin.isEnabled ? plugin.state : "disabled"
 }

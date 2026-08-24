@@ -94,6 +94,58 @@ describe("plugin transactions", () => {
     expect(current.stops).toEqual(["owner.example", "owner.example"])
   })
 
+  it("explicitly swaps to known-good code/data and retains the displaced version", async () => {
+    let paths!: PluginTransactionPaths
+    const current = fixture(async () => {
+      expect(text(join(paths.destination, "version.txt"))).toBe("known-good")
+      expect(text(join(paths.data, "value.txt"))).toBe("known-good-data")
+    })
+    paths = current.paths
+    write(join(paths.destination, "version.txt"), "current")
+    write(join(paths.data, "value.txt"), "current-data")
+    write(join(paths.knownGoodCode, "version.txt"), "known-good")
+    write(join(paths.knownGoodData, "value.txt"), "known-good-data")
+
+    await current.engine.restoreKnownGood("owner.example")
+
+    expect(text(join(paths.destination, "version.txt"))).toBe("known-good")
+    expect(text(join(paths.data, "value.txt"))).toBe("known-good-data")
+    expect(text(join(paths.knownGoodCode, "version.txt"))).toBe("current")
+    expect(text(join(paths.knownGoodData, "value.txt"))).toBe("current-data")
+  })
+
+  it("restores the absence of known-good data and preserves the backup after failure", async () => {
+    let shouldFail = false
+    const current = fixture(async () => {
+      if (shouldFail) throw new Error("known-good unhealthy")
+    })
+    write(join(current.paths.destination, "version.txt"), "current")
+    write(join(current.paths.data, "value.txt"), "current-data")
+    write(join(current.paths.knownGoodCode, "version.txt"), "known-good")
+
+    await current.engine.restoreKnownGood("owner.example")
+    expect(existsSync(current.paths.data)).toBe(false)
+    expect(text(join(current.paths.knownGoodCode, "version.txt"))).toBe("current")
+
+    // Swapping back now fails verification. The current code/data and the
+    // still-useful known-good backup both survive the rollback.
+    write(join(current.paths.data, "value.txt"), "new-current-data")
+    shouldFail = true
+    await expect(current.engine.restoreKnownGood("owner.example")).rejects.toThrow(
+      "known-good unhealthy"
+    )
+    expect(text(join(current.paths.destination, "version.txt"))).toBe("known-good")
+    expect(text(join(current.paths.data, "value.txt"))).toBe("new-current-data")
+    expect(text(join(current.paths.knownGoodCode, "version.txt"))).toBe("current")
+  })
+
+  it("rejects restore when no known-good backup exists", async () => {
+    const current = fixture(async () => undefined)
+    await expect(current.engine.restoreKnownGood("owner.example")).rejects.toThrow(
+      "no known-good version"
+    )
+  })
+
   it("removes code and data created by a failed first install", async () => {
     let paths!: PluginTransactionPaths
     const current = fixture(async () => {

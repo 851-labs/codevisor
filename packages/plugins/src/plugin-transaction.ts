@@ -25,6 +25,7 @@ export interface PluginTransactionPaths {
   readonly codeBackup: string
   readonly data: string
   readonly dataBackup: string
+  readonly dataCandidate: string
   readonly journal: string
   readonly knownGoodCode: string
   readonly knownGoodData: string
@@ -34,6 +35,9 @@ export interface PluginTransactionEngine {
   readonly paths: (pluginId: string) => PluginTransactionPaths
   readonly withLock: <Value>(pluginId: string, operation: () => Promise<Value>) => Promise<Value>
   readonly apply: (pluginId: string, hadExisting: boolean) => Promise<void>
+  /// Restores the retained known-good code/data and keeps the displaced
+  /// current version as the next known-good target.
+  readonly restoreKnownGood: (pluginId: string) => Promise<void>
   readonly recover: () => Promise<void>
   readonly recoverPlugin: (pluginId: string) => Promise<void>
 }
@@ -74,6 +78,7 @@ export const makePluginTransactionEngine = (
       codeBackup: join(transactionsRoot, `${pluginId}.code-backup`),
       data: join(deps.pluginDataRoot, pluginId),
       dataBackup: join(dataTransactionsRoot, `${pluginId}.data-backup`),
+      dataCandidate: join(dataTransactionsRoot, `${pluginId}.data-candidate`),
       destination: join(deps.pluginsRoot, pluginId),
       journal: join(transactionsRoot, `${pluginId}.json`),
       knownGoodCode: join(deps.pluginsRoot, `.${pluginId}.known-good`),
@@ -104,6 +109,7 @@ export const makePluginTransactionEngine = (
       await rm(transactionPaths.knownGoodData, { force: true, recursive: true })
     }
     await rm(transactionPaths.candidate, { force: true, recursive: true })
+    await rm(transactionPaths.dataCandidate, { force: true, recursive: true })
     await rm(transactionPaths.journal, { force: true })
   }
 
@@ -130,6 +136,7 @@ export const makePluginTransactionEngine = (
     }
     await rm(transactionPaths.candidate, { force: true, recursive: true })
     await rm(transactionPaths.dataBackup, { force: true, recursive: true })
+    await rm(transactionPaths.dataCandidate, { force: true, recursive: true })
     await rm(transactionPaths.journal, { force: true })
     if (restart && journal.hadExisting) {
       await deps.verifyInstalled(journal.pluginId)
@@ -167,6 +174,7 @@ export const makePluginTransactionEngine = (
     const transactionPaths = paths(pluginId)
     if (!(await exists(transactionPaths.journal))) {
       await rm(transactionPaths.candidate, { force: true, recursive: true })
+      await rm(transactionPaths.dataCandidate, { force: true, recursive: true })
       if (await exists(transactionPaths.codeBackup)) {
         if (await exists(transactionPaths.destination)) {
           await rm(transactionPaths.knownGoodCode, { force: true, recursive: true })
@@ -207,6 +215,7 @@ export const makePluginTransactionEngine = (
       await rename(transactionPaths.dataBackup, transactionPaths.data)
     }
     await rm(transactionPaths.candidate, { force: true, recursive: true })
+    await rm(transactionPaths.dataCandidate, { force: true, recursive: true })
     await rm(transactionPaths.journal, { force: true })
   }
 
@@ -232,7 +241,11 @@ export const makePluginTransactionEngine = (
     }
   }
 
-  const apply = async (pluginId: string, hadExisting: boolean): Promise<void> => {
+  const applyTransaction = async (
+    pluginId: string,
+    hadExisting: boolean,
+    dataMode: "preserve" | "replace" | "remove"
+  ): Promise<void> => {
     const transactionPaths = paths(pluginId)
     const hadData = await exists(transactionPaths.data)
     let journal: PluginTransactionJournal = {
@@ -255,6 +268,13 @@ export const makePluginTransactionEngine = (
       }
       journal = { ...journal, phase: "dataBackedUp" }
       await writeJournal(journal)
+
+      if (dataMode !== "preserve") {
+        await rm(transactionPaths.data, { force: true, recursive: true })
+        if (dataMode === "replace") {
+          await rename(transactionPaths.dataCandidate, transactionPaths.data)
+        }
+      }
 
       await rm(transactionPaths.codeBackup, { force: true, recursive: true })
       journal = { ...journal, phase: "codeBackedUp" }
@@ -286,6 +306,34 @@ export const makePluginTransactionEngine = (
     await promoteKnownGood(journal)
   }
 
+  const apply = async (pluginId: string, hadExisting: boolean): Promise<void> =>
+    applyTransaction(pluginId, hadExisting, "preserve")
+
+  const restoreKnownGood = async (pluginId: string): Promise<void> => {
+    const transactionPaths = paths(pluginId)
+    if (!(await exists(transactionPaths.knownGoodCode))) {
+      throw new PluginsError("notFound", `Plugin ${pluginId} has no known-good version to restore`)
+    }
+    await rm(transactionPaths.candidate, { force: true, recursive: true })
+    await rm(transactionPaths.dataCandidate, { force: true, recursive: true })
+    try {
+      await mkdir(transactionsRoot, { recursive: true })
+      await cp(transactionPaths.knownGoodCode, transactionPaths.candidate, { recursive: true })
+      const hasKnownGoodData = await exists(transactionPaths.knownGoodData)
+      if (hasKnownGoodData) {
+        await mkdir(dataTransactionsRoot, { recursive: true })
+        await cp(transactionPaths.knownGoodData, transactionPaths.dataCandidate, {
+          recursive: true
+        })
+      }
+      await applyTransaction(pluginId, true, hasKnownGoodData ? "replace" : "remove")
+    } catch (cause) {
+      await rm(transactionPaths.candidate, { force: true, recursive: true })
+      await rm(transactionPaths.dataCandidate, { force: true, recursive: true })
+      throw cause
+    }
+  }
+
   const recover = async (): Promise<void> => {
     let entries: ReadonlyArray<string>
     try {
@@ -307,5 +355,5 @@ export const makePluginTransactionEngine = (
     )
   }
 
-  return { apply, paths, recover, recoverPlugin, withLock }
+  return { apply, paths, recover, recoverPlugin, restoreKnownGood, withLock }
 }

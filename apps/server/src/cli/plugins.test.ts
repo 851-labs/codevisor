@@ -219,7 +219,8 @@ describe("codevisor plugin list", () => {
                   state: "running",
                   version: "0.1.0"
                 },
-                { id: "local.dev" }
+                { enabled: false, id: "local.dev" },
+                { enabled: true, id: "local.idle" }
               ]
             },
             status: 200
@@ -232,6 +233,8 @@ describe("codevisor plugin list", () => {
     expect(world.logs[0]).toContain("managed")
     expect(world.logs[0]).toContain("running")
     expect(world.logs[1]).toContain("local.dev")
+    expect(world.logs[1]).toContain("disabled")
+    expect(world.logs[2]).toContain("local.idle")
   })
 
   it("handles empty lists, feature-less servers, and an unreachable server", async () => {

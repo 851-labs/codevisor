@@ -1,5 +1,6 @@
 import type { PluginSummary } from "@codevisor/api"
 import type { IncomingMessage } from "node:http"
+import { makePluginEnabledState } from "./plugin-enabled-state.js"
 import { makePluginInstaller } from "./plugin-install.js"
 import { fetchPluginIcon } from "./plugin-icon.js"
 import {
@@ -50,6 +51,7 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
   const toolTimeoutMs = config.toolTimeoutMs ?? 30_000
   const isLoopback = config.isLocalhost ?? defaultIsLocalhost
   const pluginDataRoot = `${config.dataDir}/plugin-data`
+  const { assertEnabled, isEnabled, persist } = makePluginEnabledState(pluginDataRoot)
   const tokens = makePaneTokenStore(config.now)
   const listeners = new Set<(event: PluginStateEvent) => void>()
   const installedListeners = new Set<() => void>()
@@ -89,6 +91,7 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
     stop: (pluginId) => supervisor.stop(pluginId),
     verifyInstalled: async (pluginId) => {
       await supervisor.ensureRunning(findPluginOrFail(scan(), pluginId))
+      if (!isEnabled(pluginId)) supervisor.stop(pluginId)
     },
     ...(config.clone === undefined ? {} : { clone: config.clone }),
     ...(config.registerExternalTerminal === undefined
@@ -114,6 +117,8 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
   })
 
   const summarize = (plugin: InstalledPlugin): PluginSummary => ({
+    canRestore: installer.canRestore(plugin.id),
+    enabled: isEnabled(plugin.id),
     id: plugin.id,
     name: plugin.manifest.name,
     panes: plugin.manifest.panes,
@@ -205,14 +210,18 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
   /// breaker; this loop merely retries after each gate until the plugin runs,
   /// becomes terminally failed, is uninstalled, or the server closes.
   const maintain = async (pluginId: string): Promise<void> => {
-    if (maintaining.has(pluginId) || isClosing) {
+    if (maintaining.has(pluginId) || isClosing || !isEnabled(pluginId)) {
       return
     }
     maintaining.add(pluginId)
     try {
       while (!isClosing) {
         const plugin = scan().plugins.find((candidate) => candidate.id === pluginId)
-        if (plugin === undefined || supervisor.state(pluginId) === "failed") {
+        if (
+          plugin === undefined ||
+          !isEnabled(pluginId) ||
+          supervisor.state(pluginId) === "failed"
+        ) {
           return
         }
         try {
@@ -239,7 +248,7 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
   const summarizeInstalled = async (pluginId: string): Promise<PluginSummary> => {
     const installed = findPluginOrFail(scanPlugins(pluginsRoot), pluginId)
     const compatible = scan().plugins.find((plugin) => plugin.id === pluginId)
-    if (compatible !== undefined) {
+    if (compatible !== undefined && isEnabled(pluginId)) {
       try {
         await supervisor.ensureRunning(compatible)
       } catch {
@@ -262,6 +271,7 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
     get: async (pluginId) => summarize(findPluginOrFail(scan(), pluginId)),
     fetchIcon: async (pluginId, paneType) => {
       const plugin = findPluginOrFail(scan(), pluginId)
+      assertEnabled(pluginId)
       return fetchPluginIcon({
         ensureRunning: () => supervisor.ensureRunning(plugin),
         markUnreachable: () => supervisor.markUnreachable(plugin.id),
@@ -282,6 +292,10 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
       const manifest = await updates.apply(pluginId, planId)
       return summarizeInstalled(manifest.id)
     },
+    restore: async (pluginId) => {
+      const manifest = await installer.restore(pluginId)
+      return summarizeInstalled(manifest.id)
+    },
     link: async (request) => {
       const manifest = await installer.link(request)
       return summarizeInstalled(manifest.id)
@@ -292,6 +306,7 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
       // there is nothing left to describe, so the list response is the
       // client's refresh signal.
       await installer.remove(pluginId)
+      await persist(pluginId, true)
       notifyInstalled()
       return { plugins: scan().plugins.map(summarize) }
     },
@@ -312,6 +327,7 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
         return true
       }
       const plugin = findPluginOrFail(scan(), pluginId)
+      assertEnabled(pluginId)
       const authenticated = authenticate(pluginId, request, url)
       if (authenticated === undefined) {
         throw new PluginsError("notFound", "Pane session is missing or expired")
@@ -359,6 +375,7 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
         const pluginId = decodeURIComponent(match[1] ?? "")
         const subPath = match[2] ?? "/"
         const plugin = findPluginOrFail(scan(), pluginId)
+        assertEnabled(pluginId)
         // Remote plugin sockets arrive through the restricted relay byte
         // tunnel as a loopback connection, so loopback is an accepted
         // principal exactly like the server's own auth exemption.
@@ -388,6 +405,7 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
     },
     issuePaneToken: async (pluginId, paneId, tokenRequest) => {
       const plugin = findPluginOrFail(scan(), pluginId)
+      assertEnabled(pluginId)
       const pane = plugin.manifest.panes.find(
         (candidate) => candidate.type === tokenRequest.paneType
       )
@@ -417,6 +435,7 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
     },
     invokeTool: async (pluginId, toolName, args, context = {}) => {
       const plugin = findPluginOrFail(scan(), pluginId)
+      assertEnabled(pluginId)
       return invokePluginTool({
         args,
         context,
@@ -432,17 +451,36 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
     list: async () => ({ plugins: scan().plugins.map(summarize) }),
     listTools: async () =>
       scan().plugins.flatMap((plugin) =>
-        (plugin.manifest.tools ?? []).map((tool) => ({
-          description: tool.description,
-          name: tool.name,
-          pluginId: plugin.id,
-          ...(tool.inputSchema === undefined ? {} : { inputSchema: tool.inputSchema })
-        }))
+        !isEnabled(plugin.id)
+          ? []
+          : (plugin.manifest.tools ?? []).map((tool) => ({
+              description: tool.description,
+              name: tool.name,
+              pluginId: plugin.id,
+              ...(tool.inputSchema === undefined ? {} : { inputSchema: tool.inputSchema })
+            }))
       ),
     restart: async (pluginId) => {
       const plugin = findPluginOrFail(scan(), pluginId)
+      assertEnabled(pluginId)
       supervisor.restart(pluginId)
       await supervisor.ensureRunning(plugin)
+      return summarize(plugin)
+    },
+    setEnabled: async (pluginId, enabled) => {
+      const plugin = findPluginOrFail(scan(), pluginId)
+      await persist(pluginId, enabled)
+      if (enabled) {
+        try {
+          await supervisor.ensureRunning(plugin)
+        } catch {
+          requestMaintenance(pluginId)
+        }
+      } else {
+        supervisor.stop(pluginId)
+      }
+      emitState(pluginId)
+      notifyInstalled()
       return summarize(plugin)
     },
     startAll: async () => {

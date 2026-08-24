@@ -18,6 +18,8 @@ import {
   pluginLinkCommand,
   pluginListCommand,
   pluginRemoveCommand,
+  pluginRestoreCommand,
+  pluginSetEnabledCommand,
   pluginUpdateCommand,
   pluginUpdatesCommand,
   type PluginsCliDeps
@@ -388,6 +390,40 @@ const pluginUpdate = Command.make(
     })
 ).pipe(Command.withDescription("Review and apply an available plugin update"))
 
+const pluginRestore = Command.make(
+  "restore",
+  {
+    pluginId: Argument.string("id").pipe(Argument.withDescription("Plugin id to restore")),
+    port: portFlag
+  },
+  ({ pluginId, port }) =>
+    runCli((deps) =>
+      pluginRestoreCommand(
+        { ...deps, confirm: async () => true },
+        { pluginId, port: Option.getOrUndefined(port) }
+      )
+    )
+).pipe(Command.withDescription("Restore a plugin's verified pre-update version"))
+
+const pluginEnabledCommand = (name: "enable" | "disable", enabled: boolean) =>
+  Command.make(
+    name,
+    {
+      pluginId: Argument.string("id").pipe(Argument.withDescription(`Plugin id to ${name}`)),
+      port: portFlag
+    },
+    ({ pluginId, port }) =>
+      runCli((deps) =>
+        pluginSetEnabledCommand(
+          { ...deps, confirm: async () => true },
+          { enabled, pluginId, port: Option.getOrUndefined(port) }
+        )
+      )
+  ).pipe(Command.withDescription(`${name === "enable" ? "Enable" : "Disable"} an installed plugin`))
+
+const pluginEnable = pluginEnabledCommand("enable", true)
+const pluginDisable = pluginEnabledCommand("disable", false)
+
 const plugin = Command.make("plugin").pipe(
   Command.withDescription("Manage this machine's Codevisor plugins"),
   Command.withSubcommands([
@@ -396,7 +432,10 @@ const plugin = Command.make("plugin").pipe(
     pluginList,
     pluginRemove,
     pluginUpdates,
-    pluginUpdate
+    pluginUpdate,
+    pluginRestore,
+    pluginEnable,
+    pluginDisable
   ])
 )
 

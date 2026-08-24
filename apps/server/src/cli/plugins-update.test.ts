@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { pluginUpdateCommand, pluginUpdatesCommand, type PluginsCliDeps } from "./plugins.js"
+import {
+  pluginRestoreCommand,
+  pluginSetEnabledCommand,
+  pluginUpdateCommand,
+  pluginUpdatesCommand,
+  type PluginsCliDeps
+} from "./plugins.js"
 
 interface FakeWorld {
   readonly deps: PluginsCliDeps
@@ -63,6 +69,8 @@ const makeWorld = (
 const UPDATES = "GET http://127.0.0.1:49361/v1/plugins/updates"
 const PREPARE = "POST http://127.0.0.1:49361/v1/plugins/acme.git-diff%2Fsafe/update/prepare"
 const APPLY = "POST http://127.0.0.1:49361/v1/plugins/acme.git-diff%2Fsafe/update/apply"
+const RESTORE = "POST http://127.0.0.1:49361/v1/plugins/acme.git-diff%2Fsafe/restore"
+const SET_ENABLED = "POST http://127.0.0.1:49361/v1/plugins/acme.git-diff%2Fsafe/set-enabled"
 
 const plan = {
   candidate: {
@@ -213,5 +221,73 @@ describe("codevisor plugin update", () => {
       await pluginUpdateCommand(applyDown.deps, { pluginId: "acme.git-diff/safe", yes: true })
     ).toBe(1)
     expect(applyDown.errors[0]).toContain("not running")
+  })
+})
+
+describe("codevisor plugin recovery controls", () => {
+  it("restores the known-good version", async () => {
+    const world = makeWorld({
+      [RESTORE]: [
+        { body: { id: "acme.git-diff/safe", version: "1.0.0" }, status: 200 },
+        { body: { id: "acme.git-diff/safe" }, status: 200 }
+      ]
+    })
+    const options = { pluginId: "acme.git-diff/safe" }
+    expect(await pluginRestoreCommand(world.deps, options)).toBe(0)
+    expect(await pluginRestoreCommand(world.deps, options)).toBe(0)
+    expect(world.logs).toEqual(["Restored acme.git-diff/safe 1.0.0", "Restored acme.git-diff/safe"])
+    expect(world.requests[0]?.timeoutMs).toBe(600_000)
+  })
+
+  it("reports restore refusal and an unreachable server", async () => {
+    const refused = makeWorld({ [RESTORE]: [{ body: {}, status: 409 }] })
+    expect(await pluginRestoreCommand(refused.deps, { pluginId: "acme.git-diff/safe" })).toBe(1)
+    expect(refused.errors).toEqual(["Restore failed (status 409)"])
+    const down = makeWorld()
+    expect(await pluginRestoreCommand(down.deps, { pluginId: "acme.git-diff/safe" })).toBe(1)
+  })
+
+  it("enables and disables without uninstalling", async () => {
+    const world = makeWorld({
+      [SET_ENABLED]: [
+        { body: { enabled: true }, status: 200 },
+        { body: { enabled: false }, status: 200 }
+      ]
+    })
+    expect(
+      await pluginSetEnabledCommand(world.deps, {
+        enabled: true,
+        pluginId: "acme.git-diff/safe"
+      })
+    ).toBe(0)
+    expect(
+      await pluginSetEnabledCommand(world.deps, {
+        enabled: false,
+        pluginId: "acme.git-diff/safe"
+      })
+    ).toBe(0)
+    expect(world.logs).toEqual(["Enabled acme.git-diff/safe", "Disabled acme.git-diff/safe"])
+    expect(world.requests.map((request) => request.body)).toEqual([
+      { enabled: true },
+      { enabled: false }
+    ])
+  })
+
+  it("reports enabled-state refusal and an unreachable server", async () => {
+    const refused = makeWorld({ [SET_ENABLED]: [{ body: {}, status: 500 }] })
+    expect(
+      await pluginSetEnabledCommand(refused.deps, {
+        enabled: false,
+        pluginId: "acme.git-diff/safe"
+      })
+    ).toBe(1)
+    expect(refused.errors).toEqual(["Changing plugin state failed (status 500)"])
+    const down = makeWorld()
+    expect(
+      await pluginSetEnabledCommand(down.deps, {
+        enabled: true,
+        pluginId: "acme.git-diff/safe"
+      })
+    ).toBe(1)
   })
 })

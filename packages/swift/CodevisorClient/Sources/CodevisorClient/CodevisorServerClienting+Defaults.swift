@@ -169,6 +169,14 @@ public extension CodevisorServerClienting {
         throw CodevisorServerClientError.invalidResponse
     }
 
+    func restorePlugin(pluginId: String) async throws -> ServerPluginSummary {
+        throw CodevisorServerClientError.invalidResponse
+    }
+
+    func setPluginEnabled(pluginId: String, enabled: Bool) async throws -> ServerPluginSummary {
+        throw CodevisorServerClientError.invalidResponse
+    }
+
     func listWorkspaces() async throws -> [ServerWorkspace]? { nil }
     func workspaceSnapshot() async throws -> ServerWorkspaceSnapshot? { nil }
     func upsertWorkspace(_ workspace: ServerWorkspace) async throws -> ServerWorkspace? { nil }

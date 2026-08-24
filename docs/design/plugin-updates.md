@@ -64,6 +64,11 @@ Installation and update use one prepare-and-apply pipeline:
 Each plugin permits one mutating operation at a time. A journal lets startup finish or reverse an
 interrupted transaction. Codevisor retains one known-good backup for an explicit restore.
 
+Explicit restore swaps both code and data with that backup, verifies the restored process, and
+retains the displaced version as the next restore point. Enablement is stored outside plugin code
+and data snapshots, so neither an update nor a restore changes the user's enabled state. Disabled
+plugins stay installed and updateable but do not run or expose panes and tools.
+
 ## Update states
 
 Clients render one of these states:

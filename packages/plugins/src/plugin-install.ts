@@ -13,6 +13,7 @@ import { makePluginCandidatePreparer } from "./plugin-candidate.js"
 import { parsePluginManifest, PLUGIN_MANIFEST_FILENAME } from "./plugin-manifest.js"
 import { readPluginInstallReceipt, type PluginInstallSourceReceipt } from "./plugin-receipt.js"
 import { assertGitAvailable, type FindExecutable } from "./plugin-requirements.js"
+import { makePluginRestore, type PluginRestore } from "./plugin-restore.js"
 import {
   clonePluginSource,
   parsePluginSource,
@@ -73,7 +74,7 @@ export interface PluginInstallerDeps {
   readonly stop: (pluginId: string) => void
 }
 
-export interface PluginInstaller {
+export interface PluginInstaller extends PluginRestore {
   readonly discoverRemote: (
     request: DiscoverRemotePluginRequest
   ) => Promise<DiscoverRemotePluginResult>
@@ -201,6 +202,7 @@ export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller 
 
   const installedWithId = (pluginId: string): InstalledPlugin | undefined =>
     scanPlugins(deps.pluginsRoot).plugins.find((candidate) => candidate.id === pluginId)
+  const restore = makePluginRestore({ installedWithId, transactions })
 
   /// The plugin id doubles as the managed directory name. The manifest id
   /// pattern already forbids separators; this guard keeps the invariant
@@ -303,6 +305,7 @@ export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller 
   }
 
   return {
+    ...restore,
     discoverRemote: async (request) => {
       const staged = await stage(request.source)
       try {
@@ -488,6 +491,9 @@ export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller 
         }
         deps.stop(pluginId)
         await rm(plugin.path, { force: true, recursive: true })
+        const transactionPaths = transactions.paths(pluginId)
+        await rm(transactionPaths.knownGoodCode, { force: true, recursive: true })
+        await rm(transactionPaths.knownGoodData, { force: true, recursive: true })
       })
     }
   }

@@ -6,7 +6,8 @@ import {
   ImportRemotePluginRequest as ImportRemotePluginRequestSchema,
   InvokePluginToolRequest as InvokePluginToolRequestSchema,
   LinkPluginRequest as LinkPluginRequestSchema,
-  PluginPaneTokenRequest as PluginPaneTokenRequestSchema
+  PluginPaneTokenRequest as PluginPaneTokenRequestSchema,
+  SetPluginEnabledRequest as SetPluginEnabledRequestSchema
 } from "@codevisor/api"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import {
@@ -232,6 +233,23 @@ export const routePlugins = async (
     // not reload a healthy webview unless the user explicitly restarts it.
     await appendAndPublish(services.db, fanout, "plugin.updated", restarted.id, restarted)
     writeJson(response, 200, restarted)
+    return true
+  }
+
+  const restoreId = matchRoute(url.pathname, "/v1/plugins/:pluginId/restore")
+  if (restoreId !== undefined && request.method === "POST") {
+    const restored = await manager.restore(restoreId)
+    await appendAndPublish(services.db, fanout, "plugin.updated", restored.id, restored)
+    writeJson(response, 200, restored)
+    return true
+  }
+
+  const enabledId = matchRoute(url.pathname, "/v1/plugins/:pluginId/set-enabled")
+  if (enabledId !== undefined && request.method === "POST") {
+    const payload = await readSchema(request, SetPluginEnabledRequestSchema)
+    const changed = await manager.setEnabled(enabledId, payload.enabled)
+    await appendAndPublish(services.db, fanout, "plugin.updated", changed.id, changed)
+    writeJson(response, 200, changed)
     return true
   }
 

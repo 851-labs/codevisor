@@ -121,6 +121,7 @@ const installerHarness = (
     installer: undefined as unknown as PluginInstaller
   } as InstallerHarness
   const installer: PluginInstaller = {
+    canRestore: () => false,
     applyPreparedUpdate: async (candidate) => {
       applied.push(candidate)
       if (harness.applyError !== undefined) throw harness.applyError
@@ -160,7 +161,10 @@ const installerHarness = (
       }
     },
     recover: async () => undefined,
-    remove: async () => undefined
+    remove: async () => undefined,
+    restore: async () => {
+      throw new Error("unused")
+    }
   }
   Object.assign(harness, { installer })
   return harness

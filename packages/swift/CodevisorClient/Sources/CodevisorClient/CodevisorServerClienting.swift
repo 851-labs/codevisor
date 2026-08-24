@@ -201,6 +201,10 @@ public protocol CodevisorServerClienting: Sendable {
     /// Stop and immediately relaunch the plugin, clearing its crash state
     /// (`POST /v1/plugins/:pluginId/restart`).
     func restartPlugin(pluginId: String) async throws -> ServerPluginSummary
+    /// Restore the retained pre-update code/data snapshot.
+    func restorePlugin(pluginId: String) async throws -> ServerPluginSummary
+    /// Persistently enable or disable plugin runtime and capabilities.
+    func setPluginEnabled(pluginId: String, enabled: Bool) async throws -> ServerPluginSummary
     func listProjects() async throws -> [ServerProject]
     func upsertProject(_ project: Project) async throws -> ServerProject
     func updateProject(_ project: Project) async throws -> ServerProject

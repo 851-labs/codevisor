@@ -40,6 +40,7 @@ struct CodevisorServerClientPluginsTests {
             "panes":[{"type":"diff","title":"Git Diff","path":"/panes/diff/","iconPath":"/assets/diff.webp"}],
             "tools":[{"name":"diff_summary","description":"Summarize the diff","path":"/tools/summary"}],
             "source":"linked","path":"/Users/x/.codevisor/plugins/git-diff","state":"stopped",
+            "enabled":false,"canRestore":true,
             "openPaneCount":2}]}
             """.utf8)
         struct ListEnvelope: Decodable { var plugins: [ServerPluginSummary] }
@@ -47,6 +48,8 @@ struct CodevisorServerClientPluginsTests {
         #expect(decoded.plugins.count == 1)
         let plugin = try #require(decoded.plugins.first)
         #expect(plugin.id == "codevisor.git-diff")
+        #expect(!plugin.isEnabled)
+        #expect(plugin.canRestore == true)
         #expect(plugin.state == "stopped")
         #expect(plugin.openPaneCount == 2)
         #expect(plugin.iconPath == "/assets/icon.svg")
@@ -70,6 +73,7 @@ struct CodevisorServerClientPluginsTests {
         #expect(bareSummary.description == nil)
         #expect(bareSummary.tools == nil)
         #expect(bareSummary.openPaneCount == nil)
+        #expect(bareSummary.isEnabled)
 
         let token = Data(
             """
@@ -155,6 +159,13 @@ struct CodevisorServerClientPluginsTests {
             as: UTF8.self
         )
         #expect(apply == #"{"planId":"plan-1"}"#)
+        let disabled = String(
+            decoding: try JSONEncoder().encode(
+                CodevisorServerClient.PluginSetEnabledBody(enabled: false)
+            ),
+            as: UTF8.self
+        )
+        #expect(disabled == #"{"enabled":false}"#)
     }
 
     @Test("Update status and prepared review plans decode exactly")

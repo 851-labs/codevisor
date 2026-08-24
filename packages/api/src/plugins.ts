@@ -150,6 +150,10 @@ export const PluginSource = Schema.Literals(["managed", "linked"])
 export type PluginSource = typeof PluginSource.Type
 
 export const PluginSummary = Schema.Struct({
+  /// Disabled plugins remain installed but do not run or expose panes/tools.
+  enabled: Schema.Boolean,
+  /// A verified pre-update code/data snapshot is available for explicit restore.
+  canRestore: Schema.Boolean,
   id: Schema.String,
   name: Schema.String,
   version: Schema.String,
@@ -172,6 +176,11 @@ export const PluginListResponse = Schema.Struct({
   plugins: Schema.Array(PluginSummary)
 })
 export type PluginListResponse = typeof PluginListResponse.Type
+
+export const SetPluginEnabledRequest = Schema.Struct({
+  enabled: Schema.Boolean
+})
+export type SetPluginEnabledRequest = typeof SetPluginEnabledRequest.Type
 
 /// Requests a short-lived pane token. The webview cannot attach Authorization
 /// headers to subresource loads (and the cloud relay strips them), so pane

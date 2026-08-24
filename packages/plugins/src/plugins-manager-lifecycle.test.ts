@@ -1,8 +1,17 @@
-import { rmSync } from "node:fs"
+import { renameSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import type { PluginStateEvent } from "./plugins-manager.js"
-import { fakeSpawn, makeManager, makeOuterServer } from "./test-support.js"
+import { MANAGED_PLUGIN_MARKER, MANAGED_PLUGIN_MARKER_CONTENT } from "./plugin-store.js"
+import {
+  exampleManifest,
+  fakeSpawn,
+  makeDir,
+  makeManager,
+  makeOuterServer,
+  toolManifest,
+  writePlugin
+} from "./test-support.js"
 
 /// Manager-level supervision behaviors: explicit restart, state-change
 /// fanout, and always-running process ownership.
@@ -24,6 +33,79 @@ describe("restart", () => {
   it("rejects restarting plugins that are not installed", async () => {
     const { manager } = makeManager()
     await expect(manager.restart("owner.ghost")).rejects.toThrow(/not installed/)
+  })
+})
+
+describe("enabled state and recovery", () => {
+  it("persists disablement, blocks runtime access, and re-enables cleanly", async () => {
+    const dataDir = makeDir("codevisor-plugin-enabled-manager-")
+    const first = makeManager({ dataDir }, toolManifest)
+    await first.manager.startAll()
+    expect(first.fake.spawnCount()).toBe(1)
+    expect((await first.manager.setEnabled("owner.notes", false)).enabled).toBe(false)
+    expect((await first.manager.get("owner.notes")).state).toBe("stopped")
+    expect(await first.manager.listTools()).toEqual([])
+    await expect(
+      first.manager.issuePaneToken("owner.notes", "pane-1", { paneType: "main" })
+    ).rejects.toThrow("disabled")
+    await expect(first.manager.restart("owner.notes")).rejects.toThrow("disabled")
+    first.manager.close()
+
+    const second = makeManager({ dataDir }, toolManifest)
+    expect((await second.manager.get("owner.notes")).enabled).toBe(false)
+    await second.manager.startAll()
+    expect(second.fake.spawnCount()).toBe(0)
+    const enabled = await second.manager.setEnabled("owner.notes", true)
+    expect(enabled.enabled).toBe(true)
+    expect(enabled.state).toBe("running")
+    expect(second.fake.spawnCount()).toBe(1)
+    expect(await second.manager.listTools()).toHaveLength(toolManifest.tools.length)
+  })
+
+  it("restores and toggles the retained known-good managed version", async () => {
+    const { manager, root } = makeManager()
+    renameSync(join(root, "example"), join(root, "owner.example"))
+    writeFileSync(join(root, "owner.example", MANAGED_PLUGIN_MARKER), MANAGED_PLUGIN_MARKER_CONTENT)
+    writePlugin(root, ".owner.example.known-good", { ...exampleManifest, version: "0.0.9" })
+    writeFileSync(
+      join(root, ".owner.example.known-good", MANAGED_PLUGIN_MARKER),
+      MANAGED_PLUGIN_MARKER_CONTENT
+    )
+
+    expect((await manager.get("owner.example")).canRestore).toBe(true)
+    await manager.setEnabled("owner.example", false)
+    await expect(manager.restore("owner.example")).resolves.toMatchObject({
+      version: "0.0.9",
+      enabled: false,
+      state: "stopped"
+    })
+    expect((await manager.restore("owner.example")).version).toBe("0.1.0")
+  })
+
+  it("keeps enablement persisted when startup fails", async () => {
+    const spawn = fakeSpawn({ listen: false })
+    const { manager } = makeManager({
+      maxConsecutiveFailures: 1,
+      readyTimeoutMs: 100,
+      spawnShell: spawn.spawnShell
+    })
+    await manager.setEnabled("owner.example", false)
+    const enabled = await manager.setEnabled("owner.example", true)
+    expect(enabled.enabled).toBe(true)
+    expect(enabled.state).toBe("failed")
+  })
+
+  it("rejects restore for linked, unknown, and never-updated managed plugins", async () => {
+    const linked = makeManager()
+    await expect(linked.manager.restore("owner.example")).rejects.toThrow("linked")
+    await expect(linked.manager.restore("owner.ghost")).rejects.toThrow("not installed")
+
+    renameSync(join(linked.root, "example"), join(linked.root, "owner.example"))
+    writeFileSync(
+      join(linked.root, "owner.example", MANAGED_PLUGIN_MARKER),
+      MANAGED_PLUGIN_MARKER_CONTENT
+    )
+    await expect(linked.manager.restore("owner.example")).rejects.toThrow("no known-good")
   })
 })
 
