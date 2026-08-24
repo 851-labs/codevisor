@@ -174,6 +174,9 @@ export interface RouteState {
   /// Sessions whose queue drain was held because a turn was active.
   /// Re-drained when that turn's terminal event arrives.
   readonly turnHeldSessions: Set<string>
+  /// The last published release-state fingerprint, so repeated update
+  /// checks with an unchanged outcome emit no update.changed event.
+  readonly updateSignature: { value?: string }
 }
 
 export class CodevisorServer extends Context.Service<CodevisorServer, CodevisorServerServices>()(

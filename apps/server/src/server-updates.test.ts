@@ -6,6 +6,7 @@ import { defaultServerConfig, startCodevisorServer } from "./server.js"
 import {
   jsonRequest,
   makeServices,
+  readWebSocketEvents,
   run,
   runningServers,
   tempDirs,
@@ -121,6 +122,48 @@ describe("@codevisor/server self-updates", () => {
     expect(upToDate.status).toBe(200)
     expect(upToDate.body).toMatchObject({ accepted: false, targetVersion: "0.1.0" })
     expect(updaterState.applyCalls).toBe(2)
+  })
+
+  it("publishes update.changed only when the release state changes", async () => {
+    const { services } = await makeServices("server-update-events")
+    const state = { available: true }
+    const server = await run(
+      startCodevisorServer(
+        services,
+        defaultServerConfig({
+          id: "server-update-events",
+          port: 0,
+          updater: {
+            apply: async () => undefined,
+            check: async () => ({
+              channel: "stable",
+              // Varies every check; the change fingerprint must ignore it.
+              checkedAt: new Date().toISOString(),
+              currentVersion: "0.1.0",
+              latestVersion: state.available ? "0.2.0" : "0.1.0",
+              migrationState: "idle" as const,
+              updateAvailable: state.available
+            })
+          }
+        })
+      )
+    )
+    runningServers.push(server)
+
+    await jsonRequest(server, "/v1/update?refresh=1")
+    // An identical outcome stays silent…
+    await jsonRequest(server, "/v1/update?refresh=1")
+    // …while a changed one publishes again.
+    state.available = false
+    await jsonRequest(server, "/v1/update?refresh=1")
+
+    const events = (await readWebSocketEvents(server, 2, 0)) as Array<{
+      readonly kind: string
+      readonly payload: { readonly latestVersion?: string; readonly updateAvailable?: boolean }
+    }>
+    expect(events.map((event) => event.kind)).toEqual(["update.changed", "update.changed"])
+    expect(events[0]?.payload).toMatchObject({ latestVersion: "0.2.0", updateAvailable: true })
+    expect(events[1]?.payload).toMatchObject({ latestVersion: "0.1.0", updateAvailable: false })
   })
 
   it("refuses to apply an update while a chat is mid-turn", async () => {

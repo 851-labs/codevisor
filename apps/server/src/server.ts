@@ -1,4 +1,4 @@
-import { makeOpenApiDocument } from "@codevisor/api"
+import { makeOpenApiDocument, type UpdateInfo } from "@codevisor/api"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import { hostname } from "node:os"
 import { connect, type AddressInfo, type Socket } from "node:net"
@@ -90,7 +90,8 @@ export const makeCodevisorServerApp = (
     gatedSessions: new Map(),
     pendingPromptActions: new Set(),
     pendingSessionCreates: new Map(),
-    turnHeldSessions: new Set()
+    turnHeldSessions: new Set(),
+    updateSignature: {}
   }
   // Turn lifecycle → prompt dispatch: a harness can start a turn on its own
   // (task-notification follow-up after a background task finishes), which no
@@ -453,7 +454,9 @@ const handleRequest = async (
         // stable.
         const force = url.searchParams.get("refresh") === "1"
         const channel = serverUpdateChannelFrom(url.searchParams.get("channel"))
-        writeJson(response, 200, await config.updater.check({ channel, force }))
+        const info = await config.updater.check({ channel, force })
+        publishUpdateChanged(services, fanout, routeState, info)
+        writeJson(response, 200, info)
         return
       }
       writeJson(response, 200, await run(services.db.getUpdateInfo))
@@ -475,6 +478,7 @@ const handleRequest = async (
       // release state, never a stale cache entry.
       const channel = serverUpdateChannelFrom(url.searchParams.get("channel"))
       const info = await config.updater.check({ channel, force: true })
+      publishUpdateChanged(services, fanout, routeState, info)
       if (!info.updateAvailable) {
         writeJson(response, 200, { accepted: false, targetVersion: info.currentVersion })
         return
@@ -586,6 +590,37 @@ const handleRequest = async (
 /// pre-releases; absent, empty, or unknown values stay on stable.
 const serverUpdateChannelFrom = (value: string | null): ServerUpdateChannel =>
   value === "alpha" ? "alpha" : "stable"
+
+/// One release-state fingerprint per published update.changed: repeated
+/// checks with an unchanged outcome stay silent, while a new release, a
+/// converged install, or a fresh unattended-apply report each publish once.
+/// `checkedAt` is deliberately excluded — it changes on every check.
+const updateInfoSignature = (info: UpdateInfo): string =>
+  JSON.stringify([
+    info.updateAvailable,
+    info.latestVersion,
+    info.latestBuildNumber ?? null,
+    info.currentVersion,
+    info.channel,
+    info.lastApply?.state ?? null,
+    info.lastApply?.at ?? null
+  ])
+
+/// Emits update.changed when a check's outcome differs from the last one
+/// published. Every client already force-checks reachable machines on its
+/// own cadence, so any one client's probe keeps every other connected
+/// client's fleet state fresh — no server-side timer needed.
+const publishUpdateChanged = (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  routeState: RouteState,
+  info: UpdateInfo
+): void => {
+  const signature = updateInfoSignature(info)
+  if (routeState.updateSignature.value === signature) return
+  routeState.updateSignature.value = signature
+  void appendAndPublish(services.db, fanout, "update.changed", "server", info).catch(swallowError)
+}
 
 const isAddressInfo = (address: string | AddressInfo | null): address is AddressInfo =>
   typeof address === "object" && address !== null && "port" in address

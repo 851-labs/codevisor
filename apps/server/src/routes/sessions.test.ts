@@ -555,7 +555,8 @@ describe("sessions routes", () => {
       gatedSessions: new Map(),
       pendingPromptActions: new Set(),
       pendingSessionCreates: new Map(),
-      turnHeldSessions: new Set()
+      turnHeldSessions: new Set(),
+      updateSignature: {}
     })
 
     // Strand a turn "in the past": its harness died (or its terminal event
@@ -736,7 +737,8 @@ describe("sessions routes", () => {
       gatedSessions: new Map(),
       pendingPromptActions: new Set(),
       pendingSessionCreates: new Map(),
-      turnHeldSessions: new Set()
+      turnHeldSessions: new Set(),
+      updateSignature: {}
     }
     expect(await reconcileStaleStreamingTurns(services, fanout, routeState, "server-a")).toBe(0)
     expect(await run(services.db.getTranscriptPage(session.id, undefined, 8))).toMatchObject({
@@ -763,7 +765,8 @@ describe("sessions routes", () => {
       gatedSessions: new Map(),
       pendingPromptActions: new Set(),
       pendingSessionCreates: new Map(),
-      turnHeldSessions: new Set()
+      turnHeldSessions: new Set(),
+      updateSignature: {}
     }
     const unsubscribe = fanout.subscribe(
       makeTurnDispatchListener(services, fanout, routeState, "server-a")
@@ -841,7 +844,8 @@ describe("sessions routes", () => {
       gatedSessions: new Map(),
       pendingPromptActions: new Set(),
       pendingSessionCreates: new Map(),
-      turnHeldSessions: new Set()
+      turnHeldSessions: new Set(),
+      updateSignature: {}
     }
     // Simulate a task-notification turn starting the instant the first
     // dispatched turn ends — before the drain loop claims the next item.

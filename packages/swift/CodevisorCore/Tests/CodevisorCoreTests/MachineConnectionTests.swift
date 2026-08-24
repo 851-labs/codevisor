@@ -160,6 +160,34 @@ struct MachineConnectionTests {
         controller.stopEventSync()
     }
 
+    @Test("update.changed events refresh a machine's release state live")
+    func updateChangedEventApplies() async throws {
+        let remote = makeRemote("remote-a")
+        let remoteFake = SyncFakeServerClient(projects: [], sessions: [])
+        let (controller, _) = try makeController(
+            fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: remoteFake],
+            remotes: [remote]
+        )
+        await controller.connectMachine(remote.id)
+        try await waitForSync { remoteFake.eventStreamSubscriberCount == 1 }
+
+        remoteFake.emit(
+            kind: "update.changed",
+            subjectId: "server",
+            payload: .object([
+                "currentVersion": .string("0.1.0"),
+                "latestVersion": .string("9.9.9"),
+                "updateAvailable": .bool(true),
+                "channel": .string("stable"),
+                "migrationState": .string("idle"),
+            ])
+        )
+        try await waitForSync {
+            controller.updateInfoByMachineId[remote.id]?.latestVersion == "9.9.9"
+        }
+        controller.stopEventSync()
+    }
+
     @Test("An update tracks on its own machine, not on the selected one")
     func updatePhaseIsPerMachine() async throws {
         let remote = makeRemote("remote-a")

@@ -15,6 +15,7 @@ extension MachineController {
         "harness.lifecycle.updated",
         "plugin.state.updated",
         "plugin.updated",
+        "update.changed",
     ]
 
     /// Follows the selected server's event stream so projects and sessions
@@ -168,6 +169,15 @@ extension MachineController {
             // plugin.state.updated: routine runtime transitions must not
             // reload the plugin's pane content.
             onPluginUpdated?(serverId, event.subjectId)
+        case "update.changed":
+            // The machine's server release state changed (a new release, a
+            // converged install, or an unattended-apply report) — adopt the
+            // authoritative payload without waiting for the next poll.
+            if let data = try? JSONEncoder().encode(event.payload),
+                let info = try? JSONDecoder().decode(ServerUpdateInfo.self, from: data)
+            {
+                connection(for: serverId).updateInfo = info
+            }
         default:
             // Prompt/queue/error events are handled by the session transports.
             break
