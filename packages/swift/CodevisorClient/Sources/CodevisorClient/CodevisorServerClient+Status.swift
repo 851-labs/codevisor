@@ -149,6 +149,23 @@ public enum ServerUpdateChannel: String, Equatable, Sendable {
     case alpha
 }
 
+/// An app-hosted server's report of the host app's unattended update
+/// session (Sparkle running headless because a remote client asked that
+/// machine to update). Mirrors `UpdateInfo.lastApply` on the wire.
+public struct ServerUpdateApplyState: Decodable, Equatable, Sendable {
+    public var state: String
+    public var message: String?
+    public var targetVersion: String?
+    public var at: String
+
+    public init(state: String, message: String? = nil, targetVersion: String? = nil, at: String) {
+        self.state = state
+        self.message = message
+        self.targetVersion = targetVersion
+        self.at = at
+    }
+}
+
 public struct ServerUpdateInfo: Decodable, Equatable, Sendable {
     public var currentVersion: String
     public var latestVersion: String
@@ -156,6 +173,15 @@ public struct ServerUpdateInfo: Decodable, Equatable, Sendable {
     public var channel: String
     public var checkedAt: String?
     public var migrationState: String
+    /// CI build numbers, the one release marker that agrees across feeds:
+    /// alpha manifests carry the full prerelease tag while installed
+    /// runtimes report their base marketing version, so version strings
+    /// cannot confirm that an update landed. Absent on older servers.
+    public var currentBuildNumber: Int?
+    public var latestBuildNumber: Int?
+    /// Present on app-hosted servers while the host app is installing (or
+    /// after it failed to install) a remotely requested update.
+    public var lastApply: ServerUpdateApplyState?
 
     public init(
         currentVersion: String,
@@ -163,7 +189,10 @@ public struct ServerUpdateInfo: Decodable, Equatable, Sendable {
         updateAvailable: Bool,
         channel: String,
         checkedAt: String?,
-        migrationState: String
+        migrationState: String,
+        currentBuildNumber: Int? = nil,
+        latestBuildNumber: Int? = nil,
+        lastApply: ServerUpdateApplyState? = nil
     ) {
         self.currentVersion = currentVersion
         self.latestVersion = latestVersion
@@ -171,6 +200,9 @@ public struct ServerUpdateInfo: Decodable, Equatable, Sendable {
         self.channel = channel
         self.checkedAt = checkedAt
         self.migrationState = migrationState
+        self.currentBuildNumber = currentBuildNumber
+        self.latestBuildNumber = latestBuildNumber
+        self.lastApply = lastApply
     }
 }
 
@@ -178,14 +210,25 @@ public struct ServerUpdateInfo: Decodable, Equatable, Sendable {
 public struct ServerUpdateApplied: Decodable, Equatable, Sendable {
     public var accepted: Bool
     public var targetVersion: String?
+    /// The accepted release's CI build number. Clients confirm the restart
+    /// against this instead of `targetVersion`: version strings differ
+    /// between alpha manifests and installed runtimes, build numbers never
+    /// do. Absent on older servers.
+    public var targetBuildNumber: Int?
     /// When `accepted` is false, why the server declined — e.g. "busy" while
     /// chats are still running. Absent on older servers and on plain
     /// already-up-to-date responses.
     public var reason: String?
 
-    public init(accepted: Bool, targetVersion: String?, reason: String? = nil) {
+    public init(
+        accepted: Bool,
+        targetVersion: String?,
+        targetBuildNumber: Int? = nil,
+        reason: String? = nil
+    ) {
         self.accepted = accepted
         self.targetVersion = targetVersion
+        self.targetBuildNumber = targetBuildNumber
         self.reason = reason
     }
 }
