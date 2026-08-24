@@ -1,16 +1,25 @@
 import Foundation
 
-/// Server self-update orchestration: probing the selected machine's release
-/// state and driving a remote update through restart confirmation. Lives in
-/// its own file (like the navigation-sync extension) to keep the core
-/// controller file within size limits.
+/// Server self-update orchestration: probing machines' release state and
+/// driving a remote update through restart confirmation. Lives in its own
+/// file (like the navigation-sync extension) to keep the core controller
+/// file within size limits.
 extension MachineController {
+    /// The SELECTED machine's update progress — a projection kept for the
+    /// existing banner and busy-state consumers. The authoritative state is
+    /// per machine on its connection, so an update keeps being tracked when
+    /// the user switches away and never shows on another machine.
+    public var serverUpdatePhase: ServerUpdatePhase {
+        connectionsById[selectedMachineId]?.updatePhase ?? .idle
+    }
+
     /// Refreshes only the selected remote machine's release state. The app
-    /// calls this periodically while that machine is open so a release cut
-    /// after the initial connection still raises the update banner.
+    /// calls this while that machine is open so a release cut after the
+    /// initial connection still raises the update banner.
     public func refreshSelectedServerUpdate() async {
         let machineId = selectedMachineId
-        guard !selectedMachine.isLocal, serverUpdatePhase != .updating else { return }
+        guard !selectedMachine.isLocal, connection(for: machineId).updatePhase != .updating
+        else { return }
         let client = selectedClient
         do {
             let update = try await client.updateInfo(
@@ -29,21 +38,58 @@ extension MachineController {
         }
     }
 
+    /// Force-checks release state for every reachable machine — the fleet
+    /// counterpart to `refreshSelectedServerUpdate`. Machines mid-update are
+    /// skipped; `updateServer`'s own polling drives their state.
+    public func refreshServerUpdates() async {
+        let machineIds = allMachines.map(\.id).filter { id in
+            connectionsById[id]?.status?.isReachable == true
+                && connectionsById[id]?.updatePhase != .updating
+        }
+        for machineId in machineIds {
+            let client = client(for: machineId)
+            guard
+                let update = try? await client.updateInfo(
+                    refresh: true,
+                    channel: serverUpdateChannel
+                )
+            else { continue }
+            connection(for: machineId).updateInfo = update
+        }
+    }
+
     /// The selected machine's server update state, when known.
     public var selectedServerUpdate: ServerUpdateInfo? {
         updateInfoByMachineId[selectedMachineId]
     }
 
-    /// Asks the selected machine's server to update itself, then waits for it
-    /// to restart into the newer version before refreshing everything and
-    /// resubscribing to its event stream.
+    /// Asks the selected machine's server to update itself.
     public func updateSelectedServer() async {
-        guard serverUpdatePhase != .updating else { return }
-        let machineId = selectedMachineId
-        let client = selectedClient
+        await updateServer(machineId: selectedMachineId)
+    }
+
+    /// Restores a machine's event stream after an update attempt: the
+    /// selected machine re-enters the shared selected-stream path, any other
+    /// machine reconnects in the background.
+    private func resumeEventStream(for machineId: String) {
+        if machineId == selectedMachineId {
+            startEventSync()
+        } else {
+            Task { await self.connectMachine(machineId) }
+        }
+    }
+
+    /// Asks a machine's server to update itself, then waits for it to
+    /// restart into the newer version before refreshing its state and
+    /// resubscribing to its event stream. Tracks progress on THAT machine's
+    /// connection, so the attempt survives the user switching machines.
+    public func updateServer(machineId: String) async {
+        let connection = connection(for: machineId)
+        guard connection.updatePhase != .updating else { return }
+        let client = client(for: machineId)
         let updateChannel = serverUpdateChannel
-        let initialVersion = selectedServerUpdate?.currentVersion
-        serverUpdatePhase = .updating
+        let initialVersion = connection.updateInfo?.currentVersion
+        connection.updatePhase = .updating
         // Close the gate before dispatching the update request. The server
         // may begin shutting down as soon as it handles that endpoint, before
         // the response has made the round trip back to this client.
@@ -53,31 +99,26 @@ extension MachineController {
             let applied = try await client.applyServerUpdate(channel: updateChannel)
             guard applied.accepted else {
                 markReady(for: machineId)
-                if machineId == selectedMachineId { startEventSync() }
+                resumeEventStream(for: machineId)
                 if applied.reason == "busy" {
                     // The server still has chats mid-turn; updating now would
                     // kill them. The banner disables its button for this app's
                     // own chats, but another client could have started one.
-                    serverUpdatePhase = .failed(
+                    connection.updatePhase = .failed(
                         "This server still has chats running. Wait for them to finish, then update."
                     )
                     return
                 }
                 // Nothing to do (already up to date); refresh the banner state.
                 await refreshStatus(for: machineId)
-                serverUpdatePhase = .idle
+                connection.updatePhase = .idle
                 return
             }
             // The pre-apply handoff report, so a stale failure left by an
             // earlier attempt is never mistaken for this one's outcome.
-            let initialApplyAt = connection(for: machineId).updateInfo?.lastApply?.at
+            let initialApplyAt = connection.updateInfo?.lastApply?.at
             for _ in 0..<updatePollAttempts {
                 try? await Task.sleep(for: updatePollInterval)
-                // The user moved on to a different machine; stop waiting.
-                guard machineId == selectedMachineId else {
-                    serverUpdatePhase = .idle
-                    return
-                }
                 // App-hosted servers report their host app's unattended
                 // Sparkle session; a fresh failure ends the wait with the
                 // machine's real reason instead of a timeout.
@@ -89,11 +130,11 @@ extension MachineController {
                     lastApply.state == "failed",
                     lastApply.at != initialApplyAt
                 {
-                    serverUpdatePhase = .failed(
+                    connection.updatePhase = .failed(
                         lastApply.message ?? "The update failed on the machine."
                     )
                     markReady(for: machineId)
-                    if machineId == selectedMachineId { startEventSync() }
+                    resumeEventStream(for: machineId)
                     return
                 }
                 guard let info = try? await client.info() else { continue }
@@ -136,23 +177,25 @@ extension MachineController {
                 if converged {
                     // Clear the spinner as soon as the replacement server is
                     // confirmed.
-                    serverUpdatePhase = .idle
+                    connection.updatePhase = .idle
                     markReady(for: machineId)
                     await refreshStatus(for: machineId)
-                    await projectList.refreshFromServer()
-                    startEventSync()
+                    if machineId == selectedMachineId {
+                        await projectList.refreshFromServer()
+                    }
+                    resumeEventStream(for: machineId)
                     return
                 }
             }
             let message = "The server did not come back after updating. Check it on the machine directly."
-            serverUpdatePhase = .failed(message)
+            connection.updatePhase = .failed(message)
             markFailed(for: machineId, message: message)
         } catch {
             let message = serverErrorMessage(error)
-            serverUpdatePhase = .failed(message)
+            connection.updatePhase = .failed(message)
             if (try? await client.info()) != nil {
                 markReady(for: machineId)
-                if machineId == selectedMachineId { startEventSync() }
+                resumeEventStream(for: machineId)
             } else {
                 markFailed(for: machineId, message: message)
             }

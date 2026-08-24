@@ -370,15 +370,17 @@ struct RootView: View {
                 TerminalRuntime.prewarm()
             }
         }
-        .task(id: environment.machines.selectedMachineId) {
+        .task {
+            // Fleet-wide upkeep, deliberately NOT keyed to the selected
+            // machine: every machine keeps its stream and release state
+            // current, so a release cut (or work finishing) on an unselected
+            // machine is still noticed.
             guard !AppPreview.isRunning else { return }
             while !Task.isCancelled {
-                do {
-                    try await Task.sleep(for: .seconds(5 * 60))
-                } catch {
-                    return
-                }
-                await environment.machines.refreshSelectedServerUpdate()
+                try? await Task.sleep(for: .seconds(5 * 60))
+                guard !Task.isCancelled else { return }
+                environment.machines.ensureBackgroundConnections()
+                await environment.machines.refreshServerUpdates()
             }
         }
     }

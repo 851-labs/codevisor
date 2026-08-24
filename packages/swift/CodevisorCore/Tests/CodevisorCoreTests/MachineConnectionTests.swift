@@ -160,6 +160,59 @@ struct MachineConnectionTests {
         controller.stopEventSync()
     }
 
+    @Test("An update tracks on its own machine, not on the selected one")
+    func updatePhaseIsPerMachine() async throws {
+        let remote = makeRemote("remote-a")
+        let remoteFake = SyncFakeServerClient(projects: [], sessions: [])
+        remoteFake.configureUpdate(current: "0.1.0", latest: "0.2.0")
+        remoteFake.configureBusy(true)
+        let (controller, _) = try makeController(
+            fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: remoteFake],
+            remotes: [remote]
+        )
+        #expect(controller.selectedMachineId == "local")
+
+        await controller.updateServer(machineId: remote.id)
+
+        // The busy refusal lands on the REMOTE machine's phase; the selected
+        // machine's projection stays idle.
+        if case .failed = controller.connection(for: remote.id).updatePhase {
+        } else {
+            Issue.record("Expected the remote machine's phase to be failed")
+        }
+        #expect(controller.serverUpdatePhase == .idle)
+        controller.stopEventSync()
+    }
+
+    @Test("refreshServerUpdates probes every reachable machine")
+    func fleetUpdateRefresh() async throws {
+        let remoteA = makeRemote("remote-a")
+        let remoteB = makeRemote("remote-b")
+        let fakeA = SyncFakeServerClient(projects: [], sessions: [])
+        let fakeB = SyncFakeServerClient(projects: [], sessions: [])
+        fakeA.configureUpdate(current: "0.1.0", latest: "0.2.0")
+        fakeB.configureUpdate(current: "0.1.0", latest: "0.3.0")
+        let (controller, _) = try makeController(
+            fakes: [
+                "local": SyncFakeServerClient(projects: [], sessions: []),
+                remoteA.id: fakeA,
+                remoteB.id: fakeB,
+            ],
+            remotes: [remoteA, remoteB]
+        )
+
+        // Connect both so their reachability is known, then sweep.
+        await controller.connectMachine(remoteA.id)
+        await controller.connectMachine(remoteB.id)
+        await controller.refreshServerUpdates()
+
+        #expect(controller.updateInfoByMachineId[remoteA.id]?.latestVersion == "0.2.0")
+        #expect(controller.updateInfoByMachineId[remoteB.id]?.latestVersion == "0.3.0")
+        #expect(fakeA.updateInfoRefreshes.contains(true))
+        #expect(fakeB.updateInfoRefreshes.contains(true))
+        controller.stopEventSync()
+    }
+
     @Test("ensureBackgroundConnections opens a stream for every non-selected machine")
     func ensureConnectsRegisteredMachines() async throws {
         let remoteA = makeRemote("remote-a")

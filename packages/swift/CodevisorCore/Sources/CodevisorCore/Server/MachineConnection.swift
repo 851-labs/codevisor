@@ -23,6 +23,10 @@ public final class MachineConnection {
     public internal(set) var availability: ServerAvailability?
     /// How current this machine's synced navigation snapshot is.
     public internal(set) var navigationSyncState: NavigationSyncState?
+    /// Progress of a client-triggered update of THIS machine's server. Per
+    /// machine so one machine's in-flight update never shows on another,
+    /// and switching away never abandons the tracking.
+    public internal(set) var updatePhase: ServerUpdatePhase = .idle
 
     /// This machine's live shell-event subscription. Every machine holds its
     /// own; selection changes never touch another machine's stream.

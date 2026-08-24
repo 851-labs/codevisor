@@ -89,7 +89,6 @@ public final class MachineController {
     /// The release feed remote server update checks follow — mirrors the
     /// app's alpha-updates setting. AppEnvironment keeps it in sync.
     public var serverUpdateChannel: ServerUpdateChannel = .stable
-    public internal(set) var serverUpdatePhase: ServerUpdatePhase = .idle
 
     public typealias ClientFactory = @MainActor (CodevisorMachine) -> any CodevisorServerClienting
 
