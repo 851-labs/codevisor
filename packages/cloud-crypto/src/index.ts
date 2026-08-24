@@ -2,10 +2,10 @@ import { chacha20poly1305 } from "@noble/ciphers/chacha.js"
 import { x25519 } from "@noble/curves/ed25519.js"
 import { hkdf } from "@noble/hashes/hkdf.js"
 import { sha256 } from "@noble/hashes/sha2.js"
-import type { SealedPayload } from "@codevisor/api"
 
 /// End-to-end encryption for cloud relay channels (see @codevisor/api
-/// cloud-protocol). The hub only ever sees SealedPayload ciphertext.
+/// cloud-protocol). The hub only ever sees box ciphertext — raw bytes
+/// carried as relay envelope payloads.
 ///
 /// Key agreement per channel (Noise-IK-flavoured, deliberately minimal):
 ///   dh1 = X25519(ephemeral, responderStatic)   — forward secrecy
@@ -95,31 +95,29 @@ export class ChannelCipher {
     this.#key = key
   }
 
+  /// Returns the raw box (ciphertext ‖ 16-byte tag); the deterministic nonce
+  /// is never included. The box travels as a binary relay envelope payload.
   seal(
     channelId: string,
     direction: ChannelDirection,
     seq: number,
     plaintext: Uint8Array
-  ): SealedPayload {
-    const box = chacha20poly1305(
-      this.#key,
-      nonceFor(direction, seq),
-      aad(channelId, direction, seq)
-    ).encrypt(plaintext)
-    return { box: toBase64Url(box) }
-  }
-
-  open(
-    channelId: string,
-    direction: ChannelDirection,
-    seq: number,
-    sealed: SealedPayload
   ): Uint8Array {
     return chacha20poly1305(
       this.#key,
       nonceFor(direction, seq),
       aad(channelId, direction, seq)
-    ).decrypt(fromBase64Url(sealed.box))
+      // Callers pass views over regular ArrayBuffers; noble's stricter
+      // Uint8Array<ArrayBuffer> parameter type is satisfied in practice.
+    ).encrypt(plaintext as Uint8Array<ArrayBuffer>)
+  }
+
+  open(channelId: string, direction: ChannelDirection, seq: number, box: Uint8Array): Uint8Array {
+    return chacha20poly1305(
+      this.#key,
+      nonceFor(direction, seq),
+      aad(channelId, direction, seq)
+    ).decrypt(box as Uint8Array<ArrayBuffer>)
   }
 }
 
@@ -168,13 +166,12 @@ export const sealJson = (
   direction: ChannelDirection,
   seq: number,
   value: unknown
-): SealedPayload =>
-  cipher.seal(channelId, direction, seq, utf8Encoder.encode(JSON.stringify(value)))
+): Uint8Array => cipher.seal(channelId, direction, seq, utf8Encoder.encode(JSON.stringify(value)))
 
 export const openJson = (
   cipher: ChannelCipher,
   channelId: string,
   direction: ChannelDirection,
   seq: number,
-  sealed: SealedPayload
-): unknown => JSON.parse(utf8Decoder.decode(cipher.open(channelId, direction, seq, sealed)))
+  box: Uint8Array
+): unknown => JSON.parse(utf8Decoder.decode(cipher.open(channelId, direction, seq, box)))

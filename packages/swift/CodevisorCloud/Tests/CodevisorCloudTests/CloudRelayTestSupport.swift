@@ -97,8 +97,13 @@ final class FakeWebSocketTransport: ServerWebSocketTransport, @unchecked Sendabl
 /// on the other end of a FakeWebSocketConnection: answers `hello` with
 /// `welcome` and hands relay envelopes to `onRelay`.
 final class ScriptedCloudHub: @unchecked Sendable {
-    struct RelayEnvelope: Decodable {
-        var t: String
+    struct RelayEnvelope {
+        var machineId: String
+        var frame: CloudRelayFrame
+        var payload: Data
+    }
+
+    private struct RelayHeader: Codable {
         var machineId: String
         var frame: CloudRelayFrame
     }
@@ -125,14 +130,15 @@ final class ScriptedCloudHub: @unchecked Sendable {
         lock.withLock { relayed }
     }
 
-    func relayToApp(machineId: String, frame: CloudRelayFrame) {
-        struct Envelope: Encodable {
-            var t = "relay"
-            var machineId: String
-            var frame: CloudRelayFrame
-        }
-        let data = try! JSONEncoder().encode(Envelope(machineId: machineId, frame: frame))
-        socket.push(.string(String(decoding: data, as: UTF8.self)))
+    func relayToApp(machineId: String, frame: CloudRelayFrame, payload: Data = Data()) {
+        let header = try! JSONEncoder().encode(RelayHeader(machineId: machineId, frame: frame))
+        socket.push(
+            .data(CloudRelayWire.encode([CloudRelayEnvelope(header: header, payload: payload)]))
+        )
+    }
+
+    func relayToApp(machineId: String, sealed: (frame: CloudRelayFrame, payload: Data)) {
+        relayToApp(machineId: machineId, frame: sealed.frame, payload: sealed.payload)
     }
 
     func presenceToApp(_ machine: CloudMachine) {
@@ -177,6 +183,21 @@ final class ScriptedCloudHub: @unchecked Sendable {
     }
 
     private func handle(_ message: ServerWebSocketMessage) {
+        if case let .data(binary) = message {
+            guard let envelopes = try? CloudRelayWire.decode(binary) else { return }
+            for wire in envelopes {
+                guard let header = try? JSONDecoder().decode(RelayHeader.self, from: wire.header)
+                else { continue }
+                let envelope = RelayEnvelope(
+                    machineId: header.machineId,
+                    frame: header.frame,
+                    payload: wire.payload
+                )
+                lock.withLock { relayed.append(envelope) }
+                onRelay?(envelope)
+            }
+            return
+        }
         guard case let .string(text) = message else { return }
         let data = Data(text.utf8)
         struct Probe: Decodable {
@@ -202,10 +223,6 @@ final class ScriptedCloudHub: @unchecked Sendable {
             }
             let welcome = try! JSONEncoder().encode(WelcomePayload(machines: machines))
             socket.push(.string(String(decoding: welcome, as: UTF8.self)))
-        case "relay":
-            guard let envelope = try? JSONDecoder().decode(RelayEnvelope.self, from: data) else { return }
-            lock.withLock { relayed.append(envelope) }
-            onRelay?(envelope)
         case "ping":
             if respondsToPing {
                 socket.pushJSON(#"{"t":"pong"}"#)
@@ -217,7 +234,7 @@ final class ScriptedCloudHub: @unchecked Sendable {
 
     private struct WelcomePayload: Encodable {
         var t = "welcome"
-        var `protocol` = 1
+        var `protocol` = 2
         var connectionId = "conn-1"
         var machines: [CloudMachine]
     }
@@ -268,12 +285,16 @@ final class ScriptedRelayMachine: @unchecked Sendable {
         lock.withLock { channels[id] }
     }
 
-    /// Handles one app→machine relay frame, decrypting with the machine's
-    /// keys. Returns the decrypted payload for data frames.
+    /// Handles one app→machine relay envelope, decrypting with the machine's
+    /// keys. Returns the decrypted payload for open/data frames.
     @discardableResult
-    func receive(_ frame: CloudRelayFrame, appPublicKey: String) throws -> Data? {
+    func receive(
+        _ frame: CloudRelayFrame,
+        payload: Data,
+        appPublicKey: String
+    ) throws -> Data? {
         switch frame {
-        case let .open(channelId, seq, ephemeralKey, sealed):
+        case let .open(channelId, seq, ephemeralKey):
             let cipher = try CloudChannelCrypto.acceptChannel(
                 responderSecretKey: secretKey,
                 openerPublicKey: appPublicKey,
@@ -282,17 +303,17 @@ final class ScriptedRelayMachine: @unchecked Sendable {
             let channel = Channel(cipher: cipher)
             channel.nextInboundSeq = seq + 1
             channel.openPayload = try cipher.open(
-                sealed.box, channelId: channelId, direction: .openerToResponder, seq: seq
+                payload, channelId: channelId, direction: .openerToResponder, seq: seq
             )
             lock.withLock { channels[channelId] = channel }
             return channel.openPayload
-        case let .data(channelId, seq, sealed):
+        case let .data(channelId, seq):
             guard let channel = channel(channelId), channel.nextInboundSeq == seq else {
                 throw CloudChannelCryptoError.openFailed
             }
             channel.nextInboundSeq += 1
             let plaintext = try channel.cipher.open(
-                sealed.box, channelId: channelId, direction: .openerToResponder, seq: seq
+                payload, channelId: channelId, direction: .openerToResponder, seq: seq
             )
             channel.messages.append(plaintext)
             return plaintext
@@ -312,15 +333,18 @@ final class ScriptedRelayMachine: @unchecked Sendable {
         }
     }
 
-    /// Seals a machine→app data frame for the scripted side.
-    func sealData(channelId: String, payload: Data) throws -> CloudRelayFrame {
+    /// Seals a machine→app data frame (header + ciphertext payload).
+    func sealData(
+        channelId: String,
+        payload: Data
+    ) throws -> (frame: CloudRelayFrame, payload: Data) {
         guard let channel = channel(channelId) else { throw CloudChannelCryptoError.openFailed }
         let seq = channel.nextOutboundSeq
         channel.nextOutboundSeq += 1
         let box = try channel.cipher.seal(
             payload, channelId: channelId, direction: .responderToOpener, seq: seq
         )
-        return .data(channelId: channelId, seq: seq, sealed: CloudSealedPayload(box: box))
+        return (frame: .data(channelId: channelId, seq: seq), payload: box)
     }
 
     func creditFrame(channelId: String, bytes: Int) -> CloudRelayFrame {

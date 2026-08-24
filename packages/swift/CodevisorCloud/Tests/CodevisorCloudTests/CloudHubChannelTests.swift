@@ -13,7 +13,7 @@ struct CloudHubChannelTests {
         let scripted = ScriptedCloudHub(machines: [machine.presence])
         scripted.onRelay = { [weak scripted] envelope in
             guard let scripted, let appKey = scripted.appPublicKey else { return }
-            _ = try? machine.receive(envelope.frame, appPublicKey: appKey)
+            _ = try? machine.receive(envelope.frame, payload: envelope.payload, appPublicKey: appKey)
         }
         let (hub, _) = makeHub(scripted)
         let recorder = Recorder()
@@ -47,11 +47,11 @@ struct CloudHubChannelTests {
         // Machine → app data frames (seq 0, 1) decrypt and arrive in order.
         scripted.relayToApp(
             machineId: machine.deviceId,
-            frame: try machine.sealData(channelId: channel.id, payload: Data("reply-1".utf8))
+            sealed: try machine.sealData(channelId: channel.id, payload: Data("reply-1".utf8))
         )
         scripted.relayToApp(
             machineId: machine.deviceId,
-            frame: try machine.sealData(channelId: channel.id, payload: Data("reply-2".utf8))
+            sealed: try machine.sealData(channelId: channel.id, payload: Data("reply-2".utf8))
         )
         #expect(await waitUntil { recorder.messages.count == 2 })
         #expect(recorder.messages.map { String(decoding: $0, as: UTF8.self) } == ["reply-1", "reply-2"])
@@ -80,7 +80,7 @@ struct CloudHubChannelTests {
         let scripted = ScriptedCloudHub(machines: [machine.presence])
         scripted.onRelay = { [weak scripted] envelope in
             guard let scripted, let appKey = scripted.appPublicKey else { return }
-            _ = try? machine.receive(envelope.frame, appPublicKey: appKey)
+            _ = try? machine.receive(envelope.frame, payload: envelope.payload, appPublicKey: appKey)
         }
         let (hub, _) = makeHub(scripted)
         let recorder = Recorder()
@@ -102,7 +102,8 @@ struct CloudHubChannelTests {
         )
         scripted.relayToApp(
             machineId: machine.deviceId,
-            frame: .data(channelId: channel.id, seq: 4, sealed: CloudSealedPayload(box: sealed))
+            frame: .data(channelId: channel.id, seq: 4),
+            payload: sealed
         )
         #expect(await waitUntil { recorder.closes == [.protocolError] })
         #expect(recorder.messages.isEmpty)
@@ -138,13 +139,8 @@ struct CloudHubChannelTests {
         )
         scripted.relayToApp(
             machineId: machine.deviceId,
-            frame: .data(
-                channelId: channel.id,
-                seq: 0,
-                sealed: CloudSealedPayload(
-                    box: CloudChannelCrypto.base64URLEncode(Data(repeating: 9, count: 32))
-                )
-            )
+            frame: .data(channelId: channel.id, seq: 0),
+            payload: Data(repeating: 9, count: 32)
         )
         #expect(await waitUntil { recorder.closes == [.cryptoError] })
         await hub.shutdown()

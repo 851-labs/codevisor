@@ -109,11 +109,11 @@ public final class CloudRelayLoopbackBridge: @unchecked Sendable {
         }
     }
 
-    /// Encoded ChaCha20-Poly1305 box size: plaintext + 16-byte tag, then
-    /// unpadded base64url.
+    /// Raw ChaCha20-Poly1305 box size: plaintext + 16-byte tag (the box
+    /// travels as raw bytes — no encoding expansion).
     static func sealedByteCount(forPlaintextBytes count: Int) -> Int {
         precondition(count >= 0)
-        return ((count + 16) * 4 + 2) / 3
+        return count + 16
     }
 
     private final class OnceFlag: @unchecked Sendable {

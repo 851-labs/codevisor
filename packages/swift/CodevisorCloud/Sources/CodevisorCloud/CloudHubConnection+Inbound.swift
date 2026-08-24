@@ -15,7 +15,7 @@ extension CloudHubConnection {
         var machine: CloudMachine
     }
 
-    private struct InboundRelayMessage: Decodable {
+    private struct InboundRelayHeader: Decodable {
         var machineId: String
         var frame: CloudRelayFrame
     }
@@ -35,7 +35,15 @@ extension CloudHubConnection {
         let data: Data
         switch message {
         case let .data(payload):
-            data = payload
+            // Binary messages are relay envelope batches; malformed ones are
+            // dropped (the hub never sends them).
+            guard let envelopes = try? CloudRelayWire.decode(payload) else { return }
+            for envelope in envelopes {
+                guard let relay = try? decoder.decode(InboundRelayHeader.self, from: envelope.header)
+                else { continue }
+                handleRelay(relay.frame, payload: envelope.payload)
+            }
+            return
         case let .string(text):
             data = Data(text.utf8)
         }
@@ -71,9 +79,6 @@ extension CloudHubConnection {
                 // channel the machine no longer knows about.
                 closeChannels(for: presence.machine.deviceId)
             }
-        case "relay":
-            guard let relay = try? decoder.decode(InboundRelayMessage.self, from: data) else { return }
-            handleRelay(relay.frame)
         case "machine-reset":
             guard let reset = try? decoder.decode(MachineResetMessage.self, from: data) else { return }
             // The machine completed a fresh hello: its in-memory channel
@@ -118,7 +123,7 @@ extension CloudHubConnection {
         }
     }
 
-    private func handleRelay(_ frame: CloudRelayFrame) {
+    private func handleRelay(_ frame: CloudRelayFrame, payload: Data) {
         guard let state = channels[frame.channelId] else {
             #if DEBUG || NAVIGATION_DIAGNOSTICS
                 Log.cloud.notice(
@@ -150,15 +155,15 @@ extension CloudHubConnection {
         case .open:
             // Machines never open channels toward the app.
             abortChannel(frame.channelId, reason: .protocolError)
-        case let .data(channelId, seq, sealed):
+        case let .data(channelId, seq):
             do {
                 let plaintext = try state.cipher.open(
-                    sealed.box,
+                    payload,
                     channelId: channelId,
                     direction: .responderToOpener,
                     seq: seq
                 )
-                let sealedBytes = sealed.box.utf8.count
+                let sealedBytes = payload.count
                 if state.flowControlled {
                     guard sealedBytes <= state.inboundCredit else {
                         abortChannel(channelId, reason: .protocolError)

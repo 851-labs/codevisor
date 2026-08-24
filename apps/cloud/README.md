@@ -16,9 +16,12 @@ One Cloudflare Worker contains the whole plane:
   from the request's geolocation (`src/location-hint.ts`), so hubs spawn near
   their users instead of wherever Cloudflare's default placement lands.
 - **Relay protocol** — multiplexed channels (`@codevisor/api` cloud-protocol).
-  Channel payloads are sealed end-to-end between devices
-  (`@codevisor/cloud-crypto`: X25519 + XChaCha20-Poly1305); the hub only ever
-  sees ciphertext and envelope addressing. Even `channelType` is encrypted.
+  Relay traffic is binary: each WebSocket message carries one or more
+  envelopes (small JSON header + raw ciphertext payload — no base64, and
+  senders coalesce bursts into one message). Channel payloads are sealed
+  end-to-end between devices (`@codevisor/cloud-crypto`: X25519 +
+  ChaCha20-Poly1305); the hub only ever sees ciphertext and envelope
+  addressing. Even `channelType` is encrypted.
 - **Pages** — three tiny server-rendered pages (`/`, `/login`, `/device`,
   `/auth/handoff`); everything else is native-app UI.
 - **Plugin registry** — a cron trigger (every 15 min, or `POST

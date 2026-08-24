@@ -66,9 +66,9 @@ describe("channel encryption", () => {
     const repeat = opened.cipher.seal("ch-1", "opener-to-responder", 0, payload)
     const nextSeq = opened.cipher.seal("ch-1", "opener-to-responder", 1, payload)
     const otherDirection = opened.cipher.seal("ch-1", "responder-to-opener", 0, payload)
-    expect(repeat.box).toBe(first.box)
-    expect(nextSeq.box).not.toBe(first.box)
-    expect(otherDirection.box).not.toBe(first.box)
+    expect(repeat).toEqual(first)
+    expect(nextSeq).not.toEqual(first)
+    expect(otherDirection).not.toEqual(first)
   })
 
   it("rejects invalid sequence numbers", () => {
@@ -121,9 +121,7 @@ describe("channel encryption", () => {
 
   it("rejects malformed boxes and keys", () => {
     const { responder } = setup()
-    expect(() =>
-      responder.open("ch-1", "opener-to-responder", 0, { box: toBase64Url(new Uint8Array(4)) })
-    ).toThrow()
+    expect(() => responder.open("ch-1", "opener-to-responder", 0, new Uint8Array(4))).toThrow()
     expect(() => new ChannelCipher(new Uint8Array(16))).toThrow("invalid channel key length")
   })
 })

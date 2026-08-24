@@ -37,7 +37,7 @@ struct CloudChannelCryptoTests {
             direction: .openerToResponder,
             seq: Self.vectorSeq
         )
-        #expect(box == Self.vectorBox)
+        #expect(box == (try decode(Self.vectorBox)))
         #expect(try CloudChannelCrypto.publicKey(forSecretKey: decode(Self.openerSecret)) == Self.openerPublic)
     }
 
@@ -49,7 +49,7 @@ struct CloudChannelCryptoTests {
             ephemeralPublicKey: Self.ephemeralPublic
         )
         let plaintext = try cipher.open(
-            Self.vectorBox,
+            try decode(Self.vectorBox),
             channelId: Self.vectorChannelId,
             direction: .openerToResponder,
             seq: Self.vectorSeq
@@ -184,7 +184,7 @@ struct CloudChannelCryptoTests {
         )
         #expect(throws: CloudChannelCryptoError.invalidBox) {
             _ = try opened.cipher.open(
-                CloudChannelCrypto.base64URLEncode(Data(count: 4)),
+                Data(count: 4),
                 channelId: "ch-1",
                 direction: .responderToOpener,
                 seq: 0

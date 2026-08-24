@@ -138,11 +138,24 @@ const socketFactory = (url: string, headers: Record<string, string>): CloudSocke
     onclose: null
   }
   socket.on("open", () => adapted.onopen?.())
-  socket.on("message", (data) => adapted.onmessage?.(String(data)))
+  socket.on("message", (data, isBinary) => {
+    // Binary frames carry relay envelope batches; text frames JSON control.
+    if (isBinary) {
+      const bytes = Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as ArrayBuffer)
+      adapted.onmessage?.(new Uint8Array(bytes))
+      return
+    }
+    adapted.onmessage?.(String(data))
+  })
   socket.on("close", (code) => adapted.onclose?.(code))
   socket.on("error", () => undefined) // close fires afterwards and drives reconnect
   return adapted
 }
+
+/// Nagle for the relay: PTY writes and byte-stream chunks arrive in bursts,
+/// and each envelope no longer has to be its own hub message (billed and
+/// radio-waking). 5ms is far below any relay round trip.
+const RELAY_COALESCE_MS = 5
 
 /// Serves one app-opened terminal channel: reattach via (terminalId,
 /// sinceSeq), stream frames out, apply client frames in. Channel payloads:
@@ -352,6 +365,7 @@ const makeBridge = (
   const connection = new CloudMachineConnection({
     credentials,
     peerKeyPins,
+    relayCoalesceMs: RELAY_COALESCE_MS,
     onPeerKeyMismatch: ({ deviceId, pinned, presented }) => {
       options.log(
         `Cloud: REFUSED channel from app device ${deviceId}: its key changed ` +

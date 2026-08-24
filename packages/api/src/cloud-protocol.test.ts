@@ -6,14 +6,21 @@ import {
   decodeHubToApp,
   decodeHubToMachine,
   decodeMachineToHub,
+  decodeRelayEnvelopes,
   encodeCloudFrame,
+  encodeRelayEnvelopes,
+  parseAppRelayHeader,
+  parseHubToAppRelayHeader,
+  parseHubToMachineRelayHeader,
+  parseMachineRelayHeader,
+  parseRelayFrameHeader,
   type AppToHub,
   type CloudDeviceInfo,
   type CloudMachinePresence,
   type HubToApp,
   type HubToMachine,
   type MachineToHub,
-  type RelayFrame
+  type RelayFrameHeader
 } from "./cloud-protocol.js"
 
 const appDevice: CloudDeviceInfo = {
@@ -34,20 +41,10 @@ const machinePresence: CloudMachinePresence = {
   lastSeenAt: "2026-08-07T00:00:00.000Z"
 }
 
-const sealed = { box: "Ym94" }
-
-const relayFrames: RelayFrame[] = [
-  { t: "open", channelId: "ch-1", seq: 0, ephemeralKey: "eph", sealed },
-  { t: "data", channelId: "ch-1", seq: 1, sealed },
-  { t: "credit", channelId: "ch-1", seq: 2, bytes: 65536 },
-  { t: "close", channelId: "ch-1", seq: 3, reason: "done" }
-]
-
-describe("app plane", () => {
+describe("control frames (JSON text)", () => {
   it("round-trips every app→hub frame", () => {
     const frames: AppToHub[] = [
       { t: "hello", protocol: CLOUD_PROTOCOL_VERSION, device: appDevice },
-      ...relayFrames.map((frame): AppToHub => ({ t: "relay", machineId: "m-1", frame })),
       { t: "ping" }
     ]
     for (const frame of frames) {
@@ -64,7 +61,7 @@ describe("app plane", () => {
         machines: [machinePresence, { ...machinePresence, deviceId: "m-2", online: false }]
       },
       { t: "presence", machine: machinePresence },
-      { t: "relay", machineId: "m-1", frame: relayFrames[1]! },
+      { t: "machine-reset", machineId: "m-1" },
       { t: "error", code: "machine-offline", message: "gone", machineId: "m-1", channelId: "ch-1" },
       { t: "error", code: "unsupported-protocol", message: "too old" },
       { t: "pong" }
@@ -73,59 +70,154 @@ describe("app plane", () => {
       expect(decodeHubToApp(encodeCloudFrame(frame))).toEqual(frame)
     }
   })
-})
 
-describe("machine plane", () => {
-  it("round-trips every machine→hub frame", () => {
-    const frames: MachineToHub[] = [
+  it("round-trips every machine-plane frame", () => {
+    const toHub: MachineToHub[] = [
       {
         t: "hello",
         protocol: CLOUD_PROTOCOL_VERSION,
         device: { deviceId: "m-1", kind: "machine", name: "dev-vps", publicKey: "machine-pub" }
       },
-      ...relayFrames.map((frame): MachineToHub => ({ t: "relay", peerId: "conn-1", frame })),
       { t: "ping" }
     ]
-    for (const frame of frames) {
+    for (const frame of toHub) {
       expect(decodeMachineToHub(encodeCloudFrame(frame))).toEqual(frame)
     }
-  })
-
-  it("round-trips every hub→machine frame", () => {
-    const frames: HubToMachine[] = [
+    const fromHub: HubToMachine[] = [
       { t: "welcome", protocol: CLOUD_PROTOCOL_VERSION, connectionId: "conn-2" },
-      { t: "relay", peerId: "conn-1", peerPublicKey: "app-pub", frame: relayFrames[0]! },
-      { t: "relay", peerId: "conn-1", frame: relayFrames[3]! },
       { t: "peer-gone", peerId: "conn-1" },
       { t: "error", code: "invalid-frame", message: "bad json" },
       { t: "pong" }
     ]
-    for (const frame of frames) {
+    for (const frame of fromHub) {
       expect(decodeHubToMachine(encodeCloudFrame(frame))).toEqual(frame)
     }
   })
-})
 
-describe("validation", () => {
-  it("rejects malformed frames", () => {
+  it("rejects malformed control frames", () => {
     expect(() => decodeAppToHub("{}")).toThrow()
-    expect(() => decodeAppToHub('{"t":"relay","machineId":"m-1","frame":{"t":"data"}}')).toThrow()
     expect(() => decodeHubToApp('{"t":"nope"}')).toThrow()
     expect(() => decodeMachineToHub('{"t":"hello","protocol":"1"}')).toThrow()
     expect(() => decodeHubToMachine("not json")).toThrow()
-    expect(() =>
-      decodeAppToHub(
-        JSON.stringify({
-          t: "relay",
-          machineId: "m-1",
-          frame: { t: "close", channelId: "ch-1", seq: 0, reason: "because" }
-        })
-      )
-    ).toThrow()
   })
 
   it("exports the terminal channel contract", () => {
     expect(TERMINAL_CHANNEL_TYPE).toBe("terminal")
-    expect(CLOUD_PROTOCOL_VERSION).toBe(1)
+    expect(CLOUD_PROTOCOL_VERSION).toBe(2)
+  })
+})
+
+describe("relay envelopes (binary)", () => {
+  const frames: RelayFrameHeader[] = [
+    { t: "open", channelId: "ch-1", seq: 0, ephemeralKey: "eph" },
+    { t: "data", channelId: "ch-1", seq: 1 },
+    { t: "credit", channelId: "ch-1", seq: 2, bytes: 65536 },
+    { t: "close", channelId: "ch-1", seq: 3, reason: "done" }
+  ]
+
+  it("round-trips a batch of envelopes with zero-copy payloads", () => {
+    const payloads = [
+      new Uint8Array([1, 2, 3]),
+      new Uint8Array(256).fill(7),
+      new Uint8Array(0),
+      new Uint8Array(0)
+    ]
+    const message = encodeRelayEnvelopes(
+      frames.map((frame, index) => ({
+        header: { machineId: "m-1", frame },
+        payload: payloads[index]!
+      }))
+    )
+    const decoded = decodeRelayEnvelopes(message)
+    expect(decoded).toHaveLength(4)
+    for (const [index, envelope] of decoded.entries()) {
+      expect(envelope.header).toEqual({ machineId: "m-1", frame: frames[index] })
+      expect(new Uint8Array(envelope.payload)).toEqual(payloads[index])
+    }
+  })
+
+  it("decodes payload views at the right offsets within one message", () => {
+    const message = encodeRelayEnvelopes([
+      { header: { peerId: "p", frame: frames[1] }, payload: new Uint8Array([9, 9]) },
+      { header: { peerId: "p", frame: frames[1] }, payload: new Uint8Array([8]) }
+    ])
+    const [first, second] = decodeRelayEnvelopes(message)
+    expect([...first!.payload]).toEqual([9, 9])
+    expect([...second!.payload]).toEqual([8])
+  })
+
+  it("rejects malformed messages", () => {
+    expect(() => decodeRelayEnvelopes(new Uint8Array(0))).toThrow()
+    expect(() => decodeRelayEnvelopes(new Uint8Array([0, 0]))).toThrow()
+    // Header length pointing past the end.
+    expect(() => decodeRelayEnvelopes(new Uint8Array([0, 0, 0, 99, 123]))).toThrow()
+    // Valid header, truncated payload.
+    const good = encodeRelayEnvelopes([
+      { header: { machineId: "m", frame: frames[1] }, payload: new Uint8Array([1, 2, 3, 4]) }
+    ])
+    expect(() => decodeRelayEnvelopes(good.subarray(0, good.byteLength - 2))).toThrow()
+    // Header bytes that are not JSON.
+    const bad = new Uint8Array([0, 0, 0, 2, 123, 123, 0, 0, 0, 0])
+    expect(() => decodeRelayEnvelopes(bad)).toThrow()
+  })
+
+  it("validates frame headers and preserves additive fields", () => {
+    for (const frame of frames) {
+      expect(parseRelayFrameHeader(frame)).toBe(frame)
+    }
+    const extended = { t: "data", channelId: "ch", seq: 0, future: true }
+    expect(parseRelayFrameHeader(extended)).toBe(extended)
+
+    expect(parseRelayFrameHeader(undefined)).toBeUndefined()
+    expect(parseRelayFrameHeader({ t: "data", channelId: "ch" })).toBeUndefined()
+    expect(parseRelayFrameHeader({ t: "data", channelId: "ch", seq: -1 })).toBeUndefined()
+    expect(parseRelayFrameHeader({ t: "data", channelId: "ch", seq: 0.5 })).toBeUndefined()
+    expect(parseRelayFrameHeader({ t: "open", channelId: "ch", seq: 0 })).toBeUndefined()
+    expect(parseRelayFrameHeader({ t: "credit", channelId: "ch", seq: 0 })).toBeUndefined()
+    expect(
+      parseRelayFrameHeader({ t: "credit", channelId: "ch", seq: 0, bytes: 0 })
+    ).toBeUndefined()
+    expect(
+      parseRelayFrameHeader({ t: "close", channelId: "ch", seq: 0, reason: "because" })
+    ).toBeUndefined()
+    expect(parseRelayFrameHeader({ t: "nope", channelId: "ch", seq: 0 })).toBeUndefined()
+  })
+
+  it("validates addressed headers per direction", () => {
+    const frame = frames[1]!
+    expect(parseAppRelayHeader({ machineId: "m-1", frame })).toEqual({ machineId: "m-1", frame })
+    expect(parseAppRelayHeader({ peerId: "p", frame })).toBeUndefined()
+    expect(parseAppRelayHeader("nope")).toBeUndefined()
+    expect(parseAppRelayHeader({ machineId: "m-1", frame: { t: "data" } })).toBeUndefined()
+
+    expect(parseMachineRelayHeader({ peerId: "conn-1", frame })).toEqual({
+      peerId: "conn-1",
+      frame
+    })
+    expect(parseHubToAppRelayHeader({ machineId: "m-1", frame })).toEqual({
+      machineId: "m-1",
+      frame
+    })
+
+    const open = frames[0]!
+    expect(
+      parseHubToMachineRelayHeader({
+        peerId: "conn-1",
+        peerPublicKey: "pk",
+        peerDeviceId: "app-1",
+        frame: open
+      })
+    ).toEqual({ peerId: "conn-1", peerPublicKey: "pk", peerDeviceId: "app-1", frame: open })
+    expect(parseHubToMachineRelayHeader({ peerId: "conn-1", frame })).toEqual({
+      peerId: "conn-1",
+      frame
+    })
+    expect(
+      parseHubToMachineRelayHeader({ peerId: "conn-1", peerPublicKey: 7, frame })
+    ).toBeUndefined()
+    expect(
+      parseHubToMachineRelayHeader({ peerId: "conn-1", peerDeviceId: 7, frame })
+    ).toBeUndefined()
+    expect(parseHubToMachineRelayHeader({ machineId: "m-1", frame })).toBeUndefined()
   })
 })

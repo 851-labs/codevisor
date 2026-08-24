@@ -1,14 +1,18 @@
 import {
   CLOUD_PROTOCOL_VERSION,
   decodeHubToMachine,
+  decodeRelayEnvelopes,
   encodeCloudFrame,
+  parseHubToMachineRelayHeader,
   type ChannelCloseReason,
-  type RelayFrame
+  type RelayFrameHeader,
+  type WireRelayEnvelope
 } from "@codevisor/api"
-import { acceptChannel, openJson, sealJson, type ChannelCipher } from "@codevisor/cloud-crypto"
-import type { ChannelHandler, IncomingChannel } from "./incoming-channel.js"
+import { acceptChannel, openJson, type ChannelCipher } from "@codevisor/cloud-crypto"
+import { makeLiveChannel, type ChannelHandler, type LiveChannel } from "./incoming-channel.js"
 import type { MachineCredentials } from "./login.js"
 import {
+  RelayOutbox,
   reconnectDelayMs,
   type CancelTimeout,
   type CloudSocket,
@@ -36,6 +40,9 @@ export interface MachineConnectionOptions {
   /// Fired on every refused open so integrators can log the substitution
   /// attempt with enough detail to investigate.
   onPeerKeyMismatch?: (info: { deviceId: string; pinned: string; presented: string }) => void
+  /// Coalesce outgoing relay envelopes for up to this long (see RelayOutbox).
+  /// Default 0: every frame goes out immediately.
+  relayCoalesceMs?: number
   scheduleReconnect?: (callback: () => void, delayMs: number) => void
   scheduleTimeout?: (callback: () => void, delayMs: number) => CancelTimeout
   welcomeTimeoutMs?: number
@@ -44,17 +51,9 @@ export interface MachineConnectionOptions {
   random?: () => number
 }
 
-interface LiveChannel {
-  cipher: ChannelCipher
-  channel: IncomingChannel
-  nextReceiveSeq: number
-  nextSendSeq: number
-  flowControlled: boolean
-  inboundCredit: number
-}
-
 export class CloudMachineConnection {
   #socket: CloudSocket | undefined
+  #outbox: RelayOutbox | undefined
   #state: MachineConnectionState = "stopped"
   #attempt = 0
   #stopped = true
@@ -82,6 +81,7 @@ export class CloudMachineConnection {
     this.#reconnectGeneration += 1
     this.#setState("stopped")
     this.#clearLivenessTimers()
+    this.#dropOutbox()
     const socket = this.#socket
     this.#socket = undefined
     socket?.close(1000, "stopping")
@@ -100,6 +100,17 @@ export class CloudMachineConnection {
     const url = `${credentials.serverUrl.replace(/^http/, "ws")}/connect`
     const socket = this.options.socketFactory(url, { "x-api-key": credentials.apiKey })
     this.#socket = socket
+    this.#outbox = new RelayOutbox({
+      send: (message) => {
+        try {
+          socket.send(message)
+        } catch {
+          // The socket's close event drives teardown and reconnect.
+        }
+      },
+      scheduleTimeout: (callback, delayMs) => this.#scheduleTimeout(callback, delayMs),
+      coalesceMs: this.options.relayCoalesceMs ?? 0
+    })
     this.#cancelWelcomeTimeout = this.#scheduleTimeout(() => {
       this.#cancelWelcomeTimeout = undefined
       this.#forceReconnect(socket, { kind: "welcome-timeout" })
@@ -122,12 +133,33 @@ export class CloudMachineConnection {
         this.#forceReconnect(socket, { kind: "send-failed", phase: "hello" })
       }
     }
-    socket.onmessage = (data) => this.#onFrame(socket, data)
+    socket.onmessage = (data) => this.#onMessage(socket, data)
     socket.onclose = (code) => this.#onSocketClosed(socket, code)
   }
 
-  #onFrame(socket: CloudSocket, data: string): void {
+  #onMessage(socket: CloudSocket, data: string | Uint8Array): void {
     if (this.#socket !== socket) return
+    // Binary messages are relay envelope batches; text is JSON control.
+    if (typeof data !== "string") {
+      let envelopes: WireRelayEnvelope[]
+      try {
+        envelopes = decodeRelayEnvelopes(data)
+      } catch {
+        return
+      }
+      for (const envelope of envelopes) {
+        const header = parseHubToMachineRelayHeader(envelope.header)
+        if (header === undefined) continue
+        this.#onRelay(
+          header.peerId,
+          header.frame,
+          envelope.payload,
+          header.peerPublicKey,
+          header.peerDeviceId
+        )
+      }
+      return
+    }
     const frame = decodeHubToMachine(data)
     switch (frame.t) {
       case "welcome":
@@ -155,9 +187,6 @@ export class CloudMachineConnection {
         }
         return
       }
-      case "relay":
-        this.#onRelay(socket, frame.peerId, frame.frame, frame.peerPublicKey, frame.peerDeviceId)
-        return
     }
   }
 
@@ -189,6 +218,7 @@ export class CloudMachineConnection {
     if (this.#socket !== socket) return
     this.#socket = undefined
     this.#clearLivenessTimers()
+    this.#dropOutbox()
     this.#dropAllChannels("peer-gone")
     this.options.onDisconnect?.({ kind: "socket-closed", code })
     if (code === 4201) {
@@ -206,6 +236,7 @@ export class CloudMachineConnection {
     if (this.#socket !== socket || this.#stopped) return
     this.#socket = undefined
     this.#clearLivenessTimers()
+    this.#dropOutbox()
     this.#dropAllChannels("peer-gone")
     this.options.onDisconnect?.(reason)
     try {
@@ -248,17 +279,32 @@ export class CloudMachineConnection {
     this.#cancelPongTimeout = undefined
   }
 
-  #onRelay(
-    socket: CloudSocket,
+  #dropOutbox(): void {
+    this.#outbox?.clear()
+    this.#outbox = undefined
+  }
+
+  /// Queues one relay envelope toward the hub (empty payload for
+  /// credit/close frames, whose parameters live in the header).
+  #sendEnvelope(
     peerId: string,
-    frame: RelayFrame,
+    frame: RelayFrameHeader,
+    payload: Uint8Array = new Uint8Array(0)
+  ): void {
+    this.#outbox?.push({ peerId, frame }, payload)
+  }
+
+  #onRelay(
+    peerId: string,
+    frame: RelayFrameHeader,
+    payload: Uint8Array,
     peerPublicKey: string | undefined,
     peerDeviceId: string | undefined
   ): void {
     const key = `${peerId}/${frame.channelId}`
     if (frame.t === "open") {
       if (peerPublicKey === undefined || this.#channels.has(key)) {
-        this.#refuse(socket, peerId, frame.channelId, "protocol-error")
+        this.#refuse(peerId, frame.channelId, "protocol-error")
         return
       }
       // TOFU: a key that conflicts with the pin for this app device means the
@@ -273,33 +319,33 @@ export class CloudMachineConnection {
             pinned,
             presented: peerPublicKey
           })
-          this.#refuse(socket, peerId, frame.channelId, "rejected")
+          this.#refuse(peerId, frame.channelId, "rejected")
           return
         }
       }
       let cipher: ChannelCipher
-      let payload: { channelType?: unknown; params?: unknown }
+      let openPayload: { channelType?: unknown; params?: unknown }
       try {
         cipher = acceptChannel(
           this.options.credentials.secretKey,
           peerPublicKey,
           frame.ephemeralKey
         )
-        payload = openJson(cipher, frame.channelId, "opener-to-responder", 0, frame.sealed) as {
+        openPayload = openJson(cipher, frame.channelId, "opener-to-responder", 0, payload) as {
           channelType?: unknown
           params?: unknown
         }
       } catch {
-        this.#refuse(socket, peerId, frame.channelId, "crypto-error")
+        this.#refuse(peerId, frame.channelId, "crypto-error")
         return
       }
-      if (typeof payload.channelType !== "string") {
-        this.#refuse(socket, peerId, frame.channelId, "protocol-error")
+      if (typeof openPayload.channelType !== "string") {
+        this.#refuse(peerId, frame.channelId, "protocol-error")
         return
       }
-      const handler = this.options.channelHandlers[payload.channelType]
+      const handler = this.options.channelHandlers[openPayload.channelType]
       if (handler === undefined) {
-        this.#refuse(socket, peerId, frame.channelId, "unsupported")
+        this.#refuse(peerId, frame.channelId, "unsupported")
         return
       }
       // Pin only now: the sealed payload decrypted, so the opener provably
@@ -308,105 +354,18 @@ export class CloudMachineConnection {
       if (pins !== undefined && peerDeviceId !== undefined) {
         pins.set(peerDeviceId, peerPublicKey)
       }
-      const live: LiveChannel = {
+      const live = makeLiveChannel({
+        channelId: frame.channelId,
+        peerId,
+        channelType: openPayload.channelType,
+        params: openPayload.params,
         cipher,
-        nextReceiveSeq: 1,
-        nextSendSeq: 0,
-        flowControlled: false,
-        inboundCredit: 0,
-        channel: {
-          channelId: frame.channelId,
-          peerId,
-          channelType: payload.channelType,
-          params: payload.params,
-          send: (value) => {
-            const current = this.#channels.get(key)
-            if (current === undefined || this.#socket === undefined) return
-            const seq = current.nextSendSeq
-            current.nextSendSeq += 1
-            this.#socket.send(
-              encodeCloudFrame({
-                t: "relay",
-                peerId,
-                frame: {
-                  t: "data",
-                  channelId: frame.channelId,
-                  seq,
-                  sealed: sealJson(
-                    current.cipher,
-                    frame.channelId,
-                    "responder-to-opener",
-                    seq,
-                    value
-                  )
-                }
-              })
-            )
-          },
-          sendBytes: (value) => {
-            const current = this.#channels.get(key)
-            if (current === undefined || this.#socket === undefined) return undefined
-            const seq = current.nextSendSeq
-            current.nextSendSeq += 1
-            const sealed = current.cipher.seal(frame.channelId, "responder-to-opener", seq, value)
-            this.#socket.send(
-              encodeCloudFrame({
-                t: "relay",
-                peerId,
-                frame: { t: "data", channelId: frame.channelId, seq, sealed }
-              })
-            )
-            return sealed.box.length
-          },
-          deferInboundCredit: () => {
-            const current = this.#channels.get(key)
-            if (current !== undefined) current.flowControlled = true
-          },
-          grantCredit: (bytes) => {
-            const current = this.#channels.get(key)
-            if (
-              current === undefined ||
-              this.#socket === undefined ||
-              !Number.isSafeInteger(bytes) ||
-              bytes <= 0 ||
-              current.inboundCredit > Number.MAX_SAFE_INTEGER - bytes
-            ) {
-              return
-            }
-            current.inboundCredit += bytes
-            const seq = current.nextSendSeq
-            current.nextSendSeq += 1
-            this.#socket.send(
-              encodeCloudFrame({
-                t: "relay",
-                peerId,
-                frame: { t: "credit", channelId: frame.channelId, seq, bytes }
-              })
-            )
-          },
-          close: (reason) => {
-            const current = this.#channels.get(key)
-            if (current === undefined) return
-            this.#channels.delete(key)
-            this.#socket?.send(
-              encodeCloudFrame({
-                t: "relay",
-                peerId,
-                frame: {
-                  t: "close",
-                  channelId: frame.channelId,
-                  seq: current.nextSendSeq,
-                  reason
-                }
-              })
-            )
-          },
-          onData: null,
-          onBytes: null,
-          onCredit: null,
-          onClosed: null
-        }
-      }
+        current: () => this.#channels.get(key),
+        remove: () => this.#channels.delete(key),
+        ready: () => this.#outbox !== undefined,
+        sendEnvelope: (relayFrame, relayPayload) =>
+          this.#sendEnvelope(peerId, relayFrame, relayPayload)
+      })
       this.#channels.set(key, live)
       handler(live.channel)
       return
@@ -419,7 +378,7 @@ export class CloudMachineConnection {
       // frame silently, so the app tears down its side and resumes from its
       // cursor rather than waiting forever on a dead channel.
       if (frame.t !== "close") {
-        this.#refuse(socket, peerId, frame.channelId, "peer-disconnected")
+        this.#refuse(peerId, frame.channelId, "peer-disconnected")
       }
       return
     }
@@ -433,13 +392,9 @@ export class CloudMachineConnection {
     // seqs from the same counter as data seqs, so skipping credit here would
     // make the next data frame look like a gap and kill a healthy channel.
     if (frame.t === "credit") {
-      if (
-        frame.seq !== live.nextReceiveSeq ||
-        !Number.isSafeInteger(frame.bytes) ||
-        frame.bytes <= 0
-      ) {
+      if (frame.seq !== live.nextReceiveSeq) {
         this.#channels.delete(key)
-        this.#refuse(socket, peerId, frame.channelId, "protocol-error")
+        this.#refuse(peerId, frame.channelId, "protocol-error")
         live.channel.onClosed?.("protocol-error")
         return
       }
@@ -450,7 +405,7 @@ export class CloudMachineConnection {
     // data — enforce the monotonic seq contract bound into the AAD.
     if (frame.seq !== live.nextReceiveSeq) {
       this.#channels.delete(key)
-      this.#refuse(socket, peerId, frame.channelId, "protocol-error")
+      this.#refuse(peerId, frame.channelId, "protocol-error")
       live.channel.onClosed?.("protocol-error")
       return
     }
@@ -458,19 +413,19 @@ export class CloudMachineConnection {
     try {
       value =
         live.channel.onBytes === null
-          ? openJson(live.cipher, frame.channelId, "opener-to-responder", frame.seq, frame.sealed)
-          : live.cipher.open(frame.channelId, "opener-to-responder", frame.seq, frame.sealed)
+          ? openJson(live.cipher, frame.channelId, "opener-to-responder", frame.seq, payload)
+          : live.cipher.open(frame.channelId, "opener-to-responder", frame.seq, payload)
     } catch {
       this.#channels.delete(key)
-      this.#refuse(socket, peerId, frame.channelId, "crypto-error")
+      this.#refuse(peerId, frame.channelId, "crypto-error")
       live.channel.onClosed?.("crypto-error")
       return
     }
-    const sealedBytes = frame.sealed.box.length
+    const sealedBytes = payload.byteLength
     if (live.flowControlled) {
       if (sealedBytes > live.inboundCredit) {
         this.#channels.delete(key)
-        this.#refuse(socket, peerId, frame.channelId, "protocol-error")
+        this.#refuse(peerId, frame.channelId, "protocol-error")
         live.channel.onClosed?.("protocol-error")
         return
       }
@@ -481,15 +436,8 @@ export class CloudMachineConnection {
     else live.channel.onData?.(value)
   }
 
-  #refuse(
-    socket: CloudSocket,
-    peerId: string,
-    channelId: string,
-    reason: ChannelCloseReason
-  ): void {
-    socket.send(
-      encodeCloudFrame({ t: "relay", peerId, frame: { t: "close", channelId, seq: 0, reason } })
-    )
+  #refuse(peerId: string, channelId: string, reason: ChannelCloseReason): void {
+    this.#sendEnvelope(peerId, { t: "close", channelId, seq: 0, reason })
   }
 
   #dropAllChannels(reason: ChannelCloseReason | "peer-gone"): void {

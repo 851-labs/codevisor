@@ -12,26 +12,18 @@ public enum CloudChannelCloseReason: String, Codable, Sendable {
     case cryptoError = "crypto-error"
 }
 
-/// A ChaCha20-Poly1305 box (base64url ciphertext ‖ tag).
-public struct CloudSealedPayload: Codable, Sendable, Equatable {
-    public var box: String
-
-    public init(box: String) {
-        self.box = box
-    }
-}
-
-/// One frame of a relay channel. The hub never parses payloads; `channelType`
-/// itself lives inside the sealed open payload.
+/// One relay frame's header metadata. The ciphertext never appears here — it
+/// rides beside the header as the envelope payload (open/data frames), and
+/// credit/close frames carry an empty payload.
 public enum CloudRelayFrame: Sendable, Equatable {
-    case open(channelId: String, seq: UInt64, ephemeralKey: String, sealed: CloudSealedPayload)
-    case data(channelId: String, seq: UInt64, sealed: CloudSealedPayload)
+    case open(channelId: String, seq: UInt64, ephemeralKey: String)
+    case data(channelId: String, seq: UInt64)
     case credit(channelId: String, seq: UInt64, bytes: Int)
     case close(channelId: String, seq: UInt64, reason: CloudChannelCloseReason)
 
     public var channelId: String {
         switch self {
-        case let .open(channelId, _, _, _), let .data(channelId, _, _),
+        case let .open(channelId, _, _), let .data(channelId, _),
             let .credit(channelId, _, _), let .close(channelId, _, _):
             channelId
         }
@@ -39,7 +31,7 @@ public enum CloudRelayFrame: Sendable, Equatable {
 
     public var seq: UInt64 {
         switch self {
-        case let .open(_, seq, _, _), let .data(_, seq, _),
+        case let .open(_, seq, _), let .data(_, seq),
             let .credit(_, seq, _), let .close(_, seq, _):
             seq
         }
@@ -48,7 +40,7 @@ public enum CloudRelayFrame: Sendable, Equatable {
 
 extension CloudRelayFrame: Codable {
     private enum CodingKeys: String, CodingKey {
-        case t, channelId, seq, ephemeralKey, sealed, bytes, reason
+        case t, channelId, seq, ephemeralKey, bytes, reason
     }
 
     public init(from decoder: any Decoder) throws {
@@ -61,15 +53,10 @@ extension CloudRelayFrame: Codable {
             self = .open(
                 channelId: channelId,
                 seq: seq,
-                ephemeralKey: try container.decode(String.self, forKey: .ephemeralKey),
-                sealed: try container.decode(CloudSealedPayload.self, forKey: .sealed)
+                ephemeralKey: try container.decode(String.self, forKey: .ephemeralKey)
             )
         case "data":
-            self = .data(
-                channelId: channelId,
-                seq: seq,
-                sealed: try container.decode(CloudSealedPayload.self, forKey: .sealed)
-            )
+            self = .data(channelId: channelId, seq: seq)
         case "credit":
             self = .credit(
                 channelId: channelId,
@@ -94,13 +81,11 @@ extension CloudRelayFrame: Codable {
         try container.encode(channelId, forKey: .channelId)
         try container.encode(seq, forKey: .seq)
         switch self {
-        case let .open(_, _, ephemeralKey, sealed):
+        case let .open(_, _, ephemeralKey):
             try container.encode("open", forKey: .t)
             try container.encode(ephemeralKey, forKey: .ephemeralKey)
-            try container.encode(sealed, forKey: .sealed)
-        case let .data(_, _, sealed):
+        case .data:
             try container.encode("data", forKey: .t)
-            try container.encode(sealed, forKey: .sealed)
         case let .credit(_, _, bytes):
             try container.encode("credit", forKey: .t)
             try container.encode(bytes, forKey: .bytes)
@@ -109,6 +94,78 @@ extension CloudRelayFrame: Codable {
             try container.encode(reason, forKey: .reason)
         }
     }
+}
+
+// MARK: - Binary relay envelopes
+
+/// One decoded relay envelope: the raw JSON header bytes plus the payload.
+public struct CloudRelayEnvelope: Sendable {
+    public var header: Data
+    public var payload: Data
+
+    public init(header: Data, payload: Data) {
+        self.header = header
+        self.payload = payload
+    }
+}
+
+/// The relay's binary framing, the Swift twin of @codevisor/api
+/// encodeRelayEnvelopes: a binary WebSocket message is one or more envelopes,
+/// each `u32 BE header length | header JSON | u32 BE payload length | payload`.
+/// Senders may coalesce several envelopes into one message; receivers process
+/// them in order.
+public enum CloudRelayWire {
+    public static func encode(_ envelopes: [CloudRelayEnvelope]) -> Data {
+        var message = Data()
+        for envelope in envelopes {
+            withUnsafeBytes(of: UInt32(envelope.header.count).bigEndian) {
+                message.append(contentsOf: $0)
+            }
+            message.append(envelope.header)
+            withUnsafeBytes(of: UInt32(envelope.payload.count).bigEndian) {
+                message.append(contentsOf: $0)
+            }
+            message.append(envelope.payload)
+        }
+        return message
+    }
+
+    public static func decode(_ message: Data) throws -> [CloudRelayEnvelope] {
+        var envelopes: [CloudRelayEnvelope] = []
+        var offset = message.startIndex
+        func readLength() throws -> Int {
+            guard message.distance(from: offset, to: message.endIndex) >= 4 else {
+                throw CloudRelayWireError.truncated
+            }
+            let end = message.index(offset, offsetBy: 4)
+            var length: UInt32 = 0
+            for byte in message[offset..<end] {
+                length = length << 8 | UInt32(byte)
+            }
+            offset = end
+            return Int(length)
+        }
+        func readBytes(_ count: Int) throws -> Data {
+            guard message.distance(from: offset, to: message.endIndex) >= count else {
+                throw CloudRelayWireError.truncated
+            }
+            let end = message.index(offset, offsetBy: count)
+            defer { offset = end }
+            return Data(message[offset..<end])
+        }
+        while offset < message.endIndex {
+            let header = try readBytes(try readLength())
+            let payload = try readBytes(try readLength())
+            envelopes.append(CloudRelayEnvelope(header: header, payload: payload))
+        }
+        guard !envelopes.isEmpty else { throw CloudRelayWireError.empty }
+        return envelopes
+    }
+}
+
+public enum CloudRelayWireError: Error, Equatable, Sendable {
+    case truncated
+    case empty
 }
 
 /// Errors the hub connection can surface to channel openers.

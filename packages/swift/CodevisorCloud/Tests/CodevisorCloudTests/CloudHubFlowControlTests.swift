@@ -34,7 +34,7 @@ struct CloudHubFlowControlTests {
         let scripted = ScriptedCloudHub(machines: [machine.presence])
         scripted.onRelay = { [weak scripted] envelope in
             guard let scripted, let appKey = scripted.appPublicKey else { return }
-            _ = try? machine.receive(envelope.frame, appPublicKey: appKey)
+            _ = try? machine.receive(envelope.frame, payload: envelope.payload, appPublicKey: appKey)
         }
         let store = InMemoryCloudCredentialStore(token: "session-token")
         let hub = CloudHubConnection(
@@ -57,12 +57,12 @@ struct CloudHubFlowControlTests {
             onClosed: { recorder.recordClose($0) }
         )
         #expect(await waitUntil { machine.channel(channel.id) != nil })
-        // An empty encrypted box costs 22 encoded bytes. Granting only that
-        // much cannot authorize the following one-byte payload (23 bytes).
-        try await channel.grantCredit(bytes: 22)
+        // An empty raw box costs 16 bytes (the tag). Granting only that much
+        // cannot authorize the following one-byte payload (17 bytes).
+        try await channel.grantCredit(bytes: 16)
         scripted.relayToApp(
             machineId: machine.deviceId,
-            frame: try machine.sealData(channelId: channel.id, payload: Data([1]))
+            sealed: try machine.sealData(channelId: channel.id, payload: Data([1]))
         )
 
         #expect(await waitUntil { recorder.closes == [.protocolError] })

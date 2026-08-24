@@ -3,10 +3,15 @@ import {
   CLOUD_PROTOCOL_VERSION,
   decodeHubToApp,
   decodeHubToMachine,
+  decodeRelayEnvelopes,
   encodeCloudFrame,
+  encodeRelayEnvelopes,
   type CloudMachinePresence,
   type HubToApp,
-  type HubToMachine
+  type HubToMachine,
+  type HubToAppRelayHeader,
+  type HubToMachineRelayHeader,
+  type WireRelayEnvelope
 } from "@codevisor/api"
 import {
   acceptChannel,
@@ -36,33 +41,70 @@ const authed = (token: string): Record<string, string> => ({
   authorization: `Bearer ${token}`
 })
 
-/// Buffered WebSocket reader: frames arrive before or after we await them.
-class SocketReader<Frame> {
-  #queue: string[] = []
-  #waiters: ((raw: string) => void)[] = []
+/// Buffered async queue: items arrive before or after we await them.
+class Queue<Item> {
+  #items: Item[] = []
+  #waiters: ((item: Item) => void)[] = []
 
-  constructor(
-    socket: WebSocket,
-    private readonly decode: (raw: string) => Frame
-  ) {
+  push(item: Item): void {
+    const waiter = this.#waiters.shift()
+    if (waiter !== undefined) waiter(item)
+    else this.#items.push(item)
+  }
+
+  async next(): Promise<Item> {
+    const item = this.#items.shift()
+    if (item !== undefined) return item
+    return new Promise<Item>((resolve, reject) => {
+      this.#waiters.push(resolve)
+      setTimeout(() => reject(new Error("timed out waiting for frame")), 5000)
+    })
+  }
+}
+
+/// Splits a hub socket's traffic into its two wire planes: JSON text control
+/// frames and binary relay envelopes (batches flattened, boundaries counted).
+class SocketReader<Frame> {
+  readonly #controls = new Queue<Frame>()
+  readonly #envelopes = new Queue<WireRelayEnvelope>()
+  binaryMessages = 0
+  // The test client delivers binary messages as Blobs; reading them is async,
+  // so chain the reads to keep envelope order identical to wire order.
+  #chain: Promise<void> = Promise.resolve()
+
+  constructor(socket: WebSocket, decode: (raw: string) => Frame) {
     socket.addEventListener("message", (event) => {
-      const raw = event.data as string
-      const waiter = this.#waiters.shift()
-      if (waiter !== undefined) waiter(raw)
-      else this.#queue.push(raw)
+      if (typeof event.data === "string") {
+        this.#controls.push(decode(event.data))
+        return
+      }
+      this.binaryMessages += 1
+      const data = event.data
+      this.#chain = this.#chain.then(async () => {
+        const buffer =
+          data instanceof ArrayBuffer ? data : await (data as unknown as Blob).arrayBuffer()
+        for (const envelope of decodeRelayEnvelopes(new Uint8Array(buffer))) {
+          this.#envelopes.push({ ...envelope, payload: new Uint8Array(envelope.payload) })
+        }
+      })
     })
   }
 
   async next(): Promise<Frame> {
-    const raw =
-      this.#queue.shift() ??
-      (await new Promise<string>((resolve, reject) => {
-        this.#waiters.push(resolve)
-        setTimeout(() => reject(new Error("timed out waiting for frame")), 5000)
-      }))
-    return this.decode(raw)
+    return this.#controls.next()
+  }
+
+  async nextEnvelope(): Promise<WireRelayEnvelope> {
+    return this.#envelopes.next()
   }
 }
+
+/// Sends one relay envelope as its own binary message.
+const sendRelay = (
+  socket: WebSocket,
+  header: unknown,
+  payload: Uint8Array = new Uint8Array(0)
+): void => socket.send(encodeRelayEnvelopes([{ header, payload }]))
 
 const connectSocket = async (headers: Record<string, string>): Promise<WebSocket> => {
   const response = await SELF.fetch(`${BASE}/connect`, {
@@ -353,81 +395,103 @@ describe("hub relay", () => {
       channelType: "terminal",
       params: { terminalId: "term-1", sinceSeq: 7 }
     }
-    app.socket.send(
-      encodeCloudFrame({
-        t: "relay",
+    sendRelay(
+      app.socket,
+      {
         machineId: machine.deviceId,
-        frame: {
-          t: "open",
-          channelId: "ch-1",
-          seq: 0,
-          ephemeralKey: channel.ephemeralPublicKey,
-          sealed: sealJson(channel.cipher, "ch-1", "opener-to-responder", 0, openPayload)
-        }
-      })
+        frame: { t: "open", channelId: "ch-1", seq: 0, ephemeralKey: channel.ephemeralPublicKey }
+      },
+      sealJson(channel.cipher, "ch-1", "opener-to-responder", 0, openPayload)
     )
 
-    const opened = (await machine.reader.next()) as Extract<HubToMachine, { t: "relay" }>
-    expect(opened.t).toBe("relay")
-    expect(opened.peerPublicKey).toBe(app.keys.publicKey)
+    const opened = await machine.reader.nextEnvelope()
+    const openHeader = opened.header as HubToMachineRelayHeader
+    expect(openHeader.peerPublicKey).toBe(app.keys.publicKey)
     // The opener's stable device id rides along so the machine can TOFU-pin
     // the key under it.
-    expect(opened.peerDeviceId).toBe(app.deviceId)
-    const openFrame = opened.frame as Extract<typeof opened.frame, { t: "open" }>
+    expect(openHeader.peerDeviceId).toBe(app.deviceId)
+    const openFrame = openHeader.frame as Extract<typeof openHeader.frame, { t: "open" }>
     // Machine authenticates the opener and decrypts the channel intent.
     const responder = acceptChannel(
       machine.keys.secretKey,
-      opened.peerPublicKey!,
+      openHeader.peerPublicKey!,
       openFrame.ephemeralKey
     )
-    expect(openJson(responder, "ch-1", "opener-to-responder", 0, openFrame.sealed)).toEqual(
+    expect(openJson(responder, "ch-1", "opener-to-responder", 0, opened.payload)).toEqual(
       openPayload
     )
 
     // Machine answers with sealed terminal output.
-    machine.socket.send(
-      encodeCloudFrame({
-        t: "relay",
-        peerId: opened.peerId,
-        frame: {
-          t: "data",
-          channelId: "ch-1",
-          seq: 0,
-          sealed: sealJson(responder, "ch-1", "responder-to-opener", 0, {
-            type: "output",
-            seq: 8,
-            data: "hello from the machine"
-          })
-        }
+    sendRelay(
+      machine.socket,
+      { peerId: openHeader.peerId, frame: { t: "data", channelId: "ch-1", seq: 0 } },
+      sealJson(responder, "ch-1", "responder-to-opener", 0, {
+        type: "output",
+        seq: 8,
+        data: "hello from the machine"
       })
     )
-    const answered = (await app.reader.next()) as Extract<HubToApp, { t: "relay" }>
-    expect(answered.machineId).toBe(machine.deviceId)
-    const dataFrame = answered.frame as Extract<typeof answered.frame, { t: "data" }>
-    expect(openJson(channel.cipher, "ch-1", "responder-to-opener", 0, dataFrame.sealed)).toEqual({
+    const answered = await app.reader.nextEnvelope()
+    const answeredHeader = answered.header as HubToAppRelayHeader
+    expect(answeredHeader.machineId).toBe(machine.deviceId)
+    expect(openJson(channel.cipher, "ch-1", "responder-to-opener", 0, answered.payload)).toEqual({
       type: "output",
       seq: 8,
       data: "hello from the machine"
     })
 
-    // Credit + close flow through untouched.
+    // Credit + close flow through untouched (empty payloads; header-only).
+    sendRelay(app.socket, {
+      machineId: machine.deviceId,
+      frame: { t: "credit", channelId: "ch-1", seq: 1, bytes: 65536 }
+    })
+    const credit = await machine.reader.nextEnvelope()
+    expect((credit.header as HubToMachineRelayHeader).frame).toMatchObject({
+      t: "credit",
+      bytes: 65536
+    })
+    sendRelay(app.socket, {
+      machineId: machine.deviceId,
+      frame: { t: "close", channelId: "ch-1", seq: 2, reason: "done" }
+    })
+    const closeRelay = await machine.reader.nextEnvelope()
+    expect((closeRelay.header as HubToMachineRelayHeader).frame.t).toBe("close")
+  })
+
+  it("keeps a coalesced envelope batch one message through the hop", async () => {
+    const token = await devLogin()
+    const machine = await connectMachine(token, "batch-vps")
+    const app = await connectApp(token)
+    const before = machine.reader.binaryMessages
+
+    // Three envelopes for the same machine in ONE binary message — the hub
+    // must forward them as one message, preserving order.
     app.socket.send(
-      encodeCloudFrame({
-        t: "relay",
-        machineId: machine.deviceId,
-        frame: { t: "credit", channelId: "ch-1", seq: 1, bytes: 65536 }
-      })
+      encodeRelayEnvelopes([
+        {
+          header: { machineId: machine.deviceId, frame: { t: "data", channelId: "b", seq: 0 } },
+          payload: new Uint8Array([1])
+        },
+        {
+          header: { machineId: machine.deviceId, frame: { t: "data", channelId: "b", seq: 1 } },
+          payload: new Uint8Array([2, 2])
+        },
+        {
+          header: {
+            machineId: machine.deviceId,
+            frame: { t: "credit", channelId: "b", seq: 2, bytes: 64 }
+          },
+          payload: new Uint8Array(0)
+        }
+      ])
     )
-    expect((await machine.reader.next()).t).toBe("relay")
-    app.socket.send(
-      encodeCloudFrame({
-        t: "relay",
-        machineId: machine.deviceId,
-        frame: { t: "close", channelId: "ch-1", seq: 2, reason: "done" }
-      })
-    )
-    const closeRelay = (await machine.reader.next()) as Extract<HubToMachine, { t: "relay" }>
-    expect(closeRelay.frame.t).toBe("close")
+    const first = await machine.reader.nextEnvelope()
+    const second = await machine.reader.nextEnvelope()
+    const third = await machine.reader.nextEnvelope()
+    expect([...first.payload]).toEqual([1])
+    expect([...second.payload]).toEqual([2, 2])
+    expect((third.header as HubToMachineRelayHeader).frame).toMatchObject({ t: "credit" })
+    expect(machine.reader.binaryMessages - before).toBe(1)
   })
 
   it("routes opaque byte-stream data and credit through hibernatable sockets", async () => {
@@ -436,62 +500,47 @@ describe("hub relay", () => {
     const app = await connectApp(token)
     const channel = openChannel(app.keys.secretKey, machine.keys.publicKey)
     const channelId = "bytes-1"
-    app.socket.send(
-      encodeCloudFrame({
-        t: "relay",
+    sendRelay(
+      app.socket,
+      {
         machineId: machine.deviceId,
-        frame: {
-          t: "open",
-          channelId,
-          seq: 0,
-          ephemeralKey: channel.ephemeralPublicKey,
-          sealed: sealJson(channel.cipher, channelId, "opener-to-responder", 0, {
-            channelType: "byte-stream",
-            params: { service: "codevisor-loopback", version: 1 }
-          })
-        }
+        frame: { t: "open", channelId, seq: 0, ephemeralKey: channel.ephemeralPublicKey }
+      },
+      sealJson(channel.cipher, channelId, "opener-to-responder", 0, {
+        channelType: "byte-stream",
+        params: { service: "codevisor-loopback", version: 1 }
       })
     )
-    const opened = (await machine.reader.next()) as Extract<HubToMachine, { t: "relay" }>
-    const openFrame = opened.frame as Extract<typeof opened.frame, { t: "open" }>
+    const opened = await machine.reader.nextEnvelope()
+    const openHeader = opened.header as HubToMachineRelayHeader
+    const openFrame = openHeader.frame as Extract<typeof openHeader.frame, { t: "open" }>
     const responder = acceptChannel(
       machine.keys.secretKey,
-      opened.peerPublicKey!,
+      openHeader.peerPublicKey!,
       openFrame.ephemeralKey
     )
 
     const requestBytes = new Uint8Array([0, 255, 13, 10, 128, 1])
-    app.socket.send(
-      encodeCloudFrame({
-        t: "relay",
-        machineId: machine.deviceId,
-        frame: {
-          t: "data",
-          channelId,
-          seq: 1,
-          sealed: channel.cipher.seal(channelId, "opener-to-responder", 1, requestBytes)
-        }
-      })
+    sendRelay(
+      app.socket,
+      { machineId: machine.deviceId, frame: { t: "data", channelId, seq: 1 } },
+      channel.cipher.seal(channelId, "opener-to-responder", 1, requestBytes)
     )
-    const request = (await machine.reader.next()) as Extract<HubToMachine, { t: "relay" }>
-    const requestFrame = request.frame as Extract<typeof request.frame, { t: "data" }>
-    expect([
-      ...responder.open(channelId, "opener-to-responder", requestFrame.seq, requestFrame.sealed)
-    ]).toEqual([...requestBytes])
+    const request = await machine.reader.nextEnvelope()
+    expect([...responder.open(channelId, "opener-to-responder", 1, request.payload)]).toEqual([
+      ...requestBytes
+    ])
 
-    machine.socket.send(
-      encodeCloudFrame({
-        t: "relay",
-        peerId: opened.peerId,
-        frame: { t: "credit", channelId, seq: 0, bytes: requestFrame.sealed.box.length }
-      })
-    )
-    const credit = (await app.reader.next()) as Extract<HubToApp, { t: "relay" }>
-    expect(credit.frame).toEqual({
+    sendRelay(machine.socket, {
+      peerId: openHeader.peerId,
+      frame: { t: "credit", channelId, seq: 0, bytes: request.payload.byteLength }
+    })
+    const credit = await app.reader.nextEnvelope()
+    expect((credit.header as HubToAppRelayHeader).frame).toEqual({
       t: "credit",
       channelId,
       seq: 0,
-      bytes: requestFrame.sealed.box.length
+      bytes: request.payload.byteLength
     })
 
     // Protocol pings are answered by the WebSocket auto-response pair used
@@ -499,28 +548,15 @@ describe("hub relay", () => {
     app.socket.send(encodeCloudFrame({ t: "ping" }))
     expect((await app.reader.next()).t).toBe("pong")
     const responseBytes = new Uint8Array([9, 8, 7, 0, 255])
-    machine.socket.send(
-      encodeCloudFrame({
-        t: "relay",
-        peerId: opened.peerId,
-        frame: {
-          t: "data",
-          channelId,
-          seq: 1,
-          sealed: responder.seal(channelId, "responder-to-opener", 1, responseBytes)
-        }
-      })
+    sendRelay(
+      machine.socket,
+      { peerId: openHeader.peerId, frame: { t: "data", channelId, seq: 1 } },
+      responder.seal(channelId, "responder-to-opener", 1, responseBytes)
     )
-    const response = (await app.reader.next()) as Extract<HubToApp, { t: "relay" }>
-    const responseFrame = response.frame as Extract<typeof response.frame, { t: "data" }>
-    expect([
-      ...channel.cipher.open(
-        channelId,
-        "responder-to-opener",
-        responseFrame.seq,
-        responseFrame.sealed
-      )
-    ]).toEqual([...responseBytes])
+    const response = await app.reader.nextEnvelope()
+    expect([...channel.cipher.open(channelId, "responder-to-opener", 1, response.payload)]).toEqual(
+      [...responseBytes]
+    )
   })
 
   it("carries an http channel round-trip through sealed frames", async () => {
@@ -545,81 +581,58 @@ describe("hub relay", () => {
       channelType: "http",
       params: { method: "GET", path: "/v1/info", headers: { accept: "application/json" } }
     }
-    app.socket.send(
-      encodeCloudFrame({
-        t: "relay",
+    sendRelay(
+      app.socket,
+      {
         machineId: machine.deviceId,
-        frame: {
-          t: "open",
-          channelId: "http-1",
-          seq: 0,
-          ephemeralKey: channel.ephemeralPublicKey,
-          sealed: sealJson(channel.cipher, "http-1", "opener-to-responder", 0, openPayload)
-        }
-      })
+        frame: { t: "open", channelId: "http-1", seq: 0, ephemeralKey: channel.ephemeralPublicKey }
+      },
+      sealJson(channel.cipher, "http-1", "opener-to-responder", 0, openPayload)
     )
-    app.socket.send(
-      encodeCloudFrame({
-        t: "relay",
-        machineId: machine.deviceId,
-        frame: {
-          t: "data",
-          channelId: "http-1",
-          seq: 1,
-          sealed: sealJson(channel.cipher, "http-1", "opener-to-responder", 1, { kind: "end" })
-        }
-      })
+    sendRelay(
+      app.socket,
+      { machineId: machine.deviceId, frame: { t: "data", channelId: "http-1", seq: 1 } },
+      sealJson(channel.cipher, "http-1", "opener-to-responder", 1, { kind: "end" })
     )
 
     // Machine side: accept the channel, decrypt the request, answer per the
     // http contract — head, one chunk, end, close("done").
-    const opened = (await machine.reader.next()) as Extract<HubToMachine, { t: "relay" }>
-    const openFrame = opened.frame as Extract<typeof opened.frame, { t: "open" }>
+    const opened = await machine.reader.nextEnvelope()
+    const openHeader = opened.header as HubToMachineRelayHeader
+    const openFrame = openHeader.frame as Extract<typeof openHeader.frame, { t: "open" }>
     const responder = acceptChannel(
       machine.keys.secretKey,
-      opened.peerPublicKey!,
+      openHeader.peerPublicKey!,
       openFrame.ephemeralKey
     )
-    const request = openJson(responder, "http-1", "opener-to-responder", 0, openFrame.sealed) as {
+    const request = openJson(responder, "http-1", "opener-to-responder", 0, opened.payload) as {
       params: { method: string; path: string }
     }
     expect(request).toEqual(openPayload)
-    const ended = (await machine.reader.next()) as Extract<HubToMachine, { t: "relay" }>
-    const endFrame = ended.frame as Extract<typeof ended.frame, { t: "data" }>
-    expect(openJson(responder, "http-1", "opener-to-responder", 1, endFrame.sealed)).toEqual({
+    const ended = await machine.reader.nextEnvelope()
+    expect(openJson(responder, "http-1", "opener-to-responder", 1, ended.payload)).toEqual({
       kind: "end"
     })
 
     const response = localServer(request.params.method, request.params.path)
     const answer = (seq: number, value: unknown): void =>
-      machine.socket.send(
-        encodeCloudFrame({
-          t: "relay",
-          peerId: opened.peerId,
-          frame: {
-            t: "data",
-            channelId: "http-1",
-            seq,
-            sealed: sealJson(responder, "http-1", "responder-to-opener", seq, value)
-          }
-        })
+      sendRelay(
+        machine.socket,
+        { peerId: openHeader.peerId, frame: { t: "data", channelId: "http-1", seq } },
+        sealJson(responder, "http-1", "responder-to-opener", seq, value)
       )
     answer(0, { kind: "head", status: response.status, headers: response.headers })
     answer(1, { kind: "chunk", data: toBase64Url(new TextEncoder().encode(response.body)) })
     answer(2, { kind: "end" })
-    machine.socket.send(
-      encodeCloudFrame({
-        t: "relay",
-        peerId: opened.peerId,
-        frame: { t: "close", channelId: "http-1", seq: 3, reason: "done" }
-      })
-    )
+    sendRelay(machine.socket, {
+      peerId: openHeader.peerId,
+      frame: { t: "close", channelId: "http-1", seq: 3, reason: "done" }
+    })
 
     // App decrypts the full choreography back out of the relay.
     const read = async (seq: number): Promise<unknown> => {
-      const relayed = (await app.reader.next()) as Extract<HubToApp, { t: "relay" }>
-      const data = relayed.frame as Extract<typeof relayed.frame, { t: "data" }>
-      return openJson(channel.cipher, "http-1", "responder-to-opener", seq, data.sealed)
+      const relayed = await app.reader.nextEnvelope()
+      return openJson(channel.cipher, "http-1", "responder-to-opener", seq, relayed.payload)
     }
     expect(await read(0)).toEqual({
       kind: "head",
@@ -630,8 +643,12 @@ describe("hub relay", () => {
     expect(chunk.kind).toBe("chunk")
     expect(new TextDecoder().decode(fromBase64Url(chunk.data))).toBe(response.body)
     expect(await read(2)).toEqual({ kind: "end" })
-    const closed = (await app.reader.next()) as Extract<HubToApp, { t: "relay" }>
-    expect(closed.frame).toMatchObject({ t: "close", channelId: "http-1", reason: "done" })
+    const closed = await app.reader.nextEnvelope()
+    expect((closed.header as HubToAppRelayHeader).frame).toMatchObject({
+      t: "close",
+      channelId: "http-1",
+      reason: "done"
+    })
   })
 
   it("reports offline and unknown machines to the app", async () => {
@@ -649,17 +666,12 @@ describe("hub relay", () => {
       machineId: machine.deviceId
     })
 
-    const frame = {
-      t: "data",
-      channelId: "ch-x",
-      seq: 0,
-      sealed: { box: "Ym94" }
-    } as const
-    app.socket.send(encodeCloudFrame({ t: "relay", machineId: machine.deviceId, frame }))
+    const frame = { t: "data", channelId: "ch-x", seq: 0 } as const
+    sendRelay(app.socket, { machineId: machine.deviceId, frame }, new Uint8Array([1]))
     const offline = (await app.reader.next()) as Extract<HubToApp, { t: "error" }>
     expect(offline).toMatchObject({ t: "error", code: "machine-offline", channelId: "ch-x" })
 
-    app.socket.send(encodeCloudFrame({ t: "relay", machineId: "never-existed", frame }))
+    sendRelay(app.socket, { machineId: "never-existed", frame }, new Uint8Array([1]))
     const unknown = (await app.reader.next()) as Extract<HubToApp, { t: "error" }>
     expect(unknown.code).toBe("unknown-machine")
   })
@@ -687,10 +699,15 @@ describe("hub relay", () => {
 
     // The superseded socket's close is not an outage: relaying through the
     // fresh socket works immediately, with no offline error in between.
-    const frame = { t: "data", channelId: "ch-fresh", seq: 0, sealed: { box: "Ym94" } } as const
-    app.socket.send(encodeCloudFrame({ t: "relay", machineId: machine.deviceId, frame }))
-    const relayed = (await reborn.reader.next()) as Extract<HubToMachine, { t: "relay" }>
-    expect(relayed).toMatchObject({ t: "relay", frame: { channelId: "ch-fresh" } })
+    sendRelay(
+      app.socket,
+      { machineId: machine.deviceId, frame: { t: "data", channelId: "ch-fresh", seq: 0 } },
+      new Uint8Array([1])
+    )
+    const relayed = await reborn.reader.nextEnvelope()
+    expect((relayed.header as HubToMachineRelayHeader).frame).toMatchObject({
+      channelId: "ch-fresh"
+    })
   })
 
   it("notifies machines when an app peer disconnects", async () => {
@@ -718,8 +735,18 @@ describe("hub relay", () => {
     expect((await machine.reader.next()).t).toBe("pong")
 
     app.socket.send("this is not json")
-    const error = (await app.reader.next()) as Extract<HubToApp, { t: "error" }>
-    expect(error.code).toBe("invalid-frame")
+    const notJson = (await app.reader.next()) as Extract<HubToApp, { t: "error" }>
+    expect(notJson.code).toBe("invalid-frame")
+
+    // Truncated binary relay messages are refused the same way.
+    app.socket.send(new Uint8Array([0, 0, 0, 99]).buffer)
+    const truncated = (await app.reader.next()) as Extract<HubToApp, { t: "error" }>
+    expect(truncated.code).toBe("invalid-frame")
+
+    // Well-formed envelope, malformed header.
+    app.socket.send(encodeRelayEnvelopes([{ header: { nope: true }, payload: new Uint8Array(0) }]))
+    const badHeader = (await app.reader.next()) as Extract<HubToApp, { t: "error" }>
+    expect(badHeader.code).toBe("invalid-frame")
   })
 })
 

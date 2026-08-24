@@ -164,7 +164,7 @@ struct CloudRelayLoopbackBridgeTests {
             let channelId = try #require(channelId)
             hub.relayToApp(
                 machineId: machine.deviceId,
-                frame: try machine.sealData(channelId: channelId, payload: data)
+                sealed: try machine.sealData(channelId: channelId, payload: data)
             )
         }
 
@@ -176,12 +176,12 @@ struct CloudRelayLoopbackBridgeTests {
             guard let appKey = hub.appPublicKey else { return }
             let payload: Data?
             do {
-                payload = try machine.receive(envelope.frame, appPublicKey: appKey)
+                payload = try machine.receive(envelope.frame, payload: envelope.payload, appPublicKey: appKey)
             } catch {
                 return
             }
             switch envelope.frame {
-            case let .open(channelId, _, _, _):
+            case let .open(channelId, _, _):
                 guard let payload,
                     let open = try? JSONDecoder().decode(OpenPayload.self, from: payload),
                     open.channelType == CloudRelayLoopbackBridge.channelType,
@@ -198,7 +198,7 @@ struct CloudRelayLoopbackBridgeTests {
                         )
                     )
                 }
-            case let .data(channelId, _, sealed):
+            case let .data(channelId, _):
                 guard let payload else { return }
                 lock.withLock {
                     if payload.isEmpty {
@@ -213,7 +213,7 @@ struct CloudRelayLoopbackBridgeTests {
                     machineId: machine.deviceId,
                     frame: machine.creditFrame(
                         channelId: channelId,
-                        bytes: sealed.box.utf8.count
+                        bytes: envelope.payload.count
                     )
                 )
             case let .credit(_, _, bytes):
@@ -247,11 +247,12 @@ struct CloudRelayLoopbackBridgeTests {
         )
     }
 
-    @Test("Ciphertext budget calculation matches encrypted base64url boxes")
+    @Test("Ciphertext budget calculation matches raw encrypted boxes")
     func ciphertextBudget() {
-        #expect(CloudRelayLoopbackBridge.sealedByteCount(forPlaintextBytes: 0) == 22)
-        #expect(CloudRelayLoopbackBridge.sealedByteCount(forPlaintextBytes: 1) == 23)
-        #expect(CloudRelayLoopbackBridge.sealedByteCount(forPlaintextBytes: 65_536) == 87_403)
+        // Raw box = plaintext + 16-byte tag; no encoding expansion.
+        #expect(CloudRelayLoopbackBridge.sealedByteCount(forPlaintextBytes: 0) == 16)
+        #expect(CloudRelayLoopbackBridge.sealedByteCount(forPlaintextBytes: 1) == 17)
+        #expect(CloudRelayLoopbackBridge.sealedByteCount(forPlaintextBytes: 65_536) == 65_552)
     }
 
     @Test("HTTP bytes and keep-alive requests cross one tunnel unchanged")

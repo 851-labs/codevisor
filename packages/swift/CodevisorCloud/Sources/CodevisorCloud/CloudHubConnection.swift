@@ -14,7 +14,7 @@ import Foundation
 /// Channels are ephemeral: they die with either WebSocket and openers
 /// re-establish what they need after reconnect.
 public actor CloudHubConnection {
-    public static let protocolVersion = 1
+    public static let protocolVersion = 2
     static let maximumMessageSize = 16 * 1024 * 1024
     static let fatalCloseCodes: Set<Int> = [4200, 4201]
 

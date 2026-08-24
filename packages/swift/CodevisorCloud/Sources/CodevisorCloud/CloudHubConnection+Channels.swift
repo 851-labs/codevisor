@@ -114,12 +114,9 @@ extension CloudHubConnection {
         do {
             try sendRelay(
                 machineId: machineDeviceId,
-                frame: .open(
-                    channelId: channelId,
-                    seq: 0,
-                    ephemeralKey: opened.ephemeralPublicKey,
-                    sealed: CloudSealedPayload(box: sealed)
-                ))
+                frame: .open(channelId: channelId, seq: 0, ephemeralKey: opened.ephemeralPublicKey),
+                payload: sealed
+            )
         } catch {
             channels.removeValue(forKey: channelId)
             throw error
@@ -146,12 +143,10 @@ extension CloudHubConnection {
         )
         try sendRelay(
             machineId: state.machineDeviceId,
-            frame: .data(
-                channelId: channelId,
-                seq: seq,
-                sealed: CloudSealedPayload(box: sealed)
-            ))
-        return sealed.utf8.count
+            frame: .data(channelId: channelId, seq: seq),
+            payload: sealed
+        )
+        return sealed.count
     }
 
     func grantCredit(channelId: String, bytes: Int) throws {

@@ -1,10 +1,13 @@
 import {
   CLOUD_PROTOCOL_VERSION,
   decodeMachineToHub,
+  decodeRelayEnvelopes,
   encodeCloudFrame,
+  encodeRelayEnvelopes,
   type HubToMachine,
+  type MachineRelayHeader,
   type MachineToHub,
-  type RelayFrame
+  type RelayFrameHeader
 } from "@codevisor/api"
 import { generateDeviceKeyPair, openChannel, openJson, sealJson } from "@codevisor/cloud-crypto"
 import { describe, expect, it, vi } from "vitest"
@@ -19,21 +22,39 @@ import {
   type PeerKeyPinStore
 } from "./index.js"
 
+interface SentEnvelope {
+  header: MachineRelayHeader
+  payload: Uint8Array
+}
+
 class FakeSocket implements CloudSocket {
+  /// JSON control frames, in order.
   sent: MachineToHub[] = []
+  /// Binary relay messages, one entry per WebSocket message (each may carry
+  /// several envelopes when the sender coalesces).
+  relayMessages: SentEnvelope[][] = []
   closed: { code?: number; reason?: string } | undefined
   terminated = false
   sendError: Error | undefined
   onSend: ((frame: MachineToHub) => void) | undefined
   onopen: (() => void) | null = null
-  onmessage: ((data: string) => void) | null = null
+  onmessage: ((data: string | Uint8Array) => void) | null = null
   onclose: ((code: number) => void) | null = null
 
-  send(data: string): void {
+  send(data: string | Uint8Array): void {
     if (this.sendError !== undefined) throw this.sendError
-    const frame = decodeMachineToHub(data)
-    this.sent.push(frame)
-    this.onSend?.(frame)
+    if (typeof data === "string") {
+      const frame = decodeMachineToHub(data)
+      this.sent.push(frame)
+      this.onSend?.(frame)
+      return
+    }
+    this.relayMessages.push(
+      decodeRelayEnvelopes(data).map((envelope) => ({
+        header: envelope.header as MachineRelayHeader,
+        payload: new Uint8Array(envelope.payload)
+      }))
+    )
   }
 
   close(code?: number, reason?: string): void {
@@ -46,6 +67,32 @@ class FakeSocket implements CloudSocket {
 
   receive(frame: HubToMachine): void {
     this.onmessage?.(encodeCloudFrame(frame))
+  }
+
+  /// Delivers one hub→machine relay envelope as its own binary message.
+  receiveRelay(header: Record<string, unknown>, payload: Uint8Array = new Uint8Array(0)): void {
+    this.onmessage?.(encodeRelayEnvelopes([{ header, payload }]))
+  }
+
+  /// Every sent relay envelope across all messages, in order.
+  get sentRelay(): SentEnvelope[] {
+    return this.relayMessages.flat()
+  }
+
+  relayFrames(): RelayFrameHeader[] {
+    return this.sentRelay.map((envelope) => envelope.header.frame)
+  }
+
+  closeFrames(): Extract<RelayFrameHeader, { t: "close" }>[] {
+    return this.relayFrames().filter(
+      (frame): frame is Extract<RelayFrameHeader, { t: "close" }> => frame.t === "close"
+    )
+  }
+
+  lastClose(): Extract<RelayFrameHeader, { t: "close" }> {
+    const frame = this.closeFrames().at(-1)
+    if (frame === undefined) throw new Error("no close frame sent")
+    return frame
   }
 }
 
@@ -85,6 +132,7 @@ const harness = (
     device?: { name: string; os?: string; appVersion?: string }
     peerKeyPins?: PeerKeyPinStore
     onPeerKeyMismatch?: (info: { deviceId: string; pinned: string; presented: string }) => void
+    relayCoalesceMs?: number
   } = {}
 ): Harness => {
   const sockets: FakeSocket[] = []
@@ -110,6 +158,9 @@ const harness = (
     ...(overrides.onPeerKeyMismatch === undefined
       ? {}
       : { onPeerKeyMismatch: overrides.onPeerKeyMismatch }),
+    ...(overrides.relayCoalesceMs === undefined
+      ? {}
+      : { relayCoalesceMs: overrides.relayCoalesceMs }),
     onStateChange: (state) => states.push(state),
     onDisconnect: (reason) => disconnects.push(reason),
     scheduleReconnect: (callback, delayMs) => reconnects.push({ callback, delayMs }),
@@ -174,22 +225,15 @@ const openEcho = (
 ) => {
   const appKeys = identity.appKeys ?? generateDeviceKeyPair()
   const opened = openChannel(appKeys.secretKey, machineKeys.publicKey)
-  socket.receive({
-    t: "relay",
-    peerId,
-    peerPublicKey: appKeys.publicKey,
-    ...(identity.peerDeviceId === undefined ? {} : { peerDeviceId: identity.peerDeviceId }),
-    frame: {
-      t: "open",
-      channelId,
-      seq: 0,
-      ephemeralKey: opened.ephemeralPublicKey,
-      sealed: sealJson(opened.cipher, channelId, "opener-to-responder", 0, {
-        channelType: "echo",
-        params
-      })
-    }
-  })
+  socket.receiveRelay(
+    {
+      peerId,
+      peerPublicKey: appKeys.publicKey,
+      ...(identity.peerDeviceId === undefined ? {} : { peerDeviceId: identity.peerDeviceId }),
+      frame: { t: "open", channelId, seq: 0, ephemeralKey: opened.ephemeralPublicKey }
+    },
+    sealJson(opened.cipher, channelId, "opener-to-responder", 0, { channelType: "echo", params })
+  )
   return { appKeys, opened }
 }
 
@@ -428,12 +472,14 @@ describe("connection lifecycle", () => {
     second.receive({ t: "welcome", protocol: CLOUD_PROTOCOL_VERSION, connectionId: "c" })
     second.receive({ t: "pong" })
     second.receive({ t: "error", code: "rate-limited", message: "slow down" })
-    // Frames for unknown channels are dropped.
-    second.receive({
-      t: "relay",
+    // Frames for unknown channels are answered with a close, not a crash.
+    second.receiveRelay({
       peerId: "peer-x",
       frame: { t: "credit", channelId: "nope", seq: 0, bytes: 1 }
     })
+    // Malformed binary messages and headers are dropped.
+    second.onmessage?.(new Uint8Array([0, 0]))
+    second.receiveRelay({ frame: { t: "data", channelId: "x", seq: 0 } })
     expect(h.connection.state).toBe("connected")
   })
 })
@@ -449,33 +495,24 @@ describe("incoming channels", () => {
 
     const received: unknown[] = []
     channel.onData = (value) => received.push(value)
-    socket.receive({
-      t: "relay",
-      peerId: "peer-1",
-      frame: {
-        t: "data",
-        channelId: "ch-1",
-        seq: 1,
-        sealed: sealJson(opened.cipher, "ch-1", "opener-to-responder", 1, { input: "ls\n" })
-      }
-    })
+    socket.receiveRelay(
+      { peerId: "peer-1", frame: { t: "data", channelId: "ch-1", seq: 1 } },
+      sealJson(opened.cipher, "ch-1", "opener-to-responder", 1, { input: "ls\n" })
+    )
     expect(received).toEqual([{ input: "ls\n" }])
 
     channel.send({ output: "file.txt\n" })
     channel.send({ output: "done\n" })
-    const dataFrames = socket.sent
-      .filter((f): f is Extract<MachineToHub, { t: "relay" }> => f.t === "relay")
-      .map((f) => f.frame)
-      .filter((f): f is Extract<RelayFrame, { t: "data" }> => f.t === "data")
-    expect(dataFrames.map((f) => f.seq)).toEqual([0, 1])
+    const dataEnvelopes = socket.sentRelay.filter((envelope) => envelope.header.frame.t === "data")
+    expect(dataEnvelopes.map((envelope) => envelope.header.frame.seq)).toEqual([0, 1])
+    expect(dataEnvelopes.every((envelope) => envelope.header.peerId === "peer-1")).toBe(true)
     expect(
-      openJson(opened.cipher, "ch-1", "responder-to-opener", 0, dataFrames[0]!.sealed)
+      openJson(opened.cipher, "ch-1", "responder-to-opener", 0, dataEnvelopes[0]!.payload)
     ).toEqual({ output: "file.txt\n" })
 
     const credits: number[] = []
     channel.onCredit = (bytes) => credits.push(bytes)
-    socket.receive({
-      t: "relay",
+    socket.receiveRelay({
       peerId: "peer-1",
       frame: { t: "credit", channelId: "ch-1", seq: 2, bytes: 4096 }
     })
@@ -483,8 +520,7 @@ describe("incoming channels", () => {
 
     const closes: string[] = []
     channel.onClosed = (reason) => closes.push(reason)
-    socket.receive({
-      t: "relay",
+    socket.receiveRelay({
       peerId: "peer-1",
       frame: { t: "close", channelId: "ch-1", seq: 3, reason: "done" }
     })
@@ -494,7 +530,7 @@ describe("incoming channels", () => {
     expect(channel.sendBytes(new Uint8Array([1]))).toBeUndefined()
     channel.deferInboundCredit()
     channel.grantCredit(1)
-    expect(socket.sent.filter((f) => f.t === "relay")).toHaveLength(2)
+    expect(socket.sentRelay).toHaveLength(2)
   })
 
   it("relays opaque bytes with explicit receive credit", () => {
@@ -514,35 +550,34 @@ describe("incoming channels", () => {
     const received: { bytes: number[]; cost: number }[] = []
     channel.onBytes = (bytes, cost) => received.push({ bytes: [...bytes], cost })
 
-    const sealed = opened.cipher.seal(
+    const box = opened.cipher.seal(
       "ch-bytes",
       "opener-to-responder",
       1,
       new Uint8Array([0, 1, 255])
     )
-    socket.receive({
-      t: "relay",
-      peerId: "peer-1",
-      frame: { t: "data", channelId: "ch-bytes", seq: 1, sealed }
-    })
-    expect(received).toEqual([{ bytes: [0, 1, 255], cost: sealed.box.length }])
+    socket.receiveRelay(
+      { peerId: "peer-1", frame: { t: "data", channelId: "ch-bytes", seq: 1 } },
+      box
+    )
+    expect(received).toEqual([{ bytes: [0, 1, 255], cost: box.byteLength }])
 
     const sentCost = channel.sendBytes(new Uint8Array([9, 8, 7]))
-    const relayFrames = socket.sent
-      .filter((frame): frame is Extract<MachineToHub, { t: "relay" }> => frame.t === "relay")
-      .map((frame) => frame.frame)
-    expect(relayFrames[0]).toEqual({
+    const envelopes = socket.sentRelay
+    expect(envelopes[0]!.header.frame).toEqual({
       t: "credit",
       channelId: "ch-bytes",
       seq: 0,
       bytes: 100
     })
-    const response = relayFrames[1] as Extract<RelayFrame, { t: "data" }>
-    expect(response.seq).toBe(1)
-    expect(sentCost).toBe(response.sealed.box.length)
-    expect([
-      ...opened.cipher.open("ch-bytes", "responder-to-opener", response.seq, response.sealed)
-    ]).toEqual([9, 8, 7])
+    const response = envelopes[1]!
+    expect(response.header.frame).toEqual({ t: "data", channelId: "ch-bytes", seq: 1 })
+    // Ciphertext cost = plaintext + 16-byte tag, no encoding expansion.
+    expect(sentCost).toBe(response.payload.byteLength)
+    expect(sentCost).toBe(3 + 16)
+    expect([...opened.cipher.open("ch-bytes", "responder-to-opener", 1, response.payload)]).toEqual(
+      [9, 8, 7]
+    )
   })
 
   it("closes a byte channel that exceeds its granted receive window", () => {
@@ -561,21 +596,12 @@ describe("incoming channels", () => {
     const { opened } = openEcho(socket, "peer-1", "ch-overrun")
     const closes: string[] = []
     channels[0]!.onClosed = (reason) => closes.push(reason)
-    socket.receive({
-      t: "relay",
-      peerId: "peer-1",
-      frame: {
-        t: "data",
-        channelId: "ch-overrun",
-        seq: 1,
-        sealed: opened.cipher.seal("ch-overrun", "opener-to-responder", 1, new Uint8Array([1]))
-      }
-    })
+    socket.receiveRelay(
+      { peerId: "peer-1", frame: { t: "data", channelId: "ch-overrun", seq: 1 } },
+      opened.cipher.seal("ch-overrun", "opener-to-responder", 1, new Uint8Array([1]))
+    )
     expect(closes).toEqual(["protocol-error"])
-    expect((socket.sent.at(-1) as Extract<MachineToHub, { t: "relay" }>).frame).toMatchObject({
-      t: "close",
-      reason: "protocol-error"
-    })
+    expect(socket.lastClose()).toMatchObject({ t: "close", reason: "protocol-error" })
   })
 
   it("machine-side close notifies the peer once", () => {
@@ -585,50 +611,39 @@ describe("incoming channels", () => {
     const channel = h.channels[0]!
     channel.close("done")
     channel.close("done") // second close is a no-op
-    const closeFrames = socket.sent
-      .filter((f): f is Extract<MachineToHub, { t: "relay" }> => f.t === "relay")
-      .filter((f) => f.frame.t === "close")
-    expect(closeFrames).toHaveLength(1)
+    expect(socket.closeFrames()).toHaveLength(1)
   })
 
   it("answers frames for unknown channels with a peer-disconnected close", () => {
     const h = harness()
     const socket = connect(h)
-    const closeFrames = () =>
-      socket.sent
-        .filter((f): f is Extract<MachineToHub, { t: "relay" }> => f.t === "relay")
-        .map((f) => f.frame)
-        .filter((f): f is Extract<RelayFrame, { t: "close" }> => f.t === "close")
 
     // The app kept this channel alive across a machine reconnect: we never saw
     // its open, so its frames must be answered with a close — not dropped —
     // or the app waits forever on a channel we no longer know about.
-    socket.receive({
-      t: "relay",
+    socket.receiveRelay({
       peerId: "peer-1",
       frame: { t: "credit", channelId: "ch-lost", seq: 7, bytes: 1024 }
     })
-    expect(closeFrames()).toHaveLength(1)
-    expect(closeFrames()[0]!.channelId).toBe("ch-lost")
-    expect(closeFrames()[0]!.reason).toBe("peer-disconnected")
+    expect(socket.closeFrames()).toHaveLength(1)
+    expect(socket.closeFrames()[0]!.channelId).toBe("ch-lost")
+    expect(socket.closeFrames()[0]!.reason).toBe("peer-disconnected")
 
     // Data frames get the same treatment (the check precedes decryption).
-    socket.receive({
-      t: "relay",
-      peerId: "peer-1",
-      frame: { t: "data", channelId: "ch-lost-2", seq: 3, sealed: { box: "AAAA" } }
-    })
-    expect(closeFrames()).toHaveLength(2)
-    expect(closeFrames()[1]!.channelId).toBe("ch-lost-2")
-    expect(closeFrames()[1]!.reason).toBe("peer-disconnected")
+    socket.receiveRelay(
+      { peerId: "peer-1", frame: { t: "data", channelId: "ch-lost-2", seq: 3 } },
+      new Uint8Array([0, 0, 0, 0])
+    )
+    expect(socket.closeFrames()).toHaveLength(2)
+    expect(socket.closeFrames()[1]!.channelId).toBe("ch-lost-2")
+    expect(socket.closeFrames()[1]!.reason).toBe("peer-disconnected")
 
     // A close for an unknown channel is ignored — no close-for-close loops.
-    socket.receive({
-      t: "relay",
+    socket.receiveRelay({
       peerId: "peer-1",
       frame: { t: "close", channelId: "ch-lost-3", seq: 0, reason: "done" }
     })
-    expect(closeFrames()).toHaveLength(2)
+    expect(socket.closeFrames()).toHaveLength(2)
   })
 
   it("refuses malformed opens", () => {
@@ -640,72 +655,49 @@ describe("incoming channels", () => {
     const opened = openChannel(appKeys.secretKey, machineKeys.publicKey)
     const sealedOpen = (channelType: unknown, channelId: string) =>
       sealJson(opened.cipher, channelId, "opener-to-responder", 0, { channelType })
-    const lastClose = () =>
-      (socket.sent.at(-1) as Extract<MachineToHub, { t: "relay" }>).frame as Extract<
-        RelayFrame,
-        { t: "close" }
-      >
 
     // Open relayed without the peer's public key.
-    socket.receive({
-      t: "relay",
-      peerId: "p",
-      frame: {
-        t: "open",
-        channelId: "c1",
-        seq: 0,
-        ephemeralKey: opened.ephemeralPublicKey,
-        sealed: sealedOpen("echo", "c1")
-      }
-    })
-    expect(lastClose().reason).toBe("protocol-error")
+    socket.receiveRelay(
+      {
+        peerId: "p",
+        frame: { t: "open", channelId: "c1", seq: 0, ephemeralKey: opened.ephemeralPublicKey }
+      },
+      sealedOpen("echo", "c1")
+    )
+    expect(socket.lastClose().reason).toBe("protocol-error")
 
     // Undecryptable open payload.
-    socket.receive({
-      t: "relay",
-      peerId: "p",
-      peerPublicKey: appKeys.publicKey,
-      frame: {
-        t: "open",
-        channelId: "c2",
-        seq: 0,
-        ephemeralKey: opened.ephemeralPublicKey,
-        sealed: { box: "AAAA" }
-      }
-    })
-    expect(lastClose().reason).toBe("crypto-error")
+    socket.receiveRelay(
+      {
+        peerId: "p",
+        peerPublicKey: appKeys.publicKey,
+        frame: { t: "open", channelId: "c2", seq: 0, ephemeralKey: opened.ephemeralPublicKey }
+      },
+      new Uint8Array([0, 0, 0])
+    )
+    expect(socket.lastClose().reason).toBe("crypto-error")
 
     // Non-string channelType.
-    socket.receive({
-      t: "relay",
-      peerId: "p",
-      peerPublicKey: appKeys.publicKey,
-      frame: {
-        t: "open",
-        channelId: "c3",
-        seq: 0,
-        ephemeralKey: opened.ephemeralPublicKey,
-        sealed: sealedOpen(42, "c3")
-      }
-    })
-    expect(lastClose().reason).toBe("protocol-error")
+    socket.receiveRelay(
+      {
+        peerId: "p",
+        peerPublicKey: appKeys.publicKey,
+        frame: { t: "open", channelId: "c3", seq: 0, ephemeralKey: opened.ephemeralPublicKey }
+      },
+      sealedOpen(42, "c3")
+    )
+    expect(socket.lastClose().reason).toBe("protocol-error")
 
     // Unknown channel type.
-    socket.receive({
-      t: "relay",
-      peerId: "p",
-      peerPublicKey: appKeys.publicKey,
-      frame: {
-        t: "open",
-        channelId: "c4",
-        seq: 0,
-        ephemeralKey: opened.ephemeralPublicKey,
-        sealed: sealJson(opened.cipher, "c4", "opener-to-responder", 0, {
-          channelType: "screensaver"
-        })
-      }
-    })
-    expect(lastClose().reason).toBe("unsupported")
+    socket.receiveRelay(
+      {
+        peerId: "p",
+        peerPublicKey: appKeys.publicKey,
+        frame: { t: "open", channelId: "c4", seq: 0, ephemeralKey: opened.ephemeralPublicKey }
+      },
+      sealJson(opened.cipher, "c4", "opener-to-responder", 0, { channelType: "screensaver" })
+    )
+    expect(socket.lastClose().reason).toBe("unsupported")
   })
 
   it("refuses duplicate channel ids per peer", () => {
@@ -713,10 +705,7 @@ describe("incoming channels", () => {
     const socket = connect(h)
     openEcho(socket, "peer-1", "ch-1")
     openEcho(socket, "peer-1", "ch-1")
-    const closeFrames = socket.sent
-      .filter((f): f is Extract<MachineToHub, { t: "relay" }> => f.t === "relay")
-      .filter((f) => f.frame.t === "close")
-    expect(closeFrames).toHaveLength(1)
+    expect(socket.closeFrames()).toHaveLength(1)
     expect(h.channels).toHaveLength(1)
   })
 
@@ -726,31 +715,19 @@ describe("incoming channels", () => {
     const first = openEcho(socket, "peer-1", "ch-gap")
     const gapCloses: string[] = []
     h.channels[0]!.onClosed = (reason) => gapCloses.push(reason)
-    socket.receive({
-      t: "relay",
-      peerId: "peer-1",
-      frame: {
-        t: "data",
-        channelId: "ch-gap",
-        seq: 5, // expected 1
-        sealed: sealJson(first.opened.cipher, "ch-gap", "opener-to-responder", 5, {})
-      }
-    })
+    socket.receiveRelay(
+      { peerId: "peer-1", frame: { t: "data", channelId: "ch-gap", seq: 5 } }, // expected 1
+      sealJson(first.opened.cipher, "ch-gap", "opener-to-responder", 5, {})
+    )
     expect(gapCloses).toEqual(["protocol-error"])
 
     openEcho(socket, "peer-1", "ch-bad")
     const badCloses: string[] = []
     h.channels[1]!.onClosed = (reason) => badCloses.push(reason)
-    socket.receive({
-      t: "relay",
-      peerId: "peer-1",
-      frame: {
-        t: "data",
-        channelId: "ch-bad",
-        seq: 1,
-        sealed: { box: "AAAA" }
-      }
-    })
+    socket.receiveRelay(
+      { peerId: "peer-1", frame: { t: "data", channelId: "ch-bad", seq: 1 } },
+      new Uint8Array([0, 0, 0])
+    )
     expect(badCloses).toEqual(["crypto-error"])
   })
 
@@ -766,31 +743,18 @@ describe("incoming channels", () => {
     const closes: string[] = []
     channel.onData = (value) => received.push(value)
     channel.onClosed = (reason) => closes.push(reason)
-    socket.receive({
-      t: "relay",
-      peerId: "peer-1",
-      frame: {
-        t: "data",
-        channelId: "ch-credit",
-        seq: 1,
-        sealed: sealJson(opened.cipher, "ch-credit", "opener-to-responder", 1, { key: "a" })
-      }
-    })
-    socket.receive({
-      t: "relay",
+    socket.receiveRelay(
+      { peerId: "peer-1", frame: { t: "data", channelId: "ch-credit", seq: 1 } },
+      sealJson(opened.cipher, "ch-credit", "opener-to-responder", 1, { key: "a" })
+    )
+    socket.receiveRelay({
       peerId: "peer-1",
       frame: { t: "credit", channelId: "ch-credit", seq: 2, bytes: 64 }
     })
-    socket.receive({
-      t: "relay",
-      peerId: "peer-1",
-      frame: {
-        t: "data",
-        channelId: "ch-credit",
-        seq: 3,
-        sealed: sealJson(opened.cipher, "ch-credit", "opener-to-responder", 3, { key: "b" })
-      }
-    })
+    socket.receiveRelay(
+      { peerId: "peer-1", frame: { t: "data", channelId: "ch-credit", seq: 3 } },
+      sealJson(opened.cipher, "ch-credit", "opener-to-responder", 3, { key: "b" })
+    )
     expect(received).toEqual([{ key: "a" }, { key: "b" }])
     expect(closes).toEqual([])
   })
@@ -801,14 +765,12 @@ describe("incoming channels", () => {
     openEcho(socket, "peer-1", "ch-credit-gap")
     const closes: string[] = []
     h.channels[0]!.onClosed = (reason) => closes.push(reason)
-    socket.receive({
-      t: "relay",
+    socket.receiveRelay({
       peerId: "peer-1",
       frame: { t: "credit", channelId: "ch-credit-gap", seq: 4, bytes: 64 } // expected 1
     })
     expect(closes).toEqual(["protocol-error"])
-    const refusal = (socket.sent.at(-1) as Extract<MachineToHub, { t: "relay" }>).frame
-    expect(refusal).toMatchObject({ t: "close", reason: "protocol-error" })
+    expect(socket.lastClose()).toMatchObject({ t: "close", reason: "protocol-error" })
   })
 
   it("tears down a peer's channels on peer-gone, leaving others untouched", () => {
@@ -823,7 +785,7 @@ describe("incoming channels", () => {
     expect(gone).toEqual(["peer-1:peer-gone"])
     // Survivor still works.
     h.channels[1]!.send({ still: "alive" })
-    expect(socket.sent.filter((f) => f.t === "relay")).toHaveLength(1)
+    expect(socket.sentRelay).toHaveLength(1)
   })
 
   it("drops all channels when the socket drops", () => {
@@ -834,6 +796,40 @@ describe("incoming channels", () => {
     h.channels[0]!.onClosed = (reason) => closes.push(reason)
     socket.onclose?.(1006)
     expect(closes).toEqual(["peer-gone"])
+  })
+})
+
+describe("relay coalescing", () => {
+  it("buffers outgoing envelopes and flushes them as one message", () => {
+    const h = harness({ relayCoalesceMs: 5 })
+    const socket = connect(h)
+    const { opened } = openEcho(socket, "peer-1", "ch-1")
+    const channel = h.channels[0]!
+
+    channel.send({ output: "a" })
+    channel.send({ output: "b" })
+    channel.send({ output: "c" })
+    expect(socket.relayMessages).toHaveLength(0)
+
+    activeTimeout(h, 5).run()
+    expect(socket.relayMessages).toHaveLength(1)
+    const envelopes = socket.relayMessages[0]!
+    expect(envelopes.map((envelope) => envelope.header.frame.seq)).toEqual([0, 1, 2])
+    expect(
+      openJson(opened.cipher, "ch-1", "responder-to-opener", 2, envelopes[2]!.payload)
+    ).toEqual({ output: "c" })
+  })
+
+  it("drops buffered envelopes when the socket dies before the flush", () => {
+    const h = harness({ relayCoalesceMs: 5 })
+    const socket = connect(h)
+    openEcho(socket, "peer-1", "ch-1")
+    h.channels[0]!.send({ output: "never" })
+    const flushTimer = activeTimeout(h, 5)
+    socket.onclose?.(1006)
+    // Even a queued flush callback firing late must not resurrect the frames.
+    flushTimer.invoke()
+    expect(socket.relayMessages).toHaveLength(0)
   })
 })
 
@@ -876,11 +872,6 @@ describe("reconnectDelayMs", () => {
 })
 
 describe("peer key pinning", () => {
-  const lastClose = (socket: FakeSocket): Extract<RelayFrame, { t: "close" }> => {
-    const relay = socket.sent.at(-1) as Extract<MachineToHub, { t: "relay" }>
-    return relay.frame as Extract<RelayFrame, { t: "close" }>
-  }
-
   it("pins a key on first successful open and refuses a changed key", () => {
     const persisted: Record<string, string>[] = []
     const pins = makePeerKeyPinStore({ persist: (peers) => persisted.push({ ...peers }) })
@@ -899,7 +890,10 @@ describe("peer key pinning", () => {
       "peer-1",
       "ch-2",
       { hello: true },
-      { appKeys: first.appKeys, peerDeviceId: "app-1" }
+      {
+        appKeys: first.appKeys,
+        peerDeviceId: "app-1"
+      }
     )
     expect(h.channels).toHaveLength(2)
 
@@ -911,10 +905,13 @@ describe("peer key pinning", () => {
       "peer-2",
       "ch-3",
       { hello: true },
-      { appKeys: attacker, peerDeviceId: "app-1" }
+      {
+        appKeys: attacker,
+        peerDeviceId: "app-1"
+      }
     )
     expect(h.channels).toHaveLength(2)
-    expect(lastClose(socket)).toMatchObject({ t: "close", channelId: "ch-3", reason: "rejected" })
+    expect(socket.lastClose()).toMatchObject({ t: "close", channelId: "ch-3", reason: "rejected" })
     expect(mismatches).toEqual([
       { deviceId: "app-1", pinned: first.appKeys.publicKey, presented: attacker.publicKey }
     ])
@@ -927,7 +924,7 @@ describe("peer key pinning", () => {
     const socket = connect(h)
     openEcho(socket, "peer-1", "ch-1", { hello: true }, { peerDeviceId: "app-1" })
     expect(h.channels).toHaveLength(0)
-    expect(lastClose(socket)).toMatchObject({ t: "close", reason: "rejected" })
+    expect(socket.lastClose()).toMatchObject({ t: "close", reason: "rejected" })
   })
 
   it("never pins a key from an open that fails crypto", () => {
@@ -940,20 +937,16 @@ describe("peer key pinning", () => {
     const sealer = generateDeviceKeyPair()
     const presented = generateDeviceKeyPair()
     const opened = openChannel(sealer.secretKey, machineKeys.publicKey)
-    socket.receive({
-      t: "relay",
-      peerId: "peer-1",
-      peerPublicKey: presented.publicKey,
-      peerDeviceId: "app-1",
-      frame: {
-        t: "open",
-        channelId: "ch-1",
-        seq: 0,
-        ephemeralKey: opened.ephemeralPublicKey,
-        sealed: sealJson(opened.cipher, "ch-1", "opener-to-responder", 0, { channelType: "echo" })
-      }
-    })
-    expect(lastClose(socket)).toMatchObject({ t: "close", reason: "crypto-error" })
+    socket.receiveRelay(
+      {
+        peerId: "peer-1",
+        peerPublicKey: presented.publicKey,
+        peerDeviceId: "app-1",
+        frame: { t: "open", channelId: "ch-1", seq: 0, ephemeralKey: opened.ephemeralPublicKey }
+      },
+      sealJson(opened.cipher, "ch-1", "opener-to-responder", 0, { channelType: "echo" })
+    )
+    expect(socket.lastClose()).toMatchObject({ t: "close", reason: "crypto-error" })
     expect(pins.get("app-1")).toBeUndefined()
 
     // The legitimate device can still establish its pin afterwards.

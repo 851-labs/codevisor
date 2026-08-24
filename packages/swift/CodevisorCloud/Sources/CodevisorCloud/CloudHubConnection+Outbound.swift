@@ -23,8 +23,7 @@ extension CloudHubConnection {
         }
     }
 
-    private struct RelayMessage: Encodable {
-        var t = "relay"
+    private struct RelayHeader: Encodable {
         var machineId: String
         var frame: CloudRelayFrame
     }
@@ -96,21 +95,27 @@ extension CloudHubConnection {
         socket?.cancel(with: .goingAway, reason: nil)
     }
 
-    func sendRelay(machineId: String, frame: CloudRelayFrame) throws {
+    /// Sends one relay frame as a binary envelope message (ciphertext rides
+    /// beside the JSON header; credit/close carry an empty payload).
+    func sendRelay(machineId: String, frame: CloudRelayFrame, payload: Data = Data()) throws {
         guard socket != nil else { throw CloudHubConnectionError.disconnected }
-        try enqueueSend(RelayMessage(machineId: machineId, frame: frame))
+        let header = try encoder.encode(RelayHeader(machineId: machineId, frame: frame))
+        try enqueueSend(.data(CloudRelayWire.encode([CloudRelayEnvelope(header: header, payload: payload)])))
+    }
+
+    private func enqueueSend(_ message: some Encodable) throws {
+        try enqueueSend(.string(String(decoding: try encoder.encode(message), as: UTF8.self)))
     }
 
     /// Chained sends keep wire order aligned with seq allocation order —
     /// concurrent senders must not overtake each other between allocating a
     /// seq and the frame reaching the socket.
-    private func enqueueSend(_ message: some Encodable) throws {
+    private func enqueueSend(_ message: ServerWebSocketMessage) throws {
         guard let socket, let socketID else { throw CloudHubConnectionError.disconnected }
-        let text = String(decoding: try encoder.encode(message), as: UTF8.self)
         sendChain = Task { [weak self, previous = sendChain] in
             await previous.value
             do {
-                try await socket.send(.string(text))
+                try await socket.send(message)
             } catch {
                 await self?.handleSocketFailure(on: socketID, error: error)
             }

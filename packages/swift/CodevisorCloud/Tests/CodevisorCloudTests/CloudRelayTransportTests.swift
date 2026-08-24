@@ -67,7 +67,8 @@ struct CloudRelayTransportTests {
 
         private func handle(_ envelope: ScriptedCloudHub.RelayEnvelope) {
             guard let appKey = scripted.appPublicKey else { return }
-            guard let payload = try? machine.receive(envelope.frame, appPublicKey: appKey) else { return }
+            guard let payload = try? machine.receive(envelope.frame, payload: envelope.payload, appPublicKey: appKey)
+            else { return }
             let channelId = envelope.frame.channelId
             switch envelope.frame {
             case .open:
@@ -107,9 +108,9 @@ struct CloudRelayTransportTests {
             let encoder = JSONEncoder()
             func sendJSON(_ value: some Encodable) {
                 guard let data = try? encoder.encode(value),
-                    let frame = try? machine.sealData(channelId: channelId, payload: data)
+                    let sealed = try? machine.sealData(channelId: channelId, payload: data)
                 else { return }
-                scripted.relayToApp(machineId: machine.deviceId, frame: frame)
+                scripted.relayToApp(machineId: machine.deviceId, sealed: sealed)
             }
             if response.status > 0 {
                 sendJSON(HeadFrame(status: response.status, headers: response.headers))
@@ -156,7 +157,8 @@ struct CloudRelayTransportTests {
             scripted = ScriptedCloudHub(machines: [machine.presence])
             scripted.onRelay = { [weak self] envelope in
                 guard let self, let appKey = self.scripted.appPublicKey else { return }
-                guard (try? self.machine.receive(envelope.frame, appPublicKey: appKey)) != nil
+                guard
+                    (try? self.machine.receive(envelope.frame, payload: envelope.payload, appPublicKey: appKey)) != nil
                 else { return }
                 if case .open = envelope.frame {
                     self.lock.withLock { self._openChannelIds.append(envelope.frame.channelId) }
@@ -168,9 +170,9 @@ struct CloudRelayTransportTests {
 
         func push(_ json: String) {
             guard let channelId = openChannelId,
-                let frame = try? machine.sealData(channelId: channelId, payload: Data(json.utf8))
+                let sealed = try? machine.sealData(channelId: channelId, payload: Data(json.utf8))
             else { return }
-            scripted.relayToApp(machineId: machine.deviceId, frame: frame)
+            scripted.relayToApp(machineId: machine.deviceId, sealed: sealed)
         }
     }
 

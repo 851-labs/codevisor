@@ -187,14 +187,15 @@ public struct CloudChannelCipher: Sendable {
         self.key = SymmetricKey(data: keyData)
     }
 
-    /// Seals a plaintext into a base64url `box` (ciphertext ‖ tag — the
-    /// deterministic nonce is never included).
+    /// Seals a plaintext into a raw `box` (ciphertext ‖ 16-byte tag — the
+    /// deterministic nonce is never included). The box travels as a binary
+    /// relay envelope payload; no base64 on the wire.
     public func seal(
         _ plaintext: Data,
         channelId: String,
         direction: CloudChannelDirection,
         seq: UInt64
-    ) throws -> String {
+    ) throws -> Data {
         let nonce = try ChaChaPoly.Nonce(data: Self.nonce(direction: direction, seq: seq))
         guard
             let sealed = try? ChaChaPoly.seal(
@@ -204,24 +205,24 @@ public struct CloudChannelCipher: Sendable {
                 authenticating: Self.aad(channelId: channelId, direction: direction, seq: seq)
             )
         else { throw CloudChannelCryptoError.sealFailed }
-        return CloudChannelCrypto.base64URLEncode(sealed.ciphertext + sealed.tag)
+        return sealed.ciphertext + sealed.tag
     }
 
-    /// Opens a base64url `box`, authenticating (channelId, direction, seq).
+    /// Opens a raw `box`, authenticating (channelId, direction, seq).
     public func open(
-        _ box: String,
+        _ box: Data,
         channelId: String,
         direction: CloudChannelDirection,
         seq: UInt64
     ) throws -> Data {
-        guard let combined = CloudChannelCrypto.base64URLDecode(box), combined.count >= 16 else {
+        guard box.count >= 16 else {
             throw CloudChannelCryptoError.invalidBox
         }
         let nonce = try ChaChaPoly.Nonce(data: Self.nonce(direction: direction, seq: seq))
         let sealed = try ChaChaPoly.SealedBox(
             nonce: nonce,
-            ciphertext: combined.dropLast(16),
-            tag: combined.suffix(16)
+            ciphertext: box.dropLast(16),
+            tag: box.suffix(16)
         )
         guard
             let plaintext = try? ChaChaPoly.open(

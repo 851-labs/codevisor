@@ -4,14 +4,18 @@ import {
   CLOUD_PROTOCOL_VERSION,
   decodeAppToHub,
   decodeMachineToHub,
+  decodeRelayEnvelopes,
   encodeCloudFrame,
   isoTimestamp,
+  MAX_RELAY_MESSAGE_BYTES,
   type CloudMachinePresence,
   type HubErrorCode,
   type HubToApp,
-  type HubToMachine
+  type HubToMachine,
+  type WireRelayEnvelope
 } from "@codevisor/api"
 import type { CloudEnv } from "./env.js"
+import { routeAppRelay, routeMachineRelay, type RelayHubPort } from "./relay-routing.js"
 
 /// One hub per account (`getByName(userId)`): the rendezvous point every one
 /// of the user's app and machine sockets dials into. The hub is a dumb router:
@@ -44,9 +48,9 @@ export const CLOSE_HELLO_TIMEOUT = 4002
 /// process may reconnect and take over again.
 export const CLOSE_SUPERSEDED = 4003
 
-/// Refuse relay frames larger than this many UTF-16 code units (~2 MiB of
-/// JSON): far above coalesced terminal output, far below DO message limits.
-const MAX_FRAME_LENGTH = 2 * 1024 * 1024
+/// Refuse JSON control frames larger than this many UTF-16 code units. Relay
+/// traffic is binary and capped separately (MAX_RELAY_MESSAGE_BYTES).
+const MAX_FRAME_LENGTH = 64 * 1024
 
 interface SocketAttachment {
   kind: "app" | "machine"
@@ -180,8 +184,33 @@ export class UserHub extends DurableObject<CloudEnv> {
       socket.close(CLOSE_INVALID_FRAME, "missing attachment")
       return
     }
-    if (typeof message !== "string" || message.length > MAX_FRAME_LENGTH) {
-      this.#error(socket, "invalid-frame", "frames must be JSON text under the size limit")
+    // Binary messages are relay envelope batches; text messages are the rare
+    // JSON control frames (hello/ping).
+    if (typeof message !== "string") {
+      if (message.byteLength > MAX_RELAY_MESSAGE_BYTES) {
+        this.#error(socket, "invalid-frame", "relay message exceeds the size limit")
+        return
+      }
+      if (!attachment.helloDone) {
+        this.#error(socket, "invalid-frame", "hello required before relaying")
+        return
+      }
+      let envelopes: WireRelayEnvelope[]
+      try {
+        envelopes = decodeRelayEnvelopes(new Uint8Array(message))
+      } catch {
+        this.#error(socket, "invalid-frame", "malformed relay message")
+        return
+      }
+      if (attachment.kind === "app") {
+        routeAppRelay(this.#relayPort(), socket, attachment, envelopes)
+      } else {
+        routeMachineRelay(this.#relayPort(), socket, attachment.deviceId!, envelopes)
+      }
+      return
+    }
+    if (message.length > MAX_FRAME_LENGTH) {
+      this.#error(socket, "invalid-frame", "control frames must stay under the size limit")
       return
     }
     try {
@@ -226,51 +255,6 @@ export class UserHub extends DurableObject<CloudEnv> {
           machines: this.listMachines()
         })
       )
-      return
-    }
-    // relay
-    if (!attachment.helloDone) {
-      this.#error(socket, "invalid-frame", "hello required before relaying")
-      return
-    }
-    const machineSocket = this.#machineSockets(frame.machineId).find(
-      (candidate) => this.#attachment(candidate)?.helloDone === true
-    )
-    if (machineSocket === undefined) {
-      const known = this.#machineRow(frame.machineId) !== undefined
-      this.#error(
-        socket,
-        known ? "machine-offline" : "unknown-machine",
-        known ? "machine is not connected" : "no such machine on this account",
-        { machineId: frame.machineId, channelId: frame.frame.channelId }
-      )
-      return
-    }
-    const relayed: HubToMachine = {
-      t: "relay",
-      peerId: attachment.connectionId,
-      frame: frame.frame,
-      // Opens carry the opener's identity (key + stable device id) so the
-      // machine can complete key agreement and TOFU-pin the key per device.
-      ...(frame.frame.t === "open" && attachment.publicKey !== undefined
-        ? { peerPublicKey: attachment.publicKey }
-        : {}),
-      ...(frame.frame.t === "open" && attachment.deviceId !== undefined
-        ? { peerDeviceId: attachment.deviceId }
-        : {})
-    }
-    if (!this.#send(machineSocket, encodeCloudFrame(relayed))) {
-      // The chosen machine socket is dead but its close event has not fired
-      // yet. Report it like any other offline machine instead of dropping
-      // the frame silently.
-      console.warn("relay to machine failed: socket dead before close event", {
-        machineId: frame.machineId,
-        channelId: frame.frame.channelId
-      })
-      this.#error(socket, "machine-offline", "machine relay socket failed", {
-        machineId: frame.machineId,
-        channelId: frame.frame.channelId
-      })
     }
   }
 
@@ -330,34 +314,24 @@ export class UserHub extends DurableObject<CloudEnv> {
       const row = this.#machineRow(deviceId)
       if (row !== undefined)
         this.#broadcastToApps({ t: "presence", machine: this.#presence(row, true) })
-      return
     }
-    // relay
-    if (!attachment.helloDone) {
-      this.#error(socket, "invalid-frame", "hello required before relaying")
-      return
-    }
-    const peer = this.#sockets(`conn:${frame.peerId}`).find(
-      (candidate) => this.#attachment(candidate)?.kind === "app"
-    )
-    if (peer === undefined) {
-      // The app socket vanished; tell the machine so it can drop channels.
-      socket.send(encodeCloudFrame({ t: "peer-gone", peerId: frame.peerId }))
-      return
-    }
-    const relayed: HubToApp = {
-      t: "relay",
-      machineId: attachment.deviceId!,
-      frame: frame.frame
-    }
-    if (!this.#send(peer, encodeCloudFrame(relayed))) {
-      // The app socket is dead but its close event has not fired yet: tell
-      // the machine now, exactly as if the peer were already known-gone.
-      console.warn("relay to app failed: socket dead before close event", {
-        peerId: frame.peerId,
-        channelId: frame.frame.channelId
-      })
-      this.#send(socket, encodeCloudFrame({ t: "peer-gone", peerId: frame.peerId }))
+  }
+
+  /// The narrow surface relay routing (relay-routing.ts) uses to reach this
+  /// hub's sockets and registry.
+  #relayPort(): RelayHubPort {
+    return {
+      findMachineSocket: (machineId) =>
+        this.#machineSockets(machineId).find(
+          (candidate) => this.#attachment(candidate)?.helloDone === true
+        ),
+      isKnownMachine: (machineId) => this.#machineRow(machineId) !== undefined,
+      findAppSocket: (peerId) =>
+        this.#sockets(`conn:${peerId}`).find(
+          (candidate) => this.#attachment(candidate)?.kind === "app"
+        ),
+      send: (socket, message) => this.#send(socket, message),
+      error: (socket, code, message, context) => this.#error(socket, code, message, context)
     }
   }
 
@@ -452,7 +426,7 @@ export class UserHub extends DurableObject<CloudEnv> {
   /// send() that reports failure instead of throwing: a socket can be dead
   /// before its close event has fired, and callers must be able to react
   /// (report machine-offline / peer-gone) rather than crash frame handling.
-  #send(socket: WebSocket, encoded: string): boolean {
+  #send(socket: WebSocket, encoded: string | Uint8Array): boolean {
     try {
       socket.send(encoded)
       return true
