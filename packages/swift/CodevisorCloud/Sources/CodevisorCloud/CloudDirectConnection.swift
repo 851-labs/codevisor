@@ -373,9 +373,7 @@ extension CloudDirectConnection {
                     state.inboundCredit -= sealedBytes
                 }
                 state.onMessage(plaintext, sealedBytes)
-                if !state.flowControlled {
-                    try? grantCredit(channelId: channelId, bytes: sealedBytes)
-                }
+                // No auto-replenish (see CloudHubConnection+Inbound).
             } catch {
                 abortChannel(channelId, reason: .cryptoError)
             }
@@ -433,6 +431,7 @@ extension CloudDirectConnection {
     public func openFlowControlledChannel(
         channelType: String,
         params: JSONValue?,
+        compressed: Bool = false,
         onMessage: @escaping @Sendable (Data, Int) -> Void,
         onCredit: @escaping @Sendable (Int) -> Void,
         onClosed: @escaping @Sendable (CloudChannelCloseReason?) -> Void
@@ -441,7 +440,7 @@ extension CloudDirectConnection {
             channelType: channelType,
             params: params,
             flowControlled: true,
-            compressed: false,
+            compressed: compressed,
             onMessage: onMessage,
             onCredit: onCredit,
             onClosed: onClosed
@@ -470,6 +469,9 @@ extension CloudDirectConnection {
         }
         if compressed {
             payload["compress"] = .bool(true)
+        }
+        if flowControlled {
+            payload["flowControl"] = .bool(true)
         }
         let plaintext = try encoder.encode(JSONValue.object(payload))
         let sealed = try opened.cipher.seal(

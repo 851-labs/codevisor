@@ -69,11 +69,23 @@ struct CloudChannelTransportTests {
         func openFlowControlledChannel(
             channelType: String,
             params: JSONValue?,
+            compressed: Bool,
             onMessage: @escaping @Sendable (Data, Int) -> Void,
             onCredit: @escaping @Sendable (Int) -> Void,
             onClosed: @escaping @Sendable (CloudChannelCloseReason?) -> Void
         ) async throws -> CloudRelayChannel {
-            CloudRelayChannel(id: UUID().uuidString, host: host)
+            lock.withLock { _openParams.append(params) }
+            let respond = respond
+            await host.setClientFrameHandler { _, plaintext in
+                respond?(
+                    channelType, params, plaintext,
+                    { data in onMessage(data, data.count + 16) },
+                    onClosed
+                )
+            }
+            // A generous window up front, like a live machine handler would.
+            onCredit(1_000_000)
+            return CloudRelayChannel(id: UUID().uuidString, host: host)
         }
     }
 

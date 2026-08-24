@@ -148,8 +148,8 @@ struct CloudDirectConnectionTests {
         scripted.sendToApp(frame: sealed.frame, payload: sealed.payload)
         #expect(await waitUntil { !recorder.messages.isEmpty })
         #expect(recorder.messages.first == Data("pong-body".utf8))
-        // Structured channels auto-replenish the peer's send budget.
-        #expect(await waitUntil { !scripted.credits.isEmpty })
+        // Structured channels carry no credit traffic (no auto-replenish).
+        #expect(scripted.credits.isEmpty)
         #expect(recorder.closes.isEmpty)
     }
 

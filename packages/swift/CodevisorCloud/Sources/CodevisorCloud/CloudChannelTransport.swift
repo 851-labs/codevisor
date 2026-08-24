@@ -28,10 +28,12 @@ public protocol CloudChannelTransport: Sendable {
 
     /// Opens a raw channel whose owner explicitly grants receive credit and
     /// observes peer grants before sending. Credit is counted in ciphertext
-    /// bytes, matching the wire format.
+    /// bytes, matching the wire format. `compressed: true` composes the same
+    /// prefix framing as `openChannel` on top of the credit accounting.
     func openFlowControlledChannel(
         channelType: String,
         params: JSONValue?,
+        compressed: Bool,
         onMessage: @escaping @Sendable (Data, Int) -> Void,
         onCredit: @escaping @Sendable (Int) -> Void,
         onClosed: @escaping @Sendable (CloudChannelCloseReason?) -> Void
@@ -83,6 +85,7 @@ public struct CloudRelayEndpoint: Sendable, CloudChannelTransport {
     public func openFlowControlledChannel(
         channelType: String,
         params: JSONValue?,
+        compressed: Bool,
         onMessage: @escaping @Sendable (Data, Int) -> Void,
         onCredit: @escaping @Sendable (Int) -> Void,
         onClosed: @escaping @Sendable (CloudChannelCloseReason?) -> Void
@@ -92,6 +95,7 @@ public struct CloudRelayEndpoint: Sendable, CloudChannelTransport {
             machinePublicKey: machinePublicKey,
             channelType: channelType,
             params: params,
+            compressed: compressed,
             onMessage: onMessage,
             onCredit: onCredit,
             onClosed: onClosed

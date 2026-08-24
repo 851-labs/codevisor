@@ -100,6 +100,29 @@ public func serverErrorMessage(_ error: any Error) -> String {
 /// the same requests through an end-to-end encrypted channel.
 public protocol ServerRequestTransport: Sendable {
     func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse)
+
+    /// Streams the response body instead of buffering it: the head arrives
+    /// first, then chunks as the transport produces them. Transports with a
+    /// real streaming path (the cloud relay) pace the wire by consumer pulls;
+    /// everything else falls back to the buffered default.
+    func stream(
+        for request: URLRequest
+    ) async throws -> (HTTPURLResponse, AsyncThrowingStream<Data, any Error>)
+}
+
+extension ServerRequestTransport {
+    /// Default: buffer via `data(for:)` and yield the body as one chunk.
+    public func stream(
+        for request: URLRequest
+    ) async throws -> (HTTPURLResponse, AsyncThrowingStream<Data, any Error>) {
+        let (data, response) = try await self.data(for: request)
+        let (stream, continuation) = AsyncThrowingStream<Data, any Error>.makeStream()
+        if !data.isEmpty {
+            continuation.yield(data)
+        }
+        continuation.finish()
+        return (response, stream)
+    }
 }
 
 /// URLSession-backed default request transport.

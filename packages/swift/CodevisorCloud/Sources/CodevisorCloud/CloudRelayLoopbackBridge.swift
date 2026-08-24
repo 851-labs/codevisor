@@ -172,6 +172,7 @@ private final class LoopbackConnection: @unchecked Sendable {
                     "service": .string(CloudRelayLoopbackBridge.service),
                     "version": .number(Double(CloudRelayLoopbackBridge.protocolVersion)),
                 ]),
+                compressed: false,
                 onMessage: { data, sealedBytes in
                     inboundContinuation.yield(RelayChunk(data: data, sealedBytes: sealedBytes))
                 },

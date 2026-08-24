@@ -394,7 +394,14 @@ export type HubToMachine = typeof HubToMachine.Type
 export const ChannelOpenPayload = Schema.Struct({
   channelType: Schema.String,
   params: Schema.optional(Schema.Unknown),
-  compress: Schema.optional(Schema.Boolean)
+  compress: Schema.optional(Schema.Boolean),
+  /// The opener runs this channel with explicit credit-based flow control in
+  /// BOTH directions: each sender may only put granted ciphertext bytes in
+  /// flight, and grants replenish as the receiver actually consumes. Openers
+  /// set this only for channel types whose handlers grant credit (http, ws,
+  /// byte-stream) — a flow-controlled open to an unaware handler would wait
+  /// for grants forever.
+  flowControl: Schema.optional(Schema.Boolean)
 })
 export type ChannelOpenPayload = typeof ChannelOpenPayload.Type
 

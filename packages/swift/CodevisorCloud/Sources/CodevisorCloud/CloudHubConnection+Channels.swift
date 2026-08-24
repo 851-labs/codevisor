@@ -31,12 +31,15 @@ extension CloudHubConnection {
 
     /// Opens a raw channel whose owner explicitly grants receive credit and
     /// observes peer grants before sending. Credit is counted in encoded
-    /// ciphertext bytes, matching the relay wire format.
+    /// ciphertext bytes, matching the relay wire format. The sealed open
+    /// payload carries `flowControl: true` so the machine's handler gates its
+    /// own sends behind our grants (and expects the same of us).
     public func openFlowControlledChannel(
         machineDeviceId: String,
         machinePublicKey: String,
         channelType: String,
         params: JSONValue?,
+        compressed: Bool = false,
         onMessage: @escaping @Sendable (Data, Int) -> Void,
         onCredit: @escaping @Sendable (Int) -> Void,
         onClosed: @escaping @Sendable (CloudChannelCloseReason?) -> Void
@@ -47,7 +50,7 @@ extension CloudHubConnection {
             channelType: channelType,
             params: params,
             flowControlled: true,
-            compressed: false,
+            compressed: compressed,
             onMessage: onMessage,
             onCredit: onCredit,
             onClosed: onClosed
@@ -95,6 +98,9 @@ extension CloudHubConnection {
         }
         if compressed {
             payload["compress"] = .bool(true)
+        }
+        if flowControlled {
+            payload["flowControl"] = .bool(true)
         }
         let plaintext = try encoder.encode(JSONValue.object(payload))
         let sealed = try opened.cipher.seal(

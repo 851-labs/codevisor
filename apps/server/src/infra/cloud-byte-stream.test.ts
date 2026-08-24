@@ -16,16 +16,21 @@ class FakeChannel implements IncomingChannel {
   peerId = "app-1"
   channelType = "byte-stream"
   params: unknown = codevisorLoopbackParams()
+  flowControlRequested = false
   deferred = false
   sent: Uint8Array[] = []
   grants: number[] = []
   closes: ChannelCloseReason[] = []
-  onData: ((value: unknown) => void) | null = null
+  onData: ((value: unknown, sealedBytes: number) => void) | null = null
   onBytes: ((value: Uint8Array, sealedBytes: number) => void) | null = null
   onCredit: ((bytes: number) => void) | null = null
+  onOutboundDrain: (() => void) | null = null
   onClosed: ((reason: ChannelCloseReason | "peer-gone") => void) | null = null
 
   send(): void {}
+  queuedOutboundBytes(): number {
+    return 0
+  }
   sendBytes(value: Uint8Array): number | undefined {
     this.sent.push(new Uint8Array(value))
     return byteStreamSealedBytes(value.byteLength)

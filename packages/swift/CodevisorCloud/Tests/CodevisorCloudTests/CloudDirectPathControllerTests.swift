@@ -22,6 +22,7 @@ private struct UnusedTransport: CloudChannelTransport {
     func openFlowControlledChannel(
         channelType: String,
         params: JSONValue?,
+        compressed: Bool,
         onMessage: @escaping @Sendable (Data, Int) -> Void,
         onCredit: @escaping @Sendable (Int) -> Void,
         onClosed: @escaping @Sendable (CloudChannelCloseReason?) -> Void

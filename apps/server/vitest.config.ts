@@ -27,7 +27,11 @@ export default defineConfig({
         // packages/cloud-client and packages/cloud-crypto, credential parsing
         // and the login flow in src/cli/cloud-auth.ts, and the hub itself in
         // apps/cloud's workerd integration suite.
-        "src/infra/cloud-bridge.ts"
+        "src/infra/cloud-bridge.ts",
+        // Same boundary, split out for size: the http/ws channel handlers are
+        // glue over `fetch` and `ws` sockets; the frame/header/credit logic
+        // they compose lives (fully covered) in packages/cloud-client.
+        "src/infra/cloud-proxy-handlers.ts"
       ],
       provider: "v8",
       thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 }

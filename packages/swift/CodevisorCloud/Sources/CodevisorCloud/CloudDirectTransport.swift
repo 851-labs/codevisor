@@ -32,6 +32,7 @@ public struct CloudDirectTransport: Sendable, CloudChannelTransport {
     public func openFlowControlledChannel(
         channelType: String,
         params: JSONValue?,
+        compressed: Bool,
         onMessage: @escaping @Sendable (Data, Int) -> Void,
         onCredit: @escaping @Sendable (Int) -> Void,
         onClosed: @escaping @Sendable (CloudChannelCloseReason?) -> Void
@@ -39,6 +40,7 @@ public struct CloudDirectTransport: Sendable, CloudChannelTransport {
         try await connection.openFlowControlledChannel(
             channelType: channelType,
             params: params,
+            compressed: compressed,
             onMessage: onMessage,
             onCredit: onCredit,
             onClosed: onClosed
@@ -82,6 +84,7 @@ public struct SwitchingChannelTransport: Sendable, CloudChannelTransport {
     public func openFlowControlledChannel(
         channelType: String,
         params: JSONValue?,
+        compressed: Bool,
         onMessage: @escaping @Sendable (Data, Int) -> Void,
         onCredit: @escaping @Sendable (Int) -> Void,
         onClosed: @escaping @Sendable (CloudChannelCloseReason?) -> Void
@@ -89,6 +92,7 @@ public struct SwitchingChannelTransport: Sendable, CloudChannelTransport {
         try await provider().openFlowControlledChannel(
             channelType: channelType,
             params: params,
+            compressed: compressed,
             onMessage: onMessage,
             onCredit: onCredit,
             onClosed: onClosed

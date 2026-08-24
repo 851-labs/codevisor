@@ -91,7 +91,11 @@ export class ChannelReceiver {
     }
     if (frame.t === "credit") {
       live.nextReceiveSeq += 1
-      live.channel.onCredit?.(frame.bytes)
+      // Credits our send budget (flushing queued gated sends) before the
+      // handler's own observer runs; an invalid grant kills the channel.
+      if (!live.receiveCredit(frame.bytes)) {
+        this.#abort(key, peerId, frame.channelId, live, "protocol-error")
+      }
       return
     }
     // data — the monotonic seq contract is bound into the AAD.
@@ -117,7 +121,7 @@ export class ChannelReceiver {
     }
     live.nextReceiveSeq += 1
     if (value instanceof Uint8Array) live.channel.onBytes?.(value, sealedBytes)
-    else live.channel.onData?.(value)
+    else live.channel.onData?.(value, sealedBytes)
   }
 
   /// Tears down one peer's channels (the pipe reported the peer gone).
@@ -166,13 +170,19 @@ export class ChannelReceiver {
       }
     }
     let cipher: ChannelCipher
-    let openPayload: { channelType?: unknown; params?: unknown; compress?: unknown }
+    let openPayload: {
+      channelType?: unknown
+      params?: unknown
+      compress?: unknown
+      flowControl?: unknown
+    }
     try {
       cipher = acceptChannel(this.options.secretKey, peerPublicKey, frame.ephemeralKey)
       openPayload = openJson(cipher, frame.channelId, "opener-to-responder", 0, payload) as {
         channelType?: unknown
         params?: unknown
         compress?: unknown
+        flowControl?: unknown
       }
     } catch {
       this.#refuse(peerId, frame.channelId, "crypto-error")
@@ -202,6 +212,9 @@ export class ChannelReceiver {
       // Prefix-framed (compressible) payloads are opener-negotiated; the
       // responder honours the framing even without a compressor (RAW).
       compressed: openPayload.compress === true,
+      // Opener-requested flow control: inbound enforcement starts strict and
+      // structured sends gate on the opener's credit grants.
+      flowControl: openPayload.flowControl === true,
       ...(this.options.compressPayload === undefined
         ? {}
         : { compress: this.options.compressPayload }),

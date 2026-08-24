@@ -10,10 +10,12 @@ import {
   BYTE_STREAM_CHANNEL_TYPE,
   CloudMachineConnection,
   DirectChannelHost,
+  HTTP_CHANNEL_TYPE,
   makePeerKeyPinStore,
   parsePeerKeyPins,
   provisionMachine,
   serializePeerKeyPins,
+  WS_CHANNEL_TYPE,
   type ChannelHandler,
   type CloudSocket,
   type MachineConnectionState,
@@ -21,27 +23,13 @@ import {
   type PeerKeyPinStore
 } from "@codevisor/cloud-client"
 import { byteStreamChannelHandler } from "./cloud-byte-stream.js"
+import { httpChannelHandler, wsChannelHandler } from "./cloud-proxy-handlers.js"
 import type { TerminalManagerService } from "@codevisor/terminal"
 import { Effect } from "effect"
 import { WebSocket } from "ws"
 import { readFile, rm, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { deflateRawSync, inflateRawSync } from "node:zlib"
-import {
-  appendBodyChunk,
-  chunkFrames,
-  concatBodyBuffer,
-  emptyBodyBuffer,
-  encodeWsFrames,
-  headFrame,
-  HTTP_CHANNEL_TYPE,
-  parseHttpChannelParams,
-  parseHttpRequestFrame,
-  parseWsChannelParams,
-  parseWsFrame,
-  sanitizeRequestHeaders,
-  WS_CHANNEL_TYPE
-} from "@codevisor/cloud-client"
 
 /// Connects a running server to the user's cloud hub as a machine, serving
 /// end-to-end encrypted terminal channels. Integration boundary over `ws`,
@@ -210,125 +198,6 @@ const terminalChannelHandler =
       }
     }
     channel.onClosed = () => detach?.()
-  }
-
-/// Serves one app-opened HTTP channel: buffer the sealed request body frames,
-/// replay the request against the local server (loopback is exempt from token
-/// auth, so the app's cloud bearer is stripped and never forwarded), then
-/// stream the response back as head/chunk/end frames. Pure frame and header
-/// logic lives in cloud-proxy.ts.
-const httpChannelHandler =
-  (localBaseUrl: string, log: (line: string) => void): ChannelHandler =>
-  (channel) => {
-    const params = parseHttpChannelParams(channel.params)
-    if (params === undefined) {
-      channel.close("rejected")
-      return
-    }
-    const body = emptyBodyBuffer()
-    let requestDone = false
-    let channelClosed = false
-    channel.onClosed = () => {
-      channelClosed = true
-    }
-    const respond = async (): Promise<void> => {
-      try {
-        const bytes = concatBodyBuffer(body)
-        const response = await fetch(localBaseUrl + params.path, {
-          method: params.method,
-          headers: sanitizeRequestHeaders(params.headers),
-          ...(bytes.byteLength === 0 ? {} : { body: bytes })
-        })
-        if (channelClosed) {
-          await response.body?.cancel()
-          return
-        }
-        channel.send(headFrame(response.status, response.headers))
-        const reader = response.body?.getReader()
-        if (reader !== undefined) {
-          for (;;) {
-            const { done, value } = await reader.read()
-            if (done) break
-            if (channelClosed) {
-              await reader.cancel()
-              return
-            }
-            for (const frame of chunkFrames(value)) channel.send(frame)
-          }
-        }
-        channel.send({ kind: "end" })
-        channel.close("done")
-      } catch (cause) {
-        log(`Cloud http channel failed: ${cause instanceof Error ? cause.message : String(cause)}`)
-        channel.close("rejected")
-      }
-    }
-    channel.onData = (value) => {
-      if (requestDone) return
-      const frame = parseHttpRequestFrame(value)
-      if (frame === undefined) {
-        requestDone = true
-        channel.close("rejected")
-        return
-      }
-      if (frame.kind === "chunk") {
-        if (!appendBodyChunk(body, frame.data)) {
-          requestDone = true
-          channel.close("rejected")
-        }
-        return
-      }
-      requestDone = true
-      void respond()
-    }
-  }
-
-/// Serves one app-opened WebSocket channel by bridging it onto the local
-/// server's own WS endpoint. Frames arriving before the local socket opens
-/// are queued; either side closing gracefully surfaces as close("done").
-const wsChannelHandler =
-  (localBaseUrl: string): ChannelHandler =>
-  (channel) => {
-    const params = parseWsChannelParams(channel.params)
-    if (params === undefined) {
-      channel.close("rejected")
-      return
-    }
-    const socket = new WebSocket(localBaseUrl.replace(/^http/, "ws") + params.path)
-    let opened = false
-    const queued: (string | Uint8Array)[] = []
-    socket.on("open", () => {
-      opened = true
-      for (const message of queued) socket.send(message)
-      queued.length = 0
-    })
-    socket.on("message", (data, isBinary) => {
-      const bytes = Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as ArrayBuffer)
-      // Chunked: an oversized message (a huge tool-call event) would exceed
-      // the hub's relay frame cap, and the dropped frame's seq gap would
-      // abort the channel — with cursor replay resending the same oversized
-      // event forever. Split frames reassemble on the app side instead.
-      for (const frame of encodeWsFrames(isBinary ? new Uint8Array(bytes) : String(data))) {
-        channel.send(frame)
-      }
-    })
-    socket.on("close", () => channel.close("done"))
-    socket.on("error", () => {
-      // close fires afterwards; before open that would report "done" for a
-      // websocket that never connected, so reject first (later closes no-op).
-      if (!opened) channel.close("rejected")
-    })
-    channel.onData = (value) => {
-      const frame = parseWsFrame(value)
-      if (frame === undefined) {
-        channel.close("protocol-error")
-        socket.close()
-        return
-      }
-      if (opened) socket.send(frame.data)
-      else queued.push(frame.data)
-    }
-    channel.onClosed = () => socket.close()
   }
 
 /// Dev self-heal: a local cloud reset (fresh D1) leaves the machine holding a

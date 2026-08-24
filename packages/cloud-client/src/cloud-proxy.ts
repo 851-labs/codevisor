@@ -14,6 +14,16 @@ export const MAX_CHUNK_BYTES = 262144
 /// Total buffered request body cap; larger uploads are rejected.
 export const MAX_REQUEST_BODY_BYTES = 32 * 1024 * 1024
 
+/// Per-direction in-flight ciphertext window on flow-controlled http/ws
+/// channels (mirrors the byte-stream tunnel). Each receiver grants this up
+/// front and replenishes as it consumes, so a 32MB response holds at most
+/// this much in flight on any hop — a slow phone stalls the machine's local
+/// read instead of ballooning buffers.
+export const PROXY_INITIAL_CREDIT_BYTES = 1024 * 1024
+/// When gated sends queue past this, handlers pause their local source
+/// (response reader / ws socket) until the queue drains.
+export const PROXY_OUTBOUND_HIGH_WATER_BYTES = 512 * 1024
+
 /// Never relayed in either direction: they describe the hop (the relay
 /// reframes bodies and owns its own connections), not the resource.
 const HOP_BY_HOP_HEADERS = new Set([

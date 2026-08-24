@@ -197,6 +197,125 @@ describe("DirectChannelHost", () => {
     expect(garbage.closed?.code).toBe(4000)
   })
 
+  it("gates structured sends behind opener credit on flow-controlled channels", () => {
+    const { host, channels } = makeHost()
+    const socket = new FakeDirectSocket()
+    host.accept(socket)
+    socket.hello({ deviceId: "app-1", publicKey: appKeys.publicKey })
+    const opened = openChannel(appKeys.secretKey, machineKeys.publicKey)
+    socket.relay(
+      "machine-1",
+      { t: "open", channelId: "f-1", seq: 0, ephemeralKey: opened.ephemeralPublicKey },
+      sealJson(opened.cipher, "f-1", "opener-to-responder", 0, {
+        channelType: "echo",
+        flowControl: true
+      })
+    )
+    const channel = channels[0]!
+    expect(channel.flowControlRequested).toBe(true)
+
+    // No credit yet: structured sends queue instead of hitting the wire, and
+    // a close waits its turn behind them.
+    channel.send({ n: 1 })
+    channel.send({ n: 2 })
+    const dataFrames = () => socket.envelopes.filter((e) => e.header.frame.t === "data")
+    expect(dataFrames()).toHaveLength(0)
+    expect(channel.queuedOutboundBytes()).toBeGreaterThan(0)
+    channel.close("done")
+    expect(socket.envelopes.filter((e) => e.header.frame.t === "close")).toHaveLength(0)
+
+    // Grant exactly one frame's worth: {"n":1} is 7 bytes + 16-byte tag.
+    socket.relay("machine-1", { t: "credit", channelId: "f-1", seq: 1, bytes: 23 })
+    expect(dataFrames()).toHaveLength(1)
+    expect(
+      openJson(opened.cipher, "f-1", "responder-to-opener", 0, dataFrames()[0]!.payload)
+    ).toEqual({ n: 1 })
+
+    // A generous grant drains the queue and releases the deferred close.
+    socket.relay("machine-1", { t: "credit", channelId: "f-1", seq: 2, bytes: 10_000 })
+    expect(dataFrames()).toHaveLength(2)
+    expect(
+      openJson(opened.cipher, "f-1", "responder-to-opener", 1, dataFrames()[1]!.payload)
+    ).toEqual({ n: 2 })
+    expect(channel.queuedOutboundBytes()).toBe(0)
+    const close = socket.envelopes.find((e) => e.header.frame.t === "close")!
+    expect(close.header.frame).toMatchObject({ t: "close", seq: 2, reason: "done" })
+  })
+
+  it("enforces the opener's own budget and rejects invalid grants", () => {
+    const { host, channels } = makeHost()
+    const socket = new FakeDirectSocket()
+    host.accept(socket)
+    socket.hello({ deviceId: "app-1", publicKey: appKeys.publicKey })
+
+    // Opener data without any machine grant → protocol error.
+    const starved = openChannel(appKeys.secretKey, machineKeys.publicKey)
+    socket.relay(
+      "machine-1",
+      { t: "open", channelId: "f-2", seq: 0, ephemeralKey: starved.ephemeralPublicKey },
+      sealJson(starved.cipher, "f-2", "opener-to-responder", 0, {
+        channelType: "echo",
+        flowControl: true
+      })
+    )
+    const closes: string[] = []
+    channels[0]!.onClosed = (reason) => closes.push(reason)
+    socket.relay(
+      "machine-1",
+      { t: "data", channelId: "f-2", seq: 1 },
+      sealJson(starved.cipher, "f-2", "opener-to-responder", 1, { too: "eager" })
+    )
+    expect(closes).toEqual(["protocol-error"])
+
+    // A grant that would overflow the budget kills the channel. (Zero and
+    // negative grants never get this far — the header parser drops them.)
+    const flooded = openChannel(appKeys.secretKey, machineKeys.publicKey)
+    socket.relay(
+      "machine-1",
+      { t: "open", channelId: "f-3", seq: 0, ephemeralKey: flooded.ephemeralPublicKey },
+      sealJson(flooded.cipher, "f-3", "opener-to-responder", 0, {
+        channelType: "echo",
+        flowControl: true
+      })
+    )
+    const floodCloses: string[] = []
+    channels[1]!.onClosed = (reason) => floodCloses.push(reason)
+    const huge = Number.MAX_SAFE_INTEGER
+    socket.relay("machine-1", { t: "credit", channelId: "f-3", seq: 1, bytes: huge })
+    expect(floodCloses).toEqual([])
+    socket.relay("machine-1", { t: "credit", channelId: "f-3", seq: 2, bytes: huge })
+    expect(floodCloses).toEqual(["protocol-error"])
+
+    // Handlers replenish the window from the sealed size of consumed frames.
+    const budgeted = openChannel(appKeys.secretKey, machineKeys.publicKey)
+    socket.relay(
+      "machine-1",
+      { t: "open", channelId: "f-4", seq: 0, ephemeralKey: budgeted.ephemeralPublicKey },
+      sealJson(budgeted.cipher, "f-4", "opener-to-responder", 0, {
+        channelType: "echo",
+        flowControl: true
+      })
+    )
+    const sizes: number[] = []
+    channels[2]!.onData = (_value, sealedBytes) => sizes.push(sealedBytes)
+    channels[2]!.grantCredit(1024)
+    const sealed = sealJson(budgeted.cipher, "f-4", "opener-to-responder", 1, { ok: true })
+    socket.relay("machine-1", { t: "data", channelId: "f-4", seq: 1 }, sealed)
+    expect(sizes).toEqual([sealed.byteLength])
+
+    // With credit in hand, sends go straight out — no queue detour.
+    socket.relay("machine-1", { t: "credit", channelId: "f-4", seq: 2, bytes: 10_000 })
+    channels[2]!.send({ pong: true })
+    expect(channels[2]!.queuedOutboundBytes()).toBe(0)
+    const direct = socket.envelopes.filter(
+      (e) => e.header.frame.channelId === "f-4" && e.header.frame.t === "data"
+    )
+    expect(direct).toHaveLength(1)
+    expect(openJson(budgeted.cipher, "f-4", "responder-to-opener", 1, direct[0]!.payload)).toEqual({
+      pong: true
+    })
+  })
+
   it("drops malformed relay batches and rides out socket send failures", () => {
     vi.useFakeTimers()
     try {

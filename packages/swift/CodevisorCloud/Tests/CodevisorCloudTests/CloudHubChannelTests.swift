@@ -56,13 +56,13 @@ struct CloudHubChannelTests {
         #expect(await waitUntil { recorder.messages.count == 2 })
         #expect(recorder.messages.map { String(decoding: $0, as: UTF8.self) } == ["reply-1", "reply-2"])
 
-        // Consuming data replenishes the peer's window with credit frames.
+        // Structured channels carry NO credit traffic: machines don't gate
+        // sends without negotiated flow control, so auto-replenish would be a
+        // pure (billed) no-op frame per message.
         #expect(
-            await waitUntil {
-                scripted.relayEnvelopes.contains {
-                    if case .credit = $0.frame { return true }
-                    return false
-                }
+            !scripted.relayEnvelopes.contains {
+                if case .credit = $0.frame { return true }
+                return false
             })
 
         // A machine-initiated close reaches onClosed with its reason.

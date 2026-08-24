@@ -186,11 +186,9 @@ extension CloudHubConnection {
                     state.inboundCredit -= sealedBytes
                 }
                 state.onMessage(plaintext, sealedBytes)
-                if !state.flowControlled {
-                    // Legacy structured channels consume each message
-                    // immediately, so replenish their peer automatically.
-                    try? grantCredit(channelId: channelId, bytes: sealedBytes)
-                }
+                // No auto-replenish: machines never gate structured sends on
+                // credit unless the opener negotiated flow control, so a
+                // per-message credit frame would be a pure (billed) no-op.
             } catch {
                 abortChannel(channelId, reason: .cryptoError)
             }
