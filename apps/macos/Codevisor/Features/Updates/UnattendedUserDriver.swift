@@ -13,16 +13,37 @@ import Sparkle
 final class UnattendedUserDriver: NSObject, SPUUserDriver {
     private let standard: SPUStandardUserDriver
     private(set) var unattended = false
+    /// The reply Sparkle is waiting on while the standard driver shows a
+    /// prompt ("update found" / "ready to install"). Captured so a remote
+    /// request can take over the session: without it, arming mid-session
+    /// would leave that prompt open forever on a screen nobody is watching.
+    private var pendingChoiceReply: ((SPUUserUpdateChoice) -> Void)?
+    private var pendingPermissionReply: ((SUUpdatePermissionResponse) -> Void)?
 
     init(hostBundle: Bundle) {
         standard = SPUStandardUserDriver(hostBundle: hostBundle, delegate: nil)
     }
 
-    /// Arms the NEXT update session to run headless. The flag clears itself
-    /// when the session ends (installed, no update, error, or dismissed), so
-    /// later user-initiated checks get the standard UI again.
+    /// Arms the CURRENT OR NEXT update session to run headless. The flag
+    /// clears itself when the session ends (installed, no update, error, or
+    /// dismissed), so later user-initiated checks get the standard UI again.
+    ///
+    /// Taking over a session already showing the standard UI — a background
+    /// check found this update and parked its prompt on this machine's
+    /// screen before the remote request arrived — answers the pending
+    /// prompt with "install" and dismisses the visible window, so the
+    /// update proceeds instead of waiting for a click that will never come.
     func beginUnattendedSession() {
         unattended = true
+        if let reply = pendingPermissionReply {
+            pendingPermissionReply = nil
+            reply(SUUpdatePermissionResponse(automaticUpdateChecks: true, sendSystemProfile: false))
+        }
+        if let reply = pendingChoiceReply {
+            pendingChoiceReply = nil
+            reply(.install)
+        }
+        standard.dismissUpdateInstallation()
     }
 
     private func endUnattendedSession() {
@@ -36,7 +57,15 @@ final class UnattendedUserDriver: NSObject, SPUUserDriver {
         reply: @escaping (SUUpdatePermissionResponse) -> Void
     ) {
         guard unattended else {
-            standard.show(request, reply: reply)
+            pendingPermissionReply = reply
+            standard.show(request) { [weak self] response in
+                // A nil pending reply means an unattended takeover already
+                // answered Sparkle; a late standard-UI reply must not double
+                // up.
+                guard let self, self.pendingPermissionReply != nil else { return }
+                self.pendingPermissionReply = nil
+                reply(response)
+            }
             return
         }
         reply(SUUpdatePermissionResponse(automaticUpdateChecks: true, sendSystemProfile: false))
@@ -55,7 +84,12 @@ final class UnattendedUserDriver: NSObject, SPUUserDriver {
         reply: @escaping (SPUUserUpdateChoice) -> Void
     ) {
         guard unattended else {
-            standard.showUpdateFound(with: appcastItem, state: state, reply: reply)
+            pendingChoiceReply = reply
+            standard.showUpdateFound(with: appcastItem, state: state) { [weak self] choice in
+                guard let self, self.pendingChoiceReply != nil else { return }
+                self.pendingChoiceReply = nil
+                reply(choice)
+            }
             return
         }
         // Informational items have nothing to install; end the session
@@ -137,7 +171,12 @@ final class UnattendedUserDriver: NSObject, SPUUserDriver {
 
     func showReady(toInstallAndRelaunch reply: @escaping (SPUUserUpdateChoice) -> Void) {
         guard unattended else {
-            standard.showReady(toInstallAndRelaunch: reply)
+            pendingChoiceReply = reply
+            standard.showReady(toInstallAndRelaunch: { [weak self] choice in
+                guard let self, self.pendingChoiceReply != nil else { return }
+                self.pendingChoiceReply = nil
+                reply(choice)
+            })
             return
         }
         reply(.install)
@@ -176,6 +215,10 @@ final class UnattendedUserDriver: NSObject, SPUUserDriver {
     }
 
     func dismissUpdateInstallation() {
+        // Session teardown either way: any prompt Sparkle was waiting on is
+        // gone with it.
+        pendingChoiceReply = nil
+        pendingPermissionReply = nil
         guard unattended else {
             standard.dismissUpdateInstallation()
             return

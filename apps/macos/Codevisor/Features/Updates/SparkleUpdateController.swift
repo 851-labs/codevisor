@@ -1,4 +1,5 @@
 import CodevisorCore
+import CodevisorCoreMac
 import Foundation
 import Sparkle
 
@@ -11,6 +12,11 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     private let serverAgent: MacServerAgentController
     private var updater: SPUUpdater!
     private var driver: UnattendedUserDriver!
+    /// True from a remote-triggered (headless) session's arming until it
+    /// reports an outcome. Guards the handoff status writes so attended
+    /// flows never touch the file a remote client is polling through the
+    /// server.
+    private var unattendedSessionActive = false
 
     init(
         model: AppUpdateModel,
@@ -39,6 +45,12 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
         } catch {
             model.reportFailure(error.localizedDescription)
         }
+        // A fresh boot is the success path of an unattended install (the
+        // relaunched app IS the update): drop any stale handoff report, and
+        // re-assert this machine's release channel for the bundled server —
+        // it answers /v1/update from this preference, never a client's.
+        AppUpdateHandoff.clearStatus()
+        AppUpdateHandoff.writeChannel(allowsAlpha: model.allowsAlphaUpdates)
         model.checkHandler = { [weak self] userInitiated in
             guard let self else { return }
             if userInitiated {
@@ -52,14 +64,23 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
         }
         model.unattendedInstallHandler = { [weak self] in
             guard let self else { return }
-            // An update session already showing UI keeps its UI; arming only
-            // affects the session this check starts.
+            // Arm even when a session is already in progress: a background
+            // check may have found this update and parked an attended
+            // prompt on this machine's screen before the remote request
+            // arrived. The driver answers that prompt and dismisses its UI
+            // — a remote machine must never wait on a click nobody is
+            // present to make.
+            self.unattendedSessionActive = true
+            AppUpdateHandoff.writeStatus(state: "installing")
+            self.driver.beginUnattendedSession()
             if !self.updater.sessionInProgress {
-                self.driver.beginUnattendedSession()
+                self.updater.checkForUpdates()
             }
-            self.updater.checkForUpdates()
         }
-        model.channelChangeHandler = { [weak self] _ in
+        model.channelChangeHandler = { [weak self] allowsAlpha in
+            // The bundled server answers /v1/update from this machine's own
+            // channel; keep its copy of the preference current.
+            AppUpdateHandoff.writeChannel(allowsAlpha: allowsAlpha)
             self?.updater.resetUpdateCycle()
         }
     }
@@ -87,10 +108,27 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     }
 
     func updaterDidNotFindUpdate(_ updater: SPUUpdater, error: Error) {
+        if unattendedSessionActive {
+            unattendedSessionActive = false
+            // The server's manifest said "newer" but this machine's Sparkle
+            // feed disagrees (usually a channel mismatch). Report it so the
+            // remote client fails fast instead of polling to a timeout.
+            AppUpdateHandoff.writeStatus(
+                state: "failed",
+                message:
+                    "This machine's update feed has no newer release. Check its Alpha updates setting."
+            )
+        }
         model.reportUpToDate()
     }
 
     func updater(_ updater: SPUUpdater, willInstallUpdate item: SUAppcastItem) {
+        if unattendedSessionActive {
+            AppUpdateHandoff.writeStatus(
+                state: "installing",
+                targetVersion: item.displayVersionString
+            )
+        }
         model.reportInstalling(
             version: item.displayVersionString,
             releasePageURL: item.infoURL ?? item.fullReleaseNotesURL ?? item.releaseNotesURL
@@ -98,6 +136,10 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     }
 
     func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
+        if unattendedSessionActive {
+            unattendedSessionActive = false
+            AppUpdateHandoff.writeStatus(state: "failed", message: error.localizedDescription)
+        }
         // "No update" is reported through updaterDidNotFindUpdate. Keep
         // dismissing or skipping an update non-error state in our own UI.
         if case .checking = model.phase {
@@ -118,6 +160,13 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
                 return
             }
             guard await self.serverAgent.prepareForAppUpdate(localServer: self.localServer) else {
+                if self.unattendedSessionActive {
+                    self.unattendedSessionActive = false
+                    AppUpdateHandoff.writeStatus(
+                        state: "failed",
+                        message: "The Codevisor server could not be stopped safely for the update."
+                    )
+                }
                 self.model.reportFailure(
                     "The Codevisor server could not be stopped safely. Restart Codevisor and try the update again."
                 )
