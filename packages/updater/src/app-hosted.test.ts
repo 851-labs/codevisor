@@ -6,9 +6,20 @@ import {
   APP_UPDATE_CHANNEL_FILE,
   APP_UPDATE_STATUS_FILE,
   APP_UPDATE_STATUS_TTL_MS,
+  channelFromSyncedValue,
   readAppUpdateApplyState,
   readMachineUpdateChannel
 } from "./app-hosted.js"
+
+describe("channelFromSyncedValue", () => {
+  it("accepts only the two known channels", () => {
+    expect(channelFromSyncedValue("alpha")).toBe("alpha")
+    expect(channelFromSyncedValue("stable")).toBe("stable")
+    expect(channelFromSyncedValue("nightly")).toBeUndefined()
+    expect(channelFromSyncedValue(undefined)).toBeUndefined()
+    expect(channelFromSyncedValue(42)).toBeUndefined()
+  })
+})
 
 describe("app-hosted update files", () => {
   let dataDir: string

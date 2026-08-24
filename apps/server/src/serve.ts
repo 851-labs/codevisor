@@ -68,6 +68,7 @@ import {
 import { makeSkillsManager } from "@codevisor/skills"
 import { migrateLegacyLayout, migrateTmpDataDir } from "./infra/legacy-layout.js"
 import {
+  channelFromSyncedValue,
   DEFAULT_GITHUB_REPOSITORY,
   DEFAULT_LEGACY_RELEASE_BASE_URL,
   fetchLatestServerRelease,
@@ -326,9 +327,19 @@ const makeSelfUpdater = (options: {
   // the host app next to the database — is authoritative: Sparkle installs
   // from that preference, so letting a remote client's requested channel
   // decide the check would let check and install disagree and the update
-  // never converge. Standalone servers keep following the requested channel.
-  const resolveChannel = (requested: ServerUpdateChannel): ServerUpdateChannel =>
-    appHosted() ? (readMachineUpdateChannel(options.dataDir) ?? requested) : requested
+  // never converge. Standalone servers follow the config plane's synced
+  // channel the same way; the requested channel is only the fallback.
+  const syncedChannel = async (): Promise<ServerUpdateChannel | undefined> => {
+    const entries = await Effect.runPromise(options.db.getSyncEntries("settings")).catch(
+      () => undefined
+    )
+    const entry = entries?.find((item) => item.key === "updateChannel" && item.deleted !== true)
+    return channelFromSyncedValue(entry?.value)
+  }
+  const resolveChannel = async (requested: ServerUpdateChannel): Promise<ServerUpdateChannel> => {
+    const fileChannel = appHosted() ? readMachineUpdateChannel(options.dataDir) : undefined
+    return fileChannel ?? (await syncedChannel()) ?? requested
+  }
 
   // Attached fresh on every check, never cached: the host app's unattended
   // Sparkle session writes this while installing (or after failing), and a
@@ -343,7 +354,7 @@ const makeSelfUpdater = (options: {
     readonly force?: boolean
     readonly channel?: ServerUpdateChannel
   }): Promise<UpdateInfo> => {
-    const channel = resolveChannel(checkOptions?.channel ?? "stable")
+    const channel = await resolveChannel(checkOptions?.channel ?? "stable")
     const hit = cached.get(channel)
     if (
       checkOptions?.force !== true &&
@@ -395,7 +406,7 @@ const makeSelfUpdater = (options: {
   const apply = async (applyOptions?: {
     readonly channel?: ServerUpdateChannel
   }): Promise<void> => {
-    const channel = resolveChannel(applyOptions?.channel ?? "stable")
+    const channel = await resolveChannel(applyOptions?.channel ?? "stable")
     const info = await check({ channel })
     if (!info.updateAvailable) {
       return

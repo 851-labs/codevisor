@@ -133,6 +133,37 @@ struct ConfigSyncTests {
         #expect(sync.revisionsByNamespace["settings", default: 0] >= 2)
     }
 
+    @Test("The update channel replicates out and applies from remote changes")
+    func updateChannelSeed() async throws {
+        let environment = AppEnvironment.preview()
+
+        environment.setAlphaUpdatesEnabled(true)
+        #expect(
+            environment.configSync.value(namespace: "settings", key: "updateChannel")
+                == .string("alpha"))
+        #expect(environment.machines.serverUpdateChannel == .alpha)
+
+        // Another device flips it back: the synced entry applies locally —
+        // settings, Sparkle preference, and the server-check channel follow.
+        environment.configSync.applyRemoteChange(
+            namespace: "settings",
+            entries: [
+                ServerSyncEntry(
+                    key: "updateChannel",
+                    value: .string("stable"),
+                    timestamp: ServerSyncTimestamp(
+                        wallMs: 20_000_000_000_000,
+                        counter: 0,
+                        deviceId: "other-device"
+                    )
+                )
+            ]
+        )
+        #expect(environment.settings.alphaUpdatesEnabled == false)
+        #expect(environment.appUpdate.allowsAlphaUpdates == false)
+        #expect(environment.machines.serverUpdateChannel == .stable)
+    }
+
     @Test("Tombstones remove values and win over older writes")
     func tombstonesWin() throws {
         let controller = try makeController(

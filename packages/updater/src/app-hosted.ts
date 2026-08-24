@@ -31,6 +31,15 @@ export type AppUpdateApplyState = {
   readonly at: string
 }
 
+/// Parses a config-plane `settings/updateChannel` value (@codevisor/sync)
+/// into a channel. Standalone servers follow their synced replica the way
+/// app-hosted Macs follow their channel file — the fleet's one preference
+/// reaches every machine either way. Unknown values are ignored rather
+/// than coerced: a malformed replica must not silently move a machine
+/// between channels.
+export const channelFromSyncedValue = (value: unknown): ServerUpdateChannel | undefined =>
+  value === "alpha" || value === "stable" ? value : undefined
+
 /// Reads the machine's own update channel, written by the host macOS app
 /// whenever its Alpha-updates preference changes. Undefined when the file is
 /// missing or unreadable (standalone servers, or an app predating the file);

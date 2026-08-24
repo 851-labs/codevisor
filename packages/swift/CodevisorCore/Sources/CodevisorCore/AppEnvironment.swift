@@ -150,6 +150,11 @@ public final class AppEnvironment {
         machines.onSyncChanged = { [weak self] in
             self?.configSync.applyRemoteChange(namespace: $1.namespace, entries: $1.entries)
         }
+        configSync.onNamespaceChanged = { [weak self] namespace in
+            guard namespace == "settings" else { return }
+            self?.applySyncedSettings()
+        }
+        applySyncedSettings()
         machines.onPluginStateChanged = { [weak self] in self?.pluginStateDidChange(onServer: $0) }
         machines.onPluginUpdated = { [weak self] in self?.pluginDidUpdate(onServer: $0, pluginId: $1) }
         // One-time split of pre-"1 workspace == 1 directory" workspaces whose
@@ -497,19 +502,6 @@ public final class AppEnvironment {
     public func setShareCrashReports(_ enabled: Bool) {
         settings.setShareCrashReports(enabled)
         DiagnosticsClient.shared.setEnabled(enabled)
-    }
-
-    /// Changes update channels immediately; the Settings view follows this
-    /// with a fresh check so enabling or disabling Alpha updates updates the
-    /// banner without requiring a relaunch. Remote machines follow the same
-    /// preference, so the selected machine's update state refreshes too.
-    public func setAlphaUpdatesEnabled(_ enabled: Bool) {
-        settings.setAlphaUpdatesEnabled(enabled)
-        appUpdate.setAllowsAlphaUpdates(enabled)
-        machines.serverUpdateChannel = enabled ? .alpha : .stable
-        Task { [machines] in
-            await machines.refreshStatus(for: machines.selectedMachineId)
-        }
     }
 
     /// Applies the user's onboarding choice and imports if requested.

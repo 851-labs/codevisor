@@ -24,4 +24,39 @@ extension AppEnvironment {
         harnessCatalogDidChange(onServer: serverId)
         updateCenter.noteHarnessLifecycleChanged(onServer: serverId)
     }
+
+    /// Changes update channels immediately; the Settings view follows this
+    /// with a fresh check so the state updates without a relaunch. The
+    /// channel is FLEET state: it replicates through the config plane so
+    /// every machine — and every other client — follows.
+    public func setAlphaUpdatesEnabled(_ enabled: Bool) {
+        settings.setAlphaUpdatesEnabled(enabled)
+        appUpdate.setAllowsAlphaUpdates(enabled)
+        machines.serverUpdateChannel = enabled ? .alpha : .stable
+        configSync.set(
+            namespace: "settings",
+            key: "updateChannel",
+            value: .string(enabled ? "alpha" : "stable")
+        )
+        Task { [machines] in
+            await machines.refreshStatus(for: machines.selectedMachineId)
+        }
+    }
+
+    /// Applies remotely-synced settings to this client. Loop-safe: local
+    /// state changes only when it actually differs, and nothing here writes
+    /// back into the replica.
+    func applySyncedSettings() {
+        guard
+            case let .string(channel)? = configSync.value(
+                namespace: "settings",
+                key: "updateChannel"
+            )
+        else { return }
+        let alpha = channel == "alpha"
+        guard alpha != settings.alphaUpdatesEnabled else { return }
+        settings.setAlphaUpdatesEnabled(alpha)
+        appUpdate.setAllowsAlphaUpdates(alpha)
+        machines.serverUpdateChannel = alpha ? .alpha : .stable
+    }
 }

@@ -22,6 +22,9 @@ public final class ConfigSync {
     /// Bumped whenever a namespace's replica actually changes — the
     /// invalidation observers watch instead of diffing entries.
     public private(set) var revisionsByNamespace: [String: UInt64] = [:]
+    /// Invoked after a namespace's replica actually changed (local write or
+    /// adopted remote entries) — consumers apply the new values in place.
+    @ObservationIgnored public var onNamespaceChanged: ((String) -> Void)?
     @ObservationIgnored private var entriesByNamespace: [String: [ServerSyncEntry]] = [:]
 
     public init(machines: MachineController, store: (any PersistenceStore)? = nil) {
@@ -87,6 +90,7 @@ public final class ConfigSync {
         entriesByNamespace[namespace] = result.merged
         persistNamespace(namespace)
         revisionsByNamespace[namespace, default: 0] &+= 1
+        onNamespaceChanged?(namespace)
         return true
     }
 
