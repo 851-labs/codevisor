@@ -21,6 +21,12 @@ public protocol CloudCredentialStore: Sendable {
     /// identity machines pin for end-to-end encrypted relay channels.
     func appSecretKey() throws -> Data?
     func saveAppSecretKey(_ key: Data) throws
+    /// TOFU pins for machine keys (cloud device id → base64url public key).
+    /// The app pins each machine's key on first sight and refuses relay
+    /// channels when a later presence entry conflicts with the pin — the hub
+    /// is not trusted for key continuity.
+    func pinnedMachineKeys() throws -> [String: String]
+    func savePinnedMachineKeys(_ pins: [String: String]) throws
 }
 
 /// The app device's relay identity: a stable device id plus static X25519
@@ -81,6 +87,7 @@ public final class KeychainCloudCredentialStore: CloudCredentialStore, @unchecke
     private static let serverURLAccount = "server-url"
     private static let appDeviceIdAccount = "app-device-id"
     private static let appSecretKeyAccount = "app-device-secret-key"
+    private static let machineKeyPinsAccount = "machine-key-pins"
 
     private let values: KeychainValueStore
 
@@ -137,6 +144,23 @@ public final class KeychainCloudCredentialStore: CloudCredentialStore, @unchecke
         try write(key.base64EncodedString(), account: Self.appSecretKeyAccount)
     }
 
+    public func pinnedMachineKeys() throws -> [String: String] {
+        guard let raw = try read(account: Self.machineKeyPinsAccount),
+            let data = raw.data(using: .utf8),
+            let pins = try? JSONDecoder().decode([String: String].self, from: data)
+        else {
+            // Absent or unreadable pins mean "no continuity knowledge yet":
+            // TOFU re-establishes on the next machine refresh.
+            return [:]
+        }
+        return pins
+    }
+
+    public func savePinnedMachineKeys(_ pins: [String: String]) throws {
+        let data = try JSONEncoder().encode(pins)
+        try write(String(decoding: data, as: UTF8.self), account: Self.machineKeyPinsAccount)
+    }
+
     private func read(account: String) throws -> String? {
         try mapFailure { try values.value(forAccount: account) }
     }
@@ -164,6 +188,7 @@ public final class InMemoryCloudCredentialStore: CloudCredentialStore, @unchecke
     private var storedServerURL: URL?
     private var storedAppDeviceId: String?
     private var storedAppSecretKey: Data?
+    private var storedMachineKeyPins: [String: String] = [:]
 
     public init(token: String? = nil, serverURL: URL? = nil) {
         storedToken = token
@@ -204,5 +229,13 @@ public final class InMemoryCloudCredentialStore: CloudCredentialStore, @unchecke
 
     public func saveAppSecretKey(_ key: Data) throws {
         lock.withLock { storedAppSecretKey = key }
+    }
+
+    public func pinnedMachineKeys() throws -> [String: String] {
+        lock.withLock { storedMachineKeyPins }
+    }
+
+    public func savePinnedMachineKeys(_ pins: [String: String]) throws {
+        lock.withLock { storedMachineKeyPins = pins }
     }
 }

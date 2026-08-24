@@ -23,6 +23,7 @@ struct CloudAccountScreen: View {
     @State private var renaming: CloudMachine?
     @State private var renameText = ""
     @State private var removing: CloudMachine?
+    @State private var trustingKey: CloudMachine?
 
     private var cloud: CloudAccountController { environment.cloud }
 
@@ -85,6 +86,24 @@ struct CloudAccountScreen: View {
         } message: { machine in
             Text(
                 "“\(machine.name)” will be signed out of your account. Nothing on the machine itself is changed — run codevisor auth login there to reconnect it."
+            )
+        }
+        .confirmationDialog(
+            "Trust the new key for “\(trustingKey?.name ?? "")”?",
+            isPresented: Binding(
+                get: { trustingKey != nil },
+                set: { if !$0 { trustingKey = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: trustingKey
+        ) { machine in
+            Button("Trust New Key", role: .destructive) {
+                cloud.trustChangedMachineKey(deviceId: machine.deviceId)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { machine in
+            Text(
+                "“\(machine.name)” is presenting a different encryption key than the one this device remembers. That happens if the machine was re-provisioned — but it can also mean something between you and the machine is intercepting traffic. Only trust the new key if you expected this change."
             )
         }
     }
@@ -192,14 +211,31 @@ struct CloudAccountScreen: View {
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 12)
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(machine.online ? Color.green : Color.gray)
-                    .frame(width: 7, height: 7)
-                    .accessibilityHidden(true)
-                Text(machine.online ? "Online" : "Offline")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+            if cloud.machinesWithChangedKeys.contains(machine.deviceId) {
+                // TOFU refusal: the presented key conflicts with the pinned
+                // one, so relay channels are cut off until re-trusted.
+                Button {
+                    trustingKey = machine
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "exclamationmark.shield.fill")
+                            .accessibilityHidden(true)
+                        Text("Key Changed")
+                            .font(.footnote)
+                    }
+                    .foregroundStyle(.orange)
+                }
+                .buttonStyle(.plain)
+            } else {
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(machine.online ? Color.green : Color.gray)
+                        .frame(width: 7, height: 7)
+                        .accessibilityHidden(true)
+                    Text(machine.online ? "Online" : "Offline")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -216,6 +252,13 @@ struct CloudAccountScreen: View {
             }
         }
         .contextMenu {
+            if cloud.machinesWithChangedKeys.contains(machine.deviceId) {
+                Button {
+                    trustingKey = machine
+                } label: {
+                    Label("Trust New Key…", systemImage: "exclamationmark.shield")
+                }
+            }
             Button {
                 renameText = machine.name
                 renaming = machine

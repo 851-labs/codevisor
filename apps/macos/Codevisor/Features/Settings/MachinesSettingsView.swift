@@ -30,6 +30,7 @@ struct MachinesSettingsView: View {
     @State private var actionError: MachineActionError?
     @State private var renamingCloud: CloudMachine?
     @State private var removingCloud: CloudMachine?
+    @State private var trustingKeyCloud: CloudMachine?
 
     private var machines: MachineController { environment.machines }
 
@@ -126,6 +127,26 @@ struct MachinesSettingsView: View {
         } message: { machine in
             Text(
                 "“\(machine.name)” will be signed out of your cloud account. Nothing on the machine itself is changed — run `codevisor auth login` there to reconnect it."
+            )
+        }
+        .confirmationDialog(
+            "Trust the new key for “\(trustingKeyCloud?.name ?? "")”?",
+            isPresented: Binding(
+                get: { trustingKeyCloud != nil },
+                set: { if !$0 { trustingKeyCloud = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: trustingKeyCloud
+        ) { machine in
+            Button("Trust New Key", role: .destructive) {
+                environment.cloud.trustChangedMachineKey(deviceId: machine.deviceId)
+            }
+            .settingsActionTint(theme)
+            Button("Cancel", role: .cancel) {}
+                .settingsActionTint(theme)
+        } message: { machine in
+            Text(
+                "“\(machine.name)” is presenting a different encryption key than the one this device remembers. That happens if the machine was re-provisioned — but it can also mean something between you and the machine is intercepting traffic. Only trust the new key if you expected this change."
             )
         }
         .sheet(item: $addingDiscovered) { machine in
@@ -346,75 +367,30 @@ struct MachinesSettingsView: View {
         .padding(.vertical, 2)
     }
 
-    /// A machine reached through the cloud account's relay: connectable like
-    /// any other machine, with presence and cloud account actions.
-    private func cloudMachineRow(_ machine: CodevisorMachine, presence: CloudMachine) -> some View {
-        let isSelected = machine.id == machines.selectedMachineId
-        return HStack(spacing: 10) {
-            Image(systemName: EntitySystemSymbol.machine(machine))
-                .symbolRenderingMode(.monochrome)
-                .foregroundStyle(theme.textPrimary)
-                .frame(width: 20)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(presence.name)
-                        .fontWeight(.medium)
-                    if isSelected {
-                        Text("Connected")
-                            .font(.caption2.weight(.semibold))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(theme.accent.opacity(0.15)))
-                            .foregroundStyle(theme.textPrimary)
-                    }
-                }
-                Text("Codevisor Cloud")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 12)
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(presence.online ? theme.statusOK : Color.gray)
-                    .frame(width: 7, height: 7)
-                    .accessibilityHidden(true)
-                Text(presence.online ? "Online" : "Offline")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            if !isSelected {
-                Button("Connect") {
-                    machines.selectMachine(machine.id)
-                    Task { await machines.refreshStatus(for: machine.id) }
-                }
-                .settingsActionTint(theme)
-                .controlSize(.small)
-            }
-            Menu {
-                Button("Rename…") { renamingCloud = presence }
-                Divider()
-                Button("Disconnect…", role: .destructive) { removingCloud = presence }
-            } label: {
-                Image(systemName: "ellipsis.circle")
-                    .foregroundStyle(.secondary)
-            }
-            .menuStyle(.button)
-            .buttonStyle(.plain)
-            .settingsActionTint(theme)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("Machine actions")
-            .accessibilityLabel("Actions for \(presence.name)")
-        }
-        .contextMenu {
-            Button("Rename…") { renamingCloud = presence }
-            Button("Disconnect…", role: .destructive) { removingCloud = presence }
-        }
-        .accessibilityElement(children: .combine)
+}
+
+// Row/label builders live in a private extension so the struct body stays
+// within the structural lint limits.
+private extension MachinesSettingsView {
+    /// A machine reached through the cloud account's relay (row extracted to
+    /// CloudMachineRowView; the sheets/dialogs it triggers live on this list).
+    func cloudMachineRow(_ machine: CodevisorMachine, presence: CloudMachine) -> some View {
+        CloudMachineRowView(
+            machine: machine,
+            presence: presence,
+            isSelected: machine.id == machines.selectedMachineId,
+            keyChanged: environment.cloud.machinesWithChangedKeys.contains(presence.deviceId),
+            onConnect: {
+                machines.selectMachine(machine.id)
+                Task { await machines.refreshStatus(for: machine.id) }
+            },
+            onRename: { renamingCloud = presence },
+            onRemove: { removingCloud = presence },
+            onTrustKey: { trustingKeyCloud = presence }
+        )
     }
 
-    private func machineRow(_ machine: CodevisorMachine) -> some View {
+    func machineRow(_ machine: CodevisorMachine) -> some View {
         let isSelected = machine.id == machines.selectedMachineId
         return HStack(spacing: 10) {
             Image(systemName: EntitySystemSymbol.machine(machine))
@@ -487,7 +463,7 @@ struct MachinesSettingsView: View {
     }
 
     @ViewBuilder
-    private func statusLabel(_ machine: CodevisorMachine) -> some View {
+    func statusLabel(_ machine: CodevisorMachine) -> some View {
         if let status = machines.statusByMachineId[machine.id] {
             HStack(spacing: 5) {
                 Circle()
@@ -508,7 +484,7 @@ struct MachinesSettingsView: View {
         }
     }
 
-    private func refreshStatuses() async {
+    func refreshStatuses() async {
         await environment.cloud.refreshMachines()
         for machine in machines.machines {
             await machines.refreshStatus(for: machine.id)

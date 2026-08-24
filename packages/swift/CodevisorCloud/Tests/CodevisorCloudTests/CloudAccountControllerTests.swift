@@ -4,201 +4,9 @@ import CodevisorClient
 import CodevisorProtocol
 @testable import CodevisorCloud
 
-/// A scriptable stand-in for the cloud REST client.
-private final class FakeCloudClient: CloudAccountClienting, @unchecked Sendable {
-    private let lock = NSLock()
-
-    var discoverResult: Result<CloudInstanceInfo, any Error> = .success(
-        CloudInstanceInfo(service: "codevisor-cloud", instance: "Test Cloud")
-    )
-    var verifyResult: Result<String, any Error> = .failure(CloudAccountClientError.missingToken)
-    /// Tokens the fake accepts, mapped to the user get-session reports.
-    var sessions: [String: CloudSessionUser] = [:]
-    var machinesResult: Result<[CloudMachine], any Error> = .success([])
-    var renameError: (any Error)?
-    var removeError: (any Error)?
-
-    private(set) var sessionTokens: [String] = []
-    private(set) var machineTokens: [String] = []
-    private(set) var renames: [(deviceId: String, name: String)] = []
-    private(set) var removals: [String] = []
-
-    func discover() async throws -> CloudInstanceInfo {
-        try lock.withLock { discoverResult }.get()
-    }
-
-    func verifyOneTimeToken(_ ott: String) async throws -> String {
-        try lock.withLock { verifyResult }.get()
-    }
-
-    func session(token: String) async throws -> CloudSessionUser? {
-        lock.withLock {
-            sessionTokens.append(token)
-            return sessions[token]
-        }
-    }
-
-    func machines(token: String) async throws -> [CloudMachine] {
-        try lock.withLock {
-            machineTokens.append(token)
-            return machinesResult
-        }.get()
-    }
-
-    func rename(deviceId: String, name: String, token: String) async throws {
-        let error: (any Error)? = lock.withLock {
-            renames.append((deviceId: deviceId, name: name))
-            return renameError
-        }
-        if let error { throw error }
-    }
-
-    func removeMachine(deviceId: String, token: String) async throws {
-        let error: (any Error)? = lock.withLock {
-            removals.append(deviceId)
-            return removeError
-        }
-        if let error { throw error }
-    }
-}
-
-/// The embedded local server, reduced to its /v1/cloud registration surface.
-/// Everything else is the minimal boilerplate the protocol requires.
-private final class FakeLocalServerClient: CodevisorServerClienting, @unchecked Sendable {
-    private let lock = NSLock()
-    private var _registration: ServerCloudRegistration
-    private var _connects: [(serverURL: URL, sessionToken: String)] = []
-    private var _disconnects = 0
-    var connectError: (any Error)?
-
-    init(registration: ServerCloudRegistration = ServerCloudRegistration(connected: false)) {
-        _registration = registration
-    }
-
-    var connects: [(serverURL: URL, sessionToken: String)] { lock.withLock { _connects } }
-    var disconnects: Int { lock.withLock { _disconnects } }
-
-    func cloudRegistration() async throws -> ServerCloudRegistration {
-        lock.withLock { _registration }
-    }
-
-    func connectCloud(serverURL: URL, sessionToken: String) async throws -> String {
-        if let connectError { throw connectError }
-        return lock.withLock {
-            _connects.append((serverURL: serverURL, sessionToken: sessionToken))
-            _registration = ServerCloudRegistration(
-                connected: true,
-                deviceId: "local-device-1",
-                state: "connected",
-                managedBy: "app"
-            )
-            return "local-device-1"
-        }
-    }
-
-    func disconnectCloud() async throws {
-        lock.withLock {
-            _disconnects += 1
-            _registration = ServerCloudRegistration(connected: false)
-        }
-    }
-
-    // MARK: - Unused protocol surface
-
-    func health() async throws -> ServerHealth {
-        ServerHealth(ok: true, version: "0.1.0", database: "ready", bootId: nil)
-    }
-
-    func info() async throws -> ServerInfo {
-        ServerInfo(
-            id: "local", name: "Local", kind: "local", version: "0.1.0",
-            platform: "darwin", bindHost: "127.0.0.1"
-        )
-    }
-
-    func rescanHarnesses() async throws -> [ServerHarness] { [] }
-    func listHarnesses() async throws -> [ServerHarness] { [] }
-    func updateInfo(refresh: Bool, channel: ServerUpdateChannel) async throws -> ServerUpdateInfo {
-        ServerUpdateInfo(
-            currentVersion: "0.1.0", latestVersion: "0.1.0", updateAvailable: false,
-            channel: "stable", checkedAt: nil, migrationState: "idle"
-        )
-    }
-
-    func issuePairingToken() async throws -> ServerPairingToken { fatalError("unused") }
-    func capabilities(cwd: String) async throws -> ServerCapabilities {
-        ServerCapabilities(harnesses: [])
-    }
-
-    func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness {
-        fatalError("unused")
-    }
-
-    func listProjects() async throws -> [ServerProject] { [] }
-    func upsertProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }
-    func updateProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }
-    func deleteProject(id: UUID) async throws {}
-    func listSessions() async throws -> [ServerSession] { [] }
-    func sessionDetail(id: UUID) async throws -> ServerSessionDetail { fatalError("unused") }
-    func upsertSession(_ session: ChatSession) async throws -> ServerSession { fatalError("unused") }
-    func updateSession(_ session: ChatSession) async throws -> ServerSession { fatalError("unused") }
-    func deleteSession(id: UUID) async throws {}
-    func promptSession(id: UUID, text: String) async throws -> ServerPromptAccepted {
-        ServerPromptAccepted(accepted: true, sessionId: id.uuidString)
-    }
-
-    func cancelSession(id: UUID) async throws {}
-    func setSessionMode(id: UUID, modeId: String) async throws {}
-    func setSessionConfig(id: UUID, configId: String, value: String) async throws {}
-    func eventStream(since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
-        AsyncThrowingStream { continuation in continuation.finish() }
-    }
-}
-
-/// Every call fails like an unreachable host.
-private struct OfflineError: Error {}
-
-private struct OfflineCloudClient: CloudAccountClienting {
-    func discover() async throws -> CloudInstanceInfo { throw OfflineError() }
-    func verifyOneTimeToken(_ ott: String) async throws -> String { throw OfflineError() }
-    func session(token: String) async throws -> CloudSessionUser? { throw OfflineError() }
-    func machines(token: String) async throws -> [CloudMachine] { throw OfflineError() }
-    func rename(deviceId: String, name: String, token: String) async throws { throw OfflineError() }
-    func removeMachine(deviceId: String, token: String) async throws { throw OfflineError() }
-}
-
 @MainActor
 @Suite("CloudAccountController")
 struct CloudAccountControllerTests {
-    private static func machine(
-        _ deviceId: String,
-        name: String = "Mac Studio",
-        online: Bool = true
-    ) -> CloudMachine {
-        CloudMachine(
-            deviceId: deviceId,
-            name: name,
-            os: "macos",
-            appVersion: "1.0.0",
-            publicKey: "pk_\(deviceId)",
-            online: online,
-            lastSeenAt: "2026-08-07T00:00:00.000Z"
-        )
-    }
-
-    private func makeController(
-        client: FakeCloudClient = FakeCloudClient(),
-        store: InMemoryCloudCredentialStore = InMemoryCloudCredentialStore(),
-        environmentCloud: CodevisorAppVariant.DevelopmentCloud? = nil
-    ) -> (controller: CloudAccountController, client: FakeCloudClient, store: InMemoryCloudCredentialStore) {
-        let controller = CloudAccountController(
-            clientFactory: { _ in client },
-            credentialStore: store,
-            environmentCloud: environmentCloud
-        )
-        return (controller, client, store)
-    }
-
     @Test("Server URL resolution: custom beats dev cloud beats default")
     func serverURLResolution() throws {
         let dev = CodevisorAppVariant.DevelopmentCloud(
@@ -242,7 +50,7 @@ struct CloudAccountControllerTests {
     func signInWithDevelopmentAccount() async throws {
         let client = FakeCloudClient()
         client.sessions["dev-token"] = CloudSessionUser(userId: "u1", email: "dev@example.com")
-        client.machinesResult = .success([Self.machine("dev-1")])
+        client.machinesResult = .success([testMachine("dev-1")])
         let (controller, _, store) = makeController(
             client: client,
             environmentCloud: CodevisorAppVariant.DevelopmentCloud(
@@ -422,7 +230,7 @@ struct CloudAccountControllerTests {
     func persistedSessionRestorationState() async throws {
         let client = FakeCloudClient()
         client.sessions["persisted"] = CloudSessionUser(userId: "u1", email: "me@example.com")
-        client.machinesResult = .success([Self.machine("m1")])
+        client.machinesResult = .success([testMachine("m1")])
         let (controller, _, _) = makeController(
             client: client,
             store: InMemoryCloudCredentialStore(token: "persisted")
@@ -462,7 +270,7 @@ struct CloudAccountControllerTests {
         let client = FakeCloudClient()
         client.verifyResult = .success("session-token")
         client.sessions["session-token"] = CloudSessionUser(userId: "u1", email: "me@example.com")
-        client.machinesResult = .success([Self.machine("m1"), Self.machine("m2", online: false)])
+        client.machinesResult = .success([testMachine("m1"), testMachine("m2", online: false)])
         let (controller, _, store) = makeController(client: client)
 
         await controller.completeSignIn(ott: "ott-1")
@@ -491,7 +299,7 @@ struct CloudAccountControllerTests {
         let client = FakeCloudClient()
         client.verifyResult = .success("session-token")
         client.sessions["session-token"] = CloudSessionUser(userId: "u1", email: "me@example.com")
-        client.machinesResult = .success([Self.machine("m1")])
+        client.machinesResult = .success([testMachine("m1")])
         let store = InMemoryCloudCredentialStore(serverURL: URL(string: "https://cloud.example.com")!)
         let (controller, _, _) = makeController(client: client, store: store)
         await controller.completeSignIn(ott: "ott-1")
@@ -509,11 +317,11 @@ struct CloudAccountControllerTests {
         let client = FakeCloudClient()
         client.verifyResult = .success("t")
         client.sessions["t"] = CloudSessionUser(userId: "u1", email: nil)
-        client.machinesResult = .success([Self.machine("m1", name: "Old Name")])
+        client.machinesResult = .success([testMachine("m1", name: "Old Name")])
         let (controller, _, _) = makeController(client: client)
         await controller.completeSignIn(ott: "ott")
 
-        client.machinesResult = .success([Self.machine("m1", name: "Studio")])
+        client.machinesResult = .success([testMachine("m1", name: "Studio")])
         await controller.rename(deviceId: "m1", name: "  Studio  ")
 
         #expect(client.renames.count == 1)
@@ -527,11 +335,11 @@ struct CloudAccountControllerTests {
         let client = FakeCloudClient()
         client.verifyResult = .success("t")
         client.sessions["t"] = CloudSessionUser(userId: "u1", email: nil)
-        client.machinesResult = .success([Self.machine("m1"), Self.machine("m2")])
+        client.machinesResult = .success([testMachine("m1"), testMachine("m2")])
         let (controller, _, _) = makeController(client: client)
         await controller.completeSignIn(ott: "ott")
 
-        client.machinesResult = .success([Self.machine("m2")])
+        client.machinesResult = .success([testMachine("m2")])
         await controller.remove(deviceId: "m1")
 
         #expect(client.removals == ["m1"])
@@ -590,5 +398,83 @@ struct CloudAccountControllerTests {
             custom.controller.signInURL(scheme: "codevisor").absoluteString
                 == "https://cloud.example.com/login/github?redirect=/auth/handoff%3Fapp%3Dcodevisor"
         )
+    }
+
+    // MARK: - Machine key pinning (TOFU)
+
+    @Test("Machine keys are pinned on first sight")
+    func machineKeysPinnedOnFirstSight() async throws {
+        let (controller, _, store) = await makeSignedIn(machines: [
+            testMachine("m1"), testMachine("m2"),
+        ])
+
+        #expect(try store.pinnedMachineKeys() == ["m1": "pk_m1", "m2": "pk_m2"])
+        #expect(controller.machinesWithChangedKeys.isEmpty)
+        #expect(controller.relayServerConfig(for: testMachine("m1")) != nil)
+    }
+
+    @Test("A changed machine key is flagged and cut off from relay channels")
+    func changedMachineKeyIsRefused() async throws {
+        let (controller, client, store) = await makeSignedIn(machines: [
+            testMachine("m1"), testMachine("m2"),
+        ])
+
+        // The hub now presents a different key for m1 — a substitution unless
+        // the user says otherwise.
+        let swapped = testMachine("m1", publicKey: "pk_attacker")
+        client.machinesResult = .success([swapped, testMachine("m2")])
+        await controller.refreshMachines()
+
+        #expect(controller.machinesWithChangedKeys == ["m1"])
+        #expect(controller.relayServerConfig(for: swapped) == nil)
+        #expect(controller.loopbackBaseURL(for: swapped) == nil)
+        // The pin itself is untouched, and the unchanged machine is unaffected.
+        #expect(try store.pinnedMachineKeys()["m1"] == "pk_m1")
+        #expect(controller.relayServerConfig(for: testMachine("m2")) != nil)
+    }
+
+    @Test("Re-trusting a changed key is explicit and restores connectivity")
+    func trustChangedMachineKey() async throws {
+        let (controller, client, store) = await makeSignedIn(machines: [testMachine("m1")])
+        let swapped = testMachine("m1", publicKey: "pk_new")
+        client.machinesResult = .success([swapped])
+        await controller.refreshMachines()
+        #expect(controller.relayServerConfig(for: swapped) == nil)
+
+        controller.trustChangedMachineKey(deviceId: "m1")
+
+        #expect(controller.machinesWithChangedKeys.isEmpty)
+        #expect(try store.pinnedMachineKeys()["m1"] == "pk_new")
+        #expect(controller.relayServerConfig(for: swapped) != nil)
+    }
+
+    @Test("Removing a machine drops its pin, so re-adding is a fresh pairing")
+    func removeMachineDropsPin() async throws {
+        let (controller, client, store) = await makeSignedIn(machines: [testMachine("m1")])
+
+        client.machinesResult = .success([])
+        await controller.remove(deviceId: "m1")
+        #expect(try store.pinnedMachineKeys()["m1"] == nil)
+
+        // The device id returns with a different key: first sight again.
+        let readded = testMachine("m1", publicKey: "pk_fresh")
+        client.machinesResult = .success([readded])
+        await controller.refreshMachines()
+        #expect(controller.machinesWithChangedKeys.isEmpty)
+        #expect(try store.pinnedMachineKeys()["m1"] == "pk_fresh")
+    }
+
+    @Test("Switching servers clears the pins — a different TOFU world")
+    func customServerClearsPins() async throws {
+        let (controller, client, store) = await makeSignedIn(machines: [testMachine("m1")])
+        #expect(try store.pinnedMachineKeys() == ["m1": "pk_m1"])
+
+        client.discoverResult = .success(
+            CloudInstanceInfo(service: "codevisor-cloud", instance: "Homelab")
+        )
+        try await controller.setCustomServer(URL(string: "https://cloud.example.com")!)
+
+        #expect(try store.pinnedMachineKeys() == [:])
+        #expect(controller.machinesWithChangedKeys.isEmpty)
     }
 }

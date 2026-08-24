@@ -24,6 +24,13 @@ public final class CloudAccountController {
 
     public private(set) var state: CloudAccountState = .signedOut
     public private(set) var machines: [CloudMachine] = []
+    /// Machines whose presented public key conflicts with the TOFU pin taken
+    /// on first sight. Relay channels to them are refused (`relayServerConfig`
+    /// and the loopback bridge return nil) until the user explicitly re-trusts
+    /// via `trustChangedMachineKey` — the hub is not trusted for key
+    /// continuity, so a silent key swap here would defeat the end-to-end
+    /// encryption. UI surfaces these as "machine key changed".
+    public private(set) var machinesWithChangedKeys: Set<String> = []
     /// False until the app has checked any persisted account session and, when
     /// valid, loaded its first machine snapshot. Callers must not interpret an
     /// empty `machines` array as an authoritative "no machines" result before
@@ -251,6 +258,9 @@ public final class CloudAccountController {
             Log.cloud.error("Failed to clear cloud token: \(String(describing: error), privacy: .public)")
         }
         machines = []
+        // Pins survive sign-out (continuity knowledge belongs to the device,
+        // not the session); only the visible flags reset with the list.
+        machinesWithChangedKeys = []
         state = .signedOut
         stopAllLoopbackBridges()
         if let hub {
@@ -296,6 +306,7 @@ public final class CloudAccountController {
         guard state.isSignedIn, let token = storedToken else { return }
         do {
             machines = try await client.machines(token: token)
+            reconcileMachineKeyPins()
             #if DEBUG || NAVIGATION_DIAGNOSTICS
                 let machineSummary = machines.map { machine in
                     "\(machine.name){id=\(machine.deviceId),online=\(machine.online)}"
@@ -374,6 +385,8 @@ public final class CloudAccountController {
         guard let token = storedToken else { return }
         machines.removeAll { $0.deviceId == deviceId }
         stopLoopbackBridge(deviceId: deviceId)
+        // A removed machine's pin goes with it: re-adding is a fresh pairing.
+        removeMachineKeyPin(deviceId: deviceId)
         do {
             try await client.removeMachine(deviceId: deviceId, token: token)
         } catch {
@@ -392,6 +405,7 @@ public final class CloudAccountController {
             signOut()
             try credentialStore.saveServerURL(nil)
             customInstanceName = nil
+            clearMachineKeyPins()
             return
         }
         let info = try await clientFactory(url).discover()
@@ -402,6 +416,10 @@ public final class CloudAccountController {
         try credentialStore.saveServerURL(url)
         customInstanceName = info.instance
         authProviders = info.authProviders
+        // Pins belong to an instance's device-id namespace; a different
+        // server means a fresh TOFU world (sign-out alone keeps them, since
+        // re-signing into the same account must keep continuity knowledge).
+        clearMachineKeyPins()
     }
 
     /// The account's relay hub connection, created on first use while signed
@@ -441,14 +459,18 @@ public final class CloudAccountController {
             loopbackBridges[machine.deviceId] = nil
             Task { [weak self] in self?.loopbackPorts[machine.deviceId] = nil }
         }
-        guard let hub = hubConnection() else { return }
+        // TOFU: a machine presenting a key that conflicts with its pin gets
+        // no bridge at all until the user explicitly re-trusts it.
+        guard let hub = hubConnection(), let verifiedKey = verifiedMachineKey(for: machine) else {
+            return
+        }
         let endpoint = CloudRelayEndpoint(
             hub: hub,
             machineDeviceId: machine.deviceId,
-            machinePublicKey: machine.publicKey
+            machinePublicKey: verifiedKey
         )
         let bridge = CloudRelayLoopbackBridge(endpoint: endpoint)
-        loopbackBridges[machine.deviceId] = (bridge, machine.publicKey)
+        loopbackBridges[machine.deviceId] = (bridge, verifiedKey)
         let deviceId = machine.deviceId
         Task { [weak self] in
             do {
@@ -488,6 +510,85 @@ public final class CloudAccountController {
     }
 }
 
+// MARK: - Machine key pinning (TOFU)
+
+extension CloudAccountController {
+    /// Reconciles the machine list against the pinned keys: unknown machines
+    /// are pinned on first sight; a machine whose presented key conflicts with
+    /// its pin is flagged and cut off from relay channels until re-trusted.
+    func reconcileMachineKeyPins() {
+        var pins = (try? credentialStore.pinnedMachineKeys()) ?? [:]
+        var changed = Set<String>()
+        var dirty = false
+        for machine in machines {
+            if let pinned = pins[machine.deviceId] {
+                if pinned != machine.publicKey {
+                    changed.insert(machine.deviceId)
+                }
+            } else {
+                pins[machine.deviceId] = machine.publicKey
+                dirty = true
+            }
+        }
+        if dirty {
+            persistMachineKeyPins(pins)
+        }
+        for deviceId in changed.subtracting(machinesWithChangedKeys) {
+            Log.cloud.error(
+                "Machine \(deviceId, privacy: .public) presented a key that conflicts with its pin; refusing relay channels until the user re-trusts it"
+            )
+        }
+        if machinesWithChangedKeys != changed {
+            machinesWithChangedKeys = changed
+        }
+    }
+
+    /// The key to open channels with, iff it matches the TOFU pin (pinning it
+    /// on first sight). nil = the key changed; no channel may open.
+    func verifiedMachineKey(for machine: CloudMachine) -> String? {
+        var pins = (try? credentialStore.pinnedMachineKeys()) ?? [:]
+        guard let pinned = pins[machine.deviceId] else {
+            pins[machine.deviceId] = machine.publicKey
+            persistMachineKeyPins(pins)
+            return machine.publicKey
+        }
+        return pinned == machine.publicKey ? machine.publicKey : nil
+    }
+
+    /// Explicit user consent to a machine's new key — the "key changed, trust
+    /// anyway" action. Re-pins to the currently presented key and lifts the
+    /// channel refusal. Never called automatically.
+    public func trustChangedMachineKey(deviceId: String) {
+        guard let machine = machines.first(where: { $0.deviceId == deviceId }) else { return }
+        var pins = (try? credentialStore.pinnedMachineKeys()) ?? [:]
+        pins[deviceId] = machine.publicKey
+        persistMachineKeyPins(pins)
+        machinesWithChangedKeys.remove(deviceId)
+        Log.cloud.log("User re-trusted the changed key for machine \(deviceId, privacy: .public)")
+    }
+
+    func removeMachineKeyPin(deviceId: String) {
+        var pins = (try? credentialStore.pinnedMachineKeys()) ?? [:]
+        guard pins.removeValue(forKey: deviceId) != nil else { return }
+        persistMachineKeyPins(pins)
+        machinesWithChangedKeys.remove(deviceId)
+    }
+
+    func clearMachineKeyPins() {
+        persistMachineKeyPins([:])
+        machinesWithChangedKeys = []
+    }
+
+    private func persistMachineKeyPins(_ pins: [String: String]) {
+        do {
+            try credentialStore.savePinnedMachineKeys(pins)
+        } catch {
+            Log.cloud.error(
+                "Failed to persist machine key pins: \(String(describing: error), privacy: .public)")
+        }
+    }
+}
+
 // MARK: - CloudMachineProviding
 
 /// Cloud machines join the unified machine list: MachineController reads the
@@ -499,11 +600,15 @@ extension CloudAccountController: CloudMachineProviding {
     public var cloudMachines: [CloudMachine] { machines }
 
     public func relayServerConfig(for machine: CloudMachine) -> CodevisorServerConfig? {
-        guard let hub = hubConnection() else { return nil }
+        // TOFU: no relay config for a machine whose key conflicts with its
+        // pin — every channel would be opened against the imposter key.
+        guard let hub = hubConnection(), let verifiedKey = verifiedMachineKey(for: machine) else {
+            return nil
+        }
         let endpoint = CloudRelayEndpoint(
             hub: hub,
             machineDeviceId: machine.deviceId,
-            machinePublicKey: machine.publicKey
+            machinePublicKey: verifiedKey
         )
         // The transports tunnel in-process; the baseURL matters only to
         // consumers that hand it to external processes (terminal proxy), so
