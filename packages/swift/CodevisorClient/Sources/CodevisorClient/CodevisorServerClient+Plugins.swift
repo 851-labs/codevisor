@@ -91,6 +91,141 @@ public struct ServerPluginSummary: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+/// One executable a plugin expects Codevisor to find before setup or launch.
+public struct ServerPluginExecutableRequirement: Codable, Equatable, Identifiable, Sendable {
+    public var name: String
+    public var installHint: String?
+    public var helpUrl: String?
+
+    public var id: String { name }
+
+    public init(name: String, installHint: String? = nil, helpUrl: String? = nil) {
+        self.name = name
+        self.installHint = installHint
+        self.helpUrl = helpUrl
+    }
+}
+
+public struct ServerPluginRequirements: Codable, Equatable, Sendable {
+    public var executables: [ServerPluginExecutableRequirement]?
+
+    public init(executables: [ServerPluginExecutableRequirement]? = nil) {
+        self.executables = executables
+    }
+}
+
+/// Exhaustive registry-update state for one installed plugin.
+public enum ServerPluginUpdateState: String, Codable, Equatable, Sendable {
+    case current
+    case available
+    case pinned
+    case incompatible
+    case sourceUnknown
+    case checkFailed
+}
+
+public struct ServerPluginUpdateStatus: Codable, Equatable, Identifiable, Sendable {
+    public var pluginId: String
+    public var installedVersion: String
+    public var state: ServerPluginUpdateState
+    public var checkedAt: String
+    public var registryVersion: String?
+    public var reason: String?
+
+    public var id: String { pluginId }
+
+    public init(
+        pluginId: String,
+        installedVersion: String,
+        state: ServerPluginUpdateState,
+        checkedAt: String,
+        registryVersion: String? = nil,
+        reason: String? = nil
+    ) {
+        self.pluginId = pluginId
+        self.installedVersion = installedVersion
+        self.state = state
+        self.checkedAt = checkedAt
+        self.registryVersion = registryVersion
+        self.reason = reason
+    }
+}
+
+/// Commands and capabilities on one side of a prepared update.
+public struct ServerPluginUpdateReview: Codable, Equatable, Sendable {
+    public var version: String
+    public var setupCommands: [String]
+    public var runCommand: String
+    public var panes: [ServerPluginPaneDescriptor]
+    public var tools: [ServerPluginToolDescriptor]?
+    public var requirements: ServerPluginRequirements?
+
+    public init(
+        version: String,
+        setupCommands: [String],
+        runCommand: String,
+        panes: [ServerPluginPaneDescriptor],
+        tools: [ServerPluginToolDescriptor]? = nil,
+        requirements: ServerPluginRequirements? = nil
+    ) {
+        self.version = version
+        self.setupCommands = setupCommands
+        self.runCommand = runCommand
+        self.panes = panes
+        self.tools = tools
+        self.requirements = requirements
+    }
+}
+
+public struct ServerPluginNamedChanges: Codable, Equatable, Sendable {
+    public var added: [String]
+    public var removed: [String]
+    public var changed: [String]
+
+    public init(added: [String], removed: [String], changed: [String]) {
+        self.added = added
+        self.removed = removed
+        self.changed = changed
+    }
+}
+
+/// A short-lived update prepared from exact, staged source bytes.
+public struct ServerPluginUpdatePlan: Codable, Equatable, Identifiable, Sendable {
+    public var planId: String
+    public var pluginId: String
+    public var name: String
+    public var resolvedCommit: String
+    public var expiresAt: String
+    public var current: ServerPluginUpdateReview
+    public var candidate: ServerPluginUpdateReview
+    public var paneChanges: ServerPluginNamedChanges
+    public var toolChanges: ServerPluginNamedChanges
+
+    public var id: String { planId }
+
+    public init(
+        planId: String,
+        pluginId: String,
+        name: String,
+        resolvedCommit: String,
+        expiresAt: String,
+        current: ServerPluginUpdateReview,
+        candidate: ServerPluginUpdateReview,
+        paneChanges: ServerPluginNamedChanges,
+        toolChanges: ServerPluginNamedChanges
+    ) {
+        self.planId = planId
+        self.pluginId = pluginId
+        self.name = name
+        self.resolvedCommit = resolvedCommit
+        self.expiresAt = expiresAt
+        self.current = current
+        self.candidate = candidate
+        self.paneChanges = paneChanges
+        self.toolChanges = toolChanges
+    }
+}
+
 /// What a staged plugin source offers (mirrors `DiscoverRemotePluginResult`
 /// in packages/api). `installCommand`/`runCommand` are the VERBATIM manifest
 /// command strings — the consent UI shows exactly these before anything runs
@@ -242,6 +377,10 @@ extension CodevisorServerClient {
         var plugins: [ServerPluginSummary]
     }
 
+    private struct PluginUpdatesResponse: Decodable {
+        var updates: [ServerPluginUpdateStatus]
+    }
+
     struct PluginPaneTokenBody: Encodable {
         var paneType: String
         var workspaceId: String?
@@ -257,9 +396,34 @@ extension CodevisorServerClient {
         var path: String
     }
 
+    struct PluginUpdateApplyBody: Encodable {
+        var planId: String
+    }
+
     public func listPlugins() async throws -> [ServerPluginSummary] {
         let response: PluginListResponse = try await get("/v1/plugins")
         return response.plugins
+    }
+
+    public func listPluginUpdates() async throws -> [ServerPluginUpdateStatus] {
+        let response: PluginUpdatesResponse = try await get("/v1/plugins/updates")
+        return response.updates
+    }
+
+    public func preparePluginUpdate(pluginId: String) async throws -> ServerPluginUpdatePlan {
+        try await send(
+            "/v1/plugins/\(pathComponent(pluginId))/update/prepare",
+            method: "POST",
+            body: Optional<EmptyBody>.none
+        )
+    }
+
+    public func applyPluginUpdate(pluginId: String, planId: String) async throws -> ServerPluginSummary {
+        try await send(
+            "/v1/plugins/\(pathComponent(pluginId))/update/apply",
+            method: "POST",
+            body: PluginUpdateApplyBody(planId: planId)
+        )
     }
 
     public func pluginIcon(pluginId: String, paneType: String? = nil) async throws -> ServerPluginIconAsset {

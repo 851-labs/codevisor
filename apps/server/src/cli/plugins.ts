@@ -35,6 +35,44 @@ interface PluginSummary {
   readonly state?: string
 }
 
+interface PluginUpdateStatus {
+  readonly pluginId: string
+  readonly installedVersion: string
+  readonly state: string
+  readonly registryVersion?: string
+  readonly reason?: string
+}
+
+interface PluginUpdateReview {
+  readonly version: string
+  readonly setupCommands: ReadonlyArray<string>
+  readonly runCommand: string
+  readonly requirements?: {
+    readonly executables?: ReadonlyArray<{
+      readonly name: string
+      readonly installHint?: string
+      readonly helpUrl?: string
+    }>
+  }
+}
+
+interface PluginNamedChanges {
+  readonly added: ReadonlyArray<string>
+  readonly removed: ReadonlyArray<string>
+  readonly changed: ReadonlyArray<string>
+}
+
+interface PluginUpdatePlan {
+  readonly planId: string
+  readonly pluginId: string
+  readonly name: string
+  readonly resolvedCommit: string
+  readonly current: PluginUpdateReview
+  readonly candidate: PluginUpdateReview
+  readonly paneChanges: PluginNamedChanges
+  readonly toolChanges: PluginNamedChanges
+}
+
 const errorText = (body: unknown, fallback: string): string => {
   const message = (body as { readonly error?: string } | undefined)?.error
   return message === undefined || message === "" ? fallback : message
@@ -176,5 +214,120 @@ export const pluginRemoveCommand = async (
     return 1
   }
   deps.log(`Removed ${options.pluginId}`)
+  return 0
+}
+
+export const pluginUpdatesCommand = async (
+  deps: PluginsCliDeps,
+  options: CommandOptions = {}
+): Promise<number> => {
+  const port = await resolvePort(deps, options.port)
+  const response = await deps.fetchJson(`http://127.0.0.1:${port}/v1/plugins/updates`)
+  if (response === undefined) return notRunning(deps, port)
+  if (response.status !== 200) {
+    deps.error(
+      errorText(response.body, `Checking plugin updates failed (status ${response.status})`)
+    )
+    return 1
+  }
+  const updates =
+    (response.body as { readonly updates?: ReadonlyArray<PluginUpdateStatus> }).updates ?? []
+  if (updates.length === 0) {
+    deps.log("No plugin updates to report.")
+    return 0
+  }
+  for (const update of updates) {
+    const target = update.registryVersion === undefined ? "" : ` -> ${update.registryVersion}`
+    const reason = update.reason === undefined ? "" : ` — ${update.reason}`
+    deps.log(`${update.pluginId}  ${update.installedVersion}${target}  ${update.state}${reason}`)
+  }
+  return 0
+}
+
+const printReviewCommands = (
+  deps: PluginsCliDeps,
+  label: string,
+  review: PluginUpdateReview
+): void => {
+  if (review.setupCommands.length === 0) deps.log(`  ${label} setup: (none)`)
+  for (const command of review.setupCommands) deps.log(`  ${label} setup: ${command}`)
+  deps.log(`  ${label} run:   ${review.runCommand}`)
+}
+
+const printChanges = (deps: PluginsCliDeps, label: string, changes: PluginNamedChanges): void => {
+  if (changes.added.length === 0 && changes.removed.length === 0 && changes.changed.length === 0) {
+    deps.log(`  ${label}: (none)`)
+    return
+  }
+  for (const name of changes.added) deps.log(`  ${label}: + ${name}`)
+  for (const name of changes.changed) deps.log(`  ${label}: ~ ${name}`)
+  for (const name of changes.removed) deps.log(`  ${label}: - ${name}`)
+}
+
+const printUpdatePlan = (deps: PluginsCliDeps, plan: PluginUpdatePlan): void => {
+  deps.log(`${plan.name} ${plan.current.version} -> ${plan.candidate.version}`)
+  deps.log(`  id:      ${plan.pluginId}`)
+  deps.log(`  commit:  ${plan.resolvedCommit}`)
+  deps.log("")
+  deps.log("Commands:")
+  printReviewCommands(deps, "current", plan.current)
+  printReviewCommands(deps, "update ", plan.candidate)
+  deps.log("")
+  deps.log("Requirements:")
+  const requirements = plan.candidate.requirements?.executables ?? []
+  if (requirements.length === 0) deps.log("  (none declared)")
+  for (const requirement of requirements) {
+    deps.log(`  ${requirement.name}`)
+    if (requirement.installHint !== undefined) deps.log(`    ${requirement.installHint}`)
+    if (requirement.helpUrl !== undefined) deps.log(`    ${requirement.helpUrl}`)
+  }
+  deps.log("")
+  deps.log("Capability changes:")
+  printChanges(deps, "pane", plan.paneChanges)
+  printChanges(deps, "tool", plan.toolChanges)
+}
+
+export interface PluginUpdateOptions extends CommandOptions {
+  readonly pluginId: string
+  /// Skip the prepared-plan confirmation (scripting / CI).
+  readonly yes?: boolean | undefined
+}
+
+export const pluginUpdateCommand = async (
+  deps: PluginsCliDeps,
+  options: PluginUpdateOptions
+): Promise<number> => {
+  const port = await resolvePort(deps, options.port)
+  const pluginPath = encodeURIComponent(options.pluginId)
+  const prepared = await deps.fetchJson(
+    `http://127.0.0.1:${port}/v1/plugins/${pluginPath}/update/prepare`,
+    { method: "POST", timeoutMs: INSTALL_TIMEOUT_MS }
+  )
+  if (prepared === undefined) return notRunning(deps, port)
+  if (prepared.status !== 201) {
+    deps.error(errorText(prepared.body, `Preparing update failed (status ${prepared.status})`))
+    return 1
+  }
+  const plan = prepared.body as PluginUpdatePlan
+  printUpdatePlan(deps, plan)
+  deps.log("")
+  if (options.yes !== true) {
+    const accepted = await deps.confirm(`Update ${plan.name} to ${plan.candidate.version}?`)
+    if (!accepted) {
+      deps.log("Cancelled.")
+      return 1
+    }
+  }
+  const applied = await deps.fetchJson(
+    `http://127.0.0.1:${port}/v1/plugins/${pluginPath}/update/apply`,
+    { body: { planId: plan.planId }, method: "POST", timeoutMs: INSTALL_TIMEOUT_MS }
+  )
+  if (applied === undefined) return notRunning(deps, port)
+  if (applied.status !== 200) {
+    deps.error(errorText(applied.body, `Update failed (status ${applied.status})`))
+    return 1
+  }
+  const summary = applied.body as PluginSummary
+  deps.log(`Updated ${summary.id} ${summary.version ?? ""}`.trim())
   return 0
 }

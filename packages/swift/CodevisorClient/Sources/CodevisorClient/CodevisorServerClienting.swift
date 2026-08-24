@@ -162,6 +162,12 @@ public protocol CodevisorServerClienting: Sendable {
     /// Plugins installed on this machine (`GET /v1/plugins`). Empty on
     /// servers without the plugins feature.
     func listPlugins() async throws -> [ServerPluginSummary]
+    /// Explicit registry-update state for every installed plugin.
+    func listPluginUpdates() async throws -> [ServerPluginUpdateStatus]
+    /// Stage and validate one exact candidate for review before applying it.
+    func preparePluginUpdate(pluginId: String) async throws -> ServerPluginUpdatePlan
+    /// Atomically apply the already-reviewed staged plan.
+    func applyPluginUpdate(pluginId: String, planId: String) async throws -> ServerPluginSummary
     /// Fetches plugin or pane artwork. The server accepts SVG/PNG/WebP from
     /// the plugin process and returns a normalized PNG to clients.
     func pluginIcon(pluginId: String, paneType: String?) async throws -> ServerPluginIconAsset

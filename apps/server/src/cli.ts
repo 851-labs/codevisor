@@ -18,6 +18,8 @@ import {
   pluginLinkCommand,
   pluginListCommand,
   pluginRemoveCommand,
+  pluginUpdateCommand,
+  pluginUpdatesCommand,
   type PluginsCliDeps
 } from "./cli/plugins.js"
 import { qrCommand, setupCommand, type SetupDeps } from "./cli/setup.js"
@@ -357,9 +359,45 @@ const pluginRemove = Command.make(
     )
 ).pipe(Command.withDescription("Uninstall a managed plugin"))
 
+const pluginUpdates = Command.make("updates", { port: portFlag }, ({ port }) =>
+  runCli((deps) =>
+    pluginUpdatesCommand(
+      { ...deps, confirm: async () => true },
+      { port: Option.getOrUndefined(port) }
+    )
+  )
+).pipe(Command.withDescription("Show update state for installed plugins"))
+
+const pluginUpdate = Command.make(
+  "update",
+  {
+    pluginId: Argument.string("id").pipe(Argument.withDescription("Plugin id to update")),
+    port: portFlag,
+    yes: Flag.boolean("yes").pipe(
+      Flag.withAlias("y"),
+      Flag.withDescription("Skip the update confirmation prompt")
+    )
+  },
+  ({ pluginId, port, yes }) =>
+    Effect.promise(async () => {
+      process.exitCode = await pluginUpdateCommand(makePluginsDeps(), {
+        pluginId,
+        port: Option.getOrUndefined(port),
+        yes
+      })
+    })
+).pipe(Command.withDescription("Review and apply an available plugin update"))
+
 const plugin = Command.make("plugin").pipe(
   Command.withDescription("Manage this machine's Codevisor plugins"),
-  Command.withSubcommands([pluginInstall, pluginLink, pluginList, pluginRemove])
+  Command.withSubcommands([
+    pluginInstall,
+    pluginLink,
+    pluginList,
+    pluginRemove,
+    pluginUpdates,
+    pluginUpdate
+  ])
 )
 
 const authLogin = Command.make(

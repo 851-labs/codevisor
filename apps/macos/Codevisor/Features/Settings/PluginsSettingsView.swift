@@ -12,6 +12,7 @@ struct PluginsSettingsView: View {
     @Environment(\.theme) private var theme
     @Environment(\.settingsMachineId) private var settingsMachineId
     @State private var plugins: [ServerPluginSummary]?
+    @State private var updates: [String: ServerPluginUpdateStatus] = [:]
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var actionError: String?
@@ -24,10 +25,12 @@ struct PluginsSettingsView: View {
     private enum PluginsSheet: Identifiable {
         case install(initialSource: String?)
         case browse
+        case update(ServerPluginUpdatePlan)
         var id: String {
             switch self {
             case .install: "install"
             case .browse: "browse"
+            case .update(let plan): "update:\(plan.planId)"
             }
         }
     }
@@ -85,6 +88,19 @@ struct PluginsSettingsView: View {
                             // through the existing consent flow with the
                             // entry's repo as the source.
                             activeSheet = .install(initialSource: entry.repo)
+                        }
+                    )
+                case .update(let plan):
+                    PluginUpdateSheet(
+                        plan: plan,
+                        onApply: {
+                            _ = try await mutate {
+                                try await client.applyPluginUpdate(
+                                    pluginId: plan.pluginId,
+                                    planId: plan.planId
+                                )
+                            }
+                            await reload()
                         }
                     )
                 }
@@ -221,6 +237,9 @@ struct PluginsSettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     stateChip(plugin.state)
+                    if let update = updates[plugin.id] {
+                        updateChip(update)
+                    }
                 }
                 Text(sourceText(plugin))
                     .font(.caption)
@@ -230,6 +249,10 @@ struct PluginsSettingsView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Menu {
+                if updates[plugin.id]?.state == .available {
+                    Button("Update…") { prepareUpdate(plugin) }
+                    Divider()
+                }
                 Button("Restart") {
                     Task {
                         _ = try? await mutate {
@@ -259,7 +282,7 @@ struct PluginsSettingsView: View {
         }
         .help(plugin.description ?? plugin.id)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(plugin.name), \(plugin.state), \(sourceText(plugin))")
+        .accessibilityLabel(accessibilityLabel(for: plugin))
     }
 
     /// One line, one concept: who owns the directory, and where it is.
@@ -289,6 +312,56 @@ struct PluginsSettingsView: View {
         }
     }
 
+    private func updateChip(_ update: ServerPluginUpdateStatus) -> some View {
+        Text(updateTitle(update))
+            .font(.caption2.weight(.medium))
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(theme.isSystem ? AnyShapeStyle(.quaternary) : AnyShapeStyle(theme.cardQuietBackground))
+            )
+            .foregroundStyle(updateStyle(update.state))
+            .help(update.reason ?? updateTitle(update))
+    }
+
+    private func updateTitle(_ update: ServerPluginUpdateStatus) -> String {
+        switch update.state {
+        case .current: "Current"
+        case .available: "Update \(update.registryVersion ?? "available")"
+        case .pinned: "Pinned"
+        case .incompatible: "Incompatible"
+        case .sourceUnknown: "Source unknown"
+        case .checkFailed: "Check failed"
+        }
+    }
+
+    private func updateStyle(_ state: ServerPluginUpdateState) -> AnyShapeStyle {
+        switch state {
+        case .current: AnyShapeStyle(theme.statusOK)
+        case .available: AnyShapeStyle(theme.accent)
+        case .incompatible, .checkFailed: AnyShapeStyle(theme.statusWarn)
+        case .pinned, .sourceUnknown: AnyShapeStyle(.secondary)
+        }
+    }
+
+    private func accessibilityLabel(for plugin: ServerPluginSummary) -> String {
+        guard let update = updates[plugin.id] else {
+            return "\(plugin.name), \(plugin.state), \(sourceText(plugin))"
+        }
+        return "\(plugin.name), \(plugin.state), \(updateTitle(update)), \(sourceText(plugin))"
+    }
+
+    private func prepareUpdate(_ plugin: ServerPluginSummary) {
+        Task {
+            if let plan = try? await mutate({
+                try await client.preparePluginUpdate(pluginId: plugin.id)
+            }) {
+                activeSheet = .update(plan)
+            }
+        }
+    }
+
     private func reload() async {
         isLoading = true
         defer { isLoading = false }
@@ -301,6 +374,14 @@ struct PluginsSettingsView: View {
         do {
             plugins = try await client.listPlugins()
             errorMessage = nil
+            do {
+                let statuses = try await client.listPluginUpdates()
+                updates = Dictionary(uniqueKeysWithValues: statuses.map { ($0.pluginId, $0) })
+            } catch {
+                // Plugin listing remains useful against an older server or
+                // during a transient registry outage.
+                updates = [:]
+            }
         } catch {
             errorMessage = ErrorReporter.userFacingMessage(for: error)
         }
@@ -318,215 +399,6 @@ struct PluginsSettingsView: View {
         } catch {
             actionError = ErrorReporter.userFacingMessage(for: error)
             throw error
-        }
-    }
-}
-
-/// Two-stage install, forked from SkillRemoteImportSheet: enter a source,
-/// discover what it offers, then consent to the exact commands it will run.
-/// A registry selection arrives as `initialSource` (the entry's repo) and
-/// auto-discovers — skipping the typing, never the consent.
-private struct PluginInstallSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.theme) private var theme
-    var initialSource: String?
-    let discover: (String) async throws -> ServerPluginRemoteDiscovery
-    let onInstall: (String) async throws -> Void
-    @State private var source = ""
-    @State private var discovery: ServerPluginRemoteDiscovery?
-    @State private var isWorking = false
-    @State private var errorMessage: String?
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Form {
-                // The source field only exists while typing one — once a
-                // plugin is found, the consent stage shows the plugin itself
-                // (Back returns here to edit).
-                if discovery == nil {
-                    Section {
-                        // Verbatim prompt: the LocalizedStringKey initializer
-                        // would markdown-link a bare repo prompt.
-                        TextField(
-                            "Source",
-                            text: $source,
-                            prompt: Text(verbatim: "owner/repo, a git URL, or a local path")
-                        )
-                        .onSubmit { Task { await find() } }
-                    } header: {
-                        Text("Install Plugin")
-                    } footer: {
-                        Text("A public GitHub repo, a git URL, or a path on this machine.")
-                    }
-                    .listRowBackground(themedFormRowBackground)
-                }
-                if let discovery {
-                    discoverySections(discovery)
-                }
-                if let errorMessage {
-                    Text(errorMessage).foregroundStyle(theme.statusError)
-                }
-            }
-            .formStyle(.grouped)
-            .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
-            .disabled(isWorking)
-            Divider()
-                .overlay(theme.isSystem ? Color.clear : theme.separator)
-            HStack {
-                if discovery != nil {
-                    Button("Back") {
-                        discovery = nil
-                        errorMessage = nil
-                    }
-                    .settingsActionTint(theme)
-                    .disabled(isWorking)
-                }
-                Spacer()
-                Button("Cancel") { dismiss() }
-                    .settingsActionTint(theme)
-                    .keyboardShortcut(.cancelAction)
-                    .disabled(isWorking)
-                // HIG loading state: the default action is replaced by an
-                // indeterminate spinner while it runs — never a relabeled,
-                // still-tappable-looking button.
-                if isWorking {
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(theme.isSystem ? nil : theme.accent)
-                        .padding(.horizontal, 12)
-                } else if discovery == nil {
-                    Button("Find Plugin") {
-                        Task { await find() }
-                    }
-                    .settingsActionTint(theme)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(source.trimmingCharacters(in: .whitespaces).isEmpty)
-                } else {
-                    Button("Install") {
-                        Task { await runInstall() }
-                    }
-                    .settingsActionTint(theme)
-                    .keyboardShortcut(.defaultAction)
-                }
-            }
-            .padding()
-            .themedSurface(.sheet)
-        }
-        .frame(width: 480, height: discovery == nil ? 220 : 480)
-        .themedSurface(.sheet)
-        .task {
-            if let initialSource, discovery == nil {
-                source = initialSource
-                await find()
-            }
-        }
-    }
-
-    /// The consent stage, structured like the registry detail page: what the
-    /// plugin is, what it adds, and — verbatim — what it will run.
-    @ViewBuilder
-    private func discoverySections(_ discovery: ServerPluginRemoteDiscovery) -> some View {
-        Section {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(discovery.name)
-                        .font(.headline)
-                    Text(discovery.version)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                if let description = discovery.description, !description.isEmpty {
-                    Text(description)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(.vertical, 2)
-            if discovery.alreadyInstalled {
-                Label("Already installed — installing updates it.", systemImage: "arrow.triangle.2.circlepath")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .listRowBackground(themedFormRowBackground)
-        Section("Details") {
-            LabeledContent("Source", value: source.trimmingCharacters(in: .whitespaces))
-            if !discovery.panes.isEmpty {
-                LabeledContent(
-                    "Panes",
-                    value: discovery.panes.map(\.title).joined(separator: ", ")
-                )
-            }
-        }
-        .listRowBackground(themedFormRowBackground)
-        // Declared agent tools are part of what the user consents to, next
-        // to the verbatim commands below.
-        if let tools = discovery.tools, !tools.isEmpty {
-            Section("Agent Tools") {
-                ForEach(tools) { tool in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(tool.name)
-                            .font(.callout.monospaced())
-                        Text(tool.description)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
-                    .padding(.vertical, 1)
-                }
-            }
-            .listRowBackground(themedFormRowBackground)
-        }
-        Section {
-            // The verbatim manifest commands — exactly what will run, never
-            // a summary.
-            if let install = discovery.installCommand {
-                commandRow(title: "Install", command: install)
-            }
-            commandRow(title: "Run", command: discovery.runCommand)
-        } header: {
-            Text("Commands")
-        } footer: {
-            Text("Installing runs these commands on this machine.")
-        }
-        .listRowBackground(themedFormRowBackground)
-    }
-
-    private func commandRow(title: String, command: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            Text(verbatim: command)
-                .font(.footnote.monospaced())
-                .textSelection(.enabled)
-        }
-        .padding(.vertical, 1)
-    }
-
-    private var themedFormRowBackground: Color? {
-        theme.isSystem ? nil : theme.cardQuietBackground
-    }
-
-    private func find() async {
-        isWorking = true
-        defer { isWorking = false }
-        do {
-            discovery = try await discover(source.trimmingCharacters(in: .whitespaces))
-            errorMessage = nil
-        } catch {
-            errorMessage = ErrorReporter.userFacingMessage(for: error)
-        }
-    }
-
-    private func runInstall() async {
-        isWorking = true
-        defer { isWorking = false }
-        do {
-            try await onInstall(source.trimmingCharacters(in: .whitespaces))
-            dismiss()
-        } catch {
-            errorMessage = ErrorReporter.userFacingMessage(for: error)
         }
     }
 }

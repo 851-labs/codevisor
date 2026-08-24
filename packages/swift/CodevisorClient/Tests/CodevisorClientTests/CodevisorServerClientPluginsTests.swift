@@ -147,6 +147,54 @@ struct CodevisorServerClientPluginsTests {
         )
         #expect(link.contains("path"))
         #expect(link.contains("plugin"))
+
+        let apply = String(
+            decoding: try JSONEncoder().encode(
+                CodevisorServerClient.PluginUpdateApplyBody(planId: "plan-1")
+            ),
+            as: UTF8.self
+        )
+        #expect(apply == #"{"planId":"plan-1"}"#)
+    }
+
+    @Test("Update status and prepared review plans decode exactly")
+    func updateDecoding() throws {
+        let statuses = Data(
+            """
+            {"updates":[
+            {"pluginId":"acme.git-diff","installedVersion":"1.0.0","state":"available",
+            "checkedAt":"2026-08-23T00:00:00.000Z","registryVersion":"2.0.0"},
+            {"pluginId":"local.dev","installedVersion":"0.1.0","state":"pinned",
+            "checkedAt":"2026-08-23T00:00:00.000Z","reason":"Linked plugins are pinned"}]}
+            """.utf8)
+        struct UpdatesEnvelope: Decodable { var updates: [ServerPluginUpdateStatus] }
+        let decodedStatuses = try JSONDecoder().decode(UpdatesEnvelope.self, from: statuses)
+        #expect(decodedStatuses.updates.map(\.state) == [.available, .pinned])
+        #expect(decodedStatuses.updates.first?.registryVersion == "2.0.0")
+        #expect(decodedStatuses.updates.last?.reason == "Linked plugins are pinned")
+
+        let planData = Data(
+            """
+            {"planId":"plan-1","pluginId":"acme.git-diff","name":"Git Diff",
+            "resolvedCommit":"0123456789012345678901234567890123456789",
+            "expiresAt":"2026-08-23T00:15:00.000Z",
+            "current":{"version":"1.0.0","setupCommands":[],"runCommand":"node server.js",
+            "panes":[{"type":"diff","title":"Diff","path":"/diff/"}]},
+            "candidate":{"version":"2.0.0","setupCommands":["npm ci"],
+            "runCommand":"node server.js --port $PORT","panes":[],
+            "tools":[{"name":"diff_summary","description":"Summarize","path":"/tools/summary"}],
+            "requirements":{"executables":[{"name":"node","installHint":"Install Node.js",
+            "helpUrl":"https://nodejs.org"}]}},
+            "paneChanges":{"added":[],"removed":["diff"],"changed":[]},
+            "toolChanges":{"added":["diff_summary"],"removed":[],"changed":[]}}
+            """.utf8)
+        let plan = try JSONDecoder().decode(ServerPluginUpdatePlan.self, from: planData)
+        #expect(plan.id == "plan-1")
+        #expect(plan.current.version == "1.0.0")
+        #expect(plan.candidate.setupCommands == ["npm ci"])
+        #expect(plan.candidate.requirements?.executables?.first?.name == "node")
+        #expect(plan.paneChanges.removed == ["diff"])
+        #expect(plan.toolChanges.added == ["diff_summary"])
     }
 
     @Test("Remote discovery decodes the verbatim install and run commands")

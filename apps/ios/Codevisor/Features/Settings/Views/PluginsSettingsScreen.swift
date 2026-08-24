@@ -19,6 +19,7 @@ struct PluginsSettingsScreen: View {
     let serverId: String
 
     @State private var plugins: [ServerPluginSummary]?
+    @State private var updates: [String: ServerPluginUpdateStatus] = [:]
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var actionError: String?
@@ -30,10 +31,12 @@ struct PluginsSettingsScreen: View {
     private enum PluginsSheet: Identifiable {
         case install(initialSource: String?)
         case browse
+        case update(ServerPluginUpdatePlan)
         var id: String {
             switch self {
             case .install: "install"
             case .browse: "browse"
+            case .update(let plan): "update:\(plan.planId)"
             }
         }
     }
@@ -128,6 +131,19 @@ struct PluginsSettingsScreen: View {
                         activeSheet = .install(initialSource: entry.repo)
                     }
                 )
+            case .update(let plan):
+                PluginUpdateSheet(
+                    plan: plan,
+                    onApply: {
+                        _ = try await mutate {
+                            try await client.applyPluginUpdate(
+                                pluginId: plan.pluginId,
+                                planId: plan.planId
+                            )
+                        }
+                        await reload()
+                    }
+                )
             }
         }
     }
@@ -151,6 +167,9 @@ struct PluginsSettingsScreen: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     stateChip(plugin.state)
+                    if let update = updates[plugin.id] {
+                        updateChip(update)
+                    }
                 }
                 Text(sourceText(plugin))
                     .font(.caption)
@@ -165,11 +184,19 @@ struct PluginsSettingsScreen: View {
             }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(plugin.name), \(plugin.state), \(sourceText(plugin))")
+        .accessibilityLabel(accessibilityLabel(for: plugin))
         .contextMenu {
             pluginActions(plugin)
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            if updates[plugin.id]?.state == .available {
+                Button {
+                    prepareUpdate(plugin)
+                } label: {
+                    Label("Update", systemImage: "arrow.down.circle")
+                }
+                .tint(.blue)
+            }
             // Only managed installs may be uninstalled — a linked dev
             // plugin's directory belongs to its author.
             if plugin.source == "managed" {
@@ -191,6 +218,13 @@ struct PluginsSettingsScreen: View {
     /// long-press context menu so both surfaces always agree.
     @ViewBuilder
     private func pluginActions(_ plugin: ServerPluginSummary) -> some View {
+        if updates[plugin.id]?.state == .available {
+            Button {
+                prepareUpdate(plugin)
+            } label: {
+                Label("Update…", systemImage: "arrow.down.circle")
+            }
+        }
         Button {
             restart(plugin)
         } label: {
@@ -252,6 +286,52 @@ struct PluginsSettingsScreen: View {
         }
     }
 
+    private func updateChip(_ update: ServerPluginUpdateStatus) -> some View {
+        Text(updateTitle(update))
+            .font(.caption2.weight(.medium))
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(RoundedRectangle(cornerRadius: 4).fill(.quaternary))
+            .foregroundStyle(updateStyle(update.state))
+    }
+
+    private func updateTitle(_ update: ServerPluginUpdateStatus) -> String {
+        switch update.state {
+        case .current: "Current"
+        case .available: "Update \(update.registryVersion ?? "available")"
+        case .pinned: "Pinned"
+        case .incompatible: "Incompatible"
+        case .sourceUnknown: "Source unknown"
+        case .checkFailed: "Check failed"
+        }
+    }
+
+    private func updateStyle(_ state: ServerPluginUpdateState) -> AnyShapeStyle {
+        switch state {
+        case .current: AnyShapeStyle(.green)
+        case .available: AnyShapeStyle(.blue)
+        case .incompatible, .checkFailed: AnyShapeStyle(.orange)
+        case .pinned, .sourceUnknown: AnyShapeStyle(.secondary)
+        }
+    }
+
+    private func accessibilityLabel(for plugin: ServerPluginSummary) -> String {
+        guard let update = updates[plugin.id] else {
+            return "\(plugin.name), \(plugin.state), \(sourceText(plugin))"
+        }
+        return "\(plugin.name), \(plugin.state), \(updateTitle(update)), \(sourceText(plugin))"
+    }
+
+    private func prepareUpdate(_ plugin: ServerPluginSummary) {
+        Task {
+            if let plan = try? await mutate({
+                try await client.preparePluginUpdate(pluginId: plugin.id)
+            }) {
+                activeSheet = .update(plan)
+            }
+        }
+    }
+
     private func reload() async {
         isLoading = true
         defer { isLoading = false }
@@ -264,6 +344,14 @@ struct PluginsSettingsScreen: View {
         do {
             plugins = try await client.listPlugins()
             errorMessage = nil
+            do {
+                let statuses = try await client.listPluginUpdates()
+                updates = Dictionary(uniqueKeysWithValues: statuses.map { ($0.pluginId, $0) })
+            } catch {
+                // Keep installed plugins usable against older servers and
+                // through transient registry outages.
+                updates = [:]
+            }
         } catch {
             errorMessage = ErrorReporter.userFacingMessage(for: error)
         }
