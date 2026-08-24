@@ -528,21 +528,16 @@ public final class MachineController {
         return machine
     }
 
-    /// This machine's stable connection token (the loopback call is exempt
-    /// from token auth), for pasting into another device's Add Remote Machine
-    /// sheet. Stable across restarts so the copied value keeps working.
-    public func issueLocalConnectionToken() async throws -> String {
-        try await client(for: CodevisorMachine.local.id).connectionToken().token
-    }
-
     /// Adds a remote machine only after confirming the host is reachable and
     /// the token is accepted, so a wrong token surfaces as an error in the Add
     /// dialog instead of a broken machine you have to remove and re-add.
+    /// `syncConfig` records the onboarding opt-in on the machine itself.
     @discardableResult
     public func addRemoteValidating(
         host input: String,
         name: String? = nil,
-        token: String? = nil
+        token: String? = nil,
+        syncConfig: Bool = true
     ) async throws -> CodevisorMachine {
         let baseURL = try Self.normalizedRemoteURL(from: input)
         let probe = CodevisorMachine(
@@ -554,7 +549,9 @@ public final class MachineController {
         )
         // Throws on an unreachable host or a rejected token (401).
         _ = try await clientFactory(probe).info()
-        return try addRemote(host: input, name: name, token: token)
+        let machine = try addRemote(host: input, name: name, token: token)
+        applySyncParticipation(machine.id, enabled: syncConfig)
+        return machine
     }
 
     /// Renames a remote machine. Blank names are ignored; the local machine

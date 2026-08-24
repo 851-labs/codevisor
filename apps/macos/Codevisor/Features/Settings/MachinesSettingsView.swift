@@ -171,13 +171,14 @@ struct MachinesSettingsView: View {
     private var withMachineSheets: some View {
         withCloudPresentations
             .sheet(item: $addingDiscovered) { machine in
-                RemoteMachineSheet(name: machine.name, host: machine.host) { host, name, token in
-                    await addMachine(host: host, name: name, token: token)
+                RemoteMachineSheet(name: machine.name, host: machine.host) {
+                    host, name, token, syncConfig in
+                    await addMachine(host: host, name: name, token: token, syncConfig: syncConfig)
                 }
             }
             .sheet(isPresented: $showingAdd) {
-                RemoteMachineSheet { host, name, token in
-                    await addMachine(host: host, name: name, token: token)
+                RemoteMachineSheet { host, name, token, syncConfig in
+                    await addMachine(host: host, name: name, token: token, syncConfig: syncConfig)
                 }
             }
             .sheet(item: $renaming) { machine in
@@ -280,9 +281,15 @@ struct MachinesSettingsView: View {
     /// Validates and adds a machine, returning an error message for the Add
     /// dialog to show inline (nil on success). On success it re-runs discovery
     /// so a just-added network peer drops out of the suggestions immediately.
-    private func addMachine(host: String, name: String?, token: String?) async -> String? {
+    private func addMachine(
+        host: String,
+        name: String?,
+        token: String?,
+        syncConfig: Bool = true
+    ) async -> String? {
         do {
-            try await machines.addRemoteValidating(host: host, name: name, token: token)
+            try await machines.addRemoteValidating(
+                host: host, name: name, token: token, syncConfig: syncConfig)
             await discovery.refresh(registeredHosts: registeredHosts)
             return nil
         } catch {

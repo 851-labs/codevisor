@@ -458,9 +458,10 @@ struct SidebarView: View {
             .modifier(
                 SidebarSheetsModifier(
                     showingRemoteMachine: $showingRemoteMachine,
-                    onAddRemoteMachine: { host, name, token in
+                    onAddRemoteMachine: { host, name, token, syncConfig in
                         do {
-                            try await environment.machines.addRemoteValidating(host: host, name: name, token: token)
+                            try await environment.machines.addRemoteValidating(
+                                host: host, name: name, token: token, syncConfig: syncConfig)
                             selection = .newChat(nil)
                             return nil
                         } catch {

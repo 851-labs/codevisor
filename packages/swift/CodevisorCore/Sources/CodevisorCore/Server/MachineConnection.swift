@@ -143,6 +143,22 @@ extension MachineController {
         navigationSyncStateByMachineId[selectedMachineId] ?? .cached
     }
 
+    /// This machine's stable connection token (the loopback call is exempt
+    /// from token auth), for pasting into another device's Add Remote Machine
+    /// sheet. Stable across restarts so the copied value keeps working.
+    public func issueLocalConnectionToken() async throws -> String {
+        try await client(for: CodevisorMachine.local.id).connectionToken().token
+    }
+
+    /// Records the onboarding sync choice on the machine itself — the server
+    /// enforces it (see /v1/sync-participation). Fire-and-forget: the flag
+    /// defaults to participating server-side, and an unreachable machine
+    /// simply keeps its current state.
+    public func applySyncParticipation(_ machineId: String, enabled: Bool) {
+        let client = client(for: machineId)
+        Task { _ = try? await client.setSyncParticipation(enabled: enabled) }
+    }
+
     // MARK: - Legacy projections
 
     /// Read-only per-machine projections retained for existing consumers;

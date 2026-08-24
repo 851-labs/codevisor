@@ -222,6 +222,29 @@ struct ConfigSyncTests {
         controller.stopEventSync()
     }
 
+    @Test("Adding a machine records the onboarding sync choice on it")
+    func addAppliesSyncChoice() async throws {
+        let fake = SyncFakeServerClient(projects: [], sessions: [])
+        let controller = MachineController(
+            store: InMemoryStore(),
+            projectList: ProjectListModel(
+                projectRepository: DefaultProjectRepository(store: InMemoryStore()),
+                sessionRepository: DefaultSessionRepository(store: InMemoryStore())
+            ),
+            clientFactory: { _ in fake }
+        )
+
+        _ = try await controller.addRemoteValidating(
+            host: "box.test",
+            name: "Box",
+            token: nil,
+            syncConfig: false
+        )
+
+        try await waitForSync { fake.operationLog.contains("sync.participation:false") }
+        controller.stopEventSync()
+    }
+
     @Test("Full sync passes reconcile MCPs and publish rosters per machine")
     func fullPassReconciles() async throws {
         let remote = makeRemote("remote-a")

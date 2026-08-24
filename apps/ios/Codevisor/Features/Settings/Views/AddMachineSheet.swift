@@ -19,8 +19,15 @@ struct AddMachineSheet: View {
     @State private var host: String
     @State private var name: String
     @State private var token = ""
+    @State private var syncConfig = true
     @State private var isAdding = false
     @State private var errorMessage: String?
+
+    /// The config-sync opt-in only appears when a fleet already exists —
+    /// the first machine has nothing to sync yet.
+    private var showsSyncChoice: Bool {
+        environment.machines.allMachines.contains { !$0.isLocal }
+    }
 
     /// Prefill support for the tailnet-discovery rows; the manual add flow
     /// uses the empty defaults.
@@ -54,6 +61,15 @@ struct AddMachineSheet: View {
                     } footer: {
                         InlineCodeText(
                             "Run `codevisor token` on the machine, or copy it from the `codevisor setup` output.")
+                    }
+                    if showsSyncChoice {
+                        Section {
+                            Toggle("Sync Config", isOn: $syncConfig)
+                        } footer: {
+                            Text(
+                                "Skills, MCP servers, and settings from your other machines apply here too."
+                            )
+                        }
                     }
                     if let errorMessage {
                         Section {
@@ -114,7 +130,8 @@ struct AddMachineSheet: View {
                 let machine = try await environment.machines.addRemoteValidating(
                     host: host,
                     name: name.isEmpty ? nil : name,
-                    token: token.isEmpty ? nil : token
+                    token: token.isEmpty ? nil : token,
+                    syncConfig: syncConfig
                 )
                 environment.machines.selectMachine(machine.id)
                 await environment.prepareSelectedMachine()

@@ -10,18 +10,20 @@ struct RemoteMachineSheet: View {
     @State private var name: String
     @State private var host: String
     @State private var token = ""
+    @State private var syncConfig = true
     @State private var errorMessage: String?
     @State private var isAdding = false
     /// Validates and adds the machine; returns an error message to show
-    /// inline, or nil on success (the sheet then dismisses).
-    let onAdd: (String, String?, String?) async -> String?
+    /// inline, or nil on success (the sheet then dismisses). The Bool is the
+    /// config-sync opt-in.
+    let onAdd: (String, String?, String?, Bool) async -> String?
 
     /// Prefill support for discovered machines: name and host arrive from the
     /// tailnet probe, the token still has to come from the machine's owner.
     init(
         name: String = "",
         host: String = "",
-        onAdd: @escaping (String, String?, String?) async -> String?
+        onAdd: @escaping (String, String?, String?, Bool) async -> String?
     ) {
         _name = State(initialValue: name)
         _host = State(initialValue: host)
@@ -49,6 +51,14 @@ struct RemoteMachineSheet: View {
             ) {
                 TextField("hm_…", text: $token)
                     .textFieldStyle(.roundedBorder)
+            }
+            Toggle(isOn: $syncConfig) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Sync config to this machine")
+                    Text("Skills, MCP servers, and settings from your other machines apply here too.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             if let errorMessage {
                 Text(errorMessage)
@@ -79,7 +89,8 @@ struct RemoteMachineSheet: View {
         isAdding = true
         errorMessage = nil
         Task {
-            let failure = await onAdd(trimmedHost, trimmedName, trimmedToken.isEmpty ? nil : trimmedToken)
+            let failure = await onAdd(
+                trimmedHost, trimmedName, trimmedToken.isEmpty ? nil : trimmedToken, syncConfig)
             isAdding = false
             if let failure {
                 errorMessage = failure

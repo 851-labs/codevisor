@@ -379,8 +379,7 @@ struct HomeView: View {
                         MachineDeeplinkAlerts(
                             pending: $pendingDeeplink,
                             error: $deeplinkError,
-                            isActive: true,
-                            confirm: confirmDeeplink
+                            isActive: true
                         )
                     )
             }
@@ -445,8 +444,7 @@ struct HomeView: View {
                 MachineDeeplinkAlerts(
                     pending: $pendingDeeplink,
                     error: $deeplinkError,
-                    isActive: !showsOnboarding.wrappedValue,
-                    confirm: confirmDeeplink
+                    isActive: !showsOnboarding.wrappedValue
                 )
             )
             .task {
@@ -506,23 +504,6 @@ struct HomeView: View {
     /// Validated add from a confirmed deeplink: unreachable hosts and
     /// rejected tokens surface in the error alert instead of as a broken
     /// machine. Success selects the machine, which also closes onboarding.
-    private func confirmDeeplink(_ link: MachineDeeplink) {
-        pendingDeeplink = nil
-        Task {
-            do {
-                let machine = try await environment.machines.addRemoteValidating(
-                    host: link.hostWithPort,
-                    name: link.name,
-                    token: link.token
-                )
-                environment.machines.selectMachine(machine.id)
-                await environment.prepareSelectedMachine()
-            } catch {
-                deeplinkError = ErrorReporter.userFacingMessage(for: error)
-            }
-        }
-    }
-
     // MARK: - Lists
 
     /// Keep pull to refresh available in every connected-machine state. A
