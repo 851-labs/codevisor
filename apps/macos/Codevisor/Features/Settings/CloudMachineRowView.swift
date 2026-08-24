@@ -15,6 +15,9 @@ struct CloudMachineRowView: View {
     let presence: CloudMachine
     let isSelected: Bool
     let keyChanged: Bool
+    /// A verified direct LAN pipe to this machine is live — channels skip the
+    /// relay and make one local hop.
+    let direct: Bool
     let onConnect: () -> Void
     let onRename: () -> Void
     let onRemove: () -> Void
@@ -63,10 +66,11 @@ struct CloudMachineRowView: View {
                         .fill(presence.online ? theme.statusOK : Color.gray)
                         .frame(width: 7, height: 7)
                         .accessibilityHidden(true)
-                    Text(presence.online ? "Online" : "Offline")
+                    Text(presence.online ? (direct ? "Online · Direct" : "Online") : "Offline")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                .help(direct ? "Connected directly over the local network" : "")
             }
             if !isSelected {
                 Button("Connect", action: onConnect)

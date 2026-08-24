@@ -9,6 +9,7 @@ import {
 import {
   BYTE_STREAM_CHANNEL_TYPE,
   CloudMachineConnection,
+  DirectChannelHost,
   makePeerKeyPinStore,
   parsePeerKeyPins,
   provisionMachine,
@@ -75,6 +76,9 @@ export interface CloudBridge {
   /// match the machine to its cloud presence entry.
   readonly deviceId: string
   readonly managedBy: CloudBridgeManagedBy
+  /// Adopts one server-accepted WebSocket as a direct sealed-channel pipe:
+  /// same channel handlers and pins as the relay, no hub in the middle.
+  readonly acceptDirect: (socket: CloudSocket) => void
 }
 
 const readCredentials = async (
@@ -377,6 +381,14 @@ const makeBridge = (
   managedBy: CloudBridgeManagedBy,
   peerKeyPins: PeerKeyPinStore
 ): CloudBridge => {
+  // Shared by the relay connection and the direct pipe: a channel behaves
+  // identically no matter which pipe carried it.
+  const channelHandlers = {
+    [BYTE_STREAM_CHANNEL_TYPE]: byteStreamChannelHandler(options.localBaseUrl, options.log),
+    [TERMINAL_CHANNEL_TYPE]: terminalChannelHandler(options.terminal, options.log),
+    [HTTP_CHANNEL_TYPE]: httpChannelHandler(options.localBaseUrl, options.log),
+    [WS_CHANNEL_TYPE]: wsChannelHandler(options.localBaseUrl)
+  }
   const connection = new CloudMachineConnection({
     credentials,
     peerKeyPins,
@@ -397,12 +409,7 @@ const makeBridge = (
       appVersion: options.appVersion
     },
     socketFactory,
-    channelHandlers: {
-      [BYTE_STREAM_CHANNEL_TYPE]: byteStreamChannelHandler(options.localBaseUrl, options.log),
-      [TERMINAL_CHANNEL_TYPE]: terminalChannelHandler(options.terminal, options.log),
-      [HTTP_CHANNEL_TYPE]: httpChannelHandler(options.localBaseUrl, options.log),
-      [WS_CHANNEL_TYPE]: wsChannelHandler(options.localBaseUrl)
-    },
+    channelHandlers,
     onStateChange: (state) => {
       if (state === "connected") options.log(`Cloud: connected to ${credentials.serverUrl}`)
       if (state === "reconnecting") options.log("Cloud: reconnecting to relay")
@@ -426,11 +433,21 @@ const makeBridge = (
     }
   })
   connection.start()
+  const directHost = new DirectChannelHost({
+    deviceId: credentials.deviceId,
+    secretKey: credentials.secretKey,
+    channelHandlers,
+    peerKeyPins,
+    compressPayload,
+    decompressPayload,
+    log: options.log
+  })
   return {
     stop: () => connection.stop(),
     state: () => connection.state,
     deviceId: credentials.deviceId,
-    managedBy
+    managedBy,
+    acceptDirect: (socket) => directHost.accept(socket)
   }
 }
 

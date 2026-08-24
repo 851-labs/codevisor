@@ -232,9 +232,14 @@ struct CloudAccountScreen: View {
                         .fill(machine.online ? Color.green : Color.gray)
                         .frame(width: 7, height: 7)
                         .accessibilityHidden(true)
-                    Text(machine.online ? "Online" : "Offline")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                    Text(
+                        machine.online
+                            ? (cloud.directPaths.machineIds.contains(machine.deviceId)
+                                ? "Online · Direct" : "Online")
+                            : "Offline"
+                    )
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
                 }
             }
         }

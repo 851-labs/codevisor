@@ -196,7 +196,13 @@ func makeController(
     let controller = CloudAccountController(
         clientFactory: { _ in client },
         credentialStore: store,
-        environmentCloud: environmentCloud
+        environmentCloud: environmentCloud,
+        // Inert direct-path probing: account tests must never open real
+        // sockets when a refresh sees online machines.
+        directPaths: CloudDirectPathController(
+            credentialStore: store,
+            prober: { _, _, _ in nil }
+        )
     )
     return (controller, client, store)
 }

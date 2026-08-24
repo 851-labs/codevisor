@@ -723,6 +723,12 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
         cloudBridgeHolder.current?.stop()
         cloudBridgeHolder.current = undefined
         await removeCloudCredentials(cloudBridgeOptions.credentialsPath)
+      },
+      acceptDirect: (socket: import("@codevisor/cloud-client").CloudSocket) => {
+        const bridge = cloudBridgeHolder.current
+        if (bridge === undefined) return false
+        bridge.acceptDirect(socket)
+        return true
       }
     }
     // Start resolving the GUI process's minimal environment without delaying

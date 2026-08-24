@@ -29,6 +29,7 @@ import {
 import { makeAttentionSettleScheduler } from "./infra/attention-settle.js"
 import { routeBrowserUse } from "./routes/browser-use.js"
 import { routeCloud } from "./routes/cloud.js"
+import { routeNetDirect } from "./routes/net-direct.js"
 import { handleEvents, handleUpgrade } from "./routes/events.js"
 import { routeFiles } from "./routes/files.js"
 import { routeFs } from "./routes/fs.js"
@@ -557,6 +558,9 @@ const handleRequest = async (
       return
     }
     if (await routeCloud(config, request, response, url)) {
+      return
+    }
+    if (routeNetDirect(config, request, response, url)) {
       return
     }
     if (await routeTerminals(services, request, response, url)) {

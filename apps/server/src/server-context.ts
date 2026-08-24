@@ -106,6 +106,10 @@ export interface CloudServerControl {
   readonly connect: (serverUrl: string, sessionToken: string) => Promise<string>
   /// Stops the bridge and forgets the stored credential.
   readonly disconnect: () => Promise<void>
+  /// Adopts one server-accepted WebSocket as a direct sealed-channel pipe
+  /// (see @codevisor/cloud-client DirectChannelHost). False when no bridge
+  /// is running — the caller closes the socket.
+  readonly acceptDirect?: (socket: import("@codevisor/cloud-client").CloudSocket) => boolean
 }
 
 export interface CodevisorServerServices {

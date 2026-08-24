@@ -380,6 +380,7 @@ private extension MachinesSettingsView {
             presence: presence,
             isSelected: machine.id == machines.selectedMachineId,
             keyChanged: environment.cloud.machinesWithChangedKeys.contains(presence.deviceId),
+            direct: environment.cloud.directPaths.machineIds.contains(presence.deviceId),
             onConnect: {
                 machines.selectMachine(machine.id)
                 Task { await machines.refreshStatus(for: machine.id) }

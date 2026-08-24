@@ -7,6 +7,7 @@
 export * from "./login.js"
 export * from "./machine-connection.js"
 export * from "./channel-receiver.js"
+export * from "./direct-channel-host.js"
 export * from "./incoming-channel.js"
 export * from "./cloud-proxy.js"
 export * from "./byte-stream.js"

@@ -67,6 +67,10 @@ public final class CloudAccountController {
     /// The account's one relay connection, created lazily while signed in and
     /// torn down on sign-out / server switch.
     @ObservationIgnored private var hub: CloudHubConnection?
+    /// Direct LAN pipes per machine, probed after each refresh. Channel opens
+    /// go through `SwitchingChannelTransport`, which prefers a live verified
+    /// direct pipe and falls back to the relay.
+    public let directPaths: CloudDirectPathController
     /// Per-machine loopback bridges (real 127.0.0.1 addresses that forward
     /// onto the relay), created lazily on first `loopbackBaseURL` access and
     /// torn down with the account. Keyed by cloud device id; the pinned
@@ -101,12 +105,14 @@ public final class CloudAccountController {
         environmentCloud: CodevisorAppVariant.DevelopmentCloud? = CodevisorAppVariant.developmentCloud,
         hubConnectionFactory: @escaping HubConnectionFactory = { serverURL, store in
             CloudHubConnection(serverURL: serverURL, credentialStore: store)
-        }
+        },
+        directPaths: CloudDirectPathController? = nil
     ) {
         self.clientFactory = clientFactory
         self.credentialStore = credentialStore
         self.environmentCloud = environmentCloud
         self.hubConnectionFactory = hubConnectionFactory
+        self.directPaths = directPaths ?? CloudDirectPathController(credentialStore: credentialStore)
     }
 
     /// A user-entered custom server wins, then the dev cloud from `bun run
@@ -263,6 +269,7 @@ public final class CloudAccountController {
         machinesWithChangedKeys = []
         state = .signedOut
         stopAllLoopbackBridges()
+        directPaths.dropAll()
         if let hub {
             self.hub = nil
             Task { await hub.shutdown() }
@@ -297,6 +304,7 @@ public final class CloudAccountController {
     /// keep authenticating with the previous account's cached session.
     private func discardHubForCredentialChange() async {
         stopAllLoopbackBridges()
+        directPaths.dropAll()
         guard let hub else { return }
         self.hub = nil
         await hub.shutdown()
@@ -316,6 +324,7 @@ public final class CloudAccountController {
                 )
             #endif
             pruneLoopbackBridges()
+            reconcileDirectPaths()
             lastError = nil
             onMachinesRefreshed?()
             registerLocalMachineIfNeeded()
@@ -385,6 +394,7 @@ public final class CloudAccountController {
         guard let token = storedToken else { return }
         machines.removeAll { $0.deviceId == deviceId }
         stopLoopbackBridge(deviceId: deviceId)
+        directPaths.drop(deviceId: deviceId)
         // A removed machine's pin goes with it: re-adding is a fresh pairing.
         removeMachineKeyPin(deviceId: deviceId)
         do {
@@ -464,11 +474,7 @@ public final class CloudAccountController {
         guard let hub = hubConnection(), let verifiedKey = verifiedMachineKey(for: machine) else {
             return
         }
-        let endpoint = CloudRelayEndpoint(
-            hub: hub,
-            machineDeviceId: machine.deviceId,
-            machinePublicKey: verifiedKey
-        )
+        let endpoint = machineTransport(for: machine, verifiedKey: verifiedKey, hub: hub)
         let bridge = CloudRelayLoopbackBridge(endpoint: endpoint)
         loopbackBridges[machine.deviceId] = (bridge, verifiedKey)
         let deviceId = machine.deviceId
@@ -605,11 +611,7 @@ extension CloudAccountController: CloudMachineProviding {
         guard let hub = hubConnection(), let verifiedKey = verifiedMachineKey(for: machine) else {
             return nil
         }
-        let endpoint = CloudRelayEndpoint(
-            hub: hub,
-            machineDeviceId: machine.deviceId,
-            machinePublicKey: verifiedKey
-        )
+        let endpoint = machineTransport(for: machine, verifiedKey: verifiedKey, hub: hub)
         // The transports tunnel in-process; the baseURL matters only to
         // consumers that hand it to external processes (terminal proxy), so
         // it becomes the machine's real loopback address once bridged.

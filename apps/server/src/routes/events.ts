@@ -3,6 +3,7 @@ import { TerminalClientFrame as TerminalClientFrameSchema, decode } from "@codev
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import type { TerminalManagerService } from "@codevisor/terminal"
 import type { IncomingMessage, ServerResponse } from "node:http"
+import { adaptDirectSocket } from "./net-direct.js"
 import type { Socket } from "node:net"
 import { WebSocket, type WebSocketServer } from "ws"
 import { CODEVISOR_BROWSER_EXTENSION_ID } from "@codevisor/automation"
@@ -63,6 +64,22 @@ export const handleUpgrade = async (
     ) {
       webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
         services.mcp!.acceptBrowserExtension(webSocket)
+      })
+      return
+    }
+    // Direct sealed-channel pipe: authenticates via already-pinned E2E
+    // identity inside the channel protocol itself (DirectChannelHost) — a
+    // bearer token would be both unnecessary and unavailable to it.
+    if (
+      request.method === "GET" &&
+      url.pathname === "/v1/direct" &&
+      config.cloud?.acceptDirect !== undefined
+    ) {
+      const acceptDirect = config.cloud.acceptDirect
+      webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
+        if (!acceptDirect(adaptDirectSocket(webSocket))) {
+          webSocket.close(1013, "no cloud identity to serve direct connections")
+        }
       })
       return
     }
