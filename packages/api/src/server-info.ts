@@ -77,13 +77,36 @@ export const TailnetPeersResponse = Schema.Struct({
 })
 export type TailnetPeersResponse = typeof TailnetPeersResponse.Type
 
+/// An app-hosted server's report of the host app's unattended update
+/// session (Sparkle running headless because a remote client asked this
+/// machine to update). Lets that client fail fast with the real error
+/// instead of timing out against a machine that silently gave up.
+export const UpdateApplyState = Schema.Struct({
+  state: Schema.Literals(["installing", "failed"]),
+  message: Schema.optional(Schema.String),
+  targetVersion: Schema.optional(Schema.String),
+  at: Schema.String
+})
+export type UpdateApplyState = typeof UpdateApplyState.Type
+
 export const UpdateInfo = Schema.Struct({
   currentVersion: Schema.String,
   latestVersion: Schema.String,
   updateAvailable: Schema.Boolean,
   channel: Schema.String,
   checkedAt: Schema.optional(Schema.String),
-  migrationState: Schema.Literals(["idle", "running", "failed"])
+  migrationState: Schema.Literals(["idle", "running", "failed"]),
+  /// CI build numbers matching the installed runtime's BUILD.json and the
+  /// release manifest. Monotonic across every channel — unlike version
+  /// strings, which diverge between the alpha manifest (full prerelease
+  /// tag) and the runtime (base marketing version) — so clients compare
+  /// these to decide whether an update landed. Absent on older servers and
+  /// on releases predating build stamping.
+  currentBuildNumber: Schema.optional(Schema.Number),
+  latestBuildNumber: Schema.optional(Schema.Number),
+  /// Present on app-hosted servers while the host app is installing (or
+  /// after it failed to install) an update handed off by a remote client.
+  lastApply: Schema.optional(UpdateApplyState)
 })
 export type UpdateInfo = typeof UpdateInfo.Type
 

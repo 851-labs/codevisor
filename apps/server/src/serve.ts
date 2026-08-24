@@ -73,6 +73,8 @@ import {
   fetchLatestServerRelease,
   isNewerRelease,
   parseSha256,
+  readAppUpdateApplyState,
+  readMachineUpdateChannel,
   sha256File,
   type ServerRelease,
   type ServerUpdateChannel
@@ -276,6 +278,10 @@ const writeAppUpdateRequest = (path: string, version: string): void => {
   renameSync(temporary, path)
 }
 
+/// Whether a macOS app hosts this server as a child inside its .app bundle.
+const appHosted = (): boolean =>
+  process.env.CODEVISOR_APP_HOSTED === "1" || process.env.HERDMAN_APP_HOSTED === "1"
+
 const GITHUB_RELEASE_REPOSITORY =
   process.env.CODEVISOR_GITHUB_REPOSITORY ?? DEFAULT_GITHUB_REPOSITORY
 
@@ -316,18 +322,35 @@ const makeSelfUpdater = (options: {
     }
   >()
 
+  // On an app-hosted Mac the machine's own channel preference — written by
+  // the host app next to the database — is authoritative: Sparkle installs
+  // from that preference, so letting a remote client's requested channel
+  // decide the check would let check and install disagree and the update
+  // never converge. Standalone servers keep following the requested channel.
+  const resolveChannel = (requested: ServerUpdateChannel): ServerUpdateChannel =>
+    appHosted() ? (readMachineUpdateChannel(options.dataDir) ?? requested) : requested
+
+  // Attached fresh on every check, never cached: the host app's unattended
+  // Sparkle session writes this while installing (or after failing), and a
+  // remote client polling for the outcome needs the live state.
+  const withApplyState = (info: UpdateInfo): UpdateInfo => {
+    if (!appHosted()) return info
+    const lastApply = readAppUpdateApplyState(options.dataDir)
+    return lastApply === undefined ? info : { ...info, lastApply }
+  }
+
   const check = async (checkOptions?: {
     readonly force?: boolean
     readonly channel?: ServerUpdateChannel
   }): Promise<UpdateInfo> => {
-    const channel = checkOptions?.channel ?? "stable"
+    const channel = resolveChannel(checkOptions?.channel ?? "stable")
     const hit = cached.get(channel)
     if (
       checkOptions?.force !== true &&
       hit !== undefined &&
       Date.now() - hit.at < SERVER_UPDATE_CHECK_TTL_MS
     ) {
-      return hit.info
+      return withApplyState(hit.info)
     }
     let release: ServerRelease | undefined
     try {
@@ -354,17 +377,25 @@ const makeSelfUpdater = (options: {
         }),
       channel,
       checkedAt: new Date().toISOString(),
-      migrationState: "idle"
+      migrationState: "idle",
+      // Build numbers are the cross-feed authority clients compare to see
+      // whether an update landed: alpha manifests carry the full prerelease
+      // tag while installed runtimes report their base marketing version,
+      // so version strings alone cannot confirm convergence.
+      ...(options.currentBuildNumber === undefined
+        ? {}
+        : { currentBuildNumber: options.currentBuildNumber }),
+      ...(release?.buildNumber === undefined ? {} : { latestBuildNumber: release.buildNumber })
     }
     await Effect.runPromise(options.db.setUpdateInfo(info)).catch(() => undefined)
     cached.set(channel, { at: Date.now(), info, release })
-    return info
+    return withApplyState(info)
   }
 
   const apply = async (applyOptions?: {
     readonly channel?: ServerUpdateChannel
   }): Promise<void> => {
-    const channel = applyOptions?.channel ?? "stable"
+    const channel = resolveChannel(applyOptions?.channel ?? "stable")
     const info = await check({ channel })
     if (!info.updateAvailable) {
       return
@@ -375,7 +406,7 @@ const makeSelfUpdater = (options: {
     // Hand the update back to the app — it replaces the whole bundle and
     // relaunches, bringing a fresh bundled server — by exiting with the agreed
     // status the app is watching for.
-    if (process.env.CODEVISOR_APP_HOSTED === "1" || process.env.HERDMAN_APP_HOSTED === "1") {
+    if (appHosted()) {
       console.log("Handing update off to the host macOS app")
       const requestPath = process.env.CODEVISOR_APP_UPDATE_REQUEST_PATH
       if (requestPath !== undefined && requestPath.length > 0) {

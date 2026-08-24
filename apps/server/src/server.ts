@@ -480,8 +480,17 @@ const handleRequest = async (
         return
       }
       // Acknowledge first: applying restarts the process, so this response
-      // must be on the wire before the server goes away.
-      writeJson(response, 202, { accepted: true, targetVersion: info.latestVersion })
+      // must be on the wire before the server goes away. The build number is
+      // the reliable "did it land" marker for clients: version strings
+      // diverge between the alpha manifest (full prerelease tag) and the
+      // installed runtime (base marketing version), build numbers never do.
+      writeJson(response, 202, {
+        accepted: true,
+        targetVersion: info.latestVersion,
+        ...(info.latestBuildNumber === undefined
+          ? {}
+          : { targetBuildNumber: info.latestBuildNumber })
+      })
       config.updater.apply({ channel }).catch(() => undefined)
       return
     }
