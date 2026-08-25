@@ -451,15 +451,12 @@ struct RootView: View {
     /// ordinary content BELOW the toolbar (see SessionContainerView).
     private var mainSplit: some View {
         NavigationSplitView(columnVisibility: sidebarColumnVisibility) {
+            // No per-machine remount and no machine switcher: the sidebar is
+            // the FLEET's. Selection is a routing detail that follows the
+            // chat you open (or send), and machines are managed in Settings.
             SidebarView(selection: $selection, store: store)
-                .id(environment.machines.selectedMachineId)
                 .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 360)
                 .themedToolbarBackground(theme, role: .sidebar)
-                .toolbar {
-                    ToolbarItem {
-                        MachinePickerToolbarMenu()
-                    }
-                }
         } detail: {
             Group {
                 if let store {

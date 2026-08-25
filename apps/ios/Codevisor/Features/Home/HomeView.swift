@@ -34,7 +34,6 @@ struct HomeView: View {
     // period keeps onboarding from flashing over an already-paired install.
     @State private var readyForOnboarding = false
     @State private var isShowingSettings = false
-    @State private var isManagingMachines = false
     @State private var newChatFlow: NewChatFlow?
     /// Presentation and promotion have different lifetimes. SwiftUI owns this
     /// item only while the native sheet exists; `newChatFlow` deliberately
@@ -312,12 +311,10 @@ struct HomeView: View {
                         groupReorderConfirmButton
                     }
                 } else {
-                    // One glass group on the left: settings, then the machine
-                    // picker, mirroring the macOS toolbar's machine menu.
-                    ToolbarItemGroup(placement: .topBarLeading) {
-                        machineMenu
-                        settingsButton
-                    }
+                    // Settings on the left; Home itself is the fleet's, so
+                    // there is no machine switcher — selection follows the
+                    // chat you open, and machines are managed in Settings.
+                    ToolbarItem(placement: .topBarLeading) { settingsButton }
                     ToolbarItem(placement: .topBarTrailing) { organizeMenu }
                 }
             }
@@ -351,17 +348,6 @@ struct HomeView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .codevisorOpenSettings)) { _ in
                 isShowingSettings = true
-            }
-            .sheet(isPresented: $isManagingMachines) {
-                NavigationStack {
-                    MachinesSettingsScreen()
-                        .toolbar {
-                            ToolbarItem(placement: .confirmationAction) {
-                                Button("Done") { isManagingMachines = false }
-                            }
-                        }
-                }
-                .presentationDragIndicator(.visible)
             }
             .sheet(item: $presentedNewChatFlow, onDismiss: handleNewChatSheetDismissed) {
                 flow in
@@ -1262,34 +1248,6 @@ struct HomeView: View {
             Image(systemName: "gearshape")
         }
         .accessibilityLabel("Settings")
-    }
-
-    /// The machine picker, as on macOS: paired machines with the selection
-    /// checked, then Manage Machines at the bottom.
-    private var machineMenu: some View {
-        Menu {
-            ForEach(machines.allMachines.filter { !$0.isLocal }) { machine in
-                Button {
-                    machines.selectMachine(machine.id)
-                    Task { await environment.prepareSelectedMachine() }
-                } label: {
-                    if machine.id == machines.selectedMachineId {
-                        Label(machine.name, systemImage: "checkmark")
-                    } else {
-                        Text(machine.name)
-                    }
-                }
-            }
-            Divider()
-            Button {
-                isManagingMachines = true
-            } label: {
-                Label("Manage Machines…", systemImage: "desktopcomputer")
-            }
-        } label: {
-            Image(systemName: EntitySystemSymbol.machine(machines.selectedMachine))
-        }
-        .accessibilityLabel("Machine: \(machines.selectedMachine.name)")
     }
 
     /// Organization controls grouping; ordering applies only to agent rows.
