@@ -199,6 +199,10 @@ final class NewChatPromotionSurface {
     private var liveContent: AnyView?
     private var liveHostingController: UIHostingController<AnyView>?
     private var sourceSnapshot: UIView?
+    /// The sheet-surface fill behind a bottom-anchored snapshot: as the
+    /// container's top edge rises, this paints the newly exposed strip so
+    /// the sheet appears to extend upward while its content holds still.
+    private var topFillView: UIView?
     private var outgoingFlightView: UIView?
     private var outgoingTarget: TranscriptSendAnimationTarget?
     private var outgoingPlan: TranscriptSendAnimationPlan?
@@ -308,8 +312,26 @@ final class NewChatPromotionSurface {
         clippingView.layer.cornerRadius = sourceCornerRadius
         clippingView.layer.masksToBounds = true
         if let sourceSnapshot {
-            sourceSnapshot.frame = clippingView.bounds
-            sourceSnapshot.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            // A sheet that already reaches the screen bottom only ever grows
+            // at the TOP. Anchoring the snapshot to the container's bottom
+            // keeps the sheet's chrome and content perfectly stationary on
+            // screen — only the sheet's top edge rises to fill the screen,
+            // over a surface-colored fill. Sheets that don't touch the
+            // bottom (floating styles) keep the stretching behavior.
+            let anchorsBottom = abs(sourceFrame.maxY - sourceWindow.bounds.maxY) < 2
+            if anchorsBottom {
+                let fill = UIView(frame: clippingView.bounds)
+                fill.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                fill.backgroundColor = .systemBackground
+                fill.isUserInteractionEnabled = false
+                clippingView.addSubview(fill)
+                topFillView = fill
+                sourceSnapshot.frame = clippingView.bounds
+                sourceSnapshot.autoresizingMask = [.flexibleWidth, .flexibleTopMargin]
+            } else {
+                sourceSnapshot.frame = clippingView.bounds
+                sourceSnapshot.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            }
             sourceSnapshot.isUserInteractionEnabled = false
             clippingView.addSubview(sourceSnapshot)
         }
@@ -391,6 +413,7 @@ final class NewChatPromotionSurface {
         animator.addAnimations(
             {
                 self.sourceSnapshot?.alpha = 0
+                self.topFillView?.alpha = 0
                 self.liveHostingController?.view.alpha = 1
             }, delayFactor: 0.68)
         animator.addCompletion { [weak self] position in
@@ -403,6 +426,8 @@ final class NewChatPromotionSurface {
             )
             self?.sourceSnapshot?.removeFromSuperview()
             self?.sourceSnapshot = nil
+            self?.topFillView?.removeFromSuperview()
+            self?.topFillView = nil
             self?.outgoingFlightView?.removeFromSuperview()
             self?.outgoingFlightView = nil
             self?.animator = nil
@@ -486,6 +511,8 @@ final class NewChatPromotionSurface {
         animator = nil
         sourceSnapshot?.removeFromSuperview()
         sourceSnapshot = nil
+        topFillView?.removeFromSuperview()
+        topFillView = nil
         outgoingFlightView?.removeFromSuperview()
         outgoingFlightView = nil
         clippingView.removeFromSuperview()
