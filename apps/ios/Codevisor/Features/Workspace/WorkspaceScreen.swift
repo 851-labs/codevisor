@@ -290,11 +290,15 @@ struct WorkspaceScreen: View {
                 // Do not fall back to setup if an older global snapshot briefly
                 // omits that project while its server upsert is acknowledged.
                 if draftProjectCandidate == nil {
-                    // Match macOS's stale-while-revalidate behavior: an empty
-                    // persisted snapshot opens project setup immediately. If
+                    // No project yet: the new-chat screen still shows, with
+                    // the run-target picker as its single call to action. If
                     // the background refresh finds a project, onChange below
                     // replaces this with the draft composer.
-                    initialProjectPicker
+                    DraftRunTargetPlaceholder { project, wantsWorktree in
+                        setUpDraftIfNeeded(preferredProject: project)
+                        draftController?.wantsNewWorktree =
+                            project.isGitRepository && wantsWorktree
+                    }
                 } else {
                     // setUpDraftIfNeeded() runs synchronously at the start of
                     // prepare(). Keep the sheet calm for that initial actor
@@ -430,13 +434,6 @@ struct WorkspaceScreen: View {
 
     /// The draft's first surface when its machine has no usable project.
     /// This is the real file picker, hosted by the sheet's navigation stack.
-    private var initialProjectPicker: some View {
-        RemoteDirectoryScreen(directory: .home) { path in
-            addInitialProject(at: path)
-        }
-        .navigationTitle("New Project")
-    }
-
     private var baseTitle: String {
         // An unsent draft says what it is; the moment it becomes a real chat the
         // title clears like any other chat pane, so the nav bar doesn't change

@@ -93,6 +93,7 @@ struct ComposerBar: View {
     @State var isCapturingPhoto = false
     @State var isAddingProject = false
     @State var managedProject: Project?
+    @State var showsRunTargetPicker = false
     /// Paste-provider failures have no attachment bytes left to anchor a
     /// status to. Keep their recovery beside this composer instead of using
     /// the session's connection/error channel.
@@ -234,9 +235,19 @@ struct ComposerBar: View {
         .animation(Motion.quick(reduceMotion: reduceMotion), value: showsSlashCommandPopup)
         .animation(Motion.quick(reduceMotion: reduceMotion), value: pasteFailureNotice)
         .sheet(isPresented: $isAddingProject) {
-            AddProjectSheet { project in
+            AddProjectSheet(serverId: controller.project.serverId) { project in
                 selectTargetProject(project)
             }
+        }
+        .sheet(isPresented: $showsRunTargetPicker) {
+            RunTargetPickerSheet(
+                initialServerId: controller.project.serverId,
+                currentProject: controller.project,
+                currentWantsWorktree: controller.wantsNewWorktree,
+                onFinish: { project, wantsWorktree in
+                    applyRunTarget(project, wantsWorktree: wantsWorktree)
+                }
+            )
         }
         .sheet(item: $managedProject) { project in
             ManageProjectSheet(

@@ -12,154 +12,60 @@ extension ComposerBar {
         .filter { !$0.isScratch }
     }
 
-    /// The machine chip shows only when there is a choice to make.
-    private var showsMachineChip: Bool { environment.machines.allMachines.count > 1 }
-
-    /// Projects offered by the project chip: the picked machine's only. The
-    /// machine chip to its left is what changes machines.
-    private var machineScopedProjects: [Project] {
-        pickerProjects.filter { $0.serverId == controller.project.serverId }
-    }
-
     /// The live project record. The controller holds a snapshot from when
     /// the project was picked; the server's git probe lands on the list
-    /// afterwards, and the worktree chip must follow the probed value.
+    /// afterwards, and the chip must follow the probed value.
     private var liveProject: Project {
         environment.projectList.projects.first {
             $0.serverId == controller.project.serverId && $0.id == controller.project.id
         } ?? controller.project
     }
 
+    /// ONE chip for the whole run target: the run-location icon and the
+    /// project name. Tapping opens the stepped machine → project →
+    /// run-location sheet.
     var runTargetChips: some View {
-        HStack(spacing: 10) {
-            if showsMachineChip {
-                machineChip
-                Divider()
-                    .frame(height: 14)
-                    .accessibilityHidden(true)
-            }
-            projectChip
-            if liveProject.isGitRepository {
-                Divider()
-                    .frame(height: 14)
-                    .accessibilityHidden(true)
-                runLocationChip
-            }
-        }
-    }
-
-    /// Choose the machine this chat runs on. Picking one re-points the draft
-    /// at that machine's remembered (or most recent) project; the project
-    /// chip then lists that machine's projects.
-    private var machineChip: some View {
-        let selectedServerId = controller.project.serverId
-        let selectedMachine = environment.machines.machine(for: selectedServerId)
-        return Menu {
-            ForEach(environment.machines.allMachines) { machine in
-                Button {
-                    selectTargetMachine(machine)
-                } label: {
-                    menuRow(
-                        machine.name,
-                        systemImage: EntitySystemSymbol.machine(machine),
-                        isSelected: machine.id == selectedServerId
-                    )
-                }
-                .disabled(
-                    machine.id != selectedServerId
-                        && !pickerProjects.contains { $0.serverId == machine.id }
+        Button {
+            showsRunTargetPicker = true
+        } label: {
+            HStack(spacing: 4) {
+                Image(
+                    systemName: controller.wantsNewWorktree
+                        ? "arrow.triangle.branch" : "folder.fill"
                 )
+                .font(.caption)
+                Text(controller.project.name)
+                    .lineLimit(1)
             }
-        } label: {
-            chipLabel(
-                selectedMachine?.name ?? "Machine",
-                systemImage: selectedMachine.map(EntitySystemSymbol.machine)
-                    ?? EntitySystemSymbol.machine(.local)
-            )
+            .foregroundStyle(.secondary)
         }
-        .accessibilityLabel("Machine")
-        .accessibilityValue(selectedMachine?.name ?? "Machine")
-    }
-
-    private var projectChip: some View {
-        Menu {
-            ForEach(machineScopedProjects) { project in
-                Button {
-                    selectTargetProject(project)
-                } label: {
-                    menuRow(
-                        project.name,
-                        systemImage: EntitySystemSymbol.project,
-                        isSelected: controller.project.serverId == project.serverId
-                            && controller.project.id == project.id
-                    )
-                }
-            }
-            Divider()
-            Button {
-                isAddingProject = true
-            } label: {
-                Label("New Project…", systemImage: "folder.badge.plus")
-            }
-        } label: {
-            chipLabel(controller.project.name, systemImage: EntitySystemSymbol.project)
-        }
-        .accessibilityLabel("Project")
-        .accessibilityValue(controller.project.name)
-    }
-
-    private var runLocationChip: some View {
-        let newWorktree = controller.wantsNewWorktree
-        return Menu {
-            Button {
-                selectRunLocation(newWorktree: false)
-            } label: {
-                menuRow("Project Directory", systemImage: "folder.fill", isSelected: !newWorktree)
-            }
-            Button {
-                selectRunLocation(newWorktree: true)
-            } label: {
-                menuRow("New Worktree", systemImage: "arrow.triangle.branch", isSelected: newWorktree)
-            }
-            Divider()
+        .contextMenu {
             Button {
                 managedProject = liveProject
             } label: {
                 Label("Manage Project…", systemImage: "gearshape")
             }
-        } label: {
-            chipLabel(
-                newWorktree ? "New Worktree" : "Project Directory",
-                systemImage: newWorktree ? "arrow.triangle.branch" : "folder.fill"
-            )
         }
-        .accessibilityLabel("Run location")
-        .accessibilityValue(newWorktree ? "New Worktree" : "Project Directory")
+        .accessibilityLabel("Run target")
+        .accessibilityValue(
+            "\(controller.project.name), \(controller.wantsNewWorktree ? "new worktree" : "project directory")"
+        )
     }
 
-    /// Re-points the draft at another machine: its remembered project when
-    /// it still exists, else its most recently used one.
-    private func selectTargetMachine(_ machine: CodevisorMachine) {
-        guard machine.id != controller.project.serverId else { return }
-        let scoped = pickerProjects.filter { $0.serverId == machine.id }
-        let remembered = environment.composerDefaults.lastProjectId(forServer: machine.id)
-        guard let project = scoped.first(where: { $0.id == remembered }) ?? scoped.first
-        else { return }
-        selectTargetProject(project)
-    }
-
-    /// A picked project carries the machine's remembered worktree preference
-    /// (worktrees only make sense for git projects).
-    func selectTargetProject(_ project: Project) {
+    /// Applies a picker choice: re-points the draft (across machines when
+    /// needed) and fixes the run location, remembering both per machine.
+    func applyRunTarget(_ project: Project, wantsWorktree: Bool) {
         environment.composerDefaults.rememberNewWorkspaceProject(
             serverId: project.serverId,
             projectId: project.id
         )
-        let prefersWorktree =
-            project.isGitRepository
-            && environment.composerDefaults.prefersWorktreeForNewWorkspaces(
-                forServer: project.serverId
+        let effectiveWorktree = project.isGitRepository && wantsWorktree
+        if project.isGitRepository {
+            environment.composerDefaults.rememberNewWorkspaceWorktreePreference(
+                serverId: project.serverId,
+                createsWorktree: effectiveWorktree
             )
+        }
         Task {
             if project.serverId != controller.project.serverId {
                 // Another machine's project: the draft re-points there in
@@ -173,10 +79,10 @@ extension ComposerBar {
             } else {
                 await controller.selectProject(project)
             }
-            controller.wantsNewWorktree = prefersWorktree
+            controller.wantsNewWorktree = effectiveWorktree
         }
         // Re-probe git capability on the picked project's machine so the
-        // run-location chip tracks fresh data.
+        // chip's icon tracks fresh data.
         Task {
             await environment.projectList.refreshFromServer(
                 serverId: project.serverId,
@@ -185,37 +91,21 @@ extension ComposerBar {
         }
     }
 
+    /// A picked project carries the machine's remembered worktree preference
+    /// (worktrees only make sense for git projects).
+    func selectTargetProject(_ project: Project) {
+        let prefersWorktree =
+            project.isGitRepository
+            && environment.composerDefaults.prefersWorktreeForNewWorkspaces(
+                forServer: project.serverId
+            )
+        applyRunTarget(project, wantsWorktree: prefersWorktree)
+    }
+
     func archiveManagedProject(_ project: Project) {
         controller.project.isArchived = true
         environment.projectList.archive(project)
         guard let replacement = pickerProjects.first else { return }
         selectTargetProject(replacement)
-    }
-
-    private func selectRunLocation(newWorktree: Bool) {
-        environment.composerDefaults.rememberNewWorkspaceWorktreePreference(
-            serverId: controller.project.serverId,
-            createsWorktree: newWorktree
-        )
-        controller.wantsNewWorktree = newWorktree
-    }
-
-    private func chipLabel(_ title: String, systemImage: String) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: systemImage)
-                .font(.caption)
-            Text(title)
-                .lineLimit(1)
-        }
-        .foregroundStyle(.secondary)
-    }
-
-    @ViewBuilder
-    private func menuRow(_ title: String, systemImage: String, isSelected: Bool) -> some View {
-        if isSelected {
-            Label(title, systemImage: "checkmark")
-        } else {
-            Label(title, systemImage: systemImage)
-        }
     }
 }

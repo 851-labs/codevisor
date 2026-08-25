@@ -9,20 +9,27 @@ struct AddProjectSheet: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.dismiss) private var dismiss
 
+    /// The machine to browse and add on. Nil means the selected machine —
+    /// the fleet-wide picker passes the machine the user picked.
+    var serverId: String? = nil
     /// Called with the added project so the caller can select it.
     let onAdded: (Project) -> Void
 
     @State private var navigationPath = NavigationPath()
 
+    private var targetServerId: String {
+        serverId ?? environment.machines.selectedMachineId
+    }
+
     var body: some View {
         NavigationStack(path: $navigationPath) {
-            RemoteDirectoryScreen(directory: .home) { path in
+            RemoteDirectoryScreen(serverId: targetServerId, directory: .home) { path in
                 addProject(at: path)
             }
             .navigationTitle("New Project")
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(for: RemoteDirectory.self) { directory in
-                RemoteDirectoryScreen(directory: directory) { path in
+                RemoteDirectoryScreen(serverId: targetServerId, directory: directory) { path in
                     addProject(at: path)
                 }
             }
@@ -37,7 +44,11 @@ struct AddProjectSheet: View {
     }
 
     private func addProject(at path: String) {
-        let project = environment.projectList.addProject(folderURL: URL(fileURLWithPath: path))
+        let project = environment.projectList.addProject(
+            folderURL: URL(fileURLWithPath: path),
+            serverId: targetServerId,
+            client: environment.machines.client(for: targetServerId)
+        )
         dismiss()
         onAdded(project)
     }
@@ -57,6 +68,8 @@ struct RemoteDirectory: Hashable {
 /// and a fixed call to action that turns the current folder into a project.
 struct RemoteDirectoryScreen: View {
     @Environment(AppEnvironment.self) private var environment
+    /// The machine whose filesystem is browsed. Nil means the selected one.
+    var serverId: String? = nil
     let directory: RemoteDirectory
     let onPick: (String) -> Void
 
@@ -143,7 +156,10 @@ struct RemoteDirectoryScreen: View {
 
     private func load() async {
         do {
-            listing = try await environment.serverClient.listDirectory(
+            let client = environment.machines.client(
+                for: serverId ?? environment.machines.selectedMachineId
+            )
+            listing = try await client.listDirectory(
                 path: directory.path,
                 showHidden: showHidden
             )

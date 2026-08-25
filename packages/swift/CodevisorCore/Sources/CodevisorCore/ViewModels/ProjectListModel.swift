@@ -97,7 +97,7 @@ enum ServerSessionEventApplication: Sendable, Equatable {
 @MainActor
 @Observable
 public final class ProjectListModel {
-    private struct ScopedSessionID: Hashable, Codable, Sendable {
+    struct ScopedSessionID: Hashable, Codable, Sendable {
         let serverId: String
         let id: UUID
     }
@@ -143,7 +143,8 @@ public final class ProjectListModel {
     /// Upserts and list refreshes are independent requests, so an older
     /// snapshot can otherwise erase a newly added project between the user's
     /// add action and the server acknowledgement.
-    private var pendingServerProjectIds: Set<ScopedSessionID> = [] {
+    // Internal so split-off extension files (fleet project adds) reach it.
+    var pendingServerProjectIds: Set<ScopedSessionID> = [] {
         didSet {
             guard pendingServerProjectIds != oldValue else { return }
             persistPendingServerProjects()

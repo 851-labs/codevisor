@@ -53,4 +53,38 @@ struct ProjectListModelFleetTests {
             ordered.map(\.name) == ["remote-work", "local-work", "remote-idle"]
         )
     }
+
+    @Test("Adding a project on an explicit machine stamps and syncs to IT")
+    func addProjectOnExplicitMachine() async throws {
+        let model = ProjectListModel(
+            projectRepository: DefaultProjectRepository(store: InMemoryStore()),
+            sessionRepository: DefaultSessionRepository(store: InMemoryStore())
+        )
+        let client = FakeServerClient()
+
+        let added = model.addProject(
+            folderURL: URL(fileURLWithPath: "/srv/studio-work"),
+            serverId: "remote-b",
+            client: client
+        )
+
+        // Stamped with the PICKED machine, not the selected one.
+        #expect(added.serverId == "remote-b")
+        #expect(model.projects.contains { $0.serverId == "remote-b" && $0.id == added.id })
+        // The upsert reaches the picked machine's client.
+        for _ in 0..<200 {
+            if try await !client.listProjects().isEmpty { break }
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        #expect(try await client.listProjects().contains { $0.id == added.id.uuidString })
+
+        // Re-adding the same folder on the same machine reuses the record.
+        let again = model.addProject(
+            folderURL: URL(fileURLWithPath: "/srv/studio-work"),
+            serverId: "remote-b",
+            client: client
+        )
+        #expect(again.id == added.id)
+        #expect(model.projects.filter { $0.serverId == "remote-b" }.count == 1)
+    }
 }

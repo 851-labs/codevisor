@@ -93,6 +93,11 @@ private struct ConnectMachineStep: View {
 
     @State private var cloudSignIn = CloudSignInCoordinator()
     @State private var isSigningInToCloud = false
+    /// The signed-in branch holds a bare spinner until the account's machine
+    /// list has actually been fetched once — rendering the add-machine
+    /// instructions (or anything else) off an empty-because-unfetched list
+    /// flashes the wrong screen for users who already have machines.
+    @State private var hasCompletedFirstMachinesCheck = false
 
     private var cloud: CloudAccountController { environment.cloud }
 
@@ -102,12 +107,24 @@ private struct ConnectMachineStep: View {
             case .signedOut:
                 signedOutContent
             case .validating:
-                validatingContent
+                checkingContent
             case let .signedIn(userEmail):
-                if cloud.machines.isEmpty {
+                if !hasCompletedFirstMachinesCheck {
+                    // First machines check in flight: a quiet spinner. When
+                    // machines exist, Home's cover condition dismisses the
+                    // sheet straight from here — no interstitial state.
+                    checkingContent
+                        .task {
+                            await cloud.refreshMachines()
+                            hasCompletedFirstMachinesCheck = true
+                        }
+                } else if cloud.machines.isEmpty {
                     installAndLoginContent(userEmail: userEmail)
                 } else {
-                    signedInReadyContent(userEmail: userEmail)
+                    // Machines exist: the onboarding cover is about to
+                    // dismiss itself. Keep the spinner rather than flashing
+                    // any success interstitial.
+                    checkingContent
                 }
             }
         }
@@ -184,37 +201,13 @@ private struct ConnectMachineStep: View {
         }
     }
 
-    // MARK: Validating
+    // MARK: Signing in / first machines check
 
-    private var validatingContent: some View {
-        VStack(spacing: 12) {
-            ProgressView()
-            Text("Signing in…")
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    // MARK: Signed in, machines ready (brief success)
-
-    private func signedInReadyContent(userEmail: String?) -> some View {
-        VStack(spacing: 16) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 56))
-                .foregroundStyle(.tint)
-                .accessibilityHidden(true)
-            Text("You're all set")
-                .font(.title.bold())
-            VStack(spacing: 4) {
-                Text("Signed in as \(userEmail ?? "your account").")
-                Text("Your machines are ready.")
-            }
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .multilineTextAlignment(.center)
-        }
-        .padding(.horizontal, 32)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    /// A bare centered spinner — no copy. Used while the sign-in validates
+    /// and while the first machines fetch is in flight.
+    private var checkingContent: some View {
+        ProgressView()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: Signed in, no machines yet (install + login instructions)
