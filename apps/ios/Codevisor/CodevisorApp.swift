@@ -133,6 +133,12 @@ struct CodevisorApp: App {
     }
 
     private func bootstrap(environment: AppEnvironment) async {
+        // Every machine's stream is connected in the background, so the
+        // attention coordinator can notify for agents finishing anywhere;
+        // this wires the iOS delivery (banners in-app, system notifications
+        // outside the focused chat).
+        ChatNotificationManager.shared.configure(settings: environment.settings)
+        environment.attentionCoordinator.notificationDelivery = ChatNotificationManager.shared
         let machines = environment.machines
         let selectedIsConfiguredRemote = machines.machines.contains {
             $0.id == machines.selectedMachineId && !$0.isLocal

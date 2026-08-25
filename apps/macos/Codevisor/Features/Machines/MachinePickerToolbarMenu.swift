@@ -13,6 +13,20 @@ struct MachinePickerToolbarMenu: View {
     private var machines: MachineController { environment.machines }
     private var selectedMachine: CodevisorMachine { machines.selectedMachine }
 
+    /// Chats needing attention on a machine — the fleet's ambient unread.
+    private func unreadCount(for machineId: String) -> Int {
+        environment.projectList.sessions.filter {
+            $0.serverId == machineId && SessionAttentionSummary($0).hasUnseenAttention
+        }.count
+    }
+
+    /// A quiet dot on the picker when a NON-selected machine needs you.
+    private var hasBackgroundUnread: Bool {
+        machines.allMachines.contains {
+            $0.id != machines.selectedMachineId && unreadCount(for: $0.id) > 0
+        }
+    }
+
     var body: some View {
         Menu {
             // One list for everything the app can reach: configured machines
@@ -28,7 +42,8 @@ struct MachinePickerToolbarMenu: View {
                     )
                 ) {
                     Label {
-                        Text(machine.name)
+                        let unread = unreadCount(for: machine.id)
+                        Text(unread > 0 ? "\(machine.name) (\(unread))" : machine.name)
                     } icon: {
                         MenuSymbolIcon(systemName: EntitySystemSymbol.machine(machine))
                     }
@@ -49,6 +64,15 @@ struct MachinePickerToolbarMenu: View {
                 // machine glyph the same centered slot so the menu doesn't
                 // effectively leading-align wider symbols.
                 .frame(width: 20, height: 20, alignment: .center)
+                .overlay(alignment: .topTrailing) {
+                    if hasBackgroundUnread {
+                        Circle()
+                            .fill(.tint)
+                            .frame(width: 6, height: 6)
+                            .offset(x: 2, y: -1)
+                            .accessibilityLabel("Unread chats on another machine")
+                    }
+                }
         }
         .menuIndicator(.hidden)
         .help("Switch machine — \(selectedMachine.name)")

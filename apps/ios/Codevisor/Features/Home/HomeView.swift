@@ -383,63 +383,21 @@ struct HomeView: View {
                         )
                     )
             }
-            // `codevisor://add-machine` deeplinks — the QR that `codevisor
-            // setup`/`codevisor qr` prints, or the camera-scanned banner.
-            // Never auto-add: the token grants full agent access, so an
-            // explicit confirmation always sits between the link and the
-            // machine list (same contract as macOS).
-            .onOpenURL { url in
-                #if DEBUG || NAVIGATION_DIAGNOSTICS
-                    // A diagnostics build can exercise a specific persisted chat
-                    // without relying on desktop automation of the Simulator.
-                    // Production builds do not compile this route.
-                    if url.host == "diagnostic-open-session",
-                        let value = URLComponents(url: url, resolvingAgainstBaseURL: false)?
-                            .queryItems?.first(where: { $0.name == "id" })?.value,
-                        let id = UUID(uuidString: value),
-                        let session = projectList.sessions.first(where: {
-                            $0.serverId == machines.selectedMachineId && $0.id == id
-                        })
-                    {
-                        IOSNavigationDiagnostics.record(
-                            "home.diagnosticOpenSession",
-                            "session=\(shortID(id))"
-                        )
-                        openChat(session)
-                        return
-                    }
-                #endif
-                // codevisor://cloud-auth deeplinks — the browser handoff back
-                // from a cloud sign-in. The one-time token is proof by itself
-                // (it expires within minutes and is single-use), so no
-                // confirmation gate sits in front of the exchange.
-                if let auth = CloudAuthDeeplink.parse(url) {
-                    Task { await environment.cloud.completeSignIn(ott: auth.ott) }
-                    return
-                }
-                // codevisor://install-plugin deeplinks — the web plugin
-                // directory's "Open in Codevisor" button. Never auto-installs:
-                // the sheet runs the standard discover→consent flow, so the
-                // verbatim commands are always shown before anything runs.
-                if let install = PluginInstallDeeplink.parse(url) {
-                    pendingPluginInstall = PendingPluginInstall(repo: install.repo)
-                    return
-                }
-                guard let link = MachineDeeplink.parse(url) else { return }
-                pendingDeeplink = link
-            }
-            .sheet(item: $pendingPluginInstall) { pending in
-                let client = machines.client(for: machines.selectedMachineId)
-                PluginInstallSheet(
-                    initialSource: pending.repo,
-                    discover: { source in
-                        try await client.discoverRemotePlugin(source: source)
-                    },
-                    onInstall: { source in
-                        _ = try await client.importRemotePlugin(source: source)
+            // External entries — codevisor:// deeplinks and notification
+            // taps — parsed and routed in one modifier; chat opens (possibly
+            // on another machine) come back through these closures.
+            .modifier(
+                HomeExternalRouting(
+                    pendingDeeplink: $pendingDeeplink,
+                    pendingPluginInstall: $pendingPluginInstall,
+                    openSession: { openNotificationSession($0, serverId: $1) },
+                    openDiagnosticSession: { id in
+                        #if DEBUG || NAVIGATION_DIAGNOSTICS
+                            openDiagnosticSession(id)
+                        #endif
                     }
                 )
-            }
+            )
             .modifier(
                 MachineDeeplinkAlerts(
                     pending: $pendingDeeplink,
@@ -944,6 +902,38 @@ struct HomeView: View {
 
     /// Agent rows always open the agent itself, never the terminal or sibling
     /// chat that happened to be selected when the workspace was last left.
+    /// A notification tap lands here: switch to the chat's machine when
+    /// needed, then open it — same contract as the macOS handler.
+    private func openNotificationSession(_ sessionId: UUID, serverId: String) {
+        Task {
+            if machines.selectedMachineId != serverId {
+                machines.selectMachine(serverId)
+                await environment.prepareSelectedMachine()
+            }
+            guard
+                let session = projectList.sessions.first(where: {
+                    $0.serverId == serverId && $0.id == sessionId
+                })
+            else { return }
+            openChat(session)
+        }
+    }
+
+    #if DEBUG || NAVIGATION_DIAGNOSTICS
+        private func openDiagnosticSession(_ id: UUID) {
+            guard
+                let session = projectList.sessions.first(where: {
+                    $0.serverId == machines.selectedMachineId && $0.id == id
+                })
+            else { return }
+            IOSNavigationDiagnostics.record(
+                "home.diagnosticOpenSession",
+                "session=\(shortID(id))"
+            )
+            openChat(session)
+        }
+    #endif
+
     private func openChat(_ session: ChatSession) {
         // Existing sessions take the O(1) index path. Only a legacy session
         // without a workspace pays the synchronous one-time backfill before
@@ -1804,7 +1794,7 @@ struct HomeView: View {
 /// Sheet-presentation wrapper for a parsed install-plugin deeplink: the repo
 /// is the identity, so a second tap on the same link while the sheet is up
 /// doesn't re-present it.
-private struct PendingPluginInstall: Identifiable {
+struct PendingPluginInstall: Identifiable {
     let repo: String
     var id: String { repo }
 }

@@ -25,6 +25,13 @@ struct MachinesSettingsScreen: View {
         machines.allMachines.filter { !$0.isLocal }
     }
 
+    /// Chats needing attention on a machine — the fleet's ambient unread.
+    private func unreadCount(for machineId: String) -> Int {
+        environment.projectList.sessions.filter {
+            $0.serverId == machineId && SessionAttentionSummary($0).hasUnseenAttention
+        }.count
+    }
+
     var body: some View {
         List {
             Section {
@@ -48,6 +55,9 @@ struct MachinesSettingsScreen: View {
                             }
                         }
                     }
+                    // badge(0) hides itself — quiet unless a machine's
+                    // chats actually need attention.
+                    .badge(unreadCount(for: machine.id))
                 }
             } footer: {
                 InlineCodeText("Run `codevisor setup` on a machine to print its address and token.")

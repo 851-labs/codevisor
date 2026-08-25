@@ -86,6 +86,31 @@ struct SessionAttentionCoordinatorTests {
         #expect(delivery.delivered.count == 1)
     }
 
+    @Test("A background machine's live edge delivers, carrying its serverId")
+    func backgroundMachineDelivers() async throws {
+        let (model, _) = try await makeModel()
+        let coordinator = SessionAttentionCoordinator(projectList: model)
+        let delivery = FakeNotificationDelivery()
+        coordinator.notificationDelivery = delivery
+        // The user is looking at a chat on the LOCAL machine; the finish
+        // lands on a remote one. Fleet notifications must still ping.
+        coordinator.updateFocus(
+            owner: ObjectIdentifier(delivery),
+            session: SessionAttentionFocus(serverId: "local", sessionId: UUID())
+        )
+
+        model.onAttentionTransition?(
+            SessionAttentionTransition(
+                sessionId: UUID(), serverId: "remote-linux",
+                old: summary(),
+                new: summary(title: "Linux build", latest: 1, unread: 1),
+                origin: .liveEvent
+            ))
+
+        #expect(delivery.delivered.map(\.serverId) == ["remote-linux"])
+        #expect(delivery.delivered.map(\.sessionTitle) == ["Linux build"])
+    }
+
     @Test("Action-required and error edges ping as actionRequired")
     func actionRequiredEdges() async throws {
         let (model, _) = try await makeModel()
