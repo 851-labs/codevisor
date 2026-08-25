@@ -44,13 +44,17 @@ struct AddProjectSheet: View {
     }
 
     private func addProject(at path: String) {
-        let project = environment.projectList.addProject(
-            folderURL: URL(fileURLWithPath: path),
-            serverId: targetServerId,
-            client: environment.machines.client(for: targetServerId)
-        )
-        dismiss()
-        onAdded(project)
+        Task {
+            // Awaited so the returned record carries the server's git probe —
+            // the picker offers the worktree step only for git repos.
+            let project = await environment.projectList.addProject(
+                folderURL: URL(fileURLWithPath: path),
+                serverId: targetServerId,
+                client: environment.machines.client(for: targetServerId)
+            )
+            dismiss()
+            onAdded(project)
+        }
     }
 }
 
