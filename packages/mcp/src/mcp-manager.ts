@@ -74,6 +74,15 @@ export interface McpManager {
   readonly create: (request: CreateMcpServerRequest) => Promise<McpServer>
   readonly detectAuth: (url: string) => Promise<McpAuthDetection>
   readonly update: (id: string, request: UpdateMcpServerRequest) => Promise<McpServer>
+  /// The decrypted STATIC secret material (bearer token, headers, env) for
+  /// config-plane replication. OAuth material never leaves the machine —
+  /// its tokens rotate, and concurrent refreshes would invalidate each
+  /// other. Empty bearer tokens normalize to absent.
+  readonly staticSecrets: (id: string) => Promise<{
+    readonly bearerToken?: string
+    readonly headers?: Readonly<Record<string, string>>
+    readonly env?: Readonly<Record<string, string>>
+  }>
   readonly remove: (id: string) => Promise<void>
   readonly tools: (id?: string) => Promise<ReadonlyArray<McpTool>>
   readonly connect: (id: string) => Promise<McpServer>
@@ -746,6 +755,16 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       }
       await refreshGatewayInventories()
       return publicServer(await record(id))
+    },
+    staticSecrets: async (id) => {
+      const stored = secrets(await record(id))
+      return {
+        ...(stored.bearerToken === undefined || stored.bearerToken === ""
+          ? {}
+          : { bearerToken: stored.bearerToken }),
+        ...(stored.headers === undefined ? {} : { headers: stored.headers }),
+        ...(stored.env === undefined ? {} : { env: stored.env })
+      }
     },
     remove: async (id) => {
       await builtinsReady

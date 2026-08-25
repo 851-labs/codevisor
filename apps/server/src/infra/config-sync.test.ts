@@ -24,6 +24,7 @@ describe("config sync", () => {
         authType: "bearer",
         bearerToken: "secret-token",
         enabled: true,
+        headers: { "X-Keep": "k", "X-Org": "851" },
         name: "GitHub",
         transport: "http",
         url: "https://api.example.com/mcp"
@@ -33,6 +34,7 @@ describe("config sync", () => {
       await mcpA.create({
         args: ["-y", "some-mcp"],
         enabled: true,
+        env: { KEEP: "k", TOKEN: "t1" },
         name: "Local Tool",
         command: "npx",
         transport: "stdio"
@@ -47,8 +49,9 @@ describe("config sync", () => {
       })
       const firstA = await reconcileMcps(a)
       expect([...firstA.status.published].sort()).toEqual(["GitHub", "Local Tool", "Scoped"])
-      // Secrets never enter the replica.
-      expect(JSON.stringify(firstA.changedEntries)).not.toContain("secret-token")
+      // Static secrets travel with the definition (same-owner fleet trust);
+      // OAuth material never does.
+      expect(JSON.stringify(firstA.changedEntries)).toContain("secret-token")
       // Idempotent second pass.
       expect((await reconcileMcps(a)).status).toEqual({
         published: [],
@@ -71,11 +74,27 @@ describe("config sync", () => {
       expect(listB.find((server) => server.name === "Scoped")).toMatchObject({
         oauthScope: "repo"
       })
+      // Static secrets arrived with the definitions: a key-based server
+      // works here with zero re-entry.
+      const githubSecretsB = await mcpB.staticSecrets(githubB?.id ?? "")
+      expect(githubSecretsB.bearerToken).toBe("secret-token")
+      expect(githubSecretsB.headers).toEqual({ "X-Keep": "k", "X-Org": "851" })
+      const localToolIdB = listB.find((server) => server.name === "Local Tool")?.id ?? ""
+      expect((await mcpB.staticSecrets(localToolIdB)).env).toEqual({ KEEP: "k", TOKEN: "t1" })
 
       // Edits on B (http and stdio alike) replicate back to A.
-      await mcpB.update(githubB?.id ?? "", { enabled: false })
+      await mcpB.update(githubB?.id ?? "", {
+        enabled: false,
+        bearerToken: "",
+        headers: { "X-New": "1" },
+        removeHeaders: ["X-Org"]
+      })
       const localToolB = listB.find((server) => server.name === "Local Tool")
-      await mcpB.update(localToolB?.id ?? "", { args: ["-y", "other-mcp"] })
+      await mcpB.update(localToolB?.id ?? "", {
+        args: ["-y", "other-mcp"],
+        env: { KEEP: "k2" },
+        removeEnv: ["TOKEN"]
+      })
       const editedB = await reconcileMcps(b)
       expect([...editedB.status.published].sort()).toEqual(["GitHub", "Local Tool"])
       await run(machineA.db.mergeSyncEntries(MCPS_SYNC_NAMESPACE, editedB.changedEntries))
@@ -86,6 +105,31 @@ describe("config sync", () => {
         "-y",
         "other-mcp"
       ])
+      // Secret edits converged exactly: the cleared bearer stays cleared,
+      // removed headers/env are gone, additions and kept values landed.
+      const githubIdA = (await mcpA.list()).find((server) => server.name === "GitHub")?.id ?? ""
+      const githubSecretsA = await mcpA.staticSecrets(githubIdA)
+      expect(githubSecretsA.bearerToken).toBeUndefined()
+      expect(githubSecretsA.headers).toEqual({ "X-Keep": "k", "X-New": "1" })
+      const localToolIdA =
+        (await mcpA.list()).find((server) => server.name === "Local Tool")?.id ?? ""
+      expect((await mcpA.staticSecrets(localToolIdA)).env).toEqual({ KEEP: "k2" })
+
+      // A rotated bearer travels back the other way on the next round.
+      await mcpA.update(githubIdA, { bearerToken: "rotated" })
+      const rotatedA = await reconcileMcps(a)
+      expect(rotatedA.status.published).toEqual(["GitHub"])
+      await run(machineB.db.mergeSyncEntries(MCPS_SYNC_NAMESPACE, rotatedA.changedEntries))
+      await reconcileMcps(b)
+      expect((await mcpB.staticSecrets(githubB?.id ?? "")).bearerToken).toBe("rotated")
+
+      // Emptying a stdio server's env converges to nothing everywhere.
+      await mcpB.update(localToolB?.id ?? "", { removeEnv: ["KEEP"] })
+      const emptiedB = await reconcileMcps(b)
+      expect(emptiedB.status.published).toEqual(["Local Tool"])
+      await run(machineA.db.mergeSyncEntries(MCPS_SYNC_NAMESPACE, emptiedB.changedEntries))
+      await reconcileMcps(a)
+      expect((await mcpA.staticSecrets(localToolIdA)).env).toBeUndefined()
 
       // A deletion tombstones everywhere.
       const idA = (await mcpA.list()).find((server) => server.name === "GitHub")?.id ?? ""
@@ -162,7 +206,10 @@ describe("config sync", () => {
           value: {
             args: ["keep", 42, "also"],
             authType: "none",
+            bearerToken: 42,
             enabled: false,
+            env: { BAD: 2, GOOD: "1" },
+            headers: "nope",
             name: "Mixed Args",
             transport: "http",
             url: "https://mixed.example.com/mcp"
@@ -173,10 +220,26 @@ describe("config sync", () => {
           key: "No Args",
           value: {
             authType: "none",
+            bearerToken: "",
             enabled: false,
+            headers: {},
             name: "No Args",
             transport: "http",
             url: "https://noargs.example.com/mcp"
+          },
+          timestamp: { wallMs: 2, counter: 0, deviceId: "z" }
+        },
+        {
+          key: "Mixed Env",
+          value: {
+            command: "echo",
+            authType: "none",
+            bearerToken: "junk-b",
+            enabled: false,
+            env: { BAD: 2, GOOD: "1" },
+            headers: { "X-Wrong": "1" },
+            name: "Mixed Env",
+            transport: "stdio"
           },
           timestamp: { wallMs: 2, counter: 0, deviceId: "z" }
         }
@@ -187,13 +250,32 @@ describe("config sync", () => {
       mcp: services.mcp,
       serverId: "server-c"
     })
-    expect([...mixed.status.applied].sort()).toEqual(["Mixed Args", "No Args"])
+    expect([...mixed.status.applied].sort()).toEqual(["Mixed Args", "Mixed Env", "No Args"])
     expect(
       (await services.mcp.list()).find((server) => server.name === "Mixed Args")?.args
     ).toEqual(["keep", "also"])
     expect((await services.mcp.list()).find((server) => server.name === "No Args")?.args).toEqual(
       []
     )
+    // Junk secret shapes filter down to their string-valued survivors —
+    // and wrong-transport material (env on http, headers on stdio) is
+    // stripped entirely.
+    const mixedId =
+      (await services.mcp.list()).find((server) => server.name === "Mixed Args")?.id ?? ""
+    const mixedSecrets = await services.mcp.staticSecrets(mixedId)
+    expect(mixedSecrets.bearerToken).toBeUndefined()
+    expect(mixedSecrets.headers).toBeUndefined()
+    expect(mixedSecrets.env).toBeUndefined()
+    const mixedEnvId =
+      (await services.mcp.list()).find((server) => server.name === "Mixed Env")?.id ?? ""
+    const mixedEnvSecrets = await services.mcp.staticSecrets(mixedEnvId)
+    expect(mixedEnvSecrets.headers).toBeUndefined()
+    expect(mixedEnvSecrets.env).toEqual({ GOOD: "1" })
+    const noArgsId =
+      (await services.mcp.list()).find((server) => server.name === "No Args")?.id ?? ""
+    const noArgsSecrets = await services.mcp.staticSecrets(noArgsId)
+    expect(noArgsSecrets.bearerToken).toBeUndefined()
+    expect(noArgsSecrets.env).toBeUndefined()
 
     // A replica update carrying an oauth scope applies onto an existing
     // local definition through the update path.

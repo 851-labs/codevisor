@@ -985,4 +985,41 @@ describe("MCP manager", () => {
     )
     await expect(manager.list()).rejects.toThrow("Invalid encrypted MCP credentials")
   })
+
+  it("exposes static secrets for replication, normalizing empty bearers", async () => {
+    const { manager } = await testManager()
+    const full = await manager.create({
+      authType: "bearer",
+      bearerToken: "tok-1",
+      enabled: false,
+      headers: { "X-Org": "851" },
+      name: "Full",
+      transport: "http",
+      url: "https://full.example.com/mcp"
+    })
+    const stdio = await manager.create({
+      command: "echo",
+      enabled: false,
+      env: { B: "2", A: "1" },
+      name: "Stdio",
+      transport: "stdio"
+    })
+    const bare = await manager.create({
+      authType: "none",
+      enabled: false,
+      name: "Bare",
+      transport: "http",
+      url: "https://bare.example.com/mcp"
+    })
+
+    expect(await manager.staticSecrets(full.id)).toEqual({
+      bearerToken: "tok-1",
+      headers: { "X-Org": "851" }
+    })
+    expect(await manager.staticSecrets(stdio.id)).toEqual({ env: { B: "2", A: "1" } })
+    // A bare server has nothing, and a cleared bearer normalizes to absent.
+    expect(await manager.staticSecrets(bare.id)).toEqual({})
+    await manager.update(full.id, { bearerToken: "" })
+    expect((await manager.staticSecrets(full.id)).bearerToken).toBeUndefined()
+  })
 })

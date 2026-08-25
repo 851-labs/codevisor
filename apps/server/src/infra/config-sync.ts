@@ -12,9 +12,12 @@ import { Effect } from "effect"
 /// Config-plane reconciliation for MCP definitions and the harness-account
 /// roster. Same three-way shape as skills-sync: a private dot-named
 /// "applied" namespace records what this machine last published or applied,
-/// distinguishing a local edit from replica lag. Secrets NEVER travel:
-/// synced MCP values carry the definition (transport, url/command, args,
-/// auth TYPE) — env, headers, tokens, and ciphers stay on each machine.
+/// distinguishing a local edit from replica lag. Since Phase 10, STATIC
+/// secrets travel with the definition — bearer token, headers, and stdio
+/// env replicate so a key-based server works on a fresh machine with zero
+/// re-entry (same-owner fleet trust, like the roster). OAuth material
+/// never syncs: its tokens rotate, and concurrent refreshes would
+/// invalidate each other (Phase 11 owns that with a refresh owner).
 export const MCPS_SYNC_NAMESPACE = "mcps"
 const MCPS_APPLIED_NAMESPACE = "local.mcps-applied"
 export const ACCOUNTS_SYNC_NAMESPACE = "harness-accounts"
@@ -39,6 +42,32 @@ interface SyncedMcpValue {
   readonly enabled: boolean
   readonly authType: "none" | "bearer" | "oauth"
   readonly oauthScope?: string | undefined
+  readonly bearerToken?: string | undefined
+  readonly headers?: Readonly<Record<string, string>> | undefined
+  readonly env?: Readonly<Record<string, string>> | undefined
+}
+
+interface StaticMcpSecrets {
+  readonly bearerToken?: string | undefined
+  readonly headers?: Readonly<Record<string, string>> | undefined
+  readonly env?: Readonly<Record<string, string>> | undefined
+}
+
+/// Sorted keys so fingerprints compare equal regardless of author.
+const sortedRecord = (
+  value: Readonly<Record<string, string>> | undefined
+): Record<string, string> | undefined => {
+  if (value === undefined || Object.keys(value).length === 0) return undefined
+  return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)))
+}
+
+const stringRecord = (value: unknown): Record<string, string> | undefined => {
+  if (typeof value !== "object" || value === null) return undefined
+  return sortedRecord(
+    Object.fromEntries(
+      Object.entries(value).filter((pair): pair is [string, string] => typeof pair[1] === "string")
+    )
+  )
 }
 
 interface McpLike {
@@ -52,18 +81,27 @@ interface McpLike {
   readonly enabled: boolean
   readonly authType: "none" | "bearer" | "oauth"
   readonly oauthScope?: string | undefined
+  readonly headerNames?: ReadonlyArray<string> | undefined
+  readonly environmentNames?: ReadonlyArray<string> | undefined
 }
 
-const syncedValue = (server: McpLike): SyncedMcpValue => ({
-  name: server.name,
-  transport: server.transport,
-  ...(server.url === undefined ? {} : { url: server.url }),
-  ...(server.command === undefined ? {} : { command: server.command }),
-  args: [...server.args],
-  enabled: server.enabled,
-  authType: server.authType,
-  ...(server.oauthScope === undefined ? {} : { oauthScope: server.oauthScope })
-})
+const syncedValue = (server: McpLike, secrets: StaticMcpSecrets): SyncedMcpValue => {
+  const headers = sortedRecord(secrets.headers)
+  const env = sortedRecord(secrets.env)
+  return {
+    name: server.name,
+    transport: server.transport,
+    ...(server.url === undefined ? {} : { url: server.url }),
+    ...(server.command === undefined ? {} : { command: server.command }),
+    args: [...server.args],
+    enabled: server.enabled,
+    authType: server.authType,
+    ...(server.oauthScope === undefined ? {} : { oauthScope: server.oauthScope }),
+    ...(secrets.bearerToken === undefined ? {} : { bearerToken: secrets.bearerToken }),
+    ...(headers === undefined ? {} : { headers }),
+    ...(env === undefined ? {} : { env })
+  }
+}
 
 const fingerprint = (value: SyncedMcpValue): string => JSON.stringify(value)
 
@@ -80,6 +118,11 @@ const parseSyncedValue = (value: unknown): SyncedMcpValue | undefined => {
   ) {
     return undefined
   }
+  // Wrong-transport junk from a replica must never poison an apply:
+  // headers and bearer tokens belong to http servers, env to stdio ones.
+  const isHttp = candidate.transport === "http"
+  const headers = isHttp ? stringRecord(candidate.headers) : undefined
+  const env = isHttp ? undefined : stringRecord(candidate.env)
   return {
     name: candidate.name,
     transport: candidate.transport,
@@ -90,7 +133,12 @@ const parseSyncedValue = (value: unknown): SyncedMcpValue | undefined => {
       : [],
     enabled: candidate.enabled,
     authType: candidate.authType,
-    ...(typeof candidate.oauthScope === "string" ? { oauthScope: candidate.oauthScope } : {})
+    ...(typeof candidate.oauthScope === "string" ? { oauthScope: candidate.oauthScope } : {}),
+    ...(isHttp && typeof candidate.bearerToken === "string" && candidate.bearerToken !== ""
+      ? { bearerToken: candidate.bearerToken }
+      : {}),
+    ...(headers === undefined ? {} : { headers }),
+    ...(env === undefined ? {} : { env })
   }
 }
 
@@ -140,7 +188,7 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
   // renamed aside — a join never silently overwrites either side (the
   // fleet definition applies under the original name below).
   for (const [name, server] of [...localByName]) {
-    let value = syncedValue(server)
+    let value = syncedValue(server, await deps.mcp.staticSecrets(server.id))
     if (appliedByKey.get(name) === fingerprint(value)) continue
     let key = name
     const existing = replicaByKey.get(name)
@@ -186,7 +234,11 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
     const name = entry.key
     const local = localByName.get(name)
     if (entry.deleted === true) {
-      if (local !== undefined && appliedByKey.get(name) === fingerprint(syncedValue(local))) {
+      if (
+        local !== undefined &&
+        appliedByKey.get(name) ===
+          fingerprint(syncedValue(local, await deps.mcp.staticSecrets(local.id)))
+      ) {
         await deps.mcp.remove(local.id)
         appliedWrites.push({ key: name, value: null, deleted: true, timestamp: stamp() })
         appliedByKey.delete(name)
@@ -209,11 +261,17 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
         args: wanted.args,
         enabled: wanted.enabled,
         authType: wanted.authType,
-        ...(wanted.oauthScope === undefined ? {} : { oauthScope: wanted.oauthScope })
+        ...(wanted.oauthScope === undefined ? {} : { oauthScope: wanted.oauthScope }),
+        ...(wanted.bearerToken === undefined ? {} : { bearerToken: wanted.bearerToken }),
+        ...(wanted.headers === undefined ? {} : { headers: wanted.headers }),
+        ...(wanted.env === undefined ? {} : { env: wanted.env })
       })
     } else {
-      // Definition fields only: env/headers/tokens stay untouched, so a
-      // machine's local secrets survive replica updates.
+      // Definition fields plus static secrets converge exactly — absent
+      // synced headers/env are removed, an absent bearer clears (empty
+      // string normalizes back to absent). OAuth material stays local.
+      const wantedHeaders = wanted.headers ?? {}
+      const wantedEnv = wanted.env ?? {}
       await deps.mcp.update(local.id, {
         name: wanted.name,
         enabled: wanted.enabled,
@@ -221,7 +279,23 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
         ...(wanted.command === undefined ? {} : { command: wanted.command }),
         args: wanted.args,
         authType: wanted.authType,
-        ...(wanted.oauthScope === undefined ? {} : { oauthScope: wanted.oauthScope })
+        ...(wanted.oauthScope === undefined ? {} : { oauthScope: wanted.oauthScope }),
+        ...(wanted.transport === "http"
+          ? {
+              bearerToken: wanted.bearerToken ?? "",
+              ...(wanted.headers === undefined ? {} : { headers: wanted.headers }),
+              /* v8 ignore next 2 -- list() always carries headerNames on a live server. */
+              removeHeaders: (local.headerNames ?? []).filter(
+                (header) => wantedHeaders[header] === undefined
+              )
+            }
+          : {
+              ...(wanted.env === undefined ? {} : { env: wanted.env }),
+              /* v8 ignore next 2 -- list() always carries environmentNames on a live server. */
+              removeEnv: (local.environmentNames ?? []).filter(
+                (variable) => wantedEnv[variable] === undefined
+              )
+            })
       })
     }
     appliedWrites.push({ key: name, value: wantedFingerprint, timestamp: stamp() })
