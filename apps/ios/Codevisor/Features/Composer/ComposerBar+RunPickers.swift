@@ -25,30 +25,35 @@ extension ComposerBar {
     /// project name. Tapping opens the stepped machine → project →
     /// run-location sheet.
     var runTargetChips: some View {
-        Button {
+        let isPlaceholder = controller.project.isRunTargetPlaceholder
+        return Button {
             showsRunTargetPicker = true
         } label: {
             HStack(spacing: 4) {
                 Image(
-                    systemName: controller.wantsNewWorktree
+                    systemName: controller.wantsNewWorktree && !isPlaceholder
                         ? "arrow.triangle.branch" : "folder.fill"
                 )
                 .font(.caption)
-                Text(controller.project.name)
+                Text(isPlaceholder ? "Select a Project…" : controller.project.name)
                     .lineLimit(1)
             }
             .foregroundStyle(.secondary)
         }
         .contextMenu {
-            Button {
-                managedProject = liveProject
-            } label: {
-                Label("Manage Project…", systemImage: "gearshape")
+            if !isPlaceholder {
+                Button {
+                    managedProject = liveProject
+                } label: {
+                    Label("Manage Project…", systemImage: "gearshape")
+                }
             }
         }
         .accessibilityLabel("Run target")
         .accessibilityValue(
-            "\(controller.project.name), \(controller.wantsNewWorktree ? "new worktree" : "project directory")"
+            isPlaceholder
+                ? "No project selected"
+                : "\(controller.project.name), \(controller.wantsNewWorktree ? "new worktree" : "project directory")"
         )
     }
 

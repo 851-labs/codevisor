@@ -1630,7 +1630,6 @@ struct HomeView: View {
                         onDraftStarted: {
                             beginNewChatPromotion($0, flow: liveFlow)
                         },
-                        onInitialProjectAdded: returnToNewChatRoot,
                         onDismissNewChat: { cancelNewChat(liveFlow) },
                         // Keep the presented hierarchy structurally inert
                         // through first send. Changing this role reconciled
@@ -1729,14 +1728,6 @@ struct HomeView: View {
     /// Folder rows add type-erased values to the sheet's own NavigationPath.
     /// Selecting one keeps the draft sheet alive and removes only those
     /// browser pushes.
-    private func returnToNewChatRoot() {
-        guard !newChatSheetPath.isEmpty else { return }
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            newChatSheetPath.removeLast(newChatSheetPath.count)
-        }
-    }
 }
 
 /// Sheet-presentation wrapper for a parsed install-plugin deeplink: the repo

@@ -123,6 +123,9 @@ struct ComposerBar: View {
             && !controller.composerAttachments.contains { $0.state == .loading }
             && !isClearingGoal
             && controller.configurationValidationState == .ready
+            // No project picked yet (the placeholder draft): the composer
+            // renders and takes text, but nothing can be sent.
+            && !controller.project.isRunTargetPlaceholder
     }
 
     private static let minEditorHeight: CGFloat = 30
@@ -242,7 +245,8 @@ struct ComposerBar: View {
         .sheet(isPresented: $showsRunTargetPicker) {
             RunTargetPickerSheet(
                 initialServerId: controller.project.serverId,
-                currentProject: controller.project,
+                currentProject: controller.project.isRunTargetPlaceholder
+                    ? nil : controller.project,
                 currentWantsWorktree: controller.wantsNewWorktree,
                 onFinish: { project, wantsWorktree in
                     applyRunTarget(project, wantsWorktree: wantsWorktree)

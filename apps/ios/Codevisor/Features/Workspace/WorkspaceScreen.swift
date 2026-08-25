@@ -51,7 +51,6 @@ struct WorkspaceScreen: View {
     var onDraftStarted: ((UUID) -> Void)? = nil
     /// The no-project browser pushes into the sheet's type-erased path. Once a
     /// folder is selected, Home removes only those browser entries.
-    var onInitialProjectAdded: (() -> Void)? = nil
     /// Home owns the native sheet's Boolean presentation state, so the close
     /// button requests dismissal there. Normal workspace routes keep using
     /// the environment dismiss action.
@@ -98,6 +97,10 @@ struct WorkspaceScreen: View {
     /// Stands in for the session id a draft doesn't have yet, so its pane
     /// group can exist (and keep a STABLE pane id) from the first frame.
     @State private var draftPlaceholderId = UUID()
+    /// True while `draftController` is the project-less sentinel this screen
+    /// minted itself (never the cache's). The moment it points at a real
+    /// project, it is swapped for the durable cache-built draft.
+    @State private var draftIsPlaceholderBorn = false
     /// The tab grid is workspace-local state, not another navigation
     /// destination. Keeping the active pane in Home's NavigationStack means
     /// the system back button and edge swipe always pop straight to Home.
@@ -166,7 +169,7 @@ struct WorkspaceScreen: View {
     private var panes: PaneGroupState {
         if let paneState { return paneState }
         if let workspace = resolvedWorkspace {
-            return compactPaneState(from: workspace)
+            return Self.compactPaneState(from: workspace)
         }
         if let paneStorageId {
             return WorkspacePaneStore.shared.state(
@@ -195,8 +198,15 @@ struct WorkspaceScreen: View {
     /// The persisted project snapshot is good enough to construct New Chat's
     /// draft immediately. The server refresh that follows may update this
     /// list, but it must not hold the sheet behind a loading surface.
+    /// FLEET-wide: the draft can target any machine's project (the picker
+    /// and the retargeting draft both handle foreign machines), so a fresh
+    /// phone whose selected machine has no projects still lands on a real
+    /// composer when any machine does.
     private var draftProjectCandidate: Project? {
-        environment.projectList.activeProjects.first { !$0.isScratch }
+        environment.projectList.fleetActiveProjectsByWorkspaceRecency(
+            environment.workspaces.loadAll()
+        )
+        .first { !$0.isScratch }
     }
 
     /// The workspace's project. `prepare()` caches it in state, but it also
@@ -289,22 +299,11 @@ struct WorkspaceScreen: View {
                 // Once created, the retained draft controller owns its project.
                 // Do not fall back to setup if an older global snapshot briefly
                 // omits that project while its server upsert is acknowledged.
-                if draftProjectCandidate == nil {
-                    // No project yet: the new-chat screen still shows, with
-                    // the run-target picker as its single call to action. If
-                    // the background refresh finds a project, onChange below
-                    // replaces this with the draft composer.
-                    DraftRunTargetPlaceholder { project, wantsWorktree in
-                        setUpDraftIfNeeded(preferredProject: project)
-                        draftController?.wantsNewWorktree =
-                            project.isGitRepository && wantsWorktree
-                    }
-                } else {
-                    // setUpDraftIfNeeded() runs synchronously at the start of
-                    // prepare(). Keep the sheet calm for that initial actor
-                    // turn rather than flashing either setup or a spinner.
-                    Color.clear
-                }
+                // setUpDraftIfNeeded() runs synchronously at the start of
+                // prepare() — with no project anywhere it still mints the
+                // sentinel draft, so the composer always renders. Keep the
+                // sheet calm for that initial actor turn.
+                Color.clear
             } else if resolvedProject == nil {
                 DelayedWorkspaceLoadingView()
             } else if preferredChatSessionId != nil, paneState == nil {
@@ -345,16 +344,6 @@ struct WorkspaceScreen: View {
                 }
             )
         }
-        // Folder traversal only exists in the unsent-draft sheet. Registering
-        // its route from an ordinary workspace also injects RemoteDirectory
-        // into Home's homogeneous HomeRoute stack, which SwiftUI rejects and
-        // can leave the navigation bar in an invalid transition state.
-        .modifier(
-            InitialProjectNavigationDestination(
-                isEnabled: isNewChatPresentation,
-                onPick: addInitialProject
-            )
-        )
         .task(id: environment.machines.selectedServerAvailability) {
             guard case .ready = environment.machines.selectedServerAvailability else { return }
             await prepare()
@@ -370,8 +359,17 @@ struct WorkspaceScreen: View {
             if case .ready = availability { return }
             showsGrid = false
         }
-        .onChange(of: environment.projectList.activeProjects.map(\.id)) { _, _ in
+        .onChange(of: environment.projectList.projects.map(\.id)) { _, _ in
             setUpDraftIfNeeded()
+        }
+        // The chip's picker retargets the sentinel at a real project in
+        // place; swap it for the durable cache-built draft (same text).
+        .onChange(of: draftController?.project.id) { _, _ in
+            guard draftIsPlaceholderBorn,
+                let sentinel = draftController,
+                !sentinel.project.isRunTargetPlaceholder
+            else { return }
+            setUpDraftIfNeeded(preferredProject: sentinel.project)
         }
         .onChange(of: environment.workspaceSync.revision) { _, _ in
             synchronizePaneStateFromWorkspace()
@@ -426,10 +424,6 @@ struct WorkspaceScreen: View {
                 || (!blocksServerContent && !isDraft),
             contentPhase: contentPhase
         )
-    }
-
-    private func diagnosticID(_ id: UUID) -> String {
-        String(id.uuidString.prefix(8))
     }
 
     /// The draft's first surface when its machine has no usable project.
@@ -1162,70 +1156,6 @@ struct WorkspaceScreen: View {
         environment.workspaceSync.noteLocalMutation()
     }
 
-    private static func applyCompactPaneState(
-        _ state: PaneGroupState,
-        to workspace: inout Workspace
-    ) {
-        let oldTabs = workspace.centerTabs
-        workspace.centerTabs = state.panes.map { pane in
-            if let oldTab = oldTabs.first(where: {
-                $0.root.groupId(containingPane: pane.id) != nil
-            }),
-                let oldGroup = oldTab.root.allGroups.first(where: {
-                    $0.state.panes.contains { $0.id == pane.id }
-                })
-            {
-                let groupState = PaneGroupState(
-                    panes: [pane], selectedPaneId: pane.id, isVisible: true
-                )
-                return WorkspaceTab(
-                    id: oldTab.id,
-                    customTitle: oldTab.customTitle,
-                    root: .group(id: oldGroup.id, state: groupState),
-                    activeLeafId: oldGroup.id
-                )
-            }
-            return WorkspaceTab(
-                root: .leaf(
-                    PaneGroupState(
-                        panes: [pane], selectedPaneId: pane.id, isVisible: true
-                    )
-                )
-            )
-        }
-        if workspace.centerTabs.isEmpty {
-            workspace.centerTabs = [WorkspaceTab(root: .leaf(PaneGroupState()))]
-        }
-        workspace.selectedCenterTabId =
-            state.selectedPaneId.flatMap { selectedPaneId in
-                workspace.centerTabs.first {
-                    $0.root.groupId(containingPane: selectedPaneId) != nil
-                }?.id
-            } ?? workspace.centerTabs[0].id
-        // The compact client has one placement surface. A pane imported from
-        // macOS's bottom area is a normal iOS tab; its identity remains shared
-        // even though this device chooses a different layout.
-        workspace.bottomGroup = PaneGroupState()
-    }
-
-    private func compactPaneState(from workspace: Workspace) -> PaneGroupState {
-        let candidates =
-            workspace.centerTabs.flatMap { tab in
-                tab.root.allGroups.flatMap(\.state.panes)
-            } + workspace.bottomGroup.panes
-        var seen = Set<UUID>()
-        let shared = candidates.filter { seen.insert($0.id).inserted }
-        let selected = workspace.selectedCenterTab.flatMap { tab in
-            tab.root.group(id: tab.activeLeafId)?.selectedPaneId
-        }
-        return PaneGroupState(
-            panes: shared,
-            selectedPaneId: shared.contains(where: { $0.id == selected })
-                ? selected : shared.first?.id,
-            isVisible: true
-        )
-    }
-
     private func publishPane(_ pane: PaneDescriptorState) {
         guard let workspaceId = resolvedWorkspace?.id else { return }
         environment.workspaceSync.publishPane(
@@ -1302,7 +1232,7 @@ struct WorkspaceScreen: View {
     private func prepare() async {
         IOSNavigationDiagnostics.record(
             "workspace.prepare.begin",
-            "session=\(activeSessionId.map(diagnosticID) ?? "nil") controllers=\(controllers.count)"
+            "session=\(activeSessionId.map(Self.diagnosticID) ?? "nil") controllers=\(controllers.count)"
         )
         guard let sessionId = activeSessionId else {
             // Stale while revalidate, matching macOS New Chat: construct from
@@ -1317,7 +1247,7 @@ struct WorkspaceScreen: View {
         if paneState == nil, let paneStorageId {
             var explicitlyOpenedPane: PaneDescriptorState?
             var state =
-                resolvedWorkspace.map(compactPaneState(from:))
+                resolvedWorkspace.map(Self.compactPaneState(from:))
                 ?? WorkspacePaneStore.shared.state(
                     for: paneStorageId,
                     legacySessionIds: legacyPaneSessionIds
@@ -1347,7 +1277,7 @@ struct WorkspaceScreen: View {
                 missing = true
                 IOSNavigationDiagnostics.record(
                     "workspace.prepare.abort",
-                    "session=\(diagnosticID(sessionId)) reason=session-or-project-missing"
+                    "session=\(Self.diagnosticID(sessionId)) reason=session-or-project-missing"
                 )
                 return
             }
@@ -1357,7 +1287,7 @@ struct WorkspaceScreen: View {
         await connectChat(sessionId: sessionId)
         IOSNavigationDiagnostics.record(
             "workspace.prepare.end",
-            "session=\(diagnosticID(sessionId)) controllers=\(controllers.count)"
+            "session=\(Self.diagnosticID(sessionId)) controllers=\(controllers.count)"
         )
     }
 
@@ -1369,7 +1299,18 @@ struct WorkspaceScreen: View {
     private func setUpDraftIfNeeded(preferredProject: Project? = nil) {
         guard isDraft else { return }
         guard let project = preferredProject ?? draftProjectCandidate
-        else { return }
+        else {
+            setUpPlaceholderDraftIfNeeded()
+            return
+        }
+        // A project arrived (or was picked) while the project-less sentinel
+        // held the composer: carry the typed text into the real draft.
+        var carriedText = ""
+        if let sentinel = draftController, draftIsPlaceholderBorn {
+            carriedText = sentinel.composerText
+            draftController = nil
+            draftIsPlaceholderBorn = false
+        }
         guard draftController?.keepOrRetargetDraft(to: project) != true else { return }
         // The retained draft: leaving and coming back — or relaunching —
         // restores the unsent message, attachments, and picked run location.
@@ -1388,19 +1329,33 @@ struct WorkspaceScreen: View {
             guard let controller else { return }
             adoptSession(for: controller)
         }
+        if !carriedText.isEmpty, controller.composerText.isEmpty {
+            controller.composerText = carriedText
+        }
         draftController = controller
         Task { await controller.prepare() }
     }
 
-    private func addInitialProject(at path: String) {
-        let addedProject = environment.projectList.addProject(
-            folderURL: URL(fileURLWithPath: path)
+    /// No project exists anywhere yet: the composer still renders, bound to
+    /// a sentinel project — send stays disabled and the run-target chip
+    /// reads "Select a Project…". Never prepared, never cached, never
+    /// persisted; picking (or adding) a real project swaps it out.
+    private func setUpPlaceholderDraftIfNeeded() {
+        guard draftController == nil else { return }
+        let controller = SessionController(
+            project: .runTargetPlaceholder(
+                serverId: environment.machines.selectedMachineId
+            ),
+            configCache: environment.configCache
         )
-        setUpDraftIfNeeded(preferredProject: addedProject)
-
-        // A folder may have been selected several pushes deep. Reveal this
-        // same draft destination without replacing it.
-        onInitialProjectAdded?()
+        serverConfig = environment.machines.serverConfig(
+            for: environment.machines.selectedMachineId
+        )
+        if paneState == nil {
+            paneState = PaneGroupState.centerInitial(sessionId: draftPlaceholderId)
+        }
+        draftIsPlaceholderBorn = true
+        draftController = controller
     }
 
     /// The draft's first send: create the session and become its workspace,
@@ -1521,19 +1476,19 @@ struct WorkspaceScreen: View {
     private func connectChat(sessionId chatId: UUID) async {
         IOSNavigationDiagnostics.record(
             "workspace.connectChat.begin",
-            "session=\(diagnosticID(chatId)) localController=\(controllers[chatId] != nil)"
+            "session=\(Self.diagnosticID(chatId)) localController=\(controllers[chatId] != nil)"
         )
         guard controllers[chatId] == nil else {
             IOSNavigationDiagnostics.record(
                 "workspace.connectChat.skip",
-                "session=\(diagnosticID(chatId)) reason=local-controller-present"
+                "session=\(Self.diagnosticID(chatId)) reason=local-controller-present"
             )
             return
         }
         guard let session = session(for: chatId) else {
             IOSNavigationDiagnostics.record(
                 "workspace.connectChat.skip",
-                "session=\(diagnosticID(chatId)) reason=session-missing"
+                "session=\(Self.diagnosticID(chatId)) reason=session-missing"
             )
             return
         }
@@ -1544,7 +1499,7 @@ struct WorkspaceScreen: View {
         else {
             IOSNavigationDiagnostics.record(
                 "workspace.connectChat.skip",
-                "session=\(diagnosticID(chatId)) reason=project-missing"
+                "session=\(Self.diagnosticID(chatId)) reason=project-missing"
             )
             return
         }
@@ -1559,12 +1514,12 @@ struct WorkspaceScreen: View {
         controllers[chatId] = controller
         IOSNavigationDiagnostics.record(
             "workspace.connectChat.controller",
-            "session=\(diagnosticID(chatId)) model=\(controller.model != nil) connecting=\(controller.isConnecting) historyLoading=\(controller.isLoadingInitialHistory)"
+            "session=\(Self.diagnosticID(chatId)) model=\(controller.model != nil) connecting=\(controller.isConnecting) historyLoading=\(controller.isLoadingInitialHistory)"
         )
         guard controller.model == nil, !controller.isConnecting else {
             IOSNavigationDiagnostics.record(
                 "workspace.connectChat.skip",
-                "session=\(diagnosticID(chatId)) reason=\(controller.model != nil ? "model-present" : "already-connecting")"
+                "session=\(Self.diagnosticID(chatId)) reason=\(controller.model != nil ? "model-present" : "already-connecting")"
             )
             return
         }
@@ -1574,11 +1529,11 @@ struct WorkspaceScreen: View {
             await controller.prepare()
             controller.applyComposerDefaults()
         }
-        IOSNavigationDiagnostics.record("workspace.connectChat.connect.begin", "session=\(diagnosticID(chatId))")
+        IOSNavigationDiagnostics.record("workspace.connectChat.connect.begin", "session=\(Self.diagnosticID(chatId))")
         await controller.connectIfNeeded()
         IOSNavigationDiagnostics.record(
             "workspace.connectChat.connect.end",
-            "session=\(diagnosticID(chatId)) model=\(controller.model != nil) connecting=\(controller.isConnecting) historyLoading=\(controller.isLoadingInitialHistory)"
+            "session=\(Self.diagnosticID(chatId)) model=\(controller.model != nil) connecting=\(controller.isConnecting) historyLoading=\(controller.isLoadingInitialHistory)"
         )
     }
 
