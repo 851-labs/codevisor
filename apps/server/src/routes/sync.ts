@@ -15,6 +15,8 @@ import {
   publishAccountsRoster,
   reconcileMcps
 } from "../infra/config-sync.js"
+import { HARNESSES_SYNC_NAMESPACE, reconcileHarnesses } from "../infra/harness-sync.js"
+import { discoverHarnesses } from "./harnesses.js"
 import { reconcileSkills, SKILLS_SYNC_NAMESPACE, verifySkillArchive } from "../infra/skills-sync.js"
 import {
   appendAndPublish,
@@ -133,6 +135,46 @@ export const routeSync = async (
     if (result.changedEntries.length > 0) {
       void appendAndPublish(services.db, fanout, "sync.changed", SKILLS_SYNC_NAMESPACE, {
         namespace: SKILLS_SYNC_NAMESPACE,
+        entries: result.changedEntries
+      }).catch(swallowError)
+    }
+    writeJson(response, 200, result.status)
+    return true
+  }
+
+  if (url.pathname === "/v1/sync/harnesses/reconcile" && request.method === "POST") {
+    const lifecycle = services.lifecycle
+    const custom = services.customHarnesses
+    const result = await reconcileHarnesses({
+      db: services.db,
+      serverId: config.id,
+      listHarnesses: async () =>
+        (await discoverHarnesses(services)).map((harness) => ({
+          id: harness.id,
+          enabled: harness.enabled,
+          installed: harness.readiness.state === "ready",
+          // Mirrors the PATCH enable gate: without an auth service there is
+          // nothing to gate on; with one, signed-in or auth-free only.
+          authenticated:
+            services.auth === undefined ||
+            harness.auth?.state === "authenticated" ||
+            harness.auth?.state === "notRequired"
+        })),
+      setEnabled: (harnessId, enabled) => run(services.db.setHarnessEnabled(harnessId, enabled)),
+      beginInstall: async (harnessId) => {
+        if (lifecycle === undefined) {
+          throw new Error("Harness install unavailable on this machine")
+        }
+        await lifecycle.beginInstall(harnessId)
+      },
+      listCustomSpecs: async () => (custom === undefined ? [] : await custom.list()),
+      replaceCustomSpecs: async (specs) => {
+        if (custom !== undefined) await custom.replace(specs)
+      }
+    })
+    if (result.changedEntries.length > 0) {
+      void appendAndPublish(services.db, fanout, "sync.changed", HARNESSES_SYNC_NAMESPACE, {
+        namespace: HARNESSES_SYNC_NAMESPACE,
         entries: result.changedEntries
       }).catch(swallowError)
     }

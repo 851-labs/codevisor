@@ -140,6 +140,7 @@ export const endpoints = [
   "PUT /v1/sync/blobs/:id",
   "POST /v1/sync/skills/reconcile",
   "POST /v1/sync/mcps/reconcile",
+  "POST /v1/sync/harnesses/reconcile",
   "POST /v1/sync/accounts/publish",
   "GET /v1/sync-participation",
   "PUT /v1/sync-participation",

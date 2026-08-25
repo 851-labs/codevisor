@@ -613,6 +613,10 @@ public extension CodevisorServerClienting {
 }
 
 public extension CodevisorServerClienting {
+    func reconcileHarnessesSync() async throws -> ServerHarnessSyncStatus {
+        ServerHarnessSyncStatus(published: [], applied: [], removed: [], installing: [], blocked: [])
+    }
+
     func syncParticipation() async throws -> ServerSyncParticipation {
         ServerSyncParticipation(enabled: true)
     }

@@ -13,7 +13,9 @@ import Observation
 @Observable
 public final class ConfigSync {
     /// The namespaces this client gossips. Grows as stores onboard.
-    public static let namespaces = ["settings", "skills", "mcps", "harness-accounts", "machines"]
+    public static let namespaces = [
+        "settings", "skills", "mcps", "harness-accounts", "machines", "harnesses",
+    ]
 
     private let machines: MachineController
     private let store: any PersistenceStore
@@ -128,6 +130,7 @@ public final class ConfigSync {
         let client = machines.client(for: machineId)
         await synchronize(machineId: machineId)
         _ = try? await client.reconcileMcpsSync()
+        _ = try? await client.reconcileHarnessesSync()
         try? await client.publishAccountsSync()
         await synchronizeSkills()
     }
@@ -141,6 +144,7 @@ public final class ConfigSync {
             // Reconcile the machine's applied state against its (just
             // gossiped) replicas, and refresh its published roster.
             _ = try? await client.reconcileMcpsSync()
+            _ = try? await client.reconcileHarnessesSync()
             try? await client.publishAccountsSync()
         }
         await synchronizeSkills()

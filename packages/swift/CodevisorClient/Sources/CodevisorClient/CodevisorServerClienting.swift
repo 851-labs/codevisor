@@ -33,6 +33,9 @@ public protocol CodevisorServerClienting: Sendable {
     func reconcileSkillsSync() async throws -> ServerSkillsSyncStatus
     /// Runs one MCP-definitions reconcile pass on the machine.
     func reconcileMcpsSync() async throws -> ServerMcpSyncStatus
+    /// One harness-plane reconcile pass (enabled set, desired installs,
+    /// custom specs) against the machine's replica.
+    func reconcileHarnessesSync() async throws -> ServerHarnessSyncStatus
     /// Publishes the machine's harness-account roster (metadata only).
     func publishAccountsSync() async throws
     /// Raw config-plane blob transfer, for ferrying skill archives between

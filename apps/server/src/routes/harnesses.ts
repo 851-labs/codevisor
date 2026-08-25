@@ -519,7 +519,7 @@ export const discoverCapabilities = async (
 const conflictFrom = (cause: unknown): HttpFailure =>
   new HttpFailure(409, cause instanceof Error ? cause.message : String(cause))
 
-const discoverHarnesses = async (
+export const discoverHarnesses = async (
   services: CodevisorServerServices,
   forceAuth = false,
   harnessId?: string,

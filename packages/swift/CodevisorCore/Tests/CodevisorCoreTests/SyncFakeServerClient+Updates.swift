@@ -212,6 +212,14 @@ extension SyncFakeServerClient {
         lock.withLock { _operationLog.append("accounts.publish") }
     }
 
+    func reconcileHarnessesSync() async throws -> ServerHarnessSyncStatus {
+        lock.withLock {
+            _operationLog.append("harnesses.reconcile")
+            return ServerHarnessSyncStatus(
+                published: [], applied: [], removed: [], installing: [], blocked: [])
+        }
+    }
+
     func setSyncParticipation(enabled: Bool) async throws -> ServerSyncParticipation {
         lock.withLock { _operationLog.append("sync.participation:\(enabled)") }
         return ServerSyncParticipation(enabled: enabled)

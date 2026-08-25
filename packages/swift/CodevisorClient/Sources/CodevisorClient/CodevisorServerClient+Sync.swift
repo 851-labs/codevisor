@@ -153,3 +153,48 @@ extension CodevisorServerClient {
         )
     }
 }
+
+/// One machine blocked on itself: a sign-in required before an enable
+/// applies, or no runnable install method. Retried on every pass.
+public struct ServerHarnessSyncBlocked: Codable, Equatable, Sendable {
+    public var id: String
+    public var reason: String
+
+    public init(id: String, reason: String) {
+        self.id = id
+        self.reason = reason
+    }
+}
+
+/// POST /v1/sync/harnesses/reconcile: the harness plane's pass summary.
+public struct ServerHarnessSyncStatus: Codable, Equatable, Sendable {
+    public var published: [String]
+    public var applied: [String]
+    public var removed: [String]
+    public var installing: [String]
+    public var blocked: [ServerHarnessSyncBlocked]
+
+    public init(
+        published: [String],
+        applied: [String],
+        removed: [String],
+        installing: [String],
+        blocked: [ServerHarnessSyncBlocked]
+    ) {
+        self.published = published
+        self.applied = applied
+        self.removed = removed
+        self.installing = installing
+        self.blocked = blocked
+    }
+}
+
+extension CodevisorServerClient {
+    public func reconcileHarnessesSync() async throws -> ServerHarnessSyncStatus {
+        try await send(
+            "/v1/sync/harnesses/reconcile",
+            method: "POST",
+            body: Optional<EmptyBody>.none
+        )
+    }
+}

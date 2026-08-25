@@ -1,14 +1,18 @@
+import { Effect } from "effect"
 import { makeSkillsManager } from "@codevisor/skills"
 import { makeBlobStore } from "@codevisor/sync"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
+import type { CodevisorServerServices } from "../server-context.js"
 import {
+  harnesses,
   jsonRequest,
   makeAgents,
   makeServices,
   readWebSocketEvents,
+  run,
   startWithApp,
   tempDirs
 } from "../test-support.js"
@@ -181,6 +185,159 @@ describe("/v1/sync", () => {
     })
     expect(on.body).toEqual({ enabled: true })
     expect((await jsonRequest(server, "/v1/sync/settings")).status).toBe(200)
+  })
+
+  it("reconciles harnesses over HTTP with auth and lifecycle gates", async () => {
+    const { services } = await makeServices("server-hsync")
+    // A custom-spec store rides along: the local spec publishes and the
+    // seeded fleet spec applies through one replace.
+    const replaced: Array<ReadonlyArray<unknown>> = []
+    const customHarnesses = {
+      list: () => Promise.resolve([{ id: "mybot", name: "My Bot", command: "mybot" }]),
+      replace: (specs: ReadonlyArray<unknown>) => {
+        replaced.push(specs)
+        return Promise.resolve()
+      },
+      test: () => Promise.resolve({ ok: true })
+    } as unknown as NonNullable<CodevisorServerServices["customHarnesses"]>
+    await run(
+      services.db.mergeSyncEntries("harnesses", [
+        {
+          key: "custom:fleetbot",
+          value: { id: "fleetbot", name: "Fleet Bot", command: "fleetbot" },
+          timestamp: { wallMs: 10, counter: 0, deviceId: "z" }
+        }
+      ])
+    )
+    const server = await startWithApp({ ...services, customHarnesses })
+
+    // Publish: the fake catalog's codex (ready, enabled) enters the plane.
+    const first = await jsonRequest(server, "/v1/sync/harnesses/reconcile", { method: "POST" })
+    expect(first.status).toBe(200)
+    expect(first.body).toMatchObject({
+      published: ["codex", "custom:mybot"],
+      applied: ["custom:fleetbot"],
+      blocked: []
+    })
+    expect(replaced.at(-1)?.length).toBe(2)
+    const doc = await jsonRequest(server, "/v1/sync/harnesses")
+    expect(
+      (doc.body as { entries: Array<{ key: string; value: unknown }> }).entries[0]?.value
+    ).toEqual({ enabled: true, installed: true })
+
+    // A machine whose codex is NOT installed, told to install it, with no
+    // lifecycle manager: blocked, never failed.
+    const { services: bare } = await makeServices("server-hsync-bare")
+    await run(
+      bare.db.mergeSyncEntries("harnesses", [
+        {
+          key: "codex",
+          value: { enabled: true, installed: true },
+          timestamp: { wallMs: 10, counter: 0, deviceId: "z" }
+        }
+      ])
+    )
+    const blockedServer = await startWithApp({
+      ...bare,
+      agents: {
+        ...bare.agents,
+        discoverHarnesses: Effect.succeed(
+          harnesses.map((harness) => ({
+            ...harness,
+            readiness: { state: "unavailable" as const }
+          }))
+        )
+      }
+    })
+    const blocked = await jsonRequest(blockedServer, "/v1/sync/harnesses/reconcile", {
+      method: "POST"
+    })
+    expect(blocked.body).toMatchObject({
+      blocked: [{ id: "codex", reason: "Harness install unavailable on this machine" }]
+    })
+
+    // With a lifecycle manager present, the same want starts a real install.
+    const { services: installable } = await makeServices("server-hsync-install")
+    await run(
+      installable.db.mergeSyncEntries("harnesses", [
+        {
+          key: "codex",
+          value: { enabled: true, installed: true },
+          timestamp: { wallMs: 10, counter: 0, deviceId: "z" }
+        },
+        // A custom spec arriving on a machine with no custom store: the
+        // apply is a quiet no-op rather than a failure.
+        {
+          key: "custom:orphan",
+          value: { id: "orphan", name: "Orphan", command: "orphan" },
+          timestamp: { wallMs: 10, counter: 0, deviceId: "z" }
+        }
+      ])
+    )
+    const installs: Array<string> = []
+    const lifecycle = {
+      subscribe: () => () => {},
+      onGateReleased: () => () => {},
+      beginInstall: (harnessId: string) => {
+        installs.push(harnessId)
+        return Promise.resolve({ terminalId: "t1" })
+      }
+    } as unknown as NonNullable<CodevisorServerServices["lifecycle"]>
+    const installServer = await startWithApp({
+      ...installable,
+      lifecycle,
+      agents: {
+        ...installable.agents,
+        discoverHarnesses: Effect.succeed(
+          harnesses.map((harness) => ({
+            ...harness,
+            readiness: { state: "unavailable" as const }
+          }))
+        )
+      }
+    })
+    const installing = await jsonRequest(installServer, "/v1/sync/harnesses/reconcile", {
+      method: "POST"
+    })
+    expect(installing.body).toMatchObject({ installing: ["codex"] })
+    expect(installs).toEqual(["codex"])
+
+    // Auth gating end to end: loggedOut blocks the enable; authenticated
+    // and notRequired both let it through.
+    const reconcileWithAuth = async (state: string, serverId: string) => {
+      const { services: base } = await makeServices(serverId)
+      await run(base.db.setHarnessEnabled("codex", false))
+      await run(
+        base.db.mergeSyncEntries("harnesses", [
+          {
+            key: "codex",
+            value: { enabled: true, installed: true },
+            timestamp: { wallMs: 10, counter: 0, deviceId: "z" }
+          }
+        ])
+      )
+      const auth = {
+        subscribe: () => () => {},
+        decorateHarnesses: (list: ReadonlyArray<unknown>) =>
+          Promise.resolve(
+            (list as Array<Record<string, unknown>>).map((harness) => ({
+              ...harness,
+              auth: { state }
+            }))
+          )
+      } as unknown as NonNullable<CodevisorServerServices["auth"]>
+      const authedServer = await startWithApp({ ...base, auth })
+      return jsonRequest(authedServer, "/v1/sync/harnesses/reconcile", { method: "POST" })
+    }
+    expect((await reconcileWithAuth("loggedOut", "server-h1")).body).toMatchObject({
+      blocked: [{ id: "codex", reason: "Sign in before this harness can be enabled" }]
+    })
+    expect((await reconcileWithAuth("authenticated", "server-h2")).body).toMatchObject({
+      applied: ["codex"]
+    })
+    expect((await reconcileWithAuth("notRequired", "server-h3")).body).toMatchObject({
+      applied: ["codex"]
+    })
   })
 
   it("responds 501 for sync routes without the backing services", async () => {

@@ -216,6 +216,7 @@ struct ConfigSyncTests {
         // reconcile/publish calls, with no periodic sweep involved.
         try await waitForSync {
             fake.operationLog.contains("mcps.reconcile")
+                && fake.operationLog.contains("harnesses.reconcile")
                 && fake.operationLog.contains("accounts.publish")
                 && fake.operationLog.contains("skills.reconcile")
         }
@@ -259,6 +260,7 @@ struct ConfigSyncTests {
         await sync.synchronizeAll()
 
         #expect(fake.operationLog.contains("mcps.reconcile"))
+        #expect(fake.operationLog.contains("harnesses.reconcile"))
         #expect(fake.operationLog.contains("accounts.publish"))
         #expect(fake.operationLog.contains("skills.reconcile"))
     }
