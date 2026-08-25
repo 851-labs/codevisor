@@ -1334,9 +1334,13 @@ struct HomeView: View {
         // doesn't need to follow a send.
         flow.sessionId = sessionId
         let workspace = ensureWorkspace(for: session)
+        // Host the surface in the PRESENTING (main) window, not the sheet's:
+        // zoom presentations can put the sheet in a transient portal window
+        // whose layer tree detaches from the render server — an animator
+        // started there completes instantly, killing the whole morph.
         guard let presentationSession = flow.presentationSession,
-            let sourceFrame = presentationSession.visibleFrameInWindow,
-            let presentationWindow = presentationSession.presentationWindow
+            let presentationWindow = presentationSession.promotionHostWindow,
+            let sourceFrame = presentationSession.visibleFrame(in: presentationWindow)
         else {
             // The resolver is installed with the first native-sheet frame, so
             // this should be unreachable in normal interaction. Keeping the

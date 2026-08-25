@@ -36,6 +36,30 @@ final class NewChatPresentationSession {
         presentedController?.viewIfLoaded?.window
     }
 
+    /// The PRESENTING side's window — the stable app window that hosts
+    /// Home's navigation stack. Zoom-style sheet presentations can host the
+    /// presented controller in a transient portal window; a promotion
+    /// surface installed there can be detached from the render server,
+    /// which completes its animator instantly (the "no animation" sends).
+    var presentingWindow: UIWindow? {
+        presentedController?.presentingViewController?.viewIfLoaded?.window
+    }
+
+    /// Where the promotion surface should live: the presenting window when
+    /// it resolves, else the sheet's own.
+    var promotionHostWindow: UIWindow? {
+        presentingWindow ?? presentationWindow
+    }
+
+    /// The sheet's visible frame converted into an EXPLICIT window's
+    /// coordinate space (UIKit converts across windows via screen space).
+    func visibleFrame(in window: UIWindow) -> CGRect? {
+        guard let view = presentedController?.viewIfLoaded,
+            !view.bounds.isEmpty
+        else { return nil }
+        return view.convert(view.bounds, to: window)
+    }
+
     /// Preserve the exact final sheet pixels before first-send state replaces
     /// its SwiftUI hierarchy. This is a UIKit snapshot, not another live copy,
     /// so the outgoing text and native navigation chrome have one continuous
@@ -307,6 +331,12 @@ final class NewChatPromotionSurface {
 
     private func startExpansionIfReady() {
         guard didInstall, expansionRequested, !didStartExpansion else { return }
+        IOSNavigationDiagnostics.record(
+            "newChat.promotionSurface.expansionPath",
+            "duration=\(duration) window=\(sourceWindow != nil) "
+                + "editorFrame=\(outgoingSourceEditorFrame.map { NSCoder.string(for: $0) } ?? "nil") "
+                + "targetResolved=\(didResolveOutgoingTarget)"
+        )
         // A text send expands only once the already-mounted real destination
         // has supplied a snapshot of its final row. The snapshot is the exact
         // renderer ordinary sends animate; it is not a second bubble style.
@@ -337,6 +367,16 @@ final class NewChatPromotionSurface {
         }
 
         installAndStartOutgoingFlight(in: sourceWindow)
+        let startedAt = CACurrentMediaTime()
+        IOSNavigationDiagnostics.record(
+            "newChat.promotionSurface.expansionStart",
+            "containerFrame=\(NSCoder.string(for: container.frame)) "
+                + "target=\(NSCoder.string(for: sourceWindow.bounds)) "
+                + "attached=\(container.window != nil) "
+                + "windowKind=\(String(describing: type(of: sourceWindow))) "
+                + "hidden=\(sourceWindow.isHidden) key=\(sourceWindow.isKeyWindow) "
+                + "scene=\(sourceWindow.windowScene?.activationState.rawValue ?? -99)"
+        )
         let animator = UIViewPropertyAnimator(
             duration: duration,
             timingParameters: TranscriptSendAnimationMetrics.propertyTimingParameters
@@ -353,7 +393,14 @@ final class NewChatPromotionSurface {
                 self.sourceSnapshot?.alpha = 0
                 self.liveHostingController?.view.alpha = 1
             }, delayFactor: 0.68)
-        animator.addCompletion { [weak self] _ in
+        animator.addCompletion { [weak self] position in
+            IOSNavigationDiagnostics.record(
+                "newChat.promotionSurface.expansionDone",
+                "elapsedMs=\(Int((CACurrentMediaTime() - startedAt) * 1000)) "
+                    + "position=\(position.rawValue) "
+                    + "attached=\(self?.container.window != nil) "
+                    + "frame=\(self.map { NSCoder.string(for: $0.container.frame) } ?? "gone")"
+            )
             self?.sourceSnapshot?.removeFromSuperview()
             self?.sourceSnapshot = nil
             self?.outgoingFlightView?.removeFromSuperview()
