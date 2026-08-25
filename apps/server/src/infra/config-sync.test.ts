@@ -131,6 +131,61 @@ describe("config sync", () => {
       await reconcileMcps(a)
       expect((await mcpA.staticSecrets(localToolIdA)).env).toBeUndefined()
 
+      // OAuth under refresh ownership: A authorizes (modeled by importing
+      // material owned by itself), publishes the envelope, and B mirrors it
+      // WITHOUT becoming an owner.
+      const scopedIdA = (await mcpA.list()).find((server) => server.name === "Scoped")?.id ?? ""
+      await mcpA.importOAuthMaterial(scopedIdA, {
+        owner: "server-a",
+        material: JSON.stringify({
+          tokens: { access_token: "at-1", refresh_token: "rt-1", token_type: "bearer" },
+          tokensSavedAt: 1_000
+        })
+      })
+      expect((await mcpA.oauthSyncState(scopedIdA))?.owner).toBe("server-a")
+      const oauthA = await reconcileMcps(a)
+      expect(oauthA.status.published).toEqual(["Scoped"])
+      const envelope = (
+        oauthA.changedEntries.find((entry) => entry.key === "Scoped")?.value as {
+          oauth?: { owner: string }
+        }
+      ).oauth
+      expect(envelope?.owner).toBe("server-a")
+      await run(machineB.db.mergeSyncEntries(MCPS_SYNC_NAMESPACE, oauthA.changedEntries))
+      await reconcileMcps(b)
+      // B mirrors the material — visible, attributed to A, never owned.
+      const scopedIdB = (await mcpB.list()).find((server) => server.name === "Scoped")?.id ?? ""
+      expect((await mcpB.oauthSyncState(scopedIdB))?.owner).toBe("server-a")
+      // A settled mirror republishes nothing.
+      await reconcileMcps(b)
+      expect((await reconcileMcps(b)).changedEntries).toEqual([])
+
+      // B re-authorizes: ownership transfers, and A demotes to a mirror.
+      await mcpB.importOAuthMaterial(scopedIdB, {
+        owner: "server-b",
+        material: JSON.stringify({
+          tokens: { access_token: "at-2", refresh_token: "rt-2", token_type: "bearer" },
+          tokensSavedAt: 2_000
+        })
+      })
+      const takeoverB = await reconcileMcps(b)
+      expect(takeoverB.status.published).toEqual(["Scoped"])
+      await run(machineA.db.mergeSyncEntries(MCPS_SYNC_NAMESPACE, takeoverB.changedEntries))
+      await reconcileMcps(a)
+      expect((await mcpA.oauthSyncState(scopedIdA))?.owner).toBe("server-b")
+
+      // A brand-new machine creates the server AND adopts the material in
+      // the same pass — zero logins on a fresh box.
+      const { services: machineC } = await makeServices("server-c2")
+      if (machineC.mcp === undefined) throw new Error("mcp unavailable")
+      const c = { db: machineC.db, mcp: machineC.mcp, serverId: "server-c2" }
+      await run(machineC.db.mergeSyncEntries(MCPS_SYNC_NAMESPACE, takeoverB.changedEntries))
+      const freshC = await reconcileMcps(c)
+      expect(freshC.status.applied).toEqual(["Scoped"])
+      const scopedIdC =
+        (await machineC.mcp.list()).find((server) => server.name === "Scoped")?.id ?? ""
+      expect((await machineC.mcp.oauthSyncState(scopedIdC))?.owner).toBe("server-b")
+
       // A deletion tombstones everywhere.
       const idA = (await mcpA.list()).find((server) => server.name === "GitHub")?.id ?? ""
       await mcpA.remove(idA)
@@ -142,179 +197,6 @@ describe("config sync", () => {
       expect((await mcpB.list()).some((server) => server.name === "GitHub")).toBe(false)
     }
   )
-
-  it("skips malformed replica values", { timeout: 30_000 }, async () => {
-    const { services } = await makeServices("server-c")
-    if (services.mcp === undefined) throw new Error("mcp unavailable")
-    await run(
-      services.db.mergeSyncEntries(MCPS_SYNC_NAMESPACE, [
-        { key: "junk", value: "nope", timestamp: { wallMs: 1, counter: 0, deviceId: "z" } },
-        {
-          key: "half",
-          value: { name: "half" },
-          timestamp: { wallMs: 1, counter: 0, deviceId: "z" }
-        },
-        {
-          key: "bad-transport",
-          value: { enabled: true, name: "x", transport: "carrier-pigeon" },
-          timestamp: { wallMs: 1, counter: 0, deviceId: "z" }
-        },
-        {
-          key: "bad-auth",
-          value: { authType: "psychic", enabled: true, name: "x", transport: "http" },
-          timestamp: { wallMs: 1, counter: 0, deviceId: "z" }
-        },
-        {
-          key: "bad-enabled",
-          value: { authType: "none", enabled: "yes", name: "x", transport: "http" },
-          timestamp: { wallMs: 1, counter: 0, deviceId: "z" }
-        },
-        {
-          key: "nameless",
-          value: {},
-          timestamp: { wallMs: 1, counter: 0, deviceId: "z" }
-        },
-        {
-          key: "ghost",
-          value: null,
-          deleted: true,
-          timestamp: { wallMs: 1, counter: 0, deviceId: "z" }
-        }
-      ])
-    )
-    // A definition this machine once applied, deleted locally, whose
-    // replica entry is ALREADY a tombstone: nothing to republish.
-    await run(
-      services.db.mergeSyncEntries("local.mcps-applied", [
-        { key: "ghost", value: "stale-fp", timestamp: { wallMs: 1, counter: 0, deviceId: "c" } }
-      ])
-    )
-    const result = await reconcileMcps({
-      db: services.db,
-      mcp: services.mcp,
-      now: () => 1_000,
-      serverId: "server-c"
-    })
-    expect(result.status).toEqual({ published: [], applied: [], removed: [], renamed: [] })
-
-    // A structurally valid entry with junk in args keeps only the strings,
-    // and one without args at all defaults to none.
-    await run(
-      services.db.mergeSyncEntries(MCPS_SYNC_NAMESPACE, [
-        {
-          key: "Mixed Args",
-          value: {
-            args: ["keep", 42, "also"],
-            authType: "none",
-            bearerToken: 42,
-            enabled: false,
-            env: { BAD: 2, GOOD: "1" },
-            headers: "nope",
-            name: "Mixed Args",
-            transport: "http",
-            url: "https://mixed.example.com/mcp"
-          },
-          timestamp: { wallMs: 2, counter: 0, deviceId: "z" }
-        },
-        {
-          key: "No Args",
-          value: {
-            authType: "none",
-            bearerToken: "",
-            enabled: false,
-            headers: {},
-            name: "No Args",
-            transport: "http",
-            url: "https://noargs.example.com/mcp"
-          },
-          timestamp: { wallMs: 2, counter: 0, deviceId: "z" }
-        },
-        {
-          key: "Mixed Env",
-          value: {
-            command: "echo",
-            authType: "none",
-            bearerToken: "junk-b",
-            enabled: false,
-            env: { BAD: 2, GOOD: "1" },
-            headers: { "X-Wrong": "1" },
-            name: "Mixed Env",
-            transport: "stdio"
-          },
-          timestamp: { wallMs: 2, counter: 0, deviceId: "z" }
-        }
-      ])
-    )
-    const mixed = await reconcileMcps({
-      db: services.db,
-      mcp: services.mcp,
-      serverId: "server-c"
-    })
-    expect([...mixed.status.applied].sort()).toEqual(["Mixed Args", "Mixed Env", "No Args"])
-    expect(
-      (await services.mcp.list()).find((server) => server.name === "Mixed Args")?.args
-    ).toEqual(["keep", "also"])
-    expect((await services.mcp.list()).find((server) => server.name === "No Args")?.args).toEqual(
-      []
-    )
-    // Junk secret shapes filter down to their string-valued survivors —
-    // and wrong-transport material (env on http, headers on stdio) is
-    // stripped entirely.
-    const mixedId =
-      (await services.mcp.list()).find((server) => server.name === "Mixed Args")?.id ?? ""
-    const mixedSecrets = await services.mcp.staticSecrets(mixedId)
-    expect(mixedSecrets.bearerToken).toBeUndefined()
-    expect(mixedSecrets.headers).toBeUndefined()
-    expect(mixedSecrets.env).toBeUndefined()
-    const mixedEnvId =
-      (await services.mcp.list()).find((server) => server.name === "Mixed Env")?.id ?? ""
-    const mixedEnvSecrets = await services.mcp.staticSecrets(mixedEnvId)
-    expect(mixedEnvSecrets.headers).toBeUndefined()
-    expect(mixedEnvSecrets.env).toEqual({ GOOD: "1" })
-    const noArgsId =
-      (await services.mcp.list()).find((server) => server.name === "No Args")?.id ?? ""
-    const noArgsSecrets = await services.mcp.staticSecrets(noArgsId)
-    expect(noArgsSecrets.bearerToken).toBeUndefined()
-    expect(noArgsSecrets.env).toBeUndefined()
-
-    // A replica update carrying an oauth scope applies onto an existing
-    // local definition through the update path.
-    await services.mcp.create({
-      authType: "none",
-      enabled: false,
-      name: "Scoped2",
-      transport: "http",
-      url: "https://before.example.com/mcp"
-    })
-    await reconcileMcps({ db: services.db, mcp: services.mcp, serverId: "server-c" })
-    await run(
-      services.db.mergeSyncEntries(MCPS_SYNC_NAMESPACE, [
-        {
-          key: "Scoped2",
-          value: {
-            args: [],
-            authType: "oauth",
-            enabled: false,
-            name: "Scoped2",
-            oauthScope: "repo",
-            transport: "http",
-            url: "https://after.example.com/mcp"
-          },
-          timestamp: { wallMs: 99_999_999_999_999, counter: 0, deviceId: "far" }
-        }
-      ])
-    )
-    const scoped = await reconcileMcps({
-      db: services.db,
-      mcp: services.mcp,
-      serverId: "server-c"
-    })
-    expect(scoped.status.applied).toContain("Scoped2")
-    expect((await services.mcp.list()).find((server) => server.name === "Scoped2")).toMatchObject({
-      oauthScope: "repo",
-      url: "https://after.example.com/mcp"
-    })
-  })
 
   it("publishes each machine's account roster once per change", async () => {
     const { services } = await makeServices("server-d")

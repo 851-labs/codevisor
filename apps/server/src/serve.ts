@@ -863,6 +863,7 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
       makeMcpManager({
         db,
         dataDir: dirname(databasePath),
+        serverId,
         serverKind: resolvedKind,
         ...(skills === undefined ? {} : { syncManagedSkills: skills.syncManaged }),
         // Installed plugins' declared tools surface to agents through the MCP

@@ -30,6 +30,11 @@ export interface McpOAuthRuntimeDeps {
     patch?: Partial<McpServerRecord>
   ) => Promise<McpServerRecord>
   readonly secrets: (server: McpServerRecord) => StoredSecrets
+  /// This machine's server id — refresh-ownership identity.
+  readonly selfServerId: string
+  /// Fires after tokens are saved (authorize or refresh) so the config
+  /// plane can republish the rotated material immediately.
+  readonly onRotated: (serverId: string) => void
 }
 
 export const makeMcpOAuthRuntime = (deps: McpOAuthRuntimeDeps) => {
@@ -86,11 +91,19 @@ export const makeMcpOAuthRuntime = (deps: McpOAuthRuntimeDeps) => {
       },
       tokens: async () => secrets(await record(serverId)).oauth?.tokens,
       saveTokens: async (tokens) => {
+        // Saving tokens IS taking (or keeping) refresh ownership: a fresh
+        // authorize anywhere makes that machine the one rotator.
         const saved = await replaceSecrets(serverId, (value) => ({
           ...value,
-          oauth: { ...value.oauth, tokens, tokensSavedAt: Date.now() }
+          oauth: {
+            ...value.oauth,
+            tokens,
+            tokensSavedAt: Date.now(),
+            refreshOwner: deps.selfServerId
+          }
         }))
         scheduleRefresh(saved, tokens)
+        deps.onRotated(serverId)
       },
       redirectToAuthorization: (authorizationUrl) => {
         provider.authorizationUrl = authorizationUrl
@@ -133,6 +146,10 @@ export const makeMcpOAuthRuntime = (deps: McpOAuthRuntimeDeps) => {
   const scheduleRefresh = (server: McpServerRecord, tokens: OAuthTokens): void => {
     const existing = refreshTimers.get(server.id)
     if (existing !== undefined) clearTimeout(existing)
+    // Mirrors never rotate: another machine owns this token family, and a
+    // concurrent refresh here would invalidate it fleet-wide.
+    const owner = secrets(server).oauth?.refreshOwner
+    if (owner !== undefined && owner !== deps.selfServerId) return
     if (tokens.refresh_token === undefined || tokens.expires_in === undefined) return
     const savedAt = secrets(server).oauth?.tokensSavedAt ?? Date.now()
     const elapsed = Math.max(0, Date.now() - savedAt)

@@ -1022,4 +1022,61 @@ describe("MCP manager", () => {
     await manager.update(full.id, { bearerToken: "" })
     expect((await manager.staticSecrets(full.id)).bearerToken).toBeUndefined()
   })
+
+  it("owns, exports, imports, and demotes OAuth material for replication", async () => {
+    const { manager } = await testManager(undefined, { serverId: "test" })
+    const server = await manager.create({
+      authType: "oauth",
+      enabled: false,
+      name: "OAuth Sync",
+      transport: "http",
+      url: "https://oauth-sync.example.com/mcp"
+    })
+
+    // No tokens yet (and non-oauth servers never participate at all).
+    expect(await manager.oauthSyncState(server.id)).toBeUndefined()
+    const plain = await manager.create({
+      authType: "none",
+      enabled: false,
+      name: "Plain",
+      transport: "http",
+      url: "https://plain.example.com/mcp"
+    })
+    expect(await manager.oauthSyncState(plain.id)).toBeUndefined()
+
+    // Importing material with OURSELVES as owner models an authorize here
+    // (test manager's serverId is "test"): the sync state is exposed.
+    const material = JSON.stringify({
+      tokens: { access_token: "at-1", refresh_token: "rt-1", token_type: "bearer" },
+      tokensSavedAt: 1_111
+    })
+    await manager.importOAuthMaterial(server.id, { owner: "test", material })
+    const owned = await manager.oauthSyncState(server.id)
+    expect(owned?.owner).toBe("test")
+    expect(owned?.rotatedAtMs).toBe(1_111)
+    expect(JSON.parse(owned?.material ?? "{}").tokens.access_token).toBe("at-1")
+
+    // Another machine rotates and takes ownership: we become a mirror —
+    // the material stays visible (with its owner) but is not ours.
+    const rotated = JSON.stringify({
+      tokens: { access_token: "at-2", refresh_token: "rt-2", token_type: "bearer" },
+      tokensSavedAt: 2_222
+    })
+    await manager.importOAuthMaterial(server.id, { owner: "other-machine", material: rotated })
+    const mirrored = await manager.oauthSyncState(server.id)
+    expect(mirrored?.owner).toBe("other-machine")
+    expect(JSON.parse(mirrored?.material ?? "{}").tokens.access_token).toBe("at-2")
+
+    // Identical re-imports and junk are silent no-ops.
+    await manager.importOAuthMaterial(server.id, { owner: "other-machine", material: rotated })
+    await manager.importOAuthMaterial(server.id, { owner: "other-machine", material: "not json" })
+    await manager.importOAuthMaterial(server.id, { owner: "other-machine", material: "null" })
+    expect((await manager.oauthSyncState(server.id))?.owner).toBe("other-machine")
+
+    // Rotation listeners register and unregister cleanly.
+    const seen: Array<string> = []
+    const unsubscribe = manager.subscribeCredentialsRotated((id) => seen.push(id))
+    unsubscribe()
+    expect(seen).toEqual([])
+  })
 })

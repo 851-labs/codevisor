@@ -180,6 +180,13 @@ export const makeCodevisorServerApp = (
       void drainPromptQueue(services, fanout, routeState, config.id, sessionId).catch(swallowError)
     }
   })
+  // A rotated OAuth token republishes immediately: the refresh owner's
+  // config plane must carry the new material before any mirror's old
+  // access token expires.
+  /* v8 ignore next 3 -- rotation events fire from the live OAuth refresh timer. */
+  const unsubscribeRotations = services.mcp?.subscribeCredentialsRotated(() => {
+    void runBackgroundSyncReconcile(services, config, fanout, "mcps")
+  })
   const app = {
     handleRequest: (request: IncomingMessage, response: ServerResponse): void => {
       void handleRequest(services, config, fanout, routeState, request, response)
@@ -198,6 +205,7 @@ export const makeCodevisorServerApp = (
       unsubscribeLifecycle?.()
       unsubscribePlugins?.()
       unsubscribeGate?.()
+      unsubscribeRotations?.()
       webSocketServer.close()
       services.plugins?.close()
       void services.mcp?.close().catch(swallowError)

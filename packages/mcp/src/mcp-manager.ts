@@ -74,15 +74,39 @@ export interface McpManager {
   readonly create: (request: CreateMcpServerRequest) => Promise<McpServer>
   readonly detectAuth: (url: string) => Promise<McpAuthDetection>
   readonly update: (id: string, request: UpdateMcpServerRequest) => Promise<McpServer>
-  /// The decrypted STATIC secret material (bearer token, headers, env) for
-  /// config-plane replication. OAuth material never leaves the machine —
-  /// its tokens rotate, and concurrent refreshes would invalidate each
-  /// other. Empty bearer tokens normalize to absent.
+  /// The decrypted STATIC secret material (bearer token, headers, env)
+  /// for config-plane replication; OAuth material travels separately via
+  /// oauthSyncState under refresh ownership. Empty bearer tokens
+  /// normalize to absent.
   readonly staticSecrets: (id: string) => Promise<{
     readonly bearerToken?: string
     readonly headers?: Readonly<Record<string, string>>
     readonly env?: Readonly<Record<string, string>>
   }>
+  /// The replication envelope for a server's OAuth material, present
+  /// whenever tokens exist. `owner` names the machine that owns the
+  /// refresh cycle — callers must only PUBLISH material they own; mirrors
+  /// read it for observability ("credentials from <machine>").
+  readonly oauthSyncState: (id: string) => Promise<
+    | {
+        readonly owner: string
+        readonly rotatedAtMs: number
+        readonly material: string
+      }
+    | undefined
+  >
+  /// Adopts another machine's OAuth material verbatim: replaces the stored
+  /// OAuth state, records that machine as the refresh owner, cancels any
+  /// local refresh timer, and drops the live connection so the next use
+  /// picks up the new tokens. Identical re-imports are no-ops; malformed
+  /// material is ignored.
+  readonly importOAuthMaterial: (
+    id: string,
+    incoming: { readonly owner: string; readonly material: string }
+  ) => Promise<void>
+  /// Fires after this machine rotates (or first saves) a server's OAuth
+  /// tokens, so the config plane can republish immediately.
+  readonly subscribeCredentialsRotated: (listener: (id: string) => void) => () => void
   readonly remove: (id: string) => Promise<void>
   readonly tools: (id?: string) => Promise<ReadonlyArray<McpTool>>
   readonly connect: (id: string) => Promise<McpServer>
@@ -133,6 +157,10 @@ export interface McpManager {
 export interface McpManagerConfig {
   readonly db: CodevisorDatabaseService
   readonly dataDir: string
+  /// This machine's stable server id — the identity used for OAuth refresh
+  /// ownership (exactly one machine rotates a server's tokens; the rest
+  /// mirror them through config sync). Defaults to "local".
+  readonly serverId?: string
   /// The server's --kind. Remote-kind servers have no desktop user at the
   /// machine, so the Chrome-extension browser flow is disabled and Browser
   /// Use resolves straight to the managed browser. Defaults to "local".
@@ -165,6 +193,12 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
   const refreshTimers = new Map<string, ReturnType<typeof setTimeout>>()
   const refreshLocks = new Map<string, Promise<void>>()
   const refreshRetryAttempts = new Map<string, number>()
+  const selfServerId = config.serverId ?? "local"
+  const rotationListeners = new Set<(id: string) => void>()
+  /* v8 ignore next 3 -- rotation events fire from the live OAuth refresh timer. */
+  const emitCredentialsRotated = (id: string): void => {
+    for (const listener of [...rotationListeners]) listener(id)
+  }
   const gateways = new Map<string, GatewayRuntime>()
   const sessionGatewayIds = new Map<string, string>()
   let gatewayBaseUrl = "http://127.0.0.1:49361"
@@ -581,6 +615,7 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
     callbackUrl,
     closeConnection,
     connectUpstream,
+    onRotated: emitCredentialsRotated,
     record,
     refreshGatewayInventories,
     refreshLocks,
@@ -588,7 +623,8 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
     refreshTimers,
     replaceSecrets,
     saveRecord,
-    secrets
+    secrets,
+    selfServerId
   })
 
   const manager: McpManager = {
@@ -764,6 +800,62 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
           : { bearerToken: stored.bearerToken }),
         ...(stored.headers === undefined ? {} : { headers: stored.headers }),
         ...(stored.env === undefined ? {} : { env: stored.env })
+      }
+    },
+    oauthSyncState: async (id) => {
+      const server = await record(id)
+      if (server.authType !== "oauth") return undefined
+      const oauth = secrets(server).oauth
+      if (oauth?.tokens === undefined) return undefined
+      const material: StoredOAuth = {
+        ...(oauth.clientInformation === undefined
+          ? {}
+          : { clientInformation: oauth.clientInformation }),
+        tokens: oauth.tokens,
+        ...(oauth.tokensSavedAt === undefined ? {} : { tokensSavedAt: oauth.tokensSavedAt }),
+        ...(oauth.discoveryState === undefined ? {} : { discoveryState: oauth.discoveryState }),
+        ...(oauth.configuredClientId === undefined
+          ? {}
+          : { configuredClientId: oauth.configuredClientId }),
+        ...(oauth.configuredClientSecret === undefined
+          ? {}
+          : { configuredClientSecret: oauth.configuredClientSecret })
+      }
+      return {
+        owner: oauth.refreshOwner ?? selfServerId,
+        rotatedAtMs: oauth.tokensSavedAt ?? 0,
+        material: JSON.stringify(material)
+      }
+    },
+    importOAuthMaterial: async (id, incoming) => {
+      const current = secrets(await record(id)).oauth
+      let parsed: StoredOAuth
+      try {
+        parsed = JSON.parse(incoming.material) as StoredOAuth
+      } catch {
+        return
+      }
+      if (typeof parsed !== "object" || parsed === null) return
+      // Identical re-imports must not thrash the live connection.
+      if (
+        current?.refreshOwner === incoming.owner &&
+        (current?.tokensSavedAt ?? 0) === (parsed.tokensSavedAt ?? 0)
+      ) {
+        return
+      }
+      const timer = refreshTimers.get(id)
+      if (timer !== undefined) clearTimeout(timer)
+      refreshTimers.delete(id)
+      await replaceSecrets(id, (value) => ({
+        ...value,
+        oauth: { ...parsed, refreshOwner: incoming.owner }
+      }))
+      await closeConnection(id)
+    },
+    subscribeCredentialsRotated: (listener) => {
+      rotationListeners.add(listener)
+      return () => {
+        rotationListeners.delete(listener)
       }
     },
     remove: async (id) => {

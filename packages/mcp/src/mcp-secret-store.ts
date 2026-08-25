@@ -11,6 +11,10 @@ export interface StoredOAuth {
   readonly clientInformation?: OAuthClientInformationMixed | undefined
   readonly tokens?: OAuthTokens | undefined
   readonly tokensSavedAt?: number | undefined
+  /// The server id of the machine that owns REFRESHING these tokens.
+  /// Exactly one machine rotates; everyone else mirrors via config sync.
+  /// Absent (legacy) means this machine owns them.
+  readonly refreshOwner?: string | undefined
   readonly codeVerifier?: string | undefined
   readonly discoveryState?: OAuthDiscoveryState | undefined
   readonly state?: string | undefined

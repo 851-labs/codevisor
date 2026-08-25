@@ -45,6 +45,30 @@ interface SyncedMcpValue {
   readonly bearerToken?: string | undefined
   readonly headers?: Readonly<Record<string, string>> | undefined
   readonly env?: Readonly<Record<string, string>> | undefined
+  readonly oauth?: SyncedOAuthEnvelope | undefined
+}
+
+/// A server's OAuth material under refresh ownership: exactly one machine
+/// (owner) rotates the tokens and republishes; mirrors adopt the material
+/// verbatim and never refresh — the one design that cannot race a rotating
+/// token family. A fresh authorize anywhere takes ownership.
+interface SyncedOAuthEnvelope {
+  readonly owner: string
+  readonly rotatedAtMs: number
+  readonly material: string
+}
+
+const oauthEnvelope = (value: unknown): SyncedOAuthEnvelope | undefined => {
+  if (typeof value !== "object" || value === null) return undefined
+  const candidate = value as Partial<SyncedOAuthEnvelope>
+  if (typeof candidate.owner !== "string") return undefined
+  if (typeof candidate.rotatedAtMs !== "number") return undefined
+  if (typeof candidate.material !== "string") return undefined
+  return {
+    owner: candidate.owner,
+    rotatedAtMs: candidate.rotatedAtMs,
+    material: candidate.material
+  }
 }
 
 interface StaticMcpSecrets {
@@ -138,7 +162,10 @@ const parseSyncedValue = (value: unknown): SyncedMcpValue | undefined => {
       ? { bearerToken: candidate.bearerToken }
       : {}),
     ...(headers === undefined ? {} : { headers }),
-    ...(env === undefined ? {} : { env })
+    ...(env === undefined ? {} : { env }),
+    ...(isHttp && candidate.authType === "oauth" && oauthEnvelope(candidate.oauth) !== undefined
+      ? { oauth: oauthEnvelope(candidate.oauth) }
+      : {})
   }
 }
 
@@ -188,11 +215,22 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
   // renamed aside — a join never silently overwrites either side (the
   // fleet definition applies under the original name below).
   for (const [name, server] of [...localByName]) {
-    let value = syncedValue(server, await deps.mcp.staticSecrets(server.id))
-    if (appliedByKey.get(name) === fingerprint(value)) continue
-    let key = name
     const existing = replicaByKey.get(name)
     const wanted = existing?.deleted === true ? undefined : parseSyncedValue(existing?.value)
+    // OAuth material: only the refresh owner publishes its own envelope;
+    // mirrors graft the replica's verbatim, so their fingerprints match
+    // without ever publishing (or racing) tokens they do not own.
+    const oauthState =
+      server.authType === "oauth" ? await deps.mcp.oauthSyncState(server.id) : undefined
+    const ownedOAuth =
+      oauthState !== undefined && oauthState.owner === deps.serverId ? oauthState : undefined
+    const envelope = ownedOAuth ?? wanted?.oauth
+    let value: SyncedMcpValue = {
+      ...syncedValue(server, await deps.mcp.staticSecrets(server.id)),
+      ...(envelope === undefined ? {} : { oauth: envelope })
+    }
+    if (appliedByKey.get(name) === fingerprint(value)) continue
+    let key = name
     if (!appliedByKey.has(name) && wanted !== undefined) {
       if (fingerprint(wanted) === fingerprint(value)) {
         appliedWrites.push({ key: name, value: fingerprint(value), timestamp: stamp() })
@@ -248,12 +286,22 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
     }
     const wanted = parseSyncedValue(entry.value)
     if (wanted === undefined) continue
+    // OAuth material imports BEFORE the fingerprint skip: the mirror's
+    // publish loop grafts the envelope into its applied fingerprint, so
+    // fp equality cannot mean the material itself was adopted. The import
+    // is a no-op for identical material and for the owner.
+    if (wanted.oauth !== undefined && wanted.oauth.owner !== deps.serverId) {
+      const holder = localByName.get(name)
+      if (holder !== undefined) {
+        await deps.mcp.importOAuthMaterial(holder.id, wanted.oauth)
+      }
+    }
     const wantedFingerprint = fingerprint(wanted)
     // The publish loop above already recorded every local definition, so a
     // matching applied fingerprint covers "already ours" too.
     if (appliedByKey.get(name) === wantedFingerprint) continue
     if (local === undefined) {
-      await deps.mcp.create({
+      const created = await deps.mcp.create({
         name: wanted.name,
         transport: wanted.transport,
         ...(wanted.url === undefined ? {} : { url: wanted.url }),
@@ -266,10 +314,14 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
         ...(wanted.headers === undefined ? {} : { headers: wanted.headers }),
         ...(wanted.env === undefined ? {} : { env: wanted.env })
       })
+      if (wanted.oauth !== undefined && wanted.oauth.owner !== deps.serverId) {
+        await deps.mcp.importOAuthMaterial(created.id, wanted.oauth)
+      }
     } else {
       // Definition fields plus static secrets converge exactly — absent
       // synced headers/env are removed, an absent bearer clears (empty
-      // string normalizes back to absent). OAuth material stays local.
+      // string normalizes back to absent). OAuth material was imported
+      // above, before the fingerprint skip.
       const wantedHeaders = wanted.headers ?? {}
       const wantedEnv = wanted.env ?? {}
       await deps.mcp.update(local.id, {

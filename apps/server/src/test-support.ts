@@ -554,7 +554,7 @@ export const makeServices = async (serverId = "test") => {
   databases.push(db)
   const spawner = makeSpawner()
   const agents = makeAgents()
-  const mcp = makeMcpManager({ db, dataDir: dir })
+  const mcp = makeMcpManager({ db, dataDir: dir, serverId })
   return {
     agents,
     services: {
