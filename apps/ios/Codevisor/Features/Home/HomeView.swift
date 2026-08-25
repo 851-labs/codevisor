@@ -1327,12 +1327,11 @@ struct HomeView: View {
             // project (session ids are unique across the fleet).
             let session = projectList.sessions.first(where: { $0.id == sessionId })
         else { return }
-        // The send commits the machine choice — select the chat's machine,
-        // same contract as tapping one of its rows.
-        if session.serverId != machines.selectedMachineId {
-            machines.selectMachine(session.serverId)
-            Task { await environment.prepareSelectedMachine() }
-        }
+        // Deliberately NO machine switch here: the promotion animation is
+        // mid-flight, and flipping the selected machine re-renders Home under
+        // the snapshot and churns availability. iOS routes carry the
+        // session's serverId end to end, so the selected machine simply
+        // doesn't need to follow a send.
         flow.sessionId = sessionId
         let workspace = ensureWorkspace(for: session)
         guard let presentationSession = flow.presentationSession,

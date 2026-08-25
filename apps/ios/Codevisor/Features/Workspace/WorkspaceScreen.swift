@@ -284,14 +284,21 @@ struct WorkspaceScreen: View {
     private var workspaceContent: some View {
         Group {
             if blocksServerContent {
-                let machine = environment.machines.selectedMachine
+                let machines = environment.machines
+                let machine = machines.machine(for: resolvedServerId) ?? machines.selectedMachine
                 ServerAvailabilityView(
                     machineId: machine.id,
-                    availability: environment.machines.selectedServerAvailability,
+                    availability: screenAvailability,
                     machineName: machine.name,
                     isLocal: false
                 ) {
-                    Task { await environment.machines.retrySelectedMachine() }
+                    Task {
+                        if machine.id == machines.selectedMachineId {
+                            await machines.retrySelectedMachine()
+                        } else {
+                            await machines.connectMachine(machine.id)
+                        }
+                    }
                 }
             } else if missing {
                 ContentUnavailableView("Chat Not Found", systemImage: "questionmark.bubble")
@@ -344,8 +351,8 @@ struct WorkspaceScreen: View {
                 }
             )
         }
-        .task(id: environment.machines.selectedServerAvailability) {
-            guard case .ready = environment.machines.selectedServerAvailability else { return }
+        .task(id: screenAvailability) {
+            guard case .ready = screenAvailability else { return }
             await prepare()
         }
         .task(id: panePreviewLoadToken) {
@@ -355,7 +362,7 @@ struct WorkspaceScreen: View {
                 paneIds: panes.panes.map(\.id)
             )
         }
-        .onChange(of: environment.machines.selectedServerAvailability) { _, availability in
+        .onChange(of: screenAvailability) { _, availability in
             if case .ready = availability { return }
             showsGrid = false
         }
@@ -377,8 +384,16 @@ struct WorkspaceScreen: View {
         .iosNavigationDiagnostics(navigationDiagnosticState)
     }
 
+    /// THIS screen's machine, not the app's selected one: a workspace can
+    /// belong to any machine in the fleet (a chat sent to another machine's
+    /// project), and the selected machine's hiccups must never block it —
+    /// nor may its content wait on the wrong machine becoming ready.
+    private var screenAvailability: ServerAvailability {
+        environment.machines.availabilityByMachineId[resolvedServerId] ?? .ready
+    }
+
     private var blocksServerContent: Bool {
-        if case .ready = environment.machines.selectedServerAvailability {
+        if case .ready = screenAvailability {
             return false
         }
         return true
@@ -740,10 +755,11 @@ struct WorkspaceScreen: View {
         if storedSnapshot.image != nil {
             paneSnapshot = storedSnapshot
             isUncached = false
-        } else if let fallback = renderPaneCanvas(
+        } else if let fallback = Self.renderPaneCanvas(
             for: pane,
             size: storedSnapshot.contentFrame.size,
-            sourceCardFrame: cardFrame
+            sourceCardFrame: cardFrame,
+            displayScale: displayScale
         ) {
             // This image exists only to carry an unvisited card through the
             // exact same zoom. The live pane replaces it at the late handoff;
@@ -1010,10 +1026,11 @@ struct WorkspaceScreen: View {
                 for: paneId,
                 in: paneStorageId
             ),
-            let paneImage = renderPaneCanvas(
+            let paneImage = Self.renderPaneCanvas(
                 for: pane,
                 size: geometry.contentFrame.size,
-                sourceCardFrame: cardFrame
+                sourceCardFrame: cardFrame,
+                displayScale: displayScale
             )
         else { return }
 
@@ -1053,36 +1070,6 @@ struct WorkspaceScreen: View {
                 if tabZoomSurface === surface { tabZoomSurface = nil }
             }
         }
-    }
-
-    private func renderPaneCanvas(
-        for pane: PaneDescriptorState,
-        size: CGSize,
-        sourceCardFrame: CGRect
-    ) -> UIImage? {
-        guard size.width > 0, size.height > 0 else { return nil }
-        let content: AnyView
-        if pane.kind == .newTab {
-            content = AnyView(
-                NewTabPaneView(
-                    onNewChat: {},
-                    onNewTerminal: {}
-                )
-                .frame(width: size.width, height: size.height)
-            )
-        } else {
-            content = AnyView(
-                UncachedPanePreviewView(
-                    kind: pane.kind,
-                    canvasSize: size,
-                    sourceCardSize: sourceCardFrame.size
-                )
-            )
-        }
-        let renderer = ImageRenderer(content: content)
-        renderer.scale = min(2, displayScale)
-        renderer.isOpaque = true
-        return renderer.uiImage
     }
 
     private func setShowsGridWithoutAnimation(_ value: Bool) {

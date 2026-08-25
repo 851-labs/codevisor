@@ -1,5 +1,7 @@
 import CodevisorCore
 import Foundation
+import UIKit
+import SwiftUI
 
 /// Pure pane-state and diagnostics helpers, split from `WorkspaceScreen` so
 /// the screen's struct body stays within the size ratchet. All static: they
@@ -71,5 +73,36 @@ extension WorkspaceScreen {
 
     static func diagnosticID(_ id: UUID) -> String {
         String(id.uuidString.prefix(8))
+    }
+
+    static func renderPaneCanvas(
+        for pane: PaneDescriptorState,
+        size: CGSize,
+        sourceCardFrame: CGRect,
+        displayScale: CGFloat
+    ) -> UIImage? {
+        guard size.width > 0, size.height > 0 else { return nil }
+        let content: AnyView
+        if pane.kind == .newTab {
+            content = AnyView(
+                NewTabPaneView(
+                    onNewChat: {},
+                    onNewTerminal: {}
+                )
+                .frame(width: size.width, height: size.height)
+            )
+        } else {
+            content = AnyView(
+                UncachedPanePreviewView(
+                    kind: pane.kind,
+                    canvasSize: size,
+                    sourceCardSize: sourceCardFrame.size
+                )
+            )
+        }
+        let renderer = ImageRenderer(content: content)
+        renderer.scale = min(2, displayScale)
+        renderer.isOpaque = true
+        return renderer.uiImage
     }
 }
