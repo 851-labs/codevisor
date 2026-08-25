@@ -322,6 +322,11 @@ final class NewChatPromotionSurface {
             if anchorsBottom {
                 let fill = UIView(frame: clippingView.bounds)
                 fill.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                // Sheets draw at dark mode's ELEVATED level (gray), while
+                // this view lives in the base-level app window where
+                // systemBackground resolves to pure black. Match the sheet's
+                // actual surface or the extended strip reads as a black bar.
+                fill.traitOverrides.userInterfaceLevel = .elevated
                 fill.backgroundColor = .systemBackground
                 fill.isUserInteractionEnabled = false
                 clippingView.addSubview(fill)
