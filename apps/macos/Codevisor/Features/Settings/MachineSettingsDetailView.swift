@@ -63,21 +63,6 @@ struct MachineSettingsDetailView: View {
                 }
             }
 
-            Section {
-                NavigationLink(value: MachineSettingsRoute.harnesses(machineId)) {
-                    settingsNavigationLabel("Harnesses", systemImage: "cpu")
-                }
-                NavigationLink(value: MachineSettingsRoute.mcps(machineId)) {
-                    settingsNavigationLabel("MCP Servers", systemImage: "puzzlepiece.extension")
-                }
-                NavigationLink(value: MachineSettingsRoute.skills(machineId)) {
-                    settingsNavigationLabel("Skills", systemImage: "book.closed")
-                }
-                NavigationLink(value: MachineSettingsRoute.plugins(machineId)) {
-                    settingsNavigationLabel("Plugins", systemImage: "puzzlepiece")
-                }
-            }
-
             if machine?.isLocal == true {
                 Section {
                     HStack(alignment: .center) {

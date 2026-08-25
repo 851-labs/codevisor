@@ -7,12 +7,15 @@ import UserNotifications
 import os
 
 /// App settings, mirroring the macOS settings window's tabs as an iOS
-/// navigation list: Account, General, Appearance, Notifications, Machines,
-/// Harnesses, MCPs, and Skills. Machine management (the old home-screen
-/// machine picker) lives in Machines.
+/// navigation list. Agents, MCPs, skills, and plugins are fleet-synced
+/// config, so they sit at the top level (rendered from the selected
+/// machine, whose content converges with every other machine); Machines
+/// keeps what is genuinely per machine — connections, status, removal.
 struct SettingsSheet: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.dismiss) private var dismiss
+
+    private var machines: MachineController { environment.machines }
 
     var body: some View {
         NavigationStack {
@@ -51,14 +54,39 @@ struct SettingsSheet: View {
                 }
                 Section {
                     NavigationLink {
+                        HarnessesSettingsScreen(
+                            client: machines.client(for: machines.selectedMachineId))
+                    } label: {
+                        Label("Agents", systemImage: "cpu")
+                    }
+                    NavigationLink {
+                        McpSettingsScreen(client: machines.client(for: machines.selectedMachineId))
+                    } label: {
+                        Label("MCPs", systemImage: "puzzlepiece.extension")
+                    }
+                    NavigationLink {
+                        SkillsSettingsScreen(
+                            client: machines.client(for: machines.selectedMachineId))
+                    } label: {
+                        Label("Skills", systemImage: "book.closed")
+                    }
+                    NavigationLink {
+                        PluginsSettingsScreen(
+                            client: machines.client(for: machines.selectedMachineId),
+                            serverId: machines.selectedMachineId
+                        )
+                    } label: {
+                        Label("Plugins", systemImage: "puzzlepiece")
+                    }
+                } footer: {
+                    Text("Synced across your machines.")
+                }
+                Section {
+                    NavigationLink {
                         MachinesSettingsScreen()
                     } label: {
                         Label("Machines", systemImage: "desktopcomputer")
                     }
-                } footer: {
-                    Text(
-                        "Harnesses, MCPs, skills, and plugins live on each machine — open a machine to manage them."
-                    )
                 }
             }
             .navigationTitle("Settings")

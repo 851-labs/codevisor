@@ -6,9 +6,9 @@ import SwiftUI
 import UserNotifications
 import os
 
-/// One machine's page: connection info and the settings scoped to it —
-/// harnesses, MCPs, skills, and plugins all live on the machine, so they're
-/// nested here rather than floating at the top level.
+/// One machine's page: connection info, selection, rename, and removal.
+/// Agents, MCPs, skills, and plugins are fleet-synced config and live at
+/// the top level of Settings instead of being nested per machine.
 struct MachineDetailScreen: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.dismiss) private var dismiss
@@ -34,31 +34,6 @@ struct MachineDetailScreen: View {
                             machines.selectMachine(machine.id)
                             Task { await environment.prepareSelectedMachine() }
                         }
-                    }
-                }
-                Section("On This Machine") {
-                    NavigationLink {
-                        HarnessesSettingsScreen(client: machines.client(for: machine.id))
-                    } label: {
-                        Label("Harnesses", systemImage: "cpu")
-                    }
-                    NavigationLink {
-                        McpSettingsScreen(client: machines.client(for: machine.id))
-                    } label: {
-                        Label("MCPs", systemImage: "puzzlepiece.extension")
-                    }
-                    NavigationLink {
-                        SkillsSettingsScreen(client: machines.client(for: machine.id))
-                    } label: {
-                        Label("Skills", systemImage: "book.closed")
-                    }
-                    NavigationLink {
-                        PluginsSettingsScreen(
-                            client: machines.client(for: machine.id),
-                            serverId: machine.id
-                        )
-                    } label: {
-                        Label("Plugins", systemImage: "puzzlepiece")
                     }
                 }
                 Section {
