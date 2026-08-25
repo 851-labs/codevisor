@@ -2,11 +2,11 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// The composer's single run-target picker: a stepped sheet (like the model
-/// picker) that walks machine → project → run location and closes. The chip
-/// above the composer then renders just the run-location icon and project
-/// name. Single-machine fleets skip straight to the project step; non-git
-/// projects skip the run-location step.
+/// The composer's single run-target picker: a stepped sheet that pushes
+/// machine → project → run location as real navigation, so every step after
+/// the first gets the system back button and swipe-back. Dismissing the
+/// sheet itself (swipe down) is the cancel. Single-machine fleets start at
+/// the project step; non-git projects skip the run-location step.
 struct RunTargetPickerSheet: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.dismiss) private var dismiss
@@ -14,23 +14,28 @@ struct RunTargetPickerSheet: View {
     /// The machine the draft currently targets (preselected), nil when the
     /// draft has no project yet.
     var initialServerId: String? = nil
-    /// The draft's current project, for the checkmark.
+    /// The draft's current project, for the run-location checkmarks.
     var currentProject: Project? = nil
     var currentWantsWorktree = false
     /// Called with the picked project and whether the chat should run in a
     /// new worktree. The sheet dismisses itself right after.
     let onFinish: (Project, Bool) -> Void
 
-    private enum Step {
-        case machine
-        case project
-        case runLocation
+    private enum Route: Hashable {
+        case projects(serverId: String)
+        case runLocation(serverId: String, projectId: UUID)
     }
 
-    @State private var step: Step = .machine
-    @State private var pickedServerId: String?
-    @State private var pickedProject: Project?
-    @State private var isAddingProject = false
+    /// The machine whose filesystem "New Project…" browses, and the sheet
+    /// trigger for it (Identifiable so `.sheet(item:)` can present it from
+    /// whichever step is on top).
+    private struct AddProjectTarget: Identifiable {
+        let serverId: String
+        var id: String { serverId }
+    }
+
+    @State private var path: [Route] = []
+    @State private var addProjectTarget: AddProjectTarget?
 
     /// Every machine's projects, most recently used first (scratch backing
     /// projects are internal and never listed).
@@ -45,143 +50,134 @@ struct RunTargetPickerSheet: View {
         environment.machines.allMachines
     }
 
-    private var scopedProjects: [Project] {
-        pickerProjects.filter { $0.serverId == pickedServerId }
-    }
-
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             Group {
-                switch step {
-                case .machine: machineStep
-                case .project: projectStep
-                case .runLocation: runLocationStep
+                if machines.count > 1 {
+                    machineStep
+                        .navigationTitle("Machine")
+                } else {
+                    projectStep(
+                        serverId: machines.first?.id
+                            ?? initialServerId
+                            ?? environment.machines.selectedMachineId
+                    )
+                    .navigationTitle("Project")
                 }
             }
-            .navigationTitle(stepTitle)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+            .navigationDestination(for: Route.self) { route in
+                switch route {
+                case let .projects(serverId):
+                    projectStep(serverId: serverId)
+                        .navigationTitle("Project")
+                        .navigationBarTitleDisplayMode(.inline)
+                case let .runLocation(serverId, projectId):
+                    runLocationStep(serverId: serverId, projectId: projectId)
+                        .navigationTitle("Run Location")
+                        .navigationBarTitleDisplayMode(.inline)
                 }
             }
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
-        .onAppear {
-            pickedServerId = initialServerId ?? machines.first?.id
-            // One machine: nothing to choose, start at its projects.
-            if machines.count <= 1 { step = .project }
-        }
-        .sheet(isPresented: $isAddingProject) {
-            AddProjectSheet(serverId: pickedServerId) { project in
+        .sheet(item: $addProjectTarget) { target in
+            AddProjectSheet(serverId: target.serverId) { project in
                 advance(with: project)
             }
         }
     }
 
-    private var stepTitle: String {
-        switch step {
-        case .machine: "Machine"
-        case .project: "Project"
-        case .runLocation: "Run Location"
-        }
-    }
-
     // MARK: - Steps
 
+    /// Machines are never disabled here: a machine with no projects opens an
+    /// empty project step whose "New Project…" adds the first one.
     private var machineStep: some View {
         List {
             ForEach(machines) { machine in
-                Button {
-                    pickedServerId = machine.id
-                    step = .project
-                } label: {
-                    row(
-                        machine.name,
-                        systemImage: EntitySystemSymbol.machine(machine),
-                        isChecked: machine.id
-                            == (pickedServerId ?? currentProject?.serverId)
-                    )
+                NavigationLink(value: Route.projects(serverId: machine.id)) {
+                    Label(machine.name, systemImage: EntitySystemSymbol.machine(machine))
+                        .foregroundStyle(Color.primary)
                 }
-                .disabled(!pickerProjects.contains { $0.serverId == machine.id })
             }
         }
     }
 
-    private var projectStep: some View {
+    private func projectStep(serverId: String) -> some View {
         List {
-            ForEach(scopedProjects) { project in
-                Button {
-                    advance(with: project)
-                } label: {
-                    row(
-                        project.name,
-                        systemImage: EntitySystemSymbol.project,
-                        isChecked: currentProject?.serverId == project.serverId
-                            && currentProject?.id == project.id
-                    )
+            ForEach(pickerProjects.filter { $0.serverId == serverId }) { project in
+                if project.isGitRepository {
+                    NavigationLink(
+                        value: Route.runLocation(serverId: serverId, projectId: project.id)
+                    ) {
+                        Label(project.name, systemImage: EntitySystemSymbol.project)
+                            .foregroundStyle(Color.primary)
+                    }
+                } else {
+                    // Non-git projects have no run-location choice; picking
+                    // one completes the flow.
+                    Button {
+                        finish(project, wantsWorktree: false)
+                    } label: {
+                        Label(project.name, systemImage: EntitySystemSymbol.project)
+                            .foregroundStyle(Color.primary)
+                    }
                 }
             }
             Button {
-                isAddingProject = true
+                addProjectTarget = AddProjectTarget(serverId: serverId)
             } label: {
                 Label("New Project…", systemImage: "folder.badge.plus")
             }
         }
     }
 
-    private var runLocationStep: some View {
-        List {
+    private func runLocationStep(serverId: String, projectId: UUID) -> some View {
+        let project = pickerProjects.first {
+            $0.serverId == serverId && $0.id == projectId
+        }
+        let isCurrent =
+            currentProject?.serverId == serverId
+            && currentProject?.id == projectId
+        return List {
             Button {
-                finish(wantsWorktree: false)
+                if let project { finish(project, wantsWorktree: false) }
             } label: {
-                row(
+                pickRow(
                     "Project Directory",
                     systemImage: "folder.fill",
-                    isChecked: isCurrentPick && !currentWantsWorktree
+                    isChecked: isCurrent && !currentWantsWorktree
                 )
             }
             Button {
-                finish(wantsWorktree: true)
+                if let project { finish(project, wantsWorktree: true) }
             } label: {
-                row(
+                pickRow(
                     "New Worktree",
                     systemImage: "arrow.triangle.branch",
-                    isChecked: isCurrentPick && currentWantsWorktree
+                    isChecked: isCurrent && currentWantsWorktree
                 )
             }
         }
-    }
-
-    /// Whether the run-location step is showing the draft's CURRENT project
-    /// (checkmarks only make sense then).
-    private var isCurrentPick: Bool {
-        pickedProject?.serverId == currentProject?.serverId
-            && pickedProject?.id == currentProject?.id
     }
 
     // MARK: - Flow
 
+    /// A freshly added project continues the flow exactly like a tapped row.
     private func advance(with project: Project) {
-        // Worktrees only exist for git projects; everything else runs in the
-        // project directory and the sheet is done.
         guard project.isGitRepository else {
-            pickedProject = project
-            finish(wantsWorktree: false)
+            finish(project, wantsWorktree: false)
             return
         }
-        pickedProject = project
-        step = .runLocation
+        path.append(.runLocation(serverId: project.serverId, projectId: project.id))
     }
 
-    private func finish(wantsWorktree: Bool) {
-        guard let pickedProject else { return }
-        onFinish(pickedProject, wantsWorktree)
+    private func finish(_ project: Project, wantsWorktree: Bool) {
+        onFinish(project, wantsWorktree)
         dismiss()
     }
 
-    private func row(_ title: String, systemImage: String, isChecked: Bool) -> some View {
+    private func pickRow(_ title: String, systemImage: String, isChecked: Bool) -> some View {
         HStack {
             Label(title, systemImage: systemImage)
                 .foregroundStyle(Color.primary)
