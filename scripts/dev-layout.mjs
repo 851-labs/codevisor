@@ -14,6 +14,8 @@ export function developmentLayout(repoRoot, environment = process.env) {
   const localCodevisorRoot = join(tmpRoot, ".codevisor")
   const remoteRoot = join(tmpRoot, "remote")
   const remoteCodevisorRoot = join(remoteRoot, ".codevisor")
+  const remoteCloudRoot = join(tmpRoot, "remote-cloud")
+  const remoteCloudCodevisorRoot = join(remoteCloudRoot, ".codevisor")
   const buildRoot = join(tmpRoot, "build")
 
   return {
@@ -33,6 +35,9 @@ export function developmentLayout(repoRoot, environment = process.env) {
         environment.HERDMAN_WORKTREES_ROOT ??
         join(tmpRoot, "codevisor")
     },
+    // The direct-connection test server (added by token/deeplink, never in
+    // the dev cloud). Keeps the original tmp/remote roots so existing dev
+    // state carries over.
     remote: {
       root: remoteCodevisorRoot,
       data: join(remoteCodevisorRoot, "data"),
@@ -41,6 +46,17 @@ export function developmentLayout(repoRoot, environment = process.env) {
       plugins: join(remoteCodevisorRoot, "plugins"),
       cache: join(remoteCodevisorRoot, "cache"),
       worktrees: join(remoteRoot, "codevisor")
+    },
+    // The cloud test server (signs into the dev cloud; reached through the
+    // relay, never added directly).
+    remoteCloud: {
+      root: remoteCloudCodevisorRoot,
+      data: join(remoteCloudCodevisorRoot, "data"),
+      logs: join(remoteCloudCodevisorRoot, "logs"),
+      repos: join(remoteCloudCodevisorRoot, "repos"),
+      plugins: join(remoteCloudCodevisorRoot, "plugins"),
+      cache: join(remoteCloudCodevisorRoot, "cache"),
+      worktrees: join(remoteCloudRoot, "codevisor")
     },
     build: {
       root: buildRoot,
@@ -82,6 +98,12 @@ export async function ensureDevelopmentDirectories(layout) {
       layout.remote.plugins,
       layout.remote.cache,
       layout.remote.worktrees,
+      layout.remoteCloud.data,
+      layout.remoteCloud.logs,
+      layout.remoteCloud.repos,
+      layout.remoteCloud.plugins,
+      layout.remoteCloud.cache,
+      layout.remoteCloud.worktrees,
       layout.build.generated,
       layout.build.bunCache,
       layout.build.nodeGyp,
@@ -117,20 +139,27 @@ export function localDevelopmentEnvironment(layout, environment = process.env) {
   }
 }
 
-export function remoteDevelopmentEnvironment(layout, environment = process.env) {
+// `remote` picks which standalone server's roots to use: layout.remote (the
+// direct-connection server, the default) or layout.remoteCloud (the cloud
+// test server).
+export function remoteDevelopmentEnvironment(
+  layout,
+  environment = process.env,
+  remote = layout.remote
+) {
   return {
     ...environment,
     TMPDIR: layout.runtime.temp,
     BUN_INSTALL_CACHE_DIR: layout.build.bunCache,
     npm_config_devdir: layout.build.nodeGyp,
     ...(process.platform === "darwin" ? { npm_config_python: "/usr/bin/python3" } : {}),
-    CODEVISOR_DEV_DATA_DIR: layout.remote.data,
-    CODEVISOR_DEV_LOGS_DIR: layout.remote.logs,
-    CODEVISOR_DEV_CACHE_DIR: layout.remote.cache,
-    CODEVISOR_DATA_DIR: layout.remote.data,
-    CODEVISOR_LOGS_DIR: layout.remote.logs,
-    CODEVISOR_WORKTREES_ROOT: layout.remote.worktrees,
-    CODEVISOR_REPOS_ROOT: layout.remote.repos,
-    CODEVISOR_PLUGINS_ROOT: layout.remote.plugins
+    CODEVISOR_DEV_DATA_DIR: remote.data,
+    CODEVISOR_DEV_LOGS_DIR: remote.logs,
+    CODEVISOR_DEV_CACHE_DIR: remote.cache,
+    CODEVISOR_DATA_DIR: remote.data,
+    CODEVISOR_LOGS_DIR: remote.logs,
+    CODEVISOR_WORKTREES_ROOT: remote.worktrees,
+    CODEVISOR_REPOS_ROOT: remote.repos,
+    CODEVISOR_PLUGINS_ROOT: remote.plugins
   }
 }

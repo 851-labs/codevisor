@@ -23,6 +23,8 @@ test("development layout mirrors production roots inside tmp", () => {
   assert.equal(layout.local.cache, join(root, "tmp/.codevisor/cache"))
   assert.equal(layout.remote.worktrees, join(root, "tmp/remote/codevisor"))
   assert.equal(layout.remote.data, join(root, "tmp/remote/.codevisor/data"))
+  assert.equal(layout.remoteCloud.worktrees, join(root, "tmp/remote-cloud/codevisor"))
+  assert.equal(layout.remoteCloud.data, join(root, "tmp/remote-cloud/.codevisor/data"))
   assert.equal(layout.build.macos.derivedData, join(root, "tmp/build/macos/DerivedData"))
   assert.equal(layout.build.ios.derivedData, join(root, "tmp/build/ios/DerivedData"))
   assert.equal(layout.build.bunCache, join(root, "tmp/build/bun-cache"))
@@ -69,4 +71,8 @@ test("development environments point services at their own production-shaped roo
   assert.equal(remote.CODEVISOR_DATA_DIR, layout.remote.data)
   assert.equal(remote.CODEVISOR_WORKTREES_ROOT, layout.remote.worktrees)
   assert.equal(remote.PATH, "/bin")
+
+  const remoteCloud = remoteDevelopmentEnvironment(layout, { PATH: "/bin" }, layout.remoteCloud)
+  assert.equal(remoteCloud.CODEVISOR_DATA_DIR, layout.remoteCloud.data)
+  assert.equal(remoteCloud.CODEVISOR_WORKTREES_ROOT, layout.remoteCloud.worktrees)
 })

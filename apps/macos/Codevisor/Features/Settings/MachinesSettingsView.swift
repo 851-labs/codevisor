@@ -302,9 +302,11 @@ struct MachinesSettingsView: View {
         }
     }
 
-    /// Dev-only shortcut: one click adds the standalone "Dev Remote" server
+    /// Dev-only shortcut: one click adds the standalone "Dev Direct" server
     /// that `bun run dev` starts (no token entry), plus its connection details
-    /// so the manual add / deeplink flows can be exercised too.
+    /// so the manual add / deeplink flows can be exercised too. The "Dev
+    /// Cloud" server has no entry here on purpose — it arrives through the
+    /// dev cloud account, exercising the relay path.
     @ViewBuilder
     private func developmentSection(_ remote: CodevisorAppVariant.DevelopmentRemote) -> some View {
         Section {

@@ -1,7 +1,6 @@
 import { createHash, X509Certificate } from "node:crypto"
 import { execFileSync, spawn } from "node:child_process"
-import { access, cp, mkdir, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises"
-import { createServer } from "node:net"
+import { cp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { basename, join, resolve } from "node:path"
 import process from "node:process"
@@ -21,6 +20,19 @@ import {
   terminateIOSDevelopmentApp
 } from "./dev-ios-target.mjs"
 import { claimDevelopmentRunner, releaseDevelopmentRunner } from "./dev-runtime.mjs"
+import {
+  colorFromHash,
+  containsAnyPath,
+  delay,
+  describeExit,
+  directoryIsEmpty,
+  findAvailablePort,
+  isPortAvailable,
+  parsePort,
+  pathExists,
+  waitForExit,
+  waitForHealth
+} from "./dev-shared.mjs"
 import { runXcodebuild } from "./xcodebuild.mjs"
 
 const repoRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)))
@@ -99,10 +111,17 @@ const preferredWwwPort = 61_000 + (Number.parseInt(instanceHash.slice(0, 8), 16)
 const requestedWwwPort = parsePort(process.env.CODEVISOR_DEV_WWW_PORT, "CODEVISOR_DEV_WWW_PORT")
 const wwwPort = requestedWwwPort ?? (await findAvailablePort(preferredWwwPort, 61_000, 4_000))
 
-// The dev "remote" server: a real standalone server on this machine, isolated
-// from the local instance, so remote-machine flows can be developed offline.
-const remotePort = await findAvailablePort(port + 1, 51_000, 10_000)
-const remoteName = `Dev Remote (${worktreeName})`
+// The mac app's own server carries a name that says what it is in machine
+// lists (the cloud hub, other devices' fleets).
+const appServerName = `Mac App (${worktreeName})`
+// Two standalone dev servers on this machine, each isolated from the local
+// instance and from each other, named for the transport they exercise:
+// - Dev Direct: added by token/deeplink; NEVER joins the dev cloud.
+// - Dev Cloud: signs into the dev cloud; reached through the relay only.
+const directRemotePort = await findAvailablePort(port + 1, 51_000, 10_000)
+const directRemoteName = `Dev Direct (${worktreeName})`
+const cloudRemotePort = await findAvailablePort(directRemotePort + 1, 51_000, 10_000)
+const cloudRemoteName = `Dev Cloud (${worktreeName})`
 
 // The cloud dev instance (apps/cloud on `wrangler dev`): auth + relay hub,
 // running fully locally with DEV_AUTH enabled and state under tmp/. Like the
@@ -188,7 +207,8 @@ console.log(`Codevisor development instance: ${worktreeName}`)
 console.log(`  app:      ${appName}`)
 console.log(`  server:   http://127.0.0.1:${port}`)
 console.log(`  www:      http://localhost:${wwwPort}`)
-console.log(`  remote:   http://127.0.0.1:${remotePort}  (${remoteName})`)
+console.log(`  direct:   http://127.0.0.1:${directRemotePort}  (${directRemoteName})`)
+console.log(`  viacloud: http://127.0.0.1:${cloudRemotePort}  (${cloudRemoteName})`)
 console.log(`  cloud:    ${cloudUrl}`)
 console.log(`  data:     ${dataDirectory}`)
 console.log(`  worktrees:${worktreesDirectory}`)
@@ -296,11 +316,13 @@ const sharedEnvironment = {
   CODEVISOR_DEV_EXTENSION_ICON_DIR: developmentBrowserIconDirectory,
   CODEVISOR_DEV_PORT: String(port),
   CODEVISOR_DEV_WWW_PORT: String(wwwPort),
-  // The dev remote's details, so the app can offer a one-click "add the test
-  // remote" in Settings → Machines (the token is filled in once it's read).
+  // The direct dev server's details, so the app can offer a one-click "add
+  // the test remote" in Settings → Machines (the token is filled in once
+  // it's read). The cloud dev server is deliberately absent here — it
+  // arrives through the dev cloud account, exercising the relay path.
   CODEVISOR_DEV_REMOTE_HOST: "127.0.0.1",
-  CODEVISOR_DEV_REMOTE_PORT: String(remotePort),
-  CODEVISOR_DEV_REMOTE_NAME: remoteName,
+  CODEVISOR_DEV_REMOTE_PORT: String(directRemotePort),
+  CODEVISOR_DEV_REMOTE_NAME: directRemoteName,
   CODEVISOR_DEV_REMOTE_TOKEN: "",
   // The local cloud instance (auth + relay). The token is a dev-user session
   // filled in once the cloud is healthy, so clients can sign in without any
@@ -336,7 +358,7 @@ const server = spawn(
     "--kind",
     "local",
     "--name",
-    appName,
+    appServerName,
     "--upgrade-status",
     upgradeStatusPath
   ],
@@ -349,10 +371,17 @@ const www = spawn(
   { cwd: repoRoot, env: sharedEnvironment, stdio: "inherit" }
 )
 
-// A standalone "remote" server on this machine, fully isolated from the local
-// instance (its own data dir, worktrees, and managed repos) so remote-machine
-// development mirrors talking to a real second machine.
-const remoteServer = spawn(
+// Dev Direct: a standalone server fully isolated from the local instance
+// (its own data dir, worktrees, and managed repos), added by token/deeplink
+// so direct-connection flows mirror talking to a real second machine. It
+// gets NO cloud environment — a direct machine must stay direct.
+const directRemoteEnvironment = {
+  ...remoteDevelopmentEnvironment(layout, process.env),
+  CODEVISOR_DEV_INSTANCE_ID: `${instanceName}-direct`
+}
+delete directRemoteEnvironment.CODEVISOR_DEV_CLOUD_URL
+delete directRemoteEnvironment.CODEVISOR_DEV_CLOUD_TOKEN
+const directRemoteServer = spawn(
   "node",
   [
     join(repoRoot, "apps/server/dist/main.js"),
@@ -360,7 +389,7 @@ const remoteServer = spawn(
     "--host",
     "0.0.0.0",
     "--port",
-    String(remotePort),
+    String(directRemotePort),
     "--db",
     join(remoteDataDirectory, "codevisor-server.sqlite"),
     "--auth",
@@ -368,17 +397,44 @@ const remoteServer = spawn(
     "--kind",
     "remote",
     "--name",
-    remoteName,
+    directRemoteName,
     "--upgrade-status",
     join(remoteDataDirectory, "data-upgrade.json")
   ],
   {
     cwd: repoRoot,
+    env: directRemoteEnvironment,
+    stdio: "inherit"
+  }
+)
+
+// Dev Cloud: a second standalone server that signs into the dev cloud and is
+// reached through the relay — the hub's realistic "machine somewhere else".
+const cloudRemoteServer = spawn(
+  "node",
+  [
+    join(repoRoot, "apps/server/dist/main.js"),
+    "serve",
+    "--host",
+    "0.0.0.0",
+    "--port",
+    String(cloudRemotePort),
+    "--db",
+    join(layout.remoteCloud.data, "codevisor-server.sqlite"),
+    "--auth",
+    "token",
+    "--kind",
+    "remote",
+    "--name",
+    cloudRemoteName,
+    "--upgrade-status",
+    join(layout.remoteCloud.data, "data-upgrade.json")
+  ],
+  {
+    cwd: repoRoot,
     env: {
-      ...remoteDevelopmentEnvironment(layout, process.env),
-      CODEVISOR_DEV_INSTANCE_ID: `${instanceName}-remote`,
-      // The Dev Remote joins the dev cloud too — a realistic second machine
-      // in the hub's machine list.
+      ...remoteDevelopmentEnvironment(layout, process.env, layout.remoteCloud),
+      CODEVISOR_DEV_INSTANCE_ID: `${instanceName}-cloud`,
       CODEVISOR_DEV_CLOUD_URL: cloudUrl,
       CODEVISOR_DEV_CLOUD_TOKEN: sharedEnvironment.CODEVISOR_DEV_CLOUD_TOKEN
     },
@@ -400,7 +456,8 @@ const stop = async (exitCode = 0) => {
 
   for (const [servicePort, child] of [
     [port, server],
-    [remotePort, remoteServer]
+    [directRemotePort, directRemoteServer],
+    [cloudRemotePort, cloudRemoteServer]
   ]) {
     try {
       await fetch(`http://127.0.0.1:${servicePort}/v1/shutdown`, { method: "POST" })
@@ -409,8 +466,15 @@ const stop = async (exitCode = 0) => {
     }
   }
 
-  await Promise.race([Promise.all([waitForExit(server), waitForExit(remoteServer)]), delay(2_000)])
-  for (const child of [server, remoteServer]) {
+  await Promise.race([
+    Promise.all([
+      waitForExit(server),
+      waitForExit(directRemoteServer),
+      waitForExit(cloudRemoteServer)
+    ]),
+    delay(2_000)
+  ])
+  for (const child of [server, directRemoteServer, cloudRemoteServer]) {
     if (child.exitCode === null) child.kill("SIGTERM")
   }
   await releaseDevelopmentRunner(layout.runtime.manifest, runnerManifest)
@@ -430,7 +494,8 @@ const watchServerExit = (child, label) =>
   })
 const serverExit = Promise.all([
   watchServerExit(server, "Codevisor server"),
-  watchServerExit(remoteServer, "Codevisor dev remote server")
+  watchServerExit(directRemoteServer, "Codevisor dev direct server"),
+  watchServerExit(cloudRemoteServer, "Codevisor dev cloud server")
 ])
 
 void waitForExit(www).then((result) => {
@@ -447,7 +512,8 @@ void waitForExit(cloud).then((result) => {
 
 try {
   await waitForHealth(port, server)
-  await waitForHealth(remotePort, remoteServer)
+  await waitForHealth(directRemotePort, directRemoteServer)
+  await waitForHealth(cloudRemotePort, cloudRemoteServer)
   const remoteToken = await announceDevRemote()
   const launchEnvironment = Object.entries(sharedEnvironment).filter(
     ([key]) =>
@@ -480,9 +546,9 @@ try {
       instanceName,
       developmentIconColor,
       remoteHost: "127.0.0.1",
-      remotePort,
+      remotePort: directRemotePort,
       remoteToken,
-      remoteName,
+      remoteName: directRemoteName,
       urlScheme,
       cloudSession: cloudToken === "" ? undefined : { url: cloudUrl, token: cloudToken }
     })
@@ -496,25 +562,27 @@ try {
   await stop(1)
 }
 
-// Print the dev remote's connection details so it can be added in the app.
-// Its token is stable, so this only needs to be done once per instance.
+// Print the direct dev server's connection details so it can be added in the
+// app. Its token is stable, so this only needs to be done once per instance.
 async function announceDevRemote() {
   let token = "(start the server to read it)"
   try {
-    const response = await fetch(`http://127.0.0.1:${remotePort}/v1/auth/connection-token`)
+    const response = await fetch(`http://127.0.0.1:${directRemotePort}/v1/auth/connection-token`)
     if (response.ok) token = (await response.json()).token
   } catch {
     // Non-fatal: the address alone is enough to add the machine.
   }
   // Hand the token to the app for the one-click "add test remote" action.
   sharedEnvironment.CODEVISOR_DEV_REMOTE_TOKEN = token
-  const deeplink = `${urlScheme}://add-machine?host=127.0.0.1&port=${remotePort}&token=${token}&name=${encodeURIComponent(remoteName)}`
+  const deeplink = `${urlScheme}://add-machine?host=127.0.0.1&port=${directRemotePort}&token=${token}&name=${encodeURIComponent(directRemoteName)}`
   console.log("")
-  console.log(`Dev remote server ready — add it in ${appName}:`)
-  console.log(`  Settings → Machines → Add Remote Machine`)
-  console.log(`  Address: 127.0.0.1:${remotePort}`)
-  console.log(`  Token:   ${token}`)
-  console.log(`  Or open: ${deeplink}`)
+  console.log(`Dev servers ready:`)
+  console.log(`  ${directRemoteName} — direct-connection testing; add it in ${appName}:`)
+  console.log(`    Settings → Machines → Add Remote Machine`)
+  console.log(`    Address: 127.0.0.1:${directRemotePort}`)
+  console.log(`    Token:   ${token}`)
+  console.log(`    Or open: ${deeplink}`)
+  console.log(`  ${cloudRemoteName} — relay testing; appears after signing into the dev cloud.`)
   console.log("")
   return token
 }
@@ -590,43 +658,6 @@ async function readCloudDevVariables() {
   return {}
 }
 
-function parsePort(value, name) {
-  if (value === undefined) return undefined
-  const parsed = Number(value)
-  if (!Number.isInteger(parsed) || parsed < 1_024 || parsed > 65_535) {
-    throw new Error(`${name} must be an integer from 1024 through 65535; received ${value}`)
-  }
-  return parsed
-}
-
-function colorFromHash(hash) {
-  const hue = Number.parseInt(hash.slice(0, 8), 16) % 360
-  const saturation = 0.68
-  const lightness = 0.5
-  const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation
-  const section = hue / 60
-  const x = chroma * (1 - Math.abs((section % 2) - 1))
-  const [red, green, blue] =
-    section < 1
-      ? [chroma, x, 0]
-      : section < 2
-        ? [x, chroma, 0]
-        : section < 3
-          ? [0, chroma, x]
-          : section < 4
-            ? [0, x, chroma]
-            : section < 5
-              ? [x, 0, chroma]
-              : [chroma, 0, x]
-  const match = lightness - chroma / 2
-  const channels = [red + match, green + match, blue + match]
-  const bytes = channels.map((channel) => Math.round(channel * 255))
-  return {
-    hex: `#${bytes.map((byte) => byte.toString(16).padStart(2, "0")).join("")}`,
-    composer: `extended-srgb:${channels.map((channel) => channel.toFixed(5)).join(",")},1.00000`
-  }
-}
-
 async function createDevelopmentAppIcon() {
   const templateDirectory = join(
     repoRoot,
@@ -671,25 +702,6 @@ async function createDevelopmentBrowserExtensionIcons() {
   await rm(iconsetDirectory, { recursive: true, force: true })
   await run("iconutil", ["--convert", "iconset", "--output", iconsetDirectory, compiledIcon])
   return iconsetDirectory
-}
-
-async function findAvailablePort(preferred, base, range) {
-  for (let offset = 0; offset < range; offset += 1) {
-    const candidate = base + ((preferred - base + offset) % range)
-    if (await isPortAvailable(candidate)) return candidate
-  }
-  throw new Error(
-    `No available Codevisor development port was found in ${base}-${base + range - 1}`
-  )
-}
-
-function isPortAvailable(port) {
-  return new Promise((resolve) => {
-    const probe = createServer()
-    probe.unref()
-    probe.once("error", () => resolve(false))
-    probe.listen(port, "0.0.0.0", () => probe.close(() => resolve(true)))
-  })
 }
 
 function run(command, arguments_, cwd = repoRoot) {
@@ -780,57 +792,4 @@ async function resolveDevelopmentSigningArguments() {
     "CODE_SIGN_STYLE=Manual",
     "PROVISIONING_PROFILE_SPECIFIER="
   ]
-}
-
-async function pathExists(path) {
-  try {
-    await access(path)
-    return true
-  } catch {
-    return false
-  }
-}
-
-async function directoryIsEmpty(path) {
-  try {
-    return (await readdir(path)).length === 0
-  } catch (error) {
-    if (error?.code === "ENOENT") return true
-    throw error
-  }
-}
-
-async function containsAnyPath(root, names) {
-  return (await Promise.all(names.map((name) => pathExists(join(root, name))))).some(Boolean)
-}
-
-async function waitForHealth(port, child) {
-  for (let attempt = 0; attempt < 120; attempt += 1) {
-    if (child.exitCode !== null) throw new Error("Codevisor server exited before becoming healthy")
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/v1/health`)
-      if (response.ok) return
-    } catch {
-      // The listener is still starting.
-    }
-    await delay(250)
-  }
-  throw new Error(`Timed out waiting for the Codevisor server on port ${port}`)
-}
-
-function waitForExit(child) {
-  if (child.exitCode !== null || child.signalCode !== null) {
-    return Promise.resolve({ code: child.exitCode, signal: child.signalCode })
-  }
-  return new Promise((resolve) => {
-    child.once("exit", (code, signal) => resolve({ code, signal }))
-  })
-}
-
-function describeExit({ code, signal }) {
-  return signal === null ? `code ${code ?? 1}` : `signal ${signal}`
-}
-
-function delay(milliseconds) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds))
 }

@@ -1,12 +1,11 @@
-// iOS development loop: starts the standalone "Dev Remote" Codevisor server on
+// iOS development loop: starts the standalone "Dev Direct" Codevisor server on
 // this Mac (the same isolated instance scripts/dev.mjs runs alongside the macOS
-// app), starts a development cloud, then builds and launches the iOS app in the
-// visible Simulator. No macOS app is built or launched — the iOS app is a pure
-// client of the dev remote.
+// app) plus the cloud-joined "Dev Cloud" server, starts a development cloud,
+// then builds and launches the iOS app in the visible Simulator. No macOS app
+// is built or launched — the iOS app is a pure client of the dev servers.
 import { createHash } from "node:crypto"
 import { spawn } from "node:child_process"
-import { access, cp, mkdir, readdir, readFile, realpath, rm } from "node:fs/promises"
-import { createServer } from "node:net"
+import { cp, mkdir, readFile, realpath, rm } from "node:fs/promises"
 import { basename, join, resolve } from "node:path"
 import process from "node:process"
 import { fileURLToPath } from "node:url"
@@ -25,16 +24,30 @@ import {
   terminateIOSDevelopmentApp
 } from "./dev-ios-target.mjs"
 import { claimDevelopmentRunner, releaseDevelopmentRunner } from "./dev-runtime.mjs"
+import {
+  colorFromHash,
+  containsAnyPath,
+  delay,
+  describeExit,
+  directoryIsEmpty,
+  findAvailablePort,
+  isPortAvailable,
+  parsePort,
+  pathExists,
+  waitForExit,
+  waitForHealth
+} from "./dev-shared.mjs"
 
 const repoRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)))
 const worktreeName = basename(repoRoot)
 const instanceHash = createHash("sha256").update(repoRoot).digest("hex").slice(0, 10)
 const instanceName = `${worktreeName}-${instanceHash}`
 const layout = developmentLayout(repoRoot)
-// Shared with scripts/dev.mjs's dev remote so the simulator talks to the same
-// "Dev Remote" machine (same data, same stable token) either way.
+// Shared with scripts/dev.mjs's dev servers so the simulator talks to the
+// same machines (same data, same stable tokens) either way.
 const remoteDataDirectory = layout.remote.data
-const remoteName = `Dev Remote (${worktreeName})`
+const remoteName = `Dev Direct (${worktreeName})`
+const cloudRemoteName = `Dev Cloud (${worktreeName})`
 // Same hash → hue derivation as scripts/dev.mjs, so a worktree's iOS icon
 // color matches its macOS icon color.
 const worktreeHash = createHash("sha256").update(worktreeName).digest("hex")
@@ -47,7 +60,9 @@ const simulatorName = process.env.CODEVISOR_IOS_SIMULATOR ?? "iPhone 17 Pro"
 const preferredPort = 51_000 + (Number.parseInt(instanceHash.slice(0, 8), 16) % 10_000)
 const requestedPort = parsePort(process.env.CODEVISOR_DEV_REMOTE_PORT, "CODEVISOR_DEV_REMOTE_PORT")
 const remotePort = requestedPort ?? (await findAvailablePort(preferredPort + 1, 51_000, 10_000))
+const cloudRemotePort = await findAvailablePort(remotePort + 1, 51_000, 10_000)
 const serverURL = `http://127.0.0.1:${remotePort}`
+const cloudRemoteURL = `http://127.0.0.1:${cloudRemotePort}`
 const configuredCloudURL = process.env.CODEVISOR_DEV_CLOUD_URL?.replace(/\/+$/, "")
 const externalCloudURL = configuredCloudURL === "" ? undefined : configuredCloudURL
 const preferredCloudPort = 41_000 + (Number.parseInt(instanceHash.slice(0, 8), 16) % 10_000)
@@ -96,7 +111,8 @@ await claimDevelopmentRunner(layout.runtime.manifest, runnerManifest)
 Object.assign(process.env, localDevelopmentEnvironment(layout, process.env))
 
 console.log(`Codevisor iOS development instance: ${worktreeName}`)
-console.log(`  server:    ${serverURL}  (${remoteName})`)
+console.log(`  direct:    ${serverURL}  (${remoteName})`)
+console.log(`  viacloud:  ${cloudRemoteURL}  (${cloudRemoteName})`)
 console.log(`  data:      ${remoteDataDirectory}`)
 console.log(`  simulator: ${simulatorName}`)
 console.log(`  app:       ${appDisplayName} (${bundleIdentifier})`)
@@ -159,10 +175,19 @@ if (externalCloudURL === undefined) {
   )
 }
 
-// Sign into the dev cloud first so the standalone server boots cloud-connected
-// and the app can offer the explicit development-account action.
+// Sign into the dev cloud first so the cloud test server boots
+// cloud-connected and the app can offer the explicit development-account
+// action.
 const cloudSession = await resolveCloudSession(cloudURL, cloud)
 
+// Dev Direct: the machine the simulator adds by token/deeplink. It gets NO
+// cloud environment — a direct machine must stay direct.
+const directRemoteEnvironment = {
+  ...remoteDevelopmentEnvironment(layout, process.env),
+  CODEVISOR_DEV_INSTANCE_ID: `${instanceName}-direct`
+}
+delete directRemoteEnvironment.CODEVISOR_DEV_CLOUD_URL
+delete directRemoteEnvironment.CODEVISOR_DEV_CLOUD_TOKEN
 const server = spawn(
   "node",
   [
@@ -185,9 +210,38 @@ const server = spawn(
   ],
   {
     cwd: repoRoot,
+    env: directRemoteEnvironment,
+    stdio: "inherit"
+  }
+)
+
+// Dev Cloud: a second standalone server that signs into the dev cloud and is
+// reached through the relay — the hub's realistic "machine somewhere else".
+const cloudRemoteServer = spawn(
+  "node",
+  [
+    join(repoRoot, "apps/server/dist/main.js"),
+    "serve",
+    "--host",
+    "0.0.0.0",
+    "--port",
+    String(cloudRemotePort),
+    "--db",
+    join(layout.remoteCloud.data, "codevisor-server.sqlite"),
+    "--auth",
+    "token",
+    "--kind",
+    "remote",
+    "--name",
+    cloudRemoteName,
+    "--upgrade-status",
+    join(layout.remoteCloud.data, "data-upgrade.json")
+  ],
+  {
+    cwd: repoRoot,
     env: {
-      ...remoteDevelopmentEnvironment(layout, process.env),
-      CODEVISOR_DEV_INSTANCE_ID: `${instanceName}-remote`,
+      ...remoteDevelopmentEnvironment(layout, process.env, layout.remoteCloud),
+      CODEVISOR_DEV_INSTANCE_ID: `${instanceName}-cloud`,
       ...(cloudSession === undefined
         ? {}
         : {
@@ -206,14 +260,24 @@ const stop = async (exitCode = 0) => {
   if (stopping) return
   stopping = true
   terminateIOSDevelopmentApp(iosTarget)
-  try {
-    await fetch(`${serverURL}/v1/shutdown`, { method: "POST" })
-  } catch {
-    server.kill("SIGTERM")
+  for (const [url, child] of [
+    [serverURL, server],
+    [cloudRemoteURL, cloudRemoteServer]
+  ]) {
+    try {
+      await fetch(`${url}/v1/shutdown`, { method: "POST" })
+    } catch {
+      child.kill("SIGTERM")
+    }
   }
   cloud?.kill("SIGTERM")
-  await Promise.race([waitForExit(server), delay(2_000)])
-  if (server.exitCode === null) server.kill("SIGTERM")
+  await Promise.race([
+    Promise.all([waitForExit(server), waitForExit(cloudRemoteServer)]),
+    delay(2_000)
+  ])
+  for (const child of [server, cloudRemoteServer]) {
+    if (child.exitCode === null) child.kill("SIGTERM")
+  }
   await releaseDevelopmentRunner(layout.runtime.manifest, runnerManifest)
   process.exitCode = exitCode
 }
@@ -222,12 +286,17 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, () => void stop(0))
 }
 
-const serverExit = waitForExit(server).then(async (result) => {
-  if (!stopping) {
-    console.error(`Codevisor dev remote server exited unexpectedly (${describeExit(result)}).`)
-    await stop(result.code ?? 1)
-  }
-})
+const watchServerExit = (child, label) =>
+  waitForExit(child).then(async (result) => {
+    if (!stopping) {
+      console.error(`${label} exited unexpectedly (${describeExit(result)}).`)
+      await stop(result.code ?? 1)
+    }
+  })
+const serverExit = Promise.all([
+  watchServerExit(server, "Codevisor dev direct server"),
+  watchServerExit(cloudRemoteServer, "Codevisor dev cloud server")
+])
 
 try {
   iosTarget = await buildIOSDevelopmentApp({
@@ -242,6 +311,7 @@ try {
   })
 
   await waitForHealth(remotePort, server)
+  await waitForHealth(cloudRemotePort, cloudRemoteServer)
   const token = await readConnectionToken()
 
   await launchIOSDevelopmentApp({
@@ -258,40 +328,15 @@ try {
     urlScheme,
     cloudSession
   })
-  console.log("Press Ctrl+C to stop the server (the simulator stays open).")
+  console.log(
+    `${cloudRemoteName} joins after dev-cloud sign-in; ${remoteName} is the token-added machine.`
+  )
+  console.log("Press Ctrl+C to stop the servers (the simulator stays open).")
 
   await serverExit
 } catch (error) {
   console.error(error instanceof Error ? error.message : error)
   await stop(1)
-}
-
-function colorFromHash(hash) {
-  const hue = Number.parseInt(hash.slice(0, 8), 16) % 360
-  const saturation = 0.68
-  const lightness = 0.5
-  const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation
-  const section = hue / 60
-  const x = chroma * (1 - Math.abs((section % 2) - 1))
-  const [red, green, blue] =
-    section < 1
-      ? [chroma, x, 0]
-      : section < 2
-        ? [x, chroma, 0]
-        : section < 3
-          ? [0, chroma, x]
-          : section < 4
-            ? [0, x, chroma]
-            : section < 5
-              ? [x, 0, chroma]
-              : [chroma, 0, x]
-  const match = lightness - chroma / 2
-  const channels = [red + match, green + match, blue + match]
-  const bytes = channels.map((channel) => Math.round(channel * 255))
-  return {
-    hex: `#${bytes.map((byte) => byte.toString(16).padStart(2, "0")).join("")}`,
-    composer: `extended-srgb:${channels.map((channel) => channel.toFixed(5)).join(",")},1.00000`
-  }
 }
 
 async function readConnectionToken() {
@@ -302,34 +347,6 @@ async function readConnectionToken() {
     // Fall through: the address alone is enough to add the machine manually.
   }
   return ""
-}
-
-function parsePort(value, name) {
-  if (value === undefined) return undefined
-  const parsed = Number(value)
-  if (!Number.isInteger(parsed) || parsed < 1_024 || parsed > 65_535) {
-    throw new Error(`${name} must be an integer from 1024 through 65535; received ${value}`)
-  }
-  return parsed
-}
-
-async function findAvailablePort(preferred, base, range) {
-  for (let offset = 0; offset < range; offset += 1) {
-    const candidate = base + ((preferred - base + offset) % range)
-    if (await isPortAvailable(candidate)) return candidate
-  }
-  throw new Error(
-    `No available Codevisor development port was found in ${base}-${base + range - 1}`
-  )
-}
-
-function isPortAvailable(port) {
-  return new Promise((resolve) => {
-    const probe = createServer()
-    probe.unref()
-    probe.once("error", () => resolve(false))
-    probe.listen(port, "0.0.0.0", () => probe.close(() => resolve(true)))
-  })
 }
 
 function run(command, arguments_, cwd = repoRoot, environment = process.env) {
@@ -423,57 +440,4 @@ async function readCloudDevVariables() {
     return variables
   }
   return {}
-}
-
-async function pathExists(path) {
-  try {
-    await access(path)
-    return true
-  } catch {
-    return false
-  }
-}
-
-async function directoryIsEmpty(path) {
-  try {
-    return (await readdir(path)).length === 0
-  } catch (error) {
-    if (error?.code === "ENOENT") return true
-    throw error
-  }
-}
-
-async function containsAnyPath(root, names) {
-  return (await Promise.all(names.map((name) => pathExists(join(root, name))))).some(Boolean)
-}
-
-async function waitForHealth(port, child) {
-  for (let attempt = 0; attempt < 120; attempt += 1) {
-    if (child.exitCode !== null) throw new Error("Codevisor server exited before becoming healthy")
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/v1/health`)
-      if (response.ok) return
-    } catch {
-      // The listener is still starting.
-    }
-    await delay(250)
-  }
-  throw new Error(`Timed out waiting for the Codevisor server on port ${port}`)
-}
-
-function waitForExit(child) {
-  if (child.exitCode !== null || child.signalCode !== null) {
-    return Promise.resolve({ code: child.exitCode, signal: child.signalCode })
-  }
-  return new Promise((resolve) => {
-    child.once("exit", (code, signal) => resolve({ code, signal }))
-  })
-}
-
-function describeExit({ code, signal }) {
-  return signal === null ? `code ${code ?? 1}` : `signal ${signal}`
-}
-
-function delay(milliseconds) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds))
 }
