@@ -15,19 +15,6 @@ struct MachineControllerTests {
         #expect(projectList.selectedServerId == "local")
     }
 
-    @Test("Remote host input normalizes to an HTTP server URL")
-    func normalizedRemoteURL() throws {
-        #expect(
-            try MachineController.normalizedRemoteURL(from: "mac-mini.tailnet.ts.net").absoluteString
-                == "http://mac-mini.tailnet.ts.net:49361")
-        #expect(
-            try MachineController.normalizedRemoteURL(from: "https://10.0.0.5:9999/path?x=1").absoluteString
-                == "https://10.0.0.5:9999")
-        #expect(throws: MachineControllerError.invalidHost(" ")) {
-            _ = try MachineController.normalizedRemoteURL(from: " ")
-        }
-    }
-
     @Test("Adding and selecting remotes persists the registry")
     func addSelectAndPersistRemote() throws {
         let store = InMemoryStore()
@@ -202,6 +189,7 @@ struct MachineControllerTests {
         let rejecting = MachineController(
             store: store,
             projectList: projectList,
+            localServer: StubLocalServer(),
             clientFactory: { _ in
                 RescanCountingClient(infoError: CodevisorServerClientError.httpStatus(401, "{}"))
             }
@@ -218,6 +206,7 @@ struct MachineControllerTests {
                 projectRepository: DefaultProjectRepository(store: InMemoryStore()),
                 sessionRepository: DefaultSessionRepository(store: InMemoryStore())
             ),
+            localServer: StubLocalServer(),
             clientFactory: { _ in RescanCountingClient() }
         )
         let added = try await accepting.addRemoteValidating(host: "10.0.0.5", token: "hm_ok")
@@ -1103,7 +1092,13 @@ struct MachineControllerTests {
             projectRepository: DefaultProjectRepository(store: InMemoryStore()),
             sessionRepository: DefaultSessionRepository(store: InMemoryStore())
         )
-        let controller = MachineController(store: store, projectList: projectList)
+        // These tests model the MAC controller: a platform that runs a local
+        // server and therefore lists the "Local" machine.
+        let controller = MachineController(
+            store: store,
+            projectList: projectList,
+            localServer: StubLocalServer()
+        )
         return (controller, projectList, store)
     }
 

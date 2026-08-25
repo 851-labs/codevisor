@@ -162,7 +162,10 @@ extension MachineController {
     }
 
     public var machines: [CodevisorMachine] {
-        [CodevisorMachine.local] + registry.remoteMachines
+        // Client-only platforms (no local server) have no "Local" machine at
+        // all — their fleet is exactly the configured remotes. Only platforms
+        // that actually run a server alongside the app list it.
+        (localServer == nil ? [] : [CodevisorMachine.local]) + registry.remoteMachines
     }
 
     public func machine(for id: String) -> CodevisorMachine? {

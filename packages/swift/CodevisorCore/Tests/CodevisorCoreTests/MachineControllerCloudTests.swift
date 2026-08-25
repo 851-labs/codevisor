@@ -91,9 +91,12 @@ struct MachineControllerCloudTests {
         )
     }
 
+    /// Defaults to a working local server (the mac shape). Tests that model
+    /// a client-only platform (iOS) pass `localServer: nil` explicitly —
+    /// those platforms list no "Local" machine and auto-adopt real ones.
     private func makeController(
         store: InMemoryStore = InMemoryStore(),
-        localServer: (any LocalServerControlling)? = nil,
+        localServer: (any LocalServerControlling)? = StubLocalServer(),
         clientFactory: MachineController.ClientFactory? = nil
     ) -> (controller: MachineController, projectList: ProjectListModel, provider: FakeCloudProvider) {
         let projectList = ProjectListModel(
@@ -346,7 +349,7 @@ struct MachineControllerCloudTests {
     @Test("A cloud machine arriving with no explicit selection is auto-selected")
     func autoSelectsCloudMachineWhenNoExplicitChoice() async throws {
         let store = InMemoryStore()
-        let (controller, projectList, provider) = makeController(store: store)
+        let (controller, projectList, provider) = makeController(store: store, localServer: nil)
         provider.requestTransport.responsesByPath["/v1/info"] = """
             {"id":"m1","name":"Dev Remote","kind":"remote","version":"2.0.0",
              "platform":"darwin","bindHost":"127.0.0.1","cloudDeviceId":"dev-1"}
@@ -377,18 +380,32 @@ struct MachineControllerCloudTests {
         #expect(persisted.hasExplicitMachineSelection == false)
     }
 
-    @Test("An explicit local choice is never overridden by an arriving cloud machine")
-    func explicitLocalSelectionIsNotStolen() {
-        let (controller, projectList, provider) = makeController()
-        // The user explicitly taps Local.
-        controller.selectMachine("local")
+    @Test("A client-only platform never strands even an explicit local selection")
+    func strandedLocalSelectionIsRescued() throws {
+        // Legacy persisted state: "local" was explicitly selected back when
+        // this platform still listed it. Client-only platforms have no
+        // "Local" machine, so the choice cannot bind — an arriving real
+        // machine is adopted instead of stranding the user on an unreachable
+        // fleet.
+        let store = InMemoryStore()
+        try store.saveData(
+            JSONEncoder().encode(
+                MachineRegistry(
+                    selectedMachineId: "local",
+                    hasExplicitMachineSelection: true,
+                    remoteMachines: []
+                )
+            ),
+            forKey: "machines"
+        )
+        let (controller, projectList, provider) = makeController(store: store, localServer: nil)
         #expect(controller.registry.hasExplicitMachineSelection)
 
         provider.cloudMachines = [makeCloudMachine()]
         controller.reconcileCloudSelection()
 
-        #expect(controller.selectedMachineId == "local")
-        #expect(projectList.selectedServerId == "local")
+        #expect(controller.selectedMachineId == "cloud:dev-1")
+        #expect(projectList.selectedServerId == "cloud:dev-1")
     }
 
     @Test("A working local server remains the default when cloud machines arrive")
@@ -408,7 +425,7 @@ struct MachineControllerCloudTests {
 
     @Test("Auto-selection prefers an online machine over list order")
     func autoSelectPrefersOnlineMachine() {
-        let (controller, _, provider) = makeController()
+        let (controller, _, provider) = makeController(localServer: nil)
         // Offline machine first in list order, online machine second.
         provider.cloudMachines = [
             makeCloudMachine(deviceId: "dev-offline", name: "Offline Mac", online: false),
@@ -422,7 +439,7 @@ struct MachineControllerCloudTests {
 
     @Test("Auto-selection falls back to list order when no machine is online")
     func autoSelectFallsBackToListOrderWhenAllOffline() {
-        let (controller, _, provider) = makeController()
+        let (controller, _, provider) = makeController(localServer: nil)
         provider.cloudMachines = [
             makeCloudMachine(deviceId: "dev-a", name: "A Mac", online: false),
             makeCloudMachine(deviceId: "dev-b", name: "B Mac", online: false),
@@ -433,9 +450,9 @@ struct MachineControllerCloudTests {
         #expect(controller.selectedMachineId == "cloud:dev-a")
     }
 
-    @Test("With only the local machine present, auto-selection stays on local")
+    @Test("With no machines at all, a client-only platform stays on the placeholder")
     func autoSelectStaysLocalWithNoOtherMachines() {
-        let (controller, projectList, _) = makeController()
+        let (controller, projectList, _) = makeController(localServer: nil)
         // No cloud machines, no remotes: nothing to prefer over local.
         controller.reconcileCloudSelection()
 
@@ -520,7 +537,7 @@ struct MachineControllerCloudTests {
 
 @MainActor
 @Observable
-private final class StubLocalServer: LocalServerControlling {
+final class StubLocalServer: LocalServerControlling {
     var state: LocalCodevisorServerState = .idle
     var dataUpgradeProgress: LocalDataUpgradeProgress?
     var onUpdateRequested: (@MainActor () -> Void)?

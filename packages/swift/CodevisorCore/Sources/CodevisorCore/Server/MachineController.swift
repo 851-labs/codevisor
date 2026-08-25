@@ -99,7 +99,10 @@ public final class MachineController {
     private let credentialStore: (any MachineCredentialStore)?
     let projectList: ProjectListModel
     let workspaceSync: WorkspaceSyncModel?
-    private let localServer: (any LocalServerControlling)?
+    // Internal so split-off extension files (MachineConnection) can key the
+    // fleet's composition on it: platforms without a local server have no
+    // "Local" machine at all.
+    let localServer: (any LocalServerControlling)?
     private let clientFactory: ClientFactory
     let requestGate: ServerRequestGate
     private let key = "machines"
@@ -379,16 +382,16 @@ public final class MachineController {
         )
     }
 
-    /// When the user hasn't made an explicit choice yet and only the local
-    /// placeholder is selected, adopt the best available real machine. On iOS
-    /// the local machine is a non-functional placeholder, so a fresh sign-in
-    /// that has cloud machines should land on one of them instead of stranding
-    /// the user on "Local". macOS supplies a working local server and keeps it
-    /// as the default, even when cloud machines are already on the account.
-    /// No-op once the user has explicitly chosen or no non-local machine exists.
+    /// When only the local placeholder is selected on a client-only platform,
+    /// adopt the best available real machine. Client-only platforms (no local
+    /// server) don't list "Local" at all, so a selection resting on it is
+    /// never a real choice — explicit or not — and stranding the user there
+    /// renders an unreachable fleet. macOS supplies a working local server
+    /// and keeps it as the default, even when cloud machines are already on
+    /// the account. No-op when a real machine is already selected or no
+    /// non-local machine exists.
     private func autoSelectPreferredMachineIfNeeded() {
-        guard !registry.hasExplicitMachineSelection,
-            localServer == nil,
+        guard localServer == nil,
             selectedMachineId == CodevisorMachine.local.id,
             let candidate = preferredAutoSelectionCandidate()
         else { return }
