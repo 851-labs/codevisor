@@ -169,6 +169,14 @@ extension MachineController {
         allMachines.first { $0.id == id }
     }
 
+    /// A machine's display name as ROW METADATA for flattened lists: nil
+    /// for single-machine fleets, so machine context never appears until
+    /// it actually means something.
+    public func fleetMachineName(for serverId: String) -> String? {
+        guard allMachines.count > 1 else { return nil }
+        return machine(for: serverId)?.name
+    }
+
     /// The cloud presence entry backing a `cloud:` machine id, if any.
     public func cloudMachine(forMachineId id: String) -> CloudMachine? {
         guard let deviceId = CodevisorMachine.cloudDeviceId(forMachineId: id),

@@ -119,8 +119,8 @@ struct HomeView: View {
     /// separately from `visibleSessions` to coalesce bursts of automatic
     /// reorders (the held, displayed order does not change while locked).
     private var desiredVisibleSessions: [ChatSession] {
-        let sessions = projectList.sessions
-            .filter { $0.serverId == machines.selectedMachineId && !$0.isArchived }
+        // Flattened fleet: every machine's chats in one list.
+        let sessions = projectList.sessions.filter { !$0.isArchived }
         let ordered = preferenceIDs(from: manualSessionOrder)
         let manualRanks = Dictionary(
             uniqueKeysWithValues: ordered.enumerated().map { ($0.element, $0.offset) }
@@ -145,7 +145,6 @@ struct HomeView: View {
     private var workspaceItems: [HomeWorkspaceListItem] {
         _ = workspaceRevision
         _ = environment.workspaceSync.revision
-        let serverId = machines.selectedMachineId
         let sessionRank = Dictionary(
             visibleSessions.enumerated().map { ($0.element.id, $0.offset) },
             uniquingKeysWith: min
@@ -155,7 +154,7 @@ struct HomeView: View {
             uniquingKeysWith: { first, _ in first }
         )
         let items = environment.workspaces.loadAll()
-            .filter { $0.serverId == serverId && !$0.isArchived }
+            .filter { !$0.isArchived }
             .map { workspace -> HomeWorkspaceListItem in
                 // Honor the repository's grow-only routing index when healing
                 // layouts from older iOS builds. A superseded automatic
@@ -177,7 +176,7 @@ struct HomeView: View {
                         environment.workspaces.workspaceId(forSession: $0.id) == workspace.id
                     }
                 let project = projectList.projects.first {
-                    $0.serverId == serverId && $0.id == workspace.projectId
+                    $0.serverId == workspace.serverId && $0.id == workspace.projectId
                 }
                 return HomeWorkspaceListItem(
                     workspace: workspace,
@@ -195,7 +194,7 @@ struct HomeView: View {
     }
 
     private var projectItems: [HomeProjectListItem] {
-        let items: [HomeProjectListItem] = projectList.activeProjects
+        let items: [HomeProjectListItem] = projectList.fleetActiveProjects
             .filter { !$0.isScratch }
             .compactMap { project -> HomeProjectListItem? in
                 let sessions = visibleSessions.filter { $0.projectId == project.id }
@@ -211,7 +210,7 @@ struct HomeView: View {
 
     private var looseProjectSessions: [ChatSession] {
         let projectIDs = Set(
-            projectList.activeProjects.lazy.filter { !$0.isScratch }.map(\.id)
+            projectList.fleetActiveProjects.lazy.filter { !$0.isScratch }.map(\.id)
         )
         return visibleSessions.filter { !projectIDs.contains($0.projectId) }
     }
@@ -750,14 +749,15 @@ struct HomeView: View {
         hidesBottomSeparator: Bool? = nil
     ) -> some View {
         Button {
-            openChat(session)
+            openNotificationSession(session.id, serverId: session.serverId)
         } label: {
             SessionRow(
                 session: session,
                 projectName: projectName,
                 harnessSymbol: harnessSymbol(for: session),
                 status: status(for: session),
-                showsContext: showsContext
+                showsContext: showsContext,
+                machineName: machines.fleetMachineName(for: session.serverId)
             )
         }
         .buttonStyle(.plain)

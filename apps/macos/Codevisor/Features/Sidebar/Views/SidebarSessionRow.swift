@@ -16,6 +16,9 @@ struct SidebarSessionRow: View {
     let hierarchyIndent: CGFloat
     /// Deferred so the unread state is read when the context menu opens,
     /// exactly as the previous inline builder did.
+    /// Fleet context: the owning machine's name, shown only when more than
+    /// one machine exists (nil hides it entirely).
+    var machineName: String? = nil
     let isUnread: () -> Bool
     let onActivate: () -> Void
     let onRestoreRequest: () -> Void
@@ -43,6 +46,12 @@ struct SidebarSessionRow: View {
                     Text(session.title)
                         .font(titleFont)
                         .lineLimit(1)
+                    if let machineName {
+                        Text(machineName)
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                    }
                     Spacer(minLength: 6)
                 }
 

@@ -91,7 +91,7 @@ struct SidebarView: View {
     }
 
     private var visibleProjects: [Project] {
-        let active = list.activeProjects
+        let active = list.fleetActiveProjects
         if order == .none {
             return manuallyOrdered(active, ids: projectOrder, id: \.id)
         }
@@ -100,19 +100,20 @@ struct SidebarView: View {
 
     private var automaticallySortedProjects: [Project] {
         orderingCache.projects(
-            list.activeProjects,
+            list.fleetActiveProjects,
             orderingKey: projectOrderingKey
         )
     }
 
     private var automaticallySortedSessions: [ChatSession] {
-        let activeProjectIDs = Set(list.activeProjects.map(\.id))
+        // Flattened fleet: (serverId, projectId) pairs scope membership, so
+        // one machine's project can never claim another machine's chats.
+        let activeProjectKeys = Set(list.fleetActiveProjects.map { "\($0.serverId)|\($0.id)" })
         // The cache applies the final global order, so sourcing sessions via
         // `sessions(in:)` would first perform a throwaway per-project sort.
         // Filter the model's value array once instead.
         let sessions = list.sessions.filter { session in
-            session.serverId == list.selectedServerId
-                && activeProjectIDs.contains(session.projectId)
+            activeProjectKeys.contains("\(session.serverId)|\(session.projectId)")
                 && !session.isArchived
                 && (session.origin == .codevisor || list.showsImportedSessions)
         }
@@ -138,18 +139,21 @@ struct SidebarView: View {
 
     private var chronologicalSessions: [SidebarSessionListItem] {
         if order != .none {
-            let projectsByID = Dictionary(
-                visibleProjects.map { ($0.id, $0) },
+            let projectsByKey = Dictionary(
+                visibleProjects.map { ("\($0.serverId)|\($0.id)", $0) },
                 uniquingKeysWith: { first, _ in first }
             )
             let sorted = automaticallySortedSessions.compactMap { session -> SidebarSessionListItem? in
-                guard let project = projectsByID[session.projectId] else { return nil }
+                guard let project = projectsByKey["\(session.serverId)|\(session.projectId)"]
+                else { return nil }
                 return SidebarSessionListItem(session: session, project: project)
             }
             return deferredSessionOrder.applying(to: sorted, id: \.id)
         }
         let sessions = visibleProjects.flatMap { project in
-            list.sessions(in: project).map { SidebarSessionListItem(session: $0, project: project) }
+            list.fleetSessions(in: project).map {
+                SidebarSessionListItem(session: $0, project: project)
+            }
         }
         return manuallyOrderedSessions(sessions, session: \.session)
     }
@@ -170,7 +174,6 @@ struct SidebarView: View {
     private var workspaceItems: [SidebarWorkspaceListItem] {
         _ = workspaceRevision
         _ = environment.workspaceSync.revision
-        let serverId = environment.machines.selectedMachineId
         let sessionItems = chronologicalSessions
         let sessionRank = Dictionary(
             sessionItems.enumerated().map { ($0.element.session.id, $0.offset) },
@@ -180,9 +183,7 @@ struct SidebarView: View {
             sessionItems.map { ($0.session.id, $0) },
             uniquingKeysWith: { first, _ in first }
         )
-        let workspaces = environment.workspaces.loadAll().filter {
-            $0.serverId == serverId && !$0.isArchived
-        }
+        let workspaces = environment.workspaces.loadAll().filter { !$0.isArchived }
         return
             workspaces
             .map { workspace -> (item: SidebarWorkspaceListItem, rank: Int, created: Date) in
@@ -200,14 +201,14 @@ struct SidebarView: View {
                 let routingSession =
                     primary?.session
                     ?? list.sessions.first(where: {
-                        $0.serverId == serverId
+                        $0.serverId == workspace.serverId
                             && environment.workspaces.workspaceId(forSession: $0.id) == workspace.id
                     })
                 let routingProject =
                     primary?.project
                     ?? routingSession.flatMap { fallback in
                         list.projects.first {
-                            $0.serverId == serverId && $0.id == fallback.projectId
+                            $0.serverId == workspace.serverId && $0.id == fallback.projectId
                         }
                     }
                 return (
@@ -821,6 +822,7 @@ struct SidebarView: View {
             isReordering: isReordering,
             titleFont: itemTitleFont,
             hierarchyIndent: hierarchyIndent,
+            machineName: environment.machines.fleetMachineName(for: session.serverId),
             isUnread: { isUnread(session) },
             onActivate: { activateSession(session) },
             onRestoreRequest: { restoreRequest = ArchivedRestoreRequest(target: .session(session)) },
@@ -865,6 +867,7 @@ struct SidebarView: View {
             isSelected: isSelected,
             isReordering: isReordering,
             titleFont: itemTitleFont,
+            machineName: environment.machines.fleetMachineName(for: item.workspace.serverId),
             onActivateSession: { activateSession($0) },
             onArchive: { archiveWorkspace(item) },
             onRename: {
@@ -1001,6 +1004,16 @@ struct SidebarView: View {
         }
         let target = SidebarSelection.session(serverId: session.serverId, id: session.id)
         guard selection != target else { return }
+        // Flattened sidebar: a chat on another machine selects that machine
+        // under the hood first — same contract as a notification tap.
+        if session.serverId != environment.machines.selectedMachineId {
+            environment.machines.selectMachine(session.serverId)
+            Task {
+                await environment.prepareSelectedMachine()
+                selection = target
+            }
+            return
+        }
         selection = target
     }
 
@@ -1249,7 +1262,7 @@ struct SidebarView: View {
         var leadingTimestamp = project.createdAt
         for session in list.sessions
         where
-            session.serverId == list.selectedServerId
+            session.serverId == project.serverId
             && session.projectId == project.id
             && !session.isArchived
             && (session.origin == .codevisor || list.showsImportedSessions)

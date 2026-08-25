@@ -80,4 +80,26 @@ extension ProjectListModel {
             )
         }
     }
+
+    /// Sessions visible in a project on the project's OWN machine (not the
+    /// selected one) — the flattened sidebar's per-project scope.
+    public func fleetSessions(in project: Project) -> [ChatSession] {
+        sessions
+            .filter { session in
+                session.projectId == project.id
+                    && session.serverId == project.serverId
+                    && !session.isArchived
+                    && (session.origin == .codevisor || showsImportedSessions)
+            }
+            .sorted { ($0.updatedAt ?? $0.createdAt) > ($1.updatedAt ?? $1.createdAt) }
+    }
+
+    /// Active projects across EVERY machine — the flattened sidebar's root.
+    public var fleetActiveProjects: [Project] {
+        projects
+            .filter {
+                !$0.isArchived && ($0.origin == .codevisor || !fleetSessions(in: $0).isEmpty)
+            }
+            .sorted { $0.createdAt > $1.createdAt }
+    }
 }

@@ -13,6 +13,8 @@ struct SidebarWorkspaceRow: View {
     let isSelected: Bool
     let isReordering: Bool
     let titleFont: Font
+    /// Fleet context: the owning machine's name; nil hides it entirely.
+    var machineName: String? = nil
     let onActivateSession: (ChatSession) -> Void
     let onArchive: () -> Void
     let onRename: () -> Void
@@ -41,6 +43,12 @@ struct SidebarWorkspaceRow: View {
                             Text(title)
                                 .font(titleFont)
                                 .lineLimit(1)
+                            if let machineName {
+                                Text(machineName)
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                                    .lineLimit(1)
+                            }
                             Spacer(minLength: 6)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -69,7 +77,13 @@ struct SidebarWorkspaceRow: View {
                     Text(title)
                         .font(titleFont)
                         .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if let machineName {
+                        Text(machineName)
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 6)
                 }
                 if onToggle == nil, let session = item.primarySession {
                     SidebarSessionStatus(

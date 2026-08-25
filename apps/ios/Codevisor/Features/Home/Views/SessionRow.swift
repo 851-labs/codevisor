@@ -21,6 +21,9 @@ struct SessionRow: View {
     let harnessSymbol: String
     let status: HomeSessionStatus
     let showsContext: Bool
+    /// Fleet context: the owning machine's name, shown only when more than
+    /// one machine exists (nil hides it entirely).
+    var machineName: String? = nil
 
     var body: some View {
         HStack(spacing: Self.harnessToCopySpacing) {
@@ -42,6 +45,12 @@ struct SessionRow: View {
                         if let worktree = session.worktreeName, !worktree.isEmpty {
                             if projectName != nil { Text("·") }
                             Text(worktree)
+                        }
+                        if let machineName {
+                            if projectName != nil || session.worktreeName?.isEmpty == false {
+                                Text("·")
+                            }
+                            Text(machineName)
                         }
                     }
                     .font(.footnote)
