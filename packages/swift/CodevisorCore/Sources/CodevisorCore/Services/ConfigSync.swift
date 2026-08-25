@@ -211,8 +211,29 @@ public final class ConfigSync {
         where machines.connectionsById[machine.id]?.status?.isReachable == true {
             let client = machines.client(for: machine.id)
             Task {
-                _ = try? await client.mergeSyncDocument(namespace: namespace, entries: entries)
+                guard
+                    (try? await client.mergeSyncDocument(namespace: namespace, entries: entries))
+                        != nil
+                else { return }
+                // Receivers apply right away instead of on their next sweep.
+                await Self.reconcile(namespace: namespace, on: client)
             }
+        }
+        // New skill content also needs its blob ferried before it applies.
+        if namespace == "skills" {
+            Task { await synchronizeSkills() }
+        }
+    }
+
+    private static func reconcile(
+        namespace: String,
+        on client: any CodevisorServerClienting
+    ) async {
+        switch namespace {
+        case "mcps": _ = try? await client.reconcileMcpsSync()
+        case "harnesses": _ = try? await client.reconcileHarnessesSync()
+        case "plugins": _ = try? await client.reconcilePluginsSync()
+        default: break
         }
     }
 

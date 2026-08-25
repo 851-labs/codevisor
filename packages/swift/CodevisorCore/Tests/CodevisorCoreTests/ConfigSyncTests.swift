@@ -267,6 +267,27 @@ struct ConfigSyncTests {
         #expect(fake.operationLog.contains("skills.reconcile"))
     }
 
+    @Test("A gossiped write reconciles receivers immediately")
+    func gossipReconcilesReceivers() async throws {
+        let remote = makeRemote("remote-a")
+        let fake = SyncFakeServerClient(projects: [], sessions: [])
+        let controller = try makeController(
+            fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],
+            remotes: [remote]
+        )
+        await controller.refreshStatus(for: remote.id)
+        let sync = ConfigSync(machines: controller, store: InMemoryStore())
+
+        sync.set(namespace: "mcps", key: "GitHub", value: .object(["enabled": .bool(true)]))
+
+        // The push lands the entry AND applies it on the receiver in the
+        // same breath — no waiting for the periodic sweep.
+        try await waitForSync {
+            fake.syncEntries(namespace: "mcps").count == 1
+                && fake.operationLog.contains("mcps.reconcile")
+        }
+    }
+
     @Test("Tombstones remove values and win over older writes")
     func tombstonesWin() throws {
         let controller = try makeController(

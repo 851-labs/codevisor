@@ -45,6 +45,7 @@ import {
 } from "./routes/sessions.js"
 import { routePluginProxy, routePlugins } from "./routes/plugins.js"
 import { routeSkills } from "./routes/skills.js"
+import { configMutationNamespace, runBackgroundSyncReconcile } from "./routes/sync-reconcilers.js"
 import { routeSync } from "./routes/sync.js"
 import { routeTerminals } from "./routes/terminals.js"
 import { routeWorkspaces } from "./routes/workspaces.js"
@@ -318,6 +319,18 @@ const handleRequest = async (
 ): Promise<void> => {
   try {
     const url = parseRequestUrl(request)
+    // Config mutations propagate instantly: after a successful response
+    // goes out, the matching sync plane reconciles in the background so
+    // the change enters the replica and publishes sync.changed within a
+    // second instead of waiting for a client's periodic sweep.
+    const mutatedPlane = configMutationNamespace(request.method, url.pathname)
+    if (mutatedPlane !== undefined) {
+      response.once("finish", () => {
+        if (response.statusCode < 400) {
+          void runBackgroundSyncReconcile(services, config, fanout, mutatedPlane)
+        }
+      })
+    }
     if (request.method === "GET" && url.pathname === "/v1/health") {
       writeJson(response, 200, {
         ok: true,

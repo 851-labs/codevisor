@@ -9,16 +9,8 @@ import {
   nextSyncTimestamp
 } from "@codevisor/sync"
 import type { IncomingMessage, ServerResponse } from "node:http"
-import {
-  ACCOUNTS_SYNC_NAMESPACE,
-  MCPS_SYNC_NAMESPACE,
-  publishAccountsRoster,
-  reconcileMcps
-} from "../infra/config-sync.js"
-import { HARNESSES_SYNC_NAMESPACE, reconcileHarnesses } from "../infra/harness-sync.js"
-import { PLUGINS_SYNC_NAMESPACE, pluginSyncOrigin, reconcilePlugins } from "../infra/plugin-sync.js"
-import { discoverHarnesses } from "./harnesses.js"
-import { reconcileSkills, SKILLS_SYNC_NAMESPACE, verifySkillArchive } from "../infra/skills-sync.js"
+import { ACCOUNTS_SYNC_NAMESPACE, publishAccountsRoster } from "../infra/config-sync.js"
+import { verifySkillArchive } from "../infra/skills-sync.js"
 import {
   appendAndPublish,
   HttpFailure,
@@ -30,14 +22,26 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "../server-context.js"
+import {
+  PARTICIPATION_NAMESPACE,
+  publishSyncChanged,
+  readParticipation,
+  reconcileForNamespace,
+  type SyncReconcileNamespace
+} from "./sync-reconcilers.js"
 
-/// The participation flag lives in a dot-named namespace the HTTP surface
-/// can never serve or gossip; only the dedicated endpoint below reads it.
-const PARTICIPATION_NAMESPACE = "local.sync"
+const RECONCILE_ROUTES: Record<string, SyncReconcileNamespace> = {
+  "/v1/sync/skills/reconcile": "skills",
+  "/v1/sync/mcps/reconcile": "mcps",
+  "/v1/sync/harnesses/reconcile": "harnesses",
+  "/v1/sync/plugins/reconcile": "plugins"
+}
 
-const readParticipation = async (services: CodevisorServerServices): Promise<boolean> => {
-  const entries = await run(services.db.getSyncEntries(PARTICIPATION_NAMESPACE))
-  return entries.find((entry) => entry.key === "enabled")?.value !== false
+const RECONCILE_UNAVAILABLE: Record<SyncReconcileNamespace, string> = {
+  skills: "Skills sync unavailable",
+  mcps: "MCP sync unavailable",
+  harnesses: "Harness sync unavailable",
+  plugins: "Plugin sync unavailable"
 }
 
 const readRawBody = async (request: IncomingMessage): Promise<Buffer> => {
@@ -121,113 +125,13 @@ export const routeSync = async (
     throw new HttpFailure(405, "Method not allowed")
   }
 
-  if (url.pathname === "/v1/sync/skills/reconcile" && request.method === "POST") {
-    const blobs = services.syncBlobs
-    const skills = services.skills
-    if (blobs === undefined || skills === undefined) {
-      throw new HttpFailure(501, "Skills sync unavailable")
+  const reconcilePlane = RECONCILE_ROUTES[url.pathname]
+  if (reconcilePlane !== undefined && request.method === "POST") {
+    const result = await reconcileForNamespace(services, config, reconcilePlane)
+    if (result === undefined) {
+      throw new HttpFailure(501, RECONCILE_UNAVAILABLE[reconcilePlane])
     }
-    const result = await reconcileSkills({
-      db: services.db,
-      skills,
-      blobs,
-      serverId: config.id
-    })
-    if (result.changedEntries.length > 0) {
-      void appendAndPublish(services.db, fanout, "sync.changed", SKILLS_SYNC_NAMESPACE, {
-        namespace: SKILLS_SYNC_NAMESPACE,
-        entries: result.changedEntries
-      }).catch(swallowError)
-    }
-    writeJson(response, 200, result.status)
-    return true
-  }
-
-  if (url.pathname === "/v1/sync/plugins/reconcile" && request.method === "POST") {
-    const manager = services.plugins
-    if (manager === undefined) throw new HttpFailure(501, "Plugin sync unavailable")
-    const result = await reconcilePlugins({
-      db: services.db,
-      serverId: config.id,
-      listPlugins: async () =>
-        (await manager.list()).plugins.map((summary) => {
-          const origin = summary.source === "managed" ? pluginSyncOrigin(summary.path) : undefined
-          return {
-            id: summary.id,
-            enabled: summary.enabled,
-            ...(origin === undefined ? {} : { origin })
-          }
-        }),
-      installFromSource: async (source) => {
-        await manager.importRemote({ source })
-      },
-      setEnabled: async (pluginId, enabled) => {
-        await manager.setEnabled(pluginId, enabled)
-      },
-      removePlugin: async (pluginId) => {
-        await manager.remove(pluginId)
-      }
-    })
-    if (result.changedEntries.length > 0) {
-      void appendAndPublish(services.db, fanout, "sync.changed", PLUGINS_SYNC_NAMESPACE, {
-        namespace: PLUGINS_SYNC_NAMESPACE,
-        entries: result.changedEntries
-      }).catch(swallowError)
-    }
-    writeJson(response, 200, result.status)
-    return true
-  }
-
-  if (url.pathname === "/v1/sync/harnesses/reconcile" && request.method === "POST") {
-    const lifecycle = services.lifecycle
-    const custom = services.customHarnesses
-    const result = await reconcileHarnesses({
-      db: services.db,
-      serverId: config.id,
-      listHarnesses: async () =>
-        (await discoverHarnesses(services)).map((harness) => ({
-          id: harness.id,
-          enabled: harness.enabled,
-          installed: harness.readiness.state === "ready",
-          // Mirrors the PATCH enable gate: without an auth service there is
-          // nothing to gate on; with one, signed-in or auth-free only.
-          authenticated:
-            services.auth === undefined ||
-            harness.auth?.state === "authenticated" ||
-            harness.auth?.state === "notRequired"
-        })),
-      setEnabled: (harnessId, enabled) => run(services.db.setHarnessEnabled(harnessId, enabled)),
-      beginInstall: async (harnessId) => {
-        if (lifecycle === undefined) {
-          throw new Error("Harness install unavailable on this machine")
-        }
-        await lifecycle.beginInstall(harnessId)
-      },
-      listCustomSpecs: async () => (custom === undefined ? [] : await custom.list()),
-      replaceCustomSpecs: async (specs) => {
-        if (custom !== undefined) await custom.replace(specs)
-      }
-    })
-    if (result.changedEntries.length > 0) {
-      void appendAndPublish(services.db, fanout, "sync.changed", HARNESSES_SYNC_NAMESPACE, {
-        namespace: HARNESSES_SYNC_NAMESPACE,
-        entries: result.changedEntries
-      }).catch(swallowError)
-    }
-    writeJson(response, 200, result.status)
-    return true
-  }
-
-  if (url.pathname === "/v1/sync/mcps/reconcile" && request.method === "POST") {
-    const mcp = services.mcp
-    if (mcp === undefined) throw new HttpFailure(501, "MCP sync unavailable")
-    const result = await reconcileMcps({ db: services.db, mcp, serverId: config.id })
-    if (result.changedEntries.length > 0) {
-      void appendAndPublish(services.db, fanout, "sync.changed", MCPS_SYNC_NAMESPACE, {
-        namespace: MCPS_SYNC_NAMESPACE,
-        entries: result.changedEntries
-      }).catch(swallowError)
-    }
+    publishSyncChanged(services, fanout, reconcilePlane, result.changedEntries)
     writeJson(response, 200, result.status)
     return true
   }
