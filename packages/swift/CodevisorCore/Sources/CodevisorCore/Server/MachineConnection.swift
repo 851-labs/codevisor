@@ -115,6 +115,12 @@ extension MachineController {
         await refreshStatus(for: machineId)
         guard connection.status?.isReachable == true else { return }
         let cursor = (try? await client.latestShellEventCursor()) ?? 0
+        // Full snapshot BEFORE the stream starts (the cursor above replays
+        // anything racing the fetch): a machine's chats and workspaces are
+        // present — and orderable in a flattened sidebar — without it ever
+        // being selected.
+        await projectList.refreshFromServer(serverId: machineId, client: client)
+        await workspaceSync?.refreshFromServer(serverId: machineId, client: client)
         // Selection may have taken this machine over while we probed; its
         // navigation sync owns the stream then.
         guard connection.eventSyncTask == nil else { return }

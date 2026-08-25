@@ -71,6 +71,35 @@ struct MachineConnectionTests {
         ])
     }
 
+    @Test("Connecting a background machine pulls its full snapshot")
+    func connectSnapshotsBackgroundMachine() async throws {
+        let remote = makeRemote("remote-a")
+        let project = Project.fromFolder(
+            URL(fileURLWithPath: "/tmp/remote-work"),
+            serverId: remote.id,
+            origin: .codevisor
+        )
+        let session = makeSession(id: UUID(), projectId: project.id, serverId: remote.id)
+        let fake = SyncFakeServerClient(
+            projects: [serverProject(from: project)],
+            sessions: [session]
+        )
+        let (controller, projectList) = try makeController(
+            fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],
+            remotes: [remote]
+        )
+
+        await controller.connectMachine(remote.id)
+
+        // The machine was never selected, yet its chats are in the shared
+        // repositories — the flattened sidebar's precondition.
+        #expect(
+            projectList.sessions.contains {
+                $0.serverId == remote.id && $0.id.uuidString == session.id
+            })
+        controller.stopEventSync()
+    }
+
     private func waitForSync(_ predicate: () -> Bool) async throws {
         for _ in 0..<200 {
             if predicate() { return }

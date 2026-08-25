@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-private struct PreparedServerNavigationSnapshot: Sendable {
+struct PreparedServerNavigationSnapshot: Sendable {
     struct MappingFailure: Sendable {
         let kind: String
         let id: String
@@ -14,14 +14,14 @@ private struct PreparedServerNavigationSnapshot: Sendable {
     let failures: [MappingFailure]
 }
 
-private struct PreparedServerSessionUpdate: Sendable {
+struct PreparedServerSessionUpdate: Sendable {
     let session: ChatSession
     let workspaceId: UUID?
 }
 
 /// Pure server-record conversion belongs off the main actor. Only the final
 /// observable diff is committed by `ProjectListModel` on the UI actor.
-private enum ServerNavigationSnapshotBuilder {
+enum ServerNavigationSnapshotBuilder {
     static func build(
         projects: [ServerProject],
         sessions: [ServerSession],
@@ -102,8 +102,8 @@ public final class ProjectListModel {
         let id: UUID
     }
 
-    public private(set) var projects: [Project] = []
-    public private(set) var sessions: [ChatSession] = []
+    public internal(set) var projects: [Project] = []
+    public internal(set) var sessions: [ChatSession] = []
     public private(set) var selectedServerId: String
     /// Fires whenever a session's attention state changes, from every path
     /// that can change it (live events, snapshot merges, local mutations).
@@ -125,7 +125,7 @@ public final class ProjectListModel {
     /// Server-owned session → workspace membership, scoped by the client-side
     /// machine id. Pane layout stays in `WorkspaceRepository`; this mapping is
     /// refreshed with the same authoritative session snapshot as the sidebar.
-    @ObservationIgnored private var workspaceAssignmentsByServer: [String: [UUID: UUID]] = [:]
+    @ObservationIgnored var workspaceAssignmentsByServer: [String: [UUID: UUID]] = [:]
     /// Sessions created locally while a server client is active, but not yet
     /// observed in an authoritative server snapshot. A metadata refresh can
     /// race the slow first agent startup; preserving these rows prevents the
@@ -708,7 +708,7 @@ public final class ProjectListModel {
             ))
     }
 
-    private func emitAttentionTransitions(
+    func emitAttentionTransitions(
         from previous: [ChatSession],
         to next: [ChatSession],
         origin: SessionAttentionTransition.Origin
@@ -1006,11 +1006,11 @@ public final class ProjectListModel {
         syncProject(projects[index])
     }
 
-    private func persistProjects() {
+    func persistProjects() {
         projectRepository.save(projects)
     }
 
-    private func persistSessions() {
+    func persistSessions() {
         sessionRepository.save(sessions)
     }
 
@@ -1032,52 +1032,13 @@ public final class ProjectListModel {
         let serverId = selectedServerId
         do {
             try await migrateLegacyCacheIfNeeded(serverId: serverId, client: serverClient)
-            async let projectRecords = serverClient.listProjects()
-            async let sessionRecords = serverClient.listSessions()
-            let (remoteProjectRecords, remoteSessionRecords) = try await (
-                projectRecords,
-                sessionRecords
-            )
-            let prepared = await ServerNavigationSnapshotBuilder.build(
-                projects: remoteProjectRecords,
-                sessions: remoteSessionRecords,
-                serverId: serverId
-            )
+            let prepared = try await fetchSnapshot(serverId: serverId, client: serverClient)
             // The user switched machines while the fetch was in flight: drop
             // the stale response. The newly selected machine triggers its own
             // refresh, and this one would merge (and persist) another
             // machine's projects into the wrong sidebar.
             guard serverId == selectedServerId else { return .superseded }
-            for failure in prepared.failures {
-                Log.sync.error(
-                    "Dropping server \(failure.kind, privacy: .public) \(failure.id, privacy: .public) that failed to map: \(failure.description, privacy: .public)"
-                )
-            }
-            workspaceAssignmentsByServer[serverId] = prepared.workspaceAssignments
-            let nextProjects = mergeProjects(
-                local: projects,
-                remote: prepared.projects,
-                serverId: serverId
-            )
-            let previousSessions = sessions
-            let nextSessions = mergeSessions(
-                local: sessions,
-                remote: prepared.sessions,
-                serverId: serverId
-            )
-            if nextProjects != projects {
-                projects = nextProjects
-                persistProjects()
-            }
-            if nextSessions != sessions {
-                sessions = nextSessions
-                persistSessions()
-                emitAttentionTransitions(
-                    from: previousSessions,
-                    to: nextSessions,
-                    origin: .snapshot
-                )
-            }
+            commitSnapshot(prepared, serverId: serverId)
             return .committed
         } catch {
             // Keep the last successful snapshot while the server is unreachable.
@@ -1227,7 +1188,7 @@ public final class ProjectListModel {
         try await task.value
     }
 
-    private func mergeProjects(local: [Project], remote: [Project], serverId: String) -> [Project] {
+    func mergeProjects(local: [Project], remote: [Project], serverId: String) -> [Project] {
         let otherServers = local.filter { $0.serverId != serverId }
         // A snapshot that no longer lists a tombstoned project confirms the
         // deletion; one that still does was fetched before the DELETE landed
@@ -1255,7 +1216,7 @@ public final class ProjectListModel {
         return (otherServers + pending + surviving).sorted { $0.createdAt > $1.createdAt }
     }
 
-    private func mergeSessions(
+    func mergeSessions(
         local rawLocal: [ChatSession], remote rawRemote: [ChatSession], serverId: String
     ) -> [ChatSession] {
         // Sessions of a tombstoned (optimistically deleted) project go down

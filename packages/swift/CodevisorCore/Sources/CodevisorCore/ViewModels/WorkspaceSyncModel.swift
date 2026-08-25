@@ -39,7 +39,7 @@ public final class WorkspaceSyncModel {
     private let repository: any WorkspaceRepository
     private let projectList: ProjectListModel
     @ObservationIgnored private var sessionsInvalidatedByWorkspaceDeletion: [String: Set<UUID>] = [:]
-    @ObservationIgnored private var refreshGeneration: UInt64 = 0
+    @ObservationIgnored private var refreshGenerationByServer: [String: UInt64] = [:]
     @ObservationIgnored private var pendingPaneMutations: [PanePublicationKey: [PendingPaneMutation]] = [:]
     @ObservationIgnored private var publishingPaneKeys: Set<PanePublicationKey> = []
     /// While a renderer conversion is pending, this desired value is the
@@ -66,8 +66,10 @@ public final class WorkspaceSyncModel {
         serverId: String,
         client: any CodevisorServerClienting
     ) async {
-        refreshGeneration &+= 1
-        let generation = refreshGeneration
+        // Per-server generations: a background machine's refresh must never
+        // be gated (or cancelled) by the selected machine's, and vice versa.
+        refreshGenerationByServer[serverId, default: 0] &+= 1
+        let generation = refreshGenerationByServer[serverId]
         do {
             var records: [ServerWorkspace]
             var paneSnapshot: [ServerWorkspacePane]?
@@ -86,8 +88,7 @@ public final class WorkspaceSyncModel {
                 paneSnapshot = try await paneRequest
                 usesCoherentSnapshot = false
             }
-            guard projectList.selectedServerId == serverId,
-                generation == refreshGeneration
+            guard generation == refreshGenerationByServer[serverId]
             else { return }
             var assignments = projectList.workspaceAssignments(for: serverId)
 
@@ -113,8 +114,7 @@ public final class WorkspaceSyncModel {
             // events arrive. Re-read the atomic snapshot so the repository
             // crosses the ownership boundary in one coherent commit.
             if adoption.didMutateServer {
-                guard projectList.selectedServerId == serverId,
-                    generation == refreshGeneration
+                guard generation == refreshGenerationByServer[serverId]
                 else { return }
                 if usesCoherentSnapshot {
                     guard let refreshed = try await client.workspaceSnapshot() else { return }
@@ -152,8 +152,7 @@ public final class WorkspaceSyncModel {
             } else {
                 panes = nil
             }
-            guard projectList.selectedServerId == serverId,
-                generation == refreshGeneration
+            guard generation == refreshGenerationByServer[serverId]
             else { return }
             reconcile(
                 records,
