@@ -144,7 +144,8 @@ export const makeTranscriptService = (
             ...item,
             text: summary.text,
             ...(summary.planDocument === undefined ? {} : { planDocument: summary.planDocument }),
-            ...(summary.messageId === undefined ? {} : { messageId: summary.messageId })
+            ...(summary.messageId === undefined ? {} : { messageId: summary.messageId }),
+            ...(summary.phase === undefined ? {} : { phase: summary.phase })
           }
         })
         const cursor = pageRows.at(-1)?.position

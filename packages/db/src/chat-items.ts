@@ -1,4 +1,4 @@
-import type { AttachmentRef, SessionGoal } from "@codevisor/api"
+import type { AttachmentRef, MessagePhase, SessionGoal } from "@codevisor/api"
 import { SessionGoal as SessionGoalSchema } from "@codevisor/api"
 import type Database from "better-sqlite3"
 import { Schema } from "effect"
@@ -153,7 +153,7 @@ export const chatAssistantSummary = (
   sqlite: Database.Database,
   sessionId: string,
   itemId: string
-): { text: string; planDocument?: string; messageId?: string } => {
+): { text: string; planDocument?: string; messageId?: string; phase?: MessagePhase } => {
   const rows = sqlite
     .prepare(
       `select payload from session_events
@@ -161,7 +161,7 @@ export const chatAssistantSummary = (
        order by revision asc`
     )
     .all(sessionId, itemId) as ReadonlyArray<{ payload: string }>
-  const spans: Array<{ chunks: Array<string>; phase?: string; messageId?: string }> = []
+  const spans: Array<{ chunks: Array<string>; phase?: MessagePhase; messageId?: string }> = []
   const indexById = new Map<string, number>()
   let anonymous = 0
   let planDocument: string | undefined
@@ -195,28 +195,38 @@ export const chatAssistantSummary = (
     }
     /* v8 ignore next -- projected answer events always carry text; this only guards manually corrupted rows. */
     const text = payloadText(payload) ?? ""
-    if (text.length === 0) continue
-    const messageId =
-      typeof payload.messageId === "string" ? payload.messageId : `anonymous:${anonymous}`
+    const suppliedMessageId = typeof payload.messageId === "string" ? payload.messageId : undefined
+    // A zero-length chunk can retroactively classify a previously streamed
+    // span. Keep it in the semantic summary even though it has no visible
+    // text; dropping it resurrects Claude preambles as final answers when a
+    // client reopens the chat after the following tool call has started.
+    if (text.length === 0 && suppliedMessageId === undefined) continue
+    const messageId = suppliedMessageId ?? `anonymous:${anonymous}`
     let index = indexById.get(messageId)
     if (index === undefined) {
       index = spans.length
       indexById.set(messageId, index)
       // Anonymous spans have no provider identity to hand back to clients.
-      spans.push(typeof payload.messageId === "string" ? { chunks: [], messageId } : { chunks: [] })
+      spans.push(suppliedMessageId === undefined ? { chunks: [] } : { chunks: [], messageId })
     }
     const span = spans[index]
     /* v8 ignore next -- index is created from spans.length immediately before lookup. */
     if (span === undefined) continue
-    span.chunks.push(text)
-    if (typeof payload.phase === "string") span.phase = payload.phase
+    if (text.length > 0) span.chunks.push(text)
+    if (payload.phase === "commentary" || payload.phase === "final") {
+      span.phase = payload.phase
+    }
   }
-  const final = [...spans].reverse().find((span) => span.phase !== "commentary")
+  const final = [...spans]
+    .reverse()
+    .find((span) => span.chunks.length > 0 && span.phase !== "commentary")
   const messageId = finalized?.messageId ?? final?.messageId
+  const phase: MessagePhase | undefined = finalized === undefined ? final?.phase : "final"
   return {
     text: finalized?.markdown ?? final?.chunks.join("") ?? "",
     ...(planDocument === undefined ? {} : { planDocument }),
-    ...(messageId === undefined ? {} : { messageId })
+    ...(messageId === undefined ? {} : { messageId }),
+    ...(phase === undefined ? {} : { phase })
   }
 }
 

@@ -238,7 +238,12 @@ struct AssistantTurnView: View {
         // follows — settle the worked section the moment the answer STARTS
         // streaming instead of waiting for the turn to end.
         .onChange(of: turn.finalTextIsAsserted) { _, asserted in
-            if asserted, turn.isGenerating { autoCollapse() }
+            guard turn.isGenerating else { return }
+            if asserted {
+                autoCollapse()
+            } else {
+                reopenForActiveWork()
+            }
         }
         // A turn can end while its subagents keep running in the background;
         // the collapse deferred at turn end fires once the last one finishes.
@@ -328,6 +333,15 @@ struct AssistantTurnView: View {
         // hosting controller, so explicitly ask the virtualizer to remeasure —
         // settled rows (a turn whose background subagent just finished) have
         // no other layout pass coming.
+        invalidateRowMeasurement?()
+    }
+
+    /// A provider can retro-tag optimistic answer text as commentary when a
+    /// tool starts. Undo an early final collapse so live work is visible and
+    /// non-collapsible again.
+    private func reopenForActiveWork() {
+        hasAutoCollapsed = false
+        for key in sectionKeys { store.setExpanded(key, true) }
         invalidateRowMeasurement?()
     }
 

@@ -469,7 +469,7 @@ extension ServerSessionTransport {
                 ))
         case .assistant:
             // A still-streaming item carries the provider message id of its
-            // final text span. Adopting the live-delta identity (`acp:<id>`)
+            // answer candidate. Adopting the live-delta identity (`acp:<id>`)
             // lets TranscriptReducer.appendText merge resumed chunks into
             // this entry instead of appending a second span — which would
             // demote the restored half into "Worked for". Completed items
@@ -487,7 +487,7 @@ extension ServerSessionTransport {
                 planDocument: item.planDocument,
                 startedAt: item.startedAt.flatMap(parseServerDate),
                 endedAt: item.endedAt.flatMap(parseServerDate),
-                textPhases: item.text.isEmpty ? [:] : [textId: .final],
+                textPhases: item.text.isEmpty ? [:] : item.phase.map { [textId: $0] } ?? [:],
                 deferredDetailItemId: item.hasDetails ? item.id : nil,
                 hasDeferredWorkedDetails: item.hasDetails,
                 detailRevision: item.revision

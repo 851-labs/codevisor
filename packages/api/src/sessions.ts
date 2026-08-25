@@ -1,5 +1,10 @@
 import { Schema } from "effect"
-import { BackgroundTask, QuestionAnswerEntry, QuestionPayload } from "./session-updates.js"
+import {
+  BackgroundTask,
+  MessagePhase,
+  QuestionAnswerEntry,
+  QuestionPayload
+} from "./session-updates.js"
 import { GoalStatus, SessionGoal, SessionOrigin } from "./session-config.js"
 import { CreateProjectRequest } from "./projects.js"
 import { EventEnvelope } from "./events.js"
@@ -194,11 +199,14 @@ export const TranscriptItem = Schema.Struct({
   retryable: Schema.optional(Schema.Boolean),
   planDocument: Schema.optional(Schema.String),
   attachments: Schema.optional(Schema.Array(AttachmentRef)),
-  /** Provider message id of the still-streaming final text span. Present only
+  /** Provider message id of the still-streaming answer candidate. Present only
    * while an assistant item is generating, so a client restoring mid-stream
    * can give the snapshot text the same identity live deltas use and merge
    * them into one span instead of splitting the message in two. */
   messageId: Schema.optional(Schema.String),
+  /** Provider-asserted finality of the answer candidate. Absent means the
+   * candidate is optimistic and must not settle the worked section yet. */
+  phase: Schema.optional(MessagePhase),
   revision: Schema.Number
 })
 export type TranscriptItem = typeof TranscriptItem.Type

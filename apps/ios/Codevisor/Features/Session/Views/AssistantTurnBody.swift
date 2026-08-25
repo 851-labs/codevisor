@@ -156,7 +156,12 @@ struct AssistantTurnBody: View {
             autoCollapse()
         }
         .onChange(of: turn.finalTextIsAsserted) { _, asserted in
-            if asserted, isGenerating { autoCollapse() }
+            guard isGenerating else { return }
+            if asserted {
+                autoCollapse()
+            } else {
+                reopenForActiveWork()
+            }
         }
         .onChange(of: hasRunningSubagent) { _, running in
             if !running, !isGenerating { autoCollapse() }
@@ -237,6 +242,15 @@ struct AssistantTurnBody: View {
         guard !hasAutoCollapsed, !hasRunningSubagent else { return }
         hasAutoCollapsed = true
         for key in sectionKeys { store.setExpanded(key, false) }
+        invalidateRowMeasurement?()
+    }
+
+    /// A provider can retro-tag optimistic answer text as commentary when a
+    /// tool starts. Undo an early final collapse so live work is visible and
+    /// non-collapsible again.
+    private func reopenForActiveWork() {
+        hasAutoCollapsed = false
+        for key in sectionKeys { store.setExpanded(key, true) }
         invalidateRowMeasurement?()
     }
 

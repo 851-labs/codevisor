@@ -411,10 +411,13 @@ public struct ServerTranscriptItem: Decodable, Equatable, Sendable {
     public var retryable: Bool?
     public var planDocument: String?
     public var attachments: [ServerAttachmentRef]?
-    /// Provider message id of the still-streaming final text span. Present
+    /// Provider message id of the still-streaming answer candidate. Present
     /// only while the item is generating so a mid-stream restore can share
     /// identity with the live deltas that continue the same span.
     public var messageId: String?
+    /// Provider-asserted finality of the candidate. `nil` remains optimistic
+    /// and must not settle the worked section during a mid-stream restore.
+    public var phase: MessagePhase?
     public var revision: Int
 
     public init(
@@ -436,6 +439,7 @@ public struct ServerTranscriptItem: Decodable, Equatable, Sendable {
         planDocument: String? = nil,
         attachments: [ServerAttachmentRef]? = nil,
         messageId: String? = nil,
+        phase: MessagePhase? = nil,
         revision: Int
     ) {
         self.id = id
@@ -456,6 +460,7 @@ public struct ServerTranscriptItem: Decodable, Equatable, Sendable {
         self.planDocument = planDocument
         self.attachments = attachments
         self.messageId = messageId
+        self.phase = phase
         self.revision = revision
     }
 }

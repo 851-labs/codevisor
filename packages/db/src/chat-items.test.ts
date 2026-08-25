@@ -175,7 +175,7 @@ describe("@codevisor/db", () => {
     ])
   })
 
-  it("exposes the streaming final span's messageId until the item completes", async () => {
+  it("exposes the streaming answer candidate's messageId until the item completes", async () => {
     const filename = tempDatabase()
     const db = await run(makeDatabase({ filename, serverId: "local" }))
     const project = await run(db.createProject({ folderPath: "/tmp/streaming-message-id" }))
@@ -192,14 +192,30 @@ describe("@codevisor/db", () => {
       })
     )
     // A mid-stream restore adopts the live span identity, so the streaming
-    // snapshot must carry the provider message id of its final span.
+    // snapshot must carry the provider message id of its answer candidate.
     expect((await run(db.getTranscriptPage(session.id, undefined, 8))).items.at(-1)).toMatchObject({
       isGenerating: true,
       text: "first half",
       messageId: "msg-1"
     })
+    expect(
+      (await run(db.getTranscriptPage(session.id, undefined, 8))).items.at(-1)?.phase
+    ).toBeUndefined()
 
-    // A final span without provider identity has no id to hand back.
+    // An empty chunk without provider identity cannot classify any existing
+    // span and must leave the optimistic candidate untouched.
+    await run(
+      db.appendEvent("session.output", session.id, {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "" }
+      })
+    )
+    expect((await run(db.getTranscriptPage(session.id, undefined, 8))).items.at(-1)).toMatchObject({
+      text: "first half",
+      messageId: "msg-1"
+    })
+
+    // An answer candidate without provider identity has no id to hand back.
     await run(
       db.appendEvent("session.output", session.id, {
         sessionUpdate: "agent_message_chunk",
@@ -216,6 +232,62 @@ describe("@codevisor/db", () => {
     const completed = (await run(db.getTranscriptPage(session.id, undefined, 8))).items.at(-1)
     expect(completed?.isGenerating).toBe(false)
     expect(completed?.messageId).toBeUndefined()
+    await run(db.close)
+  })
+
+  it("preserves asserted finality and applies zero-length commentary corrections", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/streaming-message-phase" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "claude-code" }))
+
+    await run(
+      db.appendEvent("session.updated", session.id, { turnId: "turn-1", turnState: "started" })
+    )
+    await run(
+      db.appendEvent("session.output", session.id, {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "I'll inspect that." },
+        messageId: "msg-preamble"
+      })
+    )
+
+    const optimistic = (await run(db.getTranscriptPage(session.id, undefined, 8))).items.at(-1)
+    expect(optimistic).toMatchObject({
+      isGenerating: true,
+      text: "I'll inspect that.",
+      messageId: "msg-preamble"
+    })
+    expect(optimistic?.phase).toBeUndefined()
+
+    // Claude sends this when a tool starts after streamed prose. The empty
+    // correction must demote the restored span just as the live reducer does.
+    await run(
+      db.appendEvent("session.output", session.id, {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "" },
+        messageId: "msg-preamble",
+        phase: "commentary"
+      })
+    )
+    const corrected = (await run(db.getTranscriptPage(session.id, undefined, 8))).items.at(-1)
+    expect(corrected).toMatchObject({ isGenerating: true, text: "" })
+    expect(corrected?.messageId).toBeUndefined()
+    expect(corrected?.phase).toBeUndefined()
+
+    await run(
+      db.appendEvent("session.output", session.id, {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "The fix is complete." },
+        messageId: "msg-final",
+        phase: "final"
+      })
+    )
+    expect((await run(db.getTranscriptPage(session.id, undefined, 8))).items.at(-1)).toMatchObject({
+      isGenerating: true,
+      text: "The fix is complete.",
+      messageId: "msg-final",
+      phase: "final"
+    })
     await run(db.close)
   })
 
