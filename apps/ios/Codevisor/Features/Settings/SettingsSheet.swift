@@ -26,6 +26,11 @@ struct SettingsSheet: View {
                     } label: {
                         Label("Account", systemImage: "person.crop.circle")
                     }
+                    NavigationLink {
+                        MachinesSettingsScreen()
+                    } label: {
+                        Label("Machines", systemImage: "desktopcomputer")
+                    }
                 }
                 Section {
                     NavigationLink {
@@ -77,15 +82,6 @@ struct SettingsSheet: View {
                         )
                     } label: {
                         Label("Plugins", systemImage: "puzzlepiece")
-                    }
-                } footer: {
-                    Text("Synced across your machines.")
-                }
-                Section {
-                    NavigationLink {
-                        MachinesSettingsScreen()
-                    } label: {
-                        Label("Machines", systemImage: "desktopcomputer")
                     }
                 }
             }
