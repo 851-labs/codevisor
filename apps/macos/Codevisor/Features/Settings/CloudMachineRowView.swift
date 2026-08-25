@@ -4,21 +4,19 @@ import CodevisorUI
 import SwiftUI
 
 /// A Settings ▸ Machines row for a machine reached through the cloud
-/// account's relay: connectable like any other machine, with presence, cloud
-/// account actions, and the TOFU "key changed" warning when the machine's
-/// presented key conflicts with the pinned one (relay channels are cut off
-/// until the user explicitly re-trusts it).
+/// account's relay: presence, cloud account actions, and the TOFU "key
+/// changed" warning when the machine's presented key conflicts with the
+/// pinned one (relay channels are cut off until the user explicitly
+/// re-trusts it).
 struct CloudMachineRowView: View {
     @Environment(\.theme) private var theme
 
     let machine: CodevisorMachine
     let presence: CloudMachine
-    let isSelected: Bool
     let keyChanged: Bool
     /// A verified direct LAN pipe to this machine is live — channels skip the
     /// relay and make one local hop.
     let direct: Bool
-    let onConnect: () -> Void
     let onRename: () -> Void
     let onRemove: () -> Void
     let onTrustKey: () -> Void
@@ -31,18 +29,8 @@ struct CloudMachineRowView: View {
                 .frame(width: 20)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(presence.name)
-                        .fontWeight(.medium)
-                    if isSelected {
-                        Text("Connected")
-                            .font(.caption2.weight(.semibold))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(theme.accent.opacity(0.15)))
-                            .foregroundStyle(theme.textPrimary)
-                    }
-                }
+                Text(presence.name)
+                    .fontWeight(.medium)
                 Text("Codevisor Cloud")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -71,11 +59,6 @@ struct CloudMachineRowView: View {
                         .foregroundStyle(.secondary)
                 }
                 .help(direct ? "Connected directly over the local network" : "")
-            }
-            if !isSelected {
-                Button("Connect", action: onConnect)
-                    .settingsActionTint(theme)
-                    .controlSize(.small)
             }
             Menu {
                 if keyChanged {

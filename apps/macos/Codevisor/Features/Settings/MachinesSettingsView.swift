@@ -12,10 +12,12 @@ private struct MachineActionError: Identifiable {
     let message: String
 }
 
-/// Settings ▸ Machines: every Codevisor server this app knows about. Each
-/// row pushes the machine's own page (server status, harnesses, MCP servers,
-/// skills); the cloud account, network discovery, and the dev remote live
-/// here as list sections.
+/// Settings ▸ Machines: every Codevisor server this app knows about, as a
+/// flat list — status, actions, and removal all live on the rows. There is
+/// no per-machine page and no "connect" affordance: the fleet is always
+/// connected, and which machine the app points at is a routing detail that
+/// follows the chat you open. The cloud account, network discovery, and the
+/// dev remote live here as list sections.
 struct MachinesSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
@@ -69,14 +71,12 @@ struct MachinesSettingsView: View {
                 // (local + remote) machines plus cloud-relay machines the
                 // account knows about, deduplicated in the controller.
                 ForEach(machines.allMachines) { machine in
-                    NavigationLink(value: MachineSettingsRoute.machine(machine.id)) {
-                        if machine.isCloud,
-                            let presence = machines.cloudMachine(forMachineId: machine.id)
-                        {
-                            cloudMachineRow(machine, presence: presence)
-                        } else {
-                            machineRow(machine)
-                        }
+                    if machine.isCloud,
+                        let presence = machines.cloudMachine(forMachineId: machine.id)
+                    {
+                        cloudMachineRow(machine, presence: presence)
+                    } else {
+                        machineRow(machine)
                     }
                 }
                 Button {
@@ -401,13 +401,8 @@ private extension MachinesSettingsView {
         CloudMachineRowView(
             machine: machine,
             presence: presence,
-            isSelected: machine.id == machines.selectedMachineId,
             keyChanged: environment.cloud.machinesWithChangedKeys.contains(presence.deviceId),
             direct: environment.cloud.directPaths.machineIds.contains(presence.deviceId),
-            onConnect: {
-                machines.selectMachine(machine.id)
-                Task { await machines.refreshStatus(for: machine.id) }
-            },
             onRename: { renamingCloud = presence },
             onRemove: { removingCloud = presence },
             onTrustKey: { trustingKeyCloud = presence }
@@ -415,26 +410,15 @@ private extension MachinesSettingsView {
     }
 
     func machineRow(_ machine: CodevisorMachine) -> some View {
-        let isSelected = machine.id == machines.selectedMachineId
-        return HStack(spacing: 10) {
+        HStack(spacing: 10) {
             Image(systemName: EntitySystemSymbol.machine(machine))
                 .symbolRenderingMode(.monochrome)
                 .foregroundStyle(theme.textPrimary)
                 .frame(width: 20)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(machine.name)
-                        .fontWeight(.medium)
-                    if isSelected {
-                        Text("Connected")
-                            .font(.caption2.weight(.semibold))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(theme.accent.opacity(0.15)))
-                            .foregroundStyle(theme.textPrimary)
-                    }
-                }
+                Text(machine.name)
+                    .fontWeight(.medium)
                 Text(machine.baseURL.absoluteString)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -443,14 +427,6 @@ private extension MachinesSettingsView {
             }
             Spacer(minLength: 12)
             statusLabel(machine)
-            if !isSelected {
-                Button("Connect") {
-                    machines.selectMachine(machine.id)
-                    Task { await machines.refreshStatus(for: machine.id) }
-                }
-                .settingsActionTint(theme)
-                .controlSize(.small)
-            }
             if machine.isLocal {
                 Menu {
                     Button("Copy Connection Token") { copyConnectionToken() }

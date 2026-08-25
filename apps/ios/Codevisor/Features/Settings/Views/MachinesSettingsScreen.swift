@@ -9,8 +9,10 @@ import os
 // MARK: - Machines
 
 /// Machine management: the paired remote machines (never the on-device
-/// "local" pseudo-machine — this client has no local server). Each machine
-/// nests its own scoped settings: status, harnesses, MCPs, skills.
+/// "local" pseudo-machine — this client has no local server), as a flat
+/// list — rename and removal live on the rows. There is no per-machine page
+/// and no selection affordance: the fleet is always connected, and which
+/// machine the app points at follows the chat you open.
 struct MachinesSettingsScreen: View {
     @Environment(AppEnvironment.self) private var environment
     @State private var isAddingMachine = false
@@ -18,6 +20,8 @@ struct MachinesSettingsScreen: View {
     @State private var developmentError: String?
     @State private var discovery = TailnetMachineDiscovery()
     @State private var discoveredTarget: TailnetMachineDiscovery.Discovered?
+    @State private var renamingMachine: CodevisorMachine?
+    @State private var renameText = ""
 
     private var machines: MachineController { environment.machines }
 
@@ -36,28 +40,10 @@ struct MachinesSettingsScreen: View {
         List {
             Section {
                 ForEach(remoteMachines, id: \.id) { machine in
-                    NavigationLink {
-                        MachineDetailScreen(machineId: machine.id)
-                    } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: EntitySystemSymbol.machine(machine))
-                                .foregroundStyle(.secondary)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(machine.name)
-                                Text(machines.statusByMachineId[machine.id]?.label ?? machine.baseURL.absoluteString)
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            if machine.id == machines.selectedMachineId {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(.tint)
-                            }
-                        }
-                    }
-                    // badge(0) hides itself — quiet unless a machine's
-                    // chats actually need attention.
-                    .badge(unreadCount(for: machine.id))
+                    machineRow(machine)
+                        // badge(0) hides itself — quiet unless a machine's
+                        // chats actually need attention.
+                        .badge(unreadCount(for: machine.id))
                 }
             } footer: {
                 InlineCodeText("Run `codevisor setup` on a machine to print its address and token.")
@@ -91,6 +77,14 @@ struct MachinesSettingsScreen: View {
         .sheet(isPresented: $isAddingMachine) {
             AddMachineSheet()
         }
+        .alert("Rename Machine", isPresented: renamePresented, presenting: renamingMachine) { machine in
+            TextField("Name", text: $renameText)
+            Button("Rename") {
+                try? machines.renameMachine(machine.id, to: renameText)
+                renamingMachine = nil
+            }
+            Button("Cancel", role: .cancel) { renamingMachine = nil }
+        }
         .sheet(item: $discoveredTarget) { machine in
             AddMachineSheet(initialHost: machine.host, initialName: machine.name)
         }
@@ -105,6 +99,53 @@ struct MachinesSettingsScreen: View {
         // must leave the list) — refresh whenever the machine list changes.
         .onChange(of: machines.machines.map(\.id)) { _, _ in
             Task { await discovery.refresh(machines: machines) }
+        }
+    }
+
+    private var renamePresented: Binding<Bool> {
+        Binding(
+            get: { renamingMachine != nil },
+            set: { if !$0 { renamingMachine = nil } }
+        )
+    }
+
+    /// One machine, flat: status in the subtitle, rename/remove behind the
+    /// row's menus. Removal forgets the machine here; nothing on the machine
+    /// itself is changed.
+    private func machineRow(_ machine: CodevisorMachine) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: EntitySystemSymbol.machine(machine))
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(machine.name)
+                Text(machines.statusByMachineId[machine.id]?.label ?? machine.baseURL.absoluteString)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .contentShape(Rectangle())
+        .contextMenu {
+            Button("Rename…") {
+                renameText = machine.name
+                renamingMachine = machine
+            }
+            Button("Remove Machine…", role: .destructive) {
+                try? machines.removeMachine(machine.id)
+            }
+        }
+        .swipeActions(edge: .trailing) {
+            Button(role: .destructive) {
+                try? machines.removeMachine(machine.id)
+            } label: {
+                Label("Remove", systemImage: "trash")
+            }
+            Button {
+                renameText = machine.name
+                renamingMachine = machine
+            } label: {
+                Label("Rename", systemImage: "pencil")
+            }
         }
     }
 
@@ -131,7 +172,7 @@ struct MachinesSettingsScreen: View {
 
     /// Dev-only shortcut, as on macOS: one tap adds the dev remote that
     /// `bun run dev:ios` started, no token entry. Hidden once it's paired —
-    /// remove it like any other machine from its detail page.
+    /// remove it like any other machine from its row.
     private func developmentSection(_ remote: CodevisorAppVariant.DevelopmentRemote) -> some View {
         Section {
             Button {

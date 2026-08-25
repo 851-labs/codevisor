@@ -50,7 +50,6 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 /// machine even if the app's selected machine changes underneath the open
 /// Settings window.
 enum MachineSettingsRoute: Hashable {
-    case machine(String)
     case harnesses(String)
     case mcps(String)
     case skills(String)
@@ -132,7 +131,7 @@ final class SettingsRouter {
     func showHarnesses(machineId: String? = nil) {
         if let id = machineId, id != selectedMachineIdProvider() {
             selectedTab = .machines
-            machinesPath = [.machine(id), .harnesses(id)]
+            machinesPath = [.harnesses(id)]
             return
         }
         machinesPath = []
@@ -143,7 +142,7 @@ final class SettingsRouter {
     func showPlugins(machineId: String? = nil) {
         if let id = machineId, id != selectedMachineIdProvider() {
             selectedTab = .machines
-            machinesPath = [.machine(id), .plugins(id)]
+            machinesPath = [.plugins(id)]
             return
         }
         machinesPath = []
@@ -332,9 +331,6 @@ struct SettingsView: View {
     private func destination(for route: MachineSettingsRoute) -> some View {
         Group {
             switch route {
-            case let .machine(id):
-                MachineSettingsDetailView(machineId: id)
-                    .environment(\.settingsMachineId, id)
             case let .harnesses(id):
                 HarnessesSettingsView()
                     .navigationTitle("Harnesses")
