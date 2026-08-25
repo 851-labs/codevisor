@@ -16,6 +16,7 @@ import {
   reconcileMcps
 } from "../infra/config-sync.js"
 import { HARNESSES_SYNC_NAMESPACE, reconcileHarnesses } from "../infra/harness-sync.js"
+import { PLUGINS_SYNC_NAMESPACE, pluginSyncOrigin, reconcilePlugins } from "../infra/plugin-sync.js"
 import { discoverHarnesses } from "./harnesses.js"
 import { reconcileSkills, SKILLS_SYNC_NAMESPACE, verifySkillArchive } from "../infra/skills-sync.js"
 import {
@@ -135,6 +136,41 @@ export const routeSync = async (
     if (result.changedEntries.length > 0) {
       void appendAndPublish(services.db, fanout, "sync.changed", SKILLS_SYNC_NAMESPACE, {
         namespace: SKILLS_SYNC_NAMESPACE,
+        entries: result.changedEntries
+      }).catch(swallowError)
+    }
+    writeJson(response, 200, result.status)
+    return true
+  }
+
+  if (url.pathname === "/v1/sync/plugins/reconcile" && request.method === "POST") {
+    const manager = services.plugins
+    if (manager === undefined) throw new HttpFailure(501, "Plugin sync unavailable")
+    const result = await reconcilePlugins({
+      db: services.db,
+      serverId: config.id,
+      listPlugins: async () =>
+        (await manager.list()).plugins.map((summary) => {
+          const origin = summary.source === "managed" ? pluginSyncOrigin(summary.path) : undefined
+          return {
+            id: summary.id,
+            enabled: summary.enabled,
+            ...(origin === undefined ? {} : { origin })
+          }
+        }),
+      installFromSource: async (source) => {
+        await manager.importRemote({ source })
+      },
+      setEnabled: async (pluginId, enabled) => {
+        await manager.setEnabled(pluginId, enabled)
+      },
+      removePlugin: async (pluginId) => {
+        await manager.remove(pluginId)
+      }
+    })
+    if (result.changedEntries.length > 0) {
+      void appendAndPublish(services.db, fanout, "sync.changed", PLUGINS_SYNC_NAMESPACE, {
+        namespace: PLUGINS_SYNC_NAMESPACE,
         entries: result.changedEntries
       }).catch(swallowError)
     }

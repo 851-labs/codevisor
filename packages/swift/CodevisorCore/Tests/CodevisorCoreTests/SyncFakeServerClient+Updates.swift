@@ -220,6 +220,14 @@ extension SyncFakeServerClient {
         }
     }
 
+    func reconcilePluginsSync() async throws -> ServerPluginSyncStatus {
+        lock.withLock {
+            _operationLog.append("plugins.reconcile")
+            return ServerPluginSyncStatus(
+                published: [], applied: [], removed: [], installed: [], blocked: [])
+        }
+    }
+
     func setSyncParticipation(enabled: Bool) async throws -> ServerSyncParticipation {
         lock.withLock { _operationLog.append("sync.participation:\(enabled)") }
         return ServerSyncParticipation(enabled: enabled)

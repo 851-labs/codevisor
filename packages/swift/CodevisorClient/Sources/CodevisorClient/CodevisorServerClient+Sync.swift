@@ -198,3 +198,36 @@ extension CodevisorServerClient {
         )
     }
 }
+
+/// POST /v1/sync/plugins/reconcile: the plugin plane's pass summary.
+public struct ServerPluginSyncStatus: Codable, Equatable, Sendable {
+    public var published: [String]
+    public var applied: [String]
+    public var removed: [String]
+    public var installed: [String]
+    public var blocked: [ServerHarnessSyncBlocked]
+
+    public init(
+        published: [String],
+        applied: [String],
+        removed: [String],
+        installed: [String],
+        blocked: [ServerHarnessSyncBlocked]
+    ) {
+        self.published = published
+        self.applied = applied
+        self.removed = removed
+        self.installed = installed
+        self.blocked = blocked
+    }
+}
+
+extension CodevisorServerClient {
+    public func reconcilePluginsSync() async throws -> ServerPluginSyncStatus {
+        try await send(
+            "/v1/sync/plugins/reconcile",
+            method: "POST",
+            body: Optional<EmptyBody>.none
+        )
+    }
+}

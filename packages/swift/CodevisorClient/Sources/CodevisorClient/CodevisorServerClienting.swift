@@ -36,6 +36,8 @@ public protocol CodevisorServerClienting: Sendable {
     /// One harness-plane reconcile pass (enabled set, desired installs,
     /// custom specs) against the machine's replica.
     func reconcileHarnessesSync() async throws -> ServerHarnessSyncStatus
+    /// One plugin-plane reconcile pass (registry plugins as desired state).
+    func reconcilePluginsSync() async throws -> ServerPluginSyncStatus
     /// Publishes the machine's harness-account roster (metadata only).
     func publishAccountsSync() async throws
     /// Raw config-plane blob transfer, for ferrying skill archives between

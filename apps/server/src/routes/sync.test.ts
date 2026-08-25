@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import { makeSkillsManager } from "@codevisor/skills"
 import { makeBlobStore } from "@codevisor/sync"
-import { mkdtempSync } from "node:fs"
+import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
@@ -338,6 +338,112 @@ describe("/v1/sync", () => {
     expect((await reconcileWithAuth("notRequired", "server-h3")).body).toMatchObject({
       applied: ["codex"]
     })
+  })
+
+  it("reconciles plugins over HTTP from install receipts", async () => {
+    const { services } = await makeServices("server-psync")
+    await run(
+      services.db.mergeSyncEntries("plugins", [
+        {
+          key: "acme.tunes",
+          value: { enabled: true, source: "acme/tunes" },
+          timestamp: { wallMs: 10, counter: 0, deviceId: "z" }
+        },
+        // First contact for the locally-present plugin: the fleet's enabled
+        // state wins and applies through the manager.
+        {
+          key: "acme.paused",
+          value: { enabled: true, source: "acme/paused" },
+          timestamp: { wallMs: 11, counter: 0, deviceId: "z" }
+        }
+      ])
+    )
+    // One managed plugin with a registry receipt, one receiptless managed
+    // install, one linked dev plugin — only the first syncs.
+    const receiptDir = mkdtempSync(join(tmpdir(), "plugin-receipt-"))
+    const bareDir = mkdtempSync(join(tmpdir(), "plugin-bare-"))
+    tempDirs.push(receiptDir, bareDir)
+    writeFileSync(
+      join(receiptDir, ".codevisor-install.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        pluginId: "acme.paused",
+        source: {
+          kind: "github",
+          url: "https://github.com/acme/paused",
+          repo: "acme/paused",
+          tracking: "registry"
+        },
+        resolvedCommit: "a".repeat(40),
+        installedVersion: "1.0.0",
+        installedAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z"
+      })
+    )
+    const installs: Array<string> = []
+    const enables: Array<readonly [string, boolean]> = []
+    const removals: Array<string> = []
+    let pluginList = [
+      { id: "acme.paused", enabled: false, source: "managed", path: receiptDir },
+      { id: "acme.bare", enabled: true, source: "managed", path: bareDir },
+      { id: "dev.x", enabled: true, source: "linked", path: "/dev/x" }
+    ]
+    const plugins = {
+      subscribe: () => () => {},
+      close: () => {},
+      list: () => Promise.resolve({ plugins: [...pluginList] }),
+      importRemote: (request: { source: string }) => {
+        installs.push(request.source)
+        return Promise.resolve({ id: "acme.tunes" })
+      },
+      setEnabled: (pluginId: string, enabled: boolean) => {
+        enables.push([pluginId, enabled])
+        pluginList = pluginList.map((plugin) =>
+          plugin.id === pluginId ? { ...plugin, enabled } : plugin
+        )
+        return Promise.resolve({})
+      },
+      remove: (pluginId: string) => {
+        removals.push(pluginId)
+        pluginList = pluginList.filter((plugin) => plugin.id !== pluginId)
+        return Promise.resolve({ plugins: [] })
+      }
+    } as unknown as NonNullable<CodevisorServerServices["plugins"]>
+    const server = await startWithApp({ ...services, plugins })
+
+    const result = await jsonRequest(server, "/v1/sync/plugins/reconcile", { method: "POST" })
+    expect(result.status).toBe(200)
+    expect(result.body).toMatchObject({
+      published: [],
+      installed: ["acme.tunes"]
+    })
+    expect([...(result.body as { applied: Array<string> }).applied].sort()).toEqual([
+      "acme.paused",
+      "acme.tunes"
+    ])
+    expect(installs).toEqual(["acme/tunes"])
+    expect(enables).toEqual([["acme.paused", true]])
+
+    // A fleet tombstone uninstalls through the manager on the next pass.
+    await run(
+      services.db.mergeSyncEntries("plugins", [
+        {
+          key: "acme.paused",
+          value: null,
+          deleted: true,
+          timestamp: { wallMs: 20_000_000_000_000, counter: 0, deviceId: "z" }
+        }
+      ])
+    )
+    await jsonRequest(server, "/v1/sync/plugins/reconcile", { method: "POST" })
+    expect(removals).toEqual(["acme.paused"])
+
+    // Without a plugin manager the surface answers 501.
+    const { services: bare } = await makeServices("server-psync-bare")
+    const bareServer = await startWithApp(bare)
+    expect(
+      (await jsonRequest(bareServer, "/v1/sync/plugins/reconcile", { method: "POST" })).status
+    ).toBe(501)
   })
 
   it("responds 501 for sync routes without the backing services", async () => {

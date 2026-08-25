@@ -617,6 +617,10 @@ public extension CodevisorServerClienting {
         ServerHarnessSyncStatus(published: [], applied: [], removed: [], installing: [], blocked: [])
     }
 
+    func reconcilePluginsSync() async throws -> ServerPluginSyncStatus {
+        ServerPluginSyncStatus(published: [], applied: [], removed: [], installed: [], blocked: [])
+    }
+
     func syncParticipation() async throws -> ServerSyncParticipation {
         ServerSyncParticipation(enabled: true)
     }
