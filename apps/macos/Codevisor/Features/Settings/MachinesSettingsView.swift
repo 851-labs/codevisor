@@ -318,7 +318,7 @@ struct MachinesSettingsView: View {
                 Button(role: .destructive) {
                     try? machines.removeMachine(existing.id)
                 } label: {
-                    Label("Remove Development Machine", systemImage: "trash")
+                    Label("Remove \(remote.name)", systemImage: "trash")
                 }
                 .settingsActionTint(theme)
             } else {
@@ -327,7 +327,7 @@ struct MachinesSettingsView: View {
                         _ = await addMachine(host: remote.hostWithPort, name: remote.name, token: remote.token)
                     }
                 } label: {
-                    Label("Add Development Machine…", systemImage: "bolt.fill")
+                    Label("Add \(remote.name)…", systemImage: "bolt.fill")
                 }
                 .settingsActionTint(theme)
             }

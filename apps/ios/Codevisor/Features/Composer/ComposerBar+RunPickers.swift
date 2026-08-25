@@ -4,8 +4,7 @@ import SwiftUI
 
 extension ComposerBar {
     /// Every machine's projects, most recently used first (scratch backing
-    /// projects, when a server has any, are internal and never listed). The
-    /// picker is the fleet's — picking a project picks its machine.
+    /// projects, when a server has any, are internal and never listed).
     private var pickerProjects: [Project] {
         environment.projectList.fleetActiveProjectsByWorkspaceRecency(
             environment.workspaces.loadAll()
@@ -13,22 +12,13 @@ extension ComposerBar {
         .filter { !$0.isScratch }
     }
 
-    /// Picker projects grouped by machine, machines in recency order. A
-    /// single-machine fleet gets one headerless group (`name` nil).
-    private var pickerMachineGroups: [(serverId: String, name: String?, projects: [Project])] {
-        var order: [String] = []
-        var byServer: [String: [Project]] = [:]
-        for project in pickerProjects {
-            if byServer[project.serverId] == nil { order.append(project.serverId) }
-            byServer[project.serverId, default: []].append(project)
-        }
-        return order.map { serverId in
-            (
-                serverId: serverId,
-                name: environment.machines.fleetMachineName(for: serverId),
-                projects: byServer[serverId] ?? []
-            )
-        }
+    /// The machine chip shows only when there is a choice to make.
+    private var showsMachineChip: Bool { environment.machines.allMachines.count > 1 }
+
+    /// Projects offered by the project chip: the picked machine's only. The
+    /// machine chip to its left is what changes machines.
+    private var machineScopedProjects: [Project] {
+        pickerProjects.filter { $0.serverId == controller.project.serverId }
     }
 
     /// The live project record. The controller holds a snapshot from when
@@ -42,6 +32,12 @@ extension ComposerBar {
 
     var runTargetChips: some View {
         HStack(spacing: 10) {
+            if showsMachineChip {
+                machineChip
+                Divider()
+                    .frame(height: 14)
+                    .accessibilityHidden(true)
+            }
             projectChip
             if liveProject.isGitRepository {
                 Divider()
@@ -52,26 +48,51 @@ extension ComposerBar {
         }
     }
 
+    /// Choose the machine this chat runs on. Picking one re-points the draft
+    /// at that machine's remembered (or most recent) project; the project
+    /// chip then lists that machine's projects.
+    private var machineChip: some View {
+        let selectedServerId = controller.project.serverId
+        let selectedMachine = environment.machines.machine(for: selectedServerId)
+        return Menu {
+            ForEach(environment.machines.allMachines) { machine in
+                Button {
+                    selectTargetMachine(machine)
+                } label: {
+                    menuRow(
+                        machine.name,
+                        systemImage: EntitySystemSymbol.machine(machine),
+                        isSelected: machine.id == selectedServerId
+                    )
+                }
+                .disabled(
+                    machine.id != selectedServerId
+                        && !pickerProjects.contains { $0.serverId == machine.id }
+                )
+            }
+        } label: {
+            chipLabel(
+                selectedMachine?.name ?? "Machine",
+                systemImage: selectedMachine.map(EntitySystemSymbol.machine)
+                    ?? EntitySystemSymbol.machine(.local)
+            )
+        }
+        .accessibilityLabel("Machine")
+        .accessibilityValue(selectedMachine?.name ?? "Machine")
+    }
+
     private var projectChip: some View {
         Menu {
-            ForEach(pickerMachineGroups, id: \.serverId) { group in
-                Section {
-                    ForEach(group.projects) { project in
-                        Button {
-                            selectTargetProject(project)
-                        } label: {
-                            menuRow(
-                                project.name,
-                                systemImage: EntitySystemSymbol.project,
-                                isSelected: controller.project.serverId == project.serverId
-                                    && controller.project.id == project.id
-                            )
-                        }
-                    }
-                } header: {
-                    if let name = group.name {
-                        Text(name)
-                    }
+            ForEach(machineScopedProjects) { project in
+                Button {
+                    selectTargetProject(project)
+                } label: {
+                    menuRow(
+                        project.name,
+                        systemImage: EntitySystemSymbol.project,
+                        isSelected: controller.project.serverId == project.serverId
+                            && controller.project.id == project.id
+                    )
                 }
             }
             Divider()
@@ -114,6 +135,17 @@ extension ComposerBar {
         }
         .accessibilityLabel("Run location")
         .accessibilityValue(newWorktree ? "New Worktree" : "Project Directory")
+    }
+
+    /// Re-points the draft at another machine: its remembered project when
+    /// it still exists, else its most recently used one.
+    private func selectTargetMachine(_ machine: CodevisorMachine) {
+        guard machine.id != controller.project.serverId else { return }
+        let scoped = pickerProjects.filter { $0.serverId == machine.id }
+        let remembered = environment.composerDefaults.lastProjectId(forServer: machine.id)
+        guard let project = scoped.first(where: { $0.id == remembered }) ?? scoped.first
+        else { return }
+        selectTargetProject(project)
     }
 
     /// A picked project carries the machine's remembered worktree preference

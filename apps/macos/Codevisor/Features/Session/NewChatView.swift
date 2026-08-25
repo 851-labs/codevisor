@@ -170,6 +170,12 @@ struct NewChatView: View {
                                     )
                                     if showsRunPickers {
                                         HStack(spacing: 4) {
+                                            if showsMachinePicker {
+                                                machinePicker(controller)
+                                                Divider()
+                                                    .frame(height: 14)
+                                                    .accessibilityHidden(true)
+                                            }
                                             projectPicker(controller)
                                             if liveProject(for: controller).isGitRepository {
                                                 Divider()

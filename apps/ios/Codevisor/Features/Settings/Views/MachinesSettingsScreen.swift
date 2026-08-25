@@ -178,7 +178,7 @@ struct MachinesSettingsScreen: View {
             Button {
                 Task { await addDevelopmentMachine(remote) }
             } label: {
-                Label("Add Development Machine", systemImage: "bolt.fill")
+                Label("Add \(remote.name)", systemImage: "bolt.fill")
             }
             .disabled(isAddingDevelopmentMachine)
         } header: {

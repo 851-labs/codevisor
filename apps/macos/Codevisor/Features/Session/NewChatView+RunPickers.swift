@@ -10,8 +10,7 @@ extension NewChatView {
     var showsRunPickers: Bool { paneDraftId == nil }
 
     /// Every machine's projects, most recently used first (scratch backing
-    /// projects, when a server has any, are internal and never listed). The
-    /// picker is the fleet's — picking a project picks its machine.
+    /// projects, when a server has any, are internal and never listed).
     private var pickerProjects: [Project] {
         environment.projectList.fleetActiveProjectsByWorkspaceRecency(
             environment.workspaces.loadAll()
@@ -19,22 +18,13 @@ extension NewChatView {
         .filter { !$0.isScratch }
     }
 
-    /// Picker projects grouped by machine, machines in recency order. A
-    /// single-machine fleet gets one headerless group (`name` nil).
-    var pickerMachineGroups: [(serverId: String, name: String?, projects: [Project])] {
-        var order: [String] = []
-        var byServer: [String: [Project]] = [:]
-        for project in pickerProjects {
-            if byServer[project.serverId] == nil { order.append(project.serverId) }
-            byServer[project.serverId, default: []].append(project)
-        }
-        return order.map { serverId in
-            (
-                serverId: serverId,
-                name: environment.machines.fleetMachineName(for: serverId),
-                projects: byServer[serverId] ?? []
-            )
-        }
+    /// The machine picker shows only when there is a choice to make.
+    var showsMachinePicker: Bool { environment.machines.allMachines.count > 1 }
+
+    /// Projects offered by the project picker: the picked machine's only.
+    /// The machine chip to its left is what changes machines.
+    func machineScopedProjects(for controller: SessionController) -> [Project] {
+        pickerProjects.filter { $0.serverId == controller.project.serverId }
     }
 
     /// The live project record. The controller holds a snapshot from when
@@ -46,6 +36,54 @@ extension NewChatView {
         } ?? controller.project
     }
 
+    /// Choose the machine this chat runs on. Picking one re-points the draft
+    /// at that machine's remembered (or most recent) project; the project
+    /// picker then lists that machine's projects.
+    func machinePicker(_ controller: SessionController) -> some View {
+        let selectedServerId = controller.project.serverId
+        let selectedMachine = environment.machines.machine(for: selectedServerId)
+        return Menu {
+            // Toggle for the native selected checkmark; MenuSymbolIcon
+            // because AppKit menus drop plain SF Symbol images.
+            ForEach(environment.machines.allMachines) { machine in
+                Toggle(
+                    isOn: Binding(
+                        get: { machine.id == selectedServerId },
+                        set: { isOn in
+                            guard isOn else { return }
+                            selectTargetMachine(machine, controller: controller)
+                        }
+                    )
+                ) {
+                    Label {
+                        Text(machine.name)
+                    } icon: {
+                        MenuSymbolIcon(systemName: EntitySystemSymbol.machine(machine))
+                    }
+                }
+                .disabled(
+                    machine.id != selectedServerId
+                        && !pickerProjects.contains { $0.serverId == machine.id }
+                )
+            }
+        } label: {
+            PickerChip(text: selectedMachine?.name ?? "Machine") {
+                Image(
+                    systemName: selectedMachine.map(EntitySystemSymbol.machine)
+                        ?? EntitySystemSymbol.machine(.local)
+                )
+                .font(.system(size: 12))
+            }
+        }
+        .menuStyle(.button)
+        .buttonStyle(HoverIconButtonStyle(shape: .chip))
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Choose which machine this chat runs on")
+        .accessibilityLabel("Machine")
+        .accessibilityValue(selectedMachine?.name ?? "Machine")
+    }
+
     /// Choose the project the chat (and the workspace created around it on
     /// first send) will work in.
     func projectPicker(_ controller: SessionController) -> some View {
@@ -53,31 +91,23 @@ extension NewChatView {
         return Menu {
             // Toggle for the native selected checkmark; MenuSymbolIcon
             // because AppKit menus drop plain SF Symbol images.
-            ForEach(pickerMachineGroups, id: \.serverId) { group in
-                Section {
-                    ForEach(group.projects) { project in
-                        Toggle(
-                            isOn: Binding(
-                                get: {
-                                    selected.serverId == project.serverId
-                                        && selected.id == project.id
-                                },
-                                set: { isOn in
-                                    guard isOn else { return }
-                                    selectTargetProject(project, controller: controller)
-                                }
-                            )
-                        ) {
-                            Label {
-                                Text(project.name)
-                            } icon: {
-                                MenuSymbolIcon(systemName: EntitySystemSymbol.project)
-                            }
+            ForEach(machineScopedProjects(for: controller)) { project in
+                Toggle(
+                    isOn: Binding(
+                        get: {
+                            selected.serverId == project.serverId
+                                && selected.id == project.id
+                        },
+                        set: { isOn in
+                            guard isOn else { return }
+                            selectTargetProject(project, controller: controller)
                         }
-                    }
-                } header: {
-                    if let name = group.name {
-                        Text(name)
+                    )
+                ) {
+                    Label {
+                        Text(project.name)
+                    } icon: {
+                        MenuSymbolIcon(systemName: EntitySystemSymbol.project)
                     }
                 }
             }
@@ -165,6 +195,17 @@ extension NewChatView {
         .help("Where this chat's commands run")
         .accessibilityLabel("Run location")
         .accessibilityValue(newWorktree ? "New worktree" : "Project directory")
+    }
+
+    /// Re-points the draft at another machine: its remembered project when
+    /// it still exists, else its most recently used one.
+    func selectTargetMachine(_ machine: CodevisorMachine, controller: SessionController) {
+        guard machine.id != controller.project.serverId else { return }
+        let scoped = pickerProjects.filter { $0.serverId == machine.id }
+        let remembered = environment.composerDefaults.lastProjectId(forServer: machine.id)
+        guard let project = scoped.first(where: { $0.id == remembered }) ?? scoped.first
+        else { return }
+        selectTargetProject(project, controller: controller)
     }
 
     /// A picked project carries the machine's remembered worktree preference
