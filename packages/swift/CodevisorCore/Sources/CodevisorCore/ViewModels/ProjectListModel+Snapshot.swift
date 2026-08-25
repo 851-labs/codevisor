@@ -102,4 +102,36 @@ extension ProjectListModel {
             }
             .sorted { $0.createdAt > $1.createdAt }
     }
+
+    /// Fleet-wide analog of `activeProjectsByWorkspaceRecency`: every
+    /// machine's active projects, ordered by each project's most recent
+    /// workspace. The composer's project picker lists these — picking a
+    /// project IS picking its machine.
+    public func fleetActiveProjectsByWorkspaceRecency(
+        _ workspaces: [Workspace]
+    ) -> [Project] {
+        var latestWorkspaceDates: [String: Date] = [:]
+        for workspace in workspaces {
+            let key = "\(workspace.serverId)|\(workspace.projectId.uuidString)"
+            latestWorkspaceDates[key] = max(
+                latestWorkspaceDates[key] ?? .distantPast,
+                workspace.createdAt
+            )
+        }
+        return fleetActiveProjects.enumerated().sorted { left, right in
+            let leftKey = "\(left.element.serverId)|\(left.element.id.uuidString)"
+            let rightKey = "\(right.element.serverId)|\(right.element.id.uuidString)"
+            switch (latestWorkspaceDates[leftKey], latestWorkspaceDates[rightKey]) {
+            case let (leftDate?, rightDate?) where leftDate != rightDate:
+                return leftDate > rightDate
+            case (_?, nil):
+                return true
+            case (nil, _?):
+                return false
+            default:
+                return left.offset < right.offset
+            }
+        }
+        .map(\.element)
+    }
 }

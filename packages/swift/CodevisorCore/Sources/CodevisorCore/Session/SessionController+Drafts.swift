@@ -5,6 +5,7 @@ extension SessionController {
     public func draftSnapshot() -> ComposerDraftStore.Draft {
         ComposerDraftStore.Draft(
             projectId: project.id,
+            projectServerId: project.serverId,
             composerText: composerText,
             attachments: composerAttachments.compactMap {
                 guard $0.state != .loading else { return nil }

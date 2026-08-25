@@ -122,6 +122,43 @@ struct SessionControllerConfigurationTests {
         #expect(controller.selectedHarnessId == session.harnessId)
     }
 
+    @Test("Retargeting a draft swaps its project AND its machine, keeping the composer")
+    func retargetSwapsMachine() async {
+        let homeProject = Project.fromFolder(
+            URL(fileURLWithPath: "/tmp/home-work")
+        )
+        let remoteProject = Project.fromFolder(
+            URL(fileURLWithPath: "/srv/studio-work"),
+            serverId: "remote-b"
+        )
+        let homeClient = FakeSessionServerClient(sessionId: UUID())
+        let remoteClient = FakeSessionServerClient(sessionId: UUID())
+        let controller = SessionController(
+            project: homeProject,
+            configCache: ConfigOptionCache(store: InMemoryStore()),
+            composerDefaults: ComposerDefaultsStore(store: InMemoryStore()),
+            serverClient: homeClient
+        )
+        controller.composerText = "typed before picking the studio machine"
+        controller.wantsNewWorktree = true
+
+        await controller.retarget(to: remoteProject, serverClient: remoteClient)
+
+        // The draft now belongs to the OTHER machine end to end: project,
+        // client, and the per-machine defaults scope. The typed prompt and
+        // its snapshot's foreign project reference survive untouched.
+        #expect(controller.project.id == remoteProject.id)
+        #expect(controller.project.serverId == "remote-b")
+        #expect(controller.serverClient as? FakeSessionServerClient === remoteClient)
+        #expect(
+            controller.composerDefaultsScope == .newWorkspace(serverId: "remote-b")
+        )
+        #expect(controller.composerText == "typed before picking the studio machine")
+        let snapshot = controller.draftSnapshot()
+        #expect(snapshot.projectServerId == "remote-b")
+        #expect(snapshot.projectId == remoteProject.id)
+    }
+
     @Test("A deferred durable chat cannot connect before first send")
     func deferredChatDoesNotConnect() async {
         var deferred = session()

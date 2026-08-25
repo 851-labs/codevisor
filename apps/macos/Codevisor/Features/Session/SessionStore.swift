@@ -84,7 +84,8 @@ final class SessionStore {
     /// How many idle (not open, not working, no background tasks/goal)
     /// controllers stay cached before the least-recently-used are evicted.
     private static let maxIdleControllers = 12
-    private let environment: AppEnvironment
+    // Internal so split-off extension files (workspace helpers) reach it.
+    let environment: AppEnvironment
     private let notificationDelivery: any ChatNotificationDelivering
 
     init(
@@ -193,8 +194,12 @@ final class SessionStore {
         let persisted = environment.composerDrafts.draft(forServer: project.serverId)
         let restoredProject =
             persisted.flatMap { saved in
+                // The saved draft may target ANOTHER machine's project (the
+                // picker is fleet-wide); older drafts carry no server id and
+                // mean this machine.
                 environment.projectList.projects.first {
-                    $0.serverId == project.serverId && $0.id == saved.projectId
+                    $0.serverId == (saved.projectServerId ?? project.serverId)
+                        && $0.id == saved.projectId
                 }
             } ?? environment.composerDefaults.lastProjectId(forServer: project.serverId).flatMap {
                 rememberedId in
@@ -211,7 +216,9 @@ final class SessionStore {
             configCache: environment.configCache,
             composerDefaults: environment.composerDefaults,
             composerDefaultsScope: .newWorkspace(serverId: restoredProject.serverId),
-            serverClient: environment.serverClient,
+            // The restored project's OWN machine — a retargeted draft keeps
+            // talking to the machine it was pointed at across relaunches.
+            serverClient: environment.machines.client(for: restoredProject.serverId),
             notificationDelivery: notificationDelivery
         )
         controller.applyComposerDefaults()
@@ -227,32 +234,6 @@ final class SessionStore {
         enableDraftPersistence(for: controller)
         draftsByServer[project.serverId] = controller
         return controller
-    }
-
-    /// Wraps a just-sent new chat in its workspace: the record is rooted at
-    /// the session's directory (the project folder until a first-send
-    /// worktree finishes creating — `applyWorktree` moves it then), named
-    /// after the project.
-    @discardableResult
-    func createWorkspace(for session: ChatSession, project: Project) -> Workspace {
-        var created = workspace(for: session, project: project)
-        created.name = session.worktreeName ?? project.name
-        created.hasCustomName = false
-        environment.workspaces.save(created)
-        return created
-    }
-
-    /// The first-send worktree materialized after the workspace was created:
-    /// move the workspace onto it — directory, worktree name, and (automatic)
-    /// display name.
-    func applyWorktree(_ worktree: ServerWorktree, toWorkspaceOf sessionId: UUID) {
-        guard let workspaceId = environment.workspaces.workspaceId(forSession: sessionId),
-            var workspace = environment.workspaces.workspace(id: workspaceId)
-        else { return }
-        workspace.rootDirectory = worktree.path
-        workspace.worktreeName = worktree.name
-        environment.workspaces.save(workspace)
-        environment.workspaces.setAutomaticName(worktree.name, forWorkspace: workspaceId)
     }
 
     /// The live controller for a session WITHOUT creating one — a pure read,
@@ -735,11 +716,15 @@ final class SessionStore {
         }
         controller.onTurnEnded = { [weak self] in self?.noteTurnEnded() }
         controllers[key] = controller
-        if draftsByServer[controller.project.serverId] === controller {
-            draftsByServer[controller.project.serverId] = nil
+        // A retargeted draft's slot key (its home machine) can differ from
+        // its project's machine — release whichever slot holds it.
+        if let slotKey = draftsByServer.first(where: { $0.value === controller })?.key {
+            draftsByServer[slotKey] = nil
+            environment.composerDrafts.clearDraft(forServer: slotKey)
+        } else {
+            environment.composerDrafts.clearDraft(forServer: controller.project.serverId)
         }
         controller.onDraftChange = nil
-        environment.composerDrafts.clearDraft(forServer: controller.project.serverId)
     }
 
     /// Standalone counterpart to `restorePaneDraftPersistence`: retain the

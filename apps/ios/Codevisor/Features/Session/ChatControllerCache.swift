@@ -95,8 +95,12 @@ final class ChatControllerCache {
         let persisted = environment.composerDrafts.draft(forServer: serverId)
         let restoredProject =
             persisted.flatMap { saved in
-                environment.projectList.activeProjects.first {
-                    $0.serverId == serverId && $0.id == saved.projectId
+                // The saved draft may target ANOTHER machine's project (the
+                // picker is fleet-wide); older drafts carry no server id and
+                // mean this machine.
+                environment.projectList.projects.first {
+                    $0.serverId == (saved.projectServerId ?? serverId)
+                        && $0.id == saved.projectId && !$0.isArchived
                 }
             } ?? environment.composerDefaults.lastProjectId(forServer: serverId).flatMap {
                 rememberedId in
@@ -112,8 +116,10 @@ final class ChatControllerCache {
             project: restoredProject,
             configCache: environment.configCache,
             composerDefaults: environment.composerDefaults,
-            composerDefaultsScope: .newWorkspace(serverId: serverId),
-            serverClient: environment.serverClient
+            composerDefaultsScope: .newWorkspace(serverId: restoredProject.serverId),
+            // The restored project's OWN machine — a retargeted draft keeps
+            // talking to the machine it was pointed at across relaunches.
+            serverClient: environment.machines.client(for: restoredProject.serverId)
         )
         controller.applyComposerDefaults()
         // Fresh drafts start from the machine's remembered run-location
@@ -148,11 +154,15 @@ final class ChatControllerCache {
         noteAccess(key)
         controllers[key] = controller
         bindRetainedSessionState(controller, to: key)
-        if draftsByServer[session.serverId] === controller {
-            draftsByServer[session.serverId] = nil
+        // A retargeted draft's slot key (its home machine) can differ from
+        // its session's machine — release whichever slot holds it.
+        if let slotKey = draftsByServer.first(where: { $0.value === controller })?.key {
+            draftsByServer[slotKey] = nil
+            environment.composerDrafts.clearDraft(forServer: slotKey)
+        } else {
+            environment.composerDrafts.clearDraft(forServer: session.serverId)
         }
         controller.onDraftChange = nil
-        environment.composerDrafts.clearDraft(forServer: session.serverId)
         evictIfNeeded()
     }
 

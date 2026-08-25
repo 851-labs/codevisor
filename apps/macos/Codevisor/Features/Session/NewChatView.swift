@@ -492,6 +492,13 @@ struct NewChatView: View {
                     // animation delay.
                     await Task.yield()
                     guard controller?.serverSession?.id == session.id else { return }
+                    // A chat sent to ANOTHER machine's project switches the
+                    // app there now — the machine picker deferred to first
+                    // send. Same contract as sidebar click-through.
+                    if session.serverId != environment.machines.selectedMachineId {
+                        environment.machines.selectMachine(session.serverId)
+                        await environment.prepareSelectedMachine()
+                    }
                     selection = .session(serverId: session.serverId, id: session.id)
                 }
             }

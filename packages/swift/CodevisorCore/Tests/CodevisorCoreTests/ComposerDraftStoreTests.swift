@@ -5,6 +5,22 @@ import Testing
 @MainActor
 @Suite("ComposerDraftStore")
 struct ComposerDraftStoreTests {
+    @Test("A draft targeting another machine's project persists its server id")
+    func crossMachineDraftPersists() {
+        let store = InMemoryStore()
+        let expected = ComposerDraftStore.Draft(
+            projectId: UUID(),
+            projectServerId: "remote-b",
+            composerText: "send this to the studio machine"
+        )
+        ComposerDraftStore(store: store).saveDraft(expected, forServer: "local")
+        // Reloaded from disk: the FOREIGN project reference survives, still
+        // under the machine slot the draft was typed on.
+        let reloaded = ComposerDraftStore(store: store)
+        #expect(reloaded.draft(forServer: "local") == expected)
+        #expect(reloaded.draft(forServer: "local")?.projectServerId == "remote-b")
+    }
+
     @Test("Pane drafts persist per pane, with attachment bytes, across instances")
     func paneDraftsPersist() {
         let store = InMemoryStore()

@@ -22,6 +22,10 @@ public final class ComposerDraftStore {
 
     public struct Draft: Equatable {
         public var projectId: UUID
+        /// The project's machine. Optional because older persisted drafts
+        /// predate cross-machine drafts; nil means "the machine whose slot
+        /// this draft was saved under".
+        public var projectServerId: String?
         public var composerText: String
         public var attachments: [DraftAttachment]
         public var selectedHarnessId: String?
@@ -33,6 +37,7 @@ public final class ComposerDraftStore {
 
         public init(
             projectId: UUID,
+            projectServerId: String? = nil,
             composerText: String = "",
             attachments: [DraftAttachment] = [],
             selectedHarnessId: String? = nil,
@@ -43,6 +48,7 @@ public final class ComposerDraftStore {
             composerTextBeforeGoalEdit: String? = nil
         ) {
             self.projectId = projectId
+            self.projectServerId = projectServerId
             self.composerText = composerText
             self.attachments = attachments
             self.selectedHarnessId = selectedHarnessId
@@ -63,6 +69,7 @@ public final class ComposerDraftStore {
 
     private struct PersistedDraft: Codable, Sendable {
         var projectId: UUID
+        var projectServerId: String?
         var composerText: String
         var attachments: [PersistedAttachment]
         var selectedHarnessId: String?
@@ -126,6 +133,7 @@ public final class ComposerDraftStore {
     private static func draft(from persisted: PersistedDraft, store: any PersistenceStore) -> Draft {
         Draft(
             projectId: persisted.projectId,
+            projectServerId: persisted.projectServerId,
             composerText: persisted.composerText,
             attachments: persisted.attachments.compactMap { attachment in
                 guard let data = store.loadData(forKey: Self.attachmentKey(attachment.id)) else {
@@ -151,6 +159,7 @@ public final class ComposerDraftStore {
     private static func persisted(from draft: Draft) -> PersistedDraft {
         PersistedDraft(
             projectId: draft.projectId,
+            projectServerId: draft.projectServerId,
             composerText: draft.composerText,
             attachments: draft.attachments.map {
                 PersistedAttachment(id: $0.id, name: $0.name, mimeType: $0.mimeType, kind: $0.kind)

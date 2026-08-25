@@ -1365,10 +1365,16 @@ struct HomeView: View {
     private func beginNewChatPromotion(_ sessionId: UUID, flow: NewChatFlow) {
         guard newChatFlow === flow, flow.sessionId == nil else { return }
         guard
-            let session = projectList.sessions.first(where: {
-                $0.serverId == machines.selectedMachineId && $0.id == sessionId
-            })
+            // Fleet-wide: the draft may have been sent to ANOTHER machine's
+            // project (session ids are unique across the fleet).
+            let session = projectList.sessions.first(where: { $0.id == sessionId })
         else { return }
+        // The send commits the machine choice — select the chat's machine,
+        // same contract as tapping one of its rows.
+        if session.serverId != machines.selectedMachineId {
+            machines.selectMachine(session.serverId)
+            Task { await environment.prepareSelectedMachine() }
+        }
         flow.sessionId = sessionId
         let workspace = ensureWorkspace(for: session)
         guard let presentationSession = flow.presentationSession,
@@ -1651,22 +1657,6 @@ struct HomeView: View {
         }
         .ignoresSafeArea()
         .toolbar(.hidden, for: .navigationBar)
-    }
-
-    private func currentHomeSnapshot() -> UIImage? {
-        guard
-            let scene = UIApplication.shared.connectedScenes
-                .compactMap({ $0 as? UIWindowScene })
-                .first(where: { $0.activationState == .foregroundActive }),
-            let window = scene.windows.first(where: \.isKeyWindow),
-            !window.bounds.isEmpty
-        else { return nil }
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = window.screen.scale
-        format.opaque = true
-        return UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
-            window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
-        }
     }
 
     @ViewBuilder private func newChatSheet(_ flow: NewChatFlow) -> some View {

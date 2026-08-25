@@ -9,20 +9,41 @@ extension NewChatView {
     /// run in that workspace's directory.
     var showsRunPickers: Bool { paneDraftId == nil }
 
-    /// Projects offered by the picker (scratch backing projects, when a
-    /// server has any, are internal and never listed).
+    /// Every machine's projects, most recently used first (scratch backing
+    /// projects, when a server has any, are internal and never listed). The
+    /// picker is the fleet's — picking a project picks its machine.
     private var pickerProjects: [Project] {
-        environment.projectList.activeProjectsByWorkspaceRecency(
+        environment.projectList.fleetActiveProjectsByWorkspaceRecency(
             environment.workspaces.loadAll()
         )
         .filter { !$0.isScratch }
+    }
+
+    /// Picker projects grouped by machine, machines in recency order. A
+    /// single-machine fleet gets one headerless group (`name` nil).
+    var pickerMachineGroups: [(serverId: String, name: String?, projects: [Project])] {
+        var order: [String] = []
+        var byServer: [String: [Project]] = [:]
+        for project in pickerProjects {
+            if byServer[project.serverId] == nil { order.append(project.serverId) }
+            byServer[project.serverId, default: []].append(project)
+        }
+        return order.map { serverId in
+            (
+                serverId: serverId,
+                name: environment.machines.fleetMachineName(for: serverId),
+                projects: byServer[serverId] ?? []
+            )
+        }
     }
 
     /// The live project record. The controller holds a snapshot from when
     /// the project was picked; the server's git probe lands on the list
     /// afterwards, and the worktree picker must follow the probed value.
     func liveProject(for controller: SessionController) -> Project {
-        projects.first { $0.id == controller.project.id } ?? controller.project
+        environment.projectList.projects.first {
+            $0.serverId == controller.project.serverId && $0.id == controller.project.id
+        } ?? controller.project
     }
 
     /// Choose the project the chat (and the workspace created around it on
@@ -32,23 +53,31 @@ extension NewChatView {
         return Menu {
             // Toggle for the native selected checkmark; MenuSymbolIcon
             // because AppKit menus drop plain SF Symbol images.
-            ForEach(pickerProjects) { project in
-                Toggle(
-                    isOn: Binding(
-                        get: { selected.id == project.id },
-                        set: { isOn in
-                            guard isOn else { return }
-                            selectTargetProject(project, controller: controller)
-                            // Re-probe git capability so the run-location picker
-                            // appears/disappears with fresh data.
-                            Task { await environment.projectList.refreshFromServer() }
+            ForEach(pickerMachineGroups, id: \.serverId) { group in
+                Section {
+                    ForEach(group.projects) { project in
+                        Toggle(
+                            isOn: Binding(
+                                get: {
+                                    selected.serverId == project.serverId
+                                        && selected.id == project.id
+                                },
+                                set: { isOn in
+                                    guard isOn else { return }
+                                    selectTargetProject(project, controller: controller)
+                                }
+                            )
+                        ) {
+                            Label {
+                                Text(project.name)
+                            } icon: {
+                                MenuSymbolIcon(systemName: EntitySystemSymbol.project)
+                            }
                         }
-                    )
-                ) {
-                    Label {
-                        Text(project.name)
-                    } icon: {
-                        MenuSymbolIcon(systemName: EntitySystemSymbol.project)
+                    }
+                } header: {
+                    if let name = group.name {
+                        Text(name)
                     }
                 }
             }
@@ -152,8 +181,27 @@ extension NewChatView {
                 forServer: project.serverId
             )
         Task {
-            await controller.selectProject(project)
+            if project.serverId != controller.project.serverId {
+                // Another machine's project: the draft re-points there in
+                // place — client, catalog and all. The app's selected
+                // machine follows at first send, not now.
+                await controller.retarget(
+                    to: project,
+                    serverClient: environment.machines.client(for: project.serverId)
+                )
+                await environment.refreshHarnessLifecycle(for: project.serverId)
+            } else {
+                await controller.selectProject(project)
+            }
             controller.wantsNewWorktree = prefersWorktree
+        }
+        // Re-probe git capability on the picked project's machine so the
+        // run-location picker appears/disappears with fresh data.
+        Task {
+            await environment.projectList.refreshFromServer(
+                serverId: project.serverId,
+                client: environment.machines.client(for: project.serverId)
+            )
         }
     }
 

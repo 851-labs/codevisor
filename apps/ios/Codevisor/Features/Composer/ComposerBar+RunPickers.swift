@@ -3,13 +3,32 @@ import CodevisorUI
 import SwiftUI
 
 extension ComposerBar {
-    /// Projects offered by the picker (scratch backing projects, when a
-    /// server has any, are internal and never listed).
+    /// Every machine's projects, most recently used first (scratch backing
+    /// projects, when a server has any, are internal and never listed). The
+    /// picker is the fleet's — picking a project picks its machine.
     private var pickerProjects: [Project] {
-        environment.projectList.activeProjectsByWorkspaceRecency(
+        environment.projectList.fleetActiveProjectsByWorkspaceRecency(
             environment.workspaces.loadAll()
         )
         .filter { !$0.isScratch }
+    }
+
+    /// Picker projects grouped by machine, machines in recency order. A
+    /// single-machine fleet gets one headerless group (`name` nil).
+    private var pickerMachineGroups: [(serverId: String, name: String?, projects: [Project])] {
+        var order: [String] = []
+        var byServer: [String: [Project]] = [:]
+        for project in pickerProjects {
+            if byServer[project.serverId] == nil { order.append(project.serverId) }
+            byServer[project.serverId, default: []].append(project)
+        }
+        return order.map { serverId in
+            (
+                serverId: serverId,
+                name: environment.machines.fleetMachineName(for: serverId),
+                projects: byServer[serverId] ?? []
+            )
+        }
     }
 
     /// The live project record. The controller holds a snapshot from when
@@ -35,15 +54,24 @@ extension ComposerBar {
 
     private var projectChip: some View {
         Menu {
-            ForEach(pickerProjects) { project in
-                Button {
-                    selectTargetProject(project)
-                } label: {
-                    menuRow(
-                        project.name,
-                        systemImage: EntitySystemSymbol.project,
-                        isSelected: controller.project.id == project.id
-                    )
+            ForEach(pickerMachineGroups, id: \.serverId) { group in
+                Section {
+                    ForEach(group.projects) { project in
+                        Button {
+                            selectTargetProject(project)
+                        } label: {
+                            menuRow(
+                                project.name,
+                                systemImage: EntitySystemSymbol.project,
+                                isSelected: controller.project.serverId == project.serverId
+                                    && controller.project.id == project.id
+                            )
+                        }
+                    }
+                } header: {
+                    if let name = group.name {
+                        Text(name)
+                    }
                 }
             }
             Divider()
@@ -101,11 +129,28 @@ extension ComposerBar {
                 forServer: project.serverId
             )
         Task {
-            await controller.selectProject(project)
+            if project.serverId != controller.project.serverId {
+                // Another machine's project: the draft re-points there in
+                // place — client, catalog and all. The app's selected
+                // machine follows at first send, not now.
+                await controller.retarget(
+                    to: project,
+                    serverClient: environment.machines.client(for: project.serverId)
+                )
+                await environment.refreshHarnessLifecycle(for: project.serverId)
+            } else {
+                await controller.selectProject(project)
+            }
             controller.wantsNewWorktree = prefersWorktree
         }
-        // Re-probe git capability so the run-location chip tracks fresh data.
-        Task { await environment.projectList.refreshFromServer() }
+        // Re-probe git capability on the picked project's machine so the
+        // run-location chip tracks fresh data.
+        Task {
+            await environment.projectList.refreshFromServer(
+                serverId: project.serverId,
+                client: environment.machines.client(for: project.serverId)
+            )
+        }
     }
 
     func archiveManagedProject(_ project: Project) {

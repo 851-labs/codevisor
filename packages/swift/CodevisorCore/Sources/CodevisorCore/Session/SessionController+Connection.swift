@@ -176,6 +176,35 @@ extension SessionController {
         await reconnect()
     }
 
+    /// Re-points a DRAFT at a project on another machine: swaps the server
+    /// client along with the project so capability probes, the harness
+    /// catalog, and the eventual first send all hit the picked project's
+    /// machine. The composer's typed state stays live — the machine switch
+    /// itself waits for first send. Same-machine picks fall through to
+    /// `selectProject`.
+    public func retarget(
+        to project: Project,
+        serverClient client: any CodevisorServerClienting
+    ) async {
+        guard project.serverId != self.project.serverId else {
+            await selectProject(project)
+            return
+        }
+        serverClient = client
+        composerDefaultsScope = .newWorkspace(serverId: project.serverId)
+        self.project = project
+        // Any kept worktree belongs to the old machine's project.
+        sessionCwdOverride = nil
+        worktreeName = nil
+        if seedFromCachedServerCapabilities() {
+            preparationState = .ready
+        }
+        // Reload harnesses/capabilities from the new machine, then rebuild
+        // whatever connection state a draft is allowed to hold.
+        await prepare()
+        await reconnect()
+    }
+
     /// Tears down any connection and reconnects — used when the harness or
     /// project changes on the new-chat page.
     public func reconnect() async {

@@ -210,7 +210,9 @@ final public class SessionController {
     /// different inheritance profiles. Promotion changes this from the
     /// machine profile to the newly-created workspace profile.
     var composerDefaultsScope: ComposerDefaultsStore.Scope?
-    let serverClient: (any CodevisorServerClienting)?
+    /// The machine this chat talks to. Mutable for exactly one flow: a DRAFT
+    /// retargeting to a project on another machine (`retarget(to:serverClient:)`).
+    var serverClient: (any CodevisorServerClienting)?
     /// Platform notification delivery; nil in previews/tests. Only used to
     /// prepare authorization at the first send.
     let notificationDelivery: (any ChatNotificationDelivering)?
