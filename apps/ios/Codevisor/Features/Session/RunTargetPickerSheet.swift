@@ -55,14 +55,14 @@ struct RunTargetPickerSheet: View {
             Group {
                 if machines.count > 1 {
                     machineStep
-                        .navigationTitle("Machine")
+                        .navigationTitle("Select a machine")
                 } else {
                     projectStep(
                         serverId: machines.first?.id
                             ?? initialServerId
                             ?? environment.machines.selectedMachineId
                     )
-                    .navigationTitle("Project")
+                    .navigationTitle("Select a project")
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -70,11 +70,11 @@ struct RunTargetPickerSheet: View {
                 switch route {
                 case let .projects(serverId):
                     projectStep(serverId: serverId)
-                        .navigationTitle("Project")
+                        .navigationTitle("Select a project")
                         .navigationBarTitleDisplayMode(.inline)
                 case let .runLocation(serverId, projectId):
                     runLocationStep(serverId: serverId, projectId: projectId)
-                        .navigationTitle("Run Location")
+                        .navigationTitle("Select a directory")
                         .navigationBarTitleDisplayMode(.inline)
                 }
             }
