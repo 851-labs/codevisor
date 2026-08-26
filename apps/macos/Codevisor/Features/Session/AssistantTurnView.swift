@@ -42,6 +42,7 @@ struct AssistantTurnView: View {
     @Environment(\.openSettings) private var openSettings
     @Environment(\.quickLook) private var quickLook
     @Environment(\.attachmentImages) private var attachmentImages
+    @Environment(\.streamingTextAnimationVisibility) private var textAnimationVisibility
     /// Turn-scoped semantic stream ledger. Existing entries are seeded as
     /// settled when this row mounts (including a navigation remount); entries
     /// first created afterward retain their initial live entrance animation.
@@ -111,10 +112,7 @@ struct AssistantTurnView: View {
     }
 
     var body: some View {
-        let _ = textAnimationPresentation.establishBaseline(
-            settling: turn,
-            turnID: turnID
-        )
+        let animationEnabled = prepareTextAnimationPresentation()
         let beforePlan = turn.workedItemsBeforePlan
         let afterPlan = turn.workedItemsAfterPlan
         // Hoisted: `finalText` re-scans the turn's entries per read, and this
@@ -184,7 +182,11 @@ struct AssistantTurnView: View {
                 // text-run merging, so a flush costs O(growing block) instead
                 // of O(whole answer). The finalize flip merges runs back into
                 // one selectable TextKit storage.
-                assistantResponse(entryID: entryID, markdown: markdown)
+                assistantResponse(
+                    entryID: entryID,
+                    markdown: markdown,
+                    animationEnabled: animationEnabled
+                )
                 if let waitingOnBackgroundTask {
                     ShimmeringText.waitingOnBackgroundTask(waitingOnBackgroundTask)
                 }
@@ -197,7 +199,11 @@ struct AssistantTurnView: View {
             }
 
             if presentation.showsResult, finalText == nil, !turn.attachments.isEmpty {
-                assistantResponse(entryID: "attachments", markdown: "")
+                assistantResponse(
+                    entryID: "attachments",
+                    markdown: "",
+                    animationEnabled: animationEnabled
+                )
             }
 
             if presentation.showsResult, !isWaitingOnUser, let postResponseGoalActivity {
@@ -253,14 +259,19 @@ struct AssistantTurnView: View {
     }
 
     @ViewBuilder
-    private func assistantResponse(entryID: String, markdown: String) -> some View {
+    private func assistantResponse(
+        entryID: String,
+        markdown: String,
+        animationEnabled: Bool
+    ) -> some View {
         StreamingAssistantResponseView(
             turnID: turnID,
             entryID: entryID,
             markdown: markdown,
             attachments: turn.attachments,
             isGenerating: turn.isGenerating,
-            animationPresentation: textAnimationPresentation
+            animationPresentation: textAnimationPresentation,
+            animationEnabled: animationEnabled
         ) { file, label in
             VStack(alignment: .leading, spacing: 4) {
                 AttachmentThumbnailView(file: file, inline: true)
@@ -269,6 +280,36 @@ struct AssistantTurnView: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private func prepareTextAnimationPresentation() -> Bool {
+        textAnimationPresentation.establishBaseline(
+            settling: turn,
+            turnID: turnID
+        )
+        if let textAnimationVisibility {
+            textAnimationPresentation.updateVisibility(
+                generation: textAnimationVisibility.generation,
+                isVisible: textAnimationVisibility.isVisible
+            ) {
+                TranscriptStreamingTextIdentity.settledStreamIDs(
+                    turn: turn,
+                    turnID: turnID
+                )
+            }
+        }
+        if turn.hasHydratedWorkedDetails {
+            textAnimationPresentation.settleRestoredStreams(
+                {
+                    TranscriptStreamingTextIdentity.settledStreamIDs(
+                        turn: turn,
+                        turnID: turnID
+                    )
+                },
+                restorationID: turn.detailRevision
+            )
+        }
+        return textAnimationPresentation.animationsEnabled
     }
 
     private func retryLabel(_ retry: RetryStatus) -> String {
@@ -365,7 +406,10 @@ struct AssistantTurnView: View {
                         if expanded {
                             store.setExpanded(key, false)
                         } else {
-                            store.requestReveal(key)
+                            store.requestReveal(
+                                key,
+                                presentationKey: textAnimationVisibility?.presentationKey
+                            )
                             store.setExpanded(key, true)
                         }
                         invalidateRowMeasurement?()
@@ -384,7 +428,11 @@ struct AssistantTurnView: View {
             Divider()
 
             if expanded && (!items.isEmpty || turn.hasDeferredWorkedDetails) {
-                WorkedContentReveal(key: key, store: store) {
+                WorkedContentReveal(
+                    key: key,
+                    store: store,
+                    presentationKey: textAnimationVisibility?.presentationKey
+                ) {
                     VStack(alignment: .leading, spacing: 12) {
                         // Answered questions ride here too: the reducer synthesizes
                         // a tool call for each, so they group and render inline with
@@ -400,7 +448,8 @@ struct AssistantTurnView: View {
                                 turn: turn,
                                 turnID: turnID,
                                 isTurnActive: turn.isGenerating,
-                                animationPresentation: textAnimationPresentation
+                                animationPresentation: textAnimationPresentation,
+                                animationEnabled: textAnimationPresentation.animationsEnabled
                             )
                         }
                     }
@@ -465,20 +514,27 @@ private struct WorkedContentReveal<Content: View>: View {
     let key: TranscriptDisclosureStore.Key
     let store: TranscriptDisclosureStore
     let revealGeneration: Int
+    let presentationKey: String?
     @State private var isVisible: Bool
     private let content: Content
 
     init(
         key: TranscriptDisclosureStore.Key,
         store: TranscriptDisclosureStore,
+        presentationKey: String?,
         @ViewBuilder content: () -> Content
     ) {
         self.key = key
         self.store = store
+        self.presentationKey = presentationKey
         let generation = store.revealGeneration(for: key)
         revealGeneration = generation
         _isVisible = State(
-            initialValue: !store.hasUnclaimedReveal(key, generation: generation)
+            initialValue: !store.hasUnclaimedReveal(
+                key,
+                generation: generation,
+                presentationKey: presentationKey
+            )
         )
         self.content = content()
     }
@@ -488,7 +544,11 @@ private struct WorkedContentReveal<Content: View>: View {
             .opacity(isVisible ? 1 : 0)
             .offset(y: isVisible || reduceMotion ? 0 : -8)
             .onAppear {
-                let shouldAnimate = store.claimReveal(key, generation: revealGeneration)
+                let shouldAnimate = store.claimReveal(
+                    key,
+                    generation: revealGeneration,
+                    presentationKey: presentationKey
+                )
                 guard shouldAnimate, !reduceMotion else {
                     isVisible = true
                     return

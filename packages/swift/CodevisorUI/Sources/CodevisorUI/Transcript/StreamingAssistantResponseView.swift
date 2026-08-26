@@ -13,6 +13,7 @@ public struct StreamingAssistantResponseView<AttachmentContent: View>: View {
     private let attachments: [Attachment]
     private let isGenerating: Bool
     private let animationPresentation: StreamingTextAnimationPresentation
+    private let animationEnabled: Bool
     private let attachmentContent: (PreviewFile, String) -> AttachmentContent
 
     public init(
@@ -22,6 +23,7 @@ public struct StreamingAssistantResponseView<AttachmentContent: View>: View {
         attachments: [Attachment],
         isGenerating: Bool,
         animationPresentation: StreamingTextAnimationPresentation,
+        animationEnabled: Bool = true,
         @ViewBuilder attachmentContent: @escaping (PreviewFile, String) -> AttachmentContent
     ) {
         self.turnID = turnID
@@ -30,6 +32,7 @@ public struct StreamingAssistantResponseView<AttachmentContent: View>: View {
         self.attachments = attachments
         self.isGenerating = isGenerating
         self.animationPresentation = animationPresentation
+        self.animationEnabled = animationEnabled
         self.attachmentContent = attachmentContent
     }
 
@@ -46,6 +49,7 @@ public struct StreamingAssistantResponseView<AttachmentContent: View>: View {
             attachments: attachments,
             isGenerating: isGenerating,
             animationPresentation: animationPresentation,
+            animationEnabled: animationEnabled,
             attachmentContent: attachmentContent
         )
         // A final-answer candidate may demote while a newer text entry takes
@@ -63,6 +67,7 @@ private struct StreamingAssistantResponseContent<AttachmentContent: View>: View 
     let attachments: [Attachment]
     let isGenerating: Bool
     let animationPresentation: StreamingTextAnimationPresentation
+    let animationEnabled: Bool
     let attachmentContent: (PreviewFile, String) -> AttachmentContent
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -82,6 +87,7 @@ private struct StreamingAssistantResponseContent<AttachmentContent: View>: View 
         attachments: [Attachment],
         isGenerating: Bool,
         animationPresentation: StreamingTextAnimationPresentation,
+        animationEnabled: Bool,
         attachmentContent: @escaping (PreviewFile, String) -> AttachmentContent
     ) {
         self.turnID = turnID
@@ -91,6 +97,7 @@ private struct StreamingAssistantResponseContent<AttachmentContent: View>: View 
         self.attachments = attachments
         self.isGenerating = isGenerating
         self.animationPresentation = animationPresentation
+        self.animationEnabled = animationEnabled
         self.attachmentContent = attachmentContent
         _presentationState = State(
             initialValue: StreamingAssistantResponsePresentationState(
@@ -100,6 +107,7 @@ private struct StreamingAssistantResponseContent<AttachmentContent: View>: View 
 
     var body: some View {
         let presentationComplete = presentationState.isComplete
+        let presentsAnimation = !presentationComplete && animationEnabled
         let segments = assistantMarkdownSegments(
             markdown,
             attachments: attachments,
@@ -113,7 +121,7 @@ private struct StreamingAssistantResponseContent<AttachmentContent: View>: View 
         let entrance = entranceSequence.resolve(
             segments: segments,
             responseStreamID: responseStreamID,
-            animationEnabled: !presentationComplete,
+            animationEnabled: presentsAnimation,
             animatesInitialContent: mount.animatesInitialContent,
             reduceMotion: reduceMotion
         )
@@ -139,7 +147,8 @@ private struct StreamingAssistantResponseContent<AttachmentContent: View>: View 
                                     segmentIndex: index
                                 ),
                                 animationPresentation: animationPresentation,
-                                animationCoordinator: animationCoordinator
+                                animationCoordinator: animationCoordinator,
+                                animationEnabled: presentsAnimation
                             )
                         }
                     case let .file(file, label):
@@ -176,6 +185,9 @@ private struct StreamingAssistantResponseContent<AttachmentContent: View>: View 
         }
         .onChange(of: reduceMotion) { _, reduced in
             if reduced { animationCoordinator.reset() }
+        }
+        .onChange(of: animationEnabled) { _, enabled in
+            if !enabled { animationCoordinator.reset() }
         }
     }
 
@@ -280,6 +292,7 @@ private final class StreamingAssistantResponseAnimationMount {
 
     private var streamID: String?
     private var presentationID: ObjectIdentifier?
+    private var settlementToken: Int?
     private var isBaselining = false
     private var activationToken = 0
 
@@ -288,10 +301,18 @@ private final class StreamingAssistantResponseAnimationMount {
         presentation: StreamingTextAnimationPresentation
     ) -> Resolution {
         let nextPresentationID = ObjectIdentifier(presentation)
+        let nextSettlementToken = presentation.settlementToken(for: streamID)
         if self.streamID != streamID || presentationID != nextPresentationID {
             self.streamID = streamID
             presentationID = nextPresentationID
-            isBaselining = !presentation.claimInitialAnimation(for: streamID)
+            settlementToken = nextSettlementToken
+            isBaselining =
+                nextSettlementToken != nil
+                || !presentation.claimInitialAnimation(for: streamID)
+            if isBaselining { activationToken &+= 1 }
+        } else if settlementToken != nextSettlementToken {
+            settlementToken = nextSettlementToken
+            isBaselining = nextSettlementToken != nil
             if isBaselining { activationToken &+= 1 }
         }
         return Resolution(

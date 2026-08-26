@@ -26,7 +26,6 @@ extension SessionModel {
                 for try await event in events {
                     guard let self else { break }
                     self.pendingEvents.append(event)
-                    self.noteStreamedSize(of: event)
                     self.scheduleFlush()
                 }
                 self?.flushPendingEvents()
@@ -38,12 +37,6 @@ extension SessionModel {
                 self.consumerTask = nil
                 await self.reconcileFromServer()
             }
-        }
-    }
-
-    private func noteStreamedSize(of event: ServerSessionStreamEvent) {
-        if case let .update(.agentMessageChunk(block, _, _, _)) = event {
-            transcriptStreamBytes += block.textValue?.utf8.count ?? 0
         }
     }
 
@@ -61,23 +54,17 @@ extension SessionModel {
         visibleViewCount = max(0, visibleViewCount - 1)
     }
 
-    /// Schedules one buffered flush. The cadence stretches as transcript text
-    /// grows, keeping stream updates smooth without monopolizing the main
-    /// actor — and stretches much further when no view is mounted at all.
+    /// Schedules one buffered flush. Visible transcripts stay on one frame-like
+    /// cadence regardless of transcript length; hidden transcripts use a much
+    /// coarser cadence because they have no pixels to present.
     private func scheduleFlush() {
         guard !isFlushScheduled else { return }
         isFlushScheduled = true
-        let interval: Duration =
-            if isViewVisible || Self.eventFlushInterval == .zero {
-                // Zero base means a test drives settling by yielding; never make
-                // it wait out the background cadence.
-                Self.flushInterval(
-                    base: Self.eventFlushInterval,
-                    streamedBytes: transcriptStreamBytes
-                )
-            } else {
-                Self.backgroundEventFlushInterval
-            }
+        let interval = Self.flushInterval(
+            isViewVisible: isViewVisible,
+            foreground: Self.eventFlushInterval,
+            background: Self.backgroundEventFlushInterval
+        )
         Task { @MainActor [weak self] in
             if interval > .zero {
                 try? await Task.sleep(for: interval)
@@ -86,12 +73,15 @@ extension SessionModel {
         }
     }
 
-    static func flushInterval(base: Duration, streamedBytes: Int) -> Duration {
-        guard base > .zero else { return base }
-        switch streamedBytes {
-        case ..<49_152: return base
-        case ..<147_456: return base * 2
-        default: return base * 3
+    static func flushInterval(
+        isViewVisible: Bool,
+        foreground: Duration,
+        background: Duration
+    ) -> Duration {
+        if isViewVisible || foreground == .zero {
+            foreground
+        } else {
+            background
         }
     }
 

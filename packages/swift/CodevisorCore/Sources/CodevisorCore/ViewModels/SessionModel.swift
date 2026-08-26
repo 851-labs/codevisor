@@ -304,11 +304,6 @@ public final class SessionModel {
     /// needed during rolling upgrades to those actual optimistic rows instead
     /// of treating any repeated user text as a duplicate.
     @ObservationIgnored var pendingOptimisticUserMessageIDs: Set<UUID> = []
-    /// Approximate transcript text size, seeded from history and increased by
-    /// live assistant chunks. It drives adaptive stream pacing without
-    /// inspecting the full transcript during every flush.
-    @ObservationIgnored var transcriptStreamBytes = 0
-
     /// Base interval between buffered-event flushes — roughly one frame. Tests
     /// set this to zero so their yield-based settling needs no wall-clock wait.
     static var eventFlushInterval: Duration = .milliseconds(16)

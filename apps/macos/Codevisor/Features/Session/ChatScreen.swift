@@ -11,6 +11,7 @@ import SwiftUI
 import CodevisorCore
 import ACPKit
 import CodevisorUI
+import StreamMarkdown
 import TranscriptKit
 
 struct ChatScreen: View {
@@ -39,6 +40,7 @@ struct ChatScreen: View {
     @State private var projectedRows: [TranscriptVirtualRow] = []
     @State private var projectedSessionID: UUID?
     @State private var isPreparingTranscript = true
+    @State private var textAnimationVisibility = StreamingTextAnimationVisibility.initiallyHidden
     @Namespace private var composerGlassNamespace
 
     var body: some View {
@@ -54,8 +56,10 @@ struct ChatScreen: View {
                 autoFollow = controller.scrollState?.followMode.followsLatest ?? true
                 isAtBottom = controller.scrollState?.isAtBottom ?? true
                 controller.transcriptViewDidAppear()
+                textAnimationVisibility.appear()
             }
             .onDisappear {
+                textAnimationVisibility.disappear()
                 historyLoadTask?.cancel()
                 historyLoadTask = nil
                 olderHistoryPresentation.cancel()
@@ -161,6 +165,10 @@ struct ChatScreen: View {
                                 .environment(\.hoverTrackingSuspended, controller.isSending)
                                 .environment(\.transcriptDisclosure, controller.disclosure)
                                 .environment(\.transcriptController, controller)
+                                .environment(
+                                    \.streamingTextAnimationVisibility,
+                                    textAnimationVisibility
+                                )
                                 .environment(
                                     \.runningSubagentToolCallIds,
                                     controller.runningSubagentToolCallIds
@@ -744,20 +752,13 @@ struct ChatScreen: View {
     }
 
     private var visibleComposerGlassElements: [ComposerGlassElement] {
-        var elements: [ComposerGlassElement] = []
-        if controller.visibleTodos != nil {
-            elements.append(.todos)
-        }
-        if controller.supportsGoals, !controller.isGoalEditing,
-            (controller.goal ?? controller.draftGoal) != nil
-        {
-            elements.append(.goal)
-        }
-        if !controller.queuedPrompts.isEmpty {
-            elements.append(.queue)
-        }
-        elements.append(.composer)
-        return elements
+        let hasTodos = controller.visibleTodos != nil
+        return ComposerGlassElements.visible(
+            hasTodos: hasTodos,
+            showsGoal: controller.supportsGoals && !controller.isGoalEditing
+                && (controller.goal ?? controller.draftGoal) != nil,
+            hasQueuedPrompts: !controller.queuedPrompts.isEmpty
+        )
     }
 
     @ViewBuilder
@@ -851,7 +852,6 @@ private struct LiveGoalBannerView: View {
     @Bindable var model: SessionModel
     let glassNamespace: Namespace.ID
 
-    @ViewBuilder
     var body: some View {
         if let goal = model.goal {
             GoalBannerView(

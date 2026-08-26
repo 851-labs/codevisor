@@ -14,6 +14,7 @@ private final class StreamingMarkdownAnimationMount {
     private var hasResolved = false
     private var streamID: String?
     private var presentationID: ObjectIdentifier?
+    private var settlementToken: Int?
     private var isBaselining = false
     private var activationToken = 0
 
@@ -22,17 +23,25 @@ private final class StreamingMarkdownAnimationMount {
         presentation: StreamingTextAnimationPresentation?
     ) -> Resolution {
         let nextPresentationID = presentation.map(ObjectIdentifier.init)
+        let nextSettlementToken = streamID.flatMap { presentation?.settlementToken(for: $0) }
         if !hasResolved || self.streamID != streamID || presentationID != nextPresentationID {
             hasResolved = true
             self.streamID = streamID
             presentationID = nextPresentationID
+            settlementToken = nextSettlementToken
             if let streamID, let presentation {
-                isBaselining = !presentation.claimInitialAnimation(for: streamID)
+                isBaselining =
+                    nextSettlementToken != nil
+                    || !presentation.claimInitialAnimation(for: streamID)
             } else {
                 // Standalone callers retain the original behavior: an
                 // incomplete view animates the text it is first given.
                 isBaselining = false
             }
+            if isBaselining { activationToken &+= 1 }
+        } else if settlementToken != nextSettlementToken {
+            settlementToken = nextSettlementToken
+            isBaselining = nextSettlementToken != nil
             if isBaselining { activationToken &+= 1 }
         }
         return Resolution(
@@ -66,6 +75,7 @@ public struct StreamingMarkdownView: View {
     private let streamID: String?
     private let animationPresentation: StreamingTextAnimationPresentation?
     private let animationCoordinator: StreamingContentAnimationCoordinator?
+    private let animationEnabled: Bool
     @Environment(\.markdownTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Per-view-identity incremental state (see `StreamingSegmenter`). A
@@ -92,7 +102,8 @@ public struct StreamingMarkdownView: View {
         foregroundColor: Color? = nil,
         streamID: String? = nil,
         animationPresentation: StreamingTextAnimationPresentation? = nil,
-        animationCoordinator: StreamingContentAnimationCoordinator? = nil
+        animationCoordinator: StreamingContentAnimationCoordinator? = nil,
+        animationEnabled: Bool = true
     ) {
         self.text = text
         self.isComplete = isComplete
@@ -100,6 +111,7 @@ public struct StreamingMarkdownView: View {
         self.streamID = streamID
         self.animationPresentation = animationPresentation
         self.animationCoordinator = animationCoordinator
+        self.animationEnabled = animationEnabled
     }
 
     public var body: some View {
@@ -109,12 +121,15 @@ public struct StreamingMarkdownView: View {
         )
         let _ = animationMountRevision
         let resolvedAnimationTimeline = animationCoordinator?.timeline ?? animationTimeline
+        let presentsAnimation = !isComplete && animationEnabled
+        let pacingSourceID = streamID ?? "root"
         MarkdownSegmentListView(
             segments: segmenter.segments(for: text, isComplete: isComplete),
             foregroundColor: foregroundColor ?? theme.textForeground,
-            animationTimeline: isComplete ? nil : resolvedAnimationTimeline,
+            animationTimeline: presentsAnimation ? resolvedAnimationTimeline : nil,
             animatesInitialContent: mount.animatesInitialContent,
             documentSource: text,
+            pacingSourceID: pacingSourceID,
             // A reused SwiftUI/native surface must reset its word reconciler
             // when the semantic transcript entry changes.
             animationPath: streamID.map { "stream.\($0).root" } ?? "root",
@@ -153,6 +168,9 @@ public struct StreamingMarkdownView: View {
         }
         .onChange(of: reduceMotion) { _, reduced in
             if reduced { resolvedAnimationTimeline.reset() }
+        }
+        .onChange(of: animationEnabled) { _, enabled in
+            if !enabled { resolvedAnimationTimeline.reset() }
         }
         .task(id: mount.activationToken) {
             guard mount.needsActivation else { return }
@@ -195,6 +213,7 @@ struct MarkdownSegmentsView: View {
     var animationTimeline: StreamingTextAnimationTimeline?
     var animatesInitialContent = true
     var documentSource = ""
+    var pacingSourceID = "nested"
     var animationPath = "nested"
     var reduceMotion = false
 
@@ -205,6 +224,7 @@ struct MarkdownSegmentsView: View {
             animationTimeline: animationTimeline,
             animatesInitialContent: animatesInitialContent,
             documentSource: documentSource,
+            pacingSourceID: pacingSourceID,
             animationPath: animationPath,
             reduceMotion: reduceMotion
         )
@@ -218,6 +238,7 @@ struct MarkdownSegmentListView: View {
     let animationTimeline: StreamingTextAnimationTimeline?
     let animatesInitialContent: Bool
     let documentSource: String
+    let pacingSourceID: String
     let animationPath: String
     let reduceMotion: Bool
     @Environment(\.markdownTheme) private var theme
@@ -243,6 +264,7 @@ struct MarkdownSegmentListView: View {
                         animationEnabled: animationTimeline != nil,
                         animatesInitialContent: animatesInitialContent,
                         documentSource: documentSource,
+                        pacingSourceID: pacingSourceID,
                         animationPath: "\(animationPath).\(index)",
                         reduceMotion: reduceMotion
                     )
@@ -320,6 +342,7 @@ private struct MarkdownSegmentView: View, Equatable {
     let animationEnabled: Bool
     let animatesInitialContent: Bool
     let documentSource: String
+    let pacingSourceID: String
     let animationPath: String
     let reduceMotion: Bool
 
@@ -328,6 +351,7 @@ private struct MarkdownSegmentView: View, Equatable {
             && lhs.foregroundColor == rhs.foregroundColor
             && lhs.animationEnabled == rhs.animationEnabled
             && lhs.animatesInitialContent == rhs.animatesInitialContent
+            && lhs.pacingSourceID == rhs.pacingSourceID
             && lhs.animationPath == rhs.animationPath
             && lhs.reduceMotion == rhs.reduceMotion
     }
@@ -343,6 +367,7 @@ private struct MarkdownSegmentView: View, Equatable {
                         StreamingTextAnimationContext(
                             timeline: $0,
                             sourceID: animationPath,
+                            pacingSourceID: pacingSourceID,
                             documentSource: documentSource,
                             isStreaming: true,
                             animatesInitialContent: animatesInitialContent,
@@ -360,6 +385,7 @@ private struct MarkdownSegmentView: View, Equatable {
                 animationTimeline: animationTimeline,
                 animatesInitialContent: animatesInitialContent,
                 documentSource: documentSource,
+                pacingSourceID: pacingSourceID,
                 animationPath: animationPath,
                 reduceMotion: reduceMotion
             )
@@ -374,6 +400,7 @@ struct MarkdownBlockView: View {
     var animationTimeline: StreamingTextAnimationTimeline?
     var animatesInitialContent = true
     var documentSource = ""
+    var pacingSourceID = "block"
     var animationPath = "block"
     var reduceMotion = false
     @Environment(\.markdownTheme) private var theme
@@ -392,6 +419,7 @@ struct MarkdownBlockView: View {
                         StreamingTextAnimationContext(
                             timeline: $0,
                             sourceID: animationPath,
+                            pacingSourceID: pacingSourceID,
                             documentSource: documentSource,
                             isStreaming: true,
                             animatesInitialContent: animatesInitialContent,
@@ -417,6 +445,7 @@ struct MarkdownBlockView: View {
                     animationTimeline: animationTimeline,
                     animatesInitialContent: animatesInitialContent,
                     documentSource: documentSource,
+                    pacingSourceID: pacingSourceID,
                     animationPath: "\(animationPath).quote",
                     reduceMotion: reduceMotion
                 )

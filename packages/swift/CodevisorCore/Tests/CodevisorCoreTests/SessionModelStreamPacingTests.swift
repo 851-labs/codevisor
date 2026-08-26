@@ -16,6 +16,24 @@ struct SessionModelStreamPacingTests {
         .update(.agentMessageChunk(.text(text), messageId: messageId, parentToolCallId: parent, phase: phase))
     }
 
+    @Test("Visible flushing stays frame-paced while hidden flushing stays coarse")
+    func visibilityControlsFlushCadence() {
+        #expect(
+            SessionModel.flushInterval(
+                isViewVisible: true,
+                foreground: .milliseconds(16),
+                background: .milliseconds(300)
+            ) == .milliseconds(16)
+        )
+        #expect(
+            SessionModel.flushInterval(
+                isViewVisible: false,
+                foreground: .milliseconds(16),
+                background: .milliseconds(300)
+            ) == .milliseconds(300)
+        )
+    }
+
     @Test("Adjacent same-span text chunks merge into one")
     func adjacentChunksMerge() {
         let merged = SessionModel.coalesced([chunk("Hel"), chunk("lo "), chunk("world")])

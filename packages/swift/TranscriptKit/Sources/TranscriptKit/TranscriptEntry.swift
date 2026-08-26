@@ -99,6 +99,10 @@ public struct AssistantTurn: Sendable, Equatable {
     public var deferredDetailItemId: String?
     public var hasDeferredWorkedDetails: Bool
     public var detailRevision: Int
+    /// True after deferred worked details were restored from durable history.
+    /// Renderers use this provenance to settle the restored text even when the
+    /// owning turn is still generating; later live entries remain animated.
+    public var hasHydratedWorkedDetails: Bool
     /// Monotonic counter used to give each new text span a stable id.
     public var nextTextId: Int
 
@@ -121,6 +125,7 @@ public struct AssistantTurn: Sendable, Equatable {
         deferredDetailItemId: String? = nil,
         hasDeferredWorkedDetails: Bool = false,
         detailRevision: Int = 0,
+        hasHydratedWorkedDetails: Bool = false,
         nextTextId: Int = 0
     ) {
         self.entries = entries
@@ -141,6 +146,7 @@ public struct AssistantTurn: Sendable, Equatable {
         self.deferredDetailItemId = deferredDetailItemId
         self.hasDeferredWorkedDetails = hasDeferredWorkedDetails
         self.detailRevision = detailRevision
+        self.hasHydratedWorkedDetails = hasHydratedWorkedDetails
         self.nextTextId = nextTextId
     }
 }

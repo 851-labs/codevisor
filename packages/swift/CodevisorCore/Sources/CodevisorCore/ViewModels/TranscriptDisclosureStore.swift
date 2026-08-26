@@ -167,6 +167,7 @@ public final class TranscriptDisclosureStore {
     @ObservationIgnored private var toolGroupDisclosures: [String: ToolGroupDisclosure] = [:]
     private var revealGenerations: [Key: Int] = [:]
     private var claimedRevealGenerations: [Key: Int] = [:]
+    private var revealPresentationKeys: [Key: String] = [:]
     public init() {}
 
     /// Shared throwaway store for previews / detached contexts where no
@@ -205,20 +206,38 @@ public final class TranscriptDisclosureStore {
         return disclosure
     }
 
-    public func requestReveal(_ key: Key) {
+    public func requestReveal(_ key: Key, presentationKey: String? = nil) {
         revealGenerations[key, default: 0] &+= 1
+        revealPresentationKeys[key] = presentationKey ?? "detached"
     }
 
     public func revealGeneration(for key: Key) -> Int {
         revealGenerations[key, default: 0]
     }
 
-    public func hasUnclaimedReveal(_ key: Key, generation: Int) -> Bool {
-        generation > 0 && claimedRevealGenerations[key, default: 0] < generation
+    public func hasUnclaimedReveal(
+        _ key: Key,
+        generation: Int,
+        presentationKey: String? = nil
+    ) -> Bool {
+        generation > 0
+            && claimedRevealGenerations[key, default: 0] < generation
+            && revealPresentationKeys[key, default: "detached"]
+                == presentationKey ?? "detached"
     }
 
-    public func claimReveal(_ key: Key, generation: Int) -> Bool {
-        guard hasUnclaimedReveal(key, generation: generation) else { return false }
+    public func claimReveal(
+        _ key: Key,
+        generation: Int,
+        presentationKey: String? = nil
+    ) -> Bool {
+        guard
+            hasUnclaimedReveal(
+                key,
+                generation: generation,
+                presentationKey: presentationKey
+            )
+        else { return false }
         claimedRevealGenerations[key] = generation
         return true
     }

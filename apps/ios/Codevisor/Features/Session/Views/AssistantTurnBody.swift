@@ -14,6 +14,7 @@ struct AssistantTurnBody: View {
     @Environment(\.transcriptInvalidateRowMeasurement)
     private var invalidateRowMeasurement
     @Environment(\.attachmentImages) private var attachmentImages
+    @Environment(\.streamingTextAnimationVisibility) private var textAnimationVisibility
     @State private var textAnimationPresentation = StreamingTextAnimationPresentation()
     @State private var hasAutoCollapsed: Bool
     @State private var linkedQuickLookURL: QuickLookURL?
@@ -69,10 +70,7 @@ struct AssistantTurnBody: View {
     @State private var hasActiveTextEntranceAnimation = false
 
     var body: some View {
-        let _ = textAnimationPresentation.establishBaseline(
-            settling: turn,
-            turnID: turnId
-        )
+        let animationEnabled = prepareTextAnimationPresentation()
         let finalText = turn.finalText
         let postResponseGoalActivity = finalText == nil ? nil : goalActivity
         VStack(alignment: .leading, spacing: 14) {
@@ -116,7 +114,11 @@ struct AssistantTurnBody: View {
                     }
                 }
                 if case let .text(entryID, markdown) = finalText {
-                    assistantResponse(entryID: entryID, markdown: markdown)
+                    assistantResponse(
+                        entryID: entryID,
+                        markdown: markdown,
+                        animationEnabled: animationEnabled
+                    )
                     if let waitingOnBackgroundTask {
                         ShimmeringText.waitingOnBackgroundTask(waitingOnBackgroundTask)
                     }
@@ -125,7 +127,11 @@ struct AssistantTurnBody: View {
                     }
                 }
                 if finalText == nil, !turn.attachments.isEmpty {
-                    assistantResponse(entryID: "attachments", markdown: "")
+                    assistantResponse(
+                        entryID: "attachments",
+                        markdown: "",
+                        animationEnabled: animationEnabled
+                    )
                 }
                 if !isWaitingOnUser, let postResponseGoalActivity {
                     ShimmeringText(text: goalActivityLabel(postResponseGoalActivity))
@@ -169,14 +175,19 @@ struct AssistantTurnBody: View {
     }
 
     @ViewBuilder
-    private func assistantResponse(entryID: String, markdown: String) -> some View {
+    private func assistantResponse(
+        entryID: String,
+        markdown: String,
+        animationEnabled: Bool
+    ) -> some View {
         StreamingAssistantResponseView(
             turnID: turnId,
             entryID: entryID,
             markdown: markdown,
             attachments: turn.attachments,
             isGenerating: isGenerating,
-            animationPresentation: textAnimationPresentation
+            animationPresentation: textAnimationPresentation,
+            animationEnabled: animationEnabled
         ) { file, label in
             VStack(alignment: .leading, spacing: 4) {
                 AttachmentThumbnailView(file: file, inline: true)
@@ -185,6 +196,36 @@ struct AssistantTurnBody: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private func prepareTextAnimationPresentation() -> Bool {
+        textAnimationPresentation.establishBaseline(
+            settling: turn,
+            turnID: turnId
+        )
+        if let textAnimationVisibility {
+            textAnimationPresentation.updateVisibility(
+                generation: textAnimationVisibility.generation,
+                isVisible: textAnimationVisibility.isVisible
+            ) {
+                TranscriptStreamingTextIdentity.settledStreamIDs(
+                    turn: turn,
+                    turnID: turnId
+                )
+            }
+        }
+        if turn.hasHydratedWorkedDetails {
+            textAnimationPresentation.settleRestoredStreams(
+                {
+                    TranscriptStreamingTextIdentity.settledStreamIDs(
+                        turn: turn,
+                        turnID: turnId
+                    )
+                },
+                restorationID: turn.detailRevision
+            )
+        }
+        return textAnimationPresentation.animationsEnabled
     }
 
     @ViewBuilder
@@ -279,7 +320,10 @@ struct AssistantTurnBody: View {
                             if isExpanded {
                                 store.setExpanded(key, false)
                             } else {
-                                store.requestReveal(key)
+                                store.requestReveal(
+                                    key,
+                                    presentationKey: textAnimationVisibility?.presentationKey
+                                )
                                 store.setExpanded(key, true)
                             }
                             invalidateRowMeasurement?()
@@ -302,7 +346,11 @@ struct AssistantTurnBody: View {
                 Divider()
 
                 if isExpanded {
-                    WorkedContentReveal(key: key, store: store) {
+                    WorkedContentReveal(
+                        key: key,
+                        store: store,
+                        presentationKey: textAnimationVisibility?.presentationKey
+                    ) {
                         VStack(alignment: .leading, spacing: 12) {
                             if allowsDeferred, turn.hasDeferredWorkedDetails,
                                 let itemId = turn.deferredDetailItemId,
@@ -319,7 +367,8 @@ struct AssistantTurnBody: View {
                                     turnId: turnId,
                                     depth: 0,
                                     isTurnActive: isGenerating,
-                                    animationPresentation: textAnimationPresentation
+                                    animationPresentation: textAnimationPresentation,
+                                    animationEnabled: textAnimationPresentation.animationsEnabled
                                 )
                             }
                         }

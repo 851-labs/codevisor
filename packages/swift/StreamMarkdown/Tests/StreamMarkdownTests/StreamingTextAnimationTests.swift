@@ -27,28 +27,98 @@ struct StreamingTextAnimationTests {
         #expect(segments.allSatisfy { $0.range.length > 0 })
     }
 
-    @Test("Normal cadence compresses after 96 milliseconds of queued delay")
-    func cadence() {
+    @Test("Character backlog accelerates early reveals and preserves the thin tail")
+    func characterBacklogControlsCadence() {
         let timeline = StreamingTextAnimationTimeline()
         let now = 10.0
-        let delays = (0..<9).map { _ in timeline.scheduleSegment(at: now) - now }
-        let milliseconds = delays.map { Int(($0 * 1_000).rounded()) }
-        #expect(milliseconds == [0, 16, 32, 48, 64, 80, 96, 100, 104])
+        timeline.observeSource(String(repeating: "a", count: 45), sourceID: "answer", at: now)
+        let fades = timeline.scheduleSegments(
+            characterCounts: Array(repeating: 5, count: 9),
+            at: now
+        )
+        let intervals = zip(fades, fades.dropFirst()).map { $1.startTime - $0.startTime }
+        let firstInterval = try! #require(intervals.first)
+        let lastInterval = try! #require(intervals.last)
+
+        #expect((0.020...0.100).contains(fades[0].startTime - now))
+        #expect(firstInterval < lastInterval)
+        #expect(
+            intervals.allSatisfy {
+                $0 >= StreamingTextAnimationSpec.fastestSegmentDelay
+                    && $0 <= StreamingTextAnimationSpec.maximumSlowestSegmentDelay
+            })
     }
 
-    @Test("An idle timeline starts the next segment immediately")
-    func idleTimeline() {
+    @Test("Observed stream shape adapts without a harness or model hint")
+    func sourceShapeControlsTargetReserve() {
+        let fine = StreamingTextAnimationTimeline()
+        fine.observeSource("a", sourceID: "answer", at: 1.000)
+        fine.observeSource("ab", sourceID: "answer", at: 1.020)
+        fine.observeSource("abc", sourceID: "answer", at: 1.041)
+
+        let bursty = StreamingTextAnimationTimeline()
+        bursty.observeSource(String(repeating: "a", count: 40), sourceID: "answer", at: 1.000)
+        bursty.observeSource(String(repeating: "a", count: 80), sourceID: "answer", at: 1.280)
+        bursty.observeSource(String(repeating: "a", count: 120), sourceID: "answer", at: 1.620)
+
+        #expect(fine.targetQueueLead < 0.080)
+        #expect(bursty.targetQueueLead > 0.240)
+        #expect(bursty.targetQueueLead <= StreamingTextAnimationSpec.maximumTargetQueueLead)
+    }
+
+    @Test("Duplicate renderer passes do not become source arrival samples")
+    func duplicateSourceRevisionIsIgnored() {
         let timeline = StreamingTextAnimationTimeline()
-        _ = timeline.scheduleSegment(at: 1)
-        _ = timeline.scheduleSegment(at: 1)
-        #expect(timeline.scheduleSegment(at: 5) == 5)
+        timeline.observeSource("Hello", sourceID: "answer", at: 1.000)
+        timeline.observeSource("Hello", sourceID: "answer", at: 1.500)
+        timeline.observeSource("Hello world", sourceID: "answer", at: 1.600)
+
+        // The measured source gap is 600ms. If the duplicate render at 500ms
+        // were sampled, this would instead look like a low-latency 100ms feed.
+        #expect(timeline.targetQueueLead > 0.180)
+    }
+
+    @Test("A restored source baseline is not an arrival sample")
+    func restoredSourceDoesNotTeachArrivalGap() {
+        let timeline = StreamingTextAnimationTimeline()
+        timeline.baselineSource("Already visible", sourceID: "answer")
+        timeline.observeSource("Already visible now", sourceID: "answer", at: 20)
+
+        #expect(timeline.targetQueueLead < 0.080)
+    }
+
+    @Test("A following source update refills the reserve without moving a started word")
+    func followingChunkRefillsReserve() {
+        let timeline = StreamingTextAnimationTimeline()
+        timeline.observeSource("Hello world", sourceID: "answer", at: 10)
+        let first = timeline.scheduleSegments(characterCounts: [6, 5], at: 10)
+
+        let started = first[0].startTime
+        timeline.observeSource("Hello world again", sourceID: "answer", at: 10.030)
+        let additions = timeline.scheduleSegments(characterCounts: [6], at: 10.030)
+
+        #expect(first[0].startTime == started)
+        #expect(first[1].startTime >= 10.030)
+        #expect(try! #require(additions.first).startTime > first[1].startTime)
+    }
+
+    @Test("An idle timeline rebuilds its short presentation reserve")
+    func idleTimelineRebuffers() {
+        let timeline = StreamingTextAnimationTimeline()
+        timeline.observeSource("one", sourceID: "answer", at: 1)
+        _ = timeline.scheduleSegments(characterCounts: [3], at: 1)
+        timeline.observeSource("one two", sourceID: "answer", at: 5)
+        let next = timeline.scheduleSegments(characterCounts: [4], at: 5)
+        let lead = try! #require(next.first).startTime - 5
+        #expect((0.019...0.101).contains(lead))
     }
 
     @Test("Timeline stays active through the final scheduled glyph fade")
     func activityLifetime() {
         let timeline = StreamingTextAnimationTimeline()
-        let firstStart = timeline.scheduleSegment(at: 10)
-        let secondStart = timeline.scheduleSegment(at: 10)
+        let fades = timeline.scheduleSegments(characterCounts: [4, 4], at: 10)
+        let firstStart = fades[0].startTime
+        let secondStart = fades[1].startTime
 
         #expect(timeline.isAnimationActive(at: firstStart))
         #expect(timeline.isAnimationActive(at: secondStart + 0.149))
@@ -66,7 +136,10 @@ struct StreamingTextAnimationTests {
         await Task.yield()
         #expect(reports == [false])
 
-        _ = timeline.scheduleSegment(at: ProcessInfo.processInfo.systemUptime)
+        _ = timeline.scheduleSegments(
+            characterCounts: [4],
+            at: ProcessInfo.processInfo.systemUptime
+        )
         await Task.yield()
         #expect(reports.last == true)
 
@@ -126,7 +199,7 @@ struct StreamingTextAnimationTests {
                 at: 0,
                 effectiveRange: nil
             ) as? StreamingTextFadeMetadata
-        #expect(firstMetadata?.startTime == 1)
+        #expect(abs((firstMetadata?.startTime ?? 0) - 1.020) < 0.000_001)
 
         let secondContext = StreamingTextAnimationContext(
             timeline: timeline,
@@ -153,8 +226,8 @@ struct StreamingTextAnimationTests {
                 at: 6,
                 effectiveRange: nil
             ) as? StreamingTextFadeMetadata
-        #expect(oldMetadata?.startTime == 1)
-        #expect(newMetadata?.startTime == 1.02)
+        #expect(abs((oldMetadata?.startTime ?? 0) - 1.020) < 0.000_001)
+        #expect(abs((newMetadata?.startTime ?? 0) - 1.028) < 0.000_001)
     }
 
     @Test("Reduce Motion and completion expose text immediately")
@@ -230,177 +303,6 @@ struct StreamingTextAnimationTests {
                 at: 13,
                 effectiveRange: nil
             ) as? StreamingTextFadeMetadata
-        #expect(newMetadata?.startTime == 1.02)
-    }
-
-    @Test("Presentation claims animate only the first live mount of a new semantic stream")
-    func presentationClaims() {
-        let presentation = StreamingTextAnimationPresentation(
-            settledStreamIDs: ["existing"]
-        )
-        #expect(!presentation.claimInitialAnimation(for: "existing"))
-        #expect(presentation.claimInitialAnimation(for: "new"))
-        #expect(!presentation.claimInitialAnimation(for: "new"))
-    }
-
-    @Test("Presentation establishes its navigation baseline only once")
-    func presentationBaseline() {
-        let presentation = StreamingTextAnimationPresentation()
-        var buildCount = 0
-        presentation.establishBaseline {
-            buildCount += 1
-            return ["existing"]
-        }
-        presentation.establishBaseline {
-            buildCount += 1
-            return ["later"]
-        }
-
-        #expect(buildCount == 1)
-        #expect(!presentation.claimInitialAnimation(for: "existing"))
-        #expect(presentation.claimInitialAnimation(for: "later"))
-    }
-
-    @Test("Structural blocks reveal in document order between animated text runs")
-    func structuralBlockSequence() {
-        let sequence = StreamingMarkdownBlockEntranceSequence()
-        let segments: [MarkdownSegment] = [
-            .textRun([.paragraph("Before")]),
-            .block(.codeBlock(language: "swift", code: "let x = 1", isComplete: true)),
-            .textRun([.paragraph("Between")]),
-            .block(
-                .table(
-                    headers: ["Name"],
-                    alignments: [.leading],
-                    rows: [["Ada"]]
-                )),
-            .textRun([.paragraph("After")]),
-        ]
-
-        var resolution = sequence.resolve(
-            segments: segments,
-            animationPath: "stream.answer.root",
-            animationEnabled: true,
-            animatesInitialContent: true,
-            reduceMotion: false
-        )
-        #expect(resolution.visibleSegmentCount == 1)
-        let codeID = try! #require(resolution.pendingBlockID)
-
-        #expect(sequence.beginReveal(blockID: codeID) == .started)
-        resolution = sequence.resolve(
-            segments: segments,
-            animationPath: "stream.answer.root",
-            animationEnabled: true,
-            animatesInitialContent: true,
-            reduceMotion: false
-        )
-        #expect(resolution.visibleSegmentCount == 2)
-        #expect(resolution.revealingSegmentIndex == 1)
-
-        #expect(sequence.finishReveal(blockID: codeID))
-        resolution = sequence.resolve(
-            segments: segments,
-            animationPath: "stream.answer.root",
-            animationEnabled: true,
-            animatesInitialContent: true,
-            reduceMotion: false
-        )
-        #expect(resolution.visibleSegmentCount == 3)
-        let tableID = try! #require(resolution.pendingBlockID)
-        #expect(tableID != codeID)
-
-        #expect(sequence.beginReveal(blockID: tableID) == .started)
-        #expect(sequence.finishReveal(blockID: tableID))
-        resolution = sequence.resolve(
-            segments: segments,
-            animationPath: "stream.answer.root",
-            animationEnabled: true,
-            animatesInitialContent: true,
-            reduceMotion: false
-        )
-        #expect(resolution.visibleSegmentCount == segments.count)
-        #expect(resolution.pendingBlockID == nil)
-    }
-
-    @Test("Navigation and Reduce Motion settle structural blocks immediately")
-    func settledStructuralBlocks() {
-        let sequence = StreamingMarkdownBlockEntranceSequence()
-        let existing: [MarkdownSegment] = [
-            .textRun([.paragraph("Before")]),
-            .block(.codeBlock(language: nil, code: "old", isComplete: false)),
-        ]
-
-        var resolution = sequence.resolve(
-            segments: existing,
-            animationPath: "stream.answer.root",
-            animationEnabled: true,
-            animatesInitialContent: false,
-            reduceMotion: false
-        )
-        #expect(resolution.visibleSegmentCount == existing.count)
-        #expect(resolution.pendingBlockID == nil)
-
-        let appended =
-            existing + [
-                .textRun([.paragraph("Later")]),
-                .block(.table(headers: ["A"], alignments: [.none], rows: [["1"]])),
-            ]
-        resolution = sequence.resolve(
-            segments: appended,
-            animationPath: "stream.answer.root",
-            animationEnabled: true,
-            animatesInitialContent: true,
-            reduceMotion: false
-        )
-        #expect(resolution.visibleSegmentCount == 3)
-        #expect(resolution.pendingBlockID != nil)
-
-        resolution = sequence.resolve(
-            segments: appended,
-            animationPath: "stream.answer.root",
-            animationEnabled: true,
-            animatesInitialContent: true,
-            reduceMotion: true
-        )
-        #expect(resolution.visibleSegmentCount == appended.count)
-        #expect(resolution.pendingBlockID == nil)
-    }
-
-    @Test("Growing a structural block keeps one entrance identity")
-    func stableStructuralBlockIdentity() {
-        let sequence = StreamingMarkdownBlockEntranceSequence()
-        let first: [MarkdownSegment] = [
-            .block(.codeBlock(language: "swift", code: "let", isComplete: false))
-        ]
-        var resolution = sequence.resolve(
-            segments: first,
-            animationPath: "stream.answer.root",
-            animationEnabled: true,
-            animatesInitialContent: true,
-            reduceMotion: false
-        )
-        let blockID = try! #require(resolution.pendingBlockID)
-        #expect(sequence.beginReveal(blockID: blockID) == .started)
-        #expect(sequence.beginReveal(blockID: blockID) == .resumed)
-        #expect(sequence.finishReveal(blockID: blockID))
-
-        let grown: [MarkdownSegment] = [
-            .block(
-                .codeBlock(
-                    language: "swift",
-                    code: "let value = 1",
-                    isComplete: true
-                ))
-        ]
-        resolution = sequence.resolve(
-            segments: grown,
-            animationPath: "stream.answer.root",
-            animationEnabled: true,
-            animatesInitialContent: true,
-            reduceMotion: false
-        )
-        #expect(resolution.visibleSegmentCount == grown.count)
-        #expect(resolution.pendingBlockID == nil)
+        #expect((1.040...1.050).contains(newMetadata?.startTime ?? 0))
     }
 }

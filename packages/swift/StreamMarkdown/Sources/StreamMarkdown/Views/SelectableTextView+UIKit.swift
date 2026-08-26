@@ -40,7 +40,11 @@
                 for: attributedText,
                 animation: streamingAnimation
             )
-            view.setContent(prepared.text, latestAnimationEnd: prepared.latestAnimationEnd)
+            view.setContent(
+                prepared.text,
+                latestAnimationEnd: prepared.latestAnimationEnd,
+                activeAnimationRanges: prepared.activeAnimationRanges
+            )
             return view
         }
 
@@ -50,7 +54,11 @@
                 for: attributedText,
                 animation: streamingAnimation
             )
-            textView.setContent(prepared.text, latestAnimationEnd: prepared.latestAnimationEnd)
+            textView.setContent(
+                prepared.text,
+                latestAnimationEnd: prepared.latestAnimationEnd,
+                activeAnimationRanges: prepared.activeAnimationRanges
+            )
         }
 
         public func sizeThatFits(
@@ -87,6 +95,7 @@
             private var preparedSourceID: String?
             private var preparedDocumentSource: String?
             private var preparedIsStreaming = false
+            private var preparedAnimatesInitialContent = false
             private var preparedReduceMotion = false
             private var prepared: PreparedStreamingText?
 
@@ -110,6 +119,7 @@
                     preparedSourceID == animation?.sourceID,
                     preparedDocumentSource == animation?.documentSource,
                     preparedIsStreaming == (animation?.isStreaming ?? false),
+                    preparedAnimatesInitialContent == (animation?.animatesInitialContent ?? false),
                     preparedReduceMotion == (animation?.reduceMotion ?? false),
                     let prepared
                 {
@@ -121,6 +131,7 @@
                 preparedSourceID = animation?.sourceID
                 preparedDocumentSource = animation?.documentSource
                 preparedIsStreaming = animation?.isStreaming ?? false
+                preparedAnimatesInitialContent = animation?.animatesInitialContent ?? false
                 preparedReduceMotion = animation?.reduceMotion ?? false
                 prepared = value
                 return value
@@ -255,6 +266,7 @@
     public final class SelectableTextKitView: UITextView {
         private var representedText: NSAttributedString?
         private var latestAnimationEnd: TimeInterval?
+        private var activeAnimationRanges: [NSRange] = []
         private var animationDisplayLink: CADisplayLink?
 
         init() {
@@ -290,26 +302,46 @@
 
         func setContent(
             _ text: NSAttributedString,
-            latestAnimationEnd: TimeInterval? = nil
+            latestAnimationEnd: TimeInterval? = nil,
+            activeAnimationRanges: [NSRange] = []
         ) {
+            self.activeAnimationRanges = activeAnimationRanges
             updateAnimation(until: latestAnimationEnd)
             guard representedText !== text else {
-                redrawStreamingText()
+                redrawActiveStreamingText(at: CACurrentMediaTime())
                 return
             }
             if let representedText, representedText.isEqual(to: text) {
                 self.representedText = text
-                redrawStreamingText()
+                redrawActiveStreamingText(at: CACurrentMediaTime())
                 return
             }
 
             let selection = selectedRange
+            let previousText = representedText
             representedText = text
-            textStorage.setAttributedString(text)
+            if let previousText,
+                text.length >= previousText.length,
+                text.string.hasPrefix(previousText.string),
+                previousText.isEqual(
+                    to: text.attributedSubstring(
+                        from: NSRange(location: 0, length: previousText.length)
+                    ))
+            {
+                textStorage.append(
+                    text.attributedSubstring(
+                        from: NSRange(
+                            location: previousText.length,
+                            length: text.length - previousText.length
+                        ))
+                )
+            } else {
+                textStorage.setAttributedString(text)
+            }
             let location = min(selection.location, text.length)
             let length = min(selection.length, text.length - location)
             selectedRange = NSRange(location: location, length: length)
-            redrawStreamingText()
+            setNeedsDisplay()
         }
 
         public override func didMoveToWindow() {
@@ -337,7 +369,7 @@
 
         @objc private func animationFrame(_ displayLink: CADisplayLink) {
             streamingLayoutManager?.animationTime = displayLink.timestamp
-            redrawStreamingText()
+            redrawActiveStreamingText(at: displayLink.timestamp)
             if let latestAnimationEnd, displayLink.timestamp >= latestAnimationEnd {
                 stopAnimation()
             }
@@ -352,13 +384,26 @@
             layoutManager as? UIKitStreamingTextLayoutManager
         }
 
-        private func redrawStreamingText() {
-            if textStorage.length > 0 {
-                layoutManager.invalidateDisplay(
-                    forCharacterRange: NSRange(location: 0, length: textStorage.length)
+        private func redrawActiveStreamingText(at time: TimeInterval) {
+            for range in activeAnimationRanges where NSMaxRange(range) <= textStorage.length {
+                guard
+                    let fade = textStorage.attribute(
+                        .streamMarkdownFade,
+                        at: range.location,
+                        effectiveRange: nil
+                    ) as? StreamingTextFadeMetadata,
+                    fade.startTime + StreamingTextAnimationSpec.fadeDuration > time
+                else { continue }
+                layoutManager.invalidateDisplay(forCharacterRange: range)
+                let glyphs = layoutManager.glyphRange(
+                    forCharacterRange: range,
+                    actualCharacterRange: nil
                 )
+                var rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
+                rect.origin.x += textContainerInset.left
+                rect.origin.y += textContainerInset.top
+                setNeedsDisplay(rect.insetBy(dx: -2, dy: -2))
             }
-            setNeedsDisplay()
         }
     }
 

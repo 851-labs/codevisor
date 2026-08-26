@@ -15,6 +15,7 @@ struct TranscriptItemsView: View {
     let turnID: UUID
     let isTurnActive: Bool
     let animationPresentation: StreamingTextAnimationPresentation
+    let animationEnabled: Bool
     /// Nil for the main turn; a tool-call id for the subagent transcript
     /// bucket currently being rendered.
     var parentToolCallID: String? = nil
@@ -40,7 +41,8 @@ struct TranscriptItemsView: View {
                     isComplete: !isTurnActive,
                     foregroundColor: theme.textSecondary,
                     streamID: streamID(for: entryID),
-                    animationPresentation: animationPresentation
+                    animationPresentation: animationPresentation,
+                    animationEnabled: animationEnabled
                 )
             case let .toolGroup(group):
                 ToolGroupView(
@@ -69,6 +71,7 @@ struct TranscriptItemsView: View {
                         turnID: turnID,
                         isTurnActive: isTurnActive,
                         animationPresentation: animationPresentation,
+                        animationEnabled: animationEnabled,
                         depth: depth + 1
                     )
                 } else {
@@ -99,6 +102,7 @@ struct SubagentSectionView: View {
     let turnID: UUID
     let isTurnActive: Bool
     let animationPresentation: StreamingTextAnimationPresentation
+    let animationEnabled: Bool
     let depth: Int
     @Environment(\.theme) private var theme
     @Environment(\.transcriptDisclosure) private var disclosureStore
@@ -141,6 +145,7 @@ struct SubagentSectionView: View {
                         turnID: turnID,
                         isTurnActive: isTurnActive,
                         animationPresentation: animationPresentation,
+                        animationEnabled: animationEnabled,
                         parentToolCallID: call.toolCallId,
                         depth: depth
                     )
@@ -235,7 +240,8 @@ struct SubagentSectionView: View {
                 turn: turn,
                 turnID: UUID(),
                 isTurnActive: true,
-                animationPresentation: StreamingTextAnimationPresentation()
+                animationPresentation: StreamingTextAnimationPresentation(),
+                animationEnabled: true
             )
         }
         .padding()

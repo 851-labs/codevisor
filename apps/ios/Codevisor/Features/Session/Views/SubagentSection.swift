@@ -21,6 +21,7 @@ struct SubagentSection: View {
     let depth: Int
     let isTurnActive: Bool
     let animationPresentation: StreamingTextAnimationPresentation
+    let animationEnabled: Bool
 
     private var store: TranscriptDisclosureStore { disclosureStore ?? .previews }
     private var key: TranscriptDisclosureStore.Key { .subagent(call.toolCallId) }
@@ -69,6 +70,7 @@ struct SubagentSection: View {
                         depth: depth + 1,
                         isTurnActive: isTurnActive,
                         animationPresentation: animationPresentation,
+                        animationEnabled: animationEnabled,
                         parentToolCallID: call.toolCallId
                     )
                     if isRunning, transcript?.isThinking == true {

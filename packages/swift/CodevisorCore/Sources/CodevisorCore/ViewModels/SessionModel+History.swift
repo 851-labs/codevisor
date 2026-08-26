@@ -66,7 +66,6 @@ extension SessionModel {
             goal = page.goal
             isSending = lastTurnIsGenerating
             if isSending { noteProviderActivity(.modelStream) }
-            transcriptStreamBytes = TranscriptReducer.transcriptByteEstimate(of: conversation)
             serverEventCursor = page.eventCursor
             if defersPromptQueue {
                 await startConsumer()
@@ -205,7 +204,6 @@ extension SessionModel {
                 if isSending { noteProviderActivity(.modelStream) }
                 serverEventCursor = history.cursor ?? snapshot.eventCursor
             }
-            transcriptStreamBytes = TranscriptReducer.transcriptByteEstimate(of: conversation)
             await startConsumer()
             return .loaded
         } catch {
@@ -281,7 +279,6 @@ extension SessionModel {
             }
             settledConversation.insert(contentsOf: unique, at: 0)
             rebuildSettledIndex()
-            transcriptStreamBytes = TranscriptReducer.transcriptByteEstimate(of: conversation)
             olderHistoryCursor = page.nextBefore
             hasOlderHistory = page.hasMore
             return unique.count
@@ -350,6 +347,7 @@ extension SessionModel {
             turn.deferredDetailItemId = nil
             turn.hasDeferredWorkedDetails = false
             turn.detailRevision = originalMessage.turn.detailRevision
+            turn.hasHydratedWorkedDetails = true
             let hydrated = ConversationItem.assistant(AssistantMessage(id: originalMessage.id, turn: turn))
             switch location.storage {
             case let .settled(index): settledConversation[index] = hydrated

@@ -15,6 +15,7 @@ struct TurnItemsView: View {
     let depth: Int
     let isTurnActive: Bool
     let animationPresentation: StreamingTextAnimationPresentation
+    let animationEnabled: Bool
     var parentToolCallID: String? = nil
 
     private static let maxNestingDepth = 3
@@ -29,7 +30,8 @@ struct TurnItemsView: View {
                     isComplete: !isTurnActive,
                     foregroundColor: theme.textSecondary,
                     streamID: streamID(for: entryID),
-                    animationPresentation: animationPresentation
+                    animationPresentation: animationPresentation,
+                    animationEnabled: animationEnabled
                 )
             case let .toolGroup(group):
                 ToolGroupView(
@@ -49,7 +51,8 @@ struct TurnItemsView: View {
                         turnId: turnId,
                         depth: depth,
                         isTurnActive: isTurnActive,
-                        animationPresentation: animationPresentation
+                        animationPresentation: animationPresentation,
+                        animationEnabled: animationEnabled
                     )
                 } else {
                     ToolCallRow(call: call, isTurnActive: isTurnActive)

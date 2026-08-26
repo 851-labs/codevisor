@@ -348,6 +348,7 @@ extension SessionModelTests {
         })
         #expect(hasToolCall)
         #expect(message.turn.deferredDetailItemId == nil)
+        #expect(message.turn.hasHydratedWorkedDetails)
     }
 
     @Test("Replayed user events stamp attachments onto the optimistic echo and append remote ones")

@@ -3,7 +3,7 @@ import Observation
 import QuartzCore
 import SwiftUI
 
-/// The native transcription of ChatGPT's streamed-markdown entrance timing.
+/// Provider-neutral streamed-text presentation for native Markdown surfaces.
 ///
 /// Text is already present in the text storage and therefore participates in
 /// layout, selection, copying, and accessibility immediately. Only glyph
@@ -11,17 +11,118 @@ import SwiftUI
 /// transparent to opaque on this timeline.
 enum StreamingTextAnimationSpec {
     static let fadeDuration: TimeInterval = 0.150
-    static let segmentDelay: TimeInterval = 0.016
-    static let maximumRegularQueueDelay: TimeInterval = 0.096
-    static let catchUpMultiplier = 0.25
-    static let minimumCatchUpDelay: TimeInterval = 0.001
+    static let minimumTargetQueueLead: TimeInterval = 0.055
+    static let defaultTargetQueueLead: TimeInterval = 0.100
+    static let maximumTargetQueueLead: TimeInterval = 0.350
+    static let fastestSegmentDelay: TimeInterval = 0.008
+    static let minimumSlowestSegmentDelay: TimeInterval = 0.032
+    static let maximumSlowestSegmentDelay: TimeInterval = 0.120
+    static let minimumStartupQueueLead: TimeInterval = 0.020
+    static let maximumStartupQueueLead: TimeInterval = 0.100
+    static let minimumArrivalSampleGap: TimeInterval = 0.010
+    static let maximumArrivalSampleGap: TimeInterval = 0.900
+    static let initialChunkBaseLead: TimeInterval = 0.050
+    static let initialChunkCharacterLead: TimeInterval = 0.0008
+    static let maximumInitialChunkLead: TimeInterval = 0.150
+    static let gapSmoothingAlpha = 0.35
+    static let jitterSmoothingAlpha = 0.25
+    static let queueLeadRiseAlpha = 0.55
+    static let queueLeadFallAlpha = 0.12
+    static let jitterMultiplier = 1.5
     static let fadeCurveX1 = 0.37
     static let fadeCurveY1 = 0.55
     static let fadeCurveX2 = 0.86
     static let fadeCurveY2 = 0.88
 
-    static var catchUpDelay: TimeInterval {
-        max(minimumCatchUpDelay, segmentDelay * catchUpMultiplier)
+    static func clampedTargetQueueLead(_ lead: TimeInterval) -> TimeInterval {
+        min(maximumTargetQueueLead, max(minimumTargetQueueLead, lead))
+    }
+
+    /// Uses the shape of the first live update as a provider-neutral cold-start
+    /// estimate. Later source arrivals replace it with measured gap and jitter.
+    static func initialTargetQueueLead(forCharacterCount count: Int) -> TimeInterval {
+        clampedTargetQueueLead(
+            min(
+                maximumInitialChunkLead,
+                initialChunkBaseLead + Double(max(0, count)) * initialChunkCharacterLead
+            ))
+    }
+
+    static func startupQueueLead(forTargetQueueLead targetQueueLead: TimeInterval) -> TimeInterval {
+        min(
+            maximumStartupQueueLead,
+            max(minimumStartupQueueLead, targetQueueLead * 0.35)
+        )
+    }
+
+    static func slowestSegmentDelay(forTargetQueueLead targetQueueLead: TimeInterval) -> TimeInterval {
+        min(
+            maximumSlowestSegmentDelay,
+            max(minimumSlowestSegmentDelay, targetQueueLead * 0.45)
+        )
+    }
+
+    /// Chooses the delay after revealing one word-like range. Character
+    /// backlog, rather than provider/model identity, controls playback: a deep
+    /// queue accelerates and a thin queue preserves the measured jitter lead.
+    static func segmentDelay(
+        revealedCharacterCount: Int,
+        backlogCharacterCount: Int,
+        targetQueueLead: TimeInterval
+    ) -> TimeInterval {
+        guard backlogCharacterCount > 0 else { return fastestSegmentDelay }
+        let desired =
+            targetQueueLead
+            * Double(max(1, revealedCharacterCount))
+            / Double(backlogCharacterCount)
+        return min(
+            slowestSegmentDelay(forTargetQueueLead: targetQueueLead),
+            max(fastestSegmentDelay, desired)
+        )
+    }
+}
+
+/// One visible chat surface's animation lifecycle. A session can appear in
+/// several windows at once, so this scope belongs to the view, not the model.
+/// Each appearance creates a new generation after buffered events have been
+/// flushed; existing text settles in that generation before live animation
+/// resumes.
+@MainActor
+@Observable
+public final class StreamingTextAnimationVisibility {
+    private let presentationID = UUID()
+    public private(set) var generation = 0
+    public private(set) var isVisible: Bool
+
+    /// Uniquely identifies one appearance of one chat surface. Unlike the
+    /// numeric generation alone, this cannot collide across windows.
+    public var presentationKey: String {
+        "\(presentationID.uuidString):\(generation)"
+    }
+
+    public init(initiallyVisible: Bool = true) {
+        isVisible = initiallyVisible
+    }
+
+    public func appear() {
+        guard !isVisible else { return }
+        generation &+= 1
+        isVisible = true
+    }
+
+    public func disappear() {
+        isVisible = false
+    }
+}
+
+private struct StreamingTextAnimationVisibilityKey: EnvironmentKey {
+    static let defaultValue: StreamingTextAnimationVisibility? = nil
+}
+
+public extension EnvironmentValues {
+    var streamingTextAnimationVisibility: StreamingTextAnimationVisibility? {
+        get { self[StreamingTextAnimationVisibilityKey.self] }
+        set { self[StreamingTextAnimationVisibilityKey.self] = newValue }
     }
 }
 
@@ -37,6 +138,11 @@ enum StreamingTextAnimationSpec {
 public final class StreamingTextAnimationPresentation {
     private var presentedStreamIDs: Set<String>
     private var hasEstablishedBaseline: Bool
+    private var visibilityGeneration: Int?
+    private var settlementTokens: [String: Int] = [:]
+    private var settledRestorationIDs: Set<Int> = []
+    private var nextSettlementToken = 0
+    public private(set) var animationsEnabled = true
 
     public init() {
         presentedStreamIDs = []
@@ -63,6 +169,45 @@ public final class StreamingTextAnimationPresentation {
     /// its current contents instead of replaying their entrance animation.
     public func claimInitialAnimation(for streamID: String) -> Bool {
         presentedStreamIDs.insert(streamID).inserted
+    }
+
+    /// Applies one view-appearance boundary. Repeated body evaluations in the
+    /// same generation must not settle text that arrived live afterward.
+    public func updateVisibility(
+        generation: Int,
+        isVisible: Bool,
+        settling streamIDs: () -> [String]
+    ) {
+        animationsEnabled = isVisible
+        guard isVisible, visibilityGeneration != generation else { return }
+        visibilityGeneration = generation
+        settle(streamIDs())
+    }
+
+    /// Marks one asynchronous durable-history hydration as already presented.
+    /// The restoration id makes this idempotent while allowing later live
+    /// streams in the same turn to animate normally.
+    public func settleRestoredStreams(
+        _ streamIDs: () -> [String],
+        restorationID: Int
+    ) {
+        guard settledRestorationIDs.insert(restorationID).inserted else { return }
+        settle(streamIDs())
+    }
+
+    /// Changes whenever an already-mounted semantic stream must baseline its
+    /// current contents again, such as after navigation or history hydration.
+    public func settlementToken(for streamID: String) -> Int? {
+        settlementTokens[streamID]
+    }
+
+    private func settle(_ streamIDs: [String]) {
+        guard !streamIDs.isEmpty else { return }
+        nextSettlementToken &+= 1
+        for streamID in streamIDs {
+            presentedStreamIDs.insert(streamID)
+            settlementTokens[streamID] = nextSettlementToken
+        }
     }
 }
 
@@ -143,32 +288,145 @@ public final class StreamingContentAnimationCoordinator {
 /// one cadence instead of restarting the delay at every paragraph.
 @MainActor
 final class StreamingTextAnimationTimeline {
-    private var nextSegmentStartTime: TimeInterval = 0
+    private struct SourceObservation {
+        var text = ""
+        var lastArrivalTime: TimeInterval?
+    }
+
+    private var scheduledFades: [StreamingTextFadeMetadata] = []
     private var latestAnimationEndTime: TimeInterval?
+    private var smoothedArrivalGap: TimeInterval?
+    private var smoothedArrivalJitter: TimeInterval = 0
+    private var sourceObservations: [String: SourceObservation] = [:]
+    private(set) var targetQueueLead = StreamingTextAnimationSpec.defaultTargetQueueLead
     private var activityObserver: ((Bool) -> Void)?
     private var activityEndTask: Task<Void, Never>?
     private var reportedActive = false
     private var observerGeneration = 0
 
-    func scheduleSegment(at now: TimeInterval) -> TimeInterval {
-        let start = max(nextSegmentStartTime, now)
-        let queuedDelay = max(0, start - now)
-        let step =
-            queuedDelay < StreamingTextAnimationSpec.maximumRegularQueueDelay
-            ? StreamingTextAnimationSpec.segmentDelay
-            : StreamingTextAnimationSpec.catchUpDelay
-        nextSegmentStartTime = start + step
-        noteAnimation(until: start + StreamingTextAnimationSpec.fadeDuration, now: now)
-        return start
+    /// Enqueues one provider batch and rebalances only words that have not
+    /// started fading. The queue behaves like a small media jitter buffer: a
+    /// thin reserve slows down, backlog speeds up, and recent provider gaps
+    /// adjust the target lead. Started words never move, so cadence changes
+    /// cannot make opacity jump.
+    func scheduleSegments(
+        characterCounts: [Int],
+        at now: TimeInterval
+    ) -> [StreamingTextFadeMetadata] {
+        guard !characterCounts.isEmpty else { return [] }
+        discardExpired(at: now)
+        let additions = characterCounts.map { count in
+            StreamingTextFadeMetadata(
+                startTime: .infinity,
+                characterCount: max(1, count)
+            )
+        }
+        scheduledFades.append(contentsOf: additions)
+        rebalancePending(at: now)
+        return additions
+    }
+
+    /// Records one semantic source revision. Calls from multiple native
+    /// Markdown surfaces deduplicate by source id and full document text, so
+    /// renderer churn cannot masquerade as a provider arrival. Only append-only
+    /// live changes teach the generic gap/jitter estimator.
+    func observeSource(
+        _ text: String,
+        sourceID: String,
+        at now: TimeInterval
+    ) {
+        var observation = sourceObservations[sourceID] ?? SourceObservation()
+        guard observation.text != text else { return }
+
+        let isAppendOnly = text.hasPrefix(observation.text)
+        let deltaCharacterCount =
+            isAppendOnly
+            ? max(0, text.utf16.count - observation.text.utf16.count)
+            : 0
+        let previousArrivalTime = observation.lastArrivalTime
+        observation.text = text
+        observation.lastArrivalTime = isAppendOnly ? now : nil
+        sourceObservations[sourceID] = observation
+
+        guard isAppendOnly, deltaCharacterCount > 0 else { return }
+        guard let previousArrivalTime else {
+            targetQueueLead = StreamingTextAnimationSpec.initialTargetQueueLead(
+                forCharacterCount: deltaCharacterCount
+            )
+            rebalancePending(at: now)
+            return
+        }
+
+        let gap = now - previousArrivalTime
+        guard gap >= StreamingTextAnimationSpec.minimumArrivalSampleGap else { return }
+        guard gap <= StreamingTextAnimationSpec.maximumArrivalSampleGap else {
+            smoothedArrivalGap = nil
+            smoothedArrivalJitter = 0
+            targetQueueLead = StreamingTextAnimationSpec.initialTargetQueueLead(
+                forCharacterCount: deltaCharacterCount
+            )
+            rebalancePending(at: now)
+            return
+        }
+
+        let previousGap = smoothedArrivalGap
+        let nextGap: TimeInterval
+        if let previousGap {
+            nextGap =
+                previousGap
+                + StreamingTextAnimationSpec.gapSmoothingAlpha * (gap - previousGap)
+            let deviation = abs(gap - previousGap)
+            smoothedArrivalJitter +=
+                StreamingTextAnimationSpec.jitterSmoothingAlpha
+                * (deviation - smoothedArrivalJitter)
+        } else {
+            nextGap = gap
+            smoothedArrivalJitter = 0
+        }
+        smoothedArrivalGap = nextGap
+
+        let observedLead = StreamingTextAnimationSpec.clampedTargetQueueLead(
+            nextGap + StreamingTextAnimationSpec.jitterMultiplier * smoothedArrivalJitter
+        )
+        let alpha =
+            observedLead > targetQueueLead
+            ? StreamingTextAnimationSpec.queueLeadRiseAlpha
+            : StreamingTextAnimationSpec.queueLeadFallAlpha
+        targetQueueLead += alpha * (observedLead - targetQueueLead)
+        targetQueueLead = StreamingTextAnimationSpec.clampedTargetQueueLead(targetQueueLead)
+        rebalancePending(at: now)
+    }
+
+    /// Records already-presented text without treating a mount, navigation, or
+    /// Reduce Motion transition as a provider arrival sample.
+    func baselineSource(_ text: String, sourceID: String) {
+        sourceObservations[sourceID] = SourceObservation(
+            text: text,
+            lastArrivalTime: nil
+        )
     }
 
     /// Adds a whole native Markdown block to the same visual cadence as the
     /// streamed glyphs. Callers wait for the timeline to become idle before
     /// inserting the block, then wait again before mounting later content.
     func scheduleBlockEntrance(at now: TimeInterval = CACurrentMediaTime()) {
-        let start = max(nextSegmentStartTime, now)
-        nextSegmentStartTime = start + StreamingTextAnimationSpec.segmentDelay
-        noteAnimation(until: start + StreamingTextAnimationSpec.fadeDuration, now: now)
+        _ = scheduleSegments(characterCounts: [1], at: now)
+    }
+
+    /// Removes fades whose rendered words were replaced, finalized, or
+    /// baselined. Settling their metadata also makes any still-mounted native
+    /// surface show those glyphs immediately.
+    func discard(
+        _ metadata: [StreamingTextFadeMetadata],
+        at now: TimeInterval = CACurrentMediaTime()
+    ) {
+        guard !metadata.isEmpty else { return }
+        let identities = Set(metadata.map(ObjectIdentifier.init))
+        for fade in metadata {
+            fade.startTime = now - StreamingTextAnimationSpec.fadeDuration
+        }
+        scheduledFades.removeAll { identities.contains(ObjectIdentifier($0)) }
+        refreshActivity(at: now)
     }
 
     /// Suspends through the current animation tail. Newly scheduled work can
@@ -185,8 +443,16 @@ final class StreamingTextAnimationTimeline {
     }
 
     func reset() {
-        nextSegmentStartTime = 0
+        let now = CACurrentMediaTime()
+        for fade in scheduledFades {
+            fade.startTime = now - StreamingTextAnimationSpec.fadeDuration
+        }
+        scheduledFades = []
         latestAnimationEndTime = nil
+        smoothedArrivalGap = nil
+        smoothedArrivalJitter = 0
+        sourceObservations = [:]
+        targetQueueLead = StreamingTextAnimationSpec.defaultTargetQueueLead
         activityEndTask?.cancel()
         activityEndTask = nil
         reportActivity(false)
@@ -218,12 +484,69 @@ final class StreamingTextAnimationTimeline {
         latestAnimationEndTime.map { $0 > time } ?? false
     }
 
-    private func noteAnimation(until endTime: TimeInterval, now: TimeInterval) {
-        guard endTime > latestAnimationEndTime ?? -.infinity else { return }
-        latestAnimationEndTime = endTime
+    private func rebalancePending(at now: TimeInterval) {
+        let started = scheduledFades.filter { $0.startTime <= now }
+        let pending = scheduledFades.filter { $0.startTime > now }
+        guard !pending.isEmpty else {
+            refreshActivity(at: now)
+            return
+        }
+
+        let lastStarted = started.map(\.startTime).max()
+        let earliestPending = pending.lazy
+            .map(\.startTime)
+            .filter(\.isFinite)
+            .min()
+        let firstStart: TimeInterval
+        if let lastStarted {
+            firstStart = max(now, lastStarted + StreamingTextAnimationSpec.fastestSegmentDelay)
+        } else if let earliestPending {
+            // A second provider update can arrive during the initial reserve.
+            // Keep the original playback deadline instead of pushing it back
+            // on every pre-roll update.
+            firstStart = max(now, earliestPending)
+        } else {
+            firstStart =
+                now
+                + StreamingTextAnimationSpec.startupQueueLead(
+                    forTargetQueueLead: targetQueueLead
+                )
+        }
+        var start = firstStart
+        var backlogCharacterCount = pending.reduce(0) { $0 + $1.characterCount }
+        for fade in pending {
+            fade.startTime = start
+            start += StreamingTextAnimationSpec.segmentDelay(
+                revealedCharacterCount: fade.characterCount,
+                backlogCharacterCount: backlogCharacterCount,
+                targetQueueLead: targetQueueLead
+            )
+            backlogCharacterCount -= fade.characterCount
+        }
+        refreshActivity(at: now)
+    }
+
+    private func discardExpired(at now: TimeInterval) {
+        scheduledFades.removeAll {
+            $0.startTime + StreamingTextAnimationSpec.fadeDuration <= now
+        }
+    }
+
+    private func refreshActivity(at now: TimeInterval) {
+        discardExpired(at: now)
+        latestAnimationEndTime =
+            scheduledFades
+            .map { $0.startTime + StreamingTextAnimationSpec.fadeDuration }
+            .max()
         guard activityObserver != nil else { return }
-        reportActivity(true)
-        scheduleActivityEnd(at: endTime, now: now)
+        let active = latestAnimationEndTime.map { $0 > now } ?? false
+        reportActivity(active)
+        if active, let latestAnimationEndTime {
+            scheduleActivityEnd(at: latestAnimationEndTime, now: now)
+        } else {
+            activityEndTask?.cancel()
+            activityEndTask = nil
+        }
     }
 
     private func scheduleActivityEnd(at endTime: TimeInterval, now: TimeInterval) {
@@ -236,6 +559,8 @@ final class StreamingTextAnimationTimeline {
             if self.isAnimationActive(at: currentTime), let latestAnimationEndTime = self.latestAnimationEndTime {
                 self.scheduleActivityEnd(at: latestAnimationEndTime, now: currentTime)
             } else {
+                self.discardExpired(at: currentTime)
+                self.latestAnimationEndTime = nil
                 self.activityEndTask = nil
                 self.reportActivity(false)
             }
@@ -266,317 +591,3 @@ final class StreamingTextAnimationTimeline {
 
 /// Per-text-surface inputs. The timeline is message-wide while the identity
 /// and reconciler live with the native text view that owns a rendered block.
-struct StreamingTextAnimationContext {
-    let timeline: StreamingTextAnimationTimeline
-    let sourceID: String
-    /// The whole message source, not just this block. Markdown can reclassify
-    /// a growing tail (paragraph → list/table, incomplete emphasis → styled
-    /// text) even though the provider stream itself remains append-only.
-    let documentSource: String
-    let isStreaming: Bool
-    /// False for the first render of a semantic stream that predates the
-    /// mounted transcript presentation. That render seeds the reconciler with
-    /// already-visible words; subsequent appends use normal live animation.
-    let animatesInitialContent: Bool
-    let reduceMotion: Bool
-}
-
-/// Stored on attributed ranges and consumed only by the platform layout
-/// managers. NSObject identity keeps attributed-string copying cheap.
-final class StreamingTextFadeMetadata: NSObject, NSCopying {
-    let startTime: TimeInterval
-
-    init(startTime: TimeInterval) {
-        self.startTime = startTime
-    }
-
-    func copy(with _: NSZone? = nil) -> Any {
-        self
-    }
-
-    func opacity(at time: TimeInterval) -> CGFloat {
-        let linearProgress = (time - startTime) / StreamingTextAnimationSpec.fadeDuration
-        guard linearProgress > 0 else { return 0 }
-        guard linearProgress < 1 else { return 1 }
-        return CGFloat(StreamingTextFadeCurve.value(at: linearProgress))
-    }
-}
-
-extension NSAttributedString.Key {
-    static let streamMarkdownFade = NSAttributedString.Key(
-        "com.851labs.codevisor.streamMarkdownFade"
-    )
-}
-
-struct PreparedStreamingText {
-    let text: NSAttributedString
-    let latestAnimationEnd: TimeInterval?
-}
-
-/// Reconciles the rendered words owned by one native text surface. Existing
-/// word slots retain their original start time while an append-only provider
-/// stream grows, even if an incomplete Markdown construct changes how those
-/// same source bytes are parsed or styled.
-@MainActor
-final class StreamingTextAnimationState {
-    private struct Word {
-        let text: String
-        let startTime: TimeInterval
-    }
-
-    private var sourceID: String?
-    private var documentSource = ""
-    private var words: [Word] = []
-
-    func prepare(
-        _ base: NSAttributedString,
-        context: StreamingTextAnimationContext?,
-        now: TimeInterval = CACurrentMediaTime()
-    ) -> PreparedStreamingText {
-        guard let context, context.isStreaming else {
-            reset()
-            return PreparedStreamingText(text: base, latestAnimationEnd: nil)
-        }
-
-        if sourceID != context.sourceID {
-            reset()
-            sourceID = context.sourceID
-        }
-
-        let ranges = StreamingWordSegmenter.segments(in: base.string)
-        let sourceIsAppendOnly = context.documentSource.hasPrefix(documentSource)
-        let oldWords = words
-        var nextWords: [Word] = []
-        nextWords.reserveCapacity(ranges.count)
-
-        if !context.animatesInitialContent {
-            // Navigation/remount baseline: populate the same word ledger the
-            // live path uses, but put every current word safely in the past.
-            // When the mount switches to live mode, an unchanged prefix keeps
-            // these starts and only later appended words receive fresh ones.
-            let settledStart = now - StreamingTextAnimationSpec.fadeDuration
-            for range in ranges {
-                nextWords.append(Word(text: range.text, startTime: settledStart))
-            }
-            documentSource = context.documentSource
-            words = nextWords
-            return PreparedStreamingText(text: base, latestAnimationEnd: nil)
-        }
-
-        if context.reduceMotion {
-            // Existing and currently visible content becomes settled. If the
-            // user turns Reduce Motion back off mid-response, only genuinely
-            // new words animate.
-            for (index, range) in ranges.enumerated() {
-                let start =
-                    sourceIsAppendOnly && index < oldWords.count
-                    ? oldWords[index].startTime
-                    : now - StreamingTextAnimationSpec.fadeDuration
-                nextWords.append(Word(text: range.text, startTime: start))
-            }
-            documentSource = context.documentSource
-            words = nextWords
-            return PreparedStreamingText(text: base, latestAnimationEnd: nil)
-        }
-
-        for (index, range) in ranges.enumerated() {
-            let word: Word
-            if sourceIsAppendOnly, index < oldWords.count {
-                // Position is the stable identity for an append-only rendered
-                // block. This deliberately survives a growing final word and
-                // Markdown tail reinterpretation.
-                word = Word(text: range.text, startTime: oldWords[index].startTime)
-            } else {
-                word = Word(
-                    text: range.text,
-                    startTime: context.timeline.scheduleSegment(at: now)
-                )
-            }
-            nextWords.append(word)
-        }
-
-        let output = NSMutableAttributedString(attributedString: base)
-        var latestEnd: TimeInterval?
-        for (range, word) in zip(ranges, nextWords) {
-            let end = word.startTime + StreamingTextAnimationSpec.fadeDuration
-            guard end > now else { continue }
-            output.addAttribute(
-                .streamMarkdownFade,
-                value: StreamingTextFadeMetadata(startTime: word.startTime),
-                range: range.range
-            )
-            latestEnd = max(latestEnd ?? end, end)
-        }
-
-        documentSource = context.documentSource
-        words = nextWords
-        return PreparedStreamingText(text: output, latestAnimationEnd: latestEnd)
-    }
-
-    func reset() {
-        sourceID = nil
-        documentSource = ""
-        words = []
-    }
-}
-
-struct StreamingWordSegment: Equatable {
-    let range: NSRange
-    let text: String
-}
-
-/// Matches the desktop app's word-like segmentation contract:
-///
-/// - ASCII alphanumeric runs start segments.
-/// - Punctuation and whitespace attach to the preceding segment.
-/// - Non-ASCII strings use the platform Unicode word breaker, with every
-///   non-word gap attached to the preceding word.
-enum StreamingWordSegmenter {
-    static func segments(in text: String) -> [StreamingWordSegment] {
-        guard !text.isEmpty else { return [] }
-        if text.unicodeScalars.allSatisfy({ $0.value <= 0x7f }) {
-            return asciiSegments(in: text)
-        }
-        return unicodeSegments(in: text)
-    }
-
-    private static func asciiSegments(in text: String) -> [StreamingWordSegment] {
-        let units = Array(text.utf16)
-        var ranges: [NSRange] = []
-        var index = 0
-
-        while index < units.count {
-            if isASCIIWordUnit(units[index]) {
-                let start = index
-                repeat { index += 1 } while index < units.count && isASCIIWordUnit(units[index])
-                ranges.append(NSRange(location: start, length: index - start))
-            } else {
-                if ranges.isEmpty {
-                    ranges.append(NSRange(location: index, length: 1))
-                } else {
-                    ranges[ranges.count - 1].length += 1
-                }
-                index += 1
-            }
-        }
-
-        let string = text as NSString
-        return ranges.map { StreamingWordSegment(range: $0, text: string.substring(with: $0)) }
-    }
-
-    private static func unicodeSegments(in text: String) -> [StreamingWordSegment] {
-        var wordRanges: [Range<String.Index>] = []
-        text.enumerateSubstrings(
-            in: text.startIndex..<text.endIndex,
-            options: [.byWords, .substringNotRequired]
-        ) { _, range, _, _ in
-            wordRanges.append(range)
-        }
-
-        guard !wordRanges.isEmpty else {
-            return [
-                StreamingWordSegment(
-                    range: NSRange(text.startIndex..<text.endIndex, in: text),
-                    text: text
-                )
-            ]
-        }
-
-        var result: [StreamingWordSegment] = []
-        var cursor = text.startIndex
-
-        func appendGap(_ range: Range<String.Index>) {
-            guard !range.isEmpty else { return }
-            let gapRange = NSRange(range, in: text)
-            if result.isEmpty {
-                result.append(
-                    StreamingWordSegment(
-                        range: gapRange,
-                        text: String(text[range])
-                    )
-                )
-            } else {
-                let previous = result.removeLast()
-                let combined = NSRange(
-                    location: previous.range.location,
-                    length: NSMaxRange(gapRange) - previous.range.location
-                )
-                result.append(
-                    StreamingWordSegment(
-                        range: combined,
-                        text: (text as NSString).substring(with: combined)
-                    )
-                )
-            }
-        }
-
-        for range in wordRanges {
-            appendGap(cursor..<range.lowerBound)
-            result.append(
-                StreamingWordSegment(
-                    range: NSRange(range, in: text),
-                    text: String(text[range])
-                )
-            )
-            cursor = range.upperBound
-        }
-        appendGap(cursor..<text.endIndex)
-        return result
-    }
-
-    private static func isASCIIWordUnit(_ unit: UInt16) -> Bool {
-        (48...57).contains(unit) || (65...90).contains(unit) || (97...122).contains(unit)
-    }
-}
-
-/// CSS cubic-bezier(.37, .55, .86, .88), evaluated as y for a supplied time
-/// fraction x. Newton iteration handles the common case; bisection makes the
-/// result deterministic near flat tangents.
-enum StreamingTextFadeCurve {
-    private static let x1 = StreamingTextAnimationSpec.fadeCurveX1
-    private static let y1 = StreamingTextAnimationSpec.fadeCurveY1
-    private static let x2 = StreamingTextAnimationSpec.fadeCurveX2
-    private static let y2 = StreamingTextAnimationSpec.fadeCurveY2
-
-    static func value(at progress: Double) -> Double {
-        let progress = min(1, max(0, progress))
-        var parameter = progress
-
-        for _ in 0..<6 {
-            let error = sample(parameter, first: x1, second: x2) - progress
-            let slope = derivative(parameter, first: x1, second: x2)
-            guard abs(slope) > 1e-7 else { break }
-            parameter -= error / slope
-            parameter = min(1, max(0, parameter))
-        }
-
-        var lower = 0.0
-        var upper = 1.0
-        for _ in 0..<12 {
-            let sampled = sample(parameter, first: x1, second: x2)
-            if abs(sampled - progress) < 1e-7 { break }
-            if sampled < progress {
-                lower = parameter
-            } else {
-                upper = parameter
-            }
-            parameter = (lower + upper) / 2
-        }
-
-        return sample(parameter, first: y1, second: y2)
-    }
-
-    private static func sample(_ value: Double, first: Double, second: Double) -> Double {
-        let inverse = 1 - value
-        return 3 * inverse * inverse * value * first
-            + 3 * inverse * value * value * second
-            + value * value * value
-    }
-
-    private static func derivative(_ value: Double, first: Double, second: Double) -> Double {
-        let inverse = 1 - value
-        return 3 * inverse * inverse * first
-            + 6 * inverse * value * (second - first)
-            + 3 * value * value * (1 - second)
-    }
-}

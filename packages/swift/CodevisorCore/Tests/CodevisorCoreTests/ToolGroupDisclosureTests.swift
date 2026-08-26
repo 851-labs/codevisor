@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import CodevisorCore
 
@@ -120,5 +121,43 @@ struct ToolGroupDisclosureTests {
         )
         #expect(first === remounted)
         #expect(remounted.state == .expanded)
+    }
+
+    @Test("A Worked reveal animates only in the presentation that requested it")
+    @MainActor
+    func workedRevealIsPresentationScoped() {
+        let store = TranscriptDisclosureStore()
+        let key = TranscriptDisclosureStore.Key.turn(UUID())
+        store.requestReveal(key, presentationKey: "surface-a:4")
+        let generation = store.revealGeneration(for: key)
+
+        #expect(
+            store.hasUnclaimedReveal(
+                key,
+                generation: generation,
+                presentationKey: "surface-a:4"
+            )
+        )
+        #expect(
+            !store.hasUnclaimedReveal(
+                key,
+                generation: generation,
+                presentationKey: "surface-b:4"
+            )
+        )
+        #expect(
+            !store.claimReveal(
+                key,
+                generation: generation,
+                presentationKey: "surface-b:4"
+            )
+        )
+        #expect(
+            store.claimReveal(
+                key,
+                generation: generation,
+                presentationKey: "surface-a:4"
+            )
+        )
     }
 }

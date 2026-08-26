@@ -81,6 +81,9 @@ struct SessionTranscriptView: View {
     @State private var projectedSessionID: UUID?
     @State private var isPreparingTranscript = true
     @State private var ownsVisibleTranscriptLifecycle = false
+    @State private var textAnimationVisibility = StreamingTextAnimationVisibility(
+        initiallyVisible: false
+    )
     /// Window-space bounds of the live editor. UIKit uses this as the actual
     /// launch point for the optimistic user row instead of estimating from the
     /// transcript's bottom inset.
@@ -111,6 +114,7 @@ struct SessionTranscriptView: View {
                 historyLoadTask = nil
                 olderHistoryPresentation.cancel()
                 publishAttentionFocus(isForeground: false)
+                textAnimationVisibility.disappear()
                 if ownsVisibleTranscriptLifecycle {
                     ownsVisibleTranscriptLifecycle = false
                     controller.transcriptViewDidDisappear()
@@ -191,7 +195,9 @@ struct SessionTranscriptView: View {
         ownsVisibleTranscriptLifecycle = shouldOwnLifecycle
         if shouldOwnLifecycle {
             controller.transcriptViewDidAppear()
+            textAnimationVisibility.appear()
         } else {
+            textAnimationVisibility.disappear()
             controller.transcriptViewDidDisappear()
         }
     }
@@ -413,6 +419,10 @@ struct SessionTranscriptView: View {
                         .environment(\.attachmentImages, attachmentImages)
                         .environment(\.transcriptDisclosure, disclosure)
                         .environment(\.transcriptController, controller)
+                        .environment(
+                            \.streamingTextAnimationVisibility,
+                            textAnimationVisibility
+                        )
                         .environment(
                             \.runningSubagentToolCallIds,
                             controller.runningSubagentToolCallIds
