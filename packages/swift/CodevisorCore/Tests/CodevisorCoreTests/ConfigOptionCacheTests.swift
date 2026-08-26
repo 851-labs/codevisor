@@ -250,6 +250,45 @@ struct ConfigOptionCacheTests {
             configOptions: [option(model)]
         )
     }
+
+    private func harness(_ id: String, enabled: Bool) -> ServerHarness {
+        ServerHarness(
+            id: id,
+            name: id.capitalized,
+            symbolName: "sparkle",
+            source: "registry",
+            launchKind: "npx",
+            enabled: enabled,
+            readiness: ServerHarnessReadiness(state: "ready", detail: nil)
+        )
+    }
+
+    @Test("Revalidation splits usable capabilities from sign-in-pending, persisted per machine")
+    func signInPendingSplit() async throws {
+        let store = InMemoryStore()
+        let cache = ConfigOptionCache(store: store)
+        let usable = ServerHarnessCapability(
+            harness: harness("codex", enabled: true), configOptions: [option("gpt")])
+        let pending = ServerHarnessCapability(
+            harness: harness("claude-code", enabled: false), configOptions: [])
+        let merged = try await cache.revalidateCapabilities(
+            forServer: "remote-a", cwd: "/tmp", force: true, fetch: { [usable, pending] })
+        #expect(merged?.map(\.harness.id) == ["codex"])
+        #expect(cache.capabilities(forServer: "remote-a").map(\.harness.id) == ["codex"])
+        #expect(cache.signInRequired(forServer: "remote-a").map(\.id) == ["claude-code"])
+        // Machine-scoped and persisted, like everything else here.
+        #expect(cache.signInRequired(forServer: "remote-b").isEmpty)
+        let reopened = ConfigOptionCache(store: store)
+        #expect(reopened.signInRequired(forServer: "remote-a").map(\.id) == ["claude-code"])
+
+        // A machine that signs everything in clears its pending list.
+        let signedIn = ServerHarnessCapability(
+            harness: harness("claude-code", enabled: true), configOptions: [option("opus")])
+        _ = try await cache.revalidateCapabilities(
+            forServer: "remote-a", cwd: "/tmp", force: true, fetch: { [usable, signedIn] })
+        #expect(cache.signInRequired(forServer: "remote-a").isEmpty)
+        #expect(cache.capabilities(forServer: "remote-a").count == 2)
+    }
 }
 
 private actor CapabilityRefreshCounter {

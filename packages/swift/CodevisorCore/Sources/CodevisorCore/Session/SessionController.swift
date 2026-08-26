@@ -222,9 +222,6 @@ final public class SessionController {
     /// Keep these scoped to their harness so switching away and back does not
     /// discard that harness's model, thinking, or speed selection.
     var pendingConfigByHarness: [String: [String: String]] = [:] { didSet { draftDidChange() } }
-    /// Fleet-enabled harnesses on this draft's machine that are blocked on
-    /// sign-in — rendered by the picker as tappable "sign in required" rows.
-    public internal(set) var signInRequiredHarnesses: [ServerHarness] = []
     var pendingModeId: String? { didSet { draftDidChange() } }
     @ObservationIgnored public var onDraftChange: ((ComposerDraftStore.Draft) -> Void)?
     @ObservationIgnored var isRestoringDraft = false

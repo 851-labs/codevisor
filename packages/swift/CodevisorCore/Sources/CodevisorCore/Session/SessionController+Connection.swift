@@ -201,7 +201,6 @@ extension SessionController {
         // previous server's harnesses, models, and sign-in rows until the
         // live fetch lands.
         harnesses = []
-        signInRequiredHarnesses = []
         configOptionsByHarness = [:]
         modeStateByHarness = [:]
         supportsGoalsByHarness = [:]

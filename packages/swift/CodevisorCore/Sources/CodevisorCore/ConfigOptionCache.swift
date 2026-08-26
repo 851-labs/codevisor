@@ -5,7 +5,12 @@ import ACPKit
 /// effort, …) keyed by server and harness id. Enables a stale-while-revalidate flow: the
 /// composer shows the last-known options instantly, then background capability
 /// inspection refreshes them when the snapshot is stale.
+/// Observable: SwiftUI surfaces derive picker content (capabilities, the
+/// sign-in-pending list) straight from this cache, so any store on any
+/// machine re-renders every mounted consumer — no per-view revision
+/// watchers, no controller-held copies to go stale.
 @MainActor
+@Observable
 public final class ConfigOptionCache {
     private struct CapabilityRefreshKey: Hashable {
         let serverId: String
@@ -18,27 +23,30 @@ public final class ConfigOptionCache {
         let task: Task<[ServerHarnessCapability], any Error>
     }
 
-    private let store: any PersistenceStore
-    private let key: String
-    private let capabilitiesKey: String
+    @ObservationIgnored private let store: any PersistenceStore
+    @ObservationIgnored private let key: String
+    @ObservationIgnored private let capabilitiesKey: String
     private var cache: [String: [String: [SessionConfigOption]]]
     private var capabilitiesCache: [String: [ServerHarnessCapability]]
+    /// Fleet-enabled harnesses blocked on sign-in, per server — the
+    /// pickers' "sign in required" rows.
+    private var signInRequiredCache: [String: [ServerHarness]] = [:]
     /// In-memory generations prevent a capability request started before an
     /// authentication or catalog change from restoring the stale snapshot
     /// after invalidation. They do not need persistence: no request survives
     /// a process launch.
-    private var capabilityRevisions: [String: UInt64] = [:]
+    @ObservationIgnored private var capabilityRevisions: [String: UInt64] = [:]
     /// Capability inspection can launch a temporary CLI process. Share one
     /// request across every draft for the same machine/directory and keep a
     /// short in-memory freshness window so opening tabs is a cache read, not
     /// another process launch.
-    private var capabilityRefreshes: [CapabilityRefreshKey: CapabilityRefresh] = [:]
-    private var capabilityValidatedAt: [CapabilityRefreshKey: Date] = [:]
+    @ObservationIgnored private var capabilityRefreshes: [CapabilityRefreshKey: CapabilityRefresh] = [:]
+    @ObservationIgnored private var capabilityValidatedAt: [CapabilityRefreshKey: Date] = [:]
     private static let capabilityFreshnessInterval: TimeInterval = 5 * 60
     /// In-memory catalog-only seeds used to make the first composer render
     /// immediately. They are intentionally not persisted and may be replaced
     /// by the speculative onboarding warm.
-    private var provisionalCapabilityServers: Set<String> = []
+    @ObservationIgnored private var provisionalCapabilityServers: Set<String> = []
 
     public init(store: any PersistenceStore, key: String = "harness-config") {
         self.store = store
@@ -58,6 +66,11 @@ public final class ConfigOptionCache {
         } else {
             capabilitiesCache = [:]
         }
+        if let data = store.loadData(forKey: "\(key)-sign-in-required"),
+            let decoded = try? JSONDecoder().decode([String: [ServerHarness]].self, from: data)
+        {
+            signInRequiredCache = decoded
+        }
     }
 
     /// The cached options for a harness, or an empty list if none are cached.
@@ -73,6 +86,11 @@ public final class ConfigOptionCache {
 
     public func capabilities(forServer serverId: String) -> [ServerHarnessCapability] {
         capabilitiesCache[serverId] ?? []
+    }
+
+    /// Fleet-enabled harnesses on this server that are blocked on sign-in.
+    public func signInRequired(forServer serverId: String) -> [ServerHarness] {
+        signInRequiredCache[serverId] ?? []
     }
 
     /// Captures the current validity generation for an asynchronous
@@ -124,11 +142,20 @@ public final class ConfigOptionCache {
         }
 
         do {
-            let fetched = try await refresh.task.value
+            let response = try await refresh.task.value
             guard capabilityRevision(forServer: serverId) == refresh.revision else {
                 removeCapabilityRefresh(refresh, for: key)
                 return nil
             }
+            // The response carries BOTH the usable catalog and the
+            // fleet-enabled-but-unauthenticated harnesses (optionless
+            // entries); the split lives here so every consumer sees one
+            // truth.
+            let fetched = response.filter { $0.harness.enabled && $0.harness.isReady }
+            signInRequiredCache[serverId] =
+                response
+                .filter { !$0.harness.enabled && $0.harness.isReady }
+                .map(\.harness)
             let merged = preservingUsablePickerData(in: fetched, forServer: serverId)
             store(merged, forServer: serverId)
             // The persisted snapshot is server-wide. A project-specific
@@ -272,6 +299,7 @@ public final class ConfigOptionCache {
         capabilityValidatedAt = [:]
         cache = [:]
         capabilitiesCache = [:]
+        signInRequiredCache = [:]
         provisionalCapabilityServers = []
         persist()
     }
@@ -310,6 +338,8 @@ public final class ConfigOptionCache {
             Log.persistence.error(
                 "Failed to save \(self.key, privacy: .public): \(String(describing: error), privacy: .public)")
         }
+        try? store.saveData(
+            JSONEncoder().encode(signInRequiredCache), forKey: "\(key)-sign-in-required")
         do {
             try store.saveData(JSONEncoder().encode(capabilitiesCache), forKey: capabilitiesKey)
         } catch {

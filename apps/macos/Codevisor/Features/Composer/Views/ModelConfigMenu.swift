@@ -37,7 +37,8 @@ struct ModelConfigMenu: View {
                 .help("Loading model settings")
                 .accessibilityLabel("Loading model settings")
         } else if !modelGroups.isEmpty || controller.hasModelMenu || !settingsOptions.isEmpty
-            || !controller.signInRequiredHarnesses.isEmpty
+            || !environment.configCache.signInRequired(forServer: controller.project.serverId)
+                .isEmpty
         {
             Button {
                 isPresented.toggle()
@@ -111,7 +112,8 @@ private extension ModelConfigMenu {
                         // picker for harnesses the user never signs into.
                         if showsPendingSignInRows {
                             SignInRequiredRows(
-                                harnesses: controller.signInRequiredHarnesses
+                                harnesses: environment.configCache.signInRequired(
+                                    forServer: controller.project.serverId)
                             ) { harness in
                                 isPresented = false
                                 onSignIn?(harness)
@@ -141,7 +143,8 @@ private extension ModelConfigMenu {
     }
 
     private var showsPendingSignInRows: Bool {
-        !controller.signInRequiredHarnesses.isEmpty && modelSearch.isEmpty
+        !environment.configCache.signInRequired(forServer: controller.project.serverId).isEmpty
+            && modelSearch.isEmpty
     }
 
     private func showHarnessSettings() {
@@ -370,14 +373,17 @@ private extension ModelConfigMenu {
     private var modelGroups: [HarnessGroup] {
         let serverId = controller.project.serverId
         if controller.canChooseHarness {
-            let capabilities = environment.configCache.capabilities(forServer: serverId)
-            return controller.harnesses.compactMap { harness in
+            // Derived straight from the per-machine cache: the list is
+            // server-correct by construction and re-renders on any store,
+            // with no controller-held copy to go stale across a machine
+            // switch.
+            return environment.configCache.capabilities(forServer: serverId).compactMap {
+                capability in
+                let harness = capability.harness
                 let options: [SessionConfigOption]
                 if harness.id == controller.activeHarnessId {
                     options = controller.configOptions
-                } else if let capability = capabilities.first(where: {
-                    $0.harness.id == harness.id
-                }) {
+                } else if !capability.configOptions.isEmpty {
                     options = capability.configOptions
                 } else {
                     options = environment.configCache.options(

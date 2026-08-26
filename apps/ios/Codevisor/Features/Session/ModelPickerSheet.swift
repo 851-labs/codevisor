@@ -36,12 +36,14 @@ struct ModelPickerSheet: View {
     private var groups: [HarnessGroup] {
         let serverId = controller.project.serverId
         if controller.canChooseHarness {
-            let capabilities = environment.configCache.capabilities(forServer: serverId)
-            return controller.harnesses.compactMap { harness in
+            // Derived straight from the per-machine cache — server-correct by
+            // construction; see ModelConfigMenu on macOS.
+            return environment.configCache.capabilities(forServer: serverId).compactMap { capability in
+                let harness = capability.harness
                 let options: [SessionConfigOption]
                 if harness.id == controller.activeHarnessId {
                     options = controller.configOptions
-                } else if let capability = capabilities.first(where: { $0.harness.id == harness.id }) {
+                } else if !capability.configOptions.isEmpty {
                     options = capability.configOptions
                 } else {
                     options = environment.configCache.options(forHarness: harness.id, onServer: serverId)

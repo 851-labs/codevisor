@@ -54,7 +54,6 @@ struct DefaultModelSelectionTests {
                 options: [SessionConfigSelectOption(value: "old", name: "Old Machine Model")]
             )
         ]
-        controller.signInRequiredHarnesses = controller.harnesses
 
         var other = Project.fromFolder(URL(fileURLWithPath: "/tmp/elsewhere"))
         other.serverId = "another-machine"
@@ -66,7 +65,6 @@ struct DefaultModelSelectionTests {
         // OLD machine's catalog is gone rather than rendering as the new
         // machine's.
         #expect(controller.harnesses.isEmpty)
-        #expect(controller.signInRequiredHarnesses.isEmpty)
         #expect(controller.configOptionsByHarness.isEmpty)
         #expect(controller.modelOption == nil)
     }
