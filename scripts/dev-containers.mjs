@@ -16,7 +16,8 @@ import { EventEmitter } from "node:events"
 import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
 import { pathExists } from "./dev-shared.mjs"
-export { syncLinuxWorkspace } from "./dev-container-workspace.mjs"
+import { syncLinuxWorkspace } from "./dev-container-workspace.mjs"
+export { syncLinuxWorkspace }
 
 const execEngine = (binary, args, options = {}) =>
   new Promise((resolve, reject) => {
