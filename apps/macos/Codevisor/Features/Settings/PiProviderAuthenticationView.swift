@@ -115,7 +115,12 @@ struct PiProviderAuthenticationView: View {
             }
             .formStyle(.grouped)
         }
-        .frame(minWidth: 540, idealWidth: 540, maxWidth: 540, minHeight: 430)
+        .frame(
+            minWidth: showsHeader ? 540 : nil,
+            idealWidth: showsHeader ? 540 : nil,
+            maxWidth: showsHeader ? 540 : .infinity,
+            minHeight: showsHeader ? 430 : nil
+        )
         .task { await load() }
         .onDisappear {
             guard let flow, flow.state != "complete", flow.state != "error" else { return }

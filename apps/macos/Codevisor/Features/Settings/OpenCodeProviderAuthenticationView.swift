@@ -77,7 +77,12 @@ struct OpenCodeProviderAuthenticationView: View {
             }
             .navigationSplitViewStyle(.balanced)
         }
-        .frame(minWidth: 720, idealWidth: 760, minHeight: 500, idealHeight: 540)
+        .frame(
+            minWidth: showsHeader ? 720 : nil,
+            idealWidth: showsHeader ? 760 : nil,
+            minHeight: showsHeader ? 500 : nil,
+            idealHeight: showsHeader ? 540 : nil
+        )
         .task { await loadAccounts() }
         .task(id: selectedAccountId) {
             guard let accountId = selectedAccountId else {
@@ -292,6 +297,89 @@ struct OpenCodeProviderAuthenticationView: View {
         .padding(.vertical, 3)
     }
 
+    private var selectedAccount: ServerHarnessAccount? {
+        accounts.first { $0.id == selectedAccountId }
+    }
+
+    private var configuredProviders: [ServerOpenCodeAuthProvider] {
+        providers.filter { $0.credentialType != nil }
+    }
+
+    private var selectedProvider: ServerOpenCodeAuthProvider? {
+        guard providerAccountId == selectedAccountId else { return nil }
+        return providers.first { $0.id == selectedProviderId }
+    }
+
+    private var isProviderContentLoading: Bool {
+        guard let selectedAccountId else { return false }
+        return isLoadingProviders || providerAccountId != selectedAccountId
+    }
+
+    private var selectedConfiguredProvider: ServerOpenCodeAuthProvider? {
+        guard let provider = selectedProvider, provider.credentialType != nil else { return nil }
+        return provider
+    }
+
+    private var selectedMethod: ServerOpenCodeAuthMethod? {
+        selectedProvider?.methods.first { $0.id == selectedMethodId }
+    }
+
+    private var filteredProviders: [ServerOpenCodeAuthProvider] {
+        let query = providerSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return providers }
+        return providers.filter { $0.name.localizedStandardContains(query) }
+    }
+
+    private var errorIsPresented: Binding<Bool> {
+        Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )
+    }
+
+    private func visiblePrompts(_ method: ServerOpenCodeAuthMethod) -> [ServerOpenCodeAuthPrompt] {
+        method.prompts.filter { prompt in
+            guard let condition = prompt.when else { return true }
+            guard let actual = inputs[condition.key] else { return false }
+            return condition.op == "eq" ? actual == condition.value : actual != condition.value
+        }
+    }
+
+    private func inputBinding(_ key: String) -> Binding<String> {
+        Binding(
+            get: { inputs[key] ?? "" },
+            set: { inputs[key] = $0 }
+        )
+    }
+
+    private func canSubmit(_ method: ServerOpenCodeAuthMethod) -> Bool {
+        if method.type == "api" && apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return false
+        }
+        return visiblePrompts(method).allSatisfy { prompt in
+            !(inputs[prompt.key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+
+    private func selectDefaultMethod() {
+        selectedMethodId = selectedProvider?.methods.first?.id ?? ""
+        resetInput()
+    }
+
+    private func resetInput() {
+        inputs = [:]
+        apiKey = ""
+        if let method = selectedMethod {
+            for prompt in method.prompts where prompt.type == "select" {
+                inputs[prompt.key] = prompt.options.first?.value ?? ""
+            }
+        }
+    }
+}
+
+// MARK: - Provider sign-in sheet
+
+extension OpenCodeProviderAuthenticationView {
     private var providerSignInSheet: some View {
         VStack(spacing: 0) {
             HStack {
@@ -423,85 +511,6 @@ struct OpenCodeProviderAuthenticationView: View {
                 ProgressView().controlSize(.small)
                 Text("Waiting for sign-in…")
                     .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private var selectedAccount: ServerHarnessAccount? {
-        accounts.first { $0.id == selectedAccountId }
-    }
-
-    private var configuredProviders: [ServerOpenCodeAuthProvider] {
-        providers.filter { $0.credentialType != nil }
-    }
-
-    private var selectedProvider: ServerOpenCodeAuthProvider? {
-        guard providerAccountId == selectedAccountId else { return nil }
-        return providers.first { $0.id == selectedProviderId }
-    }
-
-    private var isProviderContentLoading: Bool {
-        guard let selectedAccountId else { return false }
-        return isLoadingProviders || providerAccountId != selectedAccountId
-    }
-
-    private var selectedConfiguredProvider: ServerOpenCodeAuthProvider? {
-        guard let provider = selectedProvider, provider.credentialType != nil else { return nil }
-        return provider
-    }
-
-    private var selectedMethod: ServerOpenCodeAuthMethod? {
-        selectedProvider?.methods.first { $0.id == selectedMethodId }
-    }
-
-    private var filteredProviders: [ServerOpenCodeAuthProvider] {
-        let query = providerSearch.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return providers }
-        return providers.filter { $0.name.localizedStandardContains(query) }
-    }
-
-    private var errorIsPresented: Binding<Bool> {
-        Binding(
-            get: { errorMessage != nil },
-            set: { if !$0 { errorMessage = nil } }
-        )
-    }
-
-    private func visiblePrompts(_ method: ServerOpenCodeAuthMethod) -> [ServerOpenCodeAuthPrompt] {
-        method.prompts.filter { prompt in
-            guard let condition = prompt.when else { return true }
-            guard let actual = inputs[condition.key] else { return false }
-            return condition.op == "eq" ? actual == condition.value : actual != condition.value
-        }
-    }
-
-    private func inputBinding(_ key: String) -> Binding<String> {
-        Binding(
-            get: { inputs[key] ?? "" },
-            set: { inputs[key] = $0 }
-        )
-    }
-
-    private func canSubmit(_ method: ServerOpenCodeAuthMethod) -> Bool {
-        if method.type == "api" && apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return false
-        }
-        return visiblePrompts(method).allSatisfy { prompt in
-            !(inputs[prompt.key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }
-    }
-
-    private func selectDefaultMethod() {
-        selectedMethodId = selectedProvider?.methods.first?.id ?? ""
-        resetInput()
-    }
-
-    private func resetInput() {
-        inputs = [:]
-        apiKey = ""
-        if let method = selectedMethod {
-            for prompt in method.prompts where prompt.type == "select" {
-                inputs[prompt.key] = prompt.options.first?.value ?? ""
             }
         }
     }

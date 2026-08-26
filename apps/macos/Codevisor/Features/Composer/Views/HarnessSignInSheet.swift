@@ -33,7 +33,7 @@ struct HarnessSignInSheet: View {
             Divider()
             content
         }
-        .frame(minWidth: 480, idealWidth: 520, minHeight: 380, idealHeight: 440)
+        .frame(minWidth: 520, idealWidth: 560, minHeight: 420, idealHeight: 500)
         .environment(\.settingsMachineId, serverId)
         .task {
             guard harness == nil else { return }

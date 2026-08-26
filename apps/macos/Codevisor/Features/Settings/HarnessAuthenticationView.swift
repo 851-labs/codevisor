@@ -37,6 +37,9 @@ struct HarnessAuthenticationView: View {
     @State private var apiKeyMethod: ServerHarnessAuthMethod?
     @State private var apiKey = ""
     @State private var authTerminalLifecycle = AuthTerminalLifecycle()
+    /// The machine the login PTY lives on, with a DIALABLE baseURL: cloud
+    /// machines resolve (and lazily start) their loopback bridge first.
+    @State private var terminalMachine: CodevisorMachine?
 
     @ViewBuilder
     var body: some View {
@@ -72,16 +75,27 @@ struct HarnessAuthenticationView: View {
             if let flow, flow.kind == "terminal", let terminalKey = flow.terminalAttachKey {
                 VStack(alignment: .leading, spacing: 10) {
                     Text(terminalTitle).font(.headline)
-                    AuthTerminalView(
-                        terminalKey: terminalKey,
-                        machine: environment.machines.selectedMachine,
-                        lifecycle: authTerminalLifecycle
-                    )
-                    .frame(minHeight: 280)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    if let terminalMachine {
+                        AuthTerminalView(
+                            terminalKey: terminalKey,
+                            // The SCOPED machine, never the app selection:
+                            // the login PTY lives on the machine this view
+                            // was opened for, and a proxy pointed elsewhere
+                            // retries HTTP 500s forever against a server
+                            // that has no such terminal.
+                            machine: terminalMachine,
+                            lifecycle: authTerminalLifecycle
+                        )
+                        .frame(minHeight: 280)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    } else {
+                        ProgressView()
+                            .frame(maxWidth: .infinity, minHeight: 280)
+                    }
                     authProgress
                 }
                 .padding(20)
+                .task(id: flow.id) { await resolveTerminalMachine() }
             } else {
                 Form {
                     if let errorMessage {
@@ -148,7 +162,15 @@ struct HarnessAuthenticationView: View {
                 .formStyle(.grouped)
             }
         }
-        .frame(minWidth: 520, idealWidth: 520, maxWidth: 520, minHeight: 390)
+        // Standalone (settings/onboarding) sizes itself; hosted in the
+        // composer sheet the SHEET owns the frame — a fixed inner width
+        // wider than the sheet clips the content's own padding off-screen.
+        .frame(
+            minWidth: showsHeader ? 520 : nil,
+            idealWidth: showsHeader ? 520 : nil,
+            maxWidth: showsHeader ? 520 : .infinity,
+            minHeight: showsHeader ? 390 : nil
+        )
         .task { await load() }
         .onDisappear {
             guard let flow else { return }
@@ -392,6 +414,19 @@ struct HarnessAuthenticationView: View {
             accountId: current.accountId,
             flowId: current.id
         )
+    }
+
+    /// The proxy dials a real socket, so a cloud machine must answer with
+    /// its loopback-bridge address (started lazily here) instead of the
+    /// relay placeholder.
+    private func resolveTerminalMachine() async {
+        var machine =
+            environment.machines.machine(for: scopedServerId)
+            ?? environment.machines.selectedMachine
+        if let url = await environment.machines.effectiveHTTPBaseURL(forMachineId: scopedServerId) {
+            machine.baseURL = url
+        }
+        terminalMachine = machine
     }
 
     private func refreshHarness() async {
