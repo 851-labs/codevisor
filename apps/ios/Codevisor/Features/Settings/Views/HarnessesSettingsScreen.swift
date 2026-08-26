@@ -9,10 +9,16 @@ import os
 // MARK: - Harnesses
 
 struct HarnessesSettingsScreen: View {
-    let client: any CodevisorServerClienting
+    @Environment(AppEnvironment.self) private var environment
+    @State var serverId: String
     @State private var harnesses: [ServerHarness] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
+    @State private var signInRequest: HarnessSignInRequest?
+
+    private var client: any CodevisorServerClienting {
+        environment.machines.client(for: serverId)
+    }
 
     private var installed: [ServerHarness] {
         harnesses.filter { $0.readiness.state != "notInstalled" }
@@ -24,6 +30,17 @@ struct HarnessesSettingsScreen: View {
 
     var body: some View {
         List {
+            // The pane serves the whole fleet: pick whose install/sign-in
+            // state to manage (hidden for single-machine setups).
+            if environment.machines.allMachines.count > 1 {
+                Section {
+                    Picker("Machine", selection: $serverId) {
+                        ForEach(environment.machines.allMachines) { machine in
+                            Text(machine.name).tag(machine.id)
+                        }
+                    }
+                }
+            }
             if isLoading {
                 HStack {
                     Spacer(); ProgressView(); Spacer()
@@ -64,17 +81,28 @@ struct HarnessesSettingsScreen: View {
                 .accessibilityLabel("Refresh harnesses")
             }
         }
-        .task { await load() }
+        .task(id: serverId) {
+            isLoading = true
+            await load()
+        }
+        .harnessSignInSheet(request: $signInRequest)
     }
 
     private func harnessRow(_ harness: ServerHarness) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(harness.name)
-                if let auth = harness.auth, auth.state != "authenticated" {
-                    Text("Sign in on your machine to use")
-                        .font(.footnote)
-                        .foregroundStyle(.orange)
+                if let auth = harness.auth,
+                    auth.state != "authenticated", auth.state != "notRequired"
+                {
+                    Button("Sign in to use") {
+                        signInRequest = HarnessSignInRequest(
+                            serverId: serverId,
+                            harnessId: harness.id,
+                            initialHarness: harness
+                        )
+                    }
+                    .font(.footnote)
                 }
             }
             Spacer()

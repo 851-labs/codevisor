@@ -59,8 +59,7 @@ struct SettingsSheet: View {
                 }
                 Section {
                     NavigationLink {
-                        HarnessesSettingsScreen(
-                            client: machines.client(for: machines.selectedMachineId))
+                        HarnessesSettingsScreen(serverId: machines.selectedMachineId)
                     } label: {
                         Label("Agents", systemImage: "cpu")
                     }

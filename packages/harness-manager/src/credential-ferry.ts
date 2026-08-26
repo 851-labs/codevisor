@@ -20,6 +20,17 @@ import { openCodeAuthPath } from "./opencode-auth.js"
 ///              `tokens` family (API-key logins); a machine with a live
 ///              ChatGPT login neither publishes nor lets ferried content
 ///              clobber it.
+/// - devin:     credentials.toml verbatim — a static API key plus static
+///              endpoint URLs, no token family at all.
+///
+/// Recon'd and deliberately NOT ferried (Phase 21 close-out):
+/// - grok-build: ~/.grok/auth.json is an OIDC session (refresh_token +
+///              expires_at) — rotating, single-owner, relayed re-auth only.
+/// - github-copilot-cli: no standalone credential file (auth rides GitHub's
+///              keyring/session store); nothing honestly static to ferry.
+/// - gemini / qwen-code: browser OAuth session stores; rotating families,
+///              relayed re-auth only.
+/// - kilo:      no sign-in required; nothing to ferry.
 export interface CredentialSource {
   readonly id: string
   /// Canonical static content, or undefined when there is nothing to
@@ -165,9 +176,44 @@ export const credentialFerrySources = (
     }
   }
 
+  const devinPath = async (): Promise<string> => {
+    const env = await config.resolveEnv()
+    const dataHome = env.XDG_DATA_HOME?.trim()
+    const base = dataHome ? dataHome : join(env.HOME ?? homedir(), ".local", "share")
+    return join(base, "devin", "credentials.toml")
+  }
+
+  // Devin's credentials.toml is a static API key plus fixed endpoint URLs —
+  // no token family, so the file travels verbatim (TOML, not JSON, hence a
+  // raw-text source rather than a merge class).
+  const devin: CredentialSource = {
+    id: "devin-credentials-file",
+    tombstoneOnAbsence: true,
+    read: async () => {
+      try {
+        return await readFile(await devinPath(), "utf8")
+      } catch (cause) {
+        if ((cause as NodeJS.ErrnoException).code === "ENOENT") return undefined
+        throw cause
+      }
+    },
+    apply: async (content) => {
+      const path = await devinPath()
+      await mkdir(dirname(path), { recursive: true, mode: 0o700 })
+      const temporary = `${path}.codevisor-${process.pid}.tmp`
+      await writeFile(temporary, content, { encoding: "utf8", mode: 0o600 })
+      await rename(temporary, path)
+      await chmod(path, 0o600)
+    },
+    applyDelete: async () => {
+      await rm(await devinPath(), { force: true })
+    }
+  }
+
   return [
     mergeClassSource("pi-auth", piPath, (type) => type === "api_key"),
     mergeClassSource("opencode-auth", openCodePath, (type) => type !== "oauth"),
-    codex
+    codex,
+    devin
   ]
 }

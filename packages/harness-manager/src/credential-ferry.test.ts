@@ -108,6 +108,66 @@ describe("codex source", () => {
   })
 })
 
+describe("devin source", () => {
+  it("ferries the credentials file verbatim and tombstones on absence", async () => {
+    const { home, byId } = await makeSources()
+    const source = byId["devin-credentials-file"]!
+    expect(source.tombstoneOnAbsence).toBe(true)
+    expect(await source.read()).toBeUndefined()
+
+    const path = join(home, ".local", "share", "devin", "credentials.toml")
+    await mkdir(join(home, ".local", "share", "devin"), { recursive: true })
+    const content = 'windsurf_api_key = "wk-static"\napi_server_url = "https://api.devin.ai"\n'
+    await writeFile(path, content)
+    expect(await source.read()).toBe(content)
+
+    // Verbatim apply onto a fresh machine, locked down to owner-only.
+    const { home: other, byId: otherById } = await makeSources()
+    const target = otherById["devin-credentials-file"]!
+    await target.apply(content)
+    const applied = join(other, ".local", "share", "devin", "credentials.toml")
+    expect(await readFile(applied, "utf8")).toBe(content)
+    expect(((await stat(applied)).mode & 0o777).toString(8)).toBe("600")
+
+    // A fleet sign-out removes the file.
+    await target.applyDelete!()
+    await expect(readFile(applied, "utf8")).rejects.toMatchObject({ code: "ENOENT" })
+    await target.applyDelete!()
+  })
+
+  it("honors HOME fallback when XDG_DATA_HOME is unset and surfaces read errors", async () => {
+    const home = await mkdtemp(join(tmpdir(), "codevisor-ferry-"))
+    roots.push(home)
+    const sources = credentialFerrySources({
+      resolveEnv: () => Promise.resolve({ HOME: home })
+    })
+    const source = sources.find((candidate) => candidate.id === "devin-credentials-file")!
+    await source.apply('windsurf_api_key = "wk"\n')
+    expect(
+      await readFile(join(home, ".local", "share", "devin", "credentials.toml"), "utf8")
+    ).toContain("wk")
+
+    // A directory where the file should be is an error, never "absent".
+    const broken = await mkdtemp(join(tmpdir(), "codevisor-ferry-"))
+    roots.push(broken)
+    await mkdir(join(broken, ".local", "share", "devin", "credentials.toml"), {
+      recursive: true
+    })
+    const brokenSource = credentialFerrySources({
+      resolveEnv: () => Promise.resolve({ HOME: broken })
+    }).find((candidate) => candidate.id === "devin-credentials-file")!
+    await expect(brokenSource.read()).rejects.toThrow()
+
+    // A bare environment falls back to the process home; the read itself
+    // must be well-formed either way (present file or none).
+    const bare = credentialFerrySources({ resolveEnv: () => Promise.resolve({}) }).find(
+      (candidate) => candidate.id === "devin-credentials-file"
+    )!
+    const bareRead = await bare.read()
+    expect(bareRead === undefined || typeof bareRead === "string").toBe(true)
+  })
+})
+
 describe("hostile files and path variants", () => {
   it("rejects non-object files, surfaces read errors, and honors dir overrides", async () => {
     const home = await mkdtemp(join(tmpdir(), "codevisor-ferry-h-"))
