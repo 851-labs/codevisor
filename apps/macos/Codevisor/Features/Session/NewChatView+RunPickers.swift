@@ -61,10 +61,7 @@ extension NewChatView {
                         MenuSymbolIcon(systemName: EntitySystemSymbol.machine(machine))
                     }
                 }
-                .disabled(
-                    machine.id != selectedServerId
-                        && !pickerProjects.contains { $0.serverId == machine.id }
-                )
+
             }
         } label: {
             PickerChip(text: selectedMachine?.name ?? "Machine") {
@@ -113,7 +110,7 @@ extension NewChatView {
             }
             Divider()
             Button {
-                addProjectFlow.begin()
+                addProjectFlow.begin(serverId: controller.project.serverId)
             } label: {
                 Label {
                     Text("New project…")
@@ -204,7 +201,12 @@ extension NewChatView {
         let scoped = pickerProjects.filter { $0.serverId == machine.id }
         let remembered = environment.composerDefaults.lastProjectId(forServer: machine.id)
         guard let project = scoped.first(where: { $0.id == remembered }) ?? scoped.first
-        else { return }
+        else {
+            // An empty machine is never disabled (fleet parity with iOS):
+            // picking it goes straight to adding its first project.
+            addProjectFlow.begin(serverId: machine.id)
+            return
+        }
         selectTargetProject(project, controller: controller)
     }
 

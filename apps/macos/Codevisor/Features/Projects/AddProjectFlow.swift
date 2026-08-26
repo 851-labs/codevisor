@@ -14,8 +14,13 @@ final class AddProjectFlow {
     var showingLocalImporter = false
     var showingRemoteBrowser = false
     var showingGitClone = false
+    /// The machine the project lands on. nil follows the selected machine
+    /// (sidebar, onboarding); pickers that name a machine pass it so an
+    /// empty fleet machine can get its first project.
+    var serverId: String?
 
-    func begin() {
+    func begin(serverId: String? = nil) {
+        self.serverId = serverId
         showingSourcePicker = true
     }
 }
@@ -44,7 +49,7 @@ private struct AddProjectFlowModifier: ViewModifier {
                     flow.showingGitClone = true
                 }
                 Button(folderButtonTitle) {
-                    if environment.machines.selectedMachine.isLocal {
+                    if isLocalTarget {
                         flow.showingLocalImporter = true
                     } else {
                         flow.showingRemoteBrowser = true
@@ -58,12 +63,28 @@ private struct AddProjectFlowModifier: ViewModifier {
                 allowedContentTypes: [.folder]
             ) { result in
                 if case let .success(url) = result {
-                    onAdded(environment.projectList.addProject(folderURL: url))
+                    let serverId = targetServerId
+                    let client = client
+                    Task {
+                        onAdded(
+                            await environment.projectList.addProject(folderURL: url, serverId: serverId, client: client)
+                        )
+                    }
                 }
             }
             .sheet(isPresented: $flow.showingRemoteBrowser) {
                 RemoteDirectoryBrowserSheet(client: client, machineName: machineName) { path in
-                    onAdded(environment.projectList.addProject(folderURL: URL(fileURLWithPath: path)))
+                    let serverId = targetServerId
+                    let client = client
+                    Task {
+                        onAdded(
+                            await environment.projectList.addProject(
+                                folderURL: URL(fileURLWithPath: path),
+                                serverId: serverId,
+                                client: client
+                            )
+                        )
+                    }
                 }
             }
             .sheet(isPresented: $flow.showingGitClone) {
@@ -73,17 +94,27 @@ private struct AddProjectFlowModifier: ViewModifier {
             }
     }
 
+    private var targetServerId: String {
+        flow.serverId ?? environment.machines.selectedMachineId
+    }
+
+    private var targetMachine: CodevisorMachine? {
+        environment.machines.machine(for: targetServerId)
+    }
+
+    private var isLocalTarget: Bool {
+        targetMachine?.isLocal ?? environment.machines.selectedMachine.isLocal
+    }
+
     private var folderButtonTitle: String {
-        environment.machines.selectedMachine.isLocal
-            ? "Choose Folder…"
-            : "Browse \(machineName)…"
+        isLocalTarget ? "Choose Folder…" : "Browse \(machineName)…"
     }
 
     private var machineName: String {
-        environment.machines.selectedMachine.name
+        targetMachine?.name ?? environment.machines.selectedMachine.name
     }
 
     private var client: any CodevisorServerClienting {
-        environment.machines.client(for: environment.machines.selectedMachineId)
+        environment.machines.client(for: targetServerId)
     }
 }
