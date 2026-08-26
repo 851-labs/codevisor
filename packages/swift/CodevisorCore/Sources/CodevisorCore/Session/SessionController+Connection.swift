@@ -196,8 +196,21 @@ extension SessionController {
         // Any kept worktree belongs to the old machine's project.
         sessionCwdOverride = nil
         worktreeName = nil
+        // The old machine's catalog must never survive a machine switch: a
+        // target with no cached snapshot would otherwise keep rendering the
+        // previous server's harnesses, models, and sign-in rows until the
+        // live fetch lands.
+        harnesses = []
+        signInRequiredHarnesses = []
+        configOptionsByHarness = [:]
+        modeStateByHarness = [:]
+        supportsGoalsByHarness = [:]
+        pendingConfigByHarness = [:]
+        selectedHarnessId = nil
         if seedFromCachedServerCapabilities() {
             preparationState = .ready
+        } else {
+            preparationState = .loading
         }
         // Reload harnesses/capabilities from the new machine, then rebuild
         // whatever connection state a draft is allowed to hold.

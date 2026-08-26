@@ -40,4 +40,34 @@ struct DefaultModelSelectionTests {
         controller.ensureDefaultModelSelection()
         #expect(controller.modelOption == nil)
     }
+
+    @Test("Retargeting to another machine never keeps the old catalog")
+    func retargetClearsCatalog() async throws {
+        let controller = SessionController.preview()
+        let harnessId = try #require(controller.selectedHarnessId)
+        controller.configOptionsByHarness[harnessId] = [
+            SessionConfigOption(
+                id: "model",
+                name: "Model",
+                category: SessionConfigOption.Category.model,
+                currentValue: "old",
+                options: [SessionConfigSelectOption(value: "old", name: "Old Machine Model")]
+            )
+        ]
+        controller.signInRequiredHarnesses = controller.harnesses
+
+        var other = Project.fromFolder(URL(fileURLWithPath: "/tmp/elsewhere"))
+        other.serverId = "another-machine"
+        await controller.retarget(
+            to: other,
+            serverClient: SyncFakeServerClient(projects: [], sessions: [])
+        )
+        // The fake client cannot serve capabilities; the point is that the
+        // OLD machine's catalog is gone rather than rendering as the new
+        // machine's.
+        #expect(controller.harnesses.isEmpty)
+        #expect(controller.signInRequiredHarnesses.isEmpty)
+        #expect(controller.configOptionsByHarness.isEmpty)
+        #expect(controller.modelOption == nil)
+    }
 }
