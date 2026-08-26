@@ -68,4 +68,89 @@ struct DefaultModelSelectionTests {
         #expect(controller.configOptionsByHarness.isEmpty)
         #expect(controller.modelOption == nil)
     }
+
+    @Test("A stale fetch never stores its machine's catalog under the new machine's key")
+    func staleFetchCannotPoisonRetargetedCache() async throws {
+        let controller = SessionController.preview()
+        controller.harnesses = []
+        controller.selectedHarnessId = nil
+
+        let gate = FetchGate()
+        let slowClient = SyncFakeServerClient(projects: [], sessions: [])
+        slowClient.capabilitiesHandler = { _ in
+            await gate.wait()
+            return ServerCapabilities(harnesses: [
+                ServerHarnessCapability(
+                    harness: ServerHarness(
+                        id: "claude-code",
+                        name: "Claude Code",
+                        symbolName: "sparkle",
+                        source: "registry",
+                        launchKind: "npx",
+                        enabled: true,
+                        readiness: ServerHarnessReadiness(state: "ready", detail: nil)
+                    ),
+                    modes: nil,
+                    configOptions: [
+                        SessionConfigOption(
+                            id: "model",
+                            name: "Model",
+                            category: SessionConfigOption.Category.model,
+                            currentValue: "opus-1m",
+                            options: [SessionConfigSelectOption(value: "opus-1m", name: "Opus (1M context)")]
+                        )
+                    ],
+                    supportsGoals: nil
+                )
+            ])
+        }
+        var machineA = Project.fromFolder(URL(fileURLWithPath: "/tmp/machine-a"))
+        machineA.serverId = "machine-a"
+        // Retarget to A starts a capability fetch bound to A's client, which
+        // we hold open at the gate.
+        async let retargetToA: Void = controller.retarget(to: machineA, serverClient: slowClient)
+        await gate.awaitWaiter()
+
+        // A second retarget lands while A's fetch is still in flight.
+        var machineB = Project.fromFolder(URL(fileURLWithPath: "/tmp/machine-b"))
+        machineB.serverId = "machine-b"
+        await controller.retarget(
+            to: machineB,
+            serverClient: SyncFakeServerClient(projects: [], sessions: [])
+        )
+
+        await gate.release()
+        await retargetToA
+
+        // A's catalog belongs under A's key — and ONLY A's key. Before the
+        // fix, the stale task re-read the retargeted project and persisted
+        // machine A's harnesses/models as machine B's.
+        #expect(controller.configCache.capabilities(forServer: "machine-b").isEmpty)
+        #expect(controller.configOptionsByHarness["claude-code"] == nil)
+        #expect(controller.modelOption == nil)
+    }
+}
+
+/// One-shot gate: the fetch parks on `wait()`, the test observes the parked
+/// waiter via `awaitWaiter()` and later opens the gate with `release()`.
+actor FetchGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var released = false
+    private(set) var hasWaiter = false
+
+    func wait() async {
+        hasWaiter = true
+        if released { return }
+        await withCheckedContinuation { self.continuation = $0 }
+    }
+
+    func awaitWaiter() async {
+        while !hasWaiter { await Task.yield() }
+    }
+
+    func release() {
+        released = true
+        continuation?.resume()
+        continuation = nil
+    }
 }

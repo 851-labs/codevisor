@@ -6,6 +6,9 @@ import Foundation
 /// A fake server whose event stream and list endpoints are test-driven.
 /// Shared by the MachineController suites (sync, panes, self-updates).
 final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable {
+    /// Tests that need capability responses (or to delay them) install one.
+    var capabilitiesHandler: (@Sendable (String) async throws -> ServerCapabilities)?
+
     let lock = NSLock()
     private var _projects: [ServerProject]
     var _sessions: [ServerSession]

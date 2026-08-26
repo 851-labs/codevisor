@@ -17,18 +17,26 @@ extension SessionController {
             preparationState = .failed
             return
         }
+        // The machine and its client are one snapshot: a retarget that lands
+        // mid-flight must not let this fetch (bound to the OLD machine's
+        // client) store its response under the NEW machine's cache key.
+        let target = CapabilityFetchTarget(
+            serverId: project.serverId,
+            cwd: project.folderURL.path
+        )
         if seedFromCachedServerCapabilities() {
             preparationState = .ready
             guard
                 configCache.needsCapabilityRevalidation(
-                    forServer: project.serverId,
-                    cwd: project.folderURL.path
+                    forServer: target.serverId,
+                    cwd: target.cwd
                 )
             else { return }
             let requestRevision = beginHarnessCapabilityRefresh()
             Task {
                 await self.prepareFromServerCapabilities(
                     serverClient,
+                    target: target,
                     requestRevision: requestRevision
                 )
             }
@@ -38,6 +46,7 @@ extension SessionController {
         let requestRevision = beginHarnessCapabilityRefresh()
         _ = await prepareFromServerCapabilities(
             serverClient,
+            target: target,
             requestRevision: requestRevision
         )
     }
@@ -118,6 +127,10 @@ extension SessionController {
         let requestRevision = beginHarnessCapabilityRefresh()
         _ = await prepareFromServerCapabilities(
             serverClient,
+            target: CapabilityFetchTarget(
+                serverId: project.serverId,
+                cwd: project.folderURL.path
+            ),
             requestRevision: requestRevision,
             force: true
         )
@@ -221,17 +234,28 @@ extension SessionController {
         return harnessCapabilityRequestRevision
     }
 
+    /// The machine/directory pair a capability fetch is bound to, captured
+    /// together with the machine's client BEFORE any suspension. Re-reading
+    /// `project` after an await raced retargets: a fetch against machine A's
+    /// client stored A's catalog under machine B's cache key, permanently
+    /// showing B another machine's models.
+    struct CapabilityFetchTarget {
+        let serverId: String
+        let cwd: String
+    }
+
     @discardableResult
     private func prepareFromServerCapabilities(
         _ serverClient: any CodevisorServerClienting,
+        target: CapabilityFetchTarget,
         requestRevision: UInt64,
         force: Bool = false
     ) async -> Bool {
         do {
-            let cwd = project.folderURL.path
+            let cwd = target.cwd
             guard
                 let capabilities = try await configCache.revalidateCapabilities(
-                    forServer: project.serverId,
+                    forServer: target.serverId,
                     cwd: cwd,
                     force: force,
                     fetch: {
@@ -244,6 +268,9 @@ extension SessionController {
                 return false
             }
             guard requestRevision == harnessCapabilityRequestRevision else { return false }
+            // Belt over the revision guard: never apply a snapshot fetched
+            // for a machine this draft no longer targets.
+            guard project.serverId == target.serverId else { return false }
             applyHarnessCapabilities(capabilities)
             preparationState = .ready
             isRefreshingHarnessCapabilities = false

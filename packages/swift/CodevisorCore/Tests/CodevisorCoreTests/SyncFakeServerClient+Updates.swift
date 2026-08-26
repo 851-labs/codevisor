@@ -322,7 +322,10 @@ extension SyncFakeServerClient {
     func issuePairingToken() async throws -> ServerPairingToken {
         ServerPairingToken(token: "hm_test", createdAt: "2026-06-30T00:00:00.000Z")
     }
-    func capabilities(cwd: String) async throws -> ServerCapabilities { ServerCapabilities(harnesses: []) }
+    func capabilities(cwd: String) async throws -> ServerCapabilities {
+        if let capabilitiesHandler { return try await capabilitiesHandler(cwd) }
+        return ServerCapabilities(harnesses: [])
+    }
     func listHarnesses() async throws -> [ServerHarness] { lock.withLock { _harnesses } }
     func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness { fatalError("unused") }
     func upsertProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }
