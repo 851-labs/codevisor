@@ -44,7 +44,7 @@ const repoRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)))
 const arguments_ = process.argv.slice(2)
 const unknownArguments = arguments_.filter(
   (argument) =>
-    argument !== "--ios" &&
+    argument !== "--no-ios" &&
     argument !== "--containers" &&
     argument !== "--no-containers" &&
     !argument.startsWith("--container-engine=")
@@ -52,7 +52,10 @@ const unknownArguments = arguments_.filter(
 if (unknownArguments.length > 0) {
   throw new Error(`Unknown development runner argument: ${unknownArguments.join(", ")}`)
 }
-const includesIOS = arguments_.includes("--ios")
+// Both apps by default — `dev` means the whole rig. `--no-ios` backs the
+// dev:macos script; it is plumbing, not a user-facing option (the public
+// surface is dev / dev:macos / dev:ios plus the container flags).
+const includesIOS = !arguments_.includes("--no-ios")
 // Containerized dev remotes are the default: real Linux machines make
 // cross-machine sync honest. --no-containers opts out; a missing engine
 // falls back to same-host processes with a warning either way.
