@@ -97,7 +97,7 @@ private extension ModelConfigMenu {
 
             Divider()
 
-            if filteredModelGroups.isEmpty {
+            if filteredModelGroups.isEmpty, !showsPendingSignInRows {
                 ContentUnavailableView.search(text: modelSearch)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -106,16 +106,19 @@ private extension ModelConfigMenu {
                         ForEach(filteredModelGroups) { group in
                             modelGroup(group)
                         }
+                        // Sign-in-pending harnesses live at the BOTTOM of the
+                        // scrolling list: discoverable without dominating the
+                        // picker for harnesses the user never signs into.
+                        if showsPendingSignInRows {
+                            SignInRequiredRows(
+                                harnesses: controller.signInRequiredHarnesses
+                            ) { harness in
+                                isPresented = false
+                                onSignIn?(harness)
+                            }
+                        }
                     }
                     .padding(8)
-                }
-            }
-
-            if !controller.signInRequiredHarnesses.isEmpty {
-                Divider()
-                SignInRequiredRows(harnesses: controller.signInRequiredHarnesses) { harness in
-                    isPresented = false
-                    onSignIn?(harness)
                 }
             }
 
@@ -135,6 +138,10 @@ private extension ModelConfigMenu {
             .padding(.vertical, 11)
             .help("Open Harness Settings")
         }
+    }
+
+    private var showsPendingSignInRows: Bool {
+        !controller.signInRequiredHarnesses.isEmpty && modelSearch.isEmpty
     }
 
     private func showHarnessSettings() {
@@ -480,6 +487,11 @@ private extension ModelConfigMenu {
             if let model = controller.modelOption {
                 Text(model.currentName)
                     .foregroundStyle(.primary)
+            } else if controller.thoughtLevelOptions.isEmpty {
+                // No selectable models on this machine yet — say what the
+                // click does instead of showing bare chevrons.
+                Text("Select a harness")
+                    .foregroundStyle(.secondary)
             }
             ForEach(controller.thoughtLevelOptions) { option in
                 Text(option.currentName)
