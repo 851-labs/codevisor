@@ -895,18 +895,17 @@ struct HomeView: View {
     /// A notification tap lands here: switch to the chat's machine when
     /// needed, then open it — same contract as the macOS handler.
     private func openNotificationSession(_ sessionId: UUID, serverId: String) {
-        Task {
-            if machines.selectedMachineId != serverId {
-                machines.selectMachine(serverId)
-                await environment.prepareSelectedMachine()
-            }
-            guard
-                let session = projectList.sessions.first(where: {
-                    $0.serverId == serverId && $0.id == sessionId
-                })
-            else { return }
-            openChat(session)
-        }
+        // Deliberately NO machine switch: routes carry the session's server
+        // id end to end and the workspace gates on ITS machine, while
+        // flipping the selected machine here put Home's list through a
+        // catch-up loading state — a visible flicker on every tap of a chat
+        // that lives on a non-selected machine.
+        guard
+            let session = projectList.sessions.first(where: {
+                $0.serverId == serverId && $0.id == sessionId
+            })
+        else { return }
+        openChat(session)
     }
 
     #if DEBUG || NAVIGATION_DIAGNOSTICS
