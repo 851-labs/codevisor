@@ -1,8 +1,10 @@
-/// `codevisor setup` — interactive onboarding for a freshly installed machine:
-/// pick how clients should reach this server (Tailscale recommended), issue a
-/// connection token, and print the exact steps plus a codevisor:// deeplink.
-/// Logic lives behind the same injectable seam as the other CLI commands; the
-/// real prompt implementations are wired in cli.ts.
+/// `codevisor setup` — interactive onboarding for a freshly installed machine.
+/// The recommended path is one question deep: sign into Codevisor Cloud and
+/// the machine appears in the user's apps everywhere, end-to-end encrypted.
+/// Direct pairing (address + connection token + QR/deeplink) is the other
+/// first-class choice — and the fallback when the sign-in dies. Logic lives
+/// behind the same injectable seam as the other CLI commands; the real
+/// prompt implementations are wired in cli.ts.
 import qrcode from "qrcode-terminal"
 import {
   DEFAULT_PORT,
@@ -139,7 +141,7 @@ const chooseHost = async (
 export interface SetupOptions extends CommandOptions {
   /// Runs the cloud device-code login (and restarts the server so it joins
   /// the hub). Wired by cli.ts; when absent — tests, programmatic use — the
-  /// optional cloud step is skipped entirely.
+  /// connect choice is skipped and setup goes straight to direct pairing.
   readonly cloudLogin?: () => Promise<number>
 }
 
@@ -160,6 +162,41 @@ export const setupCommand = async (
   const started = await startCommand(deps, options)
   if (started !== 0) return started
   const port = await resolvePort(deps, options.port)
+
+  // The connect choice. Cloud is the recommended one-step path; a machine
+  // already signed in (or a run without the login wiring) goes straight to
+  // direct pairing. A failed sign-in falls back to direct pairing so setup
+  // never ends empty-handed.
+  if (options.cloudLogin !== undefined && readCloudCredentials(deps) === undefined) {
+    const choice = await deps.prompts.select<"cloud" | "direct">(
+      "How do you want to connect this machine to your Codevisor apps?",
+      [
+        {
+          title: "Codevisor Cloud (recommended)",
+          value: "cloud",
+          description:
+            "Sign in once — this machine appears in your apps everywhere, end-to-end encrypted"
+        },
+        {
+          title: "Direct connection",
+          value: "direct",
+          description:
+            "Pair manually with an address and connection token (LAN, Tailscale, self-hosted)"
+        }
+      ]
+    )
+    if (choice === "cloud") {
+      if ((await options.cloudLogin()) === 0) {
+        deps.log("")
+        deps.log("✓ This machine is connected to your cloud account.")
+        deps.log("It appears in your Codevisor apps — you're done.")
+        deps.log("To add a direct (LAN or tailnet) route too, re-run: codevisor setup")
+        return 0
+      }
+      deps.error("Cloud sign-in didn't finish; continuing with direct pairing.")
+      deps.error("Connect to cloud any time with: codevisor auth login")
+    }
+  }
 
   const connection = await chooseHost(deps, port)
   if (connection === undefined) {
@@ -204,34 +241,6 @@ export const setupCommand = async (
   deps.log(`  ${deeplink}`)
   deps.log("")
   deps.log("Keep the token private — anyone with it can run agents on this machine.")
-
-  // Optional last step: connect this machine to a Codevisor Cloud account so
-  // it shows up in the user's apps everywhere, no manual pairing. Never
-  // required, and setup succeeds regardless of how this step goes.
-  if (options.cloudLogin !== undefined && readCloudCredentials(deps) === undefined) {
-    deps.log("")
-    const wantsCloud = await deps.prompts.select("Connect this machine to Codevisor Cloud?", [
-      {
-        title: "Sign in",
-        value: true,
-        description:
-          "See and connect to this machine from your Codevisor apps anywhere — end-to-end encrypted."
-      },
-      {
-        title: "Skip for now",
-        value: false,
-        description: "You can connect it any time with: codevisor auth login"
-      }
-    ])
-    if (wantsCloud) {
-      const result = await options.cloudLogin()
-      if (result === 0) {
-        deps.log("✓ This machine is connected to your cloud account.")
-      } else {
-        deps.error("Cloud sign-in didn't finish; run `codevisor auth login` to try again.")
-      }
-    }
-  }
   return 0
 }
 

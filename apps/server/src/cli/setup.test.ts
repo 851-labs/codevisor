@@ -209,12 +209,11 @@ describe("codevisor setup", () => {
     expect(output).not.toContain("Firewall")
   })
 
-  it("offers the optional cloud sign-in and reports success", async () => {
+  it("recommends cloud first: sign in and setup is done", async () => {
     let loginCalls = 0
     const world = makeWorld({
-      exec: { "tailscale status --json": tailscaleStatus({ dnsName: "box.tail.net." }) },
       http: { [health]: [ok], [pairing]: [tokenResponse] },
-      selections: ["tailscale", true]
+      selections: ["cloud"]
     })
     expect(
       await setupCommand(world.deps, {
@@ -225,34 +224,44 @@ describe("codevisor setup", () => {
       })
     ).toBe(0)
     expect(loginCalls).toBe(1)
-    expect(world.selectMessages.at(-1)).toContain("Codevisor Cloud")
-    expect(world.logs.join("\n")).toContain("connected to your cloud account")
+    expect(world.selectMessages[0]).toContain("connect this machine to your Codevisor apps")
+    expect(world.selectChoices[0]?.[0]?.title).toBe("Codevisor Cloud (recommended)")
+    const output = world.logs.join("\n")
+    expect(output).toContain("connected to your cloud account")
+    // The whole direct-pairing ceremony is skipped: no token, no QR.
+    expect(output).not.toContain("Connection token")
+    expect(output).not.toContain("Scan this QR code")
   })
 
-  it("keeps setup successful when the cloud sign-in fails or is declined", async () => {
-    const failed = makeWorld({
+  it("falls back to direct pairing when the cloud sign-in fails", async () => {
+    const world = makeWorld({
       exec: { "tailscale status --json": tailscaleStatus({ dnsName: "box.tail.net." }) },
       http: { [health]: [ok], [pairing]: [tokenResponse] },
-      selections: ["tailscale", true]
+      selections: ["cloud", "tailscale"]
     })
-    expect(await setupCommand(failed.deps, { cloudLogin: () => Promise.resolve(1) })).toBe(0)
-    expect(failed.errors.join("\n")).toContain("codevisor auth login")
+    expect(await setupCommand(world.deps, { cloudLogin: () => Promise.resolve(1) })).toBe(0)
+    expect(world.errors.join("\n")).toContain("codevisor auth login")
+    // Setup never ends empty-handed: the direct flow ran to completion.
+    expect(world.logs.join("\n")).toContain("Connection token   hm_setup")
+  })
 
-    let declinedCalls = 0
-    const declined = makeWorld({
+  it("honors choosing direct pairing over cloud", async () => {
+    let loginCalls = 0
+    const world = makeWorld({
       exec: { "tailscale status --json": tailscaleStatus({ dnsName: "box.tail.net." }) },
       http: { [health]: [ok], [pairing]: [tokenResponse] },
-      selections: ["tailscale", false]
+      selections: ["direct", "tailscale"]
     })
     expect(
-      await setupCommand(declined.deps, {
+      await setupCommand(world.deps, {
         cloudLogin: () => {
-          declinedCalls += 1
+          loginCalls += 1
           return Promise.resolve(0)
         }
       })
     ).toBe(0)
-    expect(declinedCalls).toBe(0)
+    expect(loginCalls).toBe(0)
+    expect(world.logs.join("\n")).toContain("Connection token   hm_setup")
   })
 
   it("skips the cloud prompt when the machine is already connected", async () => {
@@ -270,7 +279,9 @@ describe("codevisor setup", () => {
       }
     })
     expect(await setupCommand(world.deps, { cloudLogin: () => Promise.resolve(0) })).toBe(0)
-    expect(world.selectMessages.join("\n")).not.toContain("Codevisor Cloud")
+    // Straight to direct pairing: the first question is connectivity.
+    expect(world.selectMessages[0]).toContain("How should clients connect")
+    expect(world.logs.join("\n")).toContain("Connection token   hm_setup")
   })
 
   it("renders the deeplink as scannable terminal QR lines", () => {
