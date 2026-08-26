@@ -103,7 +103,7 @@ public final class MachineController {
     // fleet's composition on it: platforms without a local server have no
     // "Local" machine at all.
     let localServer: (any LocalServerControlling)?
-    private let clientFactory: ClientFactory
+    let clientFactory: ClientFactory
     let requestGate: ServerRequestGate
     private let key = "machines"
     /// How long to wait between reachability probes while the remote server
@@ -297,61 +297,6 @@ public final class MachineController {
         let knownNames = Set(machines.map(\.name))
         return cloudProvider.cloudMachines.filter {
             !knownCloudIds.contains($0.deviceId) && !knownNames.contains($0.name)
-        }
-    }
-
-    public func client(for machineId: String) -> any CodevisorServerClienting {
-        // Cloud machines get a real HTTP client whose transports tunnel every
-        // request/WebSocket through the account's encrypted relay, so all
-        // existing features work unchanged.
-        if let config = relayServerConfig(forMachineId: machineId) {
-            return CodevisorServerClient(
-                config: config,
-                requestGate: requestGate,
-                machineId: machineId
-            )
-        }
-        let machine = machine(for: machineId) ?? CodevisorMachine.local
-        return clientFactory(machine)
-    }
-
-    /// The server config for a machine id — relay-backed for cloud machines,
-    /// plain otherwise. Consumers that build their own transports from a
-    /// config (terminals) use this so cloud machines tunnel automatically.
-    public func serverConfig(for machineId: String) -> CodevisorServerConfig {
-        if let config = relayServerConfig(forMachineId: machineId) {
-            return config
-        }
-        return (machine(for: machineId) ?? selectedMachine).serverConfig
-    }
-
-    private func relayServerConfig(forMachineId machineId: String) -> CodevisorServerConfig? {
-        guard let cloud = cloudMachine(forMachineId: machineId) else { return nil }
-        return cloudProvider?.relayServerConfig(for: cloud)
-    }
-
-    /// The machine's effective HTTP origin for consumers that must dial a
-    /// real socket instead of the in-process relay transports (plugin pane
-    /// webviews, external helper processes): direct machines answer their
-    /// configured baseURL; cloud machines lazily start the in-app loopback
-    /// bridge and answer its `http://127.0.0.1:<port>` address, waiting
-    /// (bounded) for the listener to come up. Nil when the machine is gone or
-    /// the relay bridge can't start (signed out, relay down).
-    public func effectiveHTTPBaseURL(
-        forMachineId machineId: String,
-        timeout: Duration = .seconds(10)
-    ) async -> URL? {
-        guard let cloud = cloudMachine(forMachineId: machineId) else {
-            return machine(for: machineId)?.baseURL
-        }
-        guard let cloudProvider else { return nil }
-        // The first call kicks the bridge off; poll for the published port —
-        // it appears via an observable the synchronous accessor can't await.
-        let deadline = ContinuousClock.now + timeout
-        while true {
-            if let url = cloudProvider.loopbackBaseURL(for: cloud) { return url }
-            guard ContinuousClock.now < deadline, !Task.isCancelled else { return nil }
-            try? await Task.sleep(for: .milliseconds(100))
         }
     }
 

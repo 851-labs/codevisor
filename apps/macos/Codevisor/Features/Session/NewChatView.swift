@@ -289,6 +289,19 @@ struct NewChatView: View {
             controller.invalidateHarnessCapabilities()
             Task { await controller.refreshHarnessCapabilities() }
         }
+        // A draft restored onto a cloud machine can mount BEFORE the cloud
+        // relay is routable — its capability fetch fails (never silently
+        // answering as another machine). Re-resolve the client and retry
+        // when the reachable machine set changes.
+        .onChange(of: environment.machines.allMachines.map(\.id)) { _, _ in
+            guard let controller else { return }
+            controller.adoptServerClient(
+                environment.machines.client(for: controller.project.serverId)
+            )
+            guard controller.preparationState == .failed || controller.harnesses.isEmpty
+            else { return }
+            Task { await controller.prepare() }
+        }
         // Update knowledge is fetched separately from the picker's plain
         // list so the composer stays snappy; the update banner reads this.
         .task(id: harnessCatalogRevision) {

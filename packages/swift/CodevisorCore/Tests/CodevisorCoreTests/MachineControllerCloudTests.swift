@@ -322,6 +322,32 @@ struct MachineControllerCloudTests {
         #expect(persisted.selectedMachineId == "cloud:dev-1")
     }
 
+    @Test("A cloud id with no relay yields a failing client, never the local machine's")
+    func unresolvedCloudIdNeverFallsBackToLocal() async {
+        let (controller, _, provider) = makeController()
+        // The launch-time gap: the account looks signed out (or the roster
+        // hasn't loaded), so no relay config exists for the id yet. Falling
+        // back to the local client here once served the LOCAL harness
+        // catalog for a cloud machine — which the capability cache then
+        // persisted under the cloud machine's key.
+        provider.isCloudSignedIn = false
+        let client = controller.client(for: "cloud:dev-1")
+        await #expect(throws: MachineUnreachableError.self) {
+            _ = try await client.capabilities(cwd: "/tmp")
+        }
+
+        // Once the roster lands, the same id resolves to the relay client.
+        provider.isCloudSignedIn = true
+        provider.cloudMachines = [makeCloudMachine()]
+        provider.requestTransport.responsesByPath["/v1/info"] = """
+            {"id":"m1","name":"Cloud Mac","kind":"remote","version":"2.0.0",
+             "platform":"darwin","bindHost":"127.0.0.1","cloudDeviceId":"dev-1"}
+            """
+        let reachable = controller.client(for: "cloud:dev-1")
+        let info = try? await reachable.info()
+        #expect(info?.name == "Cloud Mac")
+    }
+
     @Test("serverConfig(for:) is relay-backed for cloud ids, plain otherwise")
     func serverConfigRouting() {
         let (controller, _, provider) = makeController()

@@ -217,6 +217,14 @@ extension SessionController {
         await reconnect()
     }
 
+    /// Swaps in a freshly resolved client for the draft's CURRENT machine —
+    /// used when a machine that wasn't routable at mount (a cloud relay
+    /// still connecting) becomes reachable. Same machine, better transport;
+    /// a machine CHANGE goes through `retarget(to:serverClient:)`.
+    public func adoptServerClient(_ client: any CodevisorServerClienting) {
+        serverClient = client
+    }
+
     /// Tears down any connection and reconnects — used when the harness or
     /// project changes on the new-chat page.
     public func reconnect() async {
