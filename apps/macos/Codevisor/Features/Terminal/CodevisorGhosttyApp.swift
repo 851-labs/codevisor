@@ -554,8 +554,11 @@ final class CodevisorGhosttyApp {
             }
         }
     }
+}
 
-    // MARK: - Action dispatch (subset of upstream Ghostty.App.action L481-685)
+// MARK: - Action dispatch
+
+extension CodevisorGhosttyApp {
 
     /// Runs a libghostty action. NOT main-isolated: while most actions arrive
     /// on the main thread (the app loop ticks there), the renderer thread
@@ -772,6 +775,15 @@ final class CodevisorGhosttyApp {
         case GHOSTTY_ACTION_SIZE_LIMIT:
             // Accepted but nothing to do: Codevisor's panel controls sizing.
             break
+
+        case GHOSTTY_ACTION_OPEN_URL:
+            // Cmd+click on a detected link (an auth flow's sign-in URL, a
+            // dev server address in a shell). Upstream also handles .html
+            // payloads by writing a temp file; Codevisor only opens real
+            // URLs and reports anything else unsupported.
+            let payload = Ghostty.Action.OpenURL(c: action.action.open_url)
+            guard payload.kind == .text, let url = URL(string: payload.url) else { return false }
+            onMain { NSWorkspace.shared.open(url) }
 
         default:
             // Window/tab/split/app-management actions Codevisor does not
