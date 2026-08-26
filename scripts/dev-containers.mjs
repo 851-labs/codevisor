@@ -98,11 +98,29 @@ export async function syncLinuxWorkspace(repoRoot, containerRoot) {
   }
   for (const directory of packageDirectories) {
     const target = join(appRoot, directory)
-    // Stale dist output must not survive a package rename/removal.
-    await rm(target, { recursive: true, force: true })
+    // Refresh the copied members but PRESERVE node_modules: the Linux
+    // install nests workspace links and conflict-resolved deps inside
+    // package dirs, and a refresh with an unchanged lockfile never
+    // reinstalls them.
+    if (await pathExists(target)) {
+      for (const entry of await readdir(target)) {
+        if (entry === "node_modules") continue
+        await rm(join(target, entry), { recursive: true, force: true })
+      }
+    }
     await mkdir(target, { recursive: true })
     for (const name of PACKAGE_KEEP) {
       await copyIfPresent(join(repoRoot, directory, name), join(target, name))
+    }
+  }
+  // Package dirs that no longer exist in the workspace disappear whole.
+  for (const root of WORKSPACE_ROOTS) {
+    const rootPath = join(appRoot, root)
+    if (!(await pathExists(rootPath))) continue
+    for (const entry of await readdir(rootPath)) {
+      if (!packageDirectories.includes(join(root, entry))) {
+        await rm(join(rootPath, entry), { recursive: true, force: true })
+      }
     }
   }
   await writeFile(signaturePath, signature)
