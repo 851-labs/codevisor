@@ -15,6 +15,7 @@ public final class ConfigSync {
     /// The namespaces this client gossips. Grows as stores onboard.
     public static let namespaces = [
         "settings", "skills", "mcps", "harness-accounts", "machines", "harnesses", "plugins",
+        "mcp-readiness", "mcp-overlays",
     ]
 
     private let machines: MachineController

@@ -27,6 +27,7 @@ import {
   publishSyncChanged,
   readParticipation,
   reconcileForNamespace,
+  refreshMcpReadiness,
   type SyncReconcileNamespace
 } from "./sync-reconcilers.js"
 
@@ -132,7 +133,14 @@ export const routeSync = async (
       throw new HttpFailure(501, RECONCILE_UNAVAILABLE[reconcilePlane])
     }
     publishSyncChanged(services, fanout, reconcilePlane, result.changedEntries)
+    if (reconcilePlane === "mcps") await refreshMcpReadiness(services, config, fanout)
     writeJson(response, 200, result.status)
+    return true
+  }
+
+  if (url.pathname === "/v1/sync/mcp-readiness/publish" && request.method === "POST") {
+    await refreshMcpReadiness(services, config, fanout)
+    writeJson(response, 200, { published: true })
     return true
   }
 

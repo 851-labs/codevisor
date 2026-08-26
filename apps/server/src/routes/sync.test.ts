@@ -172,6 +172,9 @@ describe("/v1/sync", () => {
     expect(
       (await jsonRequest(server, "/v1/sync/accounts/publish", { method: "POST" })).status
     ).toBe(403)
+    expect(
+      (await jsonRequest(server, "/v1/sync/mcp-readiness/publish", { method: "POST" })).status
+    ).toBe(403)
 
     // Only GET and PUT exist on the flag.
     expect((await jsonRequest(server, "/v1/sync-participation", { method: "POST" })).status).toBe(

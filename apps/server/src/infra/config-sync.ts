@@ -174,6 +174,11 @@ export interface McpSyncDeps {
   readonly mcp: McpManager
   readonly serverId: string
   readonly now?: () => number
+  /// Affinity enforcement (Phase 17): names pinned to machines that do NOT
+  /// include this one are never materialized here — an existing local copy
+  /// is removed WITHOUT tombstoning the fleet, and only after its state
+  /// (including local edits) has published. Wired from readMcpOverlays.
+  readonly excludedByAffinity?: ReadonlySet<string>
 }
 
 export interface McpSyncResult {
@@ -286,6 +291,19 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
     }
     const wanted = parseSyncedValue(entry.value)
     if (wanted === undefined) continue
+    if (deps.excludedByAffinity?.has(name) === true) {
+      // Safe to drop the local copy: the publish loop above already sent
+      // any local edit (including divergent ones) into the replica, so
+      // exclusion removes the materialization, never the state.
+      if (local !== undefined) {
+        await deps.mcp.remove(local.id)
+        appliedWrites.push({ key: name, value: null, deleted: true, timestamp: stamp() })
+        appliedByKey.delete(name)
+        localByName.delete(name)
+        removed.push(name)
+      }
+      continue
+    }
     // OAuth material imports BEFORE the fingerprint skip: the mirror's
     // publish loop grafts the envelope into its applied fingerprint, so
     // fp equality cannot mean the material itself was adopted. The import

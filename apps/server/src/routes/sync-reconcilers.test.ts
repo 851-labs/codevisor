@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest"
 import { makeEventFanout, type CodevisorServerConfig } from "../server-context.js"
 import { jsonRequest, makeServices, run, startWithApp } from "../test-support.js"
-import { configMutationNamespace, runBackgroundSyncReconcile } from "./sync-reconcilers.js"
+import {
+  configMutationNamespace,
+  refreshMcpReadiness,
+  runBackgroundSyncReconcile
+} from "./sync-reconcilers.js"
 
 const config = { id: "server-x" } as unknown as CodevisorServerConfig
 
@@ -124,5 +128,24 @@ describe("runBackgroundSyncReconcile", () => {
     }
     const entries = await run(services.db.getSyncEntries("mcps"))
     expect(entries.map((entry) => entry.key)).toEqual(["Imported"])
+  })
+})
+
+describe("refreshMcpReadiness", () => {
+  it("skips machines without MCP services and swallows publish failures", async () => {
+    const fanout = await run(makeEventFanout)
+    const { services } = await makeServices("server-x")
+
+    // No MCP manager: nothing to derive, nothing published.
+    const { mcp: omitted, ...withoutMcp } = services
+    void omitted
+    await refreshMcpReadiness(withoutMcp, config, fanout)
+
+    // A failing manager never breaks the pass that triggered the refresh.
+    const poisoned = {
+      ...services,
+      mcp: { list: () => Promise.reject(new Error("boom")) }
+    } as unknown as typeof services
+    await expect(refreshMcpReadiness(poisoned, config, fanout)).resolves.toBeUndefined()
   })
 })

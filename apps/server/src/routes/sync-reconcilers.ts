@@ -1,5 +1,10 @@
 import type { SyncEntryRecord } from "@codevisor/sync"
 import { MCPS_SYNC_NAMESPACE, reconcileMcps } from "../infra/config-sync.js"
+import {
+  MCP_READINESS_NAMESPACE,
+  publishMcpReadiness,
+  readMcpOverlays
+} from "../infra/mcp-fleet.js"
 import { HARNESSES_SYNC_NAMESPACE, reconcileHarnesses } from "../infra/harness-sync.js"
 import { PLUGINS_SYNC_NAMESPACE, pluginSyncOrigin, reconcilePlugins } from "../infra/plugin-sync.js"
 import { reconcileSkills, SKILLS_SYNC_NAMESPACE } from "../infra/skills-sync.js"
@@ -54,7 +59,13 @@ export const reconcileForNamespace = async (
     case "mcps": {
       const mcp = services.mcp
       if (mcp === undefined) return undefined
-      return reconcileMcps({ db: services.db, mcp, serverId: config.id })
+      const overlays = await readMcpOverlays(services.db, config.id)
+      return reconcileMcps({
+        db: services.db,
+        mcp,
+        serverId: config.id,
+        excludedByAffinity: overlays.excluded
+      })
     }
     case "harnesses": {
       const lifecycle = services.lifecycle
@@ -137,6 +148,31 @@ export const publishSyncChanged = (
   }).catch(swallowError)
 }
 
+/// Re-derives and publishes this machine's MCP readiness entry after an
+/// mcps pass (reconciles change connection state and overlays change what
+/// counts as suppressed). Change-detected and best-effort: a settled
+/// machine publishes nothing, and a failure never affects the pass that
+/// triggered it.
+export const refreshMcpReadiness = async (
+  services: CodevisorServerServices,
+  config: CodevisorServerConfig,
+  fanout: EventFanout
+): Promise<void> => {
+  const mcp = services.mcp
+  if (mcp === undefined) return
+  try {
+    const result = await publishMcpReadiness({ db: services.db, mcp, serverId: config.id })
+    if (result.changedEntries.length > 0) {
+      void appendAndPublish(services.db, fanout, "sync.changed", MCP_READINESS_NAMESPACE, {
+        namespace: MCP_READINESS_NAMESPACE,
+        entries: result.changedEntries
+      }).catch(swallowError)
+    }
+  } catch {
+    // Best-effort by design; the next pass republishes.
+  }
+}
+
 /// The mutation hook's half: run the pass and publish, silently skipping
 /// machines that opted out of sync or lack the backing services. Never
 /// throws — a failed background pass must not affect the request that
@@ -152,6 +188,7 @@ export const runBackgroundSyncReconcile = async (
     const result = await reconcileForNamespace(services, config, namespace)
     if (result === undefined) return
     publishSyncChanged(services, fanout, namespace, result.changedEntries)
+    if (namespace === "mcps") await refreshMcpReadiness(services, config, fanout)
   } catch {
     // Best-effort by design; the periodic client sweep remains the backstop.
   }
