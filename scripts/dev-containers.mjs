@@ -347,6 +347,8 @@ export async function launchDevRemoteServer({
     env[key] = key === "CODEVISOR_DEV_CLOUD_URL" ? rewriteHost(value) : toContainerPath(value)
   }
   await tryEngine(binary, ["rm", "--force", containerName])
+  // The bind-mounted home must exist host-side before `run` references it.
+  await mkdir(join(stateRoot, "root-home"), { recursive: true })
   const args = [
     "run",
     "--detach",
@@ -371,7 +373,13 @@ export async function launchDevRemoteServer({
     "--volume",
     `${entryScript}:/entry.sh`,
     "--publish",
-    `127.0.0.1:${port}:${port}`
+    `127.0.0.1:${port}:${port}`,
+    // The server runs as root in here, and Claude Code refuses
+    // --dangerously-skip-permissions under root unless the process declares
+    // a sandbox. This container IS one — without the flag every claude
+    // session (capability inspection included) exits immediately.
+    "--env",
+    "IS_SANDBOX=1"
   ]
   for (const [key, value] of Object.entries(env)) args.push("--env", `${key}=${value}`)
   args.push(
