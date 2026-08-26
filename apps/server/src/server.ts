@@ -36,6 +36,7 @@ import { routeFs } from "./routes/fs.js"
 import { discoverCapabilities, routeHarnesses } from "./routes/harnesses.js"
 import { routeMcps, routeMcpScopes, routeNativeMcps } from "./routes/mcps.js"
 import { routeProjects } from "./routes/projects.js"
+import { republishAccountsRoster } from "./routes/sync-reconcilers.js"
 import {
   drainPromptQueue,
   makeTurnDispatchListener,
@@ -143,11 +144,17 @@ export const makeCodevisorServerApp = (
         config.sessionActivity?.update(event.subjectId, active)
       })
     : undefined
-  /* v8 ignore next -- the auth manager invokes this thin event-forwarding callback. */
+  /* v8 ignore next 10 -- the auth manager invokes this thin event-forwarding callback. */
   const unsubscribeAuth = services.auth?.subscribe((event) => {
     void appendAndPublish(services.db, fanout, event.kind, event.subjectId, event.payload).catch(
       () => undefined
     )
+    // Auth drift is fleet-visible (Phase 19): an account flipping state —
+    // a session dying of auth, a login completing — republishes this
+    // machine's roster immediately instead of waiting for a client sweep.
+    if (event.kind === "harness.account.updated") {
+      void republishAccountsRoster(services, config, fanout)
+    }
   })
   /* v8 ignore next -- the lifecycle manager invokes this thin event-forwarding callback. */
   const unsubscribeLifecycle = services.lifecycle?.subscribe((event) => {

@@ -1,5 +1,10 @@
 import type { SyncEntryRecord } from "@codevisor/sync"
-import { MCPS_SYNC_NAMESPACE, reconcileMcps } from "../infra/config-sync.js"
+import {
+  ACCOUNTS_SYNC_NAMESPACE,
+  MCPS_SYNC_NAMESPACE,
+  publishAccountsRoster,
+  reconcileMcps
+} from "../infra/config-sync.js"
 import {
   MCP_READINESS_NAMESPACE,
   publishMcpReadiness,
@@ -146,6 +151,33 @@ export const publishSyncChanged = (
     namespace: wire,
     entries: changedEntries
   }).catch(swallowError)
+}
+
+/// Republishes this machine's harness-account roster (Phase 19). Wired to
+/// the auth manager's event stream, so a session that dies of auth — or any
+/// probe flipping an account's state — becomes fleet-visible within the
+/// gossip round instead of waiting for a client's periodic publish sweep.
+/// Change-detected and best-effort like the readiness refresh.
+export const republishAccountsRoster = async (
+  services: CodevisorServerServices,
+  config: CodevisorServerConfig,
+  fanout: EventFanout
+): Promise<void> => {
+  try {
+    const result = await publishAccountsRoster({
+      db: services.db,
+      harnessIds: services.agents.catalog.map((definition) => definition.id),
+      serverId: config.id
+    })
+    if (result.changedEntries.length > 0) {
+      void appendAndPublish(services.db, fanout, "sync.changed", ACCOUNTS_SYNC_NAMESPACE, {
+        namespace: ACCOUNTS_SYNC_NAMESPACE,
+        entries: result.changedEntries
+      }).catch(swallowError)
+    }
+  } catch {
+    // Best-effort by design; the next client publish sweep is the backstop.
+  }
 }
 
 /// Re-derives and publishes this machine's MCP readiness entry after an

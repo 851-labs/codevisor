@@ -4,6 +4,7 @@ import { jsonRequest, makeServices, run, startWithApp } from "../test-support.js
 import {
   configMutationNamespace,
   refreshMcpReadiness,
+  republishAccountsRoster,
   runBackgroundSyncReconcile
 } from "./sync-reconcilers.js"
 
@@ -147,5 +148,41 @@ describe("refreshMcpReadiness", () => {
       mcp: { list: () => Promise.reject(new Error("boom")) }
     } as unknown as typeof services
     await expect(refreshMcpReadiness(poisoned, config, fanout)).resolves.toBeUndefined()
+  })
+})
+
+describe("republishAccountsRoster", () => {
+  it("publishes account-state changes into the roster, best-effort", async () => {
+    const fanout = await run(makeEventFanout)
+    const { services } = await makeServices("server-x")
+    await run(
+      services.db.saveHarnessAccount({
+        authState: "authenticated",
+        canLogin: true,
+        canLogout: true,
+        harnessId: "claude-code",
+        label: "Personal",
+        profileKind: "default"
+      })
+    )
+    await republishAccountsRoster(services, config, fanout)
+    const entries = await run(services.db.getSyncEntries("harness-accounts"))
+    expect(entries).toHaveLength(1)
+    const value = entries[0]?.value as { accounts: Array<{ authState: string }> }
+    expect(value.accounts[0]?.authState).toBe("authenticated")
+
+    // Unchanged state republishes nothing; a failure never throws.
+    await republishAccountsRoster(services, config, fanout)
+    expect(await run(services.db.getSyncEntries("harness-accounts"))).toHaveLength(1)
+    const poisoned = {
+      ...services,
+      db: {
+        ...services.db,
+        getSyncEntries: () => {
+          throw new Error("boom")
+        }
+      }
+    } as unknown as typeof services
+    await expect(republishAccountsRoster(poisoned, config, fanout)).resolves.toBeUndefined()
   })
 })

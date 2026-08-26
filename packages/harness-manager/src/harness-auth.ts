@@ -37,7 +37,14 @@ import { makePiAuthManager } from "./pi-auth.js"
 import { makeOpenCodeAuthManager, openCodeAuthPath } from "./opencode-auth.js"
 
 const execFileAsync = promisify(execFile)
-const AUTH_CACHE_MS = 30_000
+/// Passive probe cache. Deliberately generous: every status probe spawns the
+/// harness CLI, and a spawned CLI holding an expired access token refreshes
+/// it — with rotating refresh tokens, needless concurrent invocations are
+/// exactly how a login family gets invalidated (the intermittent-logout
+/// class of bug). State-changing paths (login flows, session auth failures,
+/// the explicit settings refresh) all force past this cache, so staleness
+/// here only ever delays a *passive* re-check.
+const AUTH_CACHE_MS = 300_000
 const CLAUDE_AUTH_OVERRIDE_ENV_VARS = [
   "ANTHROPIC_API_KEY",
   "ANTHROPIC_AUTH_TOKEN",
