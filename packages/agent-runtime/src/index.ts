@@ -894,7 +894,11 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
             cwd,
             /* v8 ignore next -- inspection sessions are closed before they can emit. */
             () => Promise.resolve(),
-            account
+            account,
+            undefined,
+            // Inspection's whole point is the option list: grant it most of
+            // the outer timeout instead of the snappy interactive default.
+            { modelListTimeoutMs: Math.max(3_000, timeoutMs - 3_000) }
           )
           .pipe(
             Effect.timeout(timeoutMs),

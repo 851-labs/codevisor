@@ -5,6 +5,7 @@ import type {
 import { randomUUID } from "node:crypto"
 import {
   runtimeError,
+  type CreateSessionOptions,
   type HarnessAccountContext,
   type HarnessDefinition,
   type ProviderEnvironment,
@@ -63,7 +64,8 @@ export const makeStartSession = (deps: StartSessionDeps) => {
     emit: RuntimeEmit,
     resume: string | undefined,
     account?: HarnessAccountContext,
-    toolGateway?: ToolGatewayConfig
+    toolGateway?: ToolGatewayConfig,
+    sessionOptions?: CreateSessionOptions
   ): Promise<ClaudeSession> => {
     const claudePath = locateClaude(definition)
     await guardVersion(claudePath)
@@ -363,7 +365,7 @@ export const makeStartSession = (deps: StartSessionDeps) => {
       const models = await Promise.race([
         q.supportedModels(),
         new Promise<undefined>((resolvePromise) =>
-          setTimeout(() => resolvePromise(undefined), 3000)
+          setTimeout(() => resolvePromise(undefined), sessionOptions?.modelListTimeoutMs ?? 3000)
         )
       ])
       if (models !== undefined) {

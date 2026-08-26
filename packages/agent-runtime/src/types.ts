@@ -315,6 +315,17 @@ export interface LoadedAgentSession {
   readonly metadata?: AgentSessionMetadata
 }
 
+/// Per-call tuning for session creation. Adapters that don't recognize an
+/// option simply ignore it (implementations may accept fewer parameters).
+export interface CreateSessionOptions {
+  /// How long to wait for the harness's model list before returning without
+  /// one. Interactive session creation keeps a short budget so chat startup
+  /// stays snappy; capability INSPECTION exists to fetch the list, so it
+  /// grants most of its own timeout — a cold CLI spawn on a slow machine
+  /// (a containerized Linux server) routinely needs more than the default.
+  readonly modelListTimeoutMs?: number
+}
+
 export interface AgentProvider {
   readonly id: ProviderId
   readonly readiness: (definition: HarnessDefinition) => Harness["readiness"]
@@ -323,7 +334,8 @@ export interface AgentProvider {
     cwd: string,
     emit: RuntimeEmit,
     account?: HarnessAccountContext,
-    toolGateway?: ToolGatewayConfig
+    toolGateway?: ToolGatewayConfig,
+    sessionOptions?: CreateSessionOptions
   ) => Effect.Effect<CreatedAgentSession, AgentRuntimeError>
   readonly loadSession: (
     definition: HarnessDefinition,

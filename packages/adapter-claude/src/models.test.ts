@@ -59,6 +59,29 @@ describe("ClaudeProvider", () => {
     expect(effort?.currentValue).toBe("high")
   })
 
+  it("waits out a slow model list when the caller grants a budget", async () => {
+    const fake = new FakeQuery()
+    // Slower than instant, well within the granted inspection budget — the
+    // race must use the caller's timeout, not the 3s interactive default.
+    vi.spyOn(fake, "supportedModels").mockImplementation(
+      () =>
+        new Promise((resolve) =>
+          setTimeout(
+            () => resolve([{ description: "", displayName: "Sonnet", value: "sonnet" }]),
+            10
+          )
+        )
+    )
+    const provider = makeProvider(fake)
+    const created = await run(
+      provider.createSession(definition, "/tmp", async () => {}, undefined, undefined, {
+        modelListTimeoutMs: 5000
+      })
+    )
+    const model = created.metadata.configOptions.find((option) => option.id === "model")
+    expect(model?.options).toEqual([{ name: "Sonnet", value: "sonnet" }])
+  })
+
   it("reconciles refusal fallback model ids with unambiguous picker aliases", async () => {
     const fake = new FakeQuery()
     vi.spyOn(fake, "supportedModels").mockResolvedValue([
