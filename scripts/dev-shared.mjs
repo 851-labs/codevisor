@@ -82,8 +82,8 @@ export async function containsAnyPath(root, names) {
   return (await Promise.all(names.map((name) => pathExists(join(root, name))))).some(Boolean)
 }
 
-export async function waitForHealth(port, child) {
-  for (let attempt = 0; attempt < 120; attempt += 1) {
+export async function waitForHealth(port, child, attempts = 120) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     if (child.exitCode !== null) throw new Error("Codevisor server exited before becoming healthy")
     try {
       const response = await fetch(`http://127.0.0.1:${port}/v1/health`)

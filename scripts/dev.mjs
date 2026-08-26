@@ -15,6 +15,11 @@ import {
   remoteDevelopmentEnvironment
 } from "./dev-layout.mjs"
 import {
+  launchDevRemoteServer,
+  prepareDevContainers,
+  resolveContainerEngine
+} from "./dev-containers.mjs"
+import {
   buildIOSDevelopmentApp,
   launchIOSDevelopmentApp,
   terminateIOSDevelopmentApp
@@ -37,11 +42,24 @@ import { runXcodebuild } from "./xcodebuild.mjs"
 
 const repoRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)))
 const arguments_ = process.argv.slice(2)
-const unknownArguments = arguments_.filter((argument) => argument !== "--ios")
+const unknownArguments = arguments_.filter(
+  (argument) =>
+    argument !== "--ios" &&
+    argument !== "--containers" &&
+    argument !== "--no-containers" &&
+    !argument.startsWith("--container-engine=")
+)
 if (unknownArguments.length > 0) {
   throw new Error(`Unknown development runner argument: ${unknownArguments.join(", ")}`)
 }
 const includesIOS = arguments_.includes("--ios")
+// Containerized dev remotes are the default: real Linux machines make
+// cross-machine sync honest. --no-containers opts out; a missing engine
+// falls back to same-host processes with a warning either way.
+const wantsContainers = !arguments_.includes("--no-containers")
+const containerEnginePreference = arguments_
+  .find((argument) => argument.startsWith("--container-engine="))
+  ?.slice("--container-engine=".length)
 
 // Sanitize ambient Codevisor variables before anything inherits our env.
 // This script is often launched from inside a running Codevisor instance
@@ -60,6 +78,7 @@ const ambientAllowlist = new Set([
   "CODEVISOR_DEV_CACHE_DIR",
   "HERDMAN_DEV_DATA_DIR",
   "CODEVISOR_WORKTREES_ROOT",
+  "CODEVISOR_DEV_CONTAINER_ENGINE",
   "HERDMAN_WORKTREES_ROOT",
   "CODEVISOR_REPOS_ROOT",
   "CODEVISOR_PLUGINS_ROOT",
@@ -243,12 +262,35 @@ await run(
 ).catch((error) => {
   console.error(`Cloud dev migrations failed (${error instanceof Error ? error.message : error})`)
 })
+// Containerized dev remotes (opt-in): Dev Direct and Dev Cloud run as
+// real Linux machines so config-plane sync is tested across genuinely
+// separate filesystems. Falls back to same-host processes when no engine
+// is available — never boots a stopped Docker daemon.
+const containerEngine = wantsContainers
+  ? await resolveContainerEngine(containerEnginePreference)
+  : undefined
+if (wantsContainers && containerEngine === undefined) {
+  console.warn("No usable container engine; dev remotes run as same-host processes.")
+}
+const containerContext =
+  containerEngine === undefined
+    ? undefined
+    : await prepareDevContainers({
+        repoRoot,
+        containerRoot: join(layout.tmpRoot, "container"),
+        engine: containerEngine,
+        worktreeHash: instanceHash
+      })
+
 const cloud = spawn(
   "bun",
   [
     "x",
     "wrangler",
     "dev",
+    // Containers reach the hub through the host gateway, which needs a
+    // non-loopback bind. Same-host mode keeps the loopback default.
+    ...(containerContext === undefined ? [] : ["--ip", "0.0.0.0"]),
     "--port",
     String(cloudPort),
     "--persist-to",
@@ -381,66 +423,32 @@ const directRemoteEnvironment = {
 }
 delete directRemoteEnvironment.CODEVISOR_DEV_CLOUD_URL
 delete directRemoteEnvironment.CODEVISOR_DEV_CLOUD_TOKEN
-const directRemoteServer = spawn(
-  "node",
-  [
-    join(repoRoot, "apps/server/dist/main.js"),
-    "serve",
-    "--host",
-    "0.0.0.0",
-    "--port",
-    String(directRemotePort),
-    "--db",
-    join(remoteDataDirectory, "codevisor-server.sqlite"),
-    "--auth",
-    "token",
-    "--kind",
-    "remote",
-    "--name",
-    directRemoteName,
-    "--upgrade-status",
-    join(remoteDataDirectory, "data-upgrade.json")
-  ],
-  {
-    cwd: repoRoot,
-    env: directRemoteEnvironment,
-    stdio: "inherit"
-  }
-)
+const directRemoteServer = await launchDevRemoteServer({
+  containerContext,
+  repoRoot,
+  remoteRootHost: join(layout.tmpRoot, "remote"),
+  serverRoots: layout.remote,
+  port: directRemotePort,
+  serverName: directRemoteName,
+  environment: directRemoteEnvironment
+})
 
 // Dev Cloud: a second standalone server that signs into the dev cloud and is
 // reached through the relay — the hub's realistic "machine somewhere else".
-const cloudRemoteServer = spawn(
-  "node",
-  [
-    join(repoRoot, "apps/server/dist/main.js"),
-    "serve",
-    "--host",
-    "0.0.0.0",
-    "--port",
-    String(cloudRemotePort),
-    "--db",
-    join(layout.remoteCloud.data, "codevisor-server.sqlite"),
-    "--auth",
-    "token",
-    "--kind",
-    "remote",
-    "--name",
-    cloudRemoteName,
-    "--upgrade-status",
-    join(layout.remoteCloud.data, "data-upgrade.json")
-  ],
-  {
-    cwd: repoRoot,
-    env: {
-      ...remoteDevelopmentEnvironment(layout, process.env, layout.remoteCloud),
-      CODEVISOR_DEV_INSTANCE_ID: `${instanceName}-cloud`,
-      CODEVISOR_DEV_CLOUD_URL: cloudUrl,
-      CODEVISOR_DEV_CLOUD_TOKEN: sharedEnvironment.CODEVISOR_DEV_CLOUD_TOKEN
-    },
-    stdio: "inherit"
+const cloudRemoteServer = await launchDevRemoteServer({
+  containerContext,
+  repoRoot,
+  remoteRootHost: join(layout.tmpRoot, "remote-cloud"),
+  serverRoots: layout.remoteCloud,
+  port: cloudRemotePort,
+  serverName: cloudRemoteName,
+  environment: {
+    ...remoteDevelopmentEnvironment(layout, process.env, layout.remoteCloud),
+    CODEVISOR_DEV_INSTANCE_ID: `${instanceName}-cloud`,
+    CODEVISOR_DEV_CLOUD_URL: cloudUrl,
+    CODEVISOR_DEV_CLOUD_TOKEN: sharedEnvironment.CODEVISOR_DEV_CLOUD_TOKEN
   }
-)
+})
 
 let app
 let stopping = false
@@ -512,8 +520,10 @@ void waitForExit(cloud).then((result) => {
 
 try {
   await waitForHealth(port, server)
-  await waitForHealth(directRemotePort, directRemoteServer)
-  await waitForHealth(cloudRemotePort, cloudRemoteServer)
+  // First container boots install Linux node_modules; allow minutes, not 30s.
+  const remoteHealthAttempts = containerContext === undefined ? 120 : 2400
+  await waitForHealth(directRemotePort, directRemoteServer, remoteHealthAttempts)
+  await waitForHealth(cloudRemotePort, cloudRemoteServer, remoteHealthAttempts)
   const remoteToken = await announceDevRemote()
   const launchEnvironment = Object.entries(sharedEnvironment).filter(
     ([key]) =>

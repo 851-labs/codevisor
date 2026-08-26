@@ -17,7 +17,7 @@ The runners install locked dependencies, resolve GhosttyKit when needed, and kee
 
 `dev:ios` uses the visible `iPhone 17 Pro` simulator by default. Set `CODEVISOR_IOS_SIMULATOR=<device name>` to select another available simulator. Its development bundle identifier is derived from the worktree path, so installing or stopping it cannot replace another worktree's simulator app.
 
-`dev` builds and launches both native apps against one shared set of macOS-owned local, remote, and cloud development services — the default for day-to-day work and cross-device synchronization testing. It accepts the same `CODEVISOR_IOS_SIMULATOR` override as `dev:ios`. `dev:macos` launches only the macOS app and its bundled server.
+`dev` builds and launches both native apps against one shared set of local, remote, and cloud development services — the default for day-to-day work and cross-device synchronization testing. It accepts the same `CODEVISOR_IOS_SIMULATOR` override as `dev:ios`. By default the Dev Direct and Dev Cloud servers run as Linux containers (Apple `container` preferred, Docker fallback, `--container-engine=` to force one) so sync is tested across real separate machines; pass `--no-containers` to run them as same-host processes, which is also the automatic fallback when no engine is available. `dev:macos` launches only the macOS app and its bundled server.
 
 Keep at most one runner active per worktree. Track and stop the parent process you started before rebuilding. Never stop or modify another worktree's instance; if this worktree already has an instance you do not own, reuse it or report that it is running.
 
