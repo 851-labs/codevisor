@@ -597,6 +597,10 @@ public extension CodevisorServerClienting {
         throw CodevisorServerClientError.invalidResponse
     }
 
+    func createDirectory(path: String) async throws -> String {
+        throw CodevisorServerClientError.invalidResponse
+    }
+
     func createProjectFromGit(id: UUID, url: String, name: String?) async throws -> ServerProject {
         throw CodevisorServerClientError.invalidResponse
     }

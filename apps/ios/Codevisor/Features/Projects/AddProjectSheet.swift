@@ -80,6 +80,8 @@ struct RemoteDirectoryScreen: View {
     @State private var listing: ServerFsListing?
     @State private var errorMessage: String?
     @State private var showHidden = false
+    @State private var showingNewFolder = false
+    @State private var newFolderName = ""
 
     var body: some View {
         Group {
@@ -100,6 +102,12 @@ struct RemoteDirectoryScreen: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
+                    Button {
+                        newFolderName = ""
+                        showingNewFolder = true
+                    } label: {
+                        Label("New Folder…", systemImage: "folder.badge.plus")
+                    }
                     Toggle("Show Hidden Folders", isOn: $showHidden)
                 } label: {
                     Image(systemName: "ellipsis.circle")
@@ -124,6 +132,24 @@ struct RemoteDirectoryScreen: View {
             }
         }
         .task(id: showHidden) { await load() }
+        .alert("New Folder", isPresented: $showingNewFolder) {
+            TextField("Folder name", text: $newFolderName)
+            Button("Create") { createFolder() }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    private var client: any CodevisorServerClienting {
+        environment.machines.client(for: serverId ?? environment.machines.selectedMachineId)
+    }
+
+    private func createFolder() {
+        let name = newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, let listing else { return }
+        Task {
+            _ = try? await client.createDirectory(path: listing.path + "/" + name)
+            await load()
+        }
     }
 
     private func folderList(_ listing: ServerFsListing) -> some View {
@@ -160,9 +186,6 @@ struct RemoteDirectoryScreen: View {
 
     private func load() async {
         do {
-            let client = environment.machines.client(
-                for: serverId ?? environment.machines.selectedMachineId
-            )
             listing = try await client.listDirectory(
                 path: directory.path,
                 showHidden: showHidden

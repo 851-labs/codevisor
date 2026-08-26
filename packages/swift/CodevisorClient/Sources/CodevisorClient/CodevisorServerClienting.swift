@@ -286,6 +286,7 @@ public protocol CodevisorServerClienting: Sendable {
     /// Directory listing for the remote project picker (directories only).
     /// Nil path lists the server's home directory.
     func listDirectory(path: String?, showHidden: Bool) async throws -> ServerFsListing
+    func createDirectory(path: String) async throws -> String
     /// Clones a git remote into the machine's managed repos directory and
     /// registers the checkout as a project. The client-supplied id lets the
     /// caller follow `project.setup` progress events while the clone runs.

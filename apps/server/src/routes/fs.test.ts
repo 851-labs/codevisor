@@ -208,4 +208,39 @@ describe("fs routes", () => {
     }
     expect(denied!.status).toBe(403)
   })
+
+  it("creates directories for the remote browser's New Folder", async () => {
+    const { server } = await start()
+    const root = mkdtempSync(join(tmpdir(), "codevisor-mkdir-"))
+    tempDirs.push(root)
+    writeFileSync(join(root, "occupied"), "a file")
+
+    const mkdirRequest = (path: string) =>
+      jsonRequest(server, "/v1/fs/mkdir", { body: JSON.stringify({ path }), method: "POST" })
+
+    // Nested creation, idempotent repeat, and visibility in the listing.
+    const nested = join(root, "projects", "fresh")
+    expect((await mkdirRequest(nested)).status).toBe(201)
+    expect((await mkdirRequest(nested)).status).toBe(201)
+    const listing = await jsonRequest(
+      server,
+      `/v1/fs/list?path=${encodeURIComponent(join(root, "projects"))}`
+    )
+    expect((listing.body as { entries: Array<{ name: string }> }).entries[0]?.name).toBe("fresh")
+
+    // Home expansion: "~" is the (existing) home itself.
+    expect((await mkdirRequest("~")).status).toBe(201)
+
+    // Relative paths are rejected; files in the way are conflicts.
+    expect((await mkdirRequest("relative/path")).status).toBe(400)
+    expect((await mkdirRequest(join(root, "occupied"))).status).toBe(409)
+    expect((await mkdirRequest(join(root, "occupied", "child"))).status).toBe(409)
+
+    // Permission failures surface as 403.
+    const locked = join(root, "locked")
+    mkdirSync(locked)
+    chmodSync(locked, 0o400)
+    expect((await mkdirRequest(join(locked, "denied"))).status).toBe(403)
+    chmodSync(locked, 0o700)
+  })
 })

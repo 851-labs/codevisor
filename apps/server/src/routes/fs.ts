@@ -1,12 +1,13 @@
-import type { FsListResponse } from "@codevisor/api"
+import { FsMkdirRequest, type FsListResponse } from "@codevisor/api"
 import { createReadStream, existsSync, statSync, type Stats } from "node:fs"
-import { readdir } from "node:fs/promises"
+import { mkdir, readdir } from "node:fs/promises"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { homedir } from "node:os"
 import { basename, dirname, extname, isAbsolute, join, resolve as resolvePath } from "node:path"
 import { fileURLToPath } from "node:url"
 import {
   HttpFailure,
+  readSchema,
   requestedByteRange,
   run,
   writeJson,
@@ -52,6 +53,22 @@ const filesystemMimeTypes: Readonly<Record<string, string>> = {
 
 const filesystemMimeType = (path: string): string =>
   filesystemMimeTypes[extname(path).toLowerCase()] ?? "application/octet-stream"
+
+/// Expands "~" / "~/…" against the server's home and requires an absolute
+/// result — shared by every fs surface so path rules cannot drift.
+const expandFsPath = (requested: string): string => {
+  const home = homedir()
+  const expanded =
+    requested === "~"
+      ? home
+      : requested.startsWith("~/")
+        ? join(home, requested.slice(2))
+        : requested
+  if (!expanded.startsWith("/")) {
+    throw new HttpFailure(400, `Path must be absolute: ${requested}`, "invalid_path")
+  }
+  return resolvePath(expanded)
+}
 
 export const routeFs = async (
   services: CodevisorServerServices,
@@ -164,20 +181,36 @@ export const routeFs = async (
     return true
   }
 
+  // Creates a directory on this machine — the remote browser's "New
+  // Folder". Same path rules as /v1/fs/list; recursive and idempotent for
+  // directories, 409 when a non-directory occupies the path.
+  if (url.pathname === "/v1/fs/mkdir" && request.method === "POST") {
+    const body = await readSchema(request, FsMkdirRequest)
+    const path = expandFsPath(body.path)
+    try {
+      await mkdir(path, { recursive: true })
+    } catch (cause) {
+      /* v8 ignore next -- mkdir errno failures always carry a code. */
+      const code = (cause as NodeJS.ErrnoException).code ?? ""
+      if (["EACCES", "EPERM"].includes(code)) {
+        throw new HttpFailure(403, `Permission denied: ${path}`, "permission_denied")
+      }
+      // macOS reports EEXIST where Linux reports ENOTDIR for a file in the way.
+      /* v8 ignore next -- the no-match fall-through is the ignored generic rethrow below. */
+      if (["EEXIST", "ENOTDIR"].includes(code)) {
+        throw new HttpFailure(409, `A file is in the way: ${path}`, "not_a_directory")
+      }
+      /* v8 ignore next 2 -- other mkdir failures (EIO etc.) fall through to the generic 500. */
+      throw cause
+    }
+    writeJson(response, 201, { path })
+    return true
+  }
+
   if (request.method !== "GET" || url.pathname !== "/v1/fs/list") return false
   const requested = url.searchParams.get("path") ?? "~"
   const showHidden = url.searchParams.get("showHidden") === "true"
-  const home = homedir()
-  const expanded =
-    requested === "~"
-      ? home
-      : requested.startsWith("~/")
-        ? join(home, requested.slice(2))
-        : requested
-  if (!expanded.startsWith("/")) {
-    throw new HttpFailure(400, `Path must be absolute: ${requested}`, "invalid_path")
-  }
-  const path = resolvePath(expanded)
+  const path = expandFsPath(requested)
   let names: Array<import("node:fs").Dirent>
   try {
     names = await readdir(path, { withFileTypes: true })

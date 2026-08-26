@@ -24,6 +24,8 @@ struct RemoteDirectoryBrowserSheet: View {
     @State private var recents: [String] = []
     @State private var showingGoTo = false
     @State private var goToText = ""
+    @State private var showingNewFolder = false
+    @State private var newFolderName = ""
     @FocusState private var focusedColumn: String?
     @FocusState private var goToFieldFocused: Bool
 
@@ -61,6 +63,13 @@ struct RemoteDirectoryBrowserSheet: View {
             footer
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
+        }
+        .alert("New Folder", isPresented: $showingNewFolder) {
+            TextField("Folder name", text: $newFolderName)
+            Button("Create") { createFolder() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Created inside \(model.chosenPath ?? model.columns.last?.path ?? "the current folder").")
         }
         .background(hiddenShortcuts)
         .frame(
@@ -309,6 +318,10 @@ struct RemoteDirectoryBrowserSheet: View {
             Toggle("Show Hidden Folders", isOn: showHiddenBinding)
             Divider()
             Button("Go to Folder…") { openGoTo() }
+            Button("New Folder…") {
+                newFolderName = ""
+                showingNewFolder = true
+            }
         } label: {
             Image(systemName: "ellipsis.circle")
                 .imageScale(.large)
@@ -378,6 +391,18 @@ struct RemoteDirectoryBrowserSheet: View {
                 closeGoTo()
             } else {
                 goToFieldFocused = true
+            }
+        }
+    }
+
+    /// Creates a folder inside the current selection (or the deepest open
+    /// column) and navigates the browser to it.
+    private func createFolder() {
+        let name = newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, let base = model.chosenPath ?? model.columns.last?.path else { return }
+        Task {
+            if let created = try? await client.createDirectory(path: base + "/" + name) {
+                _ = await model.goToPath(created)
             }
         }
     }

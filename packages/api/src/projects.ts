@@ -128,6 +128,16 @@ export const FsListResponse = Schema.Struct({
 })
 export type FsListResponse = typeof FsListResponse.Type
 
+export const FsMkdirRequest = Schema.Struct({
+  path: Schema.String
+})
+export type FsMkdirRequest = typeof FsMkdirRequest.Type
+
+export const FsMkdirResponse = Schema.Struct({
+  path: Schema.String
+})
+export type FsMkdirResponse = typeof FsMkdirResponse.Type
+
 export const UpdateProjectRequest = Schema.Struct({
   name: Schema.optional(Schema.String),
   /// Archiving a project cascades to its workspaces and sessions; unarchiving

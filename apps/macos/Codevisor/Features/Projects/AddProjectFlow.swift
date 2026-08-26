@@ -88,7 +88,8 @@ private struct AddProjectFlowModifier: ViewModifier {
                 }
             }
             .sheet(isPresented: $flow.showingGitClone) {
-                GitCloneSheet(client: client, machineName: machineName) { project in
+                GitCloneSheet(client: client, machineName: machineName, serverId: targetServerId) {
+                    project in
                     onAdded(project)
                 }
             }

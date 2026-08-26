@@ -508,6 +508,21 @@ extension CodevisorServerClient {
         )
     }
 
+    private struct CreatedDirectory: Decodable {
+        let path: String
+    }
+
+    /// Creates a folder on this machine (the remote browser's "New Folder").
+    public func createDirectory(path: String) async throws -> String {
+        struct Body: Encodable {
+            let path: String
+        }
+        let created: CreatedDirectory = try await send(
+            "/v1/fs/mkdir", method: "POST", body: Body(path: path)
+        )
+        return created.path
+    }
+
     public func listDirectory(path: String?, showHidden: Bool) async throws -> ServerFsListing {
         var components = URLComponents()
         components.path = "/v1/fs/list"

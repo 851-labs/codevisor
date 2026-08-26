@@ -7,6 +7,8 @@ import CodevisorCore
 struct GitCloneSheet: View {
     let client: any CodevisorServerClienting
     let machineName: String
+    /// The machine the clone lands on; nil follows the selected machine.
+    var serverId: String? = nil
     let onCloned: (Project) -> Void
 
     @Environment(AppEnvironment.self) private var environment
@@ -155,7 +157,8 @@ struct GitCloneSheet: View {
                 let project = environment.projectList.adoptServerProject(
                     id: UUID(uuidString: created.id) ?? projectId,
                     folderURL: URL(fileURLWithPath: folderPath),
-                    name: created.name
+                    name: created.name,
+                    serverId: serverId
                 )
                 isCloning = false
                 onCloned(project)
