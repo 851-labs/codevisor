@@ -1080,3 +1080,33 @@ describe("MCP manager", () => {
     expect(seen).toEqual([])
   })
 })
+
+describe("local suppression", () => {
+  it("drops suppressed servers from resolution, refuses connection, and disconnects", async () => {
+    const upstream = await workingUpstream()
+    const { manager } = await testManager()
+    const created = await manager.create({
+      authType: "none",
+      enabled: true,
+      name: "Suppressible",
+      transport: "http",
+      url: upstream.url
+    })
+    expect(created.connectionState).toBe("connected")
+
+    await manager.setLocalSuppression(new Set(["Suppressible"]))
+    // Sessions never see it, while the fleet definition stays enabled.
+    expect((await manager.resolved()).some((server) => server.name === "Suppressible")).toBe(false)
+    const listed = (await manager.list()).find((server) => server.name === "Suppressible")
+    expect(listed?.enabled).toBe(true)
+    expect(listed?.connectionState).toBe("disconnected")
+    await expect(manager.connect(created.id)).rejects.toThrow("disabled on this machine")
+    // Idempotent re-application with no live connection left to close.
+    await manager.setLocalSuppression(new Set(["Suppressible"]))
+
+    // Lifting the suppression restores resolution and connectability.
+    await manager.setLocalSuppression(new Set())
+    expect((await manager.resolved()).some((server) => server.name === "Suppressible")).toBe(true)
+    expect((await manager.connect(created.id)).connectionState).toBe("connected")
+  })
+})

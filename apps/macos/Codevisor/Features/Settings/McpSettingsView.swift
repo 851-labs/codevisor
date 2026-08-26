@@ -224,6 +224,8 @@ struct McpSettingsView: View {
                 Text("MCP Servers")
             }
 
+            McpMachinesSection()
+
             if !importCandidates.isEmpty || importFeedback != nil {
                 Section {
                     ForEach(importCandidates) { candidate in
@@ -284,7 +286,10 @@ struct McpSettingsView: View {
         }
         .settingsPaneFormStyle(theme)
     }
+}
 
+// MARK: - Native discovery, import, and row actions
+extension McpSettingsView {
     private var nativeServerCount: Int {
         nativeHarnessesWithServers.reduce(0) { $0 + $1.servers.count }
     }

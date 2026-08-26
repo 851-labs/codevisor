@@ -10,6 +10,7 @@ import {
 } from "@codevisor/sync"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { ACCOUNTS_SYNC_NAMESPACE, publishAccountsRoster } from "../infra/config-sync.js"
+import { MCP_OVERLAYS_NAMESPACE } from "../infra/mcp-fleet.js"
 import { verifySkillArchive } from "../infra/skills-sync.js"
 import {
   appendAndPublish,
@@ -181,6 +182,11 @@ export const routeSync = async (
         namespace,
         entries: result.changed
       }).catch(swallowError)
+      // Overlay writes enforce immediately: suppression applies and the
+      // machine's readiness entry updates in the same request cycle.
+      if (namespace === MCP_OVERLAYS_NAMESPACE) {
+        await refreshMcpReadiness(services, config, fanout)
+      }
     }
     writeJson(response, 200, { namespace, entries: result.merged })
     return true

@@ -110,6 +110,12 @@ export interface McpManager {
   readonly remove: (id: string) => Promise<void>
   readonly tools: (id?: string) => Promise<ReadonlyArray<McpTool>>
   readonly connect: (id: string) => Promise<McpServer>
+  /// Machine-local suppression (Phase 18): names disabled ON THIS MACHINE
+  /// by the config plane's mcp-overlays. Suppressed servers are dropped
+  /// from session resolution, refused connection, and any live connection
+  /// is closed — while the definition (and its fleet-wide enabled flag)
+  /// stays untouched. Idempotent; pass the full current set each time.
+  readonly setLocalSuppression: (names: ReadonlySet<string>) => Promise<void>
   readonly beginOAuth: (id: string, redirectBaseUrl?: string) => Promise<string>
   readonly finishOAuth: (state: string, code: string) => Promise<McpServer>
   readonly disconnectOAuth: (id: string) => Promise<McpServer>
@@ -491,6 +497,8 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
     return saveRecord(current, { secretCipher: encryptSecrets(key, mutate(secrets(current))) })
   }
 
+  let locallySuppressed: ReadonlySet<string> = new Set()
+
   const closeConnection = async (id: string): Promise<void> => {
     const existing = connections.get(id)
     connections.delete(id)
@@ -527,6 +535,9 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       if (server.kind !== "managed") throw new Error(`${server.name} is an internal provider`)
       if (!server.enabled && options.allowDisabled !== true) {
         throw new Error(`${server.name} is disabled`)
+      }
+      if (locallySuppressed.has(server.name)) {
+        throw new Error(`${server.name} is disabled on this machine`)
       }
       /* v8 ignore next -- preserveState is reserved for the live OAuth validation path. */
       if (options.preserveState !== true) {
@@ -792,6 +803,20 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       await refreshGatewayInventories()
       return publicServer(await record(id))
     },
+    setLocalSuppression: async (names) => {
+      await builtinsReady
+      locallySuppressed = new Set(names)
+      if (names.size > 0) {
+        for (const server of await run(config.db.listMcpServers)) {
+          if (!names.has(server.name)) continue
+          if (connections.has(server.id)) {
+            await closeConnection(server.id)
+            await saveRecord(server, { connectionState: "disconnected", detail: undefined })
+          }
+        }
+      }
+      await refreshGatewayInventories()
+    },
     staticSecrets: async (id) => {
       const stored = secrets(await record(id))
       return {
@@ -1004,7 +1029,9 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
     /* v8 ignore stop */
     resolved: async (projectId, sessionId) => {
       await builtinsReady
-      return (await run(config.db.resolveMcpServers(projectId, sessionId))).map(publicServer)
+      return (await run(config.db.resolveMcpServers(projectId, sessionId)))
+        .filter((server) => !locallySuppressed.has(server.name))
+        .map(publicServer)
     },
     setProjectEnabled: async (projectId, serverId, enabled) => {
       await run(config.db.setProjectMcpEnabled(projectId, serverId, enabled))

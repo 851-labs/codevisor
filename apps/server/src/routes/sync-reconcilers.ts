@@ -161,6 +161,11 @@ export const refreshMcpReadiness = async (
   const mcp = services.mcp
   if (mcp === undefined) return
   try {
+    // Enforcement first, then the report: suppressed servers drop out of
+    // session resolution and lose live connections before readiness is
+    // derived, so the published entry reflects the enforced state.
+    const overlays = await readMcpOverlays(services.db, config.id)
+    await mcp.setLocalSuppression(overlays.disabledHere)
     const result = await publishMcpReadiness({ db: services.db, mcp, serverId: config.id })
     if (result.changedEntries.length > 0) {
       void appendAndPublish(services.db, fanout, "sync.changed", MCP_READINESS_NAMESPACE, {

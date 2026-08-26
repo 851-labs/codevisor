@@ -40,4 +40,37 @@ describe("/v1/sync/mcp-readiness", () => {
     }
     expect(after.entries[0]?.value.servers.some((s) => s.name === "Fresh")).toBe(true)
   })
+
+  it("enforces a per-machine disable overlay in the same request cycle", async () => {
+    const { services } = await makeServices("server-overlay")
+    const server = await startWithApp(services, undefined, { id: "server-overlay" })
+    await jsonRequest(server, "/v1/sync/mcp-readiness/publish", { method: "POST" })
+
+    // Disable a built-in on this machine via the generic overlay surface.
+    const put = await jsonRequest(server, "/v1/sync/mcp-overlays", {
+      body: JSON.stringify({
+        entries: [
+          {
+            key: "enable|server-overlay|Computer Use",
+            value: { enabled: false },
+            timestamp: { wallMs: 10, counter: 0, deviceId: "phone" }
+          }
+        ]
+      }),
+      method: "PUT"
+    })
+    expect(put.status).toBe(200)
+
+    // Readiness already reflects the enforced suppression...
+    const document = (await jsonRequest(server, "/v1/sync/mcp-readiness")).body as {
+      entries: Array<{
+        value: { servers: Array<{ name: string; state: string; reason?: string }> }
+      }>
+    }
+    const computer = document.entries[0]?.value.servers.find((s) => s.name === "Computer Use")
+    expect(computer).toMatchObject({ state: "disabled", reason: "Disabled on this machine" })
+    // ...and sessions on this machine no longer resolve the server.
+    const resolved = await services.mcp?.resolved()
+    expect(resolved?.some((s) => s.name === "Computer Use")).toBe(false)
+  })
 })
