@@ -308,5 +308,6 @@ extension SessionController {
         } else if selectedHarnessId == nil {
             selectedHarnessId = harnesses.first?.id
         }
+        ensureDefaultModelSelection()
     }
 }

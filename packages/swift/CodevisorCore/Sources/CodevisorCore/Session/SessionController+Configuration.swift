@@ -164,6 +164,21 @@ extension SessionController {
         SessionConfigOption.Category.modelConfig,
     ]
 
+    /// A draft never sits with an empty model chip: when the harness
+    /// reports selectable models but no usable current choice — and nothing
+    /// is pending or remembered — the first option becomes the pending
+    /// selection, which is exactly what the send would use.
+    func ensureDefaultModelSelection() {
+        guard model == nil, let harnessId = selectedHarnessId, let option = modelOption
+        else { return }
+        let isValid = option.options.contains { $0.value == option.currentValue }
+        guard !isValid, let first = option.options.first else { return }
+        var pending = pendingConfigByHarness[harnessId] ?? [:]
+        guard pending[option.id] == nil else { return }
+        pending[option.id] = first.value
+        pendingConfigByHarness[harnessId] = pending
+    }
+
     /// The model choice shown in the combined model dropdown.
     public var modelOption: SessionConfigOption? {
         configOptions.first { $0.category == SessionConfigOption.Category.model && !$0.options.isEmpty }
