@@ -4,6 +4,7 @@ import { jsonRequest, makeServices, run, startWithApp } from "../test-support.js
 import {
   configMutationNamespace,
   refreshMcpReadiness,
+  reconcileForNamespace,
   republishAccountsRoster,
   runBackgroundSyncReconcile
 } from "./sync-reconcilers.js"
@@ -184,5 +185,75 @@ describe("republishAccountsRoster", () => {
       }
     } as unknown as typeof services
     await expect(republishAccountsRoster(poisoned, config, fanout)).resolves.toBeUndefined()
+  })
+})
+
+describe("credentials plane", () => {
+  it("reconciles ferry sources, probes on apply, and rides the harnesses trigger", async () => {
+    const fanout = await run(makeEventFanout)
+    const { services } = await makeServices("server-x")
+    const contents = new Map<string, string | undefined>([
+      ["pi-auth", '{"openai":{"key":"sk-1","type":"api_key"}}'],
+      ["mystery-source", '{"whatever":true}']
+    ])
+    const makeSource = (id: string) => ({
+      id,
+      tombstoneOnAbsence: false,
+      read: () => Promise.resolve(contents.get(id)),
+      apply: (content: string) => {
+        contents.set(id, content)
+        return Promise.resolve()
+      }
+    })
+    const refreshed: Array<string | undefined> = []
+    const ferrySources = [makeSource("pi-auth"), makeSource("mystery-source")]
+    const withFerry = {
+      ...services,
+      credentialFerry: ferrySources,
+      auth: {
+        refresh: (harnessId?: string) => {
+          refreshed.push(harnessId)
+          return Promise.resolve()
+        }
+      }
+    } as unknown as typeof services
+
+    // Seed a fleet value so the pass APPLIES (covering the probe hook);
+    // the unmapped source applies too but probes nothing.
+    await run(
+      withFerry.db.mergeSyncEntries("harness-credentials", [
+        {
+          key: "pi-auth",
+          value: '{"openai":{"key":"fleet","type":"api_key"}}',
+          timestamp: { wallMs: 10, counter: 0, deviceId: "elsewhere" }
+        },
+        {
+          key: "mystery-source",
+          value: '{"whatever":false}',
+          timestamp: { wallMs: 11, counter: 0, deviceId: "elsewhere" }
+        }
+      ])
+    )
+    const result = await reconcileForNamespace(withFerry, config, "credentials")
+    expect(result).toBeDefined()
+    expect((result?.status as { applied: string[] }).applied.toSorted()).toEqual([
+      "mystery-source",
+      "pi-auth"
+    ])
+    expect(refreshed).toEqual(["pi"])
+    expect(contents.get("pi-auth")).toContain("fleet")
+
+    // The harnesses trigger re-runs the ferry: a local edit publishes into
+    // the replica without any credentials-specific mutation hook. (No auth
+    // service here — the real harnesses pass runs, and the probe hook's
+    // optional chain takes its absent side.)
+    const withFerryNoAuth = {
+      ...services,
+      credentialFerry: ferrySources
+    } as unknown as typeof services
+    contents.set("pi-auth", '{"openai":{"key":"sk-2","type":"api_key"}}')
+    await runBackgroundSyncReconcile(withFerryNoAuth, config, fanout, "harnesses")
+    const entries = await run(withFerry.db.getSyncEntries("harness-credentials"))
+    expect(entries.find((entry) => entry.key === "pi-auth")?.value).toContain("sk-2")
   })
 })

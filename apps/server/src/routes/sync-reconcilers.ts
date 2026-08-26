@@ -5,6 +5,7 @@ import {
   publishAccountsRoster,
   reconcileMcps
 } from "../infra/config-sync.js"
+import { CREDENTIALS_SYNC_NAMESPACE, reconcileCredentials } from "../infra/credential-sync.js"
 import {
   MCP_READINESS_NAMESPACE,
   publishMcpReadiness,
@@ -30,7 +31,7 @@ import { discoverHarnesses } from "./harnesses.js"
 /// response, so the change enters the replica and publishes sync.changed
 /// within a second instead of waiting for a client's periodic sweep.
 
-export type SyncReconcileNamespace = "skills" | "mcps" | "harnesses" | "plugins"
+export type SyncReconcileNamespace = "skills" | "mcps" | "harnesses" | "plugins" | "credentials"
 
 export interface SyncReconcileOutcome {
   readonly status: unknown
@@ -103,6 +104,26 @@ export const reconcileForNamespace = async (
         }
       })
     }
+    case "credentials": {
+      const sources = services.credentialFerry
+      if (sources === undefined) return undefined
+      // Ferried content landing locally forces an auth probe; the account
+      // state change then republishes the roster via the auth bridge.
+      const harnessFor: Record<string, string> = {
+        "pi-auth": "pi",
+        "opencode-auth": "opencode",
+        "codex-auth-file": "codex"
+      }
+      return reconcileCredentials({
+        db: services.db,
+        serverId: config.id,
+        sources,
+        onApplied: (sourceId: string) => {
+          const harnessId = harnessFor[sourceId]
+          if (harnessId !== undefined) void services.auth?.refresh(harnessId).catch(swallowError)
+        }
+      })
+    }
     case "plugins": {
       const manager = services.plugins
       if (manager === undefined) return undefined
@@ -136,7 +157,8 @@ const WIRE_NAMESPACES: Record<SyncReconcileNamespace, string> = {
   skills: SKILLS_SYNC_NAMESPACE,
   mcps: MCPS_SYNC_NAMESPACE,
   harnesses: HARNESSES_SYNC_NAMESPACE,
-  plugins: PLUGINS_SYNC_NAMESPACE
+  plugins: PLUGINS_SYNC_NAMESPACE,
+  credentials: CREDENTIALS_SYNC_NAMESPACE
 }
 
 export const publishSyncChanged = (
@@ -226,6 +248,14 @@ export const runBackgroundSyncReconcile = async (
     if (result === undefined) return
     publishSyncChanged(services, fanout, namespace, result.changedEntries)
     if (namespace === "mcps") await refreshMcpReadiness(services, config, fanout)
+    // Auth mutations ride the harnesses trigger; the credential ferry
+    // re-hashes its files on the same beat (cheap when nothing changed).
+    if (namespace === "harnesses") {
+      const credentials = await reconcileForNamespace(services, config, "credentials")
+      if (credentials !== undefined) {
+        publishSyncChanged(services, fanout, "credentials", credentials.changedEntries)
+      }
+    }
   } catch {
     // Best-effort by design; the periodic client sweep remains the backstop.
   }

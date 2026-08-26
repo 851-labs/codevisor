@@ -231,3 +231,13 @@ extension CodevisorServerClient {
         )
     }
 }
+
+extension CodevisorServerClient {
+    public func reconcileCredentialsSync() async throws -> JSONValue {
+        try await send(
+            "/v1/sync/credentials/reconcile",
+            method: "POST",
+            body: Optional<EmptyBody>.none
+        )
+    }
+}

@@ -1,3 +1,4 @@
+import { credentialFerrySources } from "@codevisor/harness-manager"
 import {
   makeAgentRuntime,
   resolveShellEnv,
@@ -823,6 +824,11 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
         preferDeviceCode: resolvedKind === "remote"
       })
     )
+    // The static credential ferry's file layer (Phase 20): which harness
+    // credential surfaces are honestly static enough to travel the fleet.
+    const credentialFerry = initializeOptionalServerFeature("Credential ferry", () =>
+      credentialFerrySources({ resolveEnv: () => Promise.resolve(process.env) })
+    )
     const skills = initializeOptionalServerFeature("Skills", () => makeSkillsManager({ agents }))
     // Content-addressed archives the config plane replicates skills through.
     const syncBlobs = makeBlobStore(join(dirname(databasePath), "sync-blobs"))
@@ -932,6 +938,7 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
         terminal,
         ...(auth === undefined ? {} : { auth }),
         ...(lifecycle === undefined ? {} : { lifecycle }),
+        ...(credentialFerry === undefined ? {} : { credentialFerry }),
         ...(mcp === undefined ? {} : { mcp }),
         ...(nativeMcp === undefined ? {} : { nativeMcp }),
         ...(plugins === undefined ? {} : { plugins }),

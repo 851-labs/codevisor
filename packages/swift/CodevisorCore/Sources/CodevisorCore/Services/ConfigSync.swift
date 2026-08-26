@@ -15,7 +15,7 @@ public final class ConfigSync {
     /// The namespaces this client gossips. Grows as stores onboard.
     public static let namespaces = [
         "settings", "skills", "mcps", "harness-accounts", "machines", "harnesses", "plugins",
-        "mcp-readiness", "mcp-overlays",
+        "mcp-readiness", "mcp-overlays", "harness-credentials",
     ]
 
     private let machines: MachineController
@@ -234,6 +234,7 @@ public final class ConfigSync {
         case "mcps": _ = try? await client.reconcileMcpsSync()
         case "harnesses": _ = try? await client.reconcileHarnessesSync()
         case "plugins": _ = try? await client.reconcilePluginsSync()
+        case "harness-credentials": _ = try? await client.reconcileCredentialsSync()
         default: break
         }
     }

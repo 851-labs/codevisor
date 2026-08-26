@@ -1,3 +1,4 @@
+import type { CredentialSource } from "@codevisor/harness-manager"
 import type { AgentRuntimeService, PromptAttachmentInput } from "@codevisor/agent-runtime"
 import { createHash } from "node:crypto"
 import type {
@@ -122,6 +123,7 @@ export interface CodevisorServerServices {
   /// that omits Homebrew tools such as git-lfs.
   readonly resolveGitEnvironment?: () => Promise<NodeJS.ProcessEnv>
   readonly auth?: HarnessAuthManager
+  readonly credentialFerry?: ReadonlyArray<CredentialSource>
   readonly mcp?: McpManager
   /// User-defined custom ACP harness persistence + handshake probe. Absent on
   /// hosts that don't support it (embedded runtimes, tests) — routes 501.

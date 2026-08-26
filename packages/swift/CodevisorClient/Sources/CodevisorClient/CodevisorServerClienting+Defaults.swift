@@ -625,6 +625,10 @@ public extension CodevisorServerClienting {
         ServerPluginSyncStatus(published: [], applied: [], removed: [], installed: [], blocked: [])
     }
 
+    func reconcileCredentialsSync() async throws -> JSONValue {
+        throw CodevisorServerClientError.invalidResponse
+    }
+
     func syncParticipation() async throws -> ServerSyncParticipation {
         ServerSyncParticipation(enabled: true)
     }
