@@ -18,6 +18,13 @@ STATE=/codevisor-state
 APP=/codevisor
 BUN="$STATE/bun/bin/bun"
 
+# Both dev containers share this state (and the workspace copy). Their
+# first boots race the same bun download and the same node_modules
+# install — serialize the whole provisioning phase; the loser wakes up,
+# sees the completed signature, and skips.
+exec 9>"$STATE/.bootstrap.lock"
+flock 9
+
 if [ ! -x "$BUN" ]; then
   echo "[container] installing bun (linux) into tmp-mounted cache"
   apt_missing=""
@@ -56,6 +63,16 @@ if [ ! -d node_modules ] || [ "$LOCK_SIGNATURE" != "$INSTALLED_SIGNATURE" ]; the
     node -e "require('better-sqlite3'); require('node-pty')"
   fi
   echo "$LOCK_SIGNATURE" > "$STATE/installed.signature"
+fi
+
+flock -u 9
+
+# One-shot provisioning mode: the runner boots this once (and waits)
+# before starting the two server containers, because they share this
+# state and cross-VM file locks cannot serialize their first boots.
+if [ "${1:-}" = "--provision-only" ]; then
+  echo "[container] provisioning complete"
+  exit 0
 fi
 
 echo "[container] starting server: $*"

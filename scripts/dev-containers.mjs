@@ -290,16 +290,46 @@ export async function containerHostAddress(engine) {
 /// stale containers, and resolve the host address containers use to reach
 /// the dev cloud hub.
 export async function prepareDevContainers({ repoRoot, containerRoot, engine, worktreeHash }) {
-  await mkdir(join(containerRoot, "state"), { recursive: true })
-  const { appRoot } = await syncLinuxWorkspace(repoRoot, containerRoot)
+  const stateRoot = join(containerRoot, "state")
+  await mkdir(stateRoot, { recursive: true })
+  const { appRoot, changed } = await syncLinuxWorkspace(repoRoot, containerRoot)
   await ensureDevContainerImage(engine)
   await sweepStaleContainers(engine, worktreeHash)
+  const entryScript = join(repoRoot, "scripts", "dev-container-entry.sh")
+  // The two server containers share this state and workspace; their first
+  // boots would race the same bun download and node_modules install
+  // (cross-VM file locks do not serialize virtiofs mounts). Provision
+  // once, host-sequenced, before either server starts.
+  if (changed || !(await pathExists(join(stateRoot, "installed.signature")))) {
+    console.log("  provisioning Linux workspace (first container boot)…")
+    const binary = engine === "apple" ? "container" : "docker"
+    await execEngine(binary, [
+      "run",
+      "--rm",
+      "--cpus",
+      "4",
+      "--memory",
+      "4g",
+      "--label",
+      `${WORKTREE_LABEL}=${worktreeHash}`,
+      "--volume",
+      `${appRoot}:/codevisor`,
+      "--volume",
+      `${stateRoot}:/codevisor-state`,
+      "--volume",
+      `${entryScript}:/entry.sh`,
+      DEV_CONTAINER_IMAGE,
+      "sh",
+      "/entry.sh",
+      "--provision-only"
+    ])
+  }
   return {
     engine,
     worktreeHash,
     appRoot,
-    stateRoot: join(containerRoot, "state"),
-    entryScript: join(repoRoot, "scripts", "dev-container-entry.sh"),
+    stateRoot,
+    entryScript,
     hostAddress: await containerHostAddress(engine)
   }
 }
