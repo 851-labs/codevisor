@@ -13,6 +13,9 @@ struct TerminalPaneView: View {
     let terminalKey: String
     let cwd: String
     let config: CodevisorServerConfig
+    /// Attach to a terminal something else spawned (a harness auth flow's
+    /// PTY) instead of asking the server to start a shell.
+    var attachOnly: Bool = false
 
     @State private var status: String?
     @StateObject private var keyController = TerminalKeyController()
@@ -20,7 +23,8 @@ struct TerminalPaneView: View {
     var body: some View {
         ZStack(alignment: .bottom) {
             TerminalHostView(
-                terminalKey: terminalKey, cwd: cwd, config: config, keyController: keyController
+                terminalKey: terminalKey, cwd: cwd, config: config, attachOnly: attachOnly,
+                keyController: keyController
             ) { status in
                 self.status = status
             }
@@ -64,6 +68,7 @@ private struct TerminalHostView: UIViewRepresentable {
     let terminalKey: String
     let cwd: String
     let config: CodevisorServerConfig
+    var attachOnly: Bool = false
     let keyController: TerminalKeyController
     let onStatus: (String?) -> Void
 
@@ -90,7 +95,8 @@ private struct TerminalHostView: UIViewRepresentable {
     func updateUIView(_ uiView: SwiftTerm.TerminalView, context: Context) {}
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(terminalKey: terminalKey, cwd: cwd, config: config, onStatus: onStatus)
+        Coordinator(
+            terminalKey: terminalKey, cwd: cwd, config: config, attachOnly: attachOnly, onStatus: onStatus)
     }
 
     static func dismantleUIView(_ uiView: SwiftTerm.TerminalView, coordinator: Coordinator) {
@@ -103,15 +109,20 @@ private struct TerminalHostView: UIViewRepresentable {
         private let terminalKey: String
         private let cwd: String
         private let config: CodevisorServerConfig
+        private let attachOnly: Bool
         private let onStatus: (String?) -> Void
         private var transport: TerminalTransport?
         private weak var terminalView: SwiftTerm.TerminalView?
         private var opened = false
 
-        init(terminalKey: String, cwd: String, config: CodevisorServerConfig, onStatus: @escaping (String?) -> Void) {
+        init(
+            terminalKey: String, cwd: String, config: CodevisorServerConfig, attachOnly: Bool,
+            onStatus: @escaping (String?) -> Void
+        ) {
             self.terminalKey = terminalKey
             self.cwd = cwd
             self.config = config
+            self.attachOnly = attachOnly
             self.onStatus = onStatus
         }
 
@@ -128,7 +139,8 @@ private struct TerminalHostView: UIViewRepresentable {
             let rows = max(2, terminal.rows)
             Task {
                 do {
-                    try await transport.open(sessionId: terminalKey, cwd: cwd, cols: cols, rows: rows)
+                    try await transport.open(
+                        sessionId: terminalKey, cwd: cwd, cols: cols, rows: rows, attachOnly: attachOnly)
                     self.onStatus(nil)
                 } catch {
                     self.onStatus("Couldn't open \(config.baseURL.absoluteString): \(error.localizedDescription)")

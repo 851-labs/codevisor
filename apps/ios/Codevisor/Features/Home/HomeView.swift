@@ -34,6 +34,7 @@ struct HomeView: View {
     // period keeps onboarding from flashing over an already-paired install.
     @State private var readyForOnboarding = false
     @State private var isShowingSettings = false
+    @State private var pendingHarnessSignIn: HarnessSignInRequest?
     @State private var newChatFlow: NewChatFlow?
     /// Presentation and promotion have different lifetimes. SwiftUI owns this
     /// item only while the native sheet exists; `newChatFlow` deliberately
@@ -348,6 +349,11 @@ struct HomeView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .codevisorOpenSettings)) { _ in
                 isShowingSettings = true
+            }
+            .harnessSignInSheet(request: $pendingHarnessSignIn)
+            .onReceive(NotificationCenter.default.publisher(for: .codevisorHarnessSignIn)) {
+                notification in
+                pendingHarnessSignIn = HarnessSignInRequest(notification: notification)
             }
             .sheet(item: $presentedNewChatFlow, onDismiss: handleNewChatSheetDismissed) {
                 flow in
@@ -1008,55 +1014,6 @@ struct HomeView: View {
             _ = ensureWorkspace(for: session)
         }
         workspaceRevision += 1
-    }
-
-    private func preferenceIDs(from rawValue: String) -> [UUID] {
-        var seen: Set<UUID> = []
-        return rawValue.split(separator: "\n").compactMap { rawID in
-            guard let id = UUID(uuidString: String(rawID)), seen.insert(id).inserted else {
-                return nil
-            }
-            return id
-        }
-    }
-
-    private func persistedIDs(from rawValue: String) -> Set<UUID> {
-        Set(preferenceIDs(from: rawValue))
-    }
-
-    /// Updates the selected machine's visible slice without discarding ranks
-    /// saved for archived content or other paired machines.
-    private func mergedPreferenceOrder(
-        visibleIDs: [UUID],
-        existingRawValue: String
-    ) -> String {
-        let visibleIDSet = Set(visibleIDs)
-        let preservedIDs = preferenceIDs(from: existingRawValue).filter {
-            !visibleIDSet.contains($0)
-        }
-        return (preservedIDs + visibleIDs).map(\.uuidString).joined(separator: "\n")
-    }
-
-    /// Applies a persistent manual rank while leaving newly-seen containers
-    /// in their source order at the end until the user moves them.
-    private func manuallyOrdered<Value>(
-        _ values: [Value],
-        ids: [UUID],
-        id: KeyPath<Value, UUID>
-    ) -> [Value] {
-        let ranks = Dictionary(
-            uniqueKeysWithValues: ids.enumerated().map { ($0.element, $0.offset) }
-        )
-        return values.enumerated().sorted { left, right in
-            let leftRank = ranks[left.element[keyPath: id]]
-            let rightRank = ranks[right.element[keyPath: id]]
-            switch (leftRank, rightRank) {
-            case let (leftRank?, rightRank?): return leftRank < rightRank
-            case (_?, nil): return true
-            case (nil, _?): return false
-            case (nil, nil): return left.offset < right.offset
-            }
-        }.map(\.element)
     }
 
     private func setProject(_ id: UUID, isExpanded: Bool) {

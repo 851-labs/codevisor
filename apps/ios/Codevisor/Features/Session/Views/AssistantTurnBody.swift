@@ -236,9 +236,14 @@ struct AssistantTurnBody: View {
         {
             ChatErrorRow(
                 message,
-                actionTitle: "Open Settings",
-                action: {
-                    NotificationCenter.default.post(name: .codevisorOpenSettings, object: nil)
+                actionTitle: "Sign In",
+                action: { [weak transcriptController] in
+                    guard let controller = transcriptController,
+                        let harnessId = controller.selectedHarnessId ?? controller.activeHarnessId
+                    else { return }
+                    HarnessSignInRequest(
+                        serverId: controller.project.serverId, harnessId: harnessId
+                    ).post()
                 }
             )
         } else if let transcriptController,

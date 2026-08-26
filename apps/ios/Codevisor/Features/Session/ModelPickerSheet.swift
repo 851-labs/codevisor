@@ -26,6 +26,7 @@ struct ModelPickerSheet: View {
     /// that row shows the progress spinner in its checkmark slot.
     @State private var pendingModelValue: String?
     @State private var pendingModelGroupId: String?
+    @State private var signInRequest: HarnessSignInRequest?
 
     private struct HarnessGroup: Identifiable {
         let id: String
@@ -83,6 +84,14 @@ struct ModelPickerSheet: View {
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .interactiveDismissDisabled(isSwitchingHarness)
+        .harnessSignInSheet(request: $signInRequest)
+    }
+
+    /// Fleet-enabled harnesses on this machine blocked on auth — rendered as
+    /// tappable rows at the bottom of the model list (hidden while searching).
+    private var signInRequired: [ServerHarness] {
+        guard controller.canChooseHarness else { return [] }
+        return environment.configCache.signInRequired(forServer: controller.project.serverId)
     }
 
     private var stepTitle: String {
@@ -97,7 +106,7 @@ struct ModelPickerSheet: View {
 
     @ViewBuilder
     private var modelStep: some View {
-        if groups.isEmpty {
+        if groups.isEmpty, signInRequired.isEmpty {
             // Resumed chats fetch their harness capabilities after the chip
             // can already open the sheet: hold the list's place with a
             // spinner instead of a blank screen while options load.
@@ -137,6 +146,32 @@ struct ModelPickerSheet: View {
                             HStack(spacing: 6) {
                                 HarnessIconView(harnessId: group.id, size: 14)
                                 Text(group.name)
+                            }
+                        }
+                    }
+                }
+                if !signInRequired.isEmpty, search.isEmpty {
+                    Section("Sign in required") {
+                        ForEach(signInRequired, id: \.id) { harness in
+                            Button {
+                                signInRequest = HarnessSignInRequest(
+                                    serverId: controller.project.serverId,
+                                    harnessId: harness.id,
+                                    initialHarness: harness
+                                )
+                            } label: {
+                                HStack(spacing: 8) {
+                                    HarnessIconView(
+                                        harnessId: harness.id,
+                                        fallbackSymbolName: harness.symbolName,
+                                        size: 16
+                                    )
+                                    Text(harness.name)
+                                        .foregroundStyle(Color.primary)
+                                    Spacer()
+                                    Text("Sign In")
+                                        .foregroundStyle(.tint)
+                                }
                             }
                         }
                     }

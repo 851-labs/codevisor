@@ -72,9 +72,14 @@ struct TranscriptVirtualRowContent: View {
         if controller.errorRequiresHarnessAuthentication {
             ChatErrorRow(
                 message,
-                actionTitle: "Open Settings",
-                action: {
-                    NotificationCenter.default.post(name: .codevisorOpenSettings, object: nil)
+                actionTitle: "Sign In",
+                action: { [weak controller] in
+                    guard let controller,
+                        let harnessId = controller.selectedHarnessId ?? controller.activeHarnessId
+                    else { return }
+                    HarnessSignInRequest(
+                        serverId: controller.project.serverId, harnessId: harnessId
+                    ).post()
                 }
             )
         } else {
