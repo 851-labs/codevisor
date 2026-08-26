@@ -8,8 +8,8 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "bun scripts/dev.mjs",
-    "dev:all": "bun scripts/dev.mjs --ios",
+    "dev": "bun scripts/dev.mjs --ios",
+    "dev:macos": "bun scripts/dev.mjs",
     "dev:ios": "bun scripts/dev-ios.mjs",
     "build:macos": "bun scripts/build-native.mjs macos",
     "build:ios": "bun scripts/build-native.mjs ios",
