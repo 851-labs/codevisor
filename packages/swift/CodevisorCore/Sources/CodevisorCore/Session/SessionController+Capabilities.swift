@@ -42,7 +42,10 @@ extension SessionController {
             }
             return
         }
-        preparationState = .loading
+        // No usable models cached, but a persisted sign-in-required list is
+        // still a settled answer — render it while the live fetch runs.
+        preparationState =
+            configCache.signInRequired(forServer: project.serverId).isEmpty ? .loading : .ready
         let requestRevision = beginHarnessCapabilityRefresh()
         _ = await prepareFromServerCapabilities(
             serverClient,
@@ -146,7 +149,22 @@ extension SessionController {
         modelConfigurationResolutionRevision &+= 1
         isResolvingModelConfiguration = false
         isRefreshingHarnessCapabilities = true
-        preparationState = harnesses.isEmpty ? .loading : .ready
+        preparationState =
+            harnesses.isEmpty && configCache.signInRequired(forServer: project.serverId).isEmpty
+            ? .loading : .ready
+    }
+
+    /// Whether the draft has a settled, RENDERABLE answer for its machine's
+    /// catalog: some harness with inspected options, or — for a machine with
+    /// nothing usable at all — the persisted sign-in-required list ("Select
+    /// a harness" plus sign-in rows). Either holds steady while a refresh
+    /// runs. A provisional seed (harnesses known, options not inspected yet)
+    /// is NOT settled: its models are still coming, so the spinner is honest.
+    var hasSettledCatalogKnowledge: Bool {
+        if harnesses.isEmpty {
+            return !configCache.signInRequired(forServer: project.serverId).isEmpty
+        }
+        return harnesses.contains { !(configOptionsByHarness[$0.id] ?? []).isEmpty }
     }
 
     static func configurationAdjustmentMessage(

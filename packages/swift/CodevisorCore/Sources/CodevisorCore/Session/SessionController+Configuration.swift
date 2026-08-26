@@ -205,7 +205,12 @@ extension SessionController {
     /// place with a spinner during that gap instead of popping it in later.
     public var isLoadingModelMenu: Bool {
         guard !hasModelMenu else { return false }
-        if isRefreshingHarnessCapabilities { return true }
+        // A background revalidation is stale-while-revalidate like every
+        // other catalog consumer: only spin when there is NO settled answer
+        // at all. A draft whose machine has nothing usable but a known
+        // sign-in-required list holds its "Select a harness" chip steady
+        // instead of flickering on every sync-driven refresh.
+        if isRefreshingHarnessCapabilities { return !hasSettledCatalogKnowledge }
         if isConnecting || isConnectingToHarness { return true }
         // A draft with no spawned agent yet (new-chat page, deferred chats)
         // fetching harness capabilities: hold the model chip's slot with a

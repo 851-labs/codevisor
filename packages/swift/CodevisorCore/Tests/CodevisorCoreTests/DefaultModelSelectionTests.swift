@@ -69,6 +69,51 @@ struct DefaultModelSelectionTests {
         #expect(controller.modelOption == nil)
     }
 
+    @Test("A sign-in-only catalog is settled: refreshes never flicker the spinner")
+    func signInOnlyCatalogHoldsSteady() async throws {
+        let store = InMemoryStore()
+        let cache = ConfigOptionCache(store: store)
+        var project = Project.fromFolder(URL(fileURLWithPath: "/tmp/machine-a"))
+        project.serverId = "machine-a"
+        // The machine has nothing usable — only a fleet-enabled harness
+        // waiting on auth.
+        let pending = ServerHarnessCapability(
+            harness: ServerHarness(
+                id: "claude-code",
+                name: "Claude Code",
+                symbolName: "sparkle",
+                source: "registry",
+                launchKind: "npx",
+                enabled: false,
+                readiness: ServerHarnessReadiness(state: "ready", detail: nil)
+            ),
+            modes: nil,
+            configOptions: [],
+            supportsGoals: nil
+        )
+        _ = try await cache.revalidateCapabilities(
+            forServer: "machine-a", cwd: "/tmp/machine-a", force: true, fetch: { [pending] })
+
+        let controller = SessionController(project: project, configCache: cache)
+        #expect(controller.harnesses.isEmpty)
+
+        // A catalog-revision bump (sync gossip, a dismissed sign-in sheet)
+        // marks the draft stale — but "Select a harness" plus sign-in rows
+        // is a settled answer, so no blocking state and no spinner.
+        controller.invalidateHarnessCapabilities()
+        #expect(controller.preparationState == .ready)
+        #expect(controller.isRefreshingHarnessCapabilities)
+        #expect(!controller.isLoadingModelMenu)
+
+        // A machine with NO knowledge at all still earns the spinner.
+        var unknown = Project.fromFolder(URL(fileURLWithPath: "/tmp/machine-b"))
+        unknown.serverId = "machine-b"
+        let blank = SessionController(project: unknown, configCache: cache)
+        blank.invalidateHarnessCapabilities()
+        #expect(blank.preparationState == .loading)
+        #expect(blank.isLoadingModelMenu)
+    }
+
     @Test("A stale fetch never stores its machine's catalog under the new machine's key")
     func staleFetchCannotPoisonRetargetedCache() async throws {
         let controller = SessionController.preview()
