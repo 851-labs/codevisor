@@ -74,7 +74,7 @@ struct RunTargetPickerSheet: View {
                         .navigationBarTitleDisplayMode(.inline)
                 case let .runLocation(serverId, projectId):
                     runLocationStep(serverId: serverId, projectId: projectId)
-                        .navigationTitle("Select a directory")
+                        .navigationTitle("Select a location")
                         .navigationBarTitleDisplayMode(.inline)
                 }
             }
