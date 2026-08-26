@@ -865,4 +865,52 @@ describe("harness routes", () => {
       expect(turns[0]).toBe("start codex")
     })
   })
+
+  it("capabilities lists sign-in-pending harnesses without inspecting them", async () => {
+    const { services, agents } = await makeServices("server-a")
+    const auth = {
+      // The fixture catalog holds one harness; the decorator plays the
+      // auth manager's role and contributes a second, sign-in-pending one.
+      decorateHarnesses: (list: ReadonlyArray<Harness>) =>
+        Promise.resolve([
+          ...list.map((harness) => ({
+            ...harness,
+            desiredEnabled: true,
+            enabled: true,
+            readiness: { state: "ready" },
+            auth: { state: "authenticated" }
+          })),
+          ...list.map((harness) => ({
+            ...harness,
+            id: "claude-code",
+            name: "Claude Code",
+            desiredEnabled: true,
+            enabled: false,
+            readiness: { state: "ready" },
+            auth: { state: "unauthenticated" }
+          }))
+        ]),
+      activeAccountContext: () => Promise.resolve(undefined),
+      subscribe: () => () => undefined
+    } as unknown as HarnessAuthManager
+    const server = await startWithApp({ ...services, auth })
+
+    const cwd = mkdtempSync(join(tmpdir(), "codevisor-cap-"))
+    tempDirs.push(cwd)
+    const body = (await jsonRequest(server, `/v1/capabilities?cwd=${encodeURIComponent(cwd)}`))
+      .body as {
+      harnesses: Array<{
+        harness: { id: string; enabled: boolean }
+        configOptions: ReadonlyArray<unknown>
+      }>
+    }
+    // The signed-in harness is inspected as before…
+    expect(body.harnesses.some((entry) => entry.harness.id === "codex")).toBe(true)
+    // …and the sign-in-pending ones ride along with no options and, above
+    // all, no inspection (inspection spawns the harness CLI).
+    const pending = body.harnesses.filter((entry) => !entry.harness.enabled)
+    expect(pending.length).toBeGreaterThan(0)
+    expect(pending.every((entry) => entry.configOptions.length === 0)).toBe(true)
+    expect(agents.inspections.map(([id]) => id)).toEqual(["codex"])
+  })
 })

@@ -15,6 +15,7 @@ import StreamMarkdown
 import TranscriptKit
 
 struct ChatScreen: View {
+    @State private var authSignInHarnessId: String?
     private static let composerBottomMargin: CGFloat = 16
 
     @Environment(\.theme) private var theme
@@ -50,6 +51,10 @@ struct ChatScreen: View {
                 scrollCommand.token &+= 1
             }
             .overlay { initialLoadingOverlay }
+            .harnessSignInSheet(
+                harnessId: $authSignInHarnessId,
+                serverId: controller.project.serverId
+            )
             .overlay(alignment: .bottom) { bottomChromeOverlay }
             .animation(Motion.quick(reduceMotion: reduceMotion), value: isAtBottom)
             .onAppear {
@@ -772,10 +777,9 @@ struct ChatScreen: View {
         } else if controller.errorRequiresHarnessAuthentication {
             ChatErrorRow(
                 message,
-                actionTitle: "Open Harness Settings",
+                actionTitle: "Sign In",
                 action: {
-                    SettingsRouter.shared.showHarnesses()
-                    openSettings()
+                    authSignInHarnessId = controller.selectedHarnessId ?? controller.activeHarnessId
                 }
             )
         } else {

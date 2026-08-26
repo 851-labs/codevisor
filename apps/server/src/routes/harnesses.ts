@@ -483,6 +483,18 @@ export const discoverCapabilities = async (
   const readyHarnesses = harnesses.filter(
     (harness) => harness.enabled && harness.readiness.state === "ready"
   )
+  // Fleet-enabled harnesses blocked on sign-in ride along as capability
+  // entries with no options and NO inspection (inspection spawns the CLI).
+  // The composer renders them as "sign in required" rows; older clients
+  // already filter on harness.enabled and never see them.
+  const signInPending = harnesses.filter(
+    (harness) =>
+      !harness.enabled && harness.desiredEnabled === true && harness.readiness.state === "ready"
+  )
+  const pendingCapabilities = signInPending.map((harness) => ({
+    harness,
+    configOptions: []
+  }))
   return {
     harnesses: await Promise.all(
       readyHarnesses.map(async (harness) => {
@@ -511,7 +523,7 @@ export const discoverCapabilities = async (
           }
         }
       })
-    )
+    ).then((inspected) => [...inspected, ...pendingCapabilities])
   }
 }
 

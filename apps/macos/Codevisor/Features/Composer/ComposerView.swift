@@ -11,24 +11,12 @@ extension EnvironmentValues {
     @Entry var isAppUpdateInProgress: Bool = false
 }
 
-/// A row in the slash-command popup: either a harness-advertised command
-/// (accepted by rewriting the composer to "/name ") or a local app command
-/// whose acceptance runs an action and clears the composer.
-struct ComposerSlashItem: Identifiable {
-    let name: String
-    let description: String
-    var hint: String? = nil
-    /// Present only on local commands (e.g. /plan, /goal).
-    var action: (@MainActor () -> Void)? = nil
-
-    var id: String { name }
-}
-
 /// The chat composer card: a multiline input (Return sends, Shift+Return adds a
 /// newline) with an inline toolbar holding the combined model dropdown
 /// (models grouped by harness plus every model-owned setting), active modes,
 /// and a send button.
 struct ComposerCard: View {
+    @State private var signInHarness: ServerHarness?
     static let cornerRadius = ComposerGlassStyle.composerCornerRadius
 
     @Bindable var controller: SessionController
@@ -219,7 +207,13 @@ private extension ComposerCard {
                     }
                 } else {
                     attachButton
-                    ModelConfigMenu(controller: controller)
+                    ModelConfigMenu(controller: controller) { harness in
+                        signInHarness = harness
+                    }
+                    .harnessSignInSheet(
+                        harness: $signInHarness,
+                        serverId: controller.project.serverId
+                    )
                     // Active modes show as removable chips (turned on via
                     // the /plan and /goal slash commands).
                     if controller.hasPlanMode, controller.isPlanModeOn {

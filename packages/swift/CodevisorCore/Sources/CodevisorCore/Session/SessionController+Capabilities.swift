@@ -236,6 +236,14 @@ extension SessionController {
                     force: force,
                     fetch: {
                         let response = try await serverClient.capabilities(cwd: cwd)
+                        // Fleet-enabled harnesses blocked on sign-in arrive as
+                        // optionless entries; surface them for the picker's
+                        // "sign in required" rows without caching them as
+                        // usable capabilities.
+                        let pending = response.harnesses
+                            .filter { !$0.harness.enabled && $0.harness.isReady }
+                            .map(\.harness)
+                        await MainActor.run { self.signInRequiredHarnesses = pending }
                         return response.harnesses.filter { capability in
                             capability.harness.enabled && capability.harness.isReady
                         }

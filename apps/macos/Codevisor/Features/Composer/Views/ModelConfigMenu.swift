@@ -10,6 +10,8 @@ struct ModelConfigMenu: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.openSettings) private var openSettings
     @Bindable var controller: SessionController
+    /// Presents the sign-in sheet for a fleet-enabled harness blocked on auth.
+    var onSignIn: ((ServerHarness) -> Void)? = nil
 
     @State private var isPresented = false
     @State private var modelSearch = ""
@@ -34,7 +36,9 @@ struct ModelConfigMenu: View {
                 .frame(minWidth: 96)
                 .help("Loading model settings")
                 .accessibilityLabel("Loading model settings")
-        } else if !modelGroups.isEmpty || controller.hasModelMenu || !settingsOptions.isEmpty {
+        } else if !modelGroups.isEmpty || controller.hasModelMenu || !settingsOptions.isEmpty
+            || !controller.signInRequiredHarnesses.isEmpty
+        {
             Button {
                 isPresented.toggle()
             } label: {
@@ -104,6 +108,14 @@ private extension ModelConfigMenu {
                         }
                     }
                     .padding(8)
+                }
+            }
+
+            if !controller.signInRequiredHarnesses.isEmpty {
+                Divider()
+                SignInRequiredRows(harnesses: controller.signInRequiredHarnesses) { harness in
+                    isPresented = false
+                    onSignIn?(harness)
                 }
             }
 
