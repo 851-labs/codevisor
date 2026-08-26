@@ -23,6 +23,10 @@ struct HarnessAuthenticationView: View {
 
     let harness: ServerHarness
     var onChange: (ServerHarness) -> Void
+    /// Settings/onboarding render this view standalone and want its own
+    /// title + Done header. The composer's sign-in sheet brings its own
+    /// chrome (with machine context) and turns this off.
+    var showsHeader = true
 
     @State private var accounts: [ServerHarnessAccount] = []
     @State private var methods: [ServerHarnessAuthMethod] = []
@@ -37,9 +41,10 @@ struct HarnessAuthenticationView: View {
     @ViewBuilder
     var body: some View {
         if harness.id == "pi" {
-            PiProviderAuthenticationView(harness: harness, onChange: onChange)
+            PiProviderAuthenticationView(harness: harness, onChange: onChange, showsHeader: showsHeader)
         } else if harness.id == "opencode" {
-            OpenCodeProviderAuthenticationView(harness: harness, onChange: onChange)
+            OpenCodeProviderAuthenticationView(
+                harness: harness, onChange: onChange, showsHeader: showsHeader)
         } else {
             standardAuthentication
         }
@@ -47,20 +52,22 @@ struct HarnessAuthenticationView: View {
 
     private var standardAuthentication: some View {
         VStack(spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(authenticationTitle).font(.title2).fontWeight(.semibold)
-                    Text(authenticationSubtitle)
-                        .foregroundStyle(.secondary)
+            if showsHeader {
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(authenticationTitle).font(.title2).fontWeight(.semibold)
+                        Text(authenticationSubtitle)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Done") { dismiss() }
+                        .settingsActionTint(theme)
+                        .keyboardShortcut(.defaultAction)
                 }
-                Spacer()
-                Button("Done") { dismiss() }
-                    .settingsActionTint(theme)
-                    .keyboardShortcut(.defaultAction)
-            }
-            .padding(20)
+                .padding(20)
 
-            Divider()
+                Divider()
+            }
 
             if let flow, flow.kind == "terminal", let terminalKey = flow.terminalAttachKey {
                 VStack(alignment: .leading, spacing: 10) {

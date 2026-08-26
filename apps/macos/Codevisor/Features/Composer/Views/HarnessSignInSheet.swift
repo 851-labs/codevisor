@@ -61,13 +61,16 @@ struct HarnessSignInSheet: View {
     @ViewBuilder
     private var content: some View {
         if let harness {
-            HarnessAuthenticationView(harness: harness) { updated in
-                self.harness = updated
-                if updated.auth?.state == "authenticated" {
-                    finish()
-                }
-            }
-            .padding(16)
+            HarnessAuthenticationView(
+                harness: harness,
+                onChange: { updated in
+                    self.harness = updated
+                    if updated.auth?.state == "authenticated" {
+                        finish()
+                    }
+                },
+                showsHeader: false
+            )
         } else if loadFailed {
             ContentUnavailableView {
                 Label("Harness Unavailable", systemImage: "exclamationmark.triangle")

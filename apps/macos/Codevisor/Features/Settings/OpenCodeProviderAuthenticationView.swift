@@ -23,6 +23,9 @@ struct OpenCodeProviderAuthenticationView: View {
 
     let harness: ServerHarness
     var onChange: (ServerHarness) -> Void
+    /// Hidden when hosted inside the composer's sign-in sheet, which
+    /// carries its own title bar.
+    var showsHeader = true
 
     @State private var accounts: [ServerHarnessAccount] = []
     @State private var providers: [ServerOpenCodeAuthProvider] = []
@@ -51,19 +54,21 @@ struct OpenCodeProviderAuthenticationView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                HarnessIcon(harnessId: "opencode", fallbackSymbolName: harness.symbolName, size: 30)
-                Text("OpenCode Accounts")
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                Spacer()
-                Button("Done") { dismiss() }
-                    .settingsActionTint(theme)
-                    .keyboardShortcut(.defaultAction)
-            }
-            .padding(20)
+            if showsHeader {
+                HStack(spacing: 12) {
+                    HarnessIcon(harnessId: "opencode", fallbackSymbolName: harness.symbolName, size: 30)
+                    Text("OpenCode Accounts")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                    Spacer()
+                    Button("Done") { dismiss() }
+                        .settingsActionTint(theme)
+                        .keyboardShortcut(.defaultAction)
+                }
+                .padding(20)
 
-            Divider()
+                Divider()
+            }
 
             NavigationSplitView {
                 profileSidebar
@@ -500,7 +505,11 @@ struct OpenCodeProviderAuthenticationView: View {
             }
         }
     }
+}
 
+// MARK: - Actions
+
+extension OpenCodeProviderAuthenticationView {
     private func loadAccounts() async {
         await perform {
             let loaded = try await client.listHarnessAccounts(harnessId: "opencode")

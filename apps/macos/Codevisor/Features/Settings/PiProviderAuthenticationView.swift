@@ -23,6 +23,9 @@ struct PiProviderAuthenticationView: View {
 
     let harness: ServerHarness
     var onChange: (ServerHarness) -> Void
+    /// Hidden when hosted inside the composer's sign-in sheet, which
+    /// carries its own title bar.
+    var showsHeader = true
 
     @State private var providers: [ServerPiAuthProvider] = []
     @State private var selectedProviderId = ""
@@ -37,21 +40,23 @@ struct PiProviderAuthenticationView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                HarnessIcon(harnessId: "pi", fallbackSymbolName: harness.symbolName, size: 30)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Pi Providers").font(.title2).fontWeight(.semibold)
-                    Text("Add and manage the model accounts Pi uses for new chats.")
-                        .foregroundStyle(.secondary)
+            if showsHeader {
+                HStack(spacing: 12) {
+                    HarnessIcon(harnessId: "pi", fallbackSymbolName: harness.symbolName, size: 30)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Pi Providers").font(.title2).fontWeight(.semibold)
+                        Text("Add and manage the model accounts Pi uses for new chats.")
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Done") { dismiss() }
+                        .settingsActionTint(theme)
+                        .keyboardShortcut(.defaultAction)
                 }
-                Spacer()
-                Button("Done") { dismiss() }
-                    .settingsActionTint(theme)
-                    .keyboardShortcut(.defaultAction)
-            }
-            .padding(20)
+                .padding(20)
 
-            Divider()
+                Divider()
+            }
 
             Form {
                 if let errorMessage {
