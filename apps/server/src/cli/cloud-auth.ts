@@ -3,7 +3,9 @@ import {
   discoverInstance,
   pollDeviceToken,
   provisionMachine,
+  listAccountMachines,
   requestDeviceCode,
+  type AccountMachineSummary,
   type FetchLike,
   type MachineCredentials
 } from "@codevisor/cloud-client"
@@ -55,11 +57,33 @@ export interface CloudAuthOptions {
 /// whether this machine joins config sync. The flag lives in the local
 /// server's database, so it survives the restart that follows login; when
 /// the server is not running yet, point at `codevisor sync` instead.
-const applyLoginSyncChoice = async (deps: CliDeps, options: CloudAuthOptions): Promise<void> => {
-  const wanted =
-    options.syncConfig ??
-    (options.promptSyncConfig === undefined ? undefined : await options.promptSyncConfig())
-  if (wanted === undefined) return
+///
+/// Fleet awareness: the account's machine list (fetched during login)
+/// decides whether asking even makes sense. The FIRST machine has nothing
+/// to sync from, so it is never prompted — the server default
+/// (participating) simply applies to whatever fleet grows from here. Only
+/// a machine joining an existing fleet gets the question; when the list
+/// could not be fetched, the ask is kept rather than guessed away.
+const applyLoginSyncChoice = async (
+  deps: CliDeps,
+  options: CloudAuthOptions,
+  fleet: ReadonlyArray<AccountMachineSummary> | undefined
+): Promise<void> => {
+  let wanted = options.syncConfig
+  if (wanted === undefined) {
+    if (options.promptSyncConfig === undefined) return
+    if (fleet !== undefined && fleet.length === 0) {
+      deps.log("This is the first machine on your account, so config sync is on by default.")
+      deps.log("Machines you connect later will be asked whether to join.")
+      return
+    }
+    if (fleet !== undefined && fleet.length > 0) {
+      const names = fleet.map((machine) => machine.name).join(", ")
+      const plural = fleet.length === 1 ? "machine" : "machines"
+      deps.log(`This account already has ${fleet.length} ${plural}: ${names}.`)
+    }
+    wanted = await options.promptSyncConfig()
+  }
   if (await applySyncParticipation(deps, wanted)) {
     deps.log(`Config sync is ${wanted ? "on" : "off"} for this machine.`)
     return
@@ -126,11 +150,20 @@ export const authLoginCommand = async (
         poll.sessionToken,
         machineName
       )
+      // Fleet awareness for the sync ask below — fetched only when a
+      // prompt could happen, so piped installs stay network-silent. An
+      // unreachable list degrades to "unknown", which keeps the ask.
+      const fleet =
+        options.syncConfig === undefined && options.promptSyncConfig !== undefined
+          ? await listAccountMachines(fetchImpl, serverUrl, poll.sessionToken).catch(
+              () => undefined
+            )
+          : undefined
       deps.writeTextFile(cloudCredentialsPath(deps), JSON.stringify(credentials, null, 2))
       deps.log("")
       deps.log(`✓ Connected as ${machineName}.`)
       deps.log("It will appear in your Codevisor apps once the server (re)starts.")
-      await applyLoginSyncChoice(deps, options)
+      await applyLoginSyncChoice(deps, options, fleet)
       return 0
     }
   } catch (error) {

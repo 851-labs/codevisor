@@ -76,8 +76,10 @@ export const makeAuthCommand = (runCli: RunCli) => {
           ...(Option.isSome(server) ? { server: server.value } : {}),
           machineName: Option.getOrElse(name, () => hostname()),
           ...(noSync ? { syncConfig: false } : {}),
-          // Interactive logins ask; piped installs stay silent and keep the
-          // server default (participating).
+          // Interactive logins ask — but only when joining an existing
+          // fleet (the command checks the account's machine list); piped
+          // installs stay silent and keep the server default
+          // (participating).
           ...(!noSync && process.stdin.isTTY === true && process.stdout.isTTY === true
             ? { promptSyncConfig: syncConfigPrompt }
             : {})

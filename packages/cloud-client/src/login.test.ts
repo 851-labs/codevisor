@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   CloudApiError,
+  listAccountMachines,
   discoverInstance,
   MACHINE_CLIENT_ID,
   pollDeviceToken,
@@ -148,5 +149,42 @@ describe("discoverInstance", () => {
     await expect(discoverInstance(missing.fetch, "https://x")).rejects.toThrow(
       "instance discovery failed"
     )
+  })
+})
+
+describe("listAccountMachines", () => {
+  it("returns the account's machines using the session bearer token", async () => {
+    const { calls, fetch } = fetchStub(() =>
+      jsonResponse({
+        machines: [
+          { deviceId: "dev-1", name: "Studio", online: true },
+          { deviceId: "dev-2", name: "Laptop" }
+        ]
+      })
+    )
+    const machines = await listAccountMachines(fetch, "https://cloud.example", "session-token")
+    expect(machines).toEqual([
+      { deviceId: "dev-1", name: "Studio" },
+      { deviceId: "dev-2", name: "Laptop" }
+    ])
+    expect(calls[0]?.input).toBe("https://cloud.example/api/machines")
+    expect(calls[0]?.init?.headers).toMatchObject({ authorization: "Bearer session-token" })
+  })
+
+  it("tolerates absent fields and an absent list", async () => {
+    const { fetch } = fetchStub(() => jsonResponse({ machines: [{}] }))
+    expect(await listAccountMachines(fetch, "https://cloud.example", "t")).toEqual([
+      { deviceId: "", name: "" }
+    ])
+    const { fetch: empty } = fetchStub(() => jsonResponse({}))
+    expect(await listAccountMachines(empty, "https://cloud.example", "t")).toEqual([])
+  })
+
+  it("throws CloudApiError on a rejected token", async () => {
+    const { fetch } = fetchStub(() => jsonResponse({ error: "unauthorized" }, 401))
+    await expect(listAccountMachines(fetch, "https://cloud.example", "bad")).rejects.toMatchObject({
+      name: "CloudApiError",
+      status: 401
+    })
   })
 })

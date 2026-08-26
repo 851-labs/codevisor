@@ -304,15 +304,19 @@ describe("authLogoutCommand", () => {
   })
 })
 
-describe("auth login sync choice", () => {
-  const loginScript = () =>
-    scriptedFetch({
-      "/.well-known/codevisor": [jsonResponse(instanceBody)],
-      "/api/auth/device/code": [jsonResponse(grantBody())],
-      "/api/auth/device/token": [jsonResponse({ access_token: "session" })],
-      "/api/auth/api-key/create": [jsonResponse({ key: "api-key" })]
-    })
+const loginScript = (machinesResponse?: Response) =>
+  scriptedFetch({
+    "/.well-known/codevisor": [jsonResponse(instanceBody)],
+    "/api/auth/device/code": [jsonResponse(grantBody())],
+    "/api/auth/device/token": [jsonResponse({ access_token: "session" })],
+    "/api/auth/api-key/create": [jsonResponse({ key: "api-key" })],
+    "/api/machines": [
+      machinesResponse ??
+        jsonResponse({ machines: [{ deviceId: "dev-0", name: "Original", online: true }] })
+    ]
+  })
 
+describe("auth login sync choice", () => {
   it("applies a prompted opt-out through the local server", async () => {
     const world = makeWorld()
     const calls: Array<{ url: string; body?: unknown }> = []
@@ -375,5 +379,69 @@ describe("auth login sync choice", () => {
     })
     expect(code).toBe(0)
     expect(world.logs.join("\n")).toContain("Config sync is on")
+  })
+})
+
+describe("auth login fleet awareness", () => {
+  it("never prompts the account's first machine and says why", async () => {
+    const world = makeWorld()
+    let prompted = false
+    const code = await authLoginCommand(world.deps, {
+      server: "https://cloud.example",
+      fetchImpl: loginScript(jsonResponse({ machines: [] })),
+      promptSyncConfig: () => {
+        prompted = true
+        return Promise.resolve(false)
+      }
+    })
+    expect(code).toBe(0)
+    expect(prompted).toBe(false)
+    expect(world.logs.join("\n")).toContain("first machine on your account")
+    // The server default (participating) is left alone: no local apply.
+    expect(world.logs.join("\n")).not.toContain("Config sync is")
+  })
+
+  it("shows the existing fleet before asking a joining machine", async () => {
+    const world = makeWorld()
+    const deps: CliDeps = {
+      ...world.deps,
+      fetchJson: () => Promise.resolve({ status: 200, body: { enabled: true } })
+    }
+    const code = await authLoginCommand(deps, {
+      server: "https://cloud.example",
+      fetchImpl: loginScript(
+        jsonResponse({
+          machines: [
+            { deviceId: "dev-1", name: "Studio" },
+            { deviceId: "dev-2", name: "Laptop" }
+          ]
+        })
+      ),
+      promptSyncConfig: () => Promise.resolve(true)
+    })
+    expect(code).toBe(0)
+    expect(world.logs.join("\n")).toContain("already has 2 machines: Studio, Laptop.")
+    expect(world.logs.join("\n")).toContain("Config sync is on")
+  })
+
+  it("keeps the ask when the machine list is unreachable", async () => {
+    const world = makeWorld()
+    const deps: CliDeps = {
+      ...world.deps,
+      fetchJson: () => Promise.resolve({ status: 200, body: { enabled: false } })
+    }
+    let prompted = false
+    const code = await authLoginCommand(deps, {
+      server: "https://cloud.example",
+      fetchImpl: loginScript(jsonResponse({ error: "boom" }, 500)),
+      promptSyncConfig: () => {
+        prompted = true
+        return Promise.resolve(false)
+      }
+    })
+    expect(code).toBe(0)
+    expect(prompted).toBe(true)
+    expect(world.logs.join("\n")).not.toContain("already has")
+    expect(world.logs.join("\n")).toContain("Config sync is off")
   })
 })
