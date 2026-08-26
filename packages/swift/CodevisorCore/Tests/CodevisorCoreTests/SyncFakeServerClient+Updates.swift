@@ -216,7 +216,8 @@ extension SyncFakeServerClient {
         lock.withLock {
             _operationLog.append("harnesses.reconcile")
             return ServerHarnessSyncStatus(
-                published: [], applied: [], removed: [], installing: [], blocked: [])
+                published: [], applied: _harnessesSyncApplied, removed: [], installing: [],
+                blocked: [])
         }
     }
 

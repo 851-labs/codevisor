@@ -102,7 +102,10 @@ struct NewChatView: View {
         "\(environment.machines.selectedMachineId):\(preferredProjectId?.uuidString ?? "default"):\(requiresInitialProjectResolution ? "resolving" : "ready")"
     }
     private var harnessCatalogRevision: UInt64 {
-        environment.harnessCatalogRevision(for: environment.machines.selectedMachineId)
+        // The DRAFT's machine, not the globally selected one: a composer
+        // pointed at a fleet machine must react to that machine's catalog.
+        environment.harnessCatalogRevision(
+            for: controller?.project.serverId ?? environment.machines.selectedMachineId)
     }
 
     /// The setup panel shows while the machine has no projects, and stays up

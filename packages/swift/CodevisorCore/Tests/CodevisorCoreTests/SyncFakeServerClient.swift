@@ -233,6 +233,7 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
     var _harnesses: [ServerHarness] = []
     var _pluginUpdates: [ServerPluginUpdateStatus] = []
     var _operationLog: [String] = []
+    var _harnessesSyncApplied: [String] = []
     var _syncEntries: [String: [ServerSyncEntry]] = [:]
     var _skillBlobs: [String: Data] = [:]
     var _wantedSkills: [(directoryName: String, hash: String)] = []

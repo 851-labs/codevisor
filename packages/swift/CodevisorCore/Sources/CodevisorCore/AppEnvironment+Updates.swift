@@ -22,9 +22,92 @@ extension AppEnvironment {
     }
 
     /// Change-driven application of replicated namespaces.
+    // MARK: - Harness catalog (moved from AppEnvironment.swift for the size ratchet)
+
+    public func harnessService(for serverId: String) -> any HarnessServicing {
+        harnessServiceOverride ?? ServerHarnessService(client: machines.client(for: serverId))
+    }
+
+    /// The current catalog invalidation token for a machine. Views observe
+    /// this value and refetch only the machine whose harness state changed.
+    public func harnessCatalogRevision(for serverId: String) -> UInt64 {
+        harnessCatalogRevisions[serverId, default: 0]
+    }
+
+    /// Lifecycle-decorated harnesses (update knowledge, install methods) per
+    /// machine, fetched separately from the picker's plain list so the
+    /// composer stays snappy. Update banners read this; composer surfaces
+    /// refresh it via `refreshHarnessLifecycle`.
+    public func harnessLifecycle(for serverId: String) -> [ServerHarness] {
+        harnessLifecycleByServer[serverId] ?? []
+    }
+
+    public func refreshHarnessLifecycle(for serverId: String) async {
+        guard let harnesses = try? await harnessService(for: serverId).allHarnesses() else { return }
+        harnessLifecycleByServer[serverId] = harnesses
+    }
+
+    /// Installs the lifecycle returned by a successful start request before
+    /// the optimistic client spinner is released. Events remain the ongoing
+    /// source of truth; this closes the 202/event handoff gap.
+    public func setHarnessLifecycle(
+        _ lifecycle: ServerHarnessLifecycleState,
+        harnessId: String,
+        onServer serverId: String
+    ) {
+        guard var harnesses = harnessLifecycleByServer[serverId],
+            let index = harnesses.firstIndex(where: { $0.id == harnessId })
+        else { return }
+        harnesses[index].lifecycle = lifecycle
+        harnessLifecycleByServer[serverId] = harnesses
+    }
+
+    /// Publishes that authentication, enablement, or discovery changed the
+    /// harnesses available for new chats on a machine.
+    public func harnessCatalogDidChange(onServer serverId: String) {
+        configCache.invalidateCapabilities(forServer: serverId)
+        harnessCatalogRevisions[serverId, default: 0] &+= 1
+    }
+
+    /// Forces the server to re-probe harness authentication, then invalidates
+    /// every mounted consumer of that machine's catalog.
+    public func refreshHarnessAuthentication() async throws -> [ServerHarness] {
+        // Snapshot before awaiting so a machine switch cannot attribute the
+        // completed request to whichever machine happens to be selected later.
+        let serverId = machines.selectedMachineId
+        let refreshed = try await machines.client(for: serverId).refreshHarnessAuth()
+        harnessCatalogDidChange(onServer: serverId)
+        return refreshed
+    }
+
+    /// Re-probes only the harness whose authentication changed, then
+    /// invalidates mounted consumers of that machine's catalog. Pass
+    /// `onServer` when the caller is pinned to a machine (machine-scoped
+    /// Settings pages); it defaults to the selected machine.
+    public func refreshHarnessAuthentication(
+        harnessId: String,
+        onServer serverId: String? = nil
+    ) async throws -> ServerHarness {
+        let serverId = serverId ?? machines.selectedMachineId
+        let refreshed = try await machines.client(for: serverId).refreshHarnessAuth(harnessId: harnessId)
+        harnessCatalogDidChange(onServer: serverId)
+        return refreshed
+    }
+
     func applySyncedNamespace(_ namespace: String) {
         if namespace == "settings" { applySyncedSettings() }
         if namespace == FleetRoster.namespace { Task { await fleetRoster.applyRoster() } }
+        // Fleet-wide harness state moved (enables, accounts, ferried
+        // credentials): every machine's picker catalog is now suspect. Mark
+        // them all stale — the reconcile-response hook refines per machine
+        // as applies actually land.
+        if namespace == "harnesses" || namespace == "harness-accounts"
+            || namespace == "harness-credentials"
+        {
+            for machine in machines.allMachines {
+                harnessCatalogDidChange(onServer: machine.id)
+            }
+        }
     }
 
     /// Applies everything the local replica already knows at startup.

@@ -28,6 +28,12 @@ public final class ConfigSync {
     /// Invoked after a namespace's replica actually changed (local write or
     /// adopted remote entries) — consumers apply the new values in place.
     @ObservationIgnored public var onNamespaceChanged: ((String) -> Void)?
+    /// Invoked when a machine's reconcile RESPONSE reports it actually
+    /// applied harness or credential changes — the signal that its catalog
+    /// (enabled set, auth gates) is now different, however long the apply
+    /// took. Gossip alone cannot carry this: applying does not change the
+    /// replicated entries.
+    @ObservationIgnored public var onHarnessCatalogChanged: ((String) -> Void)?
     @ObservationIgnored private var entriesByNamespace: [String: [ServerSyncEntry]] = [:]
 
     public init(machines: MachineController, store: (any PersistenceStore)? = nil) {
@@ -217,7 +223,7 @@ public final class ConfigSync {
                         != nil
                 else { return }
                 // Receivers apply right away instead of on their next sweep.
-                await Self.reconcile(namespace: namespace, on: client)
+                await self.reconcile(namespace: namespace, machineId: machine.id)
             }
         }
         // New skill content also needs its blob ferried before it applies.
@@ -226,15 +232,25 @@ public final class ConfigSync {
         }
     }
 
-    private static func reconcile(
-        namespace: String,
-        on client: any CodevisorServerClienting
-    ) async {
+    private func reconcile(namespace: String, machineId: String) async {
+        let client = machines.client(for: machineId)
         switch namespace {
         case "mcps": _ = try? await client.reconcileMcpsSync()
-        case "harnesses": _ = try? await client.reconcileHarnessesSync()
+        case "harnesses":
+            guard let status = try? await client.reconcileHarnessesSync() else { return }
+            if !status.applied.isEmpty || !status.removed.isEmpty || !status.installing.isEmpty {
+                onHarnessCatalogChanged?(machineId)
+            }
         case "plugins": _ = try? await client.reconcilePluginsSync()
-        case "harness-credentials": _ = try? await client.reconcileCredentialsSync()
+        case "harness-credentials":
+            // Ferried credentials flip auth state — the catalog's gates.
+            guard let value = try? await client.reconcileCredentialsSync() else { return }
+            if case .object(let fields) = value,
+                case .array(let applied)? = fields["applied"],
+                !applied.isEmpty
+            {
+                onHarnessCatalogChanged?(machineId)
+            }
         default: break
         }
     }

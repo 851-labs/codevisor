@@ -288,6 +288,23 @@ struct ConfigSyncTests {
         }
     }
 
+    @Test("A machine reporting applied harness changes bumps its catalog")
+    func harnessReconcileBumpsCatalog() async throws {
+        let fake = SyncFakeServerClient(projects: [], sessions: [])
+        fake._harnessesSyncApplied = ["opencode"]
+        let controller = try makeController(fakes: ["m1": fake], remotes: [makeRemote("m1")])
+        await controller.refreshStatus(for: "m1")
+        let sync = ConfigSync(machines: controller, store: InMemoryStore())
+        var changed: [String] = []
+        sync.onHarnessCatalogChanged = { changed.append($0) }
+        sync.set(
+            namespace: "harnesses",
+            key: "opencode",
+            value: .object(["enabled": .bool(true), "installed": .bool(true)])
+        )
+        try await waitForSync { changed.contains("m1") }
+    }
+
     @Test("Tombstones remove values and win over older writes")
     func tombstonesWin() throws {
         let controller = try makeController(

@@ -127,7 +127,7 @@ struct WorkspaceScreen: View {
 
     /// This workspace's chat: the routed one, or the one a draft's first send
     /// created. Nil only while an unsent draft.
-    private var activeSessionId: UUID? { sessionId ?? startedSessionId }
+    var activeSessionId: UUID? { sessionId ?? startedSessionId }
 
     private var isDraft: Bool { activeSessionId == nil }
 
@@ -135,7 +135,7 @@ struct WorkspaceScreen: View {
         serverId ?? draftController?.project.serverId ?? environment.machines.selectedMachineId
     }
 
-    private var resolvedWorkspace: Workspace? {
+    var resolvedWorkspace: Workspace? {
         if let workspaceId,
             let workspace = environment.workspaces.loadAll().first(where: {
                 $0.serverId == resolvedServerId && $0.id == workspaceId
@@ -149,24 +149,7 @@ struct WorkspaceScreen: View {
         }
     }
 
-    private var paneStorageId: UUID? {
-        resolvedWorkspace?.id ?? activeSessionId
-    }
-
-    private var panePreviewLoadToken: String {
-        guard let paneStorageId else { return "draft" }
-        return ([paneStorageId] + panes.panes.map(\.id))
-            .map(\.uuidString)
-            .joined(separator: ":")
-    }
-
-    private var legacyPaneSessionIds: [UUID] {
-        let workspaceIds = resolvedWorkspace?.chatSessionIds ?? []
-        guard let activeSessionId else { return workspaceIds }
-        return [activeSessionId] + workspaceIds.filter { $0 != activeSessionId }
-    }
-
-    private var panes: PaneGroupState {
+    var panes: PaneGroupState {
         if let paneState { return paneState }
         if let workspace = resolvedWorkspace {
             return Self.compactPaneState(from: workspace)
@@ -377,6 +360,14 @@ struct WorkspaceScreen: View {
                 !sentinel.project.isRunTargetPlaceholder
             else { return }
             setUpDraftIfNeeded(preferredProject: sentinel.project)
+        }
+        // A machine's harness catalog changed (sign-in, enablement, a
+        // ferried credential landing): refresh a mounted draft composer so
+        // new harnesses and models appear without reopening the screen.
+        .onChange(of: environment.harnessCatalogRevision(for: resolvedServerId)) { _, _ in
+            guard let draftController, isDraft else { return }
+            draftController.invalidateHarnessCapabilities()
+            Task { await draftController.refreshHarnessCapabilities() }
         }
         .onChange(of: environment.workspaceSync.revision) { _, _ in
             synchronizePaneStateFromWorkspace()

@@ -43,10 +43,10 @@ public final class AppEnvironment {
     /// both native platforms. Pane layout itself remains in `workspaces`.
     public let workspaceSync: WorkspaceSyncModel
     /// Overrides server-backed harness discovery (previews/tests only).
-    private let harnessServiceOverride: (any HarnessServicing)?
+    let harnessServiceOverride: (any HarnessServicing)?
     /// Monotonic, per-machine invalidation tokens for consumers that keep a
     /// harness catalog alive (most notably an already-mounted new-chat page).
-    private var harnessCatalogRevisions: [String: UInt64] = [:]
+    var harnessCatalogRevisions: [String: UInt64] = [:]
     /// Monotonic, per-machine invalidation tokens bumped by
     /// `plugin.state.updated` events; the Plugins settings pane and New Tab
     /// cards observe these and refetch the list. Accessors live in
@@ -57,7 +57,7 @@ public final class AppEnvironment {
     /// token and re-run the full token→load flow when it moves. Accessors
     /// live in AppEnvironment+Plugins.swift.
     var pluginUpdateRevisions: [String: UInt64] = [:]
-    private var harnessLifecycleByServer: [String: [ServerHarness]] = [:]
+    var harnessLifecycleByServer: [String: [ServerHarness]] = [:]
     private let clientDataResetter: (any ClientDataResetting)?
 
     public init(
@@ -151,6 +151,9 @@ public final class AppEnvironment {
             self?.configSync.applyRemoteChange(namespace: $1.namespace, entries: $1.entries)
         }
         configSync.onNamespaceChanged = { [weak self] in self?.applySyncedNamespace($0) }
+        configSync.onHarnessCatalogChanged = { [weak self] in
+            self?.harnessCatalogDidChange(onServer: $0)
+        }
         machines.onMachineConnected = { [weak self] in self?.noteMachineConnected($0) }
         machines.onMachineAdded = { [weak self] in self?.fleetRoster.publishMachine($0) }
         machines.onMachineRemoved = { [weak self] in
@@ -389,76 +392,6 @@ public final class AppEnvironment {
                 "Capability cache warm failed: \(String(describing: error), privacy: .public)"
             )
         }
-    }
-
-    public func harnessService(for serverId: String) -> any HarnessServicing {
-        harnessServiceOverride ?? ServerHarnessService(client: machines.client(for: serverId))
-    }
-
-    /// The current catalog invalidation token for a machine. Views observe
-    /// this value and refetch only the machine whose harness state changed.
-    public func harnessCatalogRevision(for serverId: String) -> UInt64 {
-        harnessCatalogRevisions[serverId, default: 0]
-    }
-
-    /// Lifecycle-decorated harnesses (update knowledge, install methods) per
-    /// machine, fetched separately from the picker's plain list so the
-    /// composer stays snappy. Update banners read this; composer surfaces
-    /// refresh it via `refreshHarnessLifecycle`.
-    public func harnessLifecycle(for serverId: String) -> [ServerHarness] {
-        harnessLifecycleByServer[serverId] ?? []
-    }
-
-    public func refreshHarnessLifecycle(for serverId: String) async {
-        guard let harnesses = try? await harnessService(for: serverId).allHarnesses() else { return }
-        harnessLifecycleByServer[serverId] = harnesses
-    }
-
-    /// Installs the lifecycle returned by a successful start request before
-    /// the optimistic client spinner is released. Events remain the ongoing
-    /// source of truth; this closes the 202/event handoff gap.
-    public func setHarnessLifecycle(
-        _ lifecycle: ServerHarnessLifecycleState,
-        harnessId: String,
-        onServer serverId: String
-    ) {
-        guard var harnesses = harnessLifecycleByServer[serverId],
-            let index = harnesses.firstIndex(where: { $0.id == harnessId })
-        else { return }
-        harnesses[index].lifecycle = lifecycle
-        harnessLifecycleByServer[serverId] = harnesses
-    }
-
-    /// Publishes that authentication, enablement, or discovery changed the
-    /// harnesses available for new chats on a machine.
-    public func harnessCatalogDidChange(onServer serverId: String) {
-        configCache.invalidateCapabilities(forServer: serverId)
-        harnessCatalogRevisions[serverId, default: 0] &+= 1
-    }
-
-    /// Forces the server to re-probe harness authentication, then invalidates
-    /// every mounted consumer of that machine's catalog.
-    public func refreshHarnessAuthentication() async throws -> [ServerHarness] {
-        // Snapshot before awaiting so a machine switch cannot attribute the
-        // completed request to whichever machine happens to be selected later.
-        let serverId = machines.selectedMachineId
-        let refreshed = try await machines.client(for: serverId).refreshHarnessAuth()
-        harnessCatalogDidChange(onServer: serverId)
-        return refreshed
-    }
-
-    /// Re-probes only the harness whose authentication changed, then
-    /// invalidates mounted consumers of that machine's catalog. Pass
-    /// `onServer` when the caller is pinned to a machine (machine-scoped
-    /// Settings pages); it defaults to the selected machine.
-    public func refreshHarnessAuthentication(
-        harnessId: String,
-        onServer serverId: String? = nil
-    ) async throws -> ServerHarness {
-        let serverId = serverId ?? machines.selectedMachineId
-        let refreshed = try await machines.client(for: serverId).refreshHarnessAuth(harnessId: harnessId)
-        harnessCatalogDidChange(onServer: serverId)
-        return refreshed
     }
 
     /// Deletes all Codevisor data (projects, sessions, cached config, settings)
