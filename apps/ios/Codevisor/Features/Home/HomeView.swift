@@ -580,7 +580,8 @@ struct HomeView: View {
                         WorkspaceDisclosureLabel(
                             workspace: item.workspace,
                             status: status(for: item),
-                            showsStatus: true
+                            showsStatus: true,
+                            machineName: machines.fleetMachineName(for: item.workspace.serverId)
                         )
                         .modifier(
                             BottomSeparatorModifier(
@@ -594,7 +595,8 @@ struct HomeView: View {
                         ProjectDisclosureLabel(
                             project: item.project,
                             status: status(for: item),
-                            showsStatus: true
+                            showsStatus: true,
+                            machineName: machines.fleetMachineName(for: item.project.serverId)
                         )
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .modifier(
@@ -663,7 +665,8 @@ struct HomeView: View {
             WorkspaceDisclosureLabel(
                 workspace: item.workspace,
                 status: status(for: item),
-                showsStatus: !isExpanded
+                showsStatus: !isExpanded,
+                machineName: machines.fleetMachineName(for: item.workspace.serverId)
             )
             .contentShape(Rectangle())
             .onTapGesture {
@@ -717,7 +720,8 @@ struct HomeView: View {
             ProjectDisclosureLabel(
                 project: item.project,
                 status: status(for: item),
-                showsStatus: !isExpanded
+                showsStatus: !isExpanded,
+                machineName: machines.fleetMachineName(for: item.project.serverId)
             )
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
@@ -1604,20 +1608,6 @@ struct HomeView: View {
         } else {
             Color(.systemGroupedBackground)
         }
-    }
-
-    @ViewBuilder private func promotionHomeSnapshot(_ flow: NewChatFlow) -> some View {
-        Group {
-            if let snapshot = flow.homeSnapshot {
-                Image(uiImage: snapshot)
-                    .resizable()
-                    .interpolation(.none)
-            } else {
-                Color(.systemGroupedBackground)
-            }
-        }
-        .ignoresSafeArea()
-        .toolbar(.hidden, for: .navigationBar)
     }
 
     @ViewBuilder private func newChatSheet(_ flow: NewChatFlow) -> some View {

@@ -10,16 +10,32 @@ struct ProjectDisclosureLabel: View {
     let project: Project
     let status: HomeSessionStatus
     let showsStatus: Bool
+    /// Fleet context: the owning machine's name, shown as a second row.
+    /// Nil (single-machine fleets) keeps the compact single-line row.
+    var machineName: String? = nil
 
     var body: some View {
         HStack(spacing: Self.statusToLabelSpacing) {
             HomeStatusIndicator(status: showsStatus ? status : .idle)
                 .frame(width: Self.statusWidth)
-            Label(project.name, systemImage: EntitySystemSymbol.projectList)
-                .font(.body.weight(.semibold))
+            // The icon column centers between both text rows, like the
+            // agent rows do.
+            Image(systemName: EntitySystemSymbol.projectList)
                 .foregroundStyle(.primary)
-                .textCase(nil)
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(project.name)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                if let machineName {
+                    Text(machineName)
+                        .font(.footnote)
+                        .fontWeight(.regular)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .textCase(nil)
             Spacer(minLength: 4)
         }
         .padding(.vertical, 4)

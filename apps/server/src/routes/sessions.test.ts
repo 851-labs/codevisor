@@ -33,6 +33,50 @@ import {
 } from "../test-support.js"
 
 describe("sessions routes", () => {
+  it("deleting a workspace's last session deletes the workspace too", async () => {
+    const { server, services } = await start()
+    const folder = mkdtempSync(join(tmpdir(), "codevisor-cascade-project-"))
+    tempDirs.push(folder)
+    const project = (
+      await jsonRequest(server, "/v1/projects", {
+        body: JSON.stringify({ folderPath: folder }),
+        method: "POST"
+      })
+    ).body as { readonly id: string }
+    await jsonRequest(server, "/v1/workspaces/cascade-ws", {
+      body: JSON.stringify({ projectId: project.id, name: "Cascade", hasCustomName: false }),
+      method: "PUT"
+    })
+    const makeSession = async () =>
+      (
+        await jsonRequest(server, "/v1/sessions", {
+          body: JSON.stringify({
+            projectId: project.id,
+            harnessId: "codex",
+            workspaceId: "cascade-ws"
+          }),
+          method: "POST"
+        })
+      ).body as { readonly id: string }
+    const first = await makeSession()
+    const second = await makeSession()
+
+    // Deleting one of two: the workspace survives.
+    expect(
+      (await jsonRequest(server, `/v1/sessions/${first.id}`, { method: "DELETE" })).status
+    ).toBe(204)
+    expect(await run(services.db.listWorkspaces)).toHaveLength(1)
+
+    // Deleting the LAST session cascades to the workspace, with the event
+    // clients rely on to drop it from their sidebars.
+    expect(
+      (await jsonRequest(server, `/v1/sessions/${second.id}`, { method: "DELETE" })).status
+    ).toBe(204)
+    expect(await run(services.db.listWorkspaces)).toHaveLength(0)
+    const events = await run(services.db.listEvents(0))
+    expect(events.some((event) => event.kind === "workspace.deleted")).toBe(true)
+  })
+
   it("terminalizes orphaned durable state and restores the agent only when the chat connects", async () => {
     const { agents, services } = await makeServices("server-a")
     const folder = mkdtempSync(join(tmpdir(), "codevisor-recovery-project-"))

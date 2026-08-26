@@ -10,19 +10,32 @@ struct WorkspaceDisclosureLabel: View {
     let workspace: Workspace
     let status: HomeSessionStatus
     let showsStatus: Bool
+    /// Fleet context: the owning machine's name, shown as a second row.
+    /// Nil (single-machine fleets) keeps the compact single-line row.
+    var machineName: String? = nil
 
     var body: some View {
         HStack(spacing: Self.statusToLabelSpacing) {
             HomeStatusIndicator(status: showsStatus ? status : .idle)
                 .frame(width: Self.statusWidth)
-            Label(
-                workspace.name.isEmpty ? "Workspace" : workspace.name,
-                systemImage: "square.grid.2x2"
-            )
-            .font(.body.weight(.semibold))
-            .foregroundStyle(.primary)
+            // The icon column centers between both text rows, like the
+            // agent rows do.
+            Image(systemName: "square.grid.2x2")
+                .foregroundStyle(.primary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(workspace.name.isEmpty ? "Workspace" : workspace.name)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                if let machineName {
+                    Text(machineName)
+                        .font(.footnote)
+                        .fontWeight(.regular)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
             .textCase(nil)
-            .lineLimit(1)
             Spacer(minLength: 4)
         }
         .padding(.vertical, 4)

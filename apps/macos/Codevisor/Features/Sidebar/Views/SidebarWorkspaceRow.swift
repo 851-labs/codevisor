@@ -40,14 +40,16 @@ struct SidebarWorkspaceRow: View {
                                     .opacity(isHovered ? 1 : 0)
                             }
                             .frame(width: 18)
-                            Text(title)
-                                .font(titleFont)
-                                .lineLimit(1)
-                            if let machineName {
-                                Text(machineName)
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(title)
+                                    .font(titleFont)
                                     .lineLimit(1)
+                                if let machineName {
+                                    Text(machineName)
+                                        .font(.caption2)
+                                        .foregroundStyle(.tertiary)
+                                        .lineLimit(1)
+                                }
                             }
                             Spacer(minLength: 6)
                         }
@@ -74,14 +76,16 @@ struct SidebarWorkspaceRow: View {
                     Image(systemName: EntitySystemSymbol.workspace)
                         .frame(width: 18)
                         .foregroundStyle(.secondary)
-                    Text(title)
-                        .font(titleFont)
-                        .lineLimit(1)
-                    if let machineName {
-                        Text(machineName)
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(title)
+                            .font(titleFont)
                             .lineLimit(1)
+                        if let machineName {
+                            Text(machineName)
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                        }
                     }
                     Spacer(minLength: 6)
                 }

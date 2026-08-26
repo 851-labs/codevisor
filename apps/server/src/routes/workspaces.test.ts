@@ -400,20 +400,33 @@ describe("workspace routes", () => {
     expect(
       (await jsonRequest(server, "/v1/workspaces/workspace-1", { method: "DELETE" })).status
     ).toBe(500)
-    await jsonRequest(server, `/v1/sessions/${session.id}`, { method: "DELETE" })
+    // A sessionless workspace deletes explicitly — the plain route path.
+    await jsonRequest(server, "/v1/workspaces/solo", {
+      body: JSON.stringify({ projectId: project.id, name: "Solo", hasCustomName: false }),
+      method: "PUT"
+    })
+    expect((await jsonRequest(server, "/v1/workspaces/solo", { method: "DELETE" })).status).toBe(
+      204
+    )
 
+    // Deleting the workspace's LAST session cascades: the workspace is
+    // removed and announced without a separate DELETE call.
     const replayBeforeDelete = await run(services.db.listEvents(0))
-    const liveDelete = readSseEvents(server, 1, replayBeforeDelete.at(-1)?.id ?? 0)
-    expect(
-      (await jsonRequest(server, "/v1/workspaces/workspace-1", { method: "DELETE" })).status
-    ).toBe(204)
+    const liveDelete = readSseEvents(server, 2, replayBeforeDelete.at(-1)?.id ?? 0)
+    await jsonRequest(server, `/v1/sessions/${session.id}`, { method: "DELETE" })
     expect(await liveDelete).toEqual([
+      expect.objectContaining({ kind: "session.deleted" }),
       expect.objectContaining({
         kind: "workspace.deleted",
         subjectId: "workspace-1",
         payload: { id: "workspace-1" }
       })
     ])
+    // The cascade already removed the row; an explicit DELETE now surfaces
+    // exactly like any other missing workspace.
+    expect(
+      (await jsonRequest(server, "/v1/workspaces/workspace-1", { method: "DELETE" })).status
+    ).toBe(500)
     expect(await run(services.db.listEvents(0))).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

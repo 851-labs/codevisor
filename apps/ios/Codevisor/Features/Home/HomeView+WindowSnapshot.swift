@@ -20,4 +20,18 @@ extension HomeView {
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
         }
     }
+
+    @ViewBuilder func promotionHomeSnapshot(_ flow: NewChatFlow) -> some View {
+        Group {
+            if let snapshot = flow.homeSnapshot {
+                Image(uiImage: snapshot)
+                    .resizable()
+                    .interpolation(.none)
+            } else {
+                Color(.systemGroupedBackground)
+            }
+        }
+        .ignoresSafeArea()
+        .toolbar(.hidden, for: .navigationBar)
+    }
 }

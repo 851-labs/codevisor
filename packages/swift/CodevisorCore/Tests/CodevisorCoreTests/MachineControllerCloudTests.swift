@@ -249,6 +249,44 @@ struct MachineControllerCloudTests {
         #expect(controller.cloudOnlyMachines.map(\.deviceId) == [deviceId])
     }
 
+    @Test("A configured machine's probe prunes records under its cloud twin id")
+    func probePrunesCloudTwinRecords() async throws {
+        let deviceId = "dev-twin"
+        let remoteTransport = FakeRelayRequestTransport()
+        remoteTransport.responsesByPath["/v1/info"] = """
+            {"id":"studio","name":"Studio","kind":"remote","version":"1.0.0",
+             "platform":"darwin","bindHost":"0.0.0.0","cloudDeviceId":"\(deviceId)"}
+            """
+        let (controller, projectList, provider) = makeController(clientFactory: { machine in
+            CodevisorServerClient(
+                config: CodevisorServerConfig(
+                    baseURL: machine.baseURL,
+                    requestTransport: remoteTransport,
+                    webSocketTransport: UnusedWebSocketTransport()
+                ))
+        })
+        let remote = try controller.addRemote(host: "studio.tailnet.ts.net")
+        provider.cloudMachines = [makeCloudMachine(deviceId: deviceId, name: "Studio (Cloud)")]
+
+        // Records that synced under the twin id before the probe landed.
+        let twinId = "cloud:\(deviceId)"
+        let twinProject = Project.fromFolder(
+            URL(fileURLWithPath: "/srv/studio-work"),
+            serverId: twinId
+        )
+        projectList.projects.append(twinProject)
+        projectList.sessions.append(
+            ChatSession(projectId: twinProject.id, serverId: twinId, title: "twin chat")
+        )
+
+        await controller.refreshStatus(for: remote.id)
+
+        // The twin's records are gone, and connecting to the twin is refused.
+        #expect(!projectList.projects.contains { $0.serverId == twinId })
+        #expect(!projectList.sessions.contains { $0.serverId == twinId })
+        #expect(controller.isCloudTwinOfConfiguredMachine(twinId))
+    }
+
     @Test("Selecting a cloud machine persists and yields a relay-backed client")
     func cloudSelection() async throws {
         let store = InMemoryStore()

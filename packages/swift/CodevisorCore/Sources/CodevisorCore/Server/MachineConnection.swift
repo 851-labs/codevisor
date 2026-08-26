@@ -98,6 +98,35 @@ extension MachineController {
         requestGate.markFailed(for: machineId, message: message)
     }
 
+    public func retrySelectedMachine() async {
+        let machine = selectedMachine
+        beginWaiting(for: machine.id, reason: machine.isLocal ? .starting : .connecting)
+        await prepareSelectedMachine()
+    }
+
+    /// Removes everything stored under a configured machine's own cloud
+    /// twin id: its stream, and every project/session/workspace record that
+    /// synced under the duplicate identity.
+    func pruneCloudTwinRecords(deviceId: String) {
+        let twinId = CodevisorMachine.cloudIdPrefix + deviceId
+        removeConnection(for: twinId)
+        projectList.removeAllRecords(serverId: twinId)
+        workspaceSync?.removeWorkspaces(serverId: twinId)
+    }
+
+    /// Cloud ids whose device is already served by a configured machine —
+    /// connecting to them would resurrect the duplicate records the prune
+    /// above removes.
+    func isCloudTwinOfConfiguredMachine(_ machineId: String) -> Bool {
+        guard let deviceId = CodevisorMachine.cloudDeviceId(forMachineId: machineId) else {
+            return false
+        }
+        let configuredIds = Set(machines.map(\.id))
+        return statusByMachineId.contains { key, status in
+            configuredIds.contains(key) && status.cloudDeviceId == deviceId
+        }
+    }
+
     /// Opens a machine's live event stream in the background — status probe,
     /// cursor capture, then subscribe — without touching selection, the
     /// request gate, or navigation sync. The selected machine's lifecycle
@@ -105,6 +134,7 @@ extension MachineController {
     /// machine's sessions keep flowing while it is off screen.
     public func connectMachine(_ machineId: String) async {
         guard machine(for: machineId) != nil else { return }
+        guard !isCloudTwinOfConfiguredMachine(machineId) else { return }
         let connection = connection(for: machineId)
         guard connection.eventSyncTask == nil, !connection.backgroundConnectInFlight else {
             return

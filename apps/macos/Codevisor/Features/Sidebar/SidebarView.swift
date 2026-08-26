@@ -668,6 +668,7 @@ struct SidebarView: View {
             isReordering: isReordering,
             isVisuallyExpanded: isProjectVisuallyExpanded(project.id),
             titleFont: itemTitleFont,
+            machineName: environment.machines.fleetMachineName(for: project.serverId),
             onDisclosureToggle: { toggle(project.id) },
             onRestoreRequest: { restoreRequest = ArchivedRestoreRequest(target: .project(project)) },
             onNewChat: { selection = .newChat(project.id) },

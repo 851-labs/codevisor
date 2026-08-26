@@ -13,6 +13,9 @@ struct SidebarProjectRow: View {
     let isReordering: Bool
     let isVisuallyExpanded: Bool
     let titleFont: Font
+    /// Fleet context: the owning machine's name, shown as a second row.
+    /// Nil (single-machine fleets) keeps the compact single-line row.
+    var machineName: String? = nil
     let onDisclosureToggle: () -> Void
     let onRestoreRequest: () -> Void
     let onNewChat: () -> Void
@@ -52,10 +55,18 @@ struct SidebarProjectRow: View {
                                 .opacity(isHovered && !isArchivedEntry ? 1 : 0)
                         }
                         .frame(width: 18)
-                        Text(project.name)
-                            .font(titleFont)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(project.name)
+                                .font(titleFont)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                            if let machineName {
+                                Text(machineName)
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                                    .lineLimit(1)
+                            }
+                        }
                         Spacer(minLength: 6)
                     }
                     .padding(.vertical, 5)

@@ -1,6 +1,21 @@
 import Foundation
 
 extension ProjectListModel {
+    /// Drops every record stored under a server id — used when a machine
+    /// identity turns out to be a duplicate (the local machine's own cloud
+    /// twin), whose synced records would otherwise render as doubled
+    /// projects and chats forever.
+    public func removeAllRecords(serverId: String) {
+        let hadProjects = projects.contains { $0.serverId == serverId }
+        let hadSessions = sessions.contains { $0.serverId == serverId }
+        guard hadProjects || hadSessions else { return }
+        projects.removeAll { $0.serverId == serverId }
+        sessions.removeAll { $0.serverId == serverId }
+        pendingServerProjectIds = pendingServerProjectIds.filter { $0.serverId != serverId }
+        persistProjects()
+        persistSessions()
+    }
+
     /// Adds a project on an EXPLICIT machine — the fleet-wide picker's "New
     /// Project…" flow, which may target a machine other than the selected
     /// one. Dedupe and un-archive semantics match `addProject(folderURL:)`.

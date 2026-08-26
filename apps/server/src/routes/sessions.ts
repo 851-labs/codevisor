@@ -185,9 +185,27 @@ export const routeSessions = async (
   }
 
   if (sessionId !== undefined && request.method === "DELETE") {
+    // Capture the workspace link before the row disappears: deleting the
+    // LAST session of a workspace deletes the workspace too, mirroring the
+    // client's archive-last-chat behavior. Without this, out-of-band session
+    // deletion strands empty workspaces in every client's sidebar.
+    const workspaceId = (await run(services.db.listSessions)).find(
+      (session) => session.id === sessionId
+    )?.workspaceId
     await services.mcp?.closeSession(sessionId)
     await run(services.db.deleteSession(sessionId))
     await appendAndPublish(services.db, fanout, "session.deleted", sessionId, { id: sessionId })
+    if (workspaceId != null) {
+      const remaining = (await run(services.db.listSessions)).some(
+        (session) => session.workspaceId === workspaceId
+      )
+      if (!remaining) {
+        await run(services.db.deleteWorkspace(workspaceId))
+        await appendAndPublish(services.db, fanout, "workspace.deleted", workspaceId, {
+          id: workspaceId
+        })
+      }
+    }
     writeJson(response, 204, undefined)
     return true
   }

@@ -700,12 +700,6 @@ public final class MachineController {
         onMachineConnected?(machineId)
     }
 
-    public func retrySelectedMachine() async {
-        let machine = selectedMachine
-        beginWaiting(for: machine.id, reason: machine.isLocal ? .starting : .connecting)
-        await prepareSelectedMachine()
-    }
-
     public func refreshStatus(for id: String) async {
         let client = client(for: id)
         let connection = connection(for: id)
@@ -721,6 +715,15 @@ public final class MachineController {
             // shows up on the user's other devices.
             if id == CodevisorMachine.local.id, info.cloudDeviceId == nil {
                 cloudProvider?.registerLocalMachineIfNeeded()
+            }
+            // A CONFIGURED machine advertising a cloud device id makes its
+            // cloud twin a duplicate identity. The machine list already
+            // dedupes; also drop any records synced under the twin id before
+            // the probe landed, or they render as doubled projects/chats.
+            if !id.hasPrefix(CodevisorMachine.cloudIdPrefix),
+                let deviceId = info.cloudDeviceId
+            {
+                pruneCloudTwinRecords(deviceId: deviceId)
             }
             do {
                 connection.updateInfo = try await client.updateInfo(
