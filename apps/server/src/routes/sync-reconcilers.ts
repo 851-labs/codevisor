@@ -1,9 +1,12 @@
 import type { SyncEntryRecord } from "@codevisor/sync"
 import {
   ACCOUNTS_SYNC_NAMESPACE,
+  HARNESS_READINESS_NAMESPACE,
   MCPS_SYNC_NAMESPACE,
   publishAccountsRoster,
-  reconcileMcps
+  publishHarnessReadiness,
+  reconcileMcps,
+  type HarnessReadinessRow
 } from "../infra/config-sync.js"
 import { CREDENTIALS_SYNC_NAMESPACE, reconcileCredentials } from "../infra/credential-sync.js"
 import {
@@ -232,6 +235,49 @@ export const refreshMcpReadiness = async (
   }
 }
 
+/// Re-derives and publishes this machine's harness readiness entry after a
+/// harnesses pass or an auth change — the reported side of Phase 24's
+/// desired-vs-reported matrix. Change-detected and best-effort like the
+/// MCP readiness refresh.
+export const refreshHarnessReadiness = async (
+  services: CodevisorServerServices,
+  config: CodevisorServerConfig,
+  fanout: EventFanout
+): Promise<void> => {
+  try {
+    const rows: HarnessReadinessRow[] = (await discoverHarnesses(services)).map((harness) => {
+      const authed =
+        services.auth === undefined ||
+        harness.auth?.state === "authenticated" ||
+        harness.auth?.state === "notRequired"
+      const installed = harness.readiness.state === "ready"
+      const desired = harness.desiredEnabled ?? harness.enabled
+      const state: HarnessReadinessRow["state"] = !desired
+        ? "disabled"
+        : !installed
+          ? "notInstalled"
+          : authed
+            ? "ready"
+            : "signInRequired"
+      const reason = state === "notInstalled" ? harness.readiness.detail : undefined
+      return { id: harness.id, state, ...(reason ? { reason } : {}) }
+    })
+    const result = await publishHarnessReadiness({
+      db: services.db,
+      rows,
+      serverId: config.id
+    })
+    if (result.changedEntries.length > 0) {
+      void appendAndPublish(services.db, fanout, "sync.changed", HARNESS_READINESS_NAMESPACE, {
+        namespace: HARNESS_READINESS_NAMESPACE,
+        entries: result.changedEntries
+      }).catch(swallowError)
+    }
+  } catch {
+    // Best-effort by design; the next pass republishes.
+  }
+}
+
 /// The mutation hook's half: run the pass and publish, silently skipping
 /// machines that opted out of sync or lack the backing services. Never
 /// throws — a failed background pass must not affect the request that
@@ -248,6 +294,7 @@ export const runBackgroundSyncReconcile = async (
     if (result === undefined) return
     publishSyncChanged(services, fanout, namespace, result.changedEntries)
     if (namespace === "mcps") await refreshMcpReadiness(services, config, fanout)
+    if (namespace === "harnesses") await refreshHarnessReadiness(services, config, fanout)
     // Auth mutations ride the harnesses trigger; the credential ferry
     // re-hashes its files on the same beat (cheap when nothing changed).
     if (namespace === "harnesses") {

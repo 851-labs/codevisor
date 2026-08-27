@@ -3,7 +3,9 @@ import { makeServices, run } from "../test-support.js"
 import {
   ACCOUNTS_SYNC_NAMESPACE,
   MCPS_SYNC_NAMESPACE,
+  HARNESS_READINESS_NAMESPACE,
   publishAccountsRoster,
+  publishHarnessReadiness,
   reconcileMcps
 } from "./config-sync.js"
 
@@ -197,6 +199,31 @@ describe("config sync", () => {
       expect((await mcpB.list()).some((server) => server.name === "GitHub")).toBe(false)
     }
   )
+
+  it("publishes harness readiness once per change, sorted and keyed by machine", async () => {
+    const { services } = await makeServices("server-h")
+    const deps = {
+      db: services.db,
+      now: () => 7_000,
+      rows: [
+        { id: "codex", state: "signInRequired" } as const,
+        { id: "claude-code", state: "ready" } as const,
+        { id: "gemini", state: "notInstalled", reason: "CLI not found on PATH" } as const
+      ],
+      serverId: "server-h"
+    }
+    const first = await publishHarnessReadiness(deps)
+    expect(first.changedEntries).toHaveLength(1)
+    expect((await publishHarnessReadiness(deps)).changedEntries).toEqual([])
+
+    const document = await run(services.db.getSyncEntries(HARNESS_READINESS_NAMESPACE))
+    expect(document[0]?.key).toBe("server-h")
+    const value = document[0]?.value as {
+      readonly harnesses: ReadonlyArray<{ readonly id: string; readonly reason?: string }>
+    }
+    expect(value.harnesses.map((row) => row.id)).toEqual(["claude-code", "codex", "gemini"])
+    expect(value.harnesses[2]?.reason).toBe("CLI not found on PATH")
+  })
 
   it("publishes each machine's account roster once per change", async () => {
     const { services } = await makeServices("server-d")

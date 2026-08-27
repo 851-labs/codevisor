@@ -390,6 +390,43 @@ export interface AccountsRosterDeps {
 /// credential material) under its own machine key. Each machine writes only
 /// its own entry: single-writer, so the roster can never conflict. Purely
 /// informational groundwork for fleet-wide account views.
+export const HARNESS_READINESS_NAMESPACE = "harness-readiness"
+
+export interface HarnessReadinessRow {
+  readonly id: string
+  readonly state: "ready" | "signInRequired" | "notInstalled" | "disabled"
+  readonly reason?: string | undefined
+}
+
+/// Publishes this machine's per-harness condition (Phase 24) — the
+/// REPORTED side of the desired-vs-reported matrix, mirroring
+/// mcp-readiness: one single-writer entry keyed by server id,
+/// change-detected so a settled machine publishes nothing. Rows are
+/// computed by the caller (they need the decorated catalog); this layer
+/// only owns the entry shape and the merge.
+export const publishHarnessReadiness = async (deps: {
+  readonly db: CodevisorDatabaseService
+  readonly serverId: string
+  readonly rows: ReadonlyArray<HarnessReadinessRow>
+  readonly now?: () => number
+}): Promise<{ readonly changedEntries: ReadonlyArray<SyncEntryRecord> }> => {
+  const now = deps.now ?? Date.now
+  const harnesses = deps.rows.toSorted((a, b) => a.id.localeCompare(b.id))
+  const replica = await run(deps.db.getSyncEntries(HARNESS_READINESS_NAMESPACE))
+  const existing = replica.find((entry) => entry.key === deps.serverId)
+  const value = { harnesses }
+  if (existing !== undefined && JSON.stringify(existing.value) === JSON.stringify(value)) {
+    return { changedEntries: [] }
+  }
+  const timestamp = nextSyncTimestamp(deps.serverId, latestSyncTimestamp(replica), now())
+  const result = await run(
+    deps.db.mergeSyncEntries(HARNESS_READINESS_NAMESPACE, [
+      { key: deps.serverId, value, timestamp }
+    ])
+  )
+  return { changedEntries: result.changed }
+}
+
 export const publishAccountsRoster = async (
   deps: AccountsRosterDeps
 ): Promise<{ readonly changedEntries: ReadonlyArray<SyncEntryRecord> }> => {

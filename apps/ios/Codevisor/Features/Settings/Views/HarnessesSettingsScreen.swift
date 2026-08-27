@@ -53,6 +53,7 @@ struct HarnessesSettingsScreen: View {
                         harnessRow(harness)
                     }
                 }
+                machinesSection
                 if !notInstalled.isEmpty {
                     Section("Not Installed") {
                         ForEach(notInstalled, id: \.id) { harness in
@@ -86,6 +87,48 @@ struct HarnessesSettingsScreen: View {
             await load()
         }
         .harnessSignInSheet(request: $signInRequest)
+    }
+
+    /// Phase 24: what each machine reports for the fleet's agents, with
+    /// sign-in a tap away. Hidden for single-machine fleets.
+    @ViewBuilder
+    private var machinesSection: some View {
+        let _ = environment.configSync.revisionsByNamespace["harness-readiness"]
+        let readiness = HarnessFleet.readiness(environment.configSync)
+        if environment.machines.machines.count > 1, !readiness.isEmpty {
+            Section("On Your Machines") {
+                ForEach(readiness.keys.sorted(), id: \.self) { machineId in
+                    DisclosureGroup(
+                        environment.machines.fleetMachineName(for: machineId) ?? machineId
+                    ) {
+                        ForEach(readiness[machineId] ?? []) { entry in
+                            machineReadinessRow(machineId: machineId, entry: entry)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func machineReadinessRow(
+        machineId: String, entry: HarnessFleet.MachineReadiness
+    ) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.harnessId)
+                Text(entry.reason ?? entry.state)
+                    .font(.footnote)
+                    .foregroundStyle(entry.state == "signInRequired" ? .orange : .secondary)
+            }
+            Spacer()
+            if entry.state == "signInRequired" {
+                Button("Sign In") {
+                    signInRequest = HarnessSignInRequest(
+                        serverId: machineId, harnessId: entry.harnessId)
+                }
+                .font(.footnote)
+            }
+        }
     }
 
     private func harnessRow(_ harness: ServerHarness) -> some View {

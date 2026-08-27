@@ -36,7 +36,7 @@ import { routeFs } from "./routes/fs.js"
 import { discoverCapabilities, routeHarnesses } from "./routes/harnesses.js"
 import { routeMcps, routeMcpScopes, routeNativeMcps } from "./routes/mcps.js"
 import { routeProjects } from "./routes/projects.js"
-import { republishAccountsRoster } from "./routes/sync-reconcilers.js"
+import { refreshHarnessReadiness, republishAccountsRoster } from "./routes/sync-reconcilers.js"
 import {
   drainPromptQueue,
   makeTurnDispatchListener,
@@ -154,6 +154,7 @@ export const makeCodevisorServerApp = (
     // machine's roster immediately instead of waiting for a client sweep.
     if (event.kind === "harness.account.updated") {
       void republishAccountsRoster(services, config, fanout)
+      void refreshHarnessReadiness(services, config, fanout)
     }
   })
   /* v8 ignore next -- the lifecycle manager invokes this thin event-forwarding callback. */

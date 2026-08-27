@@ -1,3 +1,5 @@
+import type { Harness } from "@codevisor/api"
+import type { HarnessAuthManager } from "@codevisor/harness-manager"
 import { describe, expect, it } from "vitest"
 import { jsonRequest, makeServices, startWithApp } from "../test-support.js"
 
@@ -72,5 +74,86 @@ describe("/v1/sync/mcp-readiness", () => {
     // ...and sessions on this machine no longer resolve the server.
     const resolved = await services.mcp?.resolved()
     expect(resolved?.some((s) => s.name === "Computer Use")).toBe(false)
+  })
+})
+
+/// Phase 24: the harness-readiness surface — the reported half of the
+/// desired-vs-reported matrix, published on demand and after harness passes.
+describe("/v1/sync/harness-readiness", () => {
+  it("publishes this machine's harness readiness on demand", async () => {
+    const { services } = await makeServices("server-hr")
+    const server = await startWithApp(services, undefined, { id: "server-hr" })
+
+    const published = await jsonRequest(server, "/v1/sync/harness-readiness/publish", {
+      method: "POST"
+    })
+    expect(published.status).toBe(200)
+    expect(published.body).toEqual({ published: true })
+
+    const document = (await jsonRequest(server, "/v1/sync/harness-readiness")).body as {
+      entries: Array<{ key: string; value: { harnesses: Array<{ id: string; state: string }> } }>
+    }
+    expect(document.entries).toHaveLength(1)
+    expect(document.entries[0]?.key).toBe("server-hr")
+    const rows = document.entries[0]?.value.harnesses ?? []
+    expect(rows.length).toBeGreaterThan(0)
+    for (const row of rows) {
+      expect(["ready", "signInRequired", "notInstalled", "disabled"]).toContain(row.state)
+    }
+  })
+
+  it("reports sign-in-required for installed-but-unauthenticated harnesses", async () => {
+    const { services } = await makeServices("server-hr2")
+    const auth = {
+      // One installed harness awaiting sign-in, and one legacy-shaped row
+      // with no desiredEnabled field (the ?? fallback reads enabled).
+      decorateHarnesses: (list: ReadonlyArray<Harness>) =>
+        Promise.resolve([
+          ...list.map((harness) => ({
+            ...harness,
+            desiredEnabled: true,
+            enabled: false,
+            readiness: { state: "ready" },
+            auth: { state: "unauthenticated" }
+          })),
+          ...list.map((harness) => {
+            const { desiredEnabled: _omitted, ...rest } = harness as Harness & {
+              desiredEnabled?: boolean
+            }
+            return {
+              ...rest,
+              id: "legacy-shape",
+              enabled: true,
+              readiness: { state: "ready" },
+              auth: { state: "authenticated" }
+            }
+          }),
+          // A desired harness the machine hasn't installed, with the
+          // scanner's explanation riding along as the row's reason.
+          ...list.map((harness) => ({
+            ...harness,
+            id: "missing-cli",
+            desiredEnabled: true,
+            enabled: false,
+            readiness: { state: "notInstalled", detail: "CLI not found on PATH" }
+          }))
+        ]),
+      activeAccountContext: () => Promise.resolve(undefined),
+      subscribe: () => () => undefined
+    } as unknown as HarnessAuthManager
+    const server = await startWithApp({ ...services, auth }, undefined, { id: "server-hr2" })
+
+    await jsonRequest(server, "/v1/sync/harness-readiness/publish", { method: "POST" })
+    const document = (await jsonRequest(server, "/v1/sync/harness-readiness")).body as {
+      entries: Array<{ value: { harnesses: Array<{ id: string; state: string }> } }>
+    }
+    const rows = document.entries[0]?.value.harnesses ?? []
+    expect(rows.some((row) => row.state === "signInRequired")).toBe(true)
+    expect(rows.find((row) => row.id === "legacy-shape")?.state).toBe("ready")
+    const missing = rows.find((row) => row.id === "missing-cli") as
+      | { state: string; reason?: string }
+      | undefined
+    expect(missing?.state).toBe("notInstalled")
+    expect(missing?.reason).toBe("CLI not found on PATH")
   })
 })

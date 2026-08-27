@@ -104,6 +104,8 @@ struct HarnessesSettingsView: View {
                 Text("Installed")
             }
 
+            HarnessMachinesSection()
+
             if !serverNotInstalled.isEmpty {
                 Section {
                     SettingsDisclosureRow(
