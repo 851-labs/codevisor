@@ -238,7 +238,7 @@ private extension ModelConfigMenu {
 
     @ViewBuilder
     private func settingControl(_ option: SessionConfigOption) -> some View {
-        if option.category == SessionConfigOption.Category.thoughtLevel {
+        if option.category == SessionConfigOption.Category.thoughtLevel, option.options.count > 1 {
             reasoningControl(option)
         } else if let toggleValues = toggleValues(for: option) {
             Toggle(
