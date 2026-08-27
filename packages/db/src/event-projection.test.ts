@@ -341,7 +341,8 @@ describe("@codevisor/db", () => {
     await run(
       db.appendEvent("session.updated", session.id, {
         stopReason: "manual",
-        stopDetail: "manual detail"
+        stopDetail: "manual detail",
+        stopKind: "usageLimit"
       })
     )
     // A terminal event with no active item is a harmless no-op.
@@ -390,7 +391,12 @@ describe("@codevisor/db", () => {
     })
     expect(page.items[3]?.text).toBe("")
     expect(page.items[3]?.stopReason).toBeUndefined()
-    expect(page.items[4]).toMatchObject({ text: "", stopReason: "manual" })
+    expect(page.items[2]?.stopKind).toBeUndefined()
+    expect(page.items[4]).toMatchObject({
+      text: "",
+      stopKind: "usageLimit",
+      stopReason: "manual"
+    })
     expect(await run(db.getSessionSummary(session.id))).toMatchObject({ id: session.id })
     expect((await run(db.listSubjectEvents(session.id))).length).toBeGreaterThan(20)
     expect((await run(db.listSubjectEvents(project.id))).length).toBeGreaterThan(0)

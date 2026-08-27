@@ -150,6 +150,7 @@ describe("ClaudeProvider", () => {
       .map((event) => event.payload as Record<string, unknown>)
       .find((payload) => payload.turnState === "ended")
     expect(endedPayload?.stopDetail).toBe(limitMessage)
+    expect(endedPayload?.stopKind).toBe("usageLimit")
     expect(endedPayload?.retryable).toBeUndefined()
   })
 
@@ -187,6 +188,7 @@ describe("ClaudeProvider", () => {
     expect(endedPayload?.stopDetail).toBe(
       "You've reached your 5-hour Claude usage limit. Try again after it resets."
     )
+    expect(endedPayload?.stopKind).toBe("usageLimit")
     expect(endedPayload?.retryable).toBeUndefined()
   })
 

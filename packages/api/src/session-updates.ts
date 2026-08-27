@@ -21,6 +21,13 @@ export type ToolCallStatus = typeof ToolCallStatus.Type
 export const TurnInitiator = Schema.Literals(["user", "agent"])
 export type TurnInitiator = typeof TurnInitiator.Type
 
+/** Machine-readable classification of an abnormal turn end. `usageLimit` marks
+ *  genuine plan/credit exhaustion (not a transient 429) so clients can react —
+ *  e.g. offer switching accounts — without parsing `stopDetail` prose. Absent
+ *  means unclassified. */
+export const TurnStopKind = Schema.Literals(["usageLimit"])
+export type TurnStopKind = typeof TurnStopKind.Type
+
 /** Turn lifecycle payload carried on `session.updated` envelopes. Turn ends
  *  keep the legacy `{ stopReason }` shape so older clients continue to detect
  *  completion; `turnState: "started"` is ignored by clients that predate it. */
@@ -32,6 +39,8 @@ export const TurnLifecycle = Schema.Struct({
   /** Short human-readable reason present only on an abnormal end (error / limit
    *  / refusal / gave-up truncation); clients render it as a per-turn line. */
   stopDetail: Schema.optional(Schema.String),
+  /** See TurnStopKind: present only when the adapter classified the end. */
+  stopKind: Schema.optional(TurnStopKind),
   /** The failed prompt can safely be submitted again after provider retries
    *  have been exhausted. */
   retryable: Schema.optional(Schema.Boolean)

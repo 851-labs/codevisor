@@ -22,7 +22,7 @@ const codexErrorSignal = (
 
 export const codexErrorDetails = (
   payload: Record<string, unknown>
-): { message: string; retryable: boolean } => {
+): { message: string; retryable: boolean; stopKind?: "usageLimit" } => {
   const error = isRecord(payload.error) ? payload.error : payload
   const message =
     typeof error.message === "string"
@@ -54,7 +54,11 @@ export const codexErrorDetails = (
         serializedInfo
       ) ||
       /\b(overload(?:ed)?|server (?:is )?busy|rate.?limit|429|503)\b/i.test(message))
-  return { message, retryable }
+  return {
+    message,
+    retryable,
+    ...(usageLimitExceeded ? { stopKind: "usageLimit" as const } : {})
+  }
 }
 
 export const codexRetryStatus = (payload: Record<string, unknown>) => {

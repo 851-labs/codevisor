@@ -168,6 +168,9 @@ export const handleNotification = (
               initiatedBy: pending === undefined ? "agent" : "user",
               stopReason,
               ...(terminalError === undefined ? {} : { stopDetail: terminalError.message }),
+              ...(terminalError?.stopKind === undefined
+                ? {}
+                : { stopKind: terminalError.stopKind }),
               ...(terminalError?.retryable === true ? { retryable: true } : {}),
               turnId,
               turnState: "ended"

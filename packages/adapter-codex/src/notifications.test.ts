@@ -132,6 +132,7 @@ describe("CodexProvider", () => {
     ).toBe(false)
     expect(events.at(-1)?.payload).toMatchObject({
       stopDetail: usageMessage,
+      stopKind: "usageLimit",
       turnState: "ended"
     })
     expect((events.at(-1)?.payload as Record<string, unknown>).retryable).toBeUndefined()

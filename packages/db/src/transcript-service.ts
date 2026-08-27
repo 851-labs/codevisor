@@ -305,6 +305,7 @@ export const makeTranscriptService = (
               now,
               "interrupted",
               stopDetail,
+              undefined,
               false,
               true
             )

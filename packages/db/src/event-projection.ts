@@ -148,6 +148,7 @@ export const projectChatEvent = (
           : event.kind === "session.error" && typeof payload.message === "string"
             ? payload.message
             : undefined,
+        typeof payload.stopKind === "string" ? payload.stopKind : undefined,
         payload.retryable === true,
         event.kind === "session.error"
       )

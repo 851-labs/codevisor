@@ -265,6 +265,7 @@ export const finishAssistantChatItem = (
   completedAt: string,
   stopReason?: string,
   stopDetail?: string,
+  stopKind?: string,
   retryable = false,
   failed = false
 ): void => {
@@ -277,6 +278,7 @@ export const finishAssistantChatItem = (
     .prepare(
       `update chat_items set status = ?, completed_at = ?, updated_at = ?,
        stop_reason = coalesce(?, stop_reason), stop_detail = coalesce(?, stop_detail),
+       stop_kind = coalesce(?, stop_kind),
        retryable = ?,
        revision = revision + 1 where id = ?`
     )
@@ -286,6 +288,7 @@ export const finishAssistantChatItem = (
       completedAt,
       stopReason ?? null,
       stopDetail ?? null,
+      stopKind ?? null,
       retryable ? 1 : 0,
       itemId
     )

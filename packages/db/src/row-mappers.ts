@@ -241,6 +241,7 @@ export const transcriptFromChatRow = (row: ChatItemRow): TranscriptItem => {
     ...(row.completed_at === null ? {} : { endedAt: row.completed_at }),
     ...(row.stop_reason === null ? {} : { stopReason: row.stop_reason }),
     ...(row.stop_detail === null ? {} : { stopDetail: row.stop_detail }),
+    ...(row.stop_kind === "usageLimit" ? { stopKind: "usageLimit" as const } : {}),
     ...(row.retryable === 1 ? { retryable: true } : {}),
     ...(row.plan_document === null ? {} : { planDocument: row.plan_document }),
     ...(attachments === undefined ? {} : { attachments }),

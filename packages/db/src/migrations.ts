@@ -1235,5 +1235,12 @@ export const migrations: ReadonlyArray<Migration> = [
         primary key (namespace, key)
       );
     `
+  },
+  {
+    id: 44,
+    name: "machine-readable turn stop kind",
+    sql: `
+      alter table chat_items add column stop_kind text;
+    `
   }
 ]

@@ -3,7 +3,8 @@ import {
   BackgroundTask,
   MessagePhase,
   QuestionAnswerEntry,
-  QuestionPayload
+  QuestionPayload,
+  TurnStopKind
 } from "./session-updates.js"
 import { GoalStatus, SessionGoal, SessionOrigin } from "./session-config.js"
 import { CreateProjectRequest } from "./projects.js"
@@ -196,6 +197,9 @@ export const TranscriptItem = Schema.Struct({
   endedAt: Schema.optional(Schema.String),
   stopReason: Schema.optional(Schema.String),
   stopDetail: Schema.optional(Schema.String),
+  /** Machine-readable end classification (see TurnStopKind); absent means
+   * unclassified. */
+  stopKind: Schema.optional(TurnStopKind),
   retryable: Schema.optional(Schema.Boolean),
   planDocument: Schema.optional(Schema.String),
   attachments: Schema.optional(Schema.Array(AttachmentRef)),

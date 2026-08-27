@@ -295,6 +295,7 @@ export interface ChatItemRow {
   readonly completed_at: string | null
   readonly stop_reason: string | null
   readonly stop_detail: string | null
+  readonly stop_kind: string | null
   readonly retryable: number
   readonly attachments: string | null
   readonly has_details: number

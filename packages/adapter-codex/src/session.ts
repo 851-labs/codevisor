@@ -53,7 +53,7 @@ export interface CodexSession {
   readonly emit: RuntimeEmit
   readonly cwd: string
   activeTurnId: string | undefined
-  pendingTurnError: { message: string; retryable: boolean } | undefined
+  pendingTurnError: { message: string; retryable: boolean; stopKind?: "usageLimit" } | undefined
   pendingPrompt: { resolve: (value: { stopReason: string }) => void } | undefined
   interruptRequested: boolean
   lastHarnessTitle: string | undefined

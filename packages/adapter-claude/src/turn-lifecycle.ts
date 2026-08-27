@@ -31,7 +31,8 @@ export const finishActiveTurn = (
   session: ClaudeSession,
   stopReason: string,
   stopDetail?: string | undefined,
-  retryable?: boolean | undefined
+  retryable?: boolean | undefined,
+  stopKind?: "usageLimit" | undefined
 ): Promise<void> => {
   const completion = session.turnCompletion
   if (!session.turnActive) return completion?.promise ?? Promise.resolve()
@@ -69,6 +70,7 @@ export const finishActiveTurn = (
       // Only present when the turn ended abnormally (error / limit / refusal /
       // truncation we gave up on); the client renders it as a per-turn reason.
       ...(stopDetail === undefined ? {} : { stopDetail }),
+      ...(stopKind === undefined ? {} : { stopKind }),
       ...(retryable === true ? { retryable: true } : {}),
       turnId: session.turnId,
       turnState: "ended"

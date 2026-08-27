@@ -71,6 +71,7 @@ type TurnResolution =
       readonly kind: "end"
       readonly stopReason: string
       readonly stopDetail?: string | undefined
+      readonly stopKind?: "usageLimit" | undefined
       readonly retryable?: boolean | undefined
     }
 
@@ -109,7 +110,12 @@ const classifyResult = (
   // temporary request-rate 429 through its canonical user-facing messages and
   // rejected rate_limit_event state. Retrying cannot help in this case.
   if (usageLimitExceeded) {
-    return { kind: "end", stopReason: "end_turn", stopDetail: usageLimitDetail }
+    return {
+      kind: "end",
+      stopReason: "end_turn",
+      stopDetail: usageLimitDetail,
+      stopKind: "usageLimit"
+    }
   }
 
   const truncated =
@@ -369,7 +375,13 @@ export const handleResult = (
   cancelClaudePendingQuestions(session)
   if (!isTaskNotification) settleGoalOnTurnEnd(session, message)
   void refreshClaudeSessionTitle(session)
-  void finishActiveTurn(session, resolution.stopReason, resolution.stopDetail, resolution.retryable)
+  void finishActiveTurn(
+    session,
+    resolution.stopReason,
+    resolution.stopDetail,
+    resolution.retryable,
+    resolution.stopKind
+  )
 }
 
 const retryMessageForAssistantError = (error: string | undefined): string => {
