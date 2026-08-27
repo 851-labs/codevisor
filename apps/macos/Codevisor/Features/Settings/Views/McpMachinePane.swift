@@ -4,7 +4,7 @@ import CodevisorCoreMac
 import CodevisorUI
 import SwiftUI
 
-/// One machine's MCP picture, rendered inside its disclosure: built-in
+/// One machine's MCP picture, rendered on its page: built-in
 /// tools, the managed servers as they run THERE, import candidates, and
 /// the native-config scan. Every control acts on that machine — the enable
 /// toggle writes the per-machine overlay, which syncs to the fleet and is
@@ -13,7 +13,11 @@ struct McpMachinePane: View {
     @Environment(AppEnvironment.self) var environment
     @Environment(\.theme) private var theme
     let machine: CodevisorMachine
-    let permissions: ComputerUsePermissionsModel?
+    /// This Mac's TCC probes — consulted only when this pane IS the local
+    /// machine; a remote machine's permissions are its own server's story.
+    @State var permissions = ComputerUsePermissionsModel(
+        probes: AppPreview.isRunning ? .granted : .live
+    )
 
     @State var servers: [ServerMcpServer] = []
     @State var isLoading = true
@@ -41,15 +45,19 @@ struct McpMachinePane: View {
     var body: some View {
         // Overlay flips re-derive every row's effective state immediately.
         let _ = environment.configSync.revisionsByNamespace["mcp-overlays"]
-        VStack(alignment: .leading, spacing: 10) {
+        Group {
             if isLoading, servers.isEmpty {
-                HStack {
-                    ProgressView().controlSize(.small)
-                    Text("Loading…").foregroundStyle(.secondary)
+                Section {
+                    HStack {
+                        ProgressView().controlSize(.small)
+                        Text("Loading…").foregroundStyle(.secondary)
+                    }
                 }
             } else if let errorMessage, servers.isEmpty {
-                Label(errorMessage, systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.secondary)
+                Section {
+                    Label(errorMessage, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.secondary)
+                }
             } else {
                 paneContent
             }
@@ -119,34 +127,29 @@ struct McpMachinePane: View {
         let builtIn = servers.filter { $0.kind == "browserUse" || $0.kind == "computerUse" }
         let managed = servers.filter { $0.kind != "browserUse" && $0.kind != "computerUse" }
         if !builtIn.isEmpty {
-            paneHeader("Built-in Tools")
-            ForEach(builtIn) { server in
-                serverRow(server)
+            Section("Built-in Tools") {
+                ForEach(builtIn) { server in
+                    serverRow(server)
+                }
             }
         }
-        paneHeader("MCP Servers")
-        if managed.isEmpty {
-            Text("No MCP servers added yet.")
-                .foregroundStyle(.secondary)
-        } else {
-            ForEach(managed) { server in
-                serverRow(server)
+        Section("MCP Servers") {
+            if managed.isEmpty {
+                Text("No MCP servers added yet.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(managed) { server in
+                    serverRow(server)
+                }
             }
-        }
-        if let errorMessage {
-            Label(errorMessage, systemImage: "exclamationmark.triangle")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+            if let errorMessage {
+                Label(errorMessage, systemImage: "exclamationmark.triangle")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
         }
         importSection
         nativeSection
-    }
-
-    private func paneHeader(_ title: String) -> some View {
-        Text(title)
-            .font(.callout.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .padding(.top, 4)
     }
 
     /// The row renders the machine-effective state: fleet-enabled AND not
@@ -171,27 +174,30 @@ struct McpMachinePane: View {
     private var importSection: some View {
         let candidates = (nativeScan?.candidates ?? []).filter { !$0.alreadyManaged }
         if !candidates.isEmpty || importFeedback != nil {
-            paneHeader("Found in Your Harnesses")
-            ForEach(candidates) { candidate in
-                McpImportCandidateRow(
-                    candidate: candidate,
-                    foundIn: harnessNames(for: candidate.foundIn),
-                    isImporting: importingIdentities.contains(candidate.identity),
-                    importDisabled: !importingIdentities.isEmpty,
-                    onImport: { Task { await importIdentities([candidate.identity]) } }
-                )
-            }
-            if candidates.count > 1 {
-                Button("Import All") {
-                    Task { await importIdentities(candidates.map(\.identity)) }
+            Section {
+                ForEach(candidates) { candidate in
+                    McpImportCandidateRow(
+                        candidate: candidate,
+                        foundIn: harnessNames(for: candidate.foundIn),
+                        isImporting: importingIdentities.contains(candidate.identity),
+                        importDisabled: !importingIdentities.isEmpty,
+                        onImport: { Task { await importIdentities([candidate.identity]) } }
+                    )
                 }
-                .settingsActionTint(theme)
-                .disabled(!importingIdentities.isEmpty)
-            }
-            if let importFeedback {
-                Text(importFeedback)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                if candidates.count > 1 {
+                    Button("Import All") {
+                        Task { await importIdentities(candidates.map(\.identity)) }
+                    }
+                    .settingsActionTint(theme)
+                    .disabled(!importingIdentities.isEmpty)
+                }
+                if let importFeedback {
+                    Text(importFeedback)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Found in Your Harnesses")
             }
         }
     }
@@ -201,17 +207,18 @@ struct McpMachinePane: View {
         let harnesses = (nativeScan?.harnesses ?? []).filter { !$0.servers.isEmpty || $0.error != nil }
         if !harnesses.isEmpty || lastNativeRemoval != nil {
             let count = harnesses.reduce(0) { $0 + $1.servers.count }
-            SettingsDisclosureRow(
-                "Installed in your harnesses (\(count))",
-                isExpanded: $showsNativeInstalled
-            ) {
-                ForEach(harnesses) { harness in
-                    nativeHarnessGroup(harness)
-                        .padding(.leading, 17)
-                        .padding(.top, 6)
+            Section {
+                SettingsDisclosureRow(
+                    "Installed in your harnesses (\(count))",
+                    isExpanded: $showsNativeInstalled
+                ) {
+                    ForEach(harnesses) { harness in
+                        nativeHarnessGroup(harness)
+                            .padding(.leading, 17)
+                            .padding(.top, 6)
+                    }
                 }
             }
-            .padding(.top, 4)
             if let error = nativeActionError {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .font(.callout)

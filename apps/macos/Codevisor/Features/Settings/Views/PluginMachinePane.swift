@@ -3,7 +3,7 @@ import CodevisorCore
 import SwiftUI
 import CodevisorUI
 
-/// One machine's plugins, rendered inside its disclosure: live
+/// One machine's plugins, rendered on its page: live
 /// runtime-state chips, restart/uninstall actions, and the two-stage
 /// install sheet that shows the exact commands a plugin will run before
 /// anything executes.

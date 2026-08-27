@@ -3,7 +3,7 @@ import CodevisorCore
 import SwiftUI
 import CodevisorUI
 
-/// One machine's skills, rendered inside its disclosure: the canonical
+/// One machine's skills, rendered on its page: the canonical
 /// ~/.agents/skills store as it exists THERE (shared across that machine's
 /// harnesses), plus the skills installed directly inside individual
 /// harnesses, grouped per harness.
@@ -30,60 +30,67 @@ struct SkillMachinePane: View {
     }
 
     var body: some View {
-        content
-            // Skills are plain files that change behind our back (npx skills
-            // add, manual edits) — the pane rescans every time it appears.
-            .task(id: serverId) { await reload() }
-            .sheet(isPresented: $showingCreate) {
-                SkillCreateSheet { name, description, pasted in
-                    try await mutate {
-                        try await client.createSkill(
-                            name: name,
-                            description: description,
-                            content: pasted
-                        )
-                    }
-                }
-            }
-            .sheet(isPresented: $showingRemoteImport) {
-                SkillRemoteImportSheet(
-                    discover: { source in
-                        try await client.discoverRemoteSkills(source: source)
-                    },
-                    onImport: { source, skillNames in
+        Group {
+            bannerSections
+            // The always-present section carries the pane's lifecycle
+            // modifiers exactly once — a Group would apply them per section.
+            globalSection
+                // Skills are plain files that change behind our back (npx
+                // skills add, manual edits) — rescan every time it appears.
+                .task(id: serverId) { await reload() }
+                .sheet(isPresented: $showingCreate) {
+                    SkillCreateSheet { name, description, pasted in
                         try await mutate {
-                            try await client.importRemoteSkill(
-                                source: source,
-                                skillNames: skillNames
-                            )
-                        }
-                    }
-                )
-            }
-            .confirmationDialog(
-                "Remove \(skillPendingRemoval?.name ?? "skill")?",
-                isPresented: Binding(
-                    get: { skillPendingRemoval != nil },
-                    set: { if !$0 { skillPendingRemoval = nil } }
-                ),
-                titleVisibility: .visible
-            ) {
-                Button("Remove Skill", role: .destructive) {
-                    guard let skill = skillPendingRemoval else { return }
-                    Task {
-                        try? await mutate {
-                            try await client.removeSkill(
-                                directoryName: skill.directoryName
+                            try await client.createSkill(
+                                name: name,
+                                description: description,
+                                content: pasted
                             )
                         }
                     }
                 }
-                .settingsActionTint(theme)
-                Button("Cancel", role: .cancel) { skillPendingRemoval = nil }
+                .sheet(isPresented: $showingRemoteImport) {
+                    SkillRemoteImportSheet(
+                        discover: { source in
+                            try await client.discoverRemoteSkills(source: source)
+                        },
+                        onImport: { source, skillNames in
+                            try await mutate {
+                                try await client.importRemoteSkill(
+                                    source: source,
+                                    skillNames: skillNames
+                                )
+                            }
+                        }
+                    )
+                }
+                .confirmationDialog(
+                    "Remove \(skillPendingRemoval?.name ?? "skill")?",
+                    isPresented: Binding(
+                        get: { skillPendingRemoval != nil },
+                        set: { if !$0 { skillPendingRemoval = nil } }
+                    ),
+                    titleVisibility: .visible
+                ) {
+                    Button("Remove Skill", role: .destructive) {
+                        guard let skill = skillPendingRemoval else { return }
+                        Task {
+                            try? await mutate {
+                                try await client.removeSkill(
+                                    directoryName: skill.directoryName
+                                )
+                            }
+                        }
+                    }
                     .settingsActionTint(theme)
-            } message: {
-                Text("This deletes the skill and removes its links from every harness.")
-            }
+                    Button("Cancel", role: .cancel) { skillPendingRemoval = nil }
+                        .settingsActionTint(theme)
+                } message: {
+                    Text("This deletes the skill and removes its links from every harness.")
+                }
+            harnessInstalledSection
+        }
+        .disabled(isMutating)
     }
 
     private var globalSkills: [ServerGlobalSkill] {
@@ -117,27 +124,11 @@ struct SkillMachinePane: View {
         harnessGroups.reduce(0) { $0 + $1.skills.count }
     }
 
+    /// Broken-link and out-of-sync banners, each its own quiet section.
     @ViewBuilder
-    private var content: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if isLoading, scan == nil {
-                HStack {
-                    ProgressView().controlSize(.small)
-                    Text("Loading…").foregroundStyle(.secondary)
-                }
-            } else if let errorMessage, scan == nil {
-                Label(errorMessage, systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.secondary)
-            } else {
-                skillsList
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var skillsList: some View {
-        Group {
-            if !brokenLinks.isEmpty {
+    private var bannerSections: some View {
+        if scan != nil, !brokenLinks.isEmpty {
+            Section {
                 HStack(spacing: 10) {
                     Image(systemName: "exclamationmark.triangle")
                         .foregroundStyle(
@@ -160,8 +151,9 @@ struct SkillMachinePane: View {
                     .accessibilityLabel("Remove all broken skill links")
                 }
             }
-
-            if anyOutOfSync {
+        }
+        if scan != nil, anyOutOfSync {
+            Section {
                 HStack(spacing: 10) {
                     Image(systemName: "arrow.triangle.2.circlepath")
                         .foregroundStyle(.secondary)
@@ -179,32 +171,54 @@ struct SkillMachinePane: View {
                     .disabled(isMutating)
                 }
             }
+        }
+    }
 
-            if let actionError {
-                Label(actionError, systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(theme.isSystem ? AnyShapeStyle(.secondary) : AnyShapeStyle(theme.statusWarn))
-                    .font(.callout)
-            }
-            if globalSkills.isEmpty {
-                Text("No skills on this machine yet.")
+    private var globalSection: some View {
+        Section("Global Skills") {
+            if isLoading, scan == nil {
+                HStack {
+                    ProgressView().controlSize(.small)
+                    Text("Loading…").foregroundStyle(.secondary)
+                }
+            } else if let errorMessage, scan == nil {
+                Label(errorMessage, systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(globalSkills) { skill in
-                    globalSkillRow(skill)
+                if let actionError {
+                    Label(actionError, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(
+                            theme.isSystem
+                                ? AnyShapeStyle(.secondary) : AnyShapeStyle(theme.statusWarn)
+                        )
+                        .font(.callout)
                 }
-            }
-            HStack(spacing: 10) {
-                Button {
-                    showingCreate = true
-                } label: {
-                    Label("New Skill…", systemImage: "plus")
+                if globalSkills.isEmpty {
+                    Text("No skills on this machine yet.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(globalSkills) { skill in
+                        globalSkillRow(skill)
+                    }
                 }
-                .settingsActionTint(theme)
-                Button("Import Skills…") { showingRemoteImport = true }
+                HStack(spacing: 10) {
+                    Button {
+                        showingCreate = true
+                    } label: {
+                        Label("New Skill…", systemImage: "plus")
+                    }
                     .settingsActionTint(theme)
+                    Button("Import Skills…") { showingRemoteImport = true }
+                        .settingsActionTint(theme)
+                }
             }
+        }
+    }
 
-            if !harnessGroups.isEmpty {
+    @ViewBuilder
+    private var harnessInstalledSection: some View {
+        if !harnessGroups.isEmpty {
+            Section {
                 SettingsDisclosureRow(
                     "Installed in your harnesses (\(harnessSkillCount))",
                     isExpanded: $showsHarnessSkills
@@ -215,10 +229,8 @@ struct SkillMachinePane: View {
                             .padding(.top, 6)
                     }
                 }
-                .padding(.top, 4)
             }
         }
-        .disabled(isMutating)
     }
 
     private var brokenLinksMessage: String {

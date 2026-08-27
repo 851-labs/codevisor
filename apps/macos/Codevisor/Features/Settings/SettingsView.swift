@@ -60,6 +60,8 @@ struct SettingsLocation: Equatable {
 final class SettingsRouter {
     static let shared = SettingsRouter()
     var selectedTab: SettingsTab = .general
+    /// Machine pages pushed over the current pane (list row → machine page).
+    var panePath: [MachinePaneRoute] = []
     /// Pages behind and ahead of the current one. Every navigation — sidebar
     /// selection, push, deep link — lands the previous page in `backHistory`;
     /// going back moves the current page to `forwardHistory` (cleared again
@@ -100,6 +102,7 @@ final class SettingsRouter {
     private func apply(_ location: SettingsLocation) {
         suppressHistoryRecording = true
         selectedTab = location.tab
+        panePath = []
     }
 
     func showMachines() {
@@ -199,6 +202,7 @@ extension EnvironmentValues {
 /// skills.
 struct SettingsView: View {
     @Bindable private var router = SettingsRouter.shared
+    @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
 
     var body: some View {
@@ -218,9 +222,12 @@ struct SettingsView: View {
             // would just leave an empty content window here.
             .toolbar(removing: .sidebarToggle)
         } detail: {
-            NavigationStack {
+            NavigationStack(path: $router.panePath) {
                 detailRoot
                     .settingsNavigationToolbar()
+                    .navigationDestination(for: MachinePaneRoute.self) { route in
+                        machinePage(for: route)
+                    }
             }
             .themedToolbarBackground(theme, role: .content)
         }
@@ -249,6 +256,7 @@ struct SettingsView: View {
             get: { router.selectedTab },
             set: { tab in
                 guard let tab else { return }
+                if tab != router.selectedTab { router.panePath = [] }
                 router.selectedTab = tab
             }
         )
@@ -285,6 +293,34 @@ struct SettingsView: View {
             MachinesSettingsView()
                 .navigationTitle("Machines")
         }
+    }
+}
+
+extension SettingsView {
+    /// One machine's page inside a config pane, pushed from the pane's
+    /// machine list. Pinned to its machine via `settingsMachineId` so every
+    /// sheet keeps talking to that machine.
+    @ViewBuilder
+    fileprivate func machinePage(for route: MachinePaneRoute) -> some View {
+        let machine =
+            environment.machines.allMachines.first { $0.id == route.machineId }
+            ?? CodevisorMachine.local
+        Form {
+            switch route.pane {
+            case .mcps:
+                McpMachinePane(machine: machine)
+            case .harnesses:
+                HarnessMachinePane(machine: machine)
+            case .plugins:
+                PluginMachinePane(machine: machine)
+            case .skills:
+                SkillMachinePane(machine: machine)
+            }
+        }
+        .settingsPaneFormStyle(theme)
+        .navigationTitle(machine.name)
+        .environment(\.settingsMachineId, machine.id)
+        .settingsNavigationToolbar()
     }
 }
 

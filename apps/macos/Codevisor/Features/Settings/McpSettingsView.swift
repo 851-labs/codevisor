@@ -3,24 +3,18 @@ import CodevisorCoreMac
 import CodevisorUI
 import SwiftUI
 
-/// The MCP pane: the machines ARE the page. One disclosure per machine
-/// with that machine's full MCP picture inside, one fleet-level Add, and
-/// nothing duplicated outside the disclosures.
+/// The MCP pane: a native machine list — sync badge on each row — that
+/// pushes each machine's full MCP picture, plus one fleet-level Add.
 struct McpSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
     @State private var showingAdd = false
     @State private var addError: String?
-    /// One shared permission model: the probes read THIS Mac's TCC state,
-    /// so only the local machine's pane consumes it.
-    @State private var permissions = ComputerUsePermissionsModel(
-        probes: AppPreview.isRunning ? .granted : .live
-    )
 
     var body: some View {
         Form {
-            MachineConfigSections(badge: badge) { machine in
-                McpMachinePane(machine: machine, permissions: permissions)
+            MachineListSection(pane: .mcps, badge: badge) { machine in
+                McpMachinePane(machine: machine)
             }
             Section {
                 Button {
@@ -33,10 +27,6 @@ struct McpSettingsView: View {
                     Label(addError, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.secondary)
                 }
-            } footer: {
-                Text("MCP servers are shared by your whole fleet — changes here sync to every machine.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
             }
         }
         .settingsPaneFormStyle(theme)

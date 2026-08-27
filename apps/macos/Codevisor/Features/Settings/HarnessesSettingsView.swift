@@ -2,25 +2,17 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// The Harnesses pane: the machines ARE the page. One disclosure per
-/// machine with that machine's harnesses inside — installs, sign-ins, and
-/// updates are all genuinely per machine.
+/// The Harnesses pane: a native machine list that pushes each machine's
+/// harnesses — installs, sign-ins, and updates are all genuinely per
+/// machine.
 struct HarnessesSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
 
     var body: some View {
         Form {
-            MachineConfigSections(badge: badge) { machine in
+            MachineListSection(pane: .harnesses, badge: badge) { machine in
                 HarnessMachinePane(machine: machine)
-            }
-            Section {
-            } footer: {
-                Text(
-                    "Harnesses are installed and signed in per machine. Which harnesses are enabled syncs across your fleet."
-                )
-                .font(.callout)
-                .foregroundStyle(.secondary)
             }
         }
         .settingsPaneFormStyle(theme)

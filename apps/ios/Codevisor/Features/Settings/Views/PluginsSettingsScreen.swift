@@ -6,22 +6,15 @@ import os
 
 // MARK: - Plugins
 
-/// The Plugins screen: the machines ARE the page. One disclosure per
-/// machine with that machine's plugins inside — install, update, restart,
-/// and uninstall act on that machine.
+/// The Plugins screen: a machine list that pushes each machine's plugins —
+/// install, update, restart, and uninstall act on that machine.
 struct PluginsSettingsScreen: View {
     @Environment(AppEnvironment.self) private var environment
 
     var body: some View {
         List {
-            MachineConfigSections(badge: badge) { machine in
+            MachineListSection(badge: badge) { machine in
                 PluginMachineRows(machine: machine)
-            }
-            Section {
-            } footer: {
-                Text(
-                    "Plugins installed from the registry sync across your fleet. Linked and local-path plugins stay on the machine they live on."
-                )
             }
         }
         .navigationTitle("Plugins")

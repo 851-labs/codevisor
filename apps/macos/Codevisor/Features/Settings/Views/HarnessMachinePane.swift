@@ -3,7 +3,7 @@ import CodevisorUI
 import SwiftUI
 import os
 
-/// One machine's harness picture, rendered inside its disclosure: the
+/// One machine's harness picture, rendered on its page: the
 /// installed harnesses THERE (sign-in, updates, enable), rescan and custom
 /// entries, and the not-yet-installed catalog with install hints. Installs
 /// and sign-ins are genuinely per machine — this pane never pretends
@@ -38,7 +38,74 @@ struct HarnessMachinePane: View {
     private var serverNotInstalled: [ServerHarness] { serverHarnesses.filter { !$0.isReady } }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        Group {
+            installedSection
+                .task(id: serverId) { await scan() }
+                .onChange(of: environment.harnessCatalogRevision(for: serverId)) { _, _ in
+                    // A lifecycle event (update detected, install finished) or another
+                    // pane changed the catalog — refetch the light list, no PATH scan.
+                    Task { await refreshList() }
+                }
+                .onChange(of: serverHarnesses) { previous, current in
+                    // Continue the user's intent: an install they just started that
+                    // finished and needs sign-in opens the auth sheet directly.
+                    guard authenticationHarness == nil else { return }
+                    for harness in current where harness.isReady {
+                        let before = previous.first { $0.id == harness.id }
+                        guard before?.lifecycle?.phase == "installing", before?.isReady != true,
+                            harness.auth != nil, !canUse(harness)
+                        else { continue }
+                        authenticationHarness = harness
+                        break
+                    }
+                }
+                .sheet(item: $authenticationHarness) { harness in
+                    HarnessAuthenticationView(harness: harness) { replaceServerHarness($0) }
+                }
+                .sheet(item: $detailHarness) { harness in
+                    HarnessDetailSheet(harness: harness)
+                }
+                .sheet(isPresented: $showsCustomEditor) {
+                    CustomHarnessEditorSheet(editingId: editingCustomHarnessId) { harnesses in
+                        serverHarnesses = harnesses
+                        environment.harnessCatalogDidChange(onServer: serverId)
+                    }
+                }
+                .alert(
+                    toggleError?.title ?? "",
+                    isPresented: Binding(
+                        get: { toggleError != nil },
+                        set: { if !$0 { toggleError = nil } }
+                    ),
+                    presenting: toggleError
+                ) { _ in
+                    Button("OK") {}
+                        .settingsActionTint(theme)
+                } message: { error in
+                    Text(error.message)
+                }
+            if !serverNotInstalled.isEmpty {
+                Section {
+                    SettingsDisclosureRow(
+                        "Not installed (\(serverNotInstalled.count))",
+                        isExpanded: $showsNotInstalled
+                    ) {
+                        ForEach(serverNotInstalled, id: \.id) { harness in
+                            serverNotInstalledRow(harness)
+                                .padding(.top, 6)
+                        }
+                    }
+                }
+            }
+        }
+        .environment(\.settingsMachineId, machine.id)
+    }
+
+    /// The always-present section; it carries the pane's lifecycle
+    /// modifiers (task, sheets, alert) exactly once — a Group would apply
+    /// them to every section.
+    private var installedSection: some View {
+        Section("Installed") {
             if isScanning, serverHarnesses.isEmpty {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
@@ -70,66 +137,6 @@ struct HarnessMachinePane: View {
                 }
                 .settingsActionTint(theme)
             }
-            if !serverNotInstalled.isEmpty {
-                SettingsDisclosureRow(
-                    "Not installed (\(serverNotInstalled.count))",
-                    isExpanded: $showsNotInstalled
-                ) {
-                    ForEach(serverNotInstalled, id: \.id) { harness in
-                        serverNotInstalledRow(harness)
-                            .padding(.top, 6)
-                    }
-                }
-                .padding(.top, 4)
-            }
-        }
-        .environment(\.settingsMachineId, machine.id)
-        .task(id: serverId) { await scan() }
-        .onChange(of: environment.harnessCatalogRevision(for: serverId)) { _, _ in
-            // A lifecycle event (update detected, install finished) or another
-            // pane changed the catalog — refetch the light list, no PATH scan.
-            Task { await refreshList() }
-        }
-        .onChange(of: serverHarnesses) { previous, current in
-            // Continue the user's intent: an install they just started that
-            // finished and needs sign-in opens the auth sheet directly.
-            guard authenticationHarness == nil else { return }
-            for harness in current where harness.isReady {
-                let before = previous.first { $0.id == harness.id }
-                guard before?.lifecycle?.phase == "installing", before?.isReady != true,
-                    harness.auth != nil, !canUse(harness)
-                else { continue }
-                authenticationHarness = harness
-                break
-            }
-        }
-        .sheet(item: $authenticationHarness) { harness in
-            HarnessAuthenticationView(harness: harness) { replaceServerHarness($0) }
-                .environment(\.settingsMachineId, machine.id)
-        }
-        .sheet(item: $detailHarness) { harness in
-            HarnessDetailSheet(harness: harness)
-                .environment(\.settingsMachineId, machine.id)
-        }
-        .sheet(isPresented: $showsCustomEditor) {
-            CustomHarnessEditorSheet(editingId: editingCustomHarnessId) { harnesses in
-                serverHarnesses = harnesses
-                environment.harnessCatalogDidChange(onServer: serverId)
-            }
-            .environment(\.settingsMachineId, machine.id)
-        }
-        .alert(
-            toggleError?.title ?? "",
-            isPresented: Binding(
-                get: { toggleError != nil },
-                set: { if !$0 { toggleError = nil } }
-            ),
-            presenting: toggleError
-        ) { _ in
-            Button("OK") {}
-                .settingsActionTint(theme)
-        } message: { error in
-            Text(error.message)
         }
     }
 

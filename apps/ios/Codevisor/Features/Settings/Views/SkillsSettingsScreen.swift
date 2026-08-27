@@ -4,33 +4,54 @@ import SwiftUI
 
 // MARK: - Skills
 
-/// The Skills screen: the machines ARE the page. One disclosure per
-/// machine with that machine's skill store inside; the fleet ferries
-/// skill content between machines.
+/// The Skills screen: a machine list that pushes each machine's skill
+/// store; the fleet ferries skill content between machines.
 struct SkillsSettingsScreen: View {
     @Environment(AppEnvironment.self) private var environment
+    /// Each machine's scanned skill directory names, fetched per machine so
+    /// the badge can compare against the fleet's synced skill set instead of
+    /// guessing from reachability.
+    @State private var scannedSkillsByMachine: [String: Set<String>] = [:]
 
     var body: some View {
         List {
-            MachineConfigSections(badge: badge) { machine in
+            MachineListSection(badge: badge) { machine in
                 SkillMachineRows(machine: machine)
-            }
-            Section {
-            } footer: {
-                Text("Skills sync across your fleet — a skill added here appears on every machine.")
             }
         }
         .navigationTitle("Skills")
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: environment.machines.allMachines.map(\.id)) { await scanAllMachines() }
     }
 
-    /// Skills have no readiness plane — their single source of truth is the
-    /// synced tree hash, so the badge derives from reachability alone.
+    /// The badge tells the truth per machine: a machine missing skills the
+    /// fleet carries is still syncing, not "Synced".
     private func badge(_ machine: CodevisorMachine) -> MachineSyncBadge {
         if environment.machines.statusByMachineId[machine.id]?.isReachable == false {
             return .attention("Unreachable")
         }
-        return .synced
+        let fleetSkills = Set(
+            environment.configSync.entries(namespace: "skills")
+                .filter { $0.deleted != true }
+                .map(\.key)
+        )
+        guard let scanned = scannedSkillsByMachine[machine.id] else { return .syncing }
+        return fleetSkills.isSubset(of: scanned) ? .synced : .syncing
+    }
+
+    private func scanAllMachines() async {
+        await withTaskGroup(of: (String, Set<String>?).self) { group in
+            for machine in environment.machines.allMachines {
+                let client = environment.machines.client(for: machine.id)
+                group.addTask { @MainActor in
+                    let scan = try? await client.listSkills()
+                    return (machine.id, scan.map { Set($0.global.map(\.directoryName)) })
+                }
+            }
+            for await (machineId, skills) in group {
+                if let skills { scannedSkillsByMachine[machineId] = skills }
+            }
+        }
     }
 }
 

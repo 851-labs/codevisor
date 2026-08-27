@@ -2,25 +2,17 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// The Plugins pane: the machines ARE the page. One disclosure per machine
-/// with that machine's plugins inside — install, update, restart, and
-/// uninstall all act on that machine.
+/// The Plugins pane: a native machine list that pushes each machine's
+/// plugins — install, update, restart, and uninstall all act on that
+/// machine.
 struct PluginsSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
 
     var body: some View {
         Form {
-            MachineConfigSections(badge: badge) { machine in
+            MachineListSection(pane: .plugins, badge: badge) { machine in
                 PluginMachinePane(machine: machine)
-            }
-            Section {
-            } footer: {
-                Text(
-                    "Plugins installed from the registry sync across your fleet. Linked and local-path plugins stay on the machine they live on."
-                )
-                .font(.callout)
-                .foregroundStyle(.secondary)
             }
         }
         .settingsPaneFormStyle(theme)

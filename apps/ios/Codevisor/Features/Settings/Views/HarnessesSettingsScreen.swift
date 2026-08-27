@@ -4,22 +4,15 @@ import SwiftUI
 
 // MARK: - Harnesses
 
-/// The Harnesses screen: the machines ARE the page. One disclosure per
-/// machine with that machine's harnesses inside — installs and sign-ins
-/// are genuinely per machine.
+/// The Harnesses screen: a machine list that pushes each machine's
+/// harnesses — installs and sign-ins are genuinely per machine.
 struct HarnessesSettingsScreen: View {
     @Environment(AppEnvironment.self) private var environment
 
     var body: some View {
         List {
-            MachineConfigSections(badge: badge) { machine in
+            MachineListSection(badge: badge) { machine in
                 HarnessMachineRows(machine: machine)
-            }
-            Section {
-            } footer: {
-                Text(
-                    "Harnesses are installed and signed in per machine. Which harnesses are enabled syncs across your fleet."
-                )
             }
         }
         .navigationTitle("Harnesses")

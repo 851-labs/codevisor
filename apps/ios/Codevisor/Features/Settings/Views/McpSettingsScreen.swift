@@ -4,20 +4,16 @@ import SwiftUI
 
 // MARK: - MCPs
 
-/// The MCP screen: the machines ARE the page. One disclosure per machine
-/// with that machine's MCP servers inside; the toggle means "available on
-/// this machine" and writes the per-machine overlay.
+/// The MCP screen: a machine list that pushes each machine's MCP servers;
+/// the toggle means "available on this machine" and writes the per-machine
+/// overlay.
 struct McpSettingsScreen: View {
     @Environment(AppEnvironment.self) private var environment
 
     var body: some View {
         List {
-            MachineConfigSections(badge: badge) { machine in
+            MachineListSection(badge: badge) { machine in
                 McpMachineRows(machine: machine)
-            }
-            Section {
-            } footer: {
-                Text("MCP servers are shared by your whole fleet — changes here sync to every machine.")
             }
         }
         .navigationTitle("MCPs")

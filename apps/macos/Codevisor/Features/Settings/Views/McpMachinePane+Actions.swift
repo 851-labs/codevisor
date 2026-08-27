@@ -18,7 +18,7 @@ extension McpMachinePane {
         }
         // Permission-derived toggle state must be current whenever the pane
         // loads; remote machines have no local probes to refresh.
-        if machine.isLocal { permissions?.refresh() }
+        if machine.isLocal { permissions.refresh() }
         // Native discovery is best-effort: older servers (404/501) or scan
         // failures simply hide those rows instead of surfacing an error.
         nativeScan = try? await client.listNativeMcps()
@@ -45,10 +45,10 @@ extension McpMachinePane {
     /// definition itself was off, re-enables it for the fleet.
     func setEnabled(_ server: ServerMcpServer, enabled: Bool) async {
         if server.kind == "computerUse", enabled, machine.isLocal {
-            permissions?.refresh()
+            permissions.refresh()
             // The toggle is disabled while permissions are missing; this
             // guard just keeps a stale press from half-enabling.
-            guard permissions?.allGranted == true else { return }
+            guard permissions.allGranted else { return }
             environment.settings.setPermissionsSetupSkipped(false)
             environment.settings.setPermissionsReviewedVersion(AppUpdateModel.bundleVersion())
         }
