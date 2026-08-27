@@ -1,7 +1,7 @@
 import type { Harness } from "@codevisor/api"
 import type { HarnessAuthManager } from "@codevisor/harness-manager"
 import { describe, expect, it } from "vitest"
-import { jsonRequest, makeServices, startWithApp } from "../test-support.js"
+import { jsonRequest, makeServices, pluginsStub, startWithApp } from "../test-support.js"
 
 /// Phase 17: the mcp-readiness surface over HTTP — the on-demand publish
 /// endpoint plus the reconcile pass keeping the machine's entry fresh.
@@ -155,5 +155,31 @@ describe("/v1/sync/harness-readiness", () => {
       | undefined
     expect(missing?.state).toBe("notInstalled")
     expect(missing?.reason).toBe("CLI not found on PATH")
+  })
+})
+
+/// Phase 24: the plugin-readiness surface — third readiness plane.
+describe("/v1/sync/plugin-readiness", () => {
+  it("publishes this machine's plugin readiness on demand", async () => {
+    const { services } = await makeServices("server-plr")
+    const server = await startWithApp({ ...services, plugins: pluginsStub([]) }, undefined, {
+      id: "server-plr"
+    })
+
+    const published = await jsonRequest(server, "/v1/sync/plugin-readiness/publish", {
+      method: "POST"
+    })
+    expect(published.status).toBe(200)
+    expect(published.body).toEqual({ published: true })
+
+    const document = (await jsonRequest(server, "/v1/sync/plugin-readiness")).body as {
+      entries: Array<{ key: string; value: { plugins: Array<{ id: string; state: string }> } }>
+    }
+    expect(document.entries).toHaveLength(1)
+    expect(document.entries[0]?.key).toBe("server-plr")
+    // The stub's one plugin is linked — machine-only by definition.
+    expect(document.entries[0]?.value.plugins).toEqual([
+      { id: "owner.example", state: "machineOnly" }
+    ])
   })
 })

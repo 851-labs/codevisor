@@ -240,6 +240,8 @@ struct PluginsSettingsView: View {
             } header: {
                 Text("Installed")
             }
+
+            PluginMachinesSection()
         }
         .settingsPaneFormStyle(theme)
         .disabled(isMutating)

@@ -3,10 +3,13 @@ import {
   ACCOUNTS_SYNC_NAMESPACE,
   HARNESS_READINESS_NAMESPACE,
   MCPS_SYNC_NAMESPACE,
+  PLUGIN_READINESS_NAMESPACE,
   publishAccountsRoster,
   publishHarnessReadiness,
+  publishPluginReadiness,
   reconcileMcps,
-  type HarnessReadinessRow
+  type HarnessReadinessRow,
+  type PluginReadinessRow
 } from "../infra/config-sync.js"
 import { CREDENTIALS_SYNC_NAMESPACE, reconcileCredentials } from "../infra/credential-sync.js"
 import {
@@ -16,6 +19,7 @@ import {
 } from "../infra/mcp-fleet.js"
 import { HARNESSES_SYNC_NAMESPACE, reconcileHarnesses } from "../infra/harness-sync.js"
 import { PLUGINS_SYNC_NAMESPACE, pluginSyncOrigin, reconcilePlugins } from "../infra/plugin-sync.js"
+import type { PluginSyncStatus } from "../infra/plugin-sync.js"
 import { reconcileSkills, SKILLS_SYNC_NAMESPACE } from "../infra/skills-sync.js"
 import {
   appendAndPublish,
@@ -278,6 +282,56 @@ export const refreshHarnessReadiness = async (
   }
 }
 
+/// Re-derives and publishes this machine's plugin readiness entry (Phase
+/// 24, third readiness instance). `blocked` carries the just-finished
+/// pass's refusals so "needs ffmpeg" survives as the row's reason; the
+/// on-demand publish has no pass and reports the static picture.
+export const refreshPluginReadiness = async (
+  services: CodevisorServerServices,
+  config: CodevisorServerConfig,
+  fanout: EventFanout,
+  blocked: ReadonlyArray<{ readonly id: string; readonly reason: string }> = []
+): Promise<void> => {
+  const manager = services.plugins
+  if (manager === undefined) return
+  try {
+    const blockedById = new Map(blocked.map((entry) => [entry.id, entry.reason]))
+    const local = (await manager.list()).plugins
+    const localIds = new Set(local.map((summary) => summary.id))
+    const rows: PluginReadinessRow[] = local.map((summary) => {
+      const machineOnly =
+        summary.source !== "managed" || pluginSyncOrigin(summary.path) === undefined
+      const state: PluginReadinessRow["state"] = machineOnly
+        ? "machineOnly"
+        : summary.enabled
+          ? "ready"
+          : "disabled"
+      return { id: summary.id, state }
+    })
+    // Fleet-desired plugins this machine doesn't have yet — blocked passes
+    // explain themselves, everything else is simply not installed yet.
+    const desired = await run(services.db.getSyncEntries(PLUGINS_SYNC_NAMESPACE))
+    for (const entry of desired) {
+      if (entry.deleted === true || localIds.has(entry.key)) continue
+      const reason = blockedById.get(entry.key)
+      rows.push({
+        id: entry.key,
+        state: reason === undefined ? "notInstalled" : "blocked",
+        ...(reason === undefined ? {} : { reason })
+      })
+    }
+    const result = await publishPluginReadiness({ db: services.db, rows, serverId: config.id })
+    if (result.changedEntries.length > 0) {
+      void appendAndPublish(services.db, fanout, "sync.changed", PLUGIN_READINESS_NAMESPACE, {
+        namespace: PLUGIN_READINESS_NAMESPACE,
+        entries: result.changedEntries
+      }).catch(swallowError)
+    }
+  } catch {
+    // Best-effort by design; the next pass republishes.
+  }
+}
+
 /// The mutation hook's half: run the pass and publish, silently skipping
 /// machines that opted out of sync or lack the backing services. Never
 /// throws — a failed background pass must not affect the request that
@@ -295,6 +349,14 @@ export const runBackgroundSyncReconcile = async (
     publishSyncChanged(services, fanout, namespace, result.changedEntries)
     if (namespace === "mcps") await refreshMcpReadiness(services, config, fanout)
     if (namespace === "harnesses") await refreshHarnessReadiness(services, config, fanout)
+    if (namespace === "plugins") {
+      await refreshPluginReadiness(
+        services,
+        config,
+        fanout,
+        (result.status as PluginSyncStatus).blocked
+      )
+    }
     // Auth mutations ride the harnesses trigger; the credential ferry
     // re-hashes its files on the same beat (cheap when nothing changed).
     if (namespace === "harnesses") {

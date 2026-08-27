@@ -427,6 +427,38 @@ export const publishHarnessReadiness = async (deps: {
   return { changedEntries: result.changed }
 }
 
+export const PLUGIN_READINESS_NAMESPACE = "plugin-readiness"
+
+export interface PluginReadinessRow {
+  readonly id: string
+  readonly state: "ready" | "disabled" | "notInstalled" | "blocked" | "machineOnly"
+  readonly reason?: string | undefined
+}
+
+/// Publishes this machine's per-plugin condition (Phase 24) — the third
+/// instance of the readiness pattern. Rows are computed by the caller;
+/// this layer owns the entry shape, sorting, and the change-detected merge.
+export const publishPluginReadiness = async (deps: {
+  readonly db: CodevisorDatabaseService
+  readonly serverId: string
+  readonly rows: ReadonlyArray<PluginReadinessRow>
+  readonly now?: () => number
+}): Promise<{ readonly changedEntries: ReadonlyArray<SyncEntryRecord> }> => {
+  const now = deps.now ?? Date.now
+  const plugins = deps.rows.toSorted((a, b) => a.id.localeCompare(b.id))
+  const replica = await run(deps.db.getSyncEntries(PLUGIN_READINESS_NAMESPACE))
+  const existing = replica.find((entry) => entry.key === deps.serverId)
+  const value = { plugins }
+  if (existing !== undefined && JSON.stringify(existing.value) === JSON.stringify(value)) {
+    return { changedEntries: [] }
+  }
+  const timestamp = nextSyncTimestamp(deps.serverId, latestSyncTimestamp(replica), now())
+  const result = await run(
+    deps.db.mergeSyncEntries(PLUGIN_READINESS_NAMESPACE, [{ key: deps.serverId, value, timestamp }])
+  )
+  return { changedEntries: result.changed }
+}
+
 export const publishAccountsRoster = async (
   deps: AccountsRosterDeps
 ): Promise<{ readonly changedEntries: ReadonlyArray<SyncEntryRecord> }> => {

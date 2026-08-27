@@ -4,8 +4,10 @@ import {
   ACCOUNTS_SYNC_NAMESPACE,
   MCPS_SYNC_NAMESPACE,
   HARNESS_READINESS_NAMESPACE,
+  PLUGIN_READINESS_NAMESPACE,
   publishAccountsRoster,
   publishHarnessReadiness,
+  publishPluginReadiness,
   reconcileMcps
 } from "./config-sync.js"
 
@@ -199,6 +201,31 @@ describe("config sync", () => {
       expect((await mcpB.list()).some((server) => server.name === "GitHub")).toBe(false)
     }
   )
+
+  it("publishes plugin readiness once per change, sorted and keyed by machine", async () => {
+    const { services } = await makeServices("server-p")
+    const deps = {
+      db: services.db,
+      now: () => 9_000,
+      rows: [
+        { id: "scratchpad", state: "ready" } as const,
+        { id: "ffmpeg-tools", state: "blocked", reason: "needs ffmpeg" } as const,
+        { id: "dev-linked", state: "machineOnly" } as const
+      ],
+      serverId: "server-p"
+    }
+    const first = await publishPluginReadiness(deps)
+    expect(first.changedEntries).toHaveLength(1)
+    expect((await publishPluginReadiness(deps)).changedEntries).toEqual([])
+
+    const document = await run(services.db.getSyncEntries(PLUGIN_READINESS_NAMESPACE))
+    expect(document[0]?.key).toBe("server-p")
+    const value = document[0]?.value as {
+      readonly plugins: ReadonlyArray<{ readonly id: string; readonly reason?: string }>
+    }
+    expect(value.plugins.map((row) => row.id)).toEqual(["dev-linked", "ffmpeg-tools", "scratchpad"])
+    expect(value.plugins[1]?.reason).toBe("needs ffmpeg")
+  })
 
   it("publishes harness readiness once per change, sorted and keyed by machine", async () => {
     const { services } = await makeServices("server-h")

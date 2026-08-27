@@ -3,7 +3,7 @@ import {
   jsonRequest,
   makeServices,
   pluginsStub,
-  readSseEvents,
+  readSseEventsOfKind,
   runningServers,
   startWithApp
 } from "../test-support.js"
@@ -26,7 +26,7 @@ describe("plugin update routes", () => {
     expect(prepared.status).toBe(201)
     expect(prepared.body).toMatchObject({ planId: "plan-1", pluginId: "owner.example" })
 
-    const live = readSseEvents(server, 1)
+    const live = readSseEventsOfKind(server, "plugin.updated", 1)
     const applied = await jsonRequest(server, "/v1/plugins/owner.example/update/apply", {
       body: JSON.stringify({ planId: "plan-1" }),
       method: "POST"

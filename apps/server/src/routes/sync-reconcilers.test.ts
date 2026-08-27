@@ -1,9 +1,14 @@
+import { writePluginInstallReceipt } from "@codevisor/plugins"
+import { mkdtemp } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { makeEventFanout, type CodevisorServerConfig } from "../server-context.js"
 import { jsonRequest, makeServices, run, startWithApp } from "../test-support.js"
 import {
   configMutationNamespace,
   refreshMcpReadiness,
+  refreshPluginReadiness,
   reconcileForNamespace,
   republishAccountsRoster,
   runBackgroundSyncReconcile
@@ -149,6 +154,89 @@ describe("refreshMcpReadiness", () => {
       mcp: { list: () => Promise.reject(new Error("boom")) }
     } as unknown as typeof services
     await expect(refreshMcpReadiness(poisoned, config, fanout)).resolves.toBeUndefined()
+  })
+})
+
+describe("refreshPluginReadiness", () => {
+  it("derives every row state and skips machines without a plugins manager", async () => {
+    const fanout = await run(makeEventFanout)
+    const { services } = await makeServices("server-pr")
+
+    // No plugins manager: nothing derived, nothing published. The shared
+    // fixture ships without one, so the services object IS that machine.
+    const base = services as unknown as Parameters<typeof refreshPluginReadiness>[0]
+    await refreshPluginReadiness(base, config, fanout)
+    expect(await run(services.db.getSyncEntries("plugin-readiness"))).toEqual([])
+
+    // A managed install with provenance, one disabled sibling, and a
+    // linked dev plugin that never syncs.
+    const managedPath = await mkdtemp(join(tmpdir(), "codevisor-pr-"))
+    await writePluginInstallReceipt(managedPath, {
+      installedAt: "2026-01-01T00:00:00.000Z",
+      installedVersion: "0.1.0",
+      pluginId: "owner.example",
+      resolvedCommit: "a".repeat(40),
+      schemaVersion: 1,
+      source: { kind: "github", repo: "owner/example", tracking: "registry", url: "owner/example" },
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    })
+    const manager = {
+      list: async () => ({
+        plugins: [
+          { enabled: true, id: "owner.example", path: managedPath, source: "managed" },
+          { enabled: false, id: "owner.paused", path: managedPath, source: "managed" },
+          { enabled: true, id: "dev-linked", path: "/tmp/nowhere", source: "linked" }
+        ]
+      })
+    } as unknown as NonNullable<Parameters<typeof refreshPluginReadiness>[0]["plugins"]>
+
+    // Fleet-desired plugins this machine lacks: one plain, one blocked by
+    // the pass, one tombstoned (skipped).
+    await run(
+      services.db.mergeSyncEntries("plugins", [
+        {
+          key: "fleet.pending",
+          timestamp: { counter: 0, deviceId: "other", wallMs: 1 },
+          value: { enabled: true, source: "o/p" }
+        },
+        {
+          key: "fleet.ffmpeg",
+          timestamp: { counter: 1, deviceId: "other", wallMs: 1 },
+          value: { enabled: true, source: "o/f" }
+        },
+        {
+          deleted: true,
+          key: "fleet.gone",
+          timestamp: { counter: 2, deviceId: "other", wallMs: 1 },
+          value: null
+        }
+      ])
+    )
+    await refreshPluginReadiness({ ...base, plugins: manager }, config, fanout, [
+      { id: "fleet.ffmpeg", reason: "needs ffmpeg" }
+    ])
+    const entries = await run(services.db.getSyncEntries("plugin-readiness"))
+    const value = entries[0]?.value as {
+      plugins: Array<{ id: string; state: string; reason?: string }>
+    }
+    const byId = Object.fromEntries(value.plugins.map((row) => [row.id, row]))
+    expect(byId["owner.example"]?.state).toBe("ready")
+    expect(byId["owner.paused"]?.state).toBe("disabled")
+    expect(byId["dev-linked"]?.state).toBe("machineOnly")
+    expect(byId["fleet.pending"]?.state).toBe("notInstalled")
+    expect(byId["fleet.ffmpeg"]).toEqual({
+      id: "fleet.ffmpeg",
+      reason: "needs ffmpeg",
+      state: "blocked"
+    })
+    expect(byId["fleet.gone"]).toBeUndefined()
+
+    // A failing manager never breaks the pass that triggered the refresh.
+    const poisoned = {
+      ...base,
+      plugins: { list: () => Promise.reject(new Error("boom")) }
+    } as unknown as typeof base
+    await expect(refreshPluginReadiness(poisoned, config, fanout)).resolves.toBeUndefined()
   })
 })
 

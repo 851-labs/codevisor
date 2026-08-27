@@ -30,6 +30,7 @@ import {
   reconcileForNamespace,
   refreshHarnessReadiness,
   refreshMcpReadiness,
+  refreshPluginReadiness,
   type SyncReconcileNamespace
 } from "./sync-reconcilers.js"
 
@@ -139,6 +140,14 @@ export const routeSync = async (
     publishSyncChanged(services, fanout, reconcilePlane, result.changedEntries)
     if (reconcilePlane === "mcps") await refreshMcpReadiness(services, config, fanout)
     if (reconcilePlane === "harnesses") await refreshHarnessReadiness(services, config, fanout)
+    if (reconcilePlane === "plugins") {
+      await refreshPluginReadiness(
+        services,
+        config,
+        fanout,
+        (result.status as { blocked: ReadonlyArray<{ id: string; reason: string }> }).blocked
+      )
+    }
     writeJson(response, 200, result.status)
     return true
   }
@@ -151,6 +160,12 @@ export const routeSync = async (
 
   if (url.pathname === "/v1/sync/harness-readiness/publish" && request.method === "POST") {
     await refreshHarnessReadiness(services, config, fanout)
+    writeJson(response, 200, { published: true })
+    return true
+  }
+
+  if (url.pathname === "/v1/sync/plugin-readiness/publish" && request.method === "POST") {
+    await refreshPluginReadiness(services, config, fanout)
     writeJson(response, 200, { published: true })
     return true
   }

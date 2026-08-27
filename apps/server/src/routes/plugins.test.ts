@@ -12,6 +12,7 @@ import {
   pluginsStub,
   pluginSummary,
   readSseEvents,
+  readSseEventsOfKind,
   run,
   runningServers,
   startWithApp,
@@ -326,7 +327,7 @@ describe("plugin routes", () => {
     const calls: Array<Array<unknown>> = []
     const server = await startWithApp({ ...services, plugins: pluginsStub(calls) })
     runningServers.push(server)
-    const live = readSseEvents(server, 2)
+    const live = readSseEventsOfKind(server, "plugin.updated", 2)
     const imported = await jsonRequest(server, "/v1/plugins/import-remote", {
       body: JSON.stringify({ source: "owner/example" }),
       method: "POST"

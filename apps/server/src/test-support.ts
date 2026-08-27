@@ -640,6 +640,47 @@ export const jsonRequest = async (
   }
 }
 
+/// Reads the live stream until `count` events of `kind` have arrived,
+/// ignoring interleaved traffic (config-plane sync.changed, readiness
+/// publishes) that rides the same stream. Assertions about a specific
+/// event kind stay stable as new planes add ambient events.
+export const readSseEventsOfKind = async (
+  server: RunningCodevisorServer,
+  kind: string,
+  count: number
+): Promise<ReadonlyArray<unknown>> => {
+  const controller = new AbortController()
+  const response = await fetch(`${server.url}/v1/events`, { signal: controller.signal })
+  const reader = response.body?.getReader()
+  if (reader === undefined) {
+    throw new Error("Missing response body")
+  }
+  let buffer = ""
+  const events: Array<unknown> = []
+  while (events.length < count) {
+    const next = await reader.read()
+    if (next.done) break
+    buffer += new TextDecoder().decode(next.value)
+    let index = buffer.indexOf("\n\n")
+    while (index !== -1) {
+      const chunk = buffer.slice(0, index)
+      buffer = buffer.slice(index + 2)
+      const data = chunk
+        .split("\n")
+        .filter((line) => line.startsWith("data: "))
+        .map((line) => line.slice("data: ".length))
+        .join("\n")
+      if (data.length > 0) {
+        const parsed = JSON.parse(data) as { kind?: string }
+        if (parsed.kind === kind) events.push(parsed)
+      }
+      index = buffer.indexOf("\n\n")
+    }
+  }
+  controller.abort()
+  return events
+}
+
 export const readSseEvents = async (
   server: RunningCodevisorServer,
   expectedCount: number,

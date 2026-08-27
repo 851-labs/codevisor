@@ -42,6 +42,32 @@ struct PluginsSettingsScreen: View {
         }
     }
 
+    /// Phase 24: what each machine reports for the fleet's plugins.
+    @ViewBuilder
+    private var machinesSection: some View {
+        let _ = environment.configSync.revisionsByNamespace["plugin-readiness"]
+        let readiness = PluginFleet.readiness(environment.configSync)
+        if environment.machines.machines.count > 1, !readiness.isEmpty {
+            Section("On Your Machines") {
+                ForEach(readiness.keys.sorted(), id: \.self) { machineId in
+                    DisclosureGroup(
+                        environment.machines.fleetMachineName(for: machineId) ?? machineId
+                    ) {
+                        ForEach(readiness[machineId] ?? []) { entry in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(entry.pluginId)
+                                Text(entry.reason ?? entry.state)
+                                    .font(.footnote)
+                                    .foregroundStyle(
+                                        entry.state == "blocked" ? .orange : .secondary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     var body: some View {
         List {
             if let actionError {
@@ -79,6 +105,7 @@ struct PluginsSettingsScreen: View {
                         pluginRow(plugin)
                     }
                 }
+                machinesSection
             }
         }
         .disabled(isMutating)
