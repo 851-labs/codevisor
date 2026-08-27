@@ -68,15 +68,6 @@ struct CloudSettingsView: View {
                     ) { startSignIn() }
                     .settingsActionTint(theme)
                 }
-                if cloud.developmentAccountAvailable {
-                    CloudSignInProviderButton(
-                        title: "Use Development Account",
-                        icon: .system("person.crop.circle.dashed")
-                    ) {
-                        Task { await cloud.signInWithDevelopmentAccount() }
-                    }
-                    .settingsActionTint(theme)
-                }
             }
             if let lastError = cloud.lastError {
                 Text(lastError)

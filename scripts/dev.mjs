@@ -381,6 +381,14 @@ const sharedEnvironment = {
   VITE_CODEVISOR_DEV_URL_SCHEME: urlScheme,
   CODEVISOR_DEV_CLOUD_TOKEN: ""
 }
+/// Everything except the dev-cloud session token. Only the Dev Cloud
+/// container is pre-signed-in (the "machine somewhere else"); every other
+/// process authenticates exactly as it would in production.
+const withoutCloudToken = (environment) => {
+  const copy = { ...environment }
+  delete copy.CODEVISOR_DEV_CLOUD_TOKEN
+  return copy
+}
 const databasePath = join(dataDirectory, "codevisor-server.sqlite")
 const upgradeStatusPath = join(dataDirectory, "data-upgrade.json")
 // Sign into the dev cloud BEFORE spawning servers, so their environment
@@ -407,7 +415,10 @@ const server = spawn(
     "--upgrade-status",
     upgradeStatusPath
   ],
-  { cwd: repoRoot, env: sharedEnvironment, stdio: "inherit" }
+  // No session token: in production the Mac App's server joins the cloud
+  // when the user signs into the app, which then registers it. The dev
+  // cloud URL stays so that sign-in targets the local cloud instance.
+  { cwd: repoRoot, env: withoutCloudToken(sharedEnvironment), stdio: "inherit" }
 )
 
 const www = spawn(
@@ -528,7 +539,10 @@ try {
   await waitForHealth(directRemotePort, directRemoteServer, remoteHealthAttempts)
   await waitForHealth(cloudRemotePort, cloudRemoteServer, remoteHealthAttempts)
   const remoteToken = await announceDevRemote()
-  const launchEnvironment = Object.entries(sharedEnvironment).filter(
+  // The apps sign into the dev cloud the production way (device-code
+  // flow against CODEVISOR_DEV_CLOUD_URL); the session token never reaches
+  // them, so cloud machines appear on a client only after a real sign-in.
+  const launchEnvironment = Object.entries(withoutCloudToken(sharedEnvironment)).filter(
     ([key]) =>
       key === "TMPDIR" ||
       key.startsWith("CODEVISOR_") ||
@@ -550,7 +564,6 @@ try {
     stdio: "inherit"
   })
   if (iosTarget !== undefined) {
-    const cloudToken = sharedEnvironment.CODEVISOR_DEV_CLOUD_TOKEN
     await launchIOSDevelopmentApp({
       repoRoot,
       target: iosTarget,
@@ -563,7 +576,7 @@ try {
       remoteToken,
       remoteName: directRemoteName,
       urlScheme,
-      cloudSession: cloudToken === "" ? undefined : { url: cloudUrl, token: cloudToken }
+      cloudURL: cloudUrl
     })
     console.log("Press Ctrl+C to stop both apps and their shared development services.")
   }

@@ -77,7 +77,7 @@ export async function launchIOSDevelopmentApp({
   remoteToken,
   remoteName,
   urlScheme,
-  cloudSession
+  cloudURL
 }) {
   const { simulator, bundleIdentifier, appBundle } = target
   await run(repoRoot, environment, "xcrun", ["simctl", "install", simulator.udid, appBundle])
@@ -89,13 +89,10 @@ export async function launchIOSDevelopmentApp({
 
   // Match CodevisorAppVariant's development-launch contract so simulator icon
   // relaunches retain the shared remote and cloud coordinates.
+  // Only the cloud URL: the simulator app signs in the production way, so
+  // cloud machines appear there only after a real sign-in.
   const cloudEnvironment =
-    cloudSession === undefined
-      ? {}
-      : {
-          SIMCTL_CHILD_CODEVISOR_DEV_CLOUD_URL: cloudSession.url,
-          SIMCTL_CHILD_CODEVISOR_DEV_CLOUD_TOKEN: cloudSession.token
-        }
+    cloudURL === undefined ? {} : { SIMCTL_CHILD_CODEVISOR_DEV_CLOUD_URL: cloudURL }
   await run(
     repoRoot,
     {

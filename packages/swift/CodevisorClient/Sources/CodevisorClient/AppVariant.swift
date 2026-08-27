@@ -157,15 +157,12 @@ public enum CodevisorAppVariant: Sendable {
     /// account flows can be developed against a local Worker. Present only in
     /// development runs where the dev script provided its details.
     public struct DevelopmentCloud: Sendable, Equatable {
+        /// The local cloud instance `bun run dev` runs. Apps sign into it the
+        /// production way; no session ever rides the environment.
         public let url: URL
-        /// A ready-to-use session token for the fixed dev user. Nil when the
-        /// dev script hadn't obtained one yet (it exports an empty string
-        /// until the Worker is up).
-        public let token: String?
 
-        public init(url: URL, token: String?) {
+        public init(url: URL) {
             self.url = url
-            self.token = token
         }
     }
 
@@ -174,17 +171,12 @@ public enum CodevisorAppVariant: Sendable {
         return developmentCloud(from: environment)
     }
 
-    /// Pure parsing, split out for tests: an empty URL means no dev cloud,
-    /// an empty token means "not ready" and is treated as absent.
+    /// Pure parsing, split out for tests: an empty URL means no dev cloud.
     static func developmentCloud(from environment: [String: String]) -> DevelopmentCloud? {
         guard let raw = environment["CODEVISOR_DEV_CLOUD_URL"], !raw.isEmpty,
             let url = URL(string: raw)
         else { return nil }
-        let token = environment["CODEVISOR_DEV_CLOUD_TOKEN"]
-        return DevelopmentCloud(
-            url: url,
-            token: (token?.isEmpty ?? true) ? nil : token
-        )
+        return DevelopmentCloud(url: url)
     }
 
     public static var applicationSupportDirectoryName: String {

@@ -326,7 +326,7 @@ try {
     remoteToken: token,
     remoteName,
     urlScheme,
-    cloudSession
+    cloudURL: cloudSession?.url
   })
   console.log(
     `${cloudRemoteName} joins after dev-cloud sign-in; ${remoteName} is the token-added machine.`

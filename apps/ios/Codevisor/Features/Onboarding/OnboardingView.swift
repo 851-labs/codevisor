@@ -177,21 +177,6 @@ private struct ConnectMachineStep: View {
                     .accessibilityLabel("Sign in with GitHub")
                 }
 
-                if cloud.developmentAccountAvailable {
-                    Button {
-                        Task { await cloud.signInWithDevelopmentAccount() }
-                    } label: {
-                        Label {
-                            Text("Use Development Account")
-                        } icon: {
-                            Image(systemName: "hammer")
-                        }
-                    }
-                    .buttonStyle(OnboardingOutlineButtonStyle())
-                    .disabled(isSigningInToCloud)
-                    .accessibilityLabel("Use Development Account")
-                }
-
                 secondaryManualLink
                     .padding(.top, 4)
             }

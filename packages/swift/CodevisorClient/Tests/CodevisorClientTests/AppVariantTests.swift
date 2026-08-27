@@ -45,37 +45,13 @@ struct AppVariantTests {
     @Test("Parses the dev cloud configuration from launch environment")
     func developmentCloudParsing() {
         let full = CodevisorAppVariant.developmentCloud(from: [
-            "CODEVISOR_DEV_CLOUD_URL": "http://127.0.0.1:8787",
-            "CODEVISOR_DEV_CLOUD_TOKEN": "dev-session-token",
-        ])
-        #expect(
-            full
-                == CodevisorAppVariant.DevelopmentCloud(
-                    url: URL(string: "http://127.0.0.1:8787")!,
-                    token: "dev-session-token"
-                ))
-
-        // The dev script exports an empty token until the Worker is ready —
-        // treat it as absent, not as a usable credential.
-        let emptyToken = CodevisorAppVariant.developmentCloud(from: [
-            "CODEVISOR_DEV_CLOUD_URL": "http://127.0.0.1:8787",
-            "CODEVISOR_DEV_CLOUD_TOKEN": "",
-        ])
-        #expect(emptyToken?.url == URL(string: "http://127.0.0.1:8787")!)
-        #expect(emptyToken?.token == nil)
-
-        let missingToken = CodevisorAppVariant.developmentCloud(from: [
             "CODEVISOR_DEV_CLOUD_URL": "http://127.0.0.1:8787"
         ])
-        #expect(missingToken?.token == nil)
+        #expect(full == CodevisorAppVariant.DevelopmentCloud(url: URL(string: "http://127.0.0.1:8787")!))
 
         // No URL (or a blank one) means no dev cloud at all.
         #expect(CodevisorAppVariant.developmentCloud(from: [:]) == nil)
-        #expect(
-            CodevisorAppVariant.developmentCloud(from: [
-                "CODEVISOR_DEV_CLOUD_URL": "",
-                "CODEVISOR_DEV_CLOUD_TOKEN": "orphaned",
-            ]) == nil)
+        #expect(CodevisorAppVariant.developmentCloud(from: ["CODEVISOR_DEV_CLOUD_URL": ""]) == nil)
     }
 
     @Test("Migration is a no-op when there is no legacy folder")

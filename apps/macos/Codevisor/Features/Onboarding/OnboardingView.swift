@@ -349,15 +349,6 @@ struct OnboardingView: View {
                             ) { startCloudSignIn() }
                             .controlSize(.large)
                         }
-                        if environment.cloud.developmentAccountAvailable {
-                            CloudSignInProviderButton(
-                                title: "Use Development Account",
-                                icon: .system("person.crop.circle.dashed")
-                            ) {
-                                Task { await environment.cloud.signInWithDevelopmentAccount() }
-                            }
-                            .controlSize(.large)
-                        }
                         if let lastError = environment.cloud.lastError {
                             Text(lastError)
                                 .font(.callout)

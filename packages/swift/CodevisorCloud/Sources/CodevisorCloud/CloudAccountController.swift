@@ -51,12 +51,6 @@ public final class CloudAccountController {
         authProviders?.contains("github") ?? true
     }
 
-    /// A dev-cloud session from `bun run dev` is available for one-tap
-    /// sign-in. Development instances only.
-    public var developmentAccountAvailable: Bool {
-        environmentCloud?.token != nil && customServerURL == nil
-    }
-
     public typealias ClientFactory = @Sendable (URL) -> any CloudAccountClienting
     public typealias HubConnectionFactory = @MainActor (URL, any CloudCredentialStore) -> CloudHubConnection
 
@@ -160,9 +154,8 @@ public final class CloudAccountController {
 
     /// Boot: validate whatever token is stored. An invalid token signs out
     /// and clears it; a network failure keeps the token for the next attempt.
-    /// The dev-cloud session is NOT adopted automatically — development
-    /// builds offer it as an explicit "Use Development Account" action
-    /// (`signInWithDevelopmentAccount`).
+    /// Development builds sign into the dev cloud exactly as production
+    /// signs into the hosted one — no session ever arrives via environment.
     public func bootstrap() async {
         guard !hasCompletedBootstrap else { return }
         defer {
@@ -202,29 +195,6 @@ public final class CloudAccountController {
             authProviders = try await client.discover().authProviders
         } catch {
             Log.cloud.error("Cloud discovery failed: \(String(describing: error), privacy: .public)")
-        }
-    }
-
-    /// Development builds only: sign in with the dev-cloud session that
-    /// `bun run dev` provisioned, as an explicit user action (never adopted
-    /// automatically).
-    public func signInWithDevelopmentAccount() async {
-        guard let devToken = environmentCloud?.token else { return }
-        state = .validating
-        lastError = nil
-        do {
-            guard let user = try await client.session(token: devToken) else {
-                state = .signedOut
-                lastError = "The development account is not available right now."
-                return
-            }
-            await discardHubForCredentialChange()
-            try credentialStore.saveToken(devToken)
-            state = .signedIn(userEmail: user.email)
-            await refreshMachines()
-        } catch {
-            state = .signedOut
-            lastError = error.localizedDescription
         }
     }
 

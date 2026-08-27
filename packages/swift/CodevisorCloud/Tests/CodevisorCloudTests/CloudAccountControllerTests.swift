@@ -9,10 +9,7 @@ import CodevisorProtocol
 struct CloudAccountControllerTests {
     @Test("Server URL resolution: custom beats dev cloud beats default")
     func serverURLResolution() throws {
-        let dev = CodevisorAppVariant.DevelopmentCloud(
-            url: URL(string: "http://127.0.0.1:8787")!,
-            token: nil
-        )
+        let dev = CodevisorAppVariant.DevelopmentCloud(url: URL(string: "http://127.0.0.1:8787")!)
 
         let bare = makeController()
         #expect(bare.controller.serverURL == URL(string: "https://cloud.codevisor.dev")!)
@@ -27,15 +24,14 @@ struct CloudAccountControllerTests {
         #expect(custom.controller.serverURL == URL(string: "https://cloud.example.com")!)
     }
 
-    @Test("Bootstrap never signs in automatically — the dev account is an explicit action")
-    func bootstrapDoesNotAdoptDevToken() async throws {
+    @Test("Bootstrap with a dev cloud URL but no stored session stays signed out")
+    func bootstrapStaysSignedOutWithoutSession() async throws {
         let client = FakeCloudClient()
         client.sessions["dev-token"] = CloudSessionUser(userId: "u1", email: "dev@example.com")
         let (controller, _, store) = makeController(
             client: client,
             environmentCloud: CodevisorAppVariant.DevelopmentCloud(
-                url: URL(string: "http://127.0.0.1:8787")!,
-                token: "dev-token"
+                url: URL(string: "http://127.0.0.1:8787")!
             )
         )
 
@@ -43,33 +39,6 @@ struct CloudAccountControllerTests {
 
         #expect(controller.state == .signedOut)
         #expect(try store.token() == nil)
-        #expect(controller.developmentAccountAvailable)
-    }
-
-    @Test("Signing in with the development account is explicit and stores the token")
-    func signInWithDevelopmentAccount() async throws {
-        let client = FakeCloudClient()
-        client.sessions["dev-token"] = CloudSessionUser(userId: "u1", email: "dev@example.com")
-        client.machinesResult = .success([testMachine("dev-1")])
-        let (controller, _, store) = makeController(
-            client: client,
-            environmentCloud: CodevisorAppVariant.DevelopmentCloud(
-                url: URL(string: "http://127.0.0.1:8787")!,
-                token: "dev-token"
-            )
-        )
-
-        await controller.signInWithDevelopmentAccount()
-
-        #expect(controller.state == .signedIn(userEmail: "dev@example.com"))
-        #expect(try store.token() == "dev-token")
-        #expect(controller.machines.map(\.deviceId) == ["dev-1"])
-
-        // Without a dev environment the action (and its button) don't exist.
-        let (bare, _, _) = makeController(client: FakeCloudClient())
-        #expect(!bare.developmentAccountAvailable)
-        await bare.signInWithDevelopmentAccount()
-        #expect(bare.state == .signedOut)
     }
 
     /// Drains chained registration attempts (a successful connect re-refreshes
@@ -80,21 +49,23 @@ struct CloudAccountControllerTests {
         }
     }
 
+    /// A controller signed in the production way — a stored session
+    /// validated at boot — with a local server attached.
     private func makeSignedInWithLocalServer(
         registration: ServerCloudRegistration = ServerCloudRegistration(connected: false)
     ) async -> (CloudAccountController, FakeCloudClient, FakeLocalServerClient) {
         let client = FakeCloudClient()
         client.sessions["dev-token"] = CloudSessionUser(userId: "u1", email: "dev@example.com")
-        let (controller, _, _) = makeController(
+        let (controller, _, store) = makeController(
             client: client,
             environmentCloud: CodevisorAppVariant.DevelopmentCloud(
-                url: URL(string: "http://127.0.0.1:8787")!,
-                token: "dev-token"
+                url: URL(string: "http://127.0.0.1:8787")!
             )
         )
         let localServer = FakeLocalServerClient(registration: registration)
         controller.localServerClient = localServer
-        await controller.signInWithDevelopmentAccount()
+        try? store.saveToken("dev-token")
+        await controller.bootstrap()
         await awaitLocalRegistration(controller)
         return (controller, client, localServer)
     }
@@ -129,18 +100,19 @@ struct CloudAccountControllerTests {
     func registrationRetriesAfterFailure() async throws {
         let client = FakeCloudClient()
         client.sessions["dev-token"] = CloudSessionUser(userId: "u1", email: "dev@example.com")
-        let (controller, _, _) = makeController(
+        let (controller, _, store) = makeController(
             client: client,
             environmentCloud: CodevisorAppVariant.DevelopmentCloud(
-                url: URL(string: "http://127.0.0.1:8787")!,
-                token: "dev-token"
+                url: URL(string: "http://127.0.0.1:8787")!
             )
         )
         struct ServerStartingUp: Error {}
         let localServer = FakeLocalServerClient()
         localServer.connectError = ServerStartingUp()
         controller.localServerClient = localServer
-        await controller.signInWithDevelopmentAccount()
+        // Signed in the production way: a stored session validated at boot.
+        try store.saveToken("dev-token")
+        await controller.bootstrap()
         await awaitLocalRegistration(controller)
         #expect(localServer.disconnects == 0)
 
