@@ -34,7 +34,7 @@ struct SettingsSheet: View {
                 }
                 Section {
                     NavigationLink {
-                        GeneralSettingsScreen()
+                        GeneralSettingsScreen(dismissSettings: { dismiss() })
                     } label: {
                         Label("General", systemImage: "gearshape")
                     }

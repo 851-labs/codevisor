@@ -381,6 +381,10 @@ public final class AppEnvironment {
         paneGroups.removeAll()
         workspaces.removeAll()
         machines.removeAllRemoteMachines()
+        // The Cloud session is local data too: staying signed in would
+        // re-synthesize every cloud-registered machine the instant the
+        // configured ones were removed, and onboarding would never return.
+        cloud.signOut()
         ClientPreferences.shared.removeAll()
         do {
             try clientDataResetter?.resetClientData()
