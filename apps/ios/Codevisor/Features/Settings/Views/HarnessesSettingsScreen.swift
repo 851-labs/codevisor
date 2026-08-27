@@ -105,7 +105,7 @@ struct HarnessesSettingsScreen: View {
                         }
                     } label: {
                         HStack {
-                            Text(environment.machines.fleetMachineName(for: machineId) ?? machineId)
+                            Text(environment.machines.fleetName(forSyncKey: machineId))
                             Spacer(minLength: 12)
                             harnessBadge(rows).view
                                 .font(.footnote)
@@ -137,8 +137,10 @@ struct HarnessesSettingsScreen: View {
             Spacer()
             if entry.state == "signInRequired" {
                 Button("Sign In") {
-                    signInRequest = HarnessSignInRequest(
-                        serverId: machineId, harnessId: entry.harnessId)
+                    if let resolved = environment.machines.machineId(forSyncKey: machineId) {
+                        signInRequest = HarnessSignInRequest(
+                            serverId: resolved, harnessId: entry.harnessId)
+                    }
                 }
                 .font(.footnote)
             }

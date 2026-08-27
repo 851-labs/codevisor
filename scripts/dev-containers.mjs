@@ -308,12 +308,18 @@ export async function launchDevRemoteServer({
   serverName,
   environment
 }) {
+  // A stable identity per dev remote: the default "local" server id
+  // collides across the fleet's sync namespaces (every machine's
+  // readiness would publish under the same key).
+  const serverId = environment.CODEVISOR_DEV_INSTANCE_ID ?? serverName
   if (containerContext === undefined) {
     return spawn(
       "node",
       [
         join(repoRoot, "apps/server/dist/main.js"),
         "serve",
+        "--serverId",
+        serverId,
         "--host",
         "0.0.0.0",
         "--port",
@@ -387,6 +393,8 @@ export async function launchDevRemoteServer({
     "sh",
     "/entry.sh",
     "serve",
+    "--serverId",
+    serverId,
     "--host",
     "0.0.0.0",
     "--port",

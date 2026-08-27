@@ -63,7 +63,7 @@ struct PluginsSettingsScreen: View {
                         }
                     } label: {
                         HStack {
-                            Text(environment.machines.fleetMachineName(for: machineId) ?? machineId)
+                            Text(environment.machines.fleetName(forSyncKey: machineId))
                             Spacer(minLength: 12)
                             pluginBadge(rows).view
                                 .font(.footnote)

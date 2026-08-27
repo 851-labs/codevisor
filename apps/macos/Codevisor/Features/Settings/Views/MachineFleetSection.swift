@@ -72,8 +72,8 @@ struct MachineFleetSection<Row: Identifiable, RowView: View>: View {
         }
     }
 
-    private func machineName(_ machineId: String) -> String {
-        environment.machines.fleetMachineName(for: machineId) ?? machineId
+    private func machineName(_ syncKey: String) -> String {
+        environment.machines.fleetName(forSyncKey: syncKey)
     }
 
     private func expansionBinding(_ machineId: String) -> Binding<Bool> {

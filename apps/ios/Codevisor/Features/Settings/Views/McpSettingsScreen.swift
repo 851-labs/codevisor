@@ -81,7 +81,7 @@ struct McpSettingsScreen: View {
     }
 
     private func machineName(_ machineId: String) -> String {
-        environment.machines.fleetMachineName(for: machineId) ?? machineId
+        environment.machines.fleetName(forSyncKey: machineId)
     }
 
     private func badge(_ rows: [McpFleet.MachineReadiness]) -> MachineSyncBadge {

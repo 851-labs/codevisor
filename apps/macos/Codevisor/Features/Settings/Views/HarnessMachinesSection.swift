@@ -49,8 +49,12 @@ struct HarnessMachinesSection: View {
             Spacer()
             if entry.state == "signInRequired" {
                 Button("Sign In…") {
-                    signInTarget = PendingMachineHarnessSignIn(
-                        machineId: machineId, harnessId: entry.harnessId)
+                    // The sign-in sheet needs the CLIENT machine id, not
+                    // the sync key the readiness entry is stored under.
+                    if let resolved = environment.machines.machineId(forSyncKey: machineId) {
+                        signInTarget = PendingMachineHarnessSignIn(
+                            machineId: resolved, harnessId: entry.harnessId)
+                    }
                 }
                 .settingsActionTint(theme)
             }

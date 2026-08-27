@@ -15,7 +15,8 @@ extension MachineController {
                 isReachable: true,
                 label: "\(info.name) \(info.version)",
                 cloudDeviceId: info.cloudDeviceId,
-                route: routeInUse(forMachineId: id)
+                route: routeInUse(forMachineId: id),
+                serverId: info.id
             )
             // Persist the direct↔cloud link on the record itself: dedup and
             // the relay fallback must both survive relaunches whose direct
@@ -103,7 +104,8 @@ extension MachineController {
             isReachable: true,
             label: "\(info.name) \(info.version) — via Codevisor Cloud",
             cloudDeviceId: info.cloudDeviceId,
-            route: .relay
+            route: .relay,
+            serverId: info.id
         )
     }
 }

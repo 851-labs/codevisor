@@ -65,17 +65,23 @@ public struct MachineStatus: Sendable, Equatable {
     /// How the machine answered (Phase 22): directly, or through the cloud
     /// relay after the direct route failed. Nil while unreachable.
     public var route: MachineRoute?
+    /// The server's own stable id (config.id from /v1/info) — the key its
+    /// entries carry in the fleet's sync namespaces. Distinct from the
+    /// CLIENT-side machine id ("cloud:<deviceId>", "remote-…").
+    public var serverId: String?
 
     public init(
         isReachable: Bool,
         label: String,
         cloudDeviceId: String? = nil,
-        route: MachineRoute? = nil
+        route: MachineRoute? = nil,
+        serverId: String? = nil
     ) {
         self.isReachable = isReachable
         self.label = label
         self.cloudDeviceId = cloudDeviceId
         self.route = route
+        self.serverId = serverId
     }
 }
 
