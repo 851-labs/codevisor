@@ -491,7 +491,10 @@ struct HomeView: View {
                     state: .loading(machineName: failedSyncMachineNames)
                 )
             }
-            .task(id: machines.allMachines.map(\.id)) {
+            // Constant identity: the clock starts when the branch appears
+            // and survives machine-list churn (cloud statuses landing used
+            // to recreate the task and reset the budget forever).
+            .task(id: "initial-sync-deadline") {
                 initialSyncDeadlineExpired = false
                 try? await Task.sleep(for: .seconds(15))
                 guard !Task.isCancelled else { return }
