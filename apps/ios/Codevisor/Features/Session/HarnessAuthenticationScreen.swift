@@ -286,16 +286,25 @@ struct HarnessAuthenticationScreen: View {
                 await finishAuthentication(accountId: accountId)
                 return
             }
-            if account.authState == "error" {
+            if account.authState == "error" || account.authState == "expired" {
                 // Friendly text only — `detail` carries the probe's technical
                 // cause (up to a crashed CLI's stderr) and never reaches the UI.
-                let message = "Couldn't verify sign-in."
+                let message =
+                    account.authState == "expired"
+                    ? "Sign-in expired. Try signing in again."
+                    : "Couldn't verify sign-in."
                 await cancelFlow()
                 await load()
                 errorMessage = message
                 return
             }
         }
+        // The waiting spinner must never outlive the wait: a login that
+        // hasn't completed after ten minutes is not going to.
+        guard !Task.isCancelled, flow != nil else { return }
+        await cancelFlow()
+        await load()
+        errorMessage = "Sign-in timed out. Try signing in again."
     }
 
     private func finishAuthentication(accountId: String) async {
