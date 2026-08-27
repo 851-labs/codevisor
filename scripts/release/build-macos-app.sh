@@ -379,15 +379,26 @@ submit_for_notarization_to_file() {
 }
 
 wait_for_notarization() {
-  local id="$1" label="$2" response status
+  local id="$1" label="$2" response status attempt
   # Bounded wait: healthy notarizations return in minutes; a stuck Apple-side
   # queue (e.g. a new team's first-submission review) must fail this build
   # fast instead of holding the CI job until its own 6-hour timeout. The job
   # stays red — never publish unstapled artifacts — and simply passes on a
   # later run once Apple's queue clears.
-  response="$(xcrun notarytool wait "$id" "${notary_args[@]}" \
-    --timeout "${CODEVISOR_NOTARY_WAIT_TIMEOUT:-30m}" --output-format json)" || true
-  status="$(printf '%s' "$response" | sed -n 's/.*"status"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+  #
+  # A TRANSPORT failure is different from a verdict: notarytool dying on an
+  # HTTP timeout leaves no status at all, while the submission is still
+  # perfectly valid on Apple's side. Re-poll the same submission a bounded
+  # number of times before giving up — only a real verdict is terminal.
+  status=""
+  for attempt in 1 2 3 4 5; do
+    response="$(xcrun notarytool wait "$id" "${notary_args[@]}" \
+      --timeout "${CODEVISOR_NOTARY_WAIT_TIMEOUT:-30m}" --output-format json)" || true
+    status="$(printf '%s' "$response" | sed -n 's/.*"status"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+    [[ -n "$status" ]] && break
+    echo "warning: no notarization status for $label (submission $id) on attempt $attempt — Apple's API did not answer; retrying" >&2
+    sleep 30
+  done
   if [[ "$status" == "In Progress" ]]; then
     echo "error: notarization of $label still in progress after ${CODEVISOR_NOTARY_WAIT_TIMEOUT:-30m} (submission $id); Apple's queue is slow — retry this job later" >&2
     exit 1
