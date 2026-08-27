@@ -269,13 +269,41 @@ const runCanonicalChatBackfill = (
   }
 }
 
+/// Server databases are single-owner: every `server_id` column is stamped
+/// with the server's own id at write time, never a foreign one. When the
+/// server's identity changes — a machine that booted under the default
+/// "local" before gaining a real `--serverId` — rows written under the former
+/// id stop matching, so the server treats its own projects as foreign: the
+/// git probe is skipped, `localLocationOrFail` misses, and the worktree
+/// picker disappears. Adopt them: rewrite every row to the current identity.
+/// A row that cannot adopt because a twin already exists under the current id
+/// is a duplicate by definition and is dropped.
+const adoptServerIdentity = (sqlite: Database.Database, config: CodevisorDatabaseConfig): void => {
+  sqlite.transaction(() => {
+    for (const table of ["sessions", "events", "session_events"]) {
+      sqlite
+        .prepare(`update ${table} set server_id = ? where server_id != ?`)
+        .run(config.serverId, config.serverId)
+    }
+    // These tables enforce uniqueness that includes server_id (folder paths,
+    // worktree names), so adoption can collide with a row already written
+    // under the current identity.
+    for (const table of ["project_locations", "worktrees", "archived_worktrees"]) {
+      sqlite
+        .prepare(`update or ignore ${table} set server_id = ? where server_id != ?`)
+        .run(config.serverId, config.serverId)
+      sqlite.prepare(`delete from ${table} where server_id != ?`).run(config.serverId)
+    }
+  })()
+}
+
 /// Ordered registry for blocking, resumable data-version changes. Future
 /// breaking upgrades add one runner here; schema creation still happens in
 /// `migrations`, while the runner owns bounded commits, validation, progress,
 /// and its durable `backfill_jobs` checkpoint.
 const blockingDataUpgrades: ReadonlyArray<
   (sqlite: Database.Database, config: CodevisorDatabaseConfig) => void
-> = [runCanonicalChatBackfill]
+> = [adoptServerIdentity, runCanonicalChatBackfill]
 
 export const runBlockingDataUpgrades = (
   sqlite: Database.Database,

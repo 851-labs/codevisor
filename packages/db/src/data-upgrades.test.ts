@@ -35,6 +35,46 @@ describe("@codevisor/db", () => {
     await Effect.runPromise(db.close)
   })
 
+  it("adopts rows written under a former server identity", async () => {
+    // A machine that booted as the default "local" before gaining a real
+    // --serverId: its project locations and worktrees were stamped "local".
+    const filename = tempDatabase()
+    const before = await run(makeDatabase({ filename, serverId: "local" }))
+    const project = await run(before.createProject({ folderPath: "/tmp/adopted-project" }))
+    await run(before.createWorktree(project.id, "sushi", "codevisor/sushi"))
+    await Effect.runPromise(before.close)
+
+    const after = await run(makeDatabase({ filename, serverId: "stock-cloud" }))
+    const adopted = (await run(after.listProjects)).find((candidate) => candidate.id === project.id)
+    expect(adopted?.locations).toMatchObject([{ serverId: "stock-cloud" }])
+    expect(await run(after.listWorktrees(project.id))).toMatchObject([{ serverId: "stock-cloud" }])
+    await Effect.runPromise(after.close)
+  })
+
+  it("drops former-identity rows that collide with current-identity twins", async () => {
+    // If a location for the same folder was re-created under the new id, the
+    // stale "local" row is a duplicate and must not survive adoption.
+    const filename = tempDatabase()
+    const before = await run(makeDatabase({ filename, serverId: "stock-cloud" }))
+    const project = await run(before.createProject({ folderPath: "/tmp/twin-project" }))
+    await Effect.runPromise(before.close)
+
+    const sqlite = new Database(filename)
+    sqlite
+      .prepare(
+        `insert into project_locations (id, project_id, server_id, folder_path, created_at)
+         values ('stale-location', ?, 'local', '/tmp/twin-project', '2026-01-01T00:00:00.000Z')`
+      )
+      .run(project.id)
+    sqlite.close()
+
+    const after = await run(makeDatabase({ filename, serverId: "stock-cloud" }))
+    const adopted = (await run(after.listProjects)).find((candidate) => candidate.id === project.id)
+    expect(adopted?.locations).toHaveLength(1)
+    expect(adopted?.locations).toMatchObject([{ serverId: "stock-cloud" }])
+    await Effect.runPromise(after.close)
+  })
+
   it("backfills transcript pages from an older event log", async () => {
     const filename = tempDatabase()
     buildV4Fixture(filename)

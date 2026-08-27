@@ -102,15 +102,18 @@ describe("@codevisor/db", () => {
 
   it("omits session cwd when the project has no folder on this server", async () => {
     const filename = tempDatabase()
-    const db = await run(makeDatabase({ filename, serverId: "machine-a" }))
+    const db = await run(makeDatabase({ filename, serverId: "local" }))
     const project = await run(db.createProject({ folderPath: "/tmp/elsewhere" }))
     await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
     await Effect.runPromise(db.close)
 
-    // A server without a location for the project cannot derive a cwd.
-    const other = await run(makeDatabase({ filename, serverId: "machine-b" }))
-    const sessions = await run(other.listSessions)
+    // A project whose folder is gone from this server cannot derive a cwd.
+    const sqlite = new Database(filename)
+    sqlite.prepare("delete from project_locations where project_id = ?").run(project.id)
+    sqlite.close()
+    const reread = await run(makeDatabase({ filename, serverId: "local" }))
+    const sessions = await run(reread.listSessions)
     expect(sessions[0]?.cwd).toBeUndefined()
-    await Effect.runPromise(other.close)
+    await Effect.runPromise(reread.close)
   })
 })
