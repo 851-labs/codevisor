@@ -6,44 +6,6 @@ import Testing
 @MainActor
 @Suite("MachineController cloud machines")
 struct MachineControllerCloudTests {
-    private func makeCloudMachine(
-        deviceId: String = "dev-1",
-        name: String = "Cloud Mac",
-        online: Bool = true
-    ) -> CloudMachine {
-        CloudMachine(
-            deviceId: deviceId,
-            name: name,
-            os: "macOS",
-            publicKey: "pk-\(deviceId)",
-            online: online,
-            lastSeenAt: "2026-01-01T00:00:00.000Z"
-        )
-    }
-
-    /// Defaults to a working local server (the mac shape). Tests that model
-    /// a client-only platform (iOS) pass `localServer: nil` explicitly —
-    /// those platforms list no "Local" machine and auto-adopt real ones.
-    private func makeController(
-        store: InMemoryStore = InMemoryStore(),
-        localServer: (any LocalServerControlling)? = StubLocalServer(),
-        clientFactory: MachineController.ClientFactory? = nil
-    ) -> (controller: MachineController, projectList: ProjectListModel, provider: FakeCloudProvider) {
-        let projectList = ProjectListModel(
-            projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-            sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-        )
-        let controller = MachineController(
-            store: store,
-            projectList: projectList,
-            localServer: localServer,
-            clientFactory: clientFactory
-        )
-        let provider = FakeCloudProvider()
-        controller.cloudProvider = provider
-        return (controller, projectList, provider)
-    }
-
     @Test("allMachines appends synthesized entries for cloud-only machines")
     func allMachinesSynthesis() throws {
         let (controller, _, provider) = makeController()
@@ -215,6 +177,39 @@ struct MachineControllerCloudTests {
         #expect(!projectList.projects.contains { $0.serverId == twinId })
         #expect(!projectList.sessions.contains { $0.serverId == twinId })
         #expect(controller.isCloudTwinOfConfiguredMachine(twinId))
+    }
+
+    @Test("Dead cloud identities' records are pruned after a roster refresh")
+    func deadCloudRecordPrune() throws {
+        let (controller, projectList, provider) = makeController()
+        // Live machine dev-1; dev-gone was wiped and re-registered long ago.
+        provider.cloudMachines = [makeCloudMachine(deviceId: "dev-1")]
+        let liveId = "cloud:dev-1"
+        let deadId = "cloud:dev-gone"
+        for serverId in [liveId, deadId] {
+            let project = Project.fromFolder(
+                URL(fileURLWithPath: "/srv/\(serverId)"),
+                serverId: serverId
+            )
+            projectList.projects.append(project)
+            projectList.sessions.append(
+                ChatSession(projectId: project.id, serverId: serverId, title: "chat")
+            )
+        }
+
+        controller.pruneDeadCloudRecords()
+
+        // Only the identity absent from the fetched roster is gone.
+        #expect(!projectList.projects.contains { $0.serverId == deadId })
+        #expect(!projectList.sessions.contains { $0.serverId == deadId })
+        #expect(projectList.projects.contains { $0.serverId == liveId })
+        #expect(projectList.sessions.contains { $0.serverId == liveId })
+
+        // Signed out: the roster is unknown, not empty — nothing is pruned.
+        provider.isCloudSignedIn = false
+        provider.cloudMachines = []
+        controller.pruneDeadCloudRecords()
+        #expect(projectList.projects.contains { $0.serverId == liveId })
     }
 
     @Test("Selecting a cloud machine persists and yields a relay-backed client")

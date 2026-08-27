@@ -73,3 +73,43 @@ final class FakeCloudProvider: CloudMachineProviding {
         loopbackURLsByDeviceId[machine.deviceId]
     }
 }
+
+@MainActor
+func makeCloudMachine(
+    deviceId: String = "dev-1",
+    name: String = "Cloud Mac",
+    online: Bool = true
+) -> CloudMachine {
+    CloudMachine(
+        deviceId: deviceId,
+        name: name,
+        os: "macOS",
+        publicKey: "pk-\(deviceId)",
+        online: online,
+        lastSeenAt: "2026-01-01T00:00:00.000Z"
+    )
+}
+
+/// Defaults to a working local server (the mac shape). Tests that model
+/// a client-only platform (iOS) pass `localServer: nil` explicitly —
+/// those platforms list no "Local" machine and auto-adopt real ones.
+@MainActor
+func makeController(
+    store: InMemoryStore = InMemoryStore(),
+    localServer: (any LocalServerControlling)? = StubLocalServer(),
+    clientFactory: MachineController.ClientFactory? = nil
+) -> (controller: MachineController, projectList: ProjectListModel, provider: FakeCloudProvider) {
+    let projectList = ProjectListModel(
+        projectRepository: DefaultProjectRepository(store: InMemoryStore()),
+        sessionRepository: DefaultSessionRepository(store: InMemoryStore())
+    )
+    let controller = MachineController(
+        store: store,
+        projectList: projectList,
+        localServer: localServer,
+        clientFactory: clientFactory
+    )
+    let provider = FakeCloudProvider()
+    controller.cloudProvider = provider
+    return (controller, projectList, provider)
+}

@@ -118,6 +118,29 @@ extension MachineController {
         workspaceSync?.removeWorkspaces(serverId: twinId)
     }
 
+    /// Removes records stored under cloud identities that no longer exist.
+    /// A wiped machine re-registers under a fresh device id, leaving its old
+    /// twin's projects and chats to render as duplicates forever. Runs only
+    /// after a REAL roster fetch (onMachinesRefreshed), so a signed-out or
+    /// still-loading client never mistakes "unknown" for "gone".
+    public func pruneDeadCloudRecords() {
+        guard let cloudProvider, cloudProvider.isCloudSignedIn else { return }
+        let liveDeviceIds = Set(cloudProvider.cloudMachines.map(\.deviceId))
+            .union(registry.remoteMachines.compactMap(\.cloudDeviceId))
+            .union(statusByMachineId.values.compactMap(\.cloudDeviceId))
+        let storedServerIds = Set(
+            projectList.projects.map(\.serverId) + projectList.sessions.map(\.serverId)
+        )
+        for serverId in storedServerIds where serverId.hasPrefix(CodevisorMachine.cloudIdPrefix) {
+            guard let deviceId = CodevisorMachine.cloudDeviceId(forMachineId: serverId),
+                !liveDeviceIds.contains(deviceId)
+            else { continue }
+            removeConnection(for: serverId)
+            projectList.removeAllRecords(serverId: serverId)
+            workspaceSync?.removeWorkspaces(serverId: serverId)
+        }
+    }
+
     /// Cloud ids whose device is already served by a configured machine —
     /// connecting to them would resurrect the duplicate records the prune
     /// above removes.

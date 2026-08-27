@@ -148,6 +148,7 @@ public final class AppEnvironment {
         }
         cloud.onMachinesRefreshed = { [weak self] in
             self?.machines.reconcileCloudSelection()
+            self?.machines.pruneDeadCloudRecords()
         }
         projectList.showsImportedSessions = settings.importExternalSessions
         machines.serverUpdateChannel = settings.alphaUpdatesEnabled ? .alpha : .stable
@@ -249,41 +250,6 @@ public final class AppEnvironment {
         let imported = await sessionImporter.fetchAll()
         projectList.importSessions(imported, serverId: serverId)
         projectList.showsImportedSessions = settings.importExternalSessions
-    }
-
-    /// Project-folder suggestions based on the user's most recent harness
-    /// sessions (used by onboarding's project step). Worktree activity is
-    /// attributed to its primary checkout — see `ProjectRecommender`.
-    public func recommendedProjects(limit: Int = 12) async -> [ProjectRecommendation] {
-        let imported = await sessionImporter.fetchAll()
-        // Recommendation probes the filesystem per session (worktree `.git`
-        // metadata, directory checks); keep those syscalls off the main actor.
-        return await Task.detached {
-            ProjectRecommender.recommend(from: imported, limit: limit)
-        }.value
-    }
-
-    /// Harness sessions whose working directory is the given folder and that
-    /// aren't already tracked by Codevisor.
-    public func findImportableSessions(for folderURL: URL) async -> [ImportedSession] {
-        let folderPath = folderURL.standardizedFileURL.path
-        let imported = await sessionImporter.fetchAll()
-        // Snapshot the main-actor state the filter reads, then run the
-        // O(imported × known) scan and per-item URL standardization off the
-        // main actor. All values involved are Sendable value types.
-        let serverId = machines.selectedMachineId
-        let knownSessions = projectList.sessions
-        return await Task.detached {
-            imported.filter { item in
-                let matchesFolder = URL(fileURLWithPath: item.info.cwd).standardizedFileURL.path == folderPath
-                let alreadyKnown = knownSessions.contains {
-                    $0.serverId == serverId
-                        && $0.harnessId == item.harnessId
-                        && $0.agentSessionId == item.info.sessionId
-                }
-                return matchesFolder && !alreadyKnown
-            }
-        }.value
     }
 
     /// Imports the given sessions into a project the user just added. The
