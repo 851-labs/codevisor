@@ -70,6 +70,38 @@ struct CloudAccountControllerTests {
         return (controller, client, localServer)
     }
 
+    @Test("The development account signs in through the production path when the cloud advertises it")
+    func developmentAccountSignIn() async throws {
+        let client = FakeCloudClient()
+        client.discoverResult = .success(
+            CloudInstanceInfo(service: "codevisor-cloud", instance: "Dev Cloud", authProviders: ["dev"])
+        )
+        client.devLoginResult = .success("dev-token")
+        client.sessions["dev-token"] = CloudSessionUser(userId: "u1", email: "dev@example.com")
+        client.machinesResult = .success([testMachine("dev-1")])
+        let (controller, _, store) = makeController(client: client)
+        await controller.bootstrap()
+        #expect(controller.developmentAccountAvailable)
+
+        await controller.signInWithDevelopmentAccount()
+
+        // A real session, stored and loaded exactly like a browser sign-in.
+        #expect(controller.state == .signedIn(userEmail: "dev@example.com"))
+        #expect(try store.token() == "dev-token")
+        #expect(controller.machines.map(\.deviceId) == ["dev-1"])
+
+        // Hosted instances never advertise dev auth: no button, no action.
+        let hosted = FakeCloudClient()
+        hosted.discoverResult = .success(
+            CloudInstanceInfo(service: "codevisor-cloud", instance: "Hosted", authProviders: ["github"])
+        )
+        let (bare, _, _) = makeController(client: hosted)
+        await bare.bootstrap()
+        #expect(!bare.developmentAccountAvailable)
+        await bare.signInWithDevelopmentAccount()
+        #expect(bare.state == .signedOut)
+    }
+
     @Test("Signing in registers the local machine on the account")
     func signInRegistersLocalMachine() async throws {
         let (controller, client, localServer) = await makeSignedInWithLocalServer()

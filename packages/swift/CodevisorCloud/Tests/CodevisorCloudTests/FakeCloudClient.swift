@@ -14,6 +14,7 @@ final class FakeCloudClient: CloudAccountClienting, @unchecked Sendable {
         CloudInstanceInfo(service: "codevisor-cloud", instance: "Test Cloud")
     )
     var verifyResult: Result<String, any Error> = .failure(CloudAccountClientError.missingToken)
+    var devLoginResult: Result<String, any Error> = .failure(CloudAccountClientError.missingToken)
     /// Tokens the fake accepts, mapped to the user get-session reports.
     var sessions: [String: CloudSessionUser] = [:]
     var machinesResult: Result<[CloudMachine], any Error> = .success([])
@@ -31,6 +32,10 @@ final class FakeCloudClient: CloudAccountClienting, @unchecked Sendable {
 
     func verifyOneTimeToken(_ ott: String) async throws -> String {
         try lock.withLock { verifyResult }.get()
+    }
+
+    func developmentLogin() async throws -> String {
+        try lock.withLock { devLoginResult }.get()
     }
 
     func session(token: String) async throws -> CloudSessionUser? {
@@ -163,6 +168,7 @@ struct OfflineError: Error {}
 struct OfflineCloudClient: CloudAccountClienting {
     func discover() async throws -> CloudInstanceInfo { throw OfflineError() }
     func verifyOneTimeToken(_ ott: String) async throws -> String { throw OfflineError() }
+    func developmentLogin() async throws -> String { throw OfflineError() }
     func session(token: String) async throws -> CloudSessionUser? { throw OfflineError() }
     func machines(token: String) async throws -> [CloudMachine] { throw OfflineError() }
     func rename(deviceId: String, name: String, token: String) async throws { throw OfflineError() }

@@ -107,6 +107,10 @@ public protocol CloudAccountClienting: Sendable {
     /// Exchanges the browser handoff's one-time token for a session bearer
     /// token (`POST /api/auth/one-time-token/verify`).
     func verifyOneTimeToken(_ ott: String) async throws -> String
+    /// Dev-only: a real session for the cloud's seeded development user.
+    /// The instance advertises the capability via `authProviders: ["dev"]`;
+    /// elsewhere the route does not exist.
+    func developmentLogin() async throws -> String
     /// `GET /api/auth/get-session` — nil when the token no longer maps to a
     /// live session.
     func session(token: String) async throws -> CloudSessionUser?
@@ -155,17 +159,28 @@ public final class CloudAccountClient: CloudAccountClienting, Sendable {
             method: "POST",
             body: body
         )
-        // The bearer plugin returns the session token in a response header;
-        // fall back to a `token` field in the body for older instances.
+        return try Self.sessionToken(fromHeader: response, body: data)
+    }
+
+    public func developmentLogin() async throws -> String {
+        let (data, response) = try await perform("/dev/login", method: "POST", body: Data())
+        return try Self.sessionToken(fromHeader: response, body: data)
+    }
+
+    /// The bearer plugin returns the session token in a response header;
+    /// older instances put a `token` field in the body.
+    private static func sessionToken(
+        fromHeader response: HTTPURLResponse, body data: Data
+    ) throws
+        -> String
+    {
         if let header = response.value(forHTTPHeaderField: "set-auth-token"), !header.isEmpty {
             return header
         }
-        struct VerifyBody: Decodable {
+        struct TokenBody: Decodable {
             var token: String?
         }
-        if let token = (try? JSONDecoder().decode(VerifyBody.self, from: data))?.token,
-            !token.isEmpty
-        {
+        if let token = (try? JSONDecoder().decode(TokenBody.self, from: data))?.token, !token.isEmpty {
             return token
         }
         throw CloudAccountClientError.missingToken

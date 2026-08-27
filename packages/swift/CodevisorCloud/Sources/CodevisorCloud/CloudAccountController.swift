@@ -51,6 +51,14 @@ public final class CloudAccountController {
         authProviders?.contains("github") ?? true
     }
 
+    /// The cloud instance itself advertises dev auth (`authProviders`
+    /// contains "dev") — the local dev Worker does, hosted instances never.
+    /// A user-chosen custom server hides it: they are talking to their own
+    /// instance, not the dev one.
+    public var developmentAccountAvailable: Bool {
+        authProviders?.contains("dev") == true && customServerURL == nil
+    }
+
     public typealias ClientFactory = @Sendable (URL) -> any CloudAccountClienting
     public typealias HubConnectionFactory = @MainActor (URL, any CloudCredentialStore) -> CloudHubConnection
 
@@ -201,11 +209,29 @@ public final class CloudAccountController {
     /// Finishes the browser flow: exchanges the handoff's one-time token for
     /// a session token, stores it, and loads the account's machines.
     public func completeSignIn(ott: String) async {
+        let client = client
+        await adoptSession { try await client.verifyOneTimeToken(ott) }
+    }
+
+    /// Dev-only: signs in as the cloud's seeded development user. Only the
+    /// credential's origin differs from the browser flow — the session is
+    /// real and everything after it (storage, machine list, local machine
+    /// registration) is the production path.
+    public func signInWithDevelopmentAccount() async {
+        guard developmentAccountAvailable else { return }
+        let client = client
+        await adoptSession { try await client.developmentLogin() }
+    }
+
+    /// The one sign-in completion: obtain a session token, store it, load
+    /// the account. Every sign-in flow funnels through here so they cannot
+    /// diverge.
+    private func adoptSession(_ obtainToken: () async throws -> String) async {
         state = .validating
         lastError = nil
         let client = client
         do {
-            let token = try await client.verifyOneTimeToken(ott)
+            let token = try await obtainToken()
             await discardHubForCredentialChange()
             try credentialStore.saveToken(token)
             let user = (try? await client.session(token: token)) ?? nil

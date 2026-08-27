@@ -126,6 +126,12 @@ struct CloudAccountScreen: View {
                 }
                 .disabled(isSigningIn)
             }
+            if cloud.developmentAccountAvailable {
+                Button("Use Development Account") {
+                    Task { await cloud.signInWithDevelopmentAccount() }
+                }
+                .disabled(isSigningIn)
+            }
             if let lastError = cloud.lastError {
                 Text(lastError)
                     .foregroundStyle(.red)
