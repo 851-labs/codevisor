@@ -214,7 +214,12 @@ extension MachineController {
     }
 
     public var selectedMachine: CodevisorMachine {
-        machine(for: registry.selectedMachineId) ?? CodevisorMachine.local
+        // A selection that no longer resolves (its machine was removed or
+        // re-registered under a new identity) adopts the first LIVE machine.
+        // Falling back to `.local` here haunted client-only platforms: iOS
+        // has no local machine, so the phantom never connected, never
+        // synced, and pinned every selection-keyed UI state forever.
+        machine(for: registry.selectedMachineId) ?? allMachines.first ?? CodevisorMachine.local
     }
 
     public var selectedClient: any CodevisorServerClienting {

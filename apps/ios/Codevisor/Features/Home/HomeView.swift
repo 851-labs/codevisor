@@ -89,22 +89,11 @@ struct HomeView: View {
         machines.allMachines.contains { !$0.isLocal }
     }
 
-    private var navigationSyncFailed: Bool {
-        if case .stale = machines.selectedNavigationSyncState { return true }
-        return false
-    }
-
-    /// True while the selected machine has never completed a sync this
-    /// launch. The cached fleet list always renders immediately — exactly
-    /// like macOS, whose sidebar never blocks on sync — so this only gates
-    /// the truly-empty first launch.
+    /// True while no machine has synced and none has failed — the fleet is
+    /// still converging. The cached list always renders immediately; this
+    /// only gates the truly-empty first launch.
     private var initialSyncPending: Bool {
-        switch machines.selectedNavigationSyncState {
-        case .cached, .catchingUp:
-            return true
-        case .current, .stale:
-            return false
-        }
+        !anyMachineSynced && failedSyncMachines.isEmpty && hasRemoteMachines
     }
 
     /// Onboarding presents itself whenever no machine is paired. There is no
@@ -325,7 +314,7 @@ struct HomeView: View {
             }
             .safeAreaInset(edge: .bottom, alignment: .trailing, spacing: 0) {
                 if hasRemoteMachines,
-                    !(visibleSessions.isEmpty && (navigationSyncFailed || initialSyncPending)),
+                    !(visibleSessions.isEmpty && !anyMachineSynced),
                     groupReorderOrganization == nil
                 {
                     newChatButton
@@ -469,17 +458,28 @@ struct HomeView: View {
             // sync gets to blank the world. Sync trouble rides a banner.
             sessionList
                 .safeAreaInset(edge: .top, spacing: 0) {
-                    if navigationSyncFailed {
+                    if !failedSyncMachines.isEmpty {
                         syncFailedBanner
                     }
                 }
-        } else if navigationSyncFailed || initialSyncDeadlineExpired {
+        } else if anyMachineSynced {
+            // At least one machine answered with a real (empty) list: the
+            // honest presentation is "no chats", banner for any stragglers.
+            refreshableState {
+                emptyState
+            }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if !failedSyncMachines.isEmpty {
+                    syncFailedBanner
+                }
+            }
+        } else if !failedSyncMachines.isEmpty || initialSyncDeadlineExpired {
             refreshableState {
                 HomeNavigationSyncView(
-                    state: .failed(machineName: machines.selectedMachine.name),
+                    state: .failed(machineName: failedSyncMachineNames),
                     retry: {
                         initialSyncDeadlineExpired = false
-                        Task { await machines.retrySelectedMachine() }
+                        retryFailedMachines()
                     }
                 )
             }
@@ -488,10 +488,10 @@ struct HomeView: View {
             // may not outlive its budget.
             refreshableState {
                 HomeNavigationSyncView(
-                    state: .loading(machineName: machines.selectedMachine.name)
+                    state: .loading(machineName: failedSyncMachineNames)
                 )
             }
-            .task(id: machines.selectedMachineId) {
+            .task(id: machines.allMachines.map(\.id)) {
                 initialSyncDeadlineExpired = false
                 try? await Task.sleep(for: .seconds(15))
                 guard !Task.isCancelled else { return }
