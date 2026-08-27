@@ -8,16 +8,85 @@ import SwiftUI
 struct PluginsSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
+    @State private var activeSheet: PluginsRootSheet?
+    @State private var actionError: String?
+
+    private enum PluginsRootSheet: Identifiable {
+        case install(initialSource: String?)
+        case browse
+        var id: String {
+            switch self {
+            case .install: "install"
+            case .browse: "browse"
+            }
+        }
+    }
+
+    /// Fleet-level installs land on the local machine; registry plugins
+    /// sync out from there.
+    private var localClient: any CodevisorServerClienting {
+        environment.machines.client(for: CodevisorMachine.local.id)
+    }
 
     var body: some View {
         Form {
             MachineListSection(pane: .plugins, badge: badge) { machine in
                 PluginMachinePane(machine: machine)
             }
+            Section {
+                HStack(spacing: 10) {
+                    Button {
+                        activeSheet = .browse
+                    } label: {
+                        Label("Browse Plugins…", systemImage: "magnifyingglass")
+                    }
+                    .settingsActionTint(theme)
+                    Button {
+                        activeSheet = .install(initialSource: nil)
+                    } label: {
+                        Label("Install Plugin…", systemImage: "plus")
+                    }
+                    .settingsActionTint(theme)
+                }
+                if let actionError {
+                    Label(actionError, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
         .settingsPaneFormStyle(theme)
         .background {
             if !theme.isSystem { theme.windowBackground }
+        }
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .install(let initialSource):
+                PluginInstallSheet(
+                    initialSource: initialSource,
+                    discover: { source in
+                        try await localClient.discoverRemotePlugin(source: source)
+                    },
+                    onInstall: { source in
+                        do {
+                            _ = try await localClient.importRemotePlugin(source: source)
+                            actionError = nil
+                        } catch {
+                            actionError = ErrorReporter.userFacingMessage(for: error)
+                            throw error
+                        }
+                    }
+                )
+            case .browse:
+                PluginRegistryBrowseSheet(
+                    fetchRegistry: { try await localClient.fetchPluginRegistry(query: nil) },
+                    installedIds: [],
+                    onInstall: { entry in
+                        // The registry only discovers; installing goes
+                        // through the consent flow with the entry's repo.
+                        activeSheet = .install(initialSource: entry.repo)
+                    }
+                )
+            }
         }
     }
 

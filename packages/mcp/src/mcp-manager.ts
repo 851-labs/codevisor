@@ -549,8 +549,14 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       }
       const stored = secrets(server)
       const client = new Client({ name: "Codevisor", version: "0.1.0" }, { capabilities: {} })
-      /* v8 ignore next -- OAuth access tokens are supplied by the live OAuth adapter above. */
-      const accessToken = stored.bearerToken ?? stored.oauth?.tokens?.access_token
+      // An empty bearer token is NO token — `""` must never shadow the
+      // OAuth access token a sync import delivered (PostHog answers an
+      // empty Authorization header with "No token provided" forever).
+      const bearer =
+        stored.bearerToken === undefined || stored.bearerToken === ""
+          ? undefined
+          : stored.bearerToken
+      const accessToken = bearer ?? stored.oauth?.tokens?.access_token
       const transport =
         server.transport === "stdio"
           ? new StdioClientTransport({
@@ -676,7 +682,10 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       const stored: StoredSecrets = {
         ...(request.env === undefined ? {} : { env: request.env }),
         ...(request.headers === undefined ? {} : { headers: request.headers }),
-        ...(request.bearerToken === undefined ? {} : { bearerToken: request.bearerToken }),
+        // "" is the editor's untouched field, not a credential.
+        ...(request.bearerToken === undefined || request.bearerToken === ""
+          ? {}
+          : { bearerToken: request.bearerToken }),
         ...(authType !== "oauth"
           ? {}
           : {

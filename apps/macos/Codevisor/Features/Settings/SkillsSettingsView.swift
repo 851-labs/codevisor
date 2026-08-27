@@ -13,10 +13,36 @@ struct SkillsSettingsView: View {
     /// guessing from reachability.
     @State private var scannedSkillsByMachine: [String: Set<String>] = [:]
 
+    @State private var showingCreate = false
+    @State private var showingRemoteImport = false
+    @State private var actionError: String?
+
+    /// Fleet-level skill creation lands on the local machine; the ferry
+    /// carries the content everywhere else.
+    private var localClient: any CodevisorServerClienting {
+        environment.machines.client(for: CodevisorMachine.local.id)
+    }
+
     var body: some View {
         Form {
             MachineListSection(pane: .skills, badge: badge) { machine in
                 SkillMachinePane(machine: machine)
+            }
+            Section {
+                HStack(spacing: 10) {
+                    Button {
+                        showingCreate = true
+                    } label: {
+                        Label("New Skill…", systemImage: "plus")
+                    }
+                    .settingsActionTint(theme)
+                    Button("Import Skills…") { showingRemoteImport = true }
+                        .settingsActionTint(theme)
+                }
+                if let actionError {
+                    Label(actionError, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .settingsPaneFormStyle(theme)
@@ -24,6 +50,40 @@ struct SkillsSettingsView: View {
             if !theme.isSystem { theme.windowBackground }
         }
         .task(id: environment.machines.allMachines.map(\.id)) { await scanAllMachines() }
+        .sheet(isPresented: $showingCreate) {
+            SkillCreateSheet { name, description, pasted in
+                do {
+                    _ = try await localClient.createSkill(
+                        name: name,
+                        description: description,
+                        content: pasted
+                    )
+                    actionError = nil
+                } catch {
+                    actionError = ErrorReporter.userFacingMessage(for: error)
+                    throw error
+                }
+            }
+        }
+        .sheet(isPresented: $showingRemoteImport) {
+            SkillRemoteImportSheet(
+                discover: { source in
+                    try await localClient.discoverRemoteSkills(source: source)
+                },
+                onImport: { source, skillNames in
+                    do {
+                        _ = try await localClient.importRemoteSkill(
+                            source: source,
+                            skillNames: skillNames
+                        )
+                        actionError = nil
+                    } catch {
+                        actionError = ErrorReporter.userFacingMessage(for: error)
+                        throw error
+                    }
+                }
+            )
+        }
     }
 
     /// The badge tells the truth per machine: a machine missing skills the
