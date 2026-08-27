@@ -35,6 +35,27 @@ public enum McpFleet {
         return result
     }
 
+    /// One machine's report about one server — the per-ITEM view the
+    /// fleet-first settings rows render (Phase 27a).
+    public struct MachineStatus: Identifiable, Equatable, Sendable {
+        public let machineId: String
+        public let state: String
+        public let reason: String?
+        public var id: String { machineId }
+    }
+
+    /// serverName → each machine's report of it, sorted by machine id.
+    public static func readinessByServer(_ sync: ConfigSync) -> [String: [MachineStatus]] {
+        var result: [String: [MachineStatus]] = [:]
+        for (machineId, rows) in readiness(sync) {
+            for row in rows {
+                result[row.name, default: []].append(
+                    MachineStatus(machineId: machineId, state: row.state, reason: row.reason))
+            }
+        }
+        return result.mapValues { $0.sorted { $0.machineId < $1.machineId } }
+    }
+
     static func disableKey(machineId: String, name: String) -> String {
         "enable|\(machineId)|\(name)"
     }

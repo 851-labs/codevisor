@@ -196,6 +196,9 @@ struct McpSettingsView: View {
                 Section {
                     ForEach(builtInServers) { server in
                         serverRow(server)
+                        if settingsMachineId == nil {
+                            McpServerMachineStatus(serverName: server.name)
+                        }
                     }
                 } header: {
                     Text("Built-in Tools")
@@ -212,6 +215,9 @@ struct McpSettingsView: View {
                 } else {
                     ForEach(managedServers) { server in
                         serverRow(server)
+                        if settingsMachineId == nil {
+                            McpServerMachineStatus(serverName: server.name)
+                        }
                     }
                 }
                 Button {
@@ -222,11 +228,17 @@ struct McpSettingsView: View {
                 .settingsActionTint(theme)
             } header: {
                 Text("MCP Servers")
+            } footer: {
+                if settingsMachineId == nil {
+                    Text(
+                        "MCP servers are shared by your whole fleet. Servers found inside a machine's harnesses live on that machine's page."
+                    )
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                }
             }
 
-            McpMachinesSection()
-
-            if !importCandidates.isEmpty || importFeedback != nil {
+            if settingsMachineId != nil, !importCandidates.isEmpty || importFeedback != nil {
                 Section {
                     ForEach(importCandidates) { candidate in
                         importCandidateRow(candidate)
@@ -249,7 +261,7 @@ struct McpSettingsView: View {
                 }
             }
 
-            if hasNativeContent || lastNativeRemoval != nil {
+            if settingsMachineId != nil, hasNativeContent || lastNativeRemoval != nil {
                 Section {
                     SettingsDisclosureRow(
                         "Installed in your harnesses (\(nativeServerCount))",

@@ -64,7 +64,7 @@ struct SettingsSheet: View {
                         Label("Agents", systemImage: "cpu")
                     }
                     NavigationLink {
-                        McpSettingsScreen(client: machines.client(for: machines.selectedMachineId))
+                        McpSettingsScreen(serverId: machines.selectedMachineId)
                     } label: {
                         Label("MCPs", systemImage: "puzzlepiece.extension")
                     }
