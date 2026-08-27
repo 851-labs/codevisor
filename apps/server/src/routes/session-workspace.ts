@@ -1,4 +1,4 @@
-import type { AgentSessionMetadata } from "@codevisor/agent-runtime"
+import type { AgentSessionMetadata, HarnessAccountContext } from "@codevisor/agent-runtime"
 import { randomUUID } from "node:crypto"
 import type {
   CreateSessionRequest,
@@ -312,13 +312,29 @@ export const ensureAgentSessionFor = async (
   serverId: string,
   sessionId: string
 ): Promise<AgentSessionMetadata> => {
-  const session = await run(services.db.getSessionSummary(sessionId))
+  let session = await run(services.db.getSessionSummary(sessionId))
   const project = await getProjectOrFail(services.db, session.projectId)
   const cwd = await resolveSessionCwdOrFail(services, serverId, project, session.worktreeName)
-  const accountContext =
-    session.harnessAccountId === undefined
-      ? await services.auth?.activeAccountContext(session.harnessId)
-      : await services.auth?.accountContext(session.harnessAccountId)
+  let accountContext: HarnessAccountContext | undefined
+  if (services.auth === undefined || session.harnessAccountId === undefined) {
+    accountContext = await services.auth?.activeAccountContext(session.harnessId)
+  } else {
+    try {
+      accountContext = await services.auth.accountContext(session.harnessAccountId)
+    } catch {
+      // Policy, not a fallback: a chat follows a working account, preferring
+      // its pin. The pinned account is used while it can authenticate; once it
+      // is dead (signed out, expired, removed) the session rebinds to the
+      // machine's usable active account and the turn continues under it, so a
+      // chat never keeps burning a dead account while a working one sits idle.
+      // Without a usable active account the turn still fails with 409 below.
+      accountContext = await services.auth.activeAccountContext(session.harnessId)
+      if (accountContext !== undefined && accountContext.id !== session.harnessAccountId) {
+        session = await run(services.db.bindSessionHarnessAccount(session.id, accountContext.id))
+        await appendAndPublish(services.db, fanout, "session.updated", session.id, session)
+      }
+    }
+  }
   /* v8 ignore next -- authenticated and blocked session-resume paths are integration-tested. */
   if (services.auth !== undefined && accountContext === undefined) {
     throw new HttpFailure(409, "Select a signed-in harness account before continuing this session")

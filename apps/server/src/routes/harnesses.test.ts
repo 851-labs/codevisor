@@ -479,6 +479,128 @@ describe("harness routes", () => {
     )
   })
 
+  it("rebinds a session pinned to a dead account when a working account is active", async () => {
+    const { services } = await makeServices("server-a")
+    const baseAccount = {
+      harnessId: "codex",
+      profileKind: "managed" as const,
+      canLogin: true,
+      canLogout: true
+    }
+    for (const [id, authState] of [
+      ["dead-account", "expired"],
+      ["flaky-account", "expired"],
+      ["active-account", "authenticated"]
+    ] as const) {
+      await run(
+        services.db.saveHarnessAccount({
+          ...baseAccount,
+          id,
+          profileKey: id,
+          label: id,
+          authState
+        })
+      )
+    }
+    let activeContext: { id: string; profileKind: "default" } | undefined = {
+      id: "active-account",
+      profileKind: "default"
+    }
+    const auth = {
+      accountContext: vi.fn(async (id: string) => {
+        if (id === "active-account") return { id, profileKind: "default" as const }
+        throw new Error("Harness account requires sign-in")
+      }),
+      activeAccountContext: vi.fn(async () => activeContext),
+      markAccountExpired: vi.fn(async () => undefined),
+      subscribe: () => () => undefined
+    } as unknown as HarnessAuthManager
+    const server = await startWithApp({ ...services, auth })
+    runningServers.push(server)
+
+    const projectFolder = mkdtempSync(join(tmpdir(), "codevisor-rebind-project-"))
+    tempDirs.push(projectFolder)
+    const project = (
+      await jsonRequest(server, "/v1/projects", {
+        method: "POST",
+        body: JSON.stringify({ folderPath: projectFolder })
+      })
+    ).body as { id: string }
+
+    // The pinned account cannot authenticate but the active account can: the
+    // session follows the working account and the rebind reaches the fanout.
+    const pinned = await run(
+      services.db.createSession({
+        projectId: project.id,
+        harnessId: "codex",
+        harnessAccountId: "dead-account",
+        agentSessionId: ""
+      })
+    )
+    await jsonRequest(server, `/v1/sessions/${pinned.id}/prompt`, {
+      method: "POST",
+      body: JSON.stringify({ text: "rebind me" })
+    })
+    await waitFor(
+      async () =>
+        (await run(services.db.getSessionSummary(pinned.id))).harnessAccountId === "active-account"
+    )
+    await waitFor(async () =>
+      (await run(services.db.listSubjectEvents(pinned.id))).some(
+        (event) =>
+          event.kind === "session.updated" &&
+          typeof event.payload === "object" &&
+          event.payload !== null &&
+          "harnessAccountId" in event.payload &&
+          event.payload.harnessAccountId === "active-account"
+      )
+    )
+
+    // The active account IS the pin (an inconsistent probe): nothing to
+    // rebind, the pin stays and the turn runs under the active context.
+    activeContext = { id: "flaky-account", profileKind: "default" }
+    const samePin = await run(
+      services.db.createSession({
+        projectId: project.id,
+        harnessId: "codex",
+        harnessAccountId: "flaky-account",
+        agentSessionId: ""
+      })
+    )
+    await jsonRequest(server, `/v1/sessions/${samePin.id}/prompt`, {
+      method: "POST",
+      body: JSON.stringify({ text: "keep my pin" })
+    })
+    await waitFor(async () => (await run(services.db.listPromptQueue(samePin.id))).length === 0)
+    expect((await run(services.db.getSessionSummary(samePin.id))).harnessAccountId).toBe(
+      "flaky-account"
+    )
+
+    // No usable account anywhere: the session keeps its dead pin and the
+    // prompt still fails with the sign-in error.
+    activeContext = undefined
+    const stranded = await run(
+      services.db.createSession({
+        projectId: project.id,
+        harnessId: "codex",
+        harnessAccountId: "dead-account",
+        agentSessionId: ""
+      })
+    )
+    await jsonRequest(server, `/v1/sessions/${stranded.id}/prompt`, {
+      method: "POST",
+      body: JSON.stringify({ text: "stranded" })
+    })
+    await waitFor(async () =>
+      (await run(services.db.listSubjectEvents(stranded.id))).some(
+        (event) => event.kind === "session.error"
+      )
+    )
+    expect((await run(services.db.getSessionSummary(stranded.id))).harnessAccountId).toBe(
+      "dead-account"
+    )
+  })
+
   describe("custom harness routes", () => {
     const makeStore = () => {
       const replaced: Array<ReadonlyArray<unknown>> = []
