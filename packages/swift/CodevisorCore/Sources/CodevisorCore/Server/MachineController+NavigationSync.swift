@@ -109,7 +109,8 @@ extension MachineController {
         stopEventSync(for: machineId)
         guard machineId == selectedMachine.id else { return }
         let client = client(for: machineId)
-        connection(for: machineId).navigationSyncState = .catchingUp
+        // The sync path owns the blocking state; writing it here too raced
+        // an in-flight sync's terminal write and could strand the spinner.
         Task { [weak self] in
             await self?.synchronizeNavigationState(
                 serverId: machineId,
@@ -249,11 +250,24 @@ extension MachineController {
         presentation: NavigationSyncPresentation
     ) async {
         guard serverId == selectedMachine.id else { return }
-        if navigationSyncMachineId == serverId, let navigationSyncTask {
+        if navigationSyncMachineId == serverId, let existing = navigationSyncTask {
             if presentation == .catchUp {
                 connection(for: serverId).navigationSyncState = .catchingUp
             }
-            await navigationSyncTask.value
+            await existing.value
+            // The joined task's terminal write can race the blocking write
+            // above (it may already be past its state-set when we joined).
+            // A blocking state must never be left displayed with no task
+            // running to clear it — re-enter once with the field clear.
+            if navigationSyncTask == nil,
+                connection(for: serverId).navigationSyncState == .catchingUp
+            {
+                await synchronizeNavigationState(
+                    serverId: serverId,
+                    client: client,
+                    presentation: presentation
+                )
+            }
             return
         }
 
@@ -270,7 +284,19 @@ extension MachineController {
         navigationSyncMachineId = serverId
         navigationSyncToken = token
         navigationSyncTask = task
+        // The spinner must never outlive the wait: a catch-up wedged on a
+        // half-open transport hangs rather than fails, so a deadline cancels
+        // it and demotes to stale — cached rows plus retry, not a spinner.
+        let watchdog = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(30))
+            guard let self, !Task.isCancelled, self.navigationSyncToken == token else { return }
+            task.cancel()
+            self.connection(for: serverId).navigationSyncState = .stale(
+                "Timed out syncing with this machine."
+            )
+        }
         await task.value
+        watchdog.cancel()
         if navigationSyncToken == token {
             navigationSyncMachineId = nil
             navigationSyncToken = nil

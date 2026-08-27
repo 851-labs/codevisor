@@ -35,6 +35,9 @@ public final class MachineConnection {
     /// detection compares against this, so an unreachable gap between
     /// probes never masks a direct↔relay change.
     @ObservationIgnored var lastKnownRoute: MachineRoute?
+    /// A scheduled stream re-home waiting out a route flap; replaced by
+    /// every newer flip so a burst settles into exactly one reroute.
+    @ObservationIgnored var pendingRerouteTask: Task<Void, Never>?
     /// Guards one background connect at a time per machine.
     @ObservationIgnored var backgroundConnectInFlight = false
     /// Consecutive background stream failures, for reconnect backoff. Reset

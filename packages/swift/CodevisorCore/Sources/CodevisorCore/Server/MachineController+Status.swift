@@ -119,7 +119,16 @@ extension MachineController {
         let known = connection.lastKnownRoute
         connection.lastKnownRoute = newRoute
         guard let known, known != newRoute else { return }
-        rerouteStreams(for: id)
-        onMachineRouteChanged?(id)
+        // Coalesce: a flapping probe (LAN and relay trading places) must not
+        // tear the streams down once per flip. The last flip in a burst wins
+        // and triggers exactly one re-home.
+        connection.pendingRerouteTask?.cancel()
+        connection.pendingRerouteTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            guard let self, !Task.isCancelled else { return }
+            connection.pendingRerouteTask = nil
+            self.rerouteStreams(for: id)
+            self.onMachineRouteChanged?(id)
+        }
     }
 }

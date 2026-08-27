@@ -491,15 +491,16 @@ struct HomeView: View {
     private func refreshableState<Content: View>(
         @ViewBuilder content: @escaping () -> Content
     ) -> some View {
-        GeometryReader { proxy in
-            ScrollView {
-                content()
-                    .frame(maxWidth: .infinity)
-                    .frame(minHeight: proxy.size.height)
-            }
-            .refreshable {
-                await refreshNavigation()
-            }
+        ScrollView {
+            content()
+                .frame(maxWidth: .infinity)
+                // Exactly the visible height: the state stays centered and
+                // the only scroll left is the rubber-band pull-to-refresh
+                // needs — no phantom scrolling past an empty page.
+                .containerRelativeFrame(.vertical)
+        }
+        .refreshable {
+            await refreshNavigation()
         }
     }
 
