@@ -45,11 +45,18 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     }
 }
 
+/// A place in Settings: the sidebar section plus any machine pages pushed
+/// over it. The unit of the router's back/forward history — pushes are
+/// history steps, so Back always retraces exactly one page.
+struct SettingsLocation: Equatable {
+    var tab: SettingsTab
+    var panePath: [MachinePaneRoute]
+}
+
 /// Routes programmatic Settings navigation (e.g. the sidebar's
-/// "Manage machines…" opens Settings on the Machines section). Navigation
-/// is scoped: the sidebar switches tabs, and each tab's machine pages ride
-/// its own NavigationStack with the native back button — no cross-tab
-/// history.
+/// "Manage machines…" opens Settings on the Machines section) and keeps
+/// the Xcode-style back/forward history over every visited page — sidebar
+/// selections and pushed machine pages alike.
 @MainActor
 @Observable
 final class SettingsRouter {
@@ -57,7 +64,54 @@ final class SettingsRouter {
     var selectedTab: SettingsTab = .general
     /// Machine pages pushed over the current pane (list row → machine page).
     var panePath: [MachinePaneRoute] = []
+    /// Pages behind and ahead of the current one. Every navigation —
+    /// sidebar selection, push, pop, deep link — lands the previous page in
+    /// `backHistory`; going back moves the current page to
+    /// `forwardHistory` (cleared again by the next normal navigation, like
+    /// a browser).
+    private(set) var backHistory: [SettingsLocation] = []
+    private(set) var forwardHistory: [SettingsLocation] = []
+    /// Set while back/forward applies a location. Applying can change tab
+    /// and path in separate observation firings, so the recorder swallows
+    /// EVERY change until the observed location equals this target —
+    /// a one-shot flag here is exactly how Back used to jump two pages.
+    @ObservationIgnored var pendingAppliedLocation: SettingsLocation?
+
+    var currentLocation: SettingsLocation {
+        SettingsLocation(tab: selectedTab, panePath: panePath)
+    }
+
+    var canGoBack: Bool { !backHistory.isEmpty }
+    var canGoForward: Bool { !forwardHistory.isEmpty }
+
+    /// Files the page just left into the back history. Called by the view's
+    /// change observer for every user navigation.
+    func recordNavigation(from previous: SettingsLocation) {
+        backHistory.append(previous)
+        if backHistory.count > 50 { backHistory.removeFirst() }
+        forwardHistory.removeAll()
+    }
+
+    func goBack() {
+        guard let target = backHistory.popLast() else { return }
+        forwardHistory.append(currentLocation)
+        apply(target)
+    }
+
+    func goForward() {
+        guard let target = forwardHistory.popLast() else { return }
+        backHistory.append(currentLocation)
+        apply(target)
+    }
+
+    private func apply(_ location: SettingsLocation) {
+        pendingAppliedLocation = location
+        selectedTab = location.tab
+        panePath = location.panePath
+    }
+
     func showMachines() {
+        panePath = []
         selectedTab = .machines
     }
 
@@ -66,12 +120,14 @@ final class SettingsRouter {
     /// machineId is accepted for callers that have one but changes nothing.
     func showHarnesses(machineId: String? = nil) {
         _ = machineId
+        panePath = []
         selectedTab = .agents
     }
 
     /// Opens the Plugins pane; same machine-first shape as showHarnesses.
     func showPlugins(machineId: String? = nil) {
         _ = machineId
+        panePath = []
         selectedTab = .plugins
     }
 
@@ -80,6 +136,55 @@ final class SettingsRouter {
     /// and opens the install sheet — discover→consent still runs; a link can
     /// never skip the consent step.
     var pendingPluginInstallSource: String?
+}
+
+/// The native back/forward control (System Settings, Xcode): a `ControlGroup`
+/// in the navigation control-group style. AppKit draws the grouped capsule,
+/// divider, sizing, and disabled dimming.
+private struct SettingsBackForwardControl: View {
+    @Bindable private var router = SettingsRouter.shared
+
+    var body: some View {
+        ControlGroup {
+            Button {
+                router.goBack()
+            } label: {
+                Label("Back", systemImage: "chevron.left")
+            }
+            .disabled(!router.canGoBack)
+            .help("Back")
+            .keyboardShortcut("[", modifiers: .command)
+
+            Button {
+                router.goForward()
+            } label: {
+                Label("Forward", systemImage: "chevron.right")
+            }
+            .disabled(!router.canGoForward)
+            .help("Forward")
+            .keyboardShortcut("]", modifiers: .command)
+        }
+        .controlGroupStyle(.navigation)
+    }
+}
+
+/// Puts the back/forward control in the window toolbar. Applied to every
+/// page in the detail column — the root panes and each pushed machine page —
+/// so the control is always present.
+private struct SettingsNavigationToolbar: ViewModifier {
+    func body(content: Content) -> some View {
+        content.toolbar {
+            ToolbarItem(placement: .navigation) {
+                SettingsBackForwardControl()
+            }
+        }
+    }
+}
+
+extension View {
+    fileprivate func settingsNavigationToolbar() -> some View {
+        modifier(SettingsNavigationToolbar())
+    }
 }
 
 /// The machine a Settings subtree is scoped to. Set at the root of each
@@ -127,11 +232,24 @@ struct SettingsView: View {
         } detail: {
             NavigationStack(path: $router.panePath) {
                 detailRoot
+                    .settingsNavigationToolbar()
                     .navigationDestination(for: MachinePaneRoute.self) { route in
                         machinePage(for: route)
                     }
             }
             .themedToolbarBackground(theme, role: .content)
+        }
+        // Every navigation (sidebar selection, push, pop, deep link) files
+        // the previous page into the history. While back/forward applies a
+        // location, every intermediate firing is swallowed until the
+        // observed location matches the target — recording those would make
+        // the next Back jump multiple pages.
+        .onChange(of: router.currentLocation) { previous, current in
+            if let pending = router.pendingAppliedLocation {
+                if current == pending { router.pendingAppliedLocation = nil }
+                return
+            }
+            router.recordNavigation(from: previous)
         }
         .frame(minWidth: 780, idealWidth: 780, minHeight: 560, idealHeight: 560)
         // One-row toolbar with the back button and title inline (the Settings
@@ -212,6 +330,8 @@ extension SettingsView {
         .settingsPaneFormStyle(theme)
         .navigationTitle(machine.name)
         .environment(\.settingsMachineId, machine.id)
+        .navigationBarBackButtonHidden(true)
+        .settingsNavigationToolbar()
     }
 }
 
