@@ -62,6 +62,7 @@ export interface McpGatewayDeps {
   readonly config: McpManagerConfig
   readonly connectUpstream: (id: string) => Promise<UpstreamConnection>
   readonly gateways: Map<string, GatewayRuntime>
+  readonly isSuppressed: (name: string) => boolean
   readonly record: (id: string) => Promise<McpServerRecord>
 }
 
@@ -74,6 +75,7 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
     config,
     connectUpstream,
     gateways,
+    isSuppressed,
     record
   } = deps
 
@@ -83,7 +85,13 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
     gatewayServerAllowed,
     integrationInventory,
     searchCatalog
-  } = makeGatewayCatalog({ automationProviders, codevisorProvider, config, connectUpstream })
+  } = makeGatewayCatalog({
+    automationProviders,
+    codevisorProvider,
+    config,
+    connectUpstream,
+    isSuppressed
+  })
 
   /// Invokes one plugin tool, resolving the calling session's cwd so plugins
   /// can scope per-project state.

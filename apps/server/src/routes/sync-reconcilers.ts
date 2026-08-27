@@ -5,8 +5,7 @@ import {
   MCPS_SYNC_NAMESPACE,
   PLUGIN_READINESS_NAMESPACE,
   publishAccountsRoster,
-  publishHarnessReadiness,
-  publishPluginReadiness,
+  publishMachineReadiness,
   reconcileMcps,
   type HarnessReadinessRow,
   type PluginReadinessRow
@@ -72,12 +71,10 @@ export const reconcileForNamespace = async (
     case "mcps": {
       const mcp = services.mcp
       if (mcp === undefined) return undefined
-      const overlays = await readMcpOverlays(services.db, config.id)
       return reconcileMcps({
         db: services.db,
         mcp,
-        serverId: config.id,
-        excludedByAffinity: overlays.excluded
+        serverId: config.id
       })
     }
     case "harnesses": {
@@ -266,10 +263,11 @@ export const refreshHarnessReadiness = async (
       const reason = state === "notInstalled" ? harness.readiness.detail : undefined
       return { id: harness.id, state, ...(reason ? { reason } : {}) }
     })
-    const result = await publishHarnessReadiness({
+    const result = await publishMachineReadiness({
       db: services.db,
-      rows,
-      serverId: config.id
+      namespace: HARNESS_READINESS_NAMESPACE,
+      serverId: config.id,
+      value: { harnesses: rows.toSorted((a, b) => a.id.localeCompare(b.id)) }
     })
     if (result.changedEntries.length > 0) {
       void appendAndPublish(services.db, fanout, "sync.changed", HARNESS_READINESS_NAMESPACE, {
@@ -320,7 +318,12 @@ export const refreshPluginReadiness = async (
         ...(reason === undefined ? {} : { reason })
       })
     }
-    const result = await publishPluginReadiness({ db: services.db, rows, serverId: config.id })
+    const result = await publishMachineReadiness({
+      db: services.db,
+      namespace: PLUGIN_READINESS_NAMESPACE,
+      serverId: config.id,
+      value: { plugins: rows.toSorted((a, b) => a.id.localeCompare(b.id)) }
+    })
     if (result.changedEntries.length > 0) {
       void appendAndPublish(services.db, fanout, "sync.changed", PLUGIN_READINESS_NAMESPACE, {
         namespace: PLUGIN_READINESS_NAMESPACE,

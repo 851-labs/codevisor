@@ -174,11 +174,6 @@ export interface McpSyncDeps {
   readonly mcp: McpManager
   readonly serverId: string
   readonly now?: () => number
-  /// Affinity enforcement (Phase 17): names pinned to machines that do NOT
-  /// include this one are never materialized here — an existing local copy
-  /// is removed WITHOUT tombstoning the fleet, and only after its state
-  /// (including local edits) has published. Wired from readMcpOverlays.
-  readonly excludedByAffinity?: ReadonlySet<string>
 }
 
 export interface McpSyncResult {
@@ -291,19 +286,6 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
     }
     const wanted = parseSyncedValue(entry.value)
     if (wanted === undefined) continue
-    if (deps.excludedByAffinity?.has(name) === true) {
-      // Safe to drop the local copy: the publish loop above already sent
-      // any local edit (including divergent ones) into the replica, so
-      // exclusion removes the materialization, never the state.
-      if (local !== undefined) {
-        await deps.mcp.remove(local.id)
-        appliedWrites.push({ key: name, value: null, deleted: true, timestamp: stamp() })
-        appliedByKey.delete(name)
-        localByName.delete(name)
-        removed.push(name)
-      }
-      continue
-    }
     // OAuth material imports BEFORE the fingerprint skip: the mirror's
     // publish loop grafts the envelope into its applied fingerprint, so
     // fp equality cannot mean the material itself was adopted. The import
@@ -398,31 +380,26 @@ export interface HarnessReadinessRow {
   readonly reason?: string | undefined
 }
 
-/// Publishes this machine's per-harness condition (Phase 24) — the
-/// REPORTED side of the desired-vs-reported matrix, mirroring
-/// mcp-readiness: one single-writer entry keyed by server id,
-/// change-detected so a settled machine publishes nothing. Rows are
-/// computed by the caller (they need the decorated catalog); this layer
-/// only owns the entry shape and the merge.
-export const publishHarnessReadiness = async (deps: {
+/// The one readiness publisher every plane shares: one single-writer entry
+/// keyed by this machine's server id, change-detected so a settled machine
+/// republishes nothing. Callers derive the plane-specific value (they need
+/// the live manager state); this layer owns only the merge.
+export const publishMachineReadiness = async (deps: {
   readonly db: CodevisorDatabaseService
+  readonly namespace: string
   readonly serverId: string
-  readonly rows: ReadonlyArray<HarnessReadinessRow>
+  readonly value: object
   readonly now?: () => number
 }): Promise<{ readonly changedEntries: ReadonlyArray<SyncEntryRecord> }> => {
   const now = deps.now ?? Date.now
-  const harnesses = deps.rows.toSorted((a, b) => a.id.localeCompare(b.id))
-  const replica = await run(deps.db.getSyncEntries(HARNESS_READINESS_NAMESPACE))
+  const replica = await run(deps.db.getSyncEntries(deps.namespace))
   const existing = replica.find((entry) => entry.key === deps.serverId)
-  const value = { harnesses }
-  if (existing !== undefined && JSON.stringify(existing.value) === JSON.stringify(value)) {
+  if (existing !== undefined && JSON.stringify(existing.value) === JSON.stringify(deps.value)) {
     return { changedEntries: [] }
   }
   const timestamp = nextSyncTimestamp(deps.serverId, latestSyncTimestamp(replica), now())
   const result = await run(
-    deps.db.mergeSyncEntries(HARNESS_READINESS_NAMESPACE, [
-      { key: deps.serverId, value, timestamp }
-    ])
+    deps.db.mergeSyncEntries(deps.namespace, [{ key: deps.serverId, value: deps.value, timestamp }])
   )
   return { changedEntries: result.changed }
 }
@@ -433,30 +410,6 @@ export interface PluginReadinessRow {
   readonly id: string
   readonly state: "ready" | "disabled" | "notInstalled" | "blocked" | "machineOnly"
   readonly reason?: string | undefined
-}
-
-/// Publishes this machine's per-plugin condition (Phase 24) — the third
-/// instance of the readiness pattern. Rows are computed by the caller;
-/// this layer owns the entry shape, sorting, and the change-detected merge.
-export const publishPluginReadiness = async (deps: {
-  readonly db: CodevisorDatabaseService
-  readonly serverId: string
-  readonly rows: ReadonlyArray<PluginReadinessRow>
-  readonly now?: () => number
-}): Promise<{ readonly changedEntries: ReadonlyArray<SyncEntryRecord> }> => {
-  const now = deps.now ?? Date.now
-  const plugins = deps.rows.toSorted((a, b) => a.id.localeCompare(b.id))
-  const replica = await run(deps.db.getSyncEntries(PLUGIN_READINESS_NAMESPACE))
-  const existing = replica.find((entry) => entry.key === deps.serverId)
-  const value = { plugins }
-  if (existing !== undefined && JSON.stringify(existing.value) === JSON.stringify(value)) {
-    return { changedEntries: [] }
-  }
-  const timestamp = nextSyncTimestamp(deps.serverId, latestSyncTimestamp(replica), now())
-  const result = await run(
-    deps.db.mergeSyncEntries(PLUGIN_READINESS_NAMESPACE, [{ key: deps.serverId, value, timestamp }])
-  )
-  return { changedEntries: result.changed }
 }
 
 export const publishAccountsRoster = async (

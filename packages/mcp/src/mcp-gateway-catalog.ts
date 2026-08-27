@@ -14,6 +14,12 @@ export interface GatewayCatalogDeps {
   readonly codevisorProvider: AutomationToolProvider
   readonly config: McpManagerConfig
   readonly connectUpstream: (id: string) => Promise<UpstreamConnection>
+  /// Machine-local suppression (the per-machine disable overlay). The
+  /// catalog consults it everywhere it consults `enabled`: a suppressed
+  /// server is not advertised, not listed, and not callable — including
+  /// built-in automation providers, which never pass through
+  /// `connectUpstream` and would otherwise leak their tools.
+  readonly isSuppressed: (name: string) => boolean
 }
 
 export const executeToolDescription = (inventory: string): string =>
@@ -27,7 +33,7 @@ export const executeToolDescription = (inventory: string): string =>
 /// exist (MCP servers, automation providers, plugin tools), how they are
 /// advertised (the inventory string), and how paths resolve to definitions.
 export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
-  const { automationProviders, codevisorProvider, config, connectUpstream } = deps
+  const { automationProviders, codevisorProvider, config, connectUpstream, isSuppressed } = deps
 
   const listPluginTools = (): Promise<ReadonlyArray<Tool>> =>
     pluginToolDefinitions(config.pluginTools)
@@ -36,7 +42,7 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
     const names = [
       "Codevisor",
       ...(await run(config.db.resolveMcpServers(projectId, sessionId)))
-        .filter((server) => server.enabled)
+        .filter((server) => server.enabled && !isSuppressed(server.name))
         .map((server) => server.name.trim())
         .filter((name) => name.length > 0)
     ].sort((left, right) => left.localeCompare(right))
@@ -59,7 +65,7 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
     sessionId?: string
   ): Promise<ReadonlyArray<{ server: CatalogServer; tool: Tool }>> => {
     const enabled = (await run(config.db.resolveMcpServers(projectId, sessionId))).filter(
-      (server) => server.enabled
+      (server) => server.enabled && !isSuppressed(server.name)
     )
     const results = await Promise.allSettled(
       enabled.map(async (server) => {
@@ -90,7 +96,7 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
   ): Promise<boolean> =>
     serverId === "codevisor" ||
     (await run(config.db.resolveMcpServers(projectId, sessionId))).some(
-      (candidate) => candidate.id === serverId && candidate.enabled
+      (candidate) => candidate.id === serverId && candidate.enabled && !isSuppressed(candidate.name)
     )
 
   const searchCatalog = async (

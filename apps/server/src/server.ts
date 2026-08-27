@@ -36,6 +36,7 @@ import { routeFs } from "./routes/fs.js"
 import { discoverCapabilities, routeHarnesses } from "./routes/harnesses.js"
 import { routeMcps, routeMcpScopes, routeNativeMcps } from "./routes/mcps.js"
 import { routeProjects } from "./routes/projects.js"
+import { readMcpOverlays } from "./infra/mcp-fleet.js"
 import { refreshHarnessReadiness, republishAccountsRoster } from "./routes/sync-reconcilers.js"
 import {
   drainPromptQueue,
@@ -188,6 +189,16 @@ export const makeCodevisorServerApp = (
       void drainPromptQueue(services, fanout, routeState, config.id, sessionId).catch(swallowError)
     }
   })
+  // Suppression is enforcement state, not cache: the per-machine disable
+  // overlays live in the sync replica, so a restarted server must re-apply
+  // them before any session asks for tools. Enforcement only — the durable
+  // readiness entry republishes on its usual triggers, not at boot.
+  const mcpAtBoot = services.mcp
+  if (mcpAtBoot !== undefined) {
+    void readMcpOverlays(services.db, config.id)
+      .then((overlays) => mcpAtBoot.setLocalSuppression(overlays.disabledHere))
+      .catch(swallowError)
+  }
   // A rotated OAuth token republishes immediately: the refresh owner's
   // config plane must carry the new material before any mirror's old
   // access token expires.

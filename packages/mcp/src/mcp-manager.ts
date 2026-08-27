@@ -263,7 +263,11 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
     if (config.syncManagedSkills === undefined) return
     await config.syncManagedSkills(
       managedAutomationSkills(
-        new Set(records.filter((record) => record.enabled).map((record) => record.id))
+        new Set(
+          records
+            .filter((record) => record.enabled && !locallySuppressed.has(record.name))
+            .map((record) => record.id)
+        )
       )
     )
   }
@@ -611,6 +615,7 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       config,
       connectUpstream,
       gateways,
+      isSuppressed: (name) => locallySuppressed.has(name),
       record
     })
 
@@ -816,6 +821,9 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
         }
       }
       await refreshGatewayInventories()
+      // Machine-disabling a built-in (Computer Use) must also retract its
+      // managed skill; re-derive from the store now that suppression changed.
+      await syncManagedAutomationSkillsFromDb()
     },
     staticSecrets: async (id) => {
       const stored = secrets(await record(id))

@@ -1109,4 +1109,21 @@ describe("local suppression", () => {
     expect((await manager.resolved()).some((server) => server.name === "Suppressible")).toBe(true)
     expect((await manager.connect(created.id)).connectionState).toBe("connected")
   })
+
+  it("hides a suppressed built-in provider's tools from the catalog", async () => {
+    // Built-ins never pass through connectUpstream, so without an explicit
+    // catalog check a machine-disabled Computer Use would keep advertising
+    // its tools to every session.
+    const { manager } = await testManager()
+    const computer = (await manager.list()).find((server) => server.kind === "computerUse")
+    if (computer === undefined) throw new Error("computer use provider missing")
+
+    const before = await manager.tools(undefined)
+    await manager.setLocalSuppression(new Set([computer.name]))
+    const suppressed = await manager.tools(undefined)
+    expect(suppressed.some((tool) => tool.serverId === computer.id)).toBe(false)
+
+    await manager.setLocalSuppression(new Set())
+    expect((await manager.tools(undefined)).length).toBe(before.length)
+  })
 })

@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { makeServices, run } from "../test-support.js"
-import { MCPS_SYNC_NAMESPACE, reconcileMcps } from "./config-sync.js"
 import {
   MCP_OVERLAYS_NAMESPACE,
-  mcpAffinityKey,
   mcpOverlayDisableKey,
   mcpReadiness,
   publishMcpReadiness,
@@ -14,10 +12,10 @@ import {
 
 const at = (wallMs: number) => ({ wallMs, counter: 0, deviceId: "elsewhere" })
 
-const none: McpOverlays = { disabledHere: new Set(), excluded: new Set() }
+const none: McpOverlays = { disabledHere: new Set() }
 
 describe("mcp overlays", () => {
-  it("reads only this machine's disables and exclusions, ignoring noise", async () => {
+  it("reads only this machine's disables, ignoring noise", async () => {
     const { services } = await makeServices("overlay-host")
     await run(
       services.db.mergeSyncEntries(MCP_OVERLAYS_NAMESPACE, [
@@ -49,24 +47,14 @@ describe("mcp overlays", () => {
           value: { enabled: true },
           timestamp: at(5)
         },
-        // Affinity: pinned away, pinned here, and malformed.
-        {
-          key: mcpAffinityKey("Pinned"),
-          value: { machines: ["studio", "laptop"] },
-          timestamp: at(6)
-        },
-        { key: mcpAffinityKey("Here"), value: { machines: ["overlay-host"] }, timestamp: at(7) },
-        { key: mcpAffinityKey("Junk"), value: { machines: "nope" }, timestamp: at(8) },
         // Malformed keys never crash the reader.
         { key: "enable|", value: { enabled: false }, timestamp: at(9) },
         { key: "enable|overlay-host", value: { enabled: false }, timestamp: at(10) },
-        { key: "affinity|", value: { machines: [] }, timestamp: at(11) },
         { key: "unrelated", value: 1, timestamp: at(12) }
       ])
     )
     const overlays = await readMcpOverlays(services.db, "overlay-host")
     expect([...overlays.disabledHere].toSorted()).toEqual(["GitHub", "odd|name"])
-    expect([...overlays.excluded]).toEqual(["Pinned"])
   })
 })
 
@@ -94,21 +82,17 @@ describe("mcp readiness mapping", () => {
     })
     // Unknown states surface verbatim rather than vanishing.
     expect(mcpReadiness(server("someFutureState"), none).reason).toBe("someFutureState")
+    // Each "disabled" carries its provenance: fleet-wide vs this machine.
     expect(mcpReadiness(server("connected", false), none)).toEqual({
       name: "S",
-      state: "disabled"
+      state: "disabled",
+      reason: "Disabled for the whole fleet"
     })
-    const disabled: McpOverlays = { disabledHere: new Set(["S"]), excluded: new Set() }
+    const disabled: McpOverlays = { disabledHere: new Set(["S"]) }
     expect(mcpReadiness(server("connected"), disabled)).toEqual({
       name: "S",
       state: "disabled",
       reason: "Disabled on this machine"
-    })
-    const excluded: McpOverlays = { disabledHere: new Set(["S"]), excluded: new Set(["S"]) }
-    expect(mcpReadiness(server("connected"), excluded)).toEqual({
-      name: "S",
-      state: "excluded",
-      reason: "Pinned to other machines"
     })
   })
 })
@@ -155,69 +139,4 @@ describe("publishMcpReadiness", () => {
     const document = await run(services.db.getSyncEntries(MCP_READINESS_NAMESPACE))
     expect(document).toHaveLength(1)
   })
-})
-
-describe("affinity enforcement", () => {
-  it(
-    "never materializes pinned-away definitions, and removes fleet-managed copies without tombstoning",
-    { timeout: 30_000 },
-    async () => {
-      const { services: a } = await makeServices("aff-a")
-      const { services: b } = await makeServices("aff-b")
-      if (a.mcp === undefined || b.mcp === undefined) throw new Error("mcp unavailable")
-      const depsA = { db: a.db, mcp: a.mcp, serverId: "aff-a" }
-
-      await a.mcp.create({
-        authType: "none",
-        enabled: true,
-        name: "Pinned",
-        transport: "http",
-        url: "https://pinned.example/mcp"
-      })
-      const seeded = await reconcileMcps(depsA)
-      await run(b.db.mergeSyncEntries(MCPS_SYNC_NAMESPACE, seeded.changedEntries))
-
-      // Pinned to a machine that is not B: B never creates it.
-      const excluded = new Set(["Pinned"])
-      const withAffinity = { db: b.db, mcp: b.mcp, serverId: "aff-b", excludedByAffinity: excluded }
-      expect((await reconcileMcps(withAffinity)).status.applied).toEqual([])
-      expect((await b.mcp.list()).some((s) => s.name === "Pinned")).toBe(false)
-
-      // Unpinned: B adopts normally.
-      const applied = await reconcileMcps({ db: b.db, mcp: b.mcp, serverId: "aff-b" })
-      expect(applied.status.applied).toEqual(["Pinned"])
-
-      // Pinned away again: the fleet-managed copy is removed locally — and
-      // the fleet entry stays LIVE (no tombstone leaks out).
-      const removed = await reconcileMcps(withAffinity)
-      expect(removed.status.removed).toEqual(["Pinned"])
-      expect((await b.mcp.list()).some((s) => s.name === "Pinned")).toBe(false)
-      const replica = await run(b.db.getSyncEntries(MCPS_SYNC_NAMESPACE))
-      expect(replica.find((entry) => entry.key === "Pinned")?.deleted).toBeUndefined()
-      // Settled: nothing republishes, nothing reappears.
-      expect((await reconcileMcps(withAffinity)).status).toEqual({
-        published: [],
-        applied: [],
-        removed: [],
-        renamed: []
-      })
-
-      // Re-including the machine re-materializes the definition.
-      const back = await reconcileMcps({ db: b.db, mcp: b.mcp, serverId: "aff-b" })
-      expect(back.status.applied).toEqual(["Pinned"])
-
-      // A locally-edited copy loses nothing to exclusion: the edit
-      // publishes into the fleet FIRST, then the local copy is removed.
-      const localId = (await b.mcp.list()).find((s) => s.name === "Pinned")?.id ?? ""
-      await b.mcp.update(localId, { url: "https://edited.example/mcp" })
-      const diverged = await reconcileMcps(withAffinity)
-      expect(diverged.status.published).toEqual(["Pinned"])
-      expect(diverged.status.removed).toEqual(["Pinned"])
-      expect((await b.mcp.list()).some((s) => s.name === "Pinned")).toBe(false)
-      const edited = await run(b.db.getSyncEntries(MCPS_SYNC_NAMESPACE))
-      expect(edited.find((entry) => entry.key === "Pinned")?.value).toMatchObject({
-        url: "https://edited.example/mcp"
-      })
-    }
-  )
 })

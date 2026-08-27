@@ -6,8 +6,7 @@ import {
   HARNESS_READINESS_NAMESPACE,
   PLUGIN_READINESS_NAMESPACE,
   publishAccountsRoster,
-  publishHarnessReadiness,
-  publishPluginReadiness,
+  publishMachineReadiness,
   reconcileMcps
 } from "./config-sync.js"
 
@@ -202,21 +201,25 @@ describe("config sync", () => {
     }
   )
 
-  it("publishes plugin readiness once per change, sorted and keyed by machine", async () => {
+  it("publishes a machine readiness entry once per change, keyed by machine", async () => {
     const { services } = await makeServices("server-p")
     const deps = {
       db: services.db,
+      namespace: PLUGIN_READINESS_NAMESPACE,
       now: () => 9_000,
-      rows: [
-        { id: "scratchpad", state: "ready" } as const,
-        { id: "ffmpeg-tools", state: "blocked", reason: "needs ffmpeg" } as const,
-        { id: "dev-linked", state: "machineOnly" } as const
-      ],
-      serverId: "server-p"
+      serverId: "server-p",
+      value: {
+        plugins: [
+          { id: "dev-linked", state: "machineOnly" },
+          { id: "ffmpeg-tools", state: "blocked", reason: "needs ffmpeg" },
+          { id: "scratchpad", state: "ready" }
+        ]
+      }
     }
-    const first = await publishPluginReadiness(deps)
+    const first = await publishMachineReadiness(deps)
     expect(first.changedEntries).toHaveLength(1)
-    expect((await publishPluginReadiness(deps)).changedEntries).toEqual([])
+    // A settled machine republishes nothing.
+    expect((await publishMachineReadiness(deps)).changedEntries).toEqual([])
 
     const document = await run(services.db.getSyncEntries(PLUGIN_READINESS_NAMESPACE))
     expect(document[0]?.key).toBe("server-p")
@@ -225,31 +228,18 @@ describe("config sync", () => {
     }
     expect(value.plugins.map((row) => row.id)).toEqual(["dev-linked", "ffmpeg-tools", "scratchpad"])
     expect(value.plugins[1]?.reason).toBe("needs ffmpeg")
-  })
 
-  it("publishes harness readiness once per change, sorted and keyed by machine", async () => {
-    const { services } = await makeServices("server-h")
-    const deps = {
+    // The same publisher serves every plane — namespaces stay independent.
+    const harness = await publishMachineReadiness({
       db: services.db,
-      now: () => 7_000,
-      rows: [
-        { id: "codex", state: "signInRequired" } as const,
-        { id: "claude-code", state: "ready" } as const,
-        { id: "gemini", state: "notInstalled", reason: "CLI not found on PATH" } as const
-      ],
-      serverId: "server-h"
-    }
-    const first = await publishHarnessReadiness(deps)
-    expect(first.changedEntries).toHaveLength(1)
-    expect((await publishHarnessReadiness(deps)).changedEntries).toEqual([])
-
-    const document = await run(services.db.getSyncEntries(HARNESS_READINESS_NAMESPACE))
-    expect(document[0]?.key).toBe("server-h")
-    const value = document[0]?.value as {
-      readonly harnesses: ReadonlyArray<{ readonly id: string; readonly reason?: string }>
-    }
-    expect(value.harnesses.map((row) => row.id)).toEqual(["claude-code", "codex", "gemini"])
-    expect(value.harnesses[2]?.reason).toBe("CLI not found on PATH")
+      namespace: HARNESS_READINESS_NAMESPACE,
+      serverId: "server-p",
+      value: { harnesses: [{ id: "codex", state: "signInRequired" }] }
+    })
+    expect(harness.changedEntries).toHaveLength(1)
+    expect((await run(services.db.getSyncEntries(HARNESS_READINESS_NAMESPACE)))[0]?.key).toBe(
+      "server-p"
+    )
   })
 
   it("publishes each machine's account roster once per change", async () => {
