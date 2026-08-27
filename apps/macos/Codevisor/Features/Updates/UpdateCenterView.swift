@@ -20,7 +20,7 @@ struct UpdateCenterView: View {
                 } else {
                     section(titled: "App", kind: .app)
                     section(titled: "Servers", kind: .server)
-                    section(titled: "Agents", kind: .harness)
+                    section(titled: "Harnesses", kind: .harness)
                     section(titled: "Plugins", kind: .plugin)
                 }
             }

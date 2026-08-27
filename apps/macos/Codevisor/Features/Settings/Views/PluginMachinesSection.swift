@@ -7,49 +7,22 @@ import SwiftUI
 /// ffmpeg") and machine-only linked/dev plugins that never sync.
 struct PluginMachinesSection: View {
     @Environment(AppEnvironment.self) private var environment
-    @State private var expandedMachines: Set<String> = []
 
     var body: some View {
         // Reading the revision keeps this section live as gossip arrives.
         let _ = environment.configSync.revisionsByNamespace["plugin-readiness"]
         let readiness = PluginFleet.readiness(environment.configSync)
-        if environment.machines.machines.count > 1, !readiness.isEmpty {
-            Section {
-                ForEach(readiness.keys.sorted(), id: \.self) { machineId in
-                    SettingsDisclosureRow(
-                        environment.machines.fleetMachineName(for: machineId) ?? machineId,
-                        isExpanded: expansionBinding(machineId)
-                    ) {
-                        ForEach(readiness[machineId] ?? []) { entry in
-                            readinessRow(entry)
-                                .padding(.leading, 17)
-                                .padding(.top, 6)
-                        }
-                    }
-                }
-            } header: {
-                Text("On Your Machines")
-            } footer: {
-                Text(
-                    "Each machine reports how the fleet's plugins look there. Linked and local-path plugins stay machine-only."
-                )
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            }
+        MachineFleetSection(rowsByMachine: readiness, badge: badge) { _, entry in
+            readinessRow(entry)
         }
     }
 
-    private func expansionBinding(_ machineId: String) -> Binding<Bool> {
-        Binding(
-            get: { expandedMachines.contains(machineId) },
-            set: { expanded in
-                if expanded {
-                    expandedMachines.insert(machineId)
-                } else {
-                    expandedMachines.remove(machineId)
-                }
-            }
-        )
+    private func badge(
+        _ machineId: String, _ rows: [PluginFleet.MachineReadiness]
+    ) -> MachineSyncBadge {
+        if rows.contains(where: { $0.state == "blocked" }) { return .attention("Needs attention") }
+        if rows.contains(where: { $0.state == "notInstalled" }) { return .syncing }
+        return .synced
     }
 
     private func readinessRow(_ entry: PluginFleet.MachineReadiness) -> some View {

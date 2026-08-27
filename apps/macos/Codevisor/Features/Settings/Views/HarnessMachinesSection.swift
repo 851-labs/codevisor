@@ -9,57 +9,28 @@ import SwiftUI
 struct HarnessMachinesSection: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
-    @State private var expandedMachines: Set<String> = []
     @State private var signInTarget: PendingMachineHarnessSignIn?
 
     var body: some View {
         // Reading the revision keeps this section live as gossip arrives.
         let _ = environment.configSync.revisionsByNamespace["harness-readiness"]
         let readiness = HarnessFleet.readiness(environment.configSync)
-        if environment.machines.machines.count > 1, !readiness.isEmpty {
-            Section {
-                ForEach(readiness.keys.sorted(), id: \.self) { machineId in
-                    SettingsDisclosureRow(
-                        machineName(machineId),
-                        isExpanded: expansionBinding(machineId)
-                    ) {
-                        ForEach(readiness[machineId] ?? []) { entry in
-                            readinessRow(machineId: machineId, entry: entry)
-                                .padding(.leading, 17)
-                                .padding(.top, 6)
-                        }
-                    }
-                }
-            } header: {
-                Text("On Your Machines")
-            } footer: {
-                Text(
-                    "Each machine reports whether the fleet's agents are installed and signed in there."
-                )
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            }
-            .sheet(item: $signInTarget) { target in
-                HarnessSignInSheet(serverId: target.machineId, harnessId: target.harnessId)
-            }
+        MachineFleetSection(rowsByMachine: readiness, badge: badge) { machineId, entry in
+            readinessRow(machineId: machineId, entry: entry)
+        }
+        .sheet(item: $signInTarget) { target in
+            HarnessSignInSheet(serverId: target.machineId, harnessId: target.harnessId)
         }
     }
 
-    private func machineName(_ machineId: String) -> String {
-        environment.machines.fleetMachineName(for: machineId) ?? machineId
-    }
-
-    private func expansionBinding(_ machineId: String) -> Binding<Bool> {
-        Binding(
-            get: { expandedMachines.contains(machineId) },
-            set: { expanded in
-                if expanded {
-                    expandedMachines.insert(machineId)
-                } else {
-                    expandedMachines.remove(machineId)
-                }
-            }
-        )
+    private func badge(
+        _ machineId: String, _ rows: [HarnessFleet.MachineReadiness]
+    ) -> MachineSyncBadge {
+        if rows.contains(where: { $0.state == "signInRequired" }) {
+            return .attention("Sign in required")
+        }
+        if rows.contains(where: { $0.state == "notInstalled" }) { return .syncing }
+        return .synced
     }
 
     private func readinessRow(

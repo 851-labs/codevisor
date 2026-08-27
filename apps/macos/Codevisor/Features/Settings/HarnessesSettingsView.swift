@@ -31,20 +31,9 @@ struct HarnessesSettingsView: View {
     /// otherwise the row can briefly fall back to Update after the 202 ack.
     @State private var startingHarnessIds: Set<String> = []
 
-    /// Top-level pane only: the machine the user picked here. Machine-pushed
-    /// pages pin their machine via `settingsMachineId` instead.
-    @State private var pickedMachineId: String?
-
     /// The machine whose harnesses this pane manages.
     private var serverId: String {
-        settingsMachineId ?? pickedMachineId ?? environment.machines.selectedMachineId
-    }
-
-    /// The top-level Agents pane serves the whole fleet: a machine picker
-    /// (hidden for single-machine setups) chooses whose install/sign-in
-    /// state is shown. A pushed per-machine page never shows it.
-    private var showsMachinePicker: Bool {
-        settingsMachineId == nil && environment.machines.allMachines.count > 1
+        settingsMachineId ?? environment.machines.selectedMachineId
     }
 
     private var serverInstalled: [ServerHarness] { serverHarnesses.filter(\.isReady) }
@@ -52,22 +41,6 @@ struct HarnessesSettingsView: View {
 
     var body: some View {
         Form {
-            if showsMachinePicker {
-                Section {
-                    Picker(
-                        "Machine",
-                        selection: Binding(
-                            get: { serverId },
-                            set: { pickedMachineId = $0 }
-                        )
-                    ) {
-                        ForEach(environment.machines.allMachines) { machine in
-                            Text(machine.name).tag(machine.id)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                }
-            }
             Section {
                 if isScanning {
                     HStack(spacing: 8) {

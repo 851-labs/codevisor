@@ -196,9 +196,6 @@ struct McpSettingsView: View {
                 Section {
                     ForEach(builtInServers) { server in
                         serverRow(server)
-                        if settingsMachineId == nil {
-                            McpServerMachineStatus(serverName: server.name)
-                        }
                     }
                 } header: {
                     Text("Built-in Tools")
@@ -215,9 +212,6 @@ struct McpSettingsView: View {
                 } else {
                     ForEach(managedServers) { server in
                         serverRow(server)
-                        if settingsMachineId == nil {
-                            McpServerMachineStatus(serverName: server.name)
-                        }
                     }
                 }
                 Button {
@@ -236,6 +230,10 @@ struct McpSettingsView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 }
+            }
+
+            if settingsMachineId == nil {
+                McpMachinesSection()
             }
 
             if settingsMachineId != nil, !importCandidates.isEmpty || importFeedback != nil {

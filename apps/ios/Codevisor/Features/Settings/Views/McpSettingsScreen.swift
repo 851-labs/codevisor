@@ -34,7 +34,6 @@ struct McpSettingsScreen: View {
                 Section {
                     ForEach(servers, id: \.id) { server in
                         serverRow(server)
-                        machineStatusRows(server)
                     }
                 } header: {
                     Text("MCP Servers")
@@ -42,6 +41,7 @@ struct McpSettingsScreen: View {
                     Text("MCP servers are shared by your whole fleet.")
                 }
             }
+            machinesSection
         }
         .navigationTitle("MCPs")
         .navigationBarTitleDisplayMode(.inline)
@@ -51,22 +51,32 @@ struct McpSettingsScreen: View {
         }
     }
 
-    /// The per-item machine reality (Phase 27a): each machine's report of
-    /// this server, with the per-machine disable toggle inline. Hidden for
+    /// One disclosure per machine: sync badge on the row, that machine's
+    /// MCP reports and per-machine toggles inside. Hidden for
     /// single-machine fleets.
     @ViewBuilder
-    private func machineStatusRows(_ server: ServerMcpServer) -> some View {
+    private var machinesSection: some View {
         let _ = environment.configSync.revisionsByNamespace["mcp-readiness"]
         let _ = environment.configSync.revisionsByNamespace["mcp-overlays"]
-        let rows = McpFleet.readinessByServer(environment.configSync)[server.name] ?? []
-        if environment.machines.machines.count > 1, !rows.isEmpty {
-            DisclosureGroup("On your machines") {
-                ForEach(rows) { row in
-                    machineRow(server: server.name, row: row)
+        let readiness = McpFleet.readiness(environment.configSync)
+        if environment.machines.machines.count > 1, !readiness.isEmpty {
+            Section("On Your Machines") {
+                ForEach(readiness.keys.sorted(), id: \.self) { machineId in
+                    let rows = readiness[machineId] ?? []
+                    DisclosureGroup {
+                        ForEach(rows) { entry in
+                            readinessRow(machineId: machineId, entry: entry)
+                        }
+                    } label: {
+                        HStack {
+                            Text(machineName(machineId))
+                            Spacer(minLength: 12)
+                            badge(rows).view
+                                .font(.footnote)
+                        }
+                    }
                 }
             }
-            .font(.footnote)
-            .foregroundStyle(.secondary)
         }
     }
 
@@ -74,28 +84,34 @@ struct McpSettingsScreen: View {
         environment.machines.fleetMachineName(for: machineId) ?? machineId
     }
 
-    private func machineRow(server: String, row: McpFleet.MachineStatus) -> some View {
+    private func badge(_ rows: [McpFleet.MachineReadiness]) -> MachineSyncBadge {
+        if rows.contains(where: { $0.state == "blocked" }) { return .attention("Needs attention") }
+        if rows.contains(where: { $0.state == "connecting" }) { return .syncing }
+        return .synced
+    }
+
+    private func readinessRow(machineId: String, entry: McpFleet.MachineReadiness) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(machineName(row.machineId))
-                Text(row.reason ?? row.state)
+                Text(entry.name)
+                Text(entry.reason ?? entry.state)
                     .font(.footnote)
                     .foregroundStyle(
-                        row.state == "blocked" ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
+                        entry.state == "blocked" ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
             }
             Spacer()
             Toggle(
-                "Enable \(server) on \(machineName(row.machineId))",
+                "Enable \(entry.name) on \(machineName(machineId))",
                 isOn: Binding(
                     get: {
                         !McpFleet.isDisabled(
-                            environment.configSync, machineId: row.machineId, name: server)
+                            environment.configSync, machineId: machineId, name: entry.name)
                     },
                     set: { enabled in
                         McpFleet.setDisabled(
                             environment.configSync,
-                            machineId: row.machineId,
-                            name: server,
+                            machineId: machineId,
+                            name: entry.name,
                             disabled: !enabled
                         )
                     }

@@ -22,7 +22,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .appearance: "Appearance"
         case .notifications: "Notifications"
         case .shortcuts: "Shortcuts"
-        case .agents: "Agents"
+        case .agents: "Harnesses"
         case .mcps: "MCP Servers"
         case .skills: "Skills"
         case .plugins: "Plugins"
@@ -306,7 +306,7 @@ struct SettingsView: View {
                 .navigationTitle("Shortcuts")
         case .agents:
             HarnessesSettingsView()
-                .navigationTitle("Agents")
+                .navigationTitle("Harnesses")
         case .mcps:
             McpSettingsView()
                 .navigationTitle("MCP Servers")

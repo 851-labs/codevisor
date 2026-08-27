@@ -98,16 +98,30 @@ struct HarnessesSettingsScreen: View {
         if environment.machines.machines.count > 1, !readiness.isEmpty {
             Section("On Your Machines") {
                 ForEach(readiness.keys.sorted(), id: \.self) { machineId in
-                    DisclosureGroup(
-                        environment.machines.fleetMachineName(for: machineId) ?? machineId
-                    ) {
-                        ForEach(readiness[machineId] ?? []) { entry in
+                    let rows = readiness[machineId] ?? []
+                    DisclosureGroup {
+                        ForEach(rows) { entry in
                             machineReadinessRow(machineId: machineId, entry: entry)
+                        }
+                    } label: {
+                        HStack {
+                            Text(environment.machines.fleetMachineName(for: machineId) ?? machineId)
+                            Spacer(minLength: 12)
+                            harnessBadge(rows).view
+                                .font(.footnote)
                         }
                     }
                 }
             }
         }
+    }
+
+    private func harnessBadge(_ rows: [HarnessFleet.MachineReadiness]) -> MachineSyncBadge {
+        if rows.contains(where: { $0.state == "signInRequired" }) {
+            return .attention("Sign in required")
+        }
+        if rows.contains(where: { $0.state == "notInstalled" }) { return .syncing }
+        return .synced
     }
 
     private func machineReadinessRow(

@@ -61,7 +61,7 @@ struct SettingsSheet: View {
                     NavigationLink {
                         HarnessesSettingsScreen(serverId: machines.selectedMachineId)
                     } label: {
-                        Label("Agents", systemImage: "cpu")
+                        Label("Harnesses", systemImage: "cpu")
                     }
                     NavigationLink {
                         McpSettingsScreen(serverId: machines.selectedMachineId)
