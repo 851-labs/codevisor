@@ -173,18 +173,36 @@ extension MachineController {
         defer { connection.backgroundConnectInFlight = false }
         let client = client(for: machineId)
         await refreshStatus(for: machineId)
-        guard connection.status?.isReachable == true else { return }
+        guard connection.status?.isReachable == true else {
+            // Unreachable is an ANSWER, not silence: fleet-aggregated UIs
+            // must be able to count this machine as failed instead of
+            // waiting on it forever.
+            connection.navigationSyncState = .stale(connection.status?.label ?? "Unreachable")
+            return
+        }
         let cursor = (try? await client.latestShellEventCursor()) ?? 0
         // Full snapshot BEFORE the stream starts (the cursor above replays
         // anything racing the fetch): a machine's chats and workspaces are
         // present — and orderable in a flattened sidebar — without it ever
         // being selected.
-        await projectList.refreshFromServer(serverId: machineId, client: client)
+        let snapshot = await projectList.refreshFromServer(serverId: machineId, client: client)
         await workspaceSync?.refreshFromServer(serverId: machineId, client: client)
         // Selection may have taken this machine over while we probed; its
         // navigation sync owns the stream then.
         guard connection.eventSyncTask == nil else { return }
         startEventSync(serverId: machineId, client: client, since: cursor)
+        // Every machine lands its own terminal sync state — this is what
+        // makes a fleet-aggregated "synced / empty / failed" decision
+        // possible. Previously only the selected machine ever wrote one,
+        // so a broken selected machine starved the whole screen.
+        switch snapshot {
+        case .committed:
+            connection.navigationSyncState = .current
+        case let .failed(message):
+            connection.navigationSyncState = .stale(message)
+        case .superseded:
+            break
+        }
         onMachineConnected?(machineId)
     }
 

@@ -97,6 +97,31 @@ struct MachineConnectionTests {
             projectList.sessions.contains {
                 $0.serverId == remote.id && $0.id.uuidString == session.id
             })
+        // And it landed its own terminal sync state: fleet-aggregated UIs
+        // count every machine, not just the selected one.
+        #expect(controller.navigationSyncStateByMachineId[remote.id] == .current)
+        controller.stopEventSync()
+    }
+
+    @Test("An unreachable background machine lands a terminal stale state")
+    func connectMarksUnreachableMachineStale() async throws {
+        let remote = makeRemote("remote-down")
+        let down = SyncFakeServerClient(projects: [], sessions: [])
+        down.lock.withLock { down.downtimeRemaining = 100 }
+        let (controller, _) = try makeController(
+            fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: down],
+            remotes: [remote]
+        )
+
+        await controller.connectMachine(remote.id)
+
+        // Unreachable is an answer: the aggregation can count this machine
+        // as failed instead of waiting on it forever.
+        guard case .stale = controller.navigationSyncStateByMachineId[remote.id] else {
+            Issue.record(
+                "Expected .stale, got \(String(describing: controller.navigationSyncStateByMachineId[remote.id]))")
+            return
+        }
         controller.stopEventSync()
     }
 
