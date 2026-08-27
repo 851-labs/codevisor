@@ -13,6 +13,7 @@ import type { DataUpgradeProgress, UpdateInfo } from "@codevisor/api"
 import {
   makeAttachmentStore,
   makeDatabase,
+  resolveServerIdentity,
   migrateAttachmentBlobs,
   worktreesRoot,
   type CodevisorDatabaseService
@@ -603,7 +604,6 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
   const program = Effect.gen(function* () {
     const host = args.host ?? "127.0.0.1"
     const port = Number(args.port ?? "49361")
-    const serverId = args.serverId ?? "local"
     const worktreeNameStyle =
       process.env.CODEVISOR_DEV_INSTANCE_ID !== undefined ||
       process.env.HERDMAN_DEV_INSTANCE_ID !== undefined
@@ -618,6 +618,8 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
     if (kind !== undefined && kind !== "local" && kind !== "remote") {
       throw new Error("--kind must be either local or remote")
     }
+    // An explicit --kind wins, otherwise a network bind means remote.
+    const resolvedKind = kind ?? (host === "127.0.0.1" ? "local" : "remote")
     // Resolve caller-provided paths before changing cwd below. This preserves
     // the CLI's relative-path semantics while ensuring every later consumer
     // sees an absolute path.
@@ -665,6 +667,14 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
         onProgress: (progress) => writeDataUpgradeStatus(upgradeStatusPath, bootId, progress)
       })
     )
+    // A remote server must never identify as the default "local": every
+    // machine publishing sync entries under one key makes the fleet LWW-merge
+    // three machines into a single lying record. Without an explicit
+    // --serverId, remotes adopt the database's persisted machine identity —
+    // stable across restarts, renames, and updates, minted on first boot.
+    const serverId =
+      args.serverId ??
+      (resolvedKind === "remote" ? `machine-${resolveServerIdentity(databasePath)}` : "local")
     const db = yield* makeDatabase({
       filename: databasePath,
       serverId,
@@ -812,9 +822,6 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
       resolveEnv: () => resolveShellEnv()
     })
     const sessionActivity = makeActiveWorkSleepInhibitor()
-    // The same inference defaultServerConfig() applies below: an explicit
-    // --kind wins, otherwise a network bind means this is a remote server.
-    const resolvedKind = kind ?? (host === "127.0.0.1" ? "local" : "remote")
     const auth = initializeOptionalServerFeature("Harness authentication", () =>
       makeHarnessAuthManager({
         dataDir: dirname(databasePath),

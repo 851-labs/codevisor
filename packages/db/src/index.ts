@@ -8,6 +8,7 @@ export {
 
 export * from "./errors.js"
 
+export * from "./identity.js"
 export * from "./ids.js"
 
 export {
