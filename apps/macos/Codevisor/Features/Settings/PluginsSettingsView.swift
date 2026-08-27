@@ -33,24 +33,28 @@ struct PluginsSettingsView: View {
             MachineListSection(pane: .plugins, badge: badge) { machine in
                 PluginMachinePane(machine: machine)
             }
-            Section {
-                HStack(spacing: 10) {
-                    Button {
-                        activeSheet = .browse
-                    } label: {
-                        Label("Browse Plugins…", systemImage: "magnifyingglass")
+            // A single-machine fleet renders that machine's own actions
+            // inline; the fleet-level ones only earn their place above a list.
+            if environment.machines.allMachines.count > 1 {
+                Section {
+                    HStack(spacing: 10) {
+                        Button {
+                            activeSheet = .browse
+                        } label: {
+                            Label("Browse Plugins…", systemImage: "magnifyingglass")
+                        }
+                        .settingsActionTint(theme)
+                        Button {
+                            activeSheet = .install(initialSource: nil)
+                        } label: {
+                            Label("Install Plugin…", systemImage: "plus")
+                        }
+                        .settingsActionTint(theme)
                     }
-                    .settingsActionTint(theme)
-                    Button {
-                        activeSheet = .install(initialSource: nil)
-                    } label: {
-                        Label("Install Plugin…", systemImage: "plus")
+                    if let actionError {
+                        Label(actionError, systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.secondary)
                     }
-                    .settingsActionTint(theme)
-                }
-                if let actionError {
-                    Label(actionError, systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.secondary)
                 }
             }
         }
