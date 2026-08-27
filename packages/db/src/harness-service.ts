@@ -19,6 +19,7 @@ export const makeHarnessService = (
   | "setActiveHarnessAccount"
   | "removeHarnessAccount"
   | "bindSessionHarnessAccount"
+  | "rebindHarnessAccountSessions"
 > => {
   const { sqlite, getSession } = context
 
@@ -212,6 +213,13 @@ export const makeHarnessService = (
           .prepare("update sessions set harness_account_id = ? where id = ?")
           .run(accountId, sessionId)
         return getSession(sessionId)
+      }),
+    rebindHarnessAccountSessions: (fromAccountId, toAccountId) =>
+      attempt("rebindHarnessAccountSessions", () => {
+        requiredHarnessAccount(toAccountId)
+        return sqlite
+          .prepare("update sessions set harness_account_id = ? where harness_account_id = ?")
+          .run(toAccountId, fromAccountId).changes
       })
   }
 }

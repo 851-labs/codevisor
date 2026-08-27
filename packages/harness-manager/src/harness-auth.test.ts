@@ -89,6 +89,69 @@ describe("Pi harness authentication", () => {
   })
 })
 
+describe("activate-time account rebinding", () => {
+  it("rebinds sessions pinned to dead accounts and frees them for removal", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "codevisor-auth-activate-"))
+    directories.push(directory)
+    const db = await run(
+      makeDatabase({ filename: join(directory, "codevisor.sqlite"), serverId: "test" })
+    )
+    databases.push(db)
+    const project = await run(
+      db.createProject({ name: "Sweep", folderPath: join(directory, "project") })
+    )
+    const saveAccount = (id: string, authState: "expired" | "unauthenticated" | "authenticated") =>
+      run(
+        db.saveHarnessAccount({
+          id,
+          harnessId: "gemini",
+          profileKind: "managed",
+          profileKey: id,
+          label: id,
+          authState,
+          canLogin: true,
+          canLogout: true
+        })
+      )
+    const dead = await saveAccount("gemini-dead", "expired")
+    const fresh = await saveAccount("gemini-fresh", "unauthenticated")
+    const healthy = await saveAccount("gemini-healthy", "authenticated")
+    const pinnedToDead = await run(
+      db.createSession({ projectId: project.id, harnessId: "gemini", harnessAccountId: dead.id })
+    )
+    const pinnedToHealthy = await run(
+      db.createSession({
+        projectId: project.id,
+        harnessId: "gemini",
+        harnessAccountId: healthy.id
+      })
+    )
+
+    const agents = {
+      probeHarnessAuth: vi.fn(() =>
+        Effect.succeed({ state: "authenticated" as const, methods: [], canLogout: true })
+      )
+    } as unknown as AgentRuntimeService
+    const manager = makeHarnessAuthManager({
+      agents,
+      dataDir: directory,
+      db,
+      terminal: {} as TerminalManagerService,
+      resolveEnv: () => Promise.resolve({ HOME: directory })
+    })
+    await manager.activateAccount("gemini", fresh.id)
+
+    // Sessions pinned to an unusable account follow the activated one; a
+    // session on a working account keeps its pin.
+    expect((await run(db.getSessionSummary(pinnedToDead.id))).harnessAccountId).toBe(fresh.id)
+    expect((await run(db.getSessionSummary(pinnedToHealthy.id))).harnessAccountId).toBe(healthy.id)
+    // With no session referencing it anymore, the dead account can finally be
+    // removed (removal refuses while sessions reference an account).
+    await manager.removeAccount(dead.id)
+    expect(await run(db.getHarnessAccount(dead.id))).toBeUndefined()
+  })
+})
+
 describe("harness authentication refresh", () => {
   it("refreshes every account when one harness probe fails", async () => {
     const directory = mkdtempSync(join(tmpdir(), "codevisor-auth-refresh-"))

@@ -355,6 +355,15 @@ export interface CodevisorDatabaseService {
     sessionId: string,
     accountId: string
   ) => Effect.Effect<SessionSummary, DatabaseError>
+  /// Moves every session pinned to `fromAccountId` onto `toAccountId`.
+  /// Activating a working account sweeps sessions off dead siblings with
+  /// this, which also frees the dead account for removal (removal refuses
+  /// while sessions still reference it). Returns the number of sessions
+  /// moved.
+  readonly rebindHarnessAccountSessions: (
+    fromAccountId: string,
+    toAccountId: string
+  ) => Effect.Effect<number, DatabaseError>
   readonly issuePairingToken: Effect.Effect<string, DatabaseError>
   readonly verifyBearerToken: (token: string) => Effect.Effect<boolean, DatabaseError>
   /// A stable machine identity that survives --serverId defaults ("local") and
