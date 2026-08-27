@@ -26,8 +26,36 @@ extension MachineController {
         if CodevisorMachine.cloudDeviceId(forMachineId: machineId) != nil {
             return CodevisorServerClient(config: .unreachable(machineId: machineId))
         }
+        // A configured machine whose direct route is down but whose persisted
+        // cloud twin answers rides the relay (Phase 22) — same machine, same
+        // records, different transport.
+        if statusByMachineId[machineId]?.route == .relay,
+            let config = relayFallbackConfig(forConfiguredMachineId: machineId)
+        {
+            return CodevisorServerClient(
+                config: config,
+                requestGate: requestGate,
+                machineId: machineId
+            )
+        }
         let machine = machine(for: machineId) ?? CodevisorMachine.local
         return clientFactory(machine)
+    }
+
+    /// The relay config backing a CONFIGURED machine's fallback route, via
+    /// the cloud device id persisted on its record. Nil without a link or a
+    /// signed-in cloud account.
+    func relayFallbackConfig(forConfiguredMachineId machineId: String) -> CodevisorServerConfig? {
+        guard let deviceId = registry.remoteMachines.first(where: { $0.id == machineId })?.cloudDeviceId,
+            let cloudProvider, cloudProvider.isCloudSignedIn,
+            let cloud = cloudProvider.cloudMachines.first(where: { $0.deviceId == deviceId })
+        else { return nil }
+        return cloudProvider.relayServerConfig(for: cloud)
+    }
+
+    /// The route a machine's traffic is currently using.
+    func routeInUse(forMachineId machineId: String) -> MachineRoute {
+        statusByMachineId[machineId]?.route == .relay ? .relay : .direct
     }
 
     /// The server config for a machine id — relay-backed for cloud machines,

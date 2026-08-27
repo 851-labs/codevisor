@@ -62,12 +62,27 @@ public struct MachineStatus: Sendable, Equatable {
     /// Codevisor Cloud — the identity that deduplicates it against the cloud
     /// machine list.
     public var cloudDeviceId: String?
+    /// How the machine answered (Phase 22): directly, or through the cloud
+    /// relay after the direct route failed. Nil while unreachable.
+    public var route: MachineRoute?
 
-    public init(isReachable: Bool, label: String, cloudDeviceId: String? = nil) {
+    public init(
+        isReachable: Bool,
+        label: String,
+        cloudDeviceId: String? = nil,
+        route: MachineRoute? = nil
+    ) {
         self.isReachable = isReachable
         self.label = label
         self.cloudDeviceId = cloudDeviceId
+        self.route = route
     }
+}
+
+/// The transport a machine's traffic currently rides.
+public enum MachineRoute: Sendable, Equatable {
+    case direct
+    case relay
 }
 
 /// Progress of a client-triggered update of the selected machine's server.
@@ -80,7 +95,7 @@ public enum ServerUpdatePhase: Equatable, Sendable {
 @MainActor
 @Observable
 public final class MachineController {
-    public private(set) var registry: MachineRegistry
+    public internal(set) var registry: MachineRegistry
     /// One connection record per machine this controller has touched — the
     /// single home for a machine's live client-side state. The legacy
     /// `*ByMachineId` dictionaries are read-only projections of these (see
@@ -294,6 +309,10 @@ public final class MachineController {
                 .values
                 .compactMap(\.cloudDeviceId)
         )
+        // The PERSISTED links dedupe too: a machine whose direct route is
+        // down this launch has no live probe to advertise its identity, and
+        // must not sprout a cloud twin next to its configured entry.
+        .union(registry.remoteMachines.compactMap(\.cloudDeviceId))
         let knownNames = Set(machines.map(\.name))
         return cloudProvider.cloudMachines.filter {
             !knownCloudIds.contains($0.deviceId) && !knownNames.contains($0.name)
@@ -645,61 +664,6 @@ public final class MachineController {
         onMachineConnected?(machineId)
     }
 
-    public func refreshStatus(for id: String) async {
-        let client = client(for: id)
-        let connection = connection(for: id)
-        do {
-            let info = try await client.info()
-            connection.status = MachineStatus(
-                isReachable: true,
-                label: "\(info.name) \(info.version)",
-                cloudDeviceId: info.cloudDeviceId
-            )
-            // A signed-in account with an unregistered local server (it may
-            // have started after sign-in): register it now so this machine
-            // shows up on the user's other devices.
-            if id == CodevisorMachine.local.id, info.cloudDeviceId == nil {
-                cloudProvider?.registerLocalMachineIfNeeded()
-            }
-            // A CONFIGURED machine advertising a cloud device id makes its
-            // cloud twin a duplicate identity. The machine list already
-            // dedupes; also drop any records synced under the twin id before
-            // the probe landed, or they render as doubled projects/chats.
-            if !id.hasPrefix(CodevisorMachine.cloudIdPrefix),
-                let deviceId = info.cloudDeviceId
-            {
-                pruneCloudTwinRecords(deviceId: deviceId)
-            }
-            do {
-                connection.updateInfo = try await client.updateInfo(
-                    refresh: true,
-                    channel: serverUpdateChannel
-                )
-            } catch {
-                connection.updateInfo = nil
-                Log.machines.debug(
-                    "Update info probe for \(id, privacy: .public) failed: \(String(describing: error), privacy: .public)"
-                )
-            }
-        } catch {
-            // A local server that failed to start has a more useful story
-            // than "Unreachable" — surface why instead.
-            if id == CodevisorMachine.local.id, case let .unavailable(message) = localServer?.state {
-                connection.status = MachineStatus(isReachable: false, label: message)
-            } else if case CodevisorServerClientError.httpStatus(401, _) = error {
-                // The server answered — the token is just wrong (or the
-                // machine was paired against a different server on that host).
-                // Say so, so the user fixes the token instead of chasing a
-                // phantom network problem.
-                connection.status = MachineStatus(isReachable: false, label: "Invalid connection token")
-            } else {
-                connection.status = MachineStatus(isReachable: false, label: "Unreachable")
-                Log.machines.debug(
-                    "Status probe for \(id, privacy: .public) failed: \(String(describing: error), privacy: .public)")
-            }
-        }
-    }
-
     public static func normalizedRemoteURL(from input: String) throws -> URL {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw MachineControllerError.invalidHost(input) }
@@ -739,7 +703,7 @@ public final class MachineController {
         return String(raw.unicodeScalars.map { allowed.contains($0) ? Character($0) : "-" })
     }
 
-    private func persist() {
+    func persist() {
         do {
             var persisted = registry.normalized()
             if let credentialStore {

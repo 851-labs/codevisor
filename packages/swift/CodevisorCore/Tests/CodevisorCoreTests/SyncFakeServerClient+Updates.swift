@@ -249,6 +249,10 @@ extension SyncFakeServerClient {
         lock.withLock { _infoId = id }
     }
 
+    func configureInfoCloudDeviceId(_ deviceId: String?) {
+        lock.withLock { _infoCloudDeviceId = deviceId }
+    }
+
     func info() async throws -> ServerInfo {
         let (version, id): (String, String) = try lock.withLock {
             if downtimeRemaining > 0 {
@@ -257,8 +261,11 @@ extension SyncFakeServerClient {
             }
             return (currentVersion, _infoId)
         }
-        return ServerInfo(
+        let cloudDeviceId = lock.withLock { _infoCloudDeviceId }
+        var info = ServerInfo(
             id: id, name: "Local", kind: "local", version: version, platform: "darwin", bindHost: "127.0.0.1")
+        info.cloudDeviceId = cloudDeviceId
+        return info
     }
     func updateInfo(refresh: Bool, channel: ServerUpdateChannel) async throws -> ServerUpdateInfo {
         lock.withLock {
