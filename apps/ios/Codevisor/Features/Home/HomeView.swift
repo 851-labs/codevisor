@@ -33,6 +33,9 @@ struct HomeView: View {
     // Bootstrap adds the dev machine a beat after first render; the grace
     // period keeps onboarding from flashing over an already-paired install.
     @State private var readyForOnboarding = false
+    /// First-launch budget: with nothing cached the spinner is allowed,
+    /// but it may never outlive the wait — after this it becomes retry.
+    @State private var initialSyncDeadlineExpired = false
     @State private var isShowingSettings = false
     @State private var pendingHarnessSignIn: HarnessSignInRequest?
     @State private var newChatFlow: NewChatFlow?
@@ -79,7 +82,7 @@ struct HomeView: View {
         HomeOrder(rawValue: orderRaw) ?? .updated
     }
 
-    private var machines: MachineController { environment.machines }
+    var machines: MachineController { environment.machines }
     private var projectList: ProjectListModel { environment.projectList }
 
     private var hasRemoteMachines: Bool {
@@ -91,10 +94,11 @@ struct HomeView: View {
         return false
     }
 
-    /// Cached rows are intentionally hidden until lifecycle recovery has
-    /// reconciled them. Ordinary live events and pull to refresh remain on the
-    /// current presentation and therefore never enter this blocking state.
-    private var needsNavigationLoadingState: Bool {
+    /// True while the selected machine has never completed a sync this
+    /// launch. The cached fleet list always renders immediately — exactly
+    /// like macOS, whose sidebar never blocks on sync — so this only gates
+    /// the truly-empty first launch.
+    private var initialSyncPending: Bool {
         switch machines.selectedNavigationSyncState {
         case .cached, .catchingUp:
             return true
@@ -321,8 +325,7 @@ struct HomeView: View {
             }
             .safeAreaInset(edge: .bottom, alignment: .trailing, spacing: 0) {
                 if hasRemoteMachines,
-                    !navigationSyncFailed,
-                    !needsNavigationLoadingState,
+                    !(visibleSessions.isEmpty && (navigationSyncFailed || initialSyncPending)),
                     groupReorderOrganization == nil
                 {
                     newChatButton
@@ -461,51 +464,44 @@ struct HomeView: View {
     /// each need a real ScrollView rather than a static replacement view.
     @ViewBuilder
     private var refreshableNavigationContent: some View {
-        if navigationSyncFailed {
+        if !visibleSessions.isEmpty {
+            // The cached fleet list always renders — no single machine's
+            // sync gets to blank the world. Sync trouble rides a banner.
+            sessionList
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if navigationSyncFailed {
+                        syncFailedBanner
+                    }
+                }
+        } else if navigationSyncFailed || initialSyncDeadlineExpired {
             refreshableState {
                 HomeNavigationSyncView(
                     state: .failed(machineName: machines.selectedMachine.name),
                     retry: {
+                        initialSyncDeadlineExpired = false
                         Task { await machines.retrySelectedMachine() }
                     }
                 )
             }
-        } else if needsNavigationLoadingState {
+        } else if initialSyncPending {
+            // Nothing cached yet: the one legitimate spinner — and even it
+            // may not outlive its budget.
             refreshableState {
                 HomeNavigationSyncView(
                     state: .loading(machineName: machines.selectedMachine.name)
                 )
             }
-        } else if visibleSessions.isEmpty {
+            .task(id: machines.selectedMachineId) {
+                initialSyncDeadlineExpired = false
+                try? await Task.sleep(for: .seconds(15))
+                guard !Task.isCancelled else { return }
+                initialSyncDeadlineExpired = true
+            }
+        } else {
             refreshableState {
                 emptyState
             }
-        } else {
-            sessionList
         }
-    }
-
-    /// A full-height native scroll surface preserves centered state content
-    /// while allowing the standard iOS pull-to-refresh gesture even when
-    /// there are no rows to make the content scroll naturally.
-    private func refreshableState<Content: View>(
-        @ViewBuilder content: @escaping () -> Content
-    ) -> some View {
-        ScrollView {
-            content()
-                .frame(maxWidth: .infinity)
-                // Exactly the visible height: the state stays centered and
-                // the only scroll left is the rubber-band pull-to-refresh
-                // needs — no phantom scrolling past an empty page.
-                .containerRelativeFrame(.vertical)
-        }
-        .refreshable {
-            await refreshNavigation()
-        }
-    }
-
-    private func refreshNavigation() async {
-        await machines.refreshSelectedNavigationState()
     }
 
     @ViewBuilder
