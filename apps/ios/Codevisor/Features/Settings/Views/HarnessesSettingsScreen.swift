@@ -8,15 +8,26 @@ import SwiftUI
 /// harnesses — installs and sign-ins are genuinely per machine.
 struct HarnessesSettingsScreen: View {
     @Environment(AppEnvironment.self) private var environment
+    /// Bumped by the toolbar refresh; every machine's rows re-scan.
+    @State private var refreshToken = UUID()
 
     var body: some View {
         List {
             MachineListSection(badge: badge) { machine in
-                HarnessMachineRows(machine: machine)
+                HarnessMachineRows(machine: machine, refreshToken: refreshToken)
             }
         }
         .navigationTitle("Harnesses")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    refreshToken = UUID()
+                } label: {
+                    Label("Refresh Harnesses", systemImage: "arrow.clockwise")
+                }
+            }
+        }
     }
 
     private func badge(_ machine: CodevisorMachine) -> MachineSyncBadge {
@@ -37,6 +48,7 @@ struct HarnessesSettingsScreen: View {
 private struct HarnessMachineRows: View {
     @Environment(AppEnvironment.self) private var environment
     let machine: CodevisorMachine
+    let refreshToken: UUID
     @State private var harnesses: [ServerHarness] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
@@ -83,7 +95,7 @@ private struct HarnessMachineRows: View {
                 }
             }
         }
-        .task(id: machine.id) {
+        .task(id: "\(machine.id):\(refreshToken)") {
             isLoading = true
             await load()
         }

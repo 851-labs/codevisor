@@ -21,6 +21,20 @@ struct SkillsSettingsScreen: View {
         }
         .navigationTitle("Skills")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    Task {
+                        // Ferry skill content across the whole fleet, then
+                        // refresh the badges from fresh scans.
+                        await environment.configSync.synchronizeSkills()
+                        await scanAllMachines()
+                    }
+                } label: {
+                    Label("Sync Skills", systemImage: "arrow.triangle.2.circlepath")
+                }
+            }
+        }
         .task(id: environment.machines.allMachines.map(\.id)) { await scanAllMachines() }
     }
 
@@ -84,15 +98,6 @@ private struct SkillMachineRows: View {
                         skillRow(skill)
                     }
                 }
-                Button {
-                    Task {
-                        self.scan = try? await client.syncSkills(directoryNames: nil)
-                    }
-                } label: {
-                    Label("Sync", systemImage: "arrow.triangle.2.circlepath")
-                }
-                .font(.footnote)
-                .buttonStyle(.borderless)
             }
         }
         .task(id: machine.id) {

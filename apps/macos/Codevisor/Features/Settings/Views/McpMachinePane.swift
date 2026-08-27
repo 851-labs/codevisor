@@ -20,6 +20,7 @@ struct McpMachinePane: View {
     )
 
     @State var servers: [ServerMcpServer] = []
+    @State private var showingAdd = false
     @State var isLoading = true
     @State var errorMessage: String?
     @State private var selectedServer: ServerMcpServer?
@@ -64,6 +65,16 @@ struct McpMachinePane: View {
         }
         .task(id: machine.id) { await reload() }
         .environment(\.settingsMachineId, machine.id)
+        .sheet(isPresented: $showingAdd) {
+            McpServerEditorSheet(initialServer: nil) { values in
+                let created = try await client.createMcpServer(values.createBody)
+                servers.append(created)
+                servers.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+                if created.authType == "oauth" {
+                    Task { try? await beginOAuth(created) }
+                }
+            }
+        }
         .sheet(item: $editingServer) { server in
             McpServerEditorSheet(initialServer: server) { values in
                 let updated = try await client.updateMcpServer(id: server.id, request: values.updateBody)
@@ -142,6 +153,12 @@ struct McpMachinePane: View {
                     serverRow(server)
                 }
             }
+            Button {
+                showingAdd = true
+            } label: {
+                Label("Add MCP Server…", systemImage: "plus")
+            }
+            .settingsActionTint(theme)
             if let errorMessage {
                 Label(errorMessage, systemImage: "exclamationmark.triangle")
                     .font(.callout)
