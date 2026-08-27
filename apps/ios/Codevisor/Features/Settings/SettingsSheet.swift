@@ -59,26 +59,22 @@ struct SettingsSheet: View {
                 }
                 Section {
                     NavigationLink {
-                        HarnessesSettingsScreen(serverId: machines.selectedMachineId)
+                        HarnessesSettingsScreen()
                     } label: {
                         Label("Harnesses", systemImage: "cpu")
                     }
                     NavigationLink {
-                        McpSettingsScreen(serverId: machines.selectedMachineId)
+                        McpSettingsScreen()
                     } label: {
                         Label("MCPs", systemImage: "puzzlepiece.extension")
                     }
                     NavigationLink {
-                        SkillsSettingsScreen(
-                            client: machines.client(for: machines.selectedMachineId))
+                        SkillsSettingsScreen()
                     } label: {
                         Label("Skills", systemImage: "book.closed")
                     }
                     NavigationLink {
-                        PluginsSettingsScreen(
-                            client: machines.client(for: machines.selectedMachineId),
-                            serverId: machines.selectedMachineId
-                        )
+                        PluginsSettingsScreen()
                     } label: {
                         Label("Plugins", systemImage: "puzzlepiece")
                     }

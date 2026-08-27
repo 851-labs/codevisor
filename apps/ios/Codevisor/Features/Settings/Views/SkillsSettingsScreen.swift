@@ -1,22 +1,54 @@
-import AuthenticationServices
 import CodevisorCore
-import CodevisorTheming
 import CodevisorUI
 import SwiftUI
-import UserNotifications
-import os
 
 // MARK: - Skills
 
+/// The Skills screen: the machines ARE the page. One disclosure per
+/// machine with that machine's skill store inside; the fleet ferries
+/// skill content between machines.
 struct SkillsSettingsScreen: View {
-    let client: any CodevisorServerClienting
+    @Environment(AppEnvironment.self) private var environment
+
+    var body: some View {
+        List {
+            MachineConfigSections(badge: badge) { machine in
+                SkillMachineRows(machine: machine)
+            }
+            Section {
+            } footer: {
+                Text("Skills sync across your fleet — a skill added here appears on every machine.")
+            }
+        }
+        .navigationTitle("Skills")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    /// Skills have no readiness plane — their single source of truth is the
+    /// synced tree hash, so the badge derives from reachability alone.
+    private func badge(_ machine: CodevisorMachine) -> MachineSyncBadge {
+        if environment.machines.statusByMachineId[machine.id]?.isReachable == false {
+            return .attention("Unreachable")
+        }
+        return .synced
+    }
+}
+
+/// One machine's global skills, with per-machine sync and removal.
+private struct SkillMachineRows: View {
+    @Environment(AppEnvironment.self) private var environment
+    let machine: CodevisorMachine
     @State private var scan: ServerSkillsScan?
     @State private var isLoading = true
     @State private var errorMessage: String?
 
+    private var client: any CodevisorServerClienting {
+        environment.machines.client(for: machine.id)
+    }
+
     var body: some View {
-        List {
-            if isLoading {
+        Group {
+            if isLoading, scan == nil {
                 HStack {
                     Spacer(); ProgressView(); Spacer()
                 }
@@ -24,32 +56,28 @@ struct SkillsSettingsScreen: View {
                 Text(errorMessage).foregroundStyle(.red)
             } else if let scan {
                 if scan.global.isEmpty {
-                    ContentUnavailableView {
-                        Label("No Skills", systemImage: "book.closed")
-                    } description: {
-                        Text("Skills are reusable instruction sets shared with your coding agents.")
-                    }
+                    Text("No skills on this machine yet.")
+                        .foregroundStyle(.secondary)
                 } else {
-                    Section("Global Skills") {
-                        ForEach(scan.global, id: \.id) { skill in
-                            skillRow(skill)
-                        }
+                    ForEach(scan.global, id: \.id) { skill in
+                        skillRow(skill)
                     }
                 }
-            }
-        }
-        .navigationTitle("Skills")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Sync") {
+                Button {
                     Task {
-                        scan = try? await client.syncSkills(directoryNames: nil)
+                        self.scan = try? await client.syncSkills(directoryNames: nil)
                     }
+                } label: {
+                    Label("Sync", systemImage: "arrow.triangle.2.circlepath")
                 }
+                .font(.footnote)
+                .buttonStyle(.borderless)
             }
         }
-        .task { await load() }
+        .task(id: machine.id) {
+            isLoading = true
+            await load()
+        }
     }
 
     private func skillRow(_ skill: ServerGlobalSkill) -> some View {

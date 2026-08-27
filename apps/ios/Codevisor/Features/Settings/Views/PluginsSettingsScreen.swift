@@ -6,17 +6,52 @@ import os
 
 // MARK: - Plugins
 
-/// Settings ▸ Machines ▸ <machine> ▸ Plugins: the plugins installed on one
-/// machine, with live runtime-state chips, restart/uninstall actions, and a
-/// two-stage install sheet that shows the exact commands a plugin will run
-/// before anything executes. The iOS twin of macOS's PluginsSettingsView,
-/// modeled on SkillsSettingsScreen.
+/// The Plugins screen: the machines ARE the page. One disclosure per
+/// machine with that machine's plugins inside — install, update, restart,
+/// and uninstall act on that machine.
 struct PluginsSettingsScreen: View {
     @Environment(AppEnvironment.self) private var environment
-    let client: any CodevisorServerClienting
-    /// The machine whose plugins this screen manages, for
-    /// `plugin.state.updated` revision observation.
-    let serverId: String
+
+    var body: some View {
+        List {
+            MachineConfigSections(badge: badge) { machine in
+                PluginMachineRows(machine: machine)
+            }
+            Section {
+            } footer: {
+                Text(
+                    "Plugins installed from the registry sync across your fleet. Linked and local-path plugins stay on the machine they live on."
+                )
+            }
+        }
+        .navigationTitle("Plugins")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func badge(_ machine: CodevisorMachine) -> MachineSyncBadge {
+        if environment.machines.statusByMachineId[machine.id]?.isReachable == false {
+            return .attention("Unreachable")
+        }
+        guard let key = environment.machines.syncKey(forMachineId: machine.id),
+            let rows = PluginFleet.readiness(environment.configSync)[key]
+        else { return .syncing }
+        if rows.contains(where: { $0.state == "blocked" }) { return .attention("Needs attention") }
+        if rows.contains(where: { $0.state == "notInstalled" }) { return .syncing }
+        return .synced
+    }
+}
+
+/// One machine's plugins: runtime-state chips, update/restore/uninstall,
+/// and the browse/install sheets — all scoped to that machine.
+private struct PluginMachineRows: View {
+    @Environment(AppEnvironment.self) private var environment
+    let machine: CodevisorMachine
+
+    private var client: any CodevisorServerClienting {
+        environment.machines.client(for: machine.id)
+    }
+
+    private var serverId: String { machine.id }
 
     @State private var plugins: [ServerPluginSummary]?
     @State private var updates: [String: ServerPluginUpdateStatus] = [:]
@@ -42,52 +77,12 @@ struct PluginsSettingsScreen: View {
         }
     }
 
-    /// Phase 24: what each machine reports for the fleet's plugins.
-    @ViewBuilder
-    private var machinesSection: some View {
-        let _ = environment.configSync.revisionsByNamespace["plugin-readiness"]
-        let readiness = PluginFleet.readiness(environment.configSync)
-        if environment.machines.allMachines.count > 1, !readiness.isEmpty {
-            Section("On Your Machines") {
-                ForEach(readiness.keys.sorted(), id: \.self) { machineId in
-                    let rows = readiness[machineId] ?? []
-                    DisclosureGroup {
-                        ForEach(rows) { entry in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(entry.pluginId)
-                                Text(entry.reason ?? entry.state)
-                                    .font(.footnote)
-                                    .foregroundStyle(
-                                        entry.state == "blocked" ? .orange : .secondary)
-                            }
-                        }
-                    } label: {
-                        HStack {
-                            Text(environment.machines.fleetName(forSyncKey: machineId))
-                            Spacer(minLength: 12)
-                            pluginBadge(rows).view
-                                .font(.footnote)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func pluginBadge(_ rows: [PluginFleet.MachineReadiness]) -> MachineSyncBadge {
-        if rows.contains(where: { $0.state == "blocked" }) { return .attention("Needs attention") }
-        if rows.contains(where: { $0.state == "notInstalled" }) { return .syncing }
-        return .synced
-    }
-
     var body: some View {
-        List {
+        Group {
             if let actionError {
-                Section {
-                    Label(actionError, systemImage: "exclamationmark.triangle")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
+                Label(actionError, systemImage: "exclamationmark.triangle")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
             if isLoading, plugins == nil {
                 HStack {
@@ -95,50 +90,32 @@ struct PluginsSettingsScreen: View {
                 }
             } else if let errorMessage, plugins == nil {
                 Text(errorMessage).foregroundStyle(.red)
-            } else if (plugins ?? []).isEmpty {
-                // Custom empty state (not ContentUnavailableView): it packs
-                // its actions right against the title. Manual installs stay
-                // reachable from the toolbar's + button.
-                VStack(spacing: 16) {
-                    Image(systemName: "puzzlepiece")
-                        .font(.system(size: 42))
-                        .foregroundStyle(.tertiary)
-                    Text("No Plugins Installed")
-                        .font(.title3.weight(.semibold))
-                    Button("Browse Plugins") { activeSheet = .browse }
-                        .buttonStyle(.borderedProminent)
-                        .padding(.top, 8)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 32)
             } else {
-                Section("Installed") {
+                if (plugins ?? []).isEmpty {
+                    Text("No plugins installed on this machine.")
+                        .foregroundStyle(.secondary)
+                } else {
                     ForEach(plugins ?? []) { plugin in
                         pluginRow(plugin)
                     }
                 }
-                machinesSection
+                HStack(spacing: 16) {
+                    Button {
+                        activeSheet = .browse
+                    } label: {
+                        Label("Browse", systemImage: "magnifyingglass")
+                    }
+                    Button {
+                        activeSheet = .install(initialSource: nil)
+                    } label: {
+                        Label("Install…", systemImage: "plus")
+                    }
+                }
+                .font(.footnote)
+                .buttonStyle(.borderless)
             }
         }
         .disabled(isMutating)
-        .navigationTitle("Plugins")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    activeSheet = .browse
-                } label: {
-                    Label("Browse Plugins", systemImage: "magnifyingglass")
-                }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    activeSheet = .install(initialSource: nil)
-                } label: {
-                    Label("Install Plugin", systemImage: "plus")
-                }
-            }
-        }
         .task(id: serverId) { await reload() }
         // plugin.state.updated events (start, crash, restart, and list
         // changes) bump the revision; refetch the light list.

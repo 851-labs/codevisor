@@ -1,23 +1,56 @@
-import AuthenticationServices
 import CodevisorCore
-import CodevisorTheming
 import CodevisorUI
 import SwiftUI
-import UserNotifications
-import os
 
 // MARK: - Harnesses
 
+/// The Harnesses screen: the machines ARE the page. One disclosure per
+/// machine with that machine's harnesses inside — installs and sign-ins
+/// are genuinely per machine.
 struct HarnessesSettingsScreen: View {
     @Environment(AppEnvironment.self) private var environment
-    @State var serverId: String
+
+    var body: some View {
+        List {
+            MachineConfigSections(badge: badge) { machine in
+                HarnessMachineRows(machine: machine)
+            }
+            Section {
+            } footer: {
+                Text(
+                    "Harnesses are installed and signed in per machine. Which harnesses are enabled syncs across your fleet."
+                )
+            }
+        }
+        .navigationTitle("Harnesses")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func badge(_ machine: CodevisorMachine) -> MachineSyncBadge {
+        if environment.machines.statusByMachineId[machine.id]?.isReachable == false {
+            return .attention("Unreachable")
+        }
+        guard let key = environment.machines.syncKey(forMachineId: machine.id),
+            let rows = HarnessFleet.readiness(environment.configSync)[key]
+        else { return .syncing }
+        if rows.contains(where: { $0.state == "signInRequired" }) {
+            return .attention("Sign in required")
+        }
+        return .synced
+    }
+}
+
+/// One machine's harnesses: sign-in, enable, and what's not installed yet.
+private struct HarnessMachineRows: View {
+    @Environment(AppEnvironment.self) private var environment
+    let machine: CodevisorMachine
     @State private var harnesses: [ServerHarness] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var signInRequest: HarnessSignInRequest?
 
     private var client: any CodevisorServerClienting {
-        environment.machines.client(for: serverId)
+        environment.machines.client(for: machine.id)
     }
 
     private var installed: [ServerHarness] {
@@ -29,33 +62,19 @@ struct HarnessesSettingsScreen: View {
     }
 
     var body: some View {
-        List {
-            // The pane serves the whole fleet: pick whose install/sign-in
-            // state to manage (hidden for single-machine setups).
-            if environment.machines.allMachines.count > 1 {
-                Section {
-                    Picker("Machine", selection: $serverId) {
-                        ForEach(environment.machines.allMachines) { machine in
-                            Text(machine.name).tag(machine.id)
-                        }
-                    }
-                }
-            }
-            if isLoading {
+        Group {
+            if isLoading, harnesses.isEmpty {
                 HStack {
                     Spacer(); ProgressView(); Spacer()
                 }
             } else if let errorMessage {
                 Text(errorMessage).foregroundStyle(.red)
             } else {
-                Section("Installed") {
-                    ForEach(installed, id: \.id) { harness in
-                        harnessRow(harness)
-                    }
+                ForEach(installed, id: \.id) { harness in
+                    harnessRow(harness)
                 }
-                machinesSection
                 if !notInstalled.isEmpty {
-                    Section("Not Installed") {
+                    DisclosureGroup("Not installed (\(notInstalled.count))") {
                         ForEach(notInstalled, id: \.id) { harness in
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(harness.name)
@@ -67,84 +86,15 @@ struct HarnessesSettingsScreen: View {
                             }
                         }
                     }
+                    .font(.footnote)
                 }
             }
         }
-        .navigationTitle("Harnesses")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    Task { await load() }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .accessibilityLabel("Refresh harnesses")
-            }
-        }
-        .task(id: serverId) {
+        .task(id: machine.id) {
             isLoading = true
             await load()
         }
         .harnessSignInSheet(request: $signInRequest)
-    }
-
-    /// Phase 24: what each machine reports for the fleet's agents, with
-    /// sign-in a tap away. Hidden for single-machine fleets.
-    @ViewBuilder
-    private var machinesSection: some View {
-        let _ = environment.configSync.revisionsByNamespace["harness-readiness"]
-        let readiness = HarnessFleet.readiness(environment.configSync)
-        if environment.machines.allMachines.count > 1, !readiness.isEmpty {
-            Section("On Your Machines") {
-                ForEach(readiness.keys.sorted(), id: \.self) { machineId in
-                    let rows = readiness[machineId] ?? []
-                    DisclosureGroup {
-                        ForEach(rows) { entry in
-                            machineReadinessRow(machineId: machineId, entry: entry)
-                        }
-                    } label: {
-                        HStack {
-                            Text(environment.machines.fleetName(forSyncKey: machineId))
-                            Spacer(minLength: 12)
-                            harnessBadge(rows).view
-                                .font(.footnote)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func harnessBadge(_ rows: [HarnessFleet.MachineReadiness]) -> MachineSyncBadge {
-        if rows.contains(where: { $0.state == "signInRequired" }) {
-            return .attention("Sign in required")
-        }
-        if rows.contains(where: { $0.state == "notInstalled" }) { return .syncing }
-        return .synced
-    }
-
-    private func machineReadinessRow(
-        machineId: String, entry: HarnessFleet.MachineReadiness
-    ) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(entry.harnessId)
-                Text(entry.reason ?? entry.state)
-                    .font(.footnote)
-                    .foregroundStyle(entry.state == "signInRequired" ? .orange : .secondary)
-            }
-            Spacer()
-            if entry.state == "signInRequired" {
-                Button("Sign In") {
-                    if let resolved = environment.machines.machineId(forSyncKey: machineId) {
-                        signInRequest = HarnessSignInRequest(
-                            serverId: resolved, harnessId: entry.harnessId)
-                    }
-                }
-                .font(.footnote)
-            }
-        }
     }
 
     private func harnessRow(_ harness: ServerHarness) -> some View {
@@ -156,7 +106,7 @@ struct HarnessesSettingsScreen: View {
                 {
                     Button("Sign in to use") {
                         signInRequest = HarnessSignInRequest(
-                            serverId: serverId,
+                            serverId: machine.id,
                             harnessId: harness.id,
                             initialHarness: harness
                         )

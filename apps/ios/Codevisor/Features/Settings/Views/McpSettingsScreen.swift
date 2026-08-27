@@ -1,128 +1,87 @@
-import AuthenticationServices
 import CodevisorCore
-import CodevisorTheming
 import CodevisorUI
 import SwiftUI
-import UserNotifications
-import os
 
 // MARK: - MCPs
 
+/// The MCP screen: the machines ARE the page. One disclosure per machine
+/// with that machine's MCP servers inside; the toggle means "available on
+/// this machine" and writes the per-machine overlay.
 struct McpSettingsScreen: View {
     @Environment(AppEnvironment.self) private var environment
-    @State var serverId: String
 
-    private var client: any CodevisorServerClienting {
-        environment.machines.client(for: serverId)
+    var body: some View {
+        List {
+            MachineConfigSections(badge: badge) { machine in
+                McpMachineRows(machine: machine)
+            }
+            Section {
+            } footer: {
+                Text("MCP servers are shared by your whole fleet — changes here sync to every machine.")
+            }
+        }
+        .navigationTitle("MCPs")
+        .navigationBarTitleDisplayMode(.inline)
     }
+
+    private func badge(_ machine: CodevisorMachine) -> MachineSyncBadge {
+        if environment.machines.statusByMachineId[machine.id]?.isReachable == false {
+            return .attention("Unreachable")
+        }
+        guard let key = environment.machines.syncKey(forMachineId: machine.id),
+            let rows = McpFleet.readiness(environment.configSync)[key]
+        else { return .syncing }
+        if rows.contains(where: { $0.state == "blocked" }) { return .attention("Needs attention") }
+        if rows.contains(where: { $0.state == "connecting" }) { return .syncing }
+        return .synced
+    }
+}
+
+/// One machine's MCP servers with machine-effective enable state.
+private struct McpMachineRows: View {
+    @Environment(AppEnvironment.self) private var environment
+    let machine: CodevisorMachine
     @State private var servers: [ServerMcpServer] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
 
+    private var client: any CodevisorServerClienting {
+        environment.machines.client(for: machine.id)
+    }
+
     var body: some View {
-        List {
-            if isLoading {
+        // Overlay flips re-derive every row's effective state immediately.
+        let _ = environment.configSync.revisionsByNamespace["mcp-overlays"]
+        Group {
+            if isLoading, servers.isEmpty {
                 HStack {
                     Spacer(); ProgressView(); Spacer()
                 }
             } else if let errorMessage {
                 Text(errorMessage).foregroundStyle(.red)
             } else if servers.isEmpty {
-                Text("No MCP servers managed by Codevisor yet.")
+                Text("No MCP servers added yet.")
                     .foregroundStyle(.secondary)
             } else {
-                Section {
-                    ForEach(servers, id: \.id) { server in
-                        serverRow(server)
-                    }
-                } header: {
-                    Text("MCP Servers")
-                } footer: {
-                    Text("MCP servers are shared by your whole fleet.")
+                ForEach(servers, id: \.id) { server in
+                    serverRow(server)
                 }
             }
-            machinesSection
         }
-        .navigationTitle("MCPs")
-        .navigationBarTitleDisplayMode(.inline)
-        .task(id: serverId) {
+        .task(id: machine.id) {
             isLoading = true
             await load()
         }
     }
 
-    /// One disclosure per machine: sync badge on the row, that machine's
-    /// MCP reports and per-machine toggles inside. Hidden for
-    /// single-machine fleets.
-    @ViewBuilder
-    private var machinesSection: some View {
-        let _ = environment.configSync.revisionsByNamespace["mcp-readiness"]
-        let _ = environment.configSync.revisionsByNamespace["mcp-overlays"]
-        let readiness = McpFleet.readiness(environment.configSync)
-        if environment.machines.allMachines.count > 1, !readiness.isEmpty {
-            Section("On Your Machines") {
-                ForEach(readiness.keys.sorted(), id: \.self) { machineId in
-                    let rows = readiness[machineId] ?? []
-                    DisclosureGroup {
-                        ForEach(rows) { entry in
-                            readinessRow(machineId: machineId, entry: entry)
-                        }
-                    } label: {
-                        HStack {
-                            Text(machineName(machineId))
-                            Spacer(minLength: 12)
-                            badge(rows).view
-                                .font(.footnote)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func machineName(_ machineId: String) -> String {
-        environment.machines.fleetName(forSyncKey: machineId)
-    }
-
-    private func badge(_ rows: [McpFleet.MachineReadiness]) -> MachineSyncBadge {
-        if rows.contains(where: { $0.state == "blocked" }) { return .attention("Needs attention") }
-        if rows.contains(where: { $0.state == "connecting" }) { return .syncing }
-        return .synced
-    }
-
-    private func readinessRow(machineId: String, entry: McpFleet.MachineReadiness) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(entry.name)
-                Text(entry.reason ?? entry.state)
-                    .font(.footnote)
-                    .foregroundStyle(
-                        entry.state == "blocked" ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
-            }
-            Spacer()
-            Toggle(
-                "Enable \(entry.name) on \(machineName(machineId))",
-                isOn: Binding(
-                    get: {
-                        !McpFleet.isDisabled(
-                            environment.configSync, machineId: machineId, name: entry.name)
-                    },
-                    set: { enabled in
-                        McpFleet.setDisabled(
-                            environment.configSync,
-                            machineId: machineId,
-                            name: entry.name,
-                            disabled: !enabled
-                        )
-                    }
-                )
-            )
-            .labelsHidden()
-        }
+    private func machineDisabled(_ server: ServerMcpServer) -> Bool {
+        guard let key = environment.machines.syncKey(forMachineId: machine.id) else { return false }
+        return McpFleet.isDisabled(environment.configSync, machineId: key, name: server.name)
     }
 
     private func serverRow(_ server: ServerMcpServer) -> some View {
-        HStack {
+        let effectiveEnabled = server.enabled && !machineDisabled(server)
+        return HStack {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(server.name)
@@ -134,7 +93,7 @@ struct McpSettingsScreen: View {
                             .background(Color.secondary.opacity(0.15), in: Capsule())
                     }
                 }
-                Text(server.connectionState)
+                Text(effectiveEnabled ? server.connectionState : "Disabled on this machine")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -142,15 +101,8 @@ struct McpSettingsScreen: View {
             Toggle(
                 "Enable \(server.name)",
                 isOn: Binding(
-                    get: { server.enabled },
-                    set: { enabled in
-                        Task {
-                            _ = try? await client.setMcpServerEnabled(
-                                id: server.id, enabled: enabled
-                            )
-                            await load()
-                        }
-                    }
+                    get: { effectiveEnabled },
+                    set: { enabled in Task { await setEnabled(server, enabled: enabled) } }
                 )
             )
             .labelsHidden()
@@ -166,6 +118,26 @@ struct McpSettingsScreen: View {
                     Label("Remove…", systemImage: "trash")
                 }
             }
+        }
+    }
+
+    /// The toggle's one meaning: available on THIS machine. Off writes the
+    /// per-machine overlay only. On clears the overlay — and if the fleet
+    /// definition itself was off, re-enables it for the fleet.
+    private func setEnabled(_ server: ServerMcpServer, enabled: Bool) async {
+        guard let key = environment.machines.syncKey(forMachineId: machine.id) else {
+            errorMessage = "This machine hasn't reported its identity yet."
+            return
+        }
+        McpFleet.setDisabled(
+            environment.configSync,
+            machineId: key,
+            name: server.name,
+            disabled: !enabled
+        )
+        if enabled, !server.enabled {
+            _ = try? await client.setMcpServerEnabled(id: server.id, enabled: true)
+            await load()
         }
     }
 
