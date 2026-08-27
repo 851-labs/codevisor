@@ -158,11 +158,12 @@ extension SessionModel {
             if promotedFromQueue {
                 onQueuedPromptPromoted?(id.flatMap(UUID.init(uuidString:)))
             }
-        case let .finished(stopReason, stopDetail, retryable, initiatedBy, chatItemId):
+        case let .finished(stopReason, stopDetail, stopKind, retryable, initiatedBy, chatItemId):
             let activeTurnContinues = finish(
                 stopReason: stopReason,
                 outcome: stopReason == .cancelled ? .cancelled : .completed,
                 stopDetail: stopDetail,
+                stopKind: stopKind,
                 retryable: retryable,
                 chatItemId: chatItemId
             )
@@ -240,6 +241,7 @@ extension SessionModel {
         stopReason: StopReason?,
         outcome: TranscriptReducer.TurnOutcome,
         stopDetail: String? = nil,
+        stopKind: String? = nil,
         retryable: Bool = false,
         chatItemId: UUID? = nil
     ) -> Bool {
@@ -253,6 +255,7 @@ extension SessionModel {
                 stopReason: stopReason,
                 outcome: outcome,
                 stopDetail: stopDetail,
+                stopKind: stopKind,
                 retryable: retryable
             )
             settledConversation[index] = .assistant(settled)
@@ -274,6 +277,7 @@ extension SessionModel {
             stopReason: stopReason,
             outcome: outcome,
             stopDetail: stopDetail,
+            stopKind: stopKind,
             retryable: retryable
         )
         // Stays the active item: settling happens when the next bubble
@@ -288,6 +292,7 @@ extension SessionModel {
         stopReason: StopReason?,
         outcome: TranscriptReducer.TurnOutcome,
         stopDetail: String?,
+        stopKind: String? = nil,
         retryable: Bool
     ) {
         turn.isGenerating = false
@@ -297,6 +302,7 @@ extension SessionModel {
         // Present only when the turn ended abnormally; drives the per-turn reason
         // line so a non-clean stop is never silent.
         turn.stopDetail = stopDetail
+        turn.stopKind = stopKind
         turn.retryable = retryable
         turn.endedAt = now()
         TranscriptReducer.settleToolCalls(&turn, outcome: outcome)

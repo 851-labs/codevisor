@@ -230,7 +230,21 @@ struct AssistantTurnBody: View {
 
     @ViewBuilder
     private func turnErrorRow(_ message: String) -> some View {
-        if let transcriptController,
+        if turn.stopKind == "usageLimit" {
+            // Out of credits: the fix is a different account, not a retry.
+            ChatErrorRow(
+                message,
+                actionTitle: "Switch Account",
+                action: { [weak transcriptController] in
+                    guard let controller = transcriptController,
+                        let harnessId = controller.selectedHarnessId ?? controller.activeHarnessId
+                    else { return }
+                    HarnessSignInRequest(
+                        serverId: controller.project.serverId, harnessId: harnessId
+                    ).post()
+                }
+            )
+        } else if let transcriptController,
             transcriptController.errorRequiresHarnessAuthentication,
             transcriptController.errorMessage == message
         {

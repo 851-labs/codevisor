@@ -57,6 +57,7 @@ public enum ServerSessionStreamEvent: Equatable, Sendable {
     case finished(
         StopReason,
         stopDetail: String?,
+        stopKind: String? = nil,
         retryable: Bool = false,
         initiatedBy: SessionTurnInitiator = .user,
         chatItemId: UUID? = nil
@@ -483,6 +484,7 @@ extension ServerSessionTransport {
                 isThinking: item.isGenerating && item.text.isEmpty,
                 stopReason: item.stopReason.flatMap(StopReason.init(rawValue:)),
                 stopDetail: item.stopDetail,
+                stopKind: item.stopKind,
                 retryable: item.retryable == true,
                 planDocument: item.planDocument,
                 startedAt: item.startedAt.flatMap(parseServerDate),
@@ -556,6 +558,7 @@ extension ServerSessionTransport {
                     .finished(
                         stopReason,
                         stopDetail: event.payload["stopDetail"]?.stringValue,
+                        stopKind: event.payload["stopKind"]?.stringValue,
                         retryable: event.payload["retryable"]?.boolValue == true,
                         initiatedBy: event.payload["initiatedBy"]?.stringValue
                             .flatMap(SessionTurnInitiator.init(rawValue:)) ?? .user,

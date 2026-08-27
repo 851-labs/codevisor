@@ -408,6 +408,7 @@ public struct ServerTranscriptItem: Decodable, Equatable, Sendable {
     public var endedAt: String?
     public var stopReason: String?
     public var stopDetail: String?
+    public var stopKind: String?
     public var retryable: Bool?
     public var planDocument: String?
     public var attachments: [ServerAttachmentRef]?
@@ -435,6 +436,7 @@ public struct ServerTranscriptItem: Decodable, Equatable, Sendable {
         endedAt: String? = nil,
         stopReason: String? = nil,
         stopDetail: String? = nil,
+        stopKind: String? = nil,
         retryable: Bool? = nil,
         planDocument: String? = nil,
         attachments: [ServerAttachmentRef]? = nil,
@@ -456,6 +458,7 @@ public struct ServerTranscriptItem: Decodable, Equatable, Sendable {
         self.endedAt = endedAt
         self.stopReason = stopReason
         self.stopDetail = stopDetail
+        self.stopKind = stopKind
         self.retryable = retryable
         self.planDocument = planDocument
         self.attachments = attachments

@@ -66,6 +66,10 @@ public struct AssistantTurn: Sendable, Equatable {
     /// completion or a silently-recovered turn; when present it renders as a
     /// per-turn line so a non-clean stop is never silent.
     public var stopDetail: String?
+    /// Machine-readable end classification from the provider ("usageLimit"
+    /// today); nil means unclassified. Lets the UI offer the RIGHT action —
+    /// switch accounts — instead of only prose.
+    public var stopKind: String?
     /// True when the provider exhausted automatic retries and the original
     /// prompt can safely be submitted again by the user.
     public var retryable: Bool
@@ -113,6 +117,7 @@ public struct AssistantTurn: Sendable, Equatable {
         isThinking: Bool = false,
         stopReason: StopReason? = nil,
         stopDetail: String? = nil,
+        stopKind: String? = nil,
         retryable: Bool = false,
         retryStatus: RetryStatus? = nil,
         plan: Plan? = nil,
@@ -134,6 +139,7 @@ public struct AssistantTurn: Sendable, Equatable {
         self.isThinking = isThinking
         self.stopReason = stopReason
         self.stopDetail = stopDetail
+        self.stopKind = stopKind
         self.retryable = retryable
         self.retryStatus = retryStatus
         self.plan = plan

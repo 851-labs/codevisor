@@ -318,9 +318,10 @@ extension SessionModel {
                         attachments: attachments,
                         to: &turn
                     )
-                case let .finished(reason, detail, retryable, _, _):
+                case let .finished(reason, detail, stopKind, retryable, _, _):
                     turn.stopReason = reason
                     turn.stopDetail = detail
+                    turn.stopKind = stopKind
                     turn.retryable = retryable
                     turn.isGenerating = false
                 case let .failed(message, retryable, _):

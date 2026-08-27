@@ -329,7 +329,17 @@ struct AssistantTurnView: View {
 
     @ViewBuilder
     private func turnErrorRow(_ message: String) -> some View {
-        if let transcriptController,
+        if turn.stopKind == "usageLimit" {
+            // Out of credits: the fix is a different account, not a retry.
+            ChatErrorRow(
+                message,
+                actionTitle: "Switch Account",
+                action: {
+                    SettingsRouter.shared.showHarnesses()
+                    openSettings()
+                }
+            )
+        } else if let transcriptController,
             transcriptController.errorRequiresHarnessAuthentication,
             transcriptController.errorMessage == message
         {
