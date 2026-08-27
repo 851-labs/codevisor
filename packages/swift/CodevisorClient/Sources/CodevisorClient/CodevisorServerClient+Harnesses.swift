@@ -197,6 +197,17 @@ extension CodevisorServerClient {
             body: HarnessLoginBody(methodId: methodId, apiKey: apiKey))
     }
 
+    public func answerHarnessLogin(
+        harnessId: String, accountId: String, flowId: String, code: String
+    ) async throws -> ServerHarnessAuthFlow {
+        struct Body: Encodable { var code: String }
+        return try await send(
+            "\(harnessAccountPath(harnessId, accountId))/login/\(pathComponent(flowId))/answer",
+            method: "POST",
+            body: Body(code: code)
+        )
+    }
+
     public func cancelHarnessLogin(harnessId: String, accountId: String, flowId: String) async throws {
         try await sendNoResponse(
             "\(harnessAccountPath(harnessId, accountId))/login/\(pathComponent(flowId))", method: "DELETE")

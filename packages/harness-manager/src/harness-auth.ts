@@ -7,6 +7,7 @@ import {
   type HarnessAccountContext,
   type HarnessDefinition
 } from "@codevisor/agent-runtime"
+import { spawnClaudeAuthClient, type ClaudeAuthClient } from "@codevisor/adapter-claude"
 import { spawnCodexClient } from "@codevisor/adapter-codex"
 import type {
   Harness,
@@ -97,6 +98,8 @@ export interface HarnessAuthManagerConfig {
   readonly agents: AgentRuntimeService
   readonly terminal: TerminalManagerService
   readonly preferDeviceCode?: boolean
+  /// Test seam: replaces the SDK-backed Claude OAuth client factory.
+  readonly claudeAuth?: typeof spawnClaudeAuthClient
   /// Overrides the login-shell environment resolver in tests and embedded hosts.
   readonly resolveEnv?: () => Promise<NodeJS.ProcessEnv>
   /// Overrides non-interactive authentication commands in tests.
@@ -125,6 +128,8 @@ export interface HarnessAuthManager {
     apiKey?: string
   ) => Promise<HarnessAuthFlow>
   readonly cancelLogin: (flowId: string) => Promise<void>
+  /// Completes a pasteCode flow with the user's pasted code.
+  readonly answerLogin: (flowId: string, code: string) => Promise<HarnessAuthFlow>
   readonly logout: (accountId: string) => Promise<HarnessAccount>
   readonly accountContext: (accountId: string) => Promise<HarnessAccountContext>
   readonly activeAccountContext: (harnessId: string) => Promise<HarnessAccountContext | undefined>
@@ -156,12 +161,6 @@ interface CodexLoginEntry {
   readonly loginId?: string
 }
 
-interface TerminalLoginEntry {
-  readonly accountId: string
-  readonly terminalId: string
-  readonly closeOnSuccess: boolean
-}
-
 const run = <A>(effect: Effect.Effect<A, unknown>): Promise<A> => Effect.runPromise(effect)
 
 export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): HarnessAuthManager => {
@@ -172,7 +171,8 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
   const listeners = new Set<(event: HarnessAuthEvent) => void>()
   const probes = new Map<string, Promise<HarnessAccount>>()
   const codexLogins = new Map<string, CodexLoginEntry>()
-  const terminalLogins = new Map<string, TerminalLoginEntry>()
+  const claudeLogins = new Map<string, { accountId: string; client: ClaudeAuthClient }>()
+  const spawnClaudeAuth = config.claudeAuth ?? spawnClaudeAuthClient
   const acpLoginMethods = new Map<string, ReadonlyArray<HarnessAuthMethod>>()
   let environmentPromise: Promise<NodeJS.ProcessEnv> | undefined
   const runExecFile: HarnessAuthExec =
@@ -523,8 +523,8 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
         {
           id: "claude-login",
           name: "Sign in to Claude",
-          kind: "terminal",
-          description: "Claude opens its secure browser sign-in flow."
+          kind: "browser",
+          description: "Approve in your browser, then paste the code back here."
         },
         {
           id: "apiKey",
@@ -759,79 +759,49 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
     return flow
   }
 
-  const monitorTerminalLogin = (flowId: string, accountId: string): void => {
-    const startedAt = Date.now()
-    const tick = async (): Promise<void> => {
-      const entry = terminalLogins.get(flowId)
-      if (entry === undefined) return
-      try {
-        const account = await probeAccount(accountId, true)
-        if (account.authState === "authenticated" || account.authState === "notRequired") {
-          terminalLogins.delete(flowId)
-          if (entry.closeOnSuccess) {
-            await run(config.terminal.closeTerminal(entry.terminalId)).catch(() => undefined)
-          }
-          await run(config.db.setActiveHarnessAccount(account.harnessId, account.id))
-          emit({
-            kind: "harness.authFlow.updated",
-            subjectId: account.harnessId,
-            payload: { id: flowId, accountId, completed: true, success: true }
-          })
-          return
-        }
-      } catch {
-        // Keep polling while the interactive harness setup owns the terminal.
-      }
-      if (Date.now() - startedAt >= 10 * 60_000) {
-        terminalLogins.delete(flowId)
-        return
-      }
-      setTimeout(() => void tick(), 2_000)
-    }
-    setTimeout(() => void tick(), 1_000)
-  }
-
-  const beginTerminalLogin = async (
-    account: HarnessAccountRecord,
-    command: string,
-    args: ReadonlyArray<string>,
-    closeOnSuccess: boolean
-  ): Promise<HarnessAuthFlow> => {
-    const flowId = randomUUID()
-    const terminalKey = `auth:${flowId}`
-    const path = profilePath(account) ?? (await environment()).HOME ?? process.cwd()
-    const terminal = await run(
-      config.terminal.createTerminal(
-        {
-          sessionId: terminalKey,
-          cwd: path,
-          cols: 90,
-          rows: 28,
-          shell: command,
-          args
-        },
-        await accountEnv(account)
-      )
-    )
-    terminalLogins.set(flowId, {
-      accountId: account.id,
-      terminalId: terminal.terminalId,
-      closeOnSuccess
+  const beginClaudeLogin = async (account: HarnessAccountRecord): Promise<HarnessAuthFlow> => {
+    // Native wrap of Claude's OAuth (Phase: replace the PTY login): the SDK
+    // yields the browser URL up front and takes the pasted code back — no
+    // terminal rendering, real input affordances on the client.
+    const env = await accountEnv(account)
+    const client = spawnClaudeAuth({
+      claudePath: await executable("claude-code"),
+      cwd: profilePath(account) ?? env.HOME ?? process.cwd(),
+      env
     })
-    monitorTerminalLogin(flowId, account.id)
-    const flow: HarnessAuthFlow = {
-      id: flowId,
-      accountId: account.id,
-      kind: "terminal",
-      terminalId: terminal.terminalId,
-      terminalKey
+    try {
+      const { url } = await client.start()
+      const flowId = randomUUID()
+      claudeLogins.set(flowId, { accountId: account.id, client })
+      const flow: HarnessAuthFlow = { id: flowId, accountId: account.id, kind: "pasteCode", url }
+      emit({ kind: "harness.authFlow.updated", subjectId: account.harnessId, payload: flow })
+      return flow
+    } catch (cause) {
+      client.close()
+      throw cause
     }
-    emit({ kind: "harness.authFlow.updated", subjectId: account.harnessId, payload: flow })
-    return flow
   }
 
-  const beginClaudeLogin = async (account: HarnessAccountRecord): Promise<HarnessAuthFlow> =>
-    beginTerminalLogin(account, await executable("claude-code"), ["auth", "login"], false)
+  /// Completes a pasteCode flow with the code the user pasted back.
+  const answerLogin = async (flowId: string, code: string): Promise<HarnessAuthFlow> => {
+    const entry = claudeLogins.get(flowId)
+    if (entry === undefined) throw new Error("This sign-in attempt has expired — start again")
+    const account = await run(config.db.getHarnessAccount(entry.accountId))
+    if (account === undefined) throw new Error("Harness account not found")
+    try {
+      await entry.client.submit(code)
+    } finally {
+      claudeLogins.delete(flowId)
+      entry.client.close()
+    }
+    const probed = await probeAccount(account.id, true)
+    if (probed.authState === "authenticated" || probed.authState === "notRequired") {
+      await run(config.db.setActiveHarnessAccount(account.harnessId, account.id))
+    }
+    const done: HarnessAuthFlow = { id: flowId, accountId: account.id, kind: "complete" }
+    emit({ kind: "harness.authFlow.updated", subjectId: account.harnessId, payload: done })
+    return done
+  }
 
   const runWithInput = async (
     command: string,
@@ -947,10 +917,11 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
       codexLogins.delete(flowId)
       return
     }
-    const terminal = terminalLogins.get(flowId)
-    if (terminal !== undefined) {
-      await run(config.terminal.closeTerminal(terminal.terminalId))
-      terminalLogins.delete(flowId)
+    const claude = claudeLogins.get(flowId)
+    if (claude !== undefined) {
+      claude.client.close()
+      claudeLogins.delete(flowId)
+      return
     }
   }
 
@@ -991,6 +962,7 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
     probeAccount,
     beginLogin,
     cancelLogin,
+    answerLogin,
     logout,
     accountContext: async (accountId) => {
       const state = await probeAccount(accountId)

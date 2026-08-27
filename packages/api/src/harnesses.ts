@@ -203,9 +203,19 @@ export const HarnessAuthFlow = Schema.Union([
   Schema.Struct({
     id: Schema.String,
     accountId: Schema.String,
+    kind: Schema.Literal("pasteCode"),
+    url: Schema.String
+  }),
+  Schema.Struct({
+    id: Schema.String,
+    accountId: Schema.String,
     kind: Schema.Literal("complete")
   })
 ])
+
+/// The code a user pasted back from a pasteCode flow's browser page.
+export const AnswerHarnessAuthRequest = Schema.Struct({ code: Schema.String })
+export type AnswerHarnessAuthRequest = typeof AnswerHarnessAuthRequest.Type
 export type HarnessAuthFlow = typeof HarnessAuthFlow.Type
 
 export const PiAuthMethod = Schema.Literals(["api_key", "oauth"])

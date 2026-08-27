@@ -77,6 +77,7 @@ describe("harness routes", () => {
     let authState: "authenticated" | "unauthenticated" = "authenticated"
     let activeContextAvailable = true
     const auth: HarnessAuthManager = {
+      answerLogin: () => Promise.reject(new Error("unused")),
       decorateHarnesses: async (values) =>
         values.map((harness) => ({
           ...harness,
@@ -864,6 +865,36 @@ describe("harness routes", () => {
       await waitFor(() => turns.includes("end codex"))
       expect(turns[0]).toBe("start codex")
     })
+  })
+
+  it("reports 501 for a login answer without an auth service", async () => {
+    const { services } = await makeServices("server-answer-501")
+    const server = await startWithApp(services)
+    const answered = await jsonRequest(
+      server,
+      "/v1/harnesses/claude-code/accounts/a1/login/flow-1/answer",
+      { body: JSON.stringify({ code: "abc" }), method: "POST" }
+    )
+    expect(answered.status).toBe(501)
+  })
+
+  it("answers a pasteCode login flow through the accounts route", async () => {
+    const { services } = await makeServices("server-answer")
+    const auth = {
+      answerLogin: (flowId: string, code: string) =>
+        Promise.resolve({ id: flowId, accountId: "a1", kind: "complete", echoed: code }),
+      activeAccountContext: () => Promise.resolve(undefined),
+      subscribe: () => () => undefined
+    } as unknown as HarnessAuthManager
+    const server = await startWithApp({ ...services, auth })
+
+    const answered = await jsonRequest(
+      server,
+      "/v1/harnesses/claude-code/accounts/a1/login/flow-1/answer",
+      { body: JSON.stringify({ code: "abc#def" }), method: "POST" }
+    )
+    expect(answered.status).toBe(200)
+    expect(answered.body).toMatchObject({ id: "flow-1", kind: "complete", echoed: "abc#def" })
   })
 
   it("capabilities lists sign-in-pending harnesses without inspecting them", async () => {

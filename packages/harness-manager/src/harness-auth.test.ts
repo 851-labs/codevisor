@@ -293,3 +293,76 @@ describe("Claude authentication probing", () => {
     })
   })
 })
+
+describe("Claude wrapped OAuth login", () => {
+  it("begins a pasteCode flow, completes on the pasted code, and cancels cleanly", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "codevisor-claude-auth-"))
+    directories.push(directory)
+    const db = await run(
+      makeDatabase({ filename: join(directory, "codevisor.sqlite"), serverId: "test" })
+    )
+    databases.push(db)
+    const account = await run(
+      db.saveHarnessAccount({
+        id: "claude-account",
+        harnessId: "claude-code",
+        profileKind: "default",
+        label: "Personal",
+        authState: "unauthenticated",
+        canLogin: true,
+        canLogout: false
+      })
+    )
+    // The post-answer probe runs the real CLI shape: a fake binary that
+    // reports a signed-in account.
+    const binary = join(directory, "claude")
+    writeFileSync(
+      binary,
+      '#!/bin/sh\necho \'{"loggedIn": true, "authMethod": "claude.ai", "email": "u@example.com"}\'\n'
+    )
+    chmodSync(binary, 0o700)
+
+    const calls: Array<Array<string>> = []
+    const claudeAuth = () => ({
+      start: async () => {
+        calls.push(["start"])
+        return { url: "https://claude.com/cai/oauth/authorize?state=abc" }
+      },
+      submit: async (pasted: string) => {
+        calls.push(["submit", pasted])
+      },
+      close: () => {
+        calls.push(["close"])
+      }
+    })
+    const manager = makeHarnessAuthManager({
+      agents: {} as AgentRuntimeService,
+      claudeAuth,
+      dataDir: directory,
+      db,
+      terminal: {} as TerminalManagerService,
+      resolveEnv: () =>
+        Promise.resolve({ HOME: directory, PATH: `${directory}:${process.env.PATH}` })
+    })
+
+    const flow = await manager.beginLogin(account.id)
+    expect(flow).toMatchObject({
+      accountId: account.id,
+      kind: "pasteCode",
+      url: "https://claude.com/cai/oauth/authorize?state=abc"
+    })
+
+    const done = await manager.answerLogin(flow.id, "the-code#the-state")
+    expect(done.kind).toBe("complete")
+    expect(calls).toContainEqual(["submit", "the-code#the-state"])
+    expect(calls).toContainEqual(["close"])
+    const probed = await manager.probeAccount(account.id)
+    expect(probed.authState).toBe("authenticated")
+
+    // A fresh flow cancels by closing its client; answering it afterwards
+    // reports expiry instead of a dangling exchange.
+    const second = await manager.beginLogin(account.id)
+    await manager.cancelLogin(second.id)
+    await expect(manager.answerLogin(second.id, "x#y")).rejects.toThrow("expired")
+  })
+})

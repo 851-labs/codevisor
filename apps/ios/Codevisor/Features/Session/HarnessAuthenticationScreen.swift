@@ -23,6 +23,8 @@ struct HarnessAuthenticationScreen: View {
     @State private var apiKeyAccount: ServerHarnessAccount?
     @State private var apiKeyMethod: ServerHarnessAuthMethod?
     @State private var apiKey = ""
+    @State private var pasteCode = ""
+    @State private var isSubmittingCode = false
 
     private var client: any CodevisorServerClienting {
         environment.machines.client(for: serverId)
@@ -87,7 +89,25 @@ struct HarnessAuthenticationScreen: View {
                 }
             }
 
-            if let flow, flow.kind == "deviceCode" {
+            if let flow, flow.kind == "pasteCode" {
+                Section("Sign In") {
+                    Text("Approve the sign-in in your browser, copy the code it shows, and paste it here.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    if let value = flow.url, let url = URL(string: value) {
+                        Button("Reopen Browser") { openURL(url) }
+                    }
+                    TextField("Paste code", text: $pasteCode)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .onSubmit { submitPastedCode(flow) }
+                    Button(isSubmittingCode ? "Verifying…" : "Continue") { submitPastedCode(flow) }
+                        .disabled(
+                            pasteCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                || isSubmittingCode)
+                    authProgress
+                }
+            } else if let flow, flow.kind == "deviceCode" {
                 Section("Sign In") {
                     Text("Enter this code in your browser:")
                     Text(flow.userCode ?? "")
@@ -257,6 +277,30 @@ struct HarnessAuthenticationScreen: View {
         let value = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return }
         Task { await login(account, methodId: method.id, apiKey: value) }
+    }
+
+    private func submitPastedCode(_ flow: ServerHarnessAuthFlow) {
+        let code = pasteCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !code.isEmpty, !isSubmittingCode else { return }
+        isSubmittingCode = true
+        Task {
+            defer { isSubmittingCode = false }
+            do {
+                let next = try await client.answerHarnessLogin(
+                    harnessId: harness.id,
+                    accountId: flow.accountId,
+                    flowId: flow.id,
+                    code: code
+                )
+                pasteCode = ""
+                if next.kind == "complete" {
+                    self.flow = nil
+                    await finishAuthentication(accountId: flow.accountId)
+                }
+            } catch {
+                errorMessage = serverErrorMessage(error)
+            }
+        }
     }
 
     private func clearApiKeyEntry() {

@@ -358,6 +358,11 @@ public extension CodevisorServerClienting {
     ) async throws -> ServerHarnessAuthFlow {
         throw CodevisorServerClientError.invalidResponse
     }
+    func answerHarnessLogin(
+        harnessId: String, accountId: String, flowId: String, code: String
+    ) async throws -> ServerHarnessAuthFlow {
+        throw CodevisorServerClientError.invalidResponse
+    }
     func cancelHarnessLogin(harnessId: String, accountId: String, flowId: String) async throws {}
     func logoutHarnessAccount(harnessId: String, accountId: String) async throws -> ServerHarnessAccount {
         throw CodevisorServerClientError.invalidResponse

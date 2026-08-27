@@ -116,6 +116,9 @@ public protocol CodevisorServerClienting: Sendable {
     func loginHarnessAccount(
         harnessId: String, accountId: String, methodId: String?, apiKey: String?
     ) async throws -> ServerHarnessAuthFlow
+    func answerHarnessLogin(
+        harnessId: String, accountId: String, flowId: String, code: String
+    ) async throws -> ServerHarnessAuthFlow
     func cancelHarnessLogin(harnessId: String, accountId: String, flowId: String) async throws
     func logoutHarnessAccount(harnessId: String, accountId: String) async throws -> ServerHarnessAccount
     func listPiAuthProviders() async throws -> [ServerPiAuthProvider]

@@ -1,5 +1,6 @@
 import type { Harness, HarnessCapability } from "@codevisor/api"
 import {
+  AnswerHarnessAuthRequest as AnswerHarnessAuthRequestSchema,
   AnswerOpenCodeAuthRequest as AnswerOpenCodeAuthRequestSchema,
   AnswerPiAuthRequest as AnswerPiAuthRequestSchema,
   CreateHarnessAccountRequest as CreateHarnessAccountRequestSchema,
@@ -342,6 +343,23 @@ export const routeHarnesses = async (
       response,
       200,
       await run(services.agents.listAgentSessions(agentSessionsHarnessId, account))
+    )
+    return true
+  }
+
+  const accountLoginAnswer = matchRouteParams(
+    url.pathname,
+    "/v1/harnesses/:id/accounts/:accountId/login/:flowId/answer"
+  )
+  if (accountLoginAnswer !== undefined && request.method === "POST") {
+    if (services.auth === undefined) {
+      throw new HttpFailure(501, "Harness authentication unavailable")
+    }
+    const payload = await readSchema(request, AnswerHarnessAuthRequestSchema)
+    writeJson(
+      response,
+      200,
+      await services.auth.answerLogin(accountLoginAnswer.flowId!, payload.code)
     )
     return true
   }

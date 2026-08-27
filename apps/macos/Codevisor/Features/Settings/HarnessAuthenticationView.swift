@@ -36,6 +36,8 @@ struct HarnessAuthenticationView: View {
     @State private var apiKeyAccount: ServerHarnessAccount?
     @State private var apiKeyMethod: ServerHarnessAuthMethod?
     @State private var apiKey = ""
+    @State private var pasteCode = ""
+    @State private var isSubmittingCode = false
     @State private var authTerminalLifecycle = AuthTerminalLifecycle()
     /// The machine the login PTY lives on, with a DIALABLE baseURL: cloud
     /// machines resolve (and lazily start) their loopback bridge first.
@@ -118,7 +120,33 @@ struct HarnessAuthenticationView: View {
                         }
                     }
 
-                    if let flow, flow.kind == "deviceCode" {
+                    if let flow, flow.kind == "pasteCode" {
+                        Section("Sign In") {
+                            Text(
+                                "Your browser opened Claude's sign-in page. Approve it, copy the code it shows, and paste it here."
+                            )
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            if let value = flow.url, let url = URL(string: value) {
+                                Button("Reopen Browser") { NSWorkspace.shared.open(url) }
+                                    .settingsActionTint(theme)
+                            }
+                            HStack {
+                                TextField("Paste code", text: $pasteCode)
+                                    .textFieldStyle(.roundedBorder)
+                                    .onSubmit { submitPastedCode(flow) }
+                                Button(isSubmittingCode ? "Verifying…" : "Continue") {
+                                    submitPastedCode(flow)
+                                }
+                                .settingsActionTint(theme)
+                                .keyboardShortcut(.defaultAction)
+                                .disabled(
+                                    pasteCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                        || isSubmittingCode)
+                            }
+                            authProgress
+                        }
+                    } else if let flow, flow.kind == "deviceCode" {
                         Section("Sign In") {
                             Text("Enter this code in your browser:")
                             Text(flow.userCode ?? "")
@@ -292,7 +320,11 @@ struct HarnessAuthenticationView: View {
         default: return "Not signed in"
         }
     }
+}
 
+// MARK: - Actions
+
+extension HarnessAuthenticationView {
     private func load() async {
         methods = harness.auth?.loginMethods ?? []
         do {
@@ -343,6 +375,32 @@ struct HarnessAuthenticationView: View {
         let value = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return }
         Task { await login(account, methodId: method.id, apiKey: value) }
+    }
+
+    /// Submits the code the user pasted from Claude's browser page; the
+    /// server completes the OAuth exchange and the poll below confirms it.
+    private func submitPastedCode(_ flow: ServerHarnessAuthFlow) {
+        let code = pasteCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !code.isEmpty, !isSubmittingCode else { return }
+        isSubmittingCode = true
+        Task {
+            defer { isSubmittingCode = false }
+            do {
+                let next = try await client.answerHarnessLogin(
+                    harnessId: harness.id,
+                    accountId: flow.accountId,
+                    flowId: flow.id,
+                    code: code
+                )
+                pasteCode = ""
+                if next.kind == "complete" {
+                    self.flow = nil
+                    await finishAuthentication(accountId: flow.accountId)
+                }
+            } catch {
+                errorMessage = serverErrorMessage(error)
+            }
+        }
     }
 
     private func clearApiKeyEntry() {
@@ -447,81 +505,5 @@ struct HarnessAuthenticationView: View {
     private func copy(_ value: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(value, forType: .string)
-    }
-}
-
-private struct AuthTerminalView: NSViewRepresentable {
-    let terminalKey: String
-    let machine: CodevisorMachine
-    let lifecycle: AuthTerminalLifecycle
-
-    func makeNSView(context: Context) -> NSView {
-        let descriptor = TerminalLaunchDescriptor(
-            terminalKey: terminalKey,
-            attachOnly: true,
-            machine: machine,
-            workingDirectory: FileManager.default.homeDirectoryForCurrentUser,
-            command: TerminalProxyCommand.command(
-                server: machine.baseURL,
-                terminalKey: terminalKey,
-                cwd: FileManager.default.homeDirectoryForCurrentUser.path,
-                token: machine.token,
-                attachOnly: true
-            )
-        )
-        let surface = TerminalRuntime.factory.makeSurface(descriptor: descriptor)
-        context.coordinator.surface = surface
-        lifecycle.attach(surface)
-        let container = NSView()
-        let child = surface.nsView
-        child.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(child)
-        NSLayoutConstraint.activate([
-            child.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            child.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            child.topAnchor.constraint(equalTo: container.topAnchor),
-            child.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-        ])
-        return container
-    }
-
-    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
-        guard let surface = coordinator.surface else { return }
-        surface.terminate()
-        coordinator.lifecycle?.detach(surface)
-        coordinator.surface = nil
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {}
-
-    func makeCoordinator() -> Coordinator { Coordinator(lifecycle: lifecycle) }
-
-    final class Coordinator {
-        weak var lifecycle: AuthTerminalLifecycle?
-        var surface: (any TerminalSurface)?
-
-        init(lifecycle: AuthTerminalLifecycle) {
-            self.lifecycle = lifecycle
-        }
-    }
-}
-
-@MainActor
-private final class AuthTerminalLifecycle {
-    private var surface: (any TerminalSurface)?
-
-    func attach(_ surface: any TerminalSurface) {
-        self.surface = surface
-    }
-
-    func terminate() {
-        surface?.terminate()
-        surface = nil
-    }
-
-    func detach(_ candidate: any TerminalSurface) {
-        if let surface, surface === candidate {
-            self.surface = nil
-        }
     }
 }

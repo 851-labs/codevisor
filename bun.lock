@@ -280,6 +280,7 @@
     "packages/harness-manager": {
       "name": "@codevisor/harness-manager",
       "dependencies": {
+        "@codevisor/adapter-claude": "workspace:*",
         "@codevisor/adapter-codex": "workspace:*",
         "@codevisor/agent-runtime": "workspace:*",
         "@codevisor/api": "workspace:*",
