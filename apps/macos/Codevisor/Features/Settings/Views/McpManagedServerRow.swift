@@ -11,7 +11,9 @@ struct McpManagedServerRow: View {
     @Environment(\.theme) private var theme
     let server: ServerMcpServer
     let browserConfiguration: ServerBrowserUseConfiguration?
-    let computerPermissions: ComputerUsePermissionsModel
+    /// Nil on remote machines: the permission probes read THIS Mac's
+    /// TCC state, which says nothing about another machine.
+    let computerPermissions: ComputerUsePermissionsModel?
     let setPreferredBrowser: (String) async -> Void
     let installBrowserExtension: () async -> Void
     let beginOAuth: () async throws -> Void
@@ -23,7 +25,7 @@ struct McpManagedServerRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             rowContent
-            if server.kind == "computerUse" {
+            if server.kind == "computerUse", let computerPermissions {
                 // Always visible, in every state: these rows are the live
                 // status of what Computer Use depends on, and they carry the
                 // poll that notices a permission revoked in System Settings.
@@ -123,7 +125,7 @@ struct McpManagedServerRow: View {
                 .disabled(
                     server.kind == "computerUse"
                         && !server.enabled
-                        && !computerPermissions.allGranted
+                        && computerPermissions?.allGranted == false
                 )
             }
             Menu {

@@ -303,12 +303,9 @@ struct RootView: View {
                     // Computer Use toggle in Settings re-enters setup.
                     environment.settings.setPermissionsSetupSkipped(true)
                     environment.settings.setPermissionsReviewInProgress(false)
-                    Task {
-                        try? await environment.serverClient.setMcpServerEnabled(
-                            id: "computer",
-                            enabled: false
-                        )
-                    }
+                    // Per-machine truth: skipping permissions disables
+                    // Computer Use HERE, never across the fleet.
+                    McpFleet.disableLocally(environment.configSync, name: "Computer Use")
                     environment.requiresPermissionsReview = false
                 }
                 .transition(.opacity)
@@ -393,10 +390,7 @@ struct RootView: View {
                 let computer = servers.first(where: { $0.kind == "computerUse" })
             {
                 if computer.enabled {
-                    _ = try? await environment.serverClient.setMcpServerEnabled(
-                        id: "computer",
-                        enabled: false
-                    )
+                    McpFleet.disableLocally(environment.configSync, name: computer.name)
                 }
                 return
             }

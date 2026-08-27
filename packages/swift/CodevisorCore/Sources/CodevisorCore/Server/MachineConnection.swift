@@ -219,6 +219,15 @@ extension MachineController {
         return statusByMachineId.first { $0.value.serverId == key }?.key
     }
 
+    /// The inverse of `machineId(forSyncKey:)`: the key a machine's server
+    /// uses for its single-writer sync entries. The local server identifies
+    /// as "local"; remotes report their id via /v1/info. Nil until a remote
+    /// has been probed — its readiness cannot be read yet either.
+    public func syncKey(forMachineId id: String) -> String? {
+        if id == CodevisorMachine.local.id { return CodevisorMachine.local.id }
+        return statusByMachineId[id]?.serverId
+    }
+
     /// The display name for a sync key: the matching machine's fleet name,
     /// else the raw key (a machine that vanished or was never probed).
     public func fleetName(forSyncKey key: String) -> String {

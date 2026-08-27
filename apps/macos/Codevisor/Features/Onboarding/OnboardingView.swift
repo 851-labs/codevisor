@@ -886,9 +886,9 @@ struct OnboardingView: View {
     /// Computer Use toggle in Settings re-enters this setup inline.
     private func skipPermissions() {
         environment.settings.setPermissionsSetupSkipped(true)
-        Task {
-            try? await environment.serverClient.setMcpServerEnabled(id: "computer", enabled: false)
-        }
+        // Per-machine truth: skipping permissions disables Computer Use
+        // HERE, never across the fleet.
+        McpFleet.disableLocally(environment.configSync, name: "Computer Use")
         navigate(to: .project, back: false)
     }
 

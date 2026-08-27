@@ -1,18 +1,19 @@
 import SwiftUI
 
 /// How a machine's slice of a config plane is doing, shown on its
-/// disclosure row: converging, settled, or waiting on the user.
-enum MachineSyncBadge {
+/// disclosure row: converging, settled, or waiting on the user. Shared by
+/// every settings pane on both platforms.
+public enum MachineSyncBadge {
     case syncing
     case synced
     case attention(String)
 
     @ViewBuilder
-    var view: some View {
+    public var view: some View {
         switch self {
         case .syncing:
             HStack(spacing: 5) {
-                ProgressView()
+                ProgressView().controlSize(.small)
                 Text("Syncing…")
             }
             .foregroundStyle(.secondary)

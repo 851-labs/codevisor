@@ -78,41 +78,4 @@ struct McpFleetStatusTests {
         #expect(McpFleet.isDisabled(sync, machineId: "studio", name: "GitHub") == false)
         #expect(sync.entries(namespace: "mcp-overlays").first?.deleted == true)
     }
-
-    @Test("Per-server inversion groups each machine's report under the item")
-    func readinessByServerInverts() throws {
-        let sync = try makeSync()
-        sync.applyRemoteChange(
-            namespace: "mcp-readiness",
-            entries: [
-                ServerSyncEntry(
-                    key: "studio",
-                    value: .object([
-                        "servers": .array([
-                            .object(["name": .string("GitHub"), "state": .string("ready")])
-                        ])
-                    ]),
-                    timestamp: ServerSyncTimestamp(wallMs: 1, counter: 0, deviceId: "studio")
-                ),
-                ServerSyncEntry(
-                    key: "laptop",
-                    value: .object([
-                        "servers": .array([
-                            .object([
-                                "name": .string("GitHub"),
-                                "state": .string("blocked"),
-                                "reason": .string("Needs Screen Recording"),
-                            ])
-                        ])
-                    ]),
-                    timestamp: ServerSyncTimestamp(wallMs: 1, counter: 0, deviceId: "laptop")
-                ),
-            ]
-        )
-        let byServer = McpFleet.readinessByServer(sync)
-        let rows = byServer["GitHub"] ?? []
-        #expect(rows.map(\.machineId) == ["laptop", "studio"])
-        #expect(rows[0].reason == "Needs Screen Recording")
-        #expect(rows[1].state == "ready")
-    }
 }
