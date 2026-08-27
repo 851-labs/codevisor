@@ -92,6 +92,7 @@ struct NewChatView: View {
     /// because a clone registers its project immediately — the page must keep
     /// showing the panel with the clone as a selected row, exactly like
     /// onboarding, instead of flipping to the composer mid-setup.
+    @Environment(\.openSettings) var openSettings
     @State private var projectSetup = ProjectSetupModel()
 
     var projects: [Project] { environment.projectList.activeProjects }

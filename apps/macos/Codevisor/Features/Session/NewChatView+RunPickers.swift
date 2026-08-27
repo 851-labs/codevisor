@@ -61,7 +61,17 @@ extension NewChatView {
                         MenuSymbolIcon(systemName: EntitySystemSymbol.machine(machine))
                     }
                 }
-
+            }
+            Divider()
+            Button {
+                SettingsRouter.shared.showMachines()
+                openSettings()
+            } label: {
+                Label {
+                    Text("Manage Machines…")
+                } icon: {
+                    MenuSymbolIcon(systemName: "gearshape")
+                }
             }
         } label: {
             PickerChip(text: selectedMachine?.name ?? "Machine") {
