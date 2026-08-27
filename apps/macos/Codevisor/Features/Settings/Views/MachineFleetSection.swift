@@ -47,7 +47,7 @@ struct MachineFleetSection<Row: Identifiable, RowView: View>: View {
     @State private var expandedMachines: Set<String> = []
 
     var body: some View {
-        if environment.machines.machines.count > 1, !rowsByMachine.isEmpty {
+        if environment.machines.allMachines.count > 1, !rowsByMachine.isEmpty {
             Section {
                 ForEach(rowsByMachine.keys.sorted(), id: \.self) { machineId in
                     let rows = rowsByMachine[machineId] ?? []

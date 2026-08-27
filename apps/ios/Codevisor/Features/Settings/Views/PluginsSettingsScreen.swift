@@ -47,7 +47,7 @@ struct PluginsSettingsScreen: View {
     private var machinesSection: some View {
         let _ = environment.configSync.revisionsByNamespace["plugin-readiness"]
         let readiness = PluginFleet.readiness(environment.configSync)
-        if environment.machines.machines.count > 1, !readiness.isEmpty {
+        if environment.machines.allMachines.count > 1, !readiness.isEmpty {
             Section("On Your Machines") {
                 ForEach(readiness.keys.sorted(), id: \.self) { machineId in
                     let rows = readiness[machineId] ?? []

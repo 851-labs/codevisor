@@ -59,7 +59,7 @@ struct McpSettingsScreen: View {
         let _ = environment.configSync.revisionsByNamespace["mcp-readiness"]
         let _ = environment.configSync.revisionsByNamespace["mcp-overlays"]
         let readiness = McpFleet.readiness(environment.configSync)
-        if environment.machines.machines.count > 1, !readiness.isEmpty {
+        if environment.machines.allMachines.count > 1, !readiness.isEmpty {
             Section("On Your Machines") {
                 ForEach(readiness.keys.sorted(), id: \.self) { machineId in
                     let rows = readiness[machineId] ?? []
