@@ -33,15 +33,8 @@ struct HarnessAuthenticationView: View {
     @State private var flow: ServerHarnessAuthFlow?
     @State private var isWorking = false
     @State private var errorMessage: String?
-    @State private var apiKeyAccount: ServerHarnessAccount?
-    @State private var apiKeyMethod: ServerHarnessAuthMethod?
-    @State private var apiKey = ""
-    @State private var pasteCode = ""
-    @State private var isSubmittingCode = false
-    @State private var authTerminalLifecycle = AuthTerminalLifecycle()
-    /// The machine the login PTY lives on, with a DIALABLE baseURL: cloud
-    /// machines resolve (and lazily start) their loopback bridge first.
-    @State private var terminalMachine: CodevisorMachine?
+    /// The focused modal step a sign-in attempt runs in.
+    @State private var loginStep: HarnessLoginStep?
 
     @ViewBuilder
     var body: some View {
@@ -74,125 +67,31 @@ struct HarnessAuthenticationView: View {
                 Divider()
             }
 
-            if let flow, flow.kind == "terminal", let terminalKey = flow.terminalAttachKey {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(terminalTitle).font(.headline)
-                    if let terminalMachine {
-                        AuthTerminalView(
-                            terminalKey: terminalKey,
-                            // The SCOPED machine, never the app selection:
-                            // the login PTY lives on the machine this view
-                            // was opened for, and a proxy pointed elsewhere
-                            // retries HTTP 500s forever against a server
-                            // that has no such terminal.
-                            machine: terminalMachine,
-                            lifecycle: authTerminalLifecycle
-                        )
-                        .frame(minHeight: 280)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                    } else {
-                        ProgressView()
-                            .frame(maxWidth: .infinity, minHeight: 280)
-                    }
-                    authProgress
-                }
-                .padding(20)
-                .task(id: flow.id) { await resolveTerminalMachine() }
-            } else {
-                Form {
-                    if let errorMessage {
-                        Section {
-                            Label(errorMessage, systemImage: "exclamationmark.triangle")
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    Section(accountSectionTitle) {
-                        ForEach(accounts) { account in accountRow(account) }
-                        if harness.auth?.supportsMultipleAccounts == true {
-                            Button {
-                                Task { await addAccount() }
-                            } label: {
-                                Label("Add Account", systemImage: "plus")
-                            }
-                            .settingsActionTint(theme)
-                            .disabled(isWorking)
-                        }
-                    }
-
-                    if let flow, flow.kind == "pasteCode" {
-                        Section("Sign In") {
-                            Text(
-                                "Your browser opened Claude's sign-in page. Approve it, copy the code it shows, and paste it here."
-                            )
-                            .font(.callout)
+            Form {
+                if let errorMessage {
+                    Section {
+                        Label(errorMessage, systemImage: "exclamationmark.triangle")
                             .foregroundStyle(.secondary)
-                            if let value = flow.url, let url = URL(string: value) {
-                                Button("Reopen Browser") { NSWorkspace.shared.open(url) }
-                                    .settingsActionTint(theme)
-                            }
-                            HStack {
-                                TextField("Paste code", text: $pasteCode)
-                                    .textFieldStyle(.roundedBorder)
-                                    .onSubmit { submitPastedCode(flow) }
-                                Button(isSubmittingCode ? "Verifying…" : "Continue") {
-                                    submitPastedCode(flow)
-                                }
-                                .settingsActionTint(theme)
-                                .keyboardShortcut(.defaultAction)
-                                .disabled(
-                                    pasteCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                        || isSubmittingCode)
-                            }
-                            authProgress
-                        }
-                    } else if let flow, flow.kind == "deviceCode" {
-                        Section("Sign In") {
-                            Text("Enter this code in your browser:")
-                            Text(flow.userCode ?? "")
-                                .font(.system(.title2, design: .monospaced, weight: .semibold))
-                                .textSelection(.enabled)
-                            HStack {
-                                Button("Copy Code") { copy(flow.userCode ?? "") }
-                                    .settingsActionTint(theme)
-                                if let value = flow.verificationUrl, let url = URL(string: value) {
-                                    Button("Open Browser") { NSWorkspace.shared.open(url) }
-                                        .settingsActionTint(theme)
-                                }
-                            }
-                            authProgress
-                        }
-                    } else if flow != nil {
-                        Section("Sign In") { authProgress }
-                    }
-
-                    if let account = apiKeyAccount, let method = apiKeyMethod {
-                        Section(method.name) {
-                            SecureField("API Key", text: $apiKey)
-                                .textContentType(.password)
-                                .onSubmit { submitApiKey(account: account, method: method) }
-                            Text("The key is stored only on the selected Codevisor server for this account profile.")
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                            HStack {
-                                Button("Cancel") { clearApiKeyEntry() }
-                                    .settingsActionTint(theme)
-                                Spacer()
-                                Button("Sign In") { submitApiKey(account: account, method: method) }
-                                    .settingsActionTint(theme)
-                                    .keyboardShortcut(.defaultAction)
-                                    .disabled(
-                                        apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isWorking)
-                            }
-                        }
                     }
                 }
-                .formStyle(.grouped)
+
+                Section(accountSectionTitle) {
+                    ForEach(accounts) { account in accountRow(account) }
+                    if harness.auth?.supportsMultipleAccounts == true {
+                        Button {
+                            Task { await addAccount() }
+                        } label: {
+                            Label("Add Account", systemImage: "plus")
+                        }
+                        .settingsActionTint(theme)
+                        .disabled(isWorking)
+                    }
+                }
             }
+            .formStyle(.grouped)
         }
         // Standalone (settings/onboarding) sizes itself; hosted in the
-        // composer sheet the SHEET owns the frame — a fixed inner width
-        // wider than the sheet clips the content's own padding off-screen.
+        // composer sheet the SHEET owns the frame.
         .frame(
             minWidth: showsHeader ? 520 : nil,
             idealWidth: showsHeader ? 520 : nil,
@@ -200,6 +99,22 @@ struct HarnessAuthenticationView: View {
             minHeight: showsHeader ? 390 : nil
         )
         .task { await load() }
+        // Each sign-in attempt is one focused task in its own sheet — the
+        // accounts list never grows inline flow UI.
+        .sheet(item: $loginStep) { step in
+            HarnessLoginStepSheet(
+                harness: harness,
+                step: step,
+                submitCode: { code in await submitPastedCode(code) },
+                submitApiKey: { account, method, key in
+                    await submitApiKey(account: account, method: method, key: key)
+                },
+                cancel: {
+                    loginStep = nil
+                    Task { await cancelFlow() }
+                }
+            )
+        }
         .onDisappear {
             guard let flow else { return }
             Task {
@@ -276,17 +191,6 @@ struct HarnessAuthenticationView: View {
         }
     }
 
-    private var authProgress: some View {
-        HStack(spacing: 8) {
-            ProgressView().controlSize(.small)
-            Text(harness.id == "pi" ? "Waiting for Pi configuration…" : "Waiting for sign-in…")
-                .foregroundStyle(.secondary)
-            Spacer()
-            Button("Cancel") { Task { await cancelFlow() } }
-                .settingsActionTint(theme)
-        }
-    }
-
     private var authenticationTitle: String {
         harness.auth?.supportsMultipleAccounts == true ? "\(harness.name) Accounts" : "\(harness.name) Setup"
     }
@@ -298,10 +202,6 @@ struct HarnessAuthenticationView: View {
         return harness.auth?.supportsMultipleAccounts == true
             ? "Choose the account Codevisor uses for new chats."
             : "Configure the credentials Codevisor uses for new chats."
-    }
-
-    private var terminalTitle: String {
-        harness.id == "pi" ? "Configure Pi below" : "Finish signing in below"
     }
 
     private var accountSectionTitle: String {
@@ -363,50 +263,54 @@ extension HarnessAuthenticationView {
 
     private func selectLoginMethod(_ method: ServerHarnessAuthMethod, for account: ServerHarnessAccount) {
         if method.kind == "apiKey" {
-            apiKey = ""
-            apiKeyAccount = account
-            apiKeyMethod = method
+            loginStep = .apiKey(account: account, method: method)
         } else {
             Task { await login(account, methodId: method.id) }
         }
     }
 
-    private func submitApiKey(account: ServerHarnessAccount, method: ServerHarnessAuthMethod) {
-        let value = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty else { return }
-        Task { await login(account, methodId: method.id, apiKey: value) }
-    }
-
-    /// Submits the code the user pasted from Claude's browser page; the
-    /// server completes the OAuth exchange and the poll below confirms it.
-    private func submitPastedCode(_ flow: ServerHarnessAuthFlow) {
-        let code = pasteCode.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !code.isEmpty, !isSubmittingCode else { return }
-        isSubmittingCode = true
-        Task {
-            defer { isSubmittingCode = false }
-            do {
-                let next = try await client.answerHarnessLogin(
-                    harnessId: harness.id,
-                    accountId: flow.accountId,
-                    flowId: flow.id,
-                    code: code
-                )
-                pasteCode = ""
-                if next.kind == "complete" {
-                    self.flow = nil
-                    await finishAuthentication(accountId: flow.accountId)
-                }
-            } catch {
-                errorMessage = serverErrorMessage(error)
+    /// Completes a pasteCode flow; returns an error message for the sheet.
+    private func submitPastedCode(_ code: String) async -> String? {
+        guard let flow else { return "This sign-in attempt has expired — start again." }
+        do {
+            let next = try await client.answerHarnessLogin(
+                harnessId: harness.id,
+                accountId: flow.accountId,
+                flowId: flow.id,
+                code: code
+            )
+            if next.kind == "complete" {
+                self.flow = nil
+                loginStep = nil
+                await finishAuthentication(accountId: flow.accountId)
             }
+            return nil
+        } catch {
+            return serverErrorMessage(error)
         }
     }
 
-    private func clearApiKeyEntry() {
-        apiKey = ""
-        apiKeyAccount = nil
-        apiKeyMethod = nil
+    /// Runs an API-key login; returns an error message for the sheet.
+    private func submitApiKey(
+        account: ServerHarnessAccount,
+        method: ServerHarnessAuthMethod,
+        key: String
+    ) async -> String? {
+        do {
+            let next = try await client.loginHarnessAccount(
+                harnessId: harness.id,
+                accountId: account.id,
+                methodId: method.id,
+                apiKey: key
+            )
+            if next.kind == "complete" {
+                loginStep = nil
+                await finishAuthentication(accountId: account.id)
+            }
+            return nil
+        } catch {
+            return serverErrorMessage(error)
+        }
     }
 
     private func login(_ account: ServerHarnessAccount, methodId: String?, apiKey: String? = nil) async {
@@ -417,8 +321,8 @@ extension HarnessAuthenticationView {
                 methodId: methodId,
                 apiKey: apiKey
             )
-            clearApiKeyEntry()
             flow = next.kind == "complete" ? nil : next
+            loginStep = next.kind == "complete" ? nil : .flow(next)
             if let value = next.url, let url = URL(string: value) { NSWorkspace.shared.open(url) }
             if let value = next.verificationUrl, let url = URL(string: value) { NSWorkspace.shared.open(url) }
             if next.kind == "complete" { await finishAuthentication(accountId: account.id); return }
@@ -433,6 +337,7 @@ extension HarnessAuthenticationView {
             else { continue }
             if account.authState == "authenticated" || account.authState == "notRequired" {
                 flow = nil
+                loginStep = nil
                 await finishAuthentication(accountId: accountId)
                 return
             }
@@ -462,29 +367,12 @@ extension HarnessAuthenticationView {
 
     private func cancelFlow() async {
         guard let current = flow else { return }
-        // Detach the proxy and finish libghostty teardown before the server
-        // kills Claude's PTY. Reversing this order lets the proxy's child-exit
-        // callback race SwiftUI dismantling the same surface.
-        authTerminalLifecycle.terminate()
         flow = nil
         try? await client.cancelHarnessLogin(
             harnessId: harness.id,
             accountId: current.accountId,
             flowId: current.id
         )
-    }
-
-    /// The proxy dials a real socket, so a cloud machine must answer with
-    /// its loopback-bridge address (started lazily here) instead of the
-    /// relay placeholder.
-    private func resolveTerminalMachine() async {
-        var machine =
-            environment.machines.machine(for: scopedServerId)
-            ?? environment.machines.selectedMachine
-        if let url = await environment.machines.effectiveHTTPBaseURL(forMachineId: scopedServerId) {
-            machine.baseURL = url
-        }
-        terminalMachine = machine
     }
 
     private func refreshHarness() async {

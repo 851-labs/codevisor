@@ -20,53 +20,42 @@ struct HarnessAuthenticationScreen: View {
     @State private var flow: ServerHarnessAuthFlow?
     @State private var isWorking = false
     @State private var errorMessage: String?
-    @State private var apiKeyAccount: ServerHarnessAccount?
-    @State private var apiKeyMethod: ServerHarnessAuthMethod?
-    @State private var apiKey = ""
-    @State private var pasteCode = ""
-    @State private var isSubmittingCode = false
+    @State private var loginStep: HarnessLoginStep?
 
     private var client: any CodevisorServerClienting {
         environment.machines.client(for: serverId)
     }
 
     var body: some View {
-        Group {
-            if let flow, flow.kind == "terminal", let terminalKey = flow.terminalAttachKey {
-                terminalFlow(terminalKey: terminalKey)
-            } else {
-                accountsForm
-            }
-        }
-        .task { await load() }
-        .onDisappear {
-            guard let flow else { return }
-            Task {
-                try? await client.cancelHarnessLogin(
-                    harnessId: harness.id,
-                    accountId: flow.accountId,
-                    flowId: flow.id
+        accountsForm
+            .sheet(item: $loginStep) { step in
+                HarnessLoginStepScreen(
+                    harness: harness,
+                    step: step,
+                    submitCode: { code in await submitPastedCode(code) },
+                    submitApiKey: { account, method, key in
+                        await submitApiKey(account: account, method: method, key: key)
+                    },
+                    cancel: {
+                        loginStep = nil
+                        Task { await cancelFlow() }
+                    }
                 )
             }
-        }
+            .task { await load() }
+            .onDisappear {
+                guard let flow else { return }
+                Task {
+                    try? await client.cancelHarnessLogin(
+                        harnessId: harness.id,
+                        accountId: flow.accountId,
+                        flowId: flow.id
+                    )
+                }
+            }
     }
 
     // MARK: - Layout
-
-    private func terminalFlow(terminalKey: String) -> some View {
-        VStack(spacing: 0) {
-            TerminalPaneView(
-                terminalKey: terminalKey,
-                cwd: "/",
-                config: environment.machines.serverConfig(for: serverId),
-                attachOnly: true
-            )
-            Divider()
-            authProgress
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-        }
-    }
 
     private var accountsForm: some View {
         Form {
@@ -89,55 +78,6 @@ struct HarnessAuthenticationScreen: View {
                 }
             }
 
-            if let flow, flow.kind == "pasteCode" {
-                Section("Sign In") {
-                    Text("Approve the sign-in in your browser, copy the code it shows, and paste it here.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                    if let value = flow.url, let url = URL(string: value) {
-                        Button("Reopen Browser") { openURL(url) }
-                    }
-                    TextField("Paste code", text: $pasteCode)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .onSubmit { submitPastedCode(flow) }
-                    Button(isSubmittingCode ? "Verifying…" : "Continue") { submitPastedCode(flow) }
-                        .disabled(
-                            pasteCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                || isSubmittingCode)
-                    authProgress
-                }
-            } else if let flow, flow.kind == "deviceCode" {
-                Section("Sign In") {
-                    Text("Enter this code in your browser:")
-                    Text(flow.userCode ?? "")
-                        .font(.system(.title2, design: .monospaced, weight: .semibold))
-                        .textSelection(.enabled)
-                    Button("Copy Code") { UIPasteboard.general.string = flow.userCode ?? "" }
-                    if let value = flow.verificationUrl, let url = URL(string: value) {
-                        Button("Open Browser") { openURL(url) }
-                    }
-                    authProgress
-                }
-            } else if flow != nil {
-                Section("Sign In") { authProgress }
-            }
-
-            if let account = apiKeyAccount, let method = apiKeyMethod {
-                Section(method.name) {
-                    SecureField("API Key", text: $apiKey)
-                        .textContentType(.password)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .onSubmit { submitApiKey(account: account, method: method) }
-                    Text("The key is stored only on the selected Codevisor server for this account profile.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                    Button("Sign In") { submitApiKey(account: account, method: method) }
-                        .disabled(apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isWorking)
-                    Button("Cancel", role: .cancel) { clearApiKeyEntry() }
-                }
-            }
         }
     }
 
@@ -265,48 +205,54 @@ struct HarnessAuthenticationScreen: View {
 
     private func selectLoginMethod(_ method: ServerHarnessAuthMethod, for account: ServerHarnessAccount) {
         if method.kind == "apiKey" {
-            apiKey = ""
-            apiKeyAccount = account
-            apiKeyMethod = method
+            loginStep = .apiKey(account: account, method: method)
         } else {
             Task { await login(account, methodId: method.id) }
         }
     }
 
-    private func submitApiKey(account: ServerHarnessAccount, method: ServerHarnessAuthMethod) {
-        let value = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty else { return }
-        Task { await login(account, methodId: method.id, apiKey: value) }
-    }
-
-    private func submitPastedCode(_ flow: ServerHarnessAuthFlow) {
-        let code = pasteCode.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !code.isEmpty, !isSubmittingCode else { return }
-        isSubmittingCode = true
-        Task {
-            defer { isSubmittingCode = false }
-            do {
-                let next = try await client.answerHarnessLogin(
-                    harnessId: harness.id,
-                    accountId: flow.accountId,
-                    flowId: flow.id,
-                    code: code
-                )
-                pasteCode = ""
-                if next.kind == "complete" {
-                    self.flow = nil
-                    await finishAuthentication(accountId: flow.accountId)
-                }
-            } catch {
-                errorMessage = serverErrorMessage(error)
+    /// Completes a pasteCode flow; returns an error message for the sheet.
+    private func submitPastedCode(_ code: String) async -> String? {
+        guard let flow else { return "This sign-in attempt has expired — start again." }
+        do {
+            let next = try await client.answerHarnessLogin(
+                harnessId: harness.id,
+                accountId: flow.accountId,
+                flowId: flow.id,
+                code: code
+            )
+            if next.kind == "complete" {
+                self.flow = nil
+                loginStep = nil
+                await finishAuthentication(accountId: flow.accountId)
             }
+            return nil
+        } catch {
+            return serverErrorMessage(error)
         }
     }
 
-    private func clearApiKeyEntry() {
-        apiKey = ""
-        apiKeyAccount = nil
-        apiKeyMethod = nil
+    /// Runs an API-key login; returns an error message for the sheet.
+    private func submitApiKey(
+        account: ServerHarnessAccount,
+        method: ServerHarnessAuthMethod,
+        key: String
+    ) async -> String? {
+        do {
+            let next = try await client.loginHarnessAccount(
+                harnessId: harness.id,
+                accountId: account.id,
+                methodId: method.id,
+                apiKey: key
+            )
+            if next.kind == "complete" {
+                loginStep = nil
+                await finishAuthentication(accountId: account.id)
+            }
+            return nil
+        } catch {
+            return serverErrorMessage(error)
+        }
     }
 
     private func login(_ account: ServerHarnessAccount, methodId: String?, apiKey: String? = nil) async {
@@ -317,8 +263,8 @@ struct HarnessAuthenticationScreen: View {
                 methodId: methodId,
                 apiKey: apiKey
             )
-            clearApiKeyEntry()
             flow = next.kind == "complete" ? nil : next
+            loginStep = next.kind == "complete" ? nil : .flow(next)
             if let value = next.url, let url = URL(string: value) { openURL(url) }
             if let value = next.verificationUrl, let url = URL(string: value) { openURL(url) }
             if next.kind == "complete" {
@@ -336,6 +282,7 @@ struct HarnessAuthenticationScreen: View {
             else { continue }
             if account.authState == "authenticated" || account.authState == "notRequired" {
                 flow = nil
+                loginStep = nil
                 await finishAuthentication(accountId: accountId)
                 return
             }
