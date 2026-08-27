@@ -43,10 +43,15 @@ struct MachineControllerCloudTests {
              "platform":"darwin","bindHost":"0.0.0.0","cloudDeviceId":"\(deviceId)"}
             """
         let (controller, _, provider) = makeController(clientFactory: { machine in
+            // Only the REMOTE speaks through the studio transport. Handing it
+            // to every machine let a racing local probe adopt the studio's
+            // cloud identity and silently corrupt deduplication.
             CodevisorServerClient(
                 config: CodevisorServerConfig(
                     baseURL: machine.baseURL,
-                    requestTransport: remoteTransport,
+                    requestTransport: machine.isLocal
+                        ? FakeRelayRequestTransport()
+                        : remoteTransport,
                     webSocketTransport: UnusedWebSocketTransport()
                 ))
         })
@@ -84,10 +89,15 @@ struct MachineControllerCloudTests {
              "platform":"darwin","bindHost":"0.0.0.0","cloudDeviceId":"\(deviceId)"}
             """
         let (controller, _, provider) = makeController(clientFactory: { machine in
+            // Only the REMOTE speaks through the studio transport. Handing it
+            // to every machine let a racing local probe adopt the studio's
+            // cloud identity and silently corrupt deduplication.
             CodevisorServerClient(
                 config: CodevisorServerConfig(
                     baseURL: machine.baseURL,
-                    requestTransport: remoteTransport,
+                    requestTransport: machine.isLocal
+                        ? FakeRelayRequestTransport()
+                        : remoteTransport,
                     webSocketTransport: UnusedWebSocketTransport()
                 ))
         })
@@ -135,7 +145,17 @@ struct MachineControllerCloudTests {
         let (controller, _, remote) = try await makeDedupedRemote(deviceId: deviceId)
 
         try controller.removeMachine(remote.id)
-        await controller.refreshStatus(for: remote.id)
+        // An in-flight refreshStatus holds its pre-removal client and its
+        // result can land after removal pruned the entry — model the landing
+        // directly rather than through client re-resolution, which correctly
+        // refuses to dial a machine that no longer exists.
+        controller.connection(for: remote.id).status = MachineStatus(
+            isReachable: true,
+            label: "Studio 1.0.0",
+            cloudDeviceId: deviceId,
+            route: .direct,
+            serverId: "studio"
+        )
 
         #expect(controller.statusByMachineId[remote.id]?.cloudDeviceId == deviceId)
         #expect(controller.cloudOnlyMachines.map(\.deviceId) == [deviceId])

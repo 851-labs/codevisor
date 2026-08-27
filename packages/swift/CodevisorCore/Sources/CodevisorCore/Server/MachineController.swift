@@ -617,6 +617,12 @@ public final class MachineController {
         client: any CodevisorServerClienting
     ) async {
         let machineId = machine.id
+        // Background machines connect IMMEDIATELY, in parallel with the
+        // selected machine's own preparation. Sequencing them after it meant
+        // a hanging selected machine (dead LAN address, wedged relay) held
+        // every healthy machine's snapshot hostage — and with it, the whole
+        // fleet-aggregated home screen.
+        ensureBackgroundConnections()
         connection(for: machineId).navigationSyncState = .catchingUp
 
         if machine.isLocal, let localServer {
@@ -669,9 +675,6 @@ public final class MachineController {
             client: client,
             presentation: .catchUp
         )
-        // With the selected machine ready, bring every other machine's
-        // stream up so activity elsewhere stays visible.
-        ensureBackgroundConnections()
         onMachineConnected?(machineId)
     }
 
