@@ -14,12 +14,18 @@ export const treeHash = async (
   const exclude = options?.exclude ?? new Set()
   const hash = createHash("sha256")
   const walk = async (directory: string, prefix: string): Promise<void> => {
-    const entries = (await readdir(directory, { withFileTypes: true }))
-      .filter((entry) => !exclude.has(entry.name))
-      .sort((a, b) => a.name.localeCompare(b.name))
-    for (const entry of entries) {
-      const relative = prefix === "" ? entry.name : `${prefix}/${entry.name}`
-      const absolute = join(directory, entry.name)
+    const entries = (await readdir(directory, { withFileTypes: true })).filter(
+      (entry) => !exclude.has(entry.name)
+    )
+    const byName = new Map(entries.map((entry) => [entry.name, entry]))
+    // Default string sort is UTF-16 code-unit order — deterministic on every
+    // machine, unlike localeCompare, whose collation varies by locale and
+    // would make the "identity" hash platform-dependent.
+    for (const name of [...byName.keys()].sort()) {
+      /* v8 ignore next -- names derive from entries; the map always hits. */
+      const entry = byName.get(name)!
+      const relative = prefix === "" ? name : `${prefix}/${name}`
+      const absolute = join(directory, name)
       if (entry.isDirectory()) {
         hash.update(`dir:${relative}\n`)
         await walk(absolute, relative)

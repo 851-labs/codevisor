@@ -37,6 +37,8 @@ public final class ConfigSync {
     @ObservationIgnored public var onHarnessCatalogChanged: ((String) -> Void)?
     @ObservationIgnored private var entriesByNamespace: [String: [ServerSyncEntry]] = [:]
 
+    @ObservationIgnored private var periodicSweepTask: Task<Void, Never>?
+
     public init(machines: MachineController, store: (any PersistenceStore)? = nil) {
         self.machines = machines
         let store = store ?? machines.persistenceStore
@@ -142,6 +144,27 @@ public final class ConfigSync {
         _ = try? await client.reconcilePluginsSync()
         try? await client.publishAccountsSync()
         await synchronizeSkills()
+    }
+
+    /// The periodic reconvergence loop. One-shot triggers (machine connect,
+    /// local writes) cover the happy path, but a ferry that fails while a
+    /// machine is mid-boot would otherwise stick forever — nothing retried.
+    /// Merging is idempotent and change-detected, so a settled fleet sweep
+    /// costs a handful of no-op requests.
+    public func startPeriodicSweep(every interval: Duration = .seconds(300)) {
+        periodicSweepTask?.cancel()
+        periodicSweepTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: interval)
+                guard !Task.isCancelled else { return }
+                await self?.synchronizeAll()
+            }
+        }
+    }
+
+    public func stopPeriodicSweep() {
+        periodicSweepTask?.cancel()
+        periodicSweepTask = nil
     }
 
     /// Every reachable machine. Safe to call often; merging is idempotent.

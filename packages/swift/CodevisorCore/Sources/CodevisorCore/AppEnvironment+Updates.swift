@@ -96,6 +96,9 @@ extension AppEnvironment {
 
     func applySyncedNamespace(_ namespace: String) {
         if namespace == "settings" { applySyncedSettings() }
+        // New skill metadata means some machine is missing the content blob
+        // behind it; ferry immediately instead of waiting for the sweep.
+        if namespace == "skills" { Task { await configSync.synchronizeSkills() } }
         if namespace == FleetRoster.namespace { Task { await fleetRoster.applyRoster() } }
         // Fleet-wide harness state moved (enables, accounts, ferried
         // credentials): every machine's picker catalog is now suspect. Mark

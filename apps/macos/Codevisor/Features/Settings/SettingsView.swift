@@ -45,16 +45,11 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     }
 }
 
-/// A place in Settings — the sidebar section. The unit of the router's
-/// back/forward history. Machine scoping lives inside each pane now: every
-/// config pane is machine-first, so there are no pushed machine pages.
-struct SettingsLocation: Equatable {
-    var tab: SettingsTab
-}
-
 /// Routes programmatic Settings navigation (e.g. the sidebar's
-/// "Manage machines…" opens Settings on the Machines section) and keeps the
-/// Xcode-style back/forward history over every visited page.
+/// "Manage machines…" opens Settings on the Machines section). Navigation
+/// is scoped: the sidebar switches tabs, and each tab's machine pages ride
+/// its own NavigationStack with the native back button — no cross-tab
+/// history.
 @MainActor
 @Observable
 final class SettingsRouter {
@@ -62,49 +57,6 @@ final class SettingsRouter {
     var selectedTab: SettingsTab = .general
     /// Machine pages pushed over the current pane (list row → machine page).
     var panePath: [MachinePaneRoute] = []
-    /// Pages behind and ahead of the current one. Every navigation — sidebar
-    /// selection, push, deep link — lands the previous page in `backHistory`;
-    /// going back moves the current page to `forwardHistory` (cleared again
-    /// by the next normal navigation, like a browser).
-    private(set) var backHistory: [SettingsLocation] = []
-    private(set) var forwardHistory: [SettingsLocation] = []
-    /// One-shot: set while back/forward applies a location so the change
-    /// observer doesn't record time travel as a new navigation.
-    @ObservationIgnored var suppressHistoryRecording = false
-
-    var currentLocation: SettingsLocation {
-        SettingsLocation(tab: selectedTab)
-    }
-
-    var canGoBack: Bool { !backHistory.isEmpty }
-    var canGoForward: Bool { !forwardHistory.isEmpty }
-
-    /// Files the page just left into the back history. Called by the view's
-    /// change observer for every user navigation.
-    func recordNavigation(from previous: SettingsLocation) {
-        backHistory.append(previous)
-        if backHistory.count > 50 { backHistory.removeFirst() }
-        forwardHistory.removeAll()
-    }
-
-    func goBack() {
-        guard let target = backHistory.popLast() else { return }
-        forwardHistory.append(currentLocation)
-        apply(target)
-    }
-
-    func goForward() {
-        guard let target = forwardHistory.popLast() else { return }
-        backHistory.append(currentLocation)
-        apply(target)
-    }
-
-    private func apply(_ location: SettingsLocation) {
-        suppressHistoryRecording = true
-        selectedTab = location.tab
-        panePath = []
-    }
-
     func showMachines() {
         selectedTab = .machines
     }
@@ -128,55 +80,6 @@ final class SettingsRouter {
     /// and opens the install sheet — discover→consent still runs; a link can
     /// never skip the consent step.
     var pendingPluginInstallSource: String?
-}
-
-/// The native back/forward control (System Settings, Xcode): a `ControlGroup`
-/// in the navigation control-group style. AppKit draws the grouped capsule,
-/// divider, sizing, and disabled dimming.
-private struct SettingsBackForwardControl: View {
-    @Bindable private var router = SettingsRouter.shared
-
-    var body: some View {
-        ControlGroup {
-            Button {
-                router.goBack()
-            } label: {
-                Label("Back", systemImage: "chevron.left")
-            }
-            .disabled(!router.canGoBack)
-            .help("Back")
-            .keyboardShortcut("[", modifiers: .command)
-
-            Button {
-                router.goForward()
-            } label: {
-                Label("Forward", systemImage: "chevron.right")
-            }
-            .disabled(!router.canGoForward)
-            .help("Forward")
-            .keyboardShortcut("]", modifiers: .command)
-        }
-        .controlGroupStyle(.navigation)
-    }
-}
-
-/// Puts the back/forward control in the window toolbar. Applied to every
-/// page in the detail column — the root panes and each pushed machine page —
-/// so the control is always present.
-private struct SettingsNavigationToolbar: ViewModifier {
-    func body(content: Content) -> some View {
-        content.toolbar {
-            ToolbarItem(placement: .navigation) {
-                SettingsBackForwardControl()
-            }
-        }
-    }
-}
-
-extension View {
-    func settingsNavigationToolbar() -> some View {
-        modifier(SettingsNavigationToolbar())
-    }
 }
 
 /// The machine a Settings subtree is scoped to. Set at the root of each
@@ -224,22 +127,11 @@ struct SettingsView: View {
         } detail: {
             NavigationStack(path: $router.panePath) {
                 detailRoot
-                    .settingsNavigationToolbar()
                     .navigationDestination(for: MachinePaneRoute.self) { route in
                         machinePage(for: route)
                     }
             }
             .themedToolbarBackground(theme, role: .content)
-        }
-        // Every navigation (sidebar selection, push, pop, deep link) files
-        // the previous page into the history — except when back/forward is
-        // the thing navigating.
-        .onChange(of: router.currentLocation) { previous, _ in
-            if router.suppressHistoryRecording {
-                router.suppressHistoryRecording = false
-                return
-            }
-            router.recordNavigation(from: previous)
         }
         .frame(minWidth: 780, idealWidth: 780, minHeight: 560, idealHeight: 560)
         // One-row toolbar with the back button and title inline (the Settings
@@ -320,7 +212,6 @@ extension SettingsView {
         .settingsPaneFormStyle(theme)
         .navigationTitle(machine.name)
         .environment(\.settingsMachineId, machine.id)
-        .settingsNavigationToolbar()
     }
 }
 

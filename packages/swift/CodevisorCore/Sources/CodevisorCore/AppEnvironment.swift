@@ -157,6 +157,9 @@ public final class AppEnvironment {
             self?.configSync.applyRemoteChange(namespace: $1.namespace, entries: $1.entries)
         }
         configSync.onNamespaceChanged = { [weak self] in self?.applySyncedNamespace($0) }
+        // The reconvergence loop: one-shot sync triggers can fail while a
+        // machine is mid-boot; the sweep guarantees the fleet settles anyway.
+        configSync.startPeriodicSweep()
         configSync.onHarnessCatalogChanged = { [weak self] in
             self?.harnessCatalogDidChange(onServer: $0)
         }

@@ -154,14 +154,24 @@ describe("skills sync", () => {
     expect(await verifySkillArchive(hash, Buffer.from("not a tarball"))).toBe(false)
   })
 
-  it("publishes without re-packing when the blob already exists", async () => {
+  it("repacks a tainted cached blob and settles afterward", async () => {
     const { services } = await makeServices("server-d")
     const skills = makeSkills()
     const blobs = makeBlobs()
     await skills.create({ name: "Cached", description: "already packed" })
     const path = (await skills.list()).global[0]?.path ?? ""
     const hash = await skillTreeHash(path)
-    blobs.write(hash, await packSkillArchive(path))
+    // A cached archive that does not verify (e.g. packed with macOS
+    // AppleDouble junk before COPYFILE_DISABLE) is repacked in place —
+    // otherwise the donor serves rejected bytes under a correct id forever.
+    blobs.write(hash, Buffer.from("not an archive"))
+
+    // A second skill whose cached archive is already good stays untouched.
+    await skills.create({ name: "Prepacked", description: "good archive" })
+    const prepackedPath =
+      (await skills.list()).global.find((skill) => skill.name === "Prepacked")?.path ?? ""
+    const prepackedHash = await skillTreeHash(prepackedPath)
+    blobs.write(prepackedHash, await packSkillArchive(prepackedPath))
 
     const result = await reconcileSkills({
       db: services.db,
@@ -169,8 +179,19 @@ describe("skills sync", () => {
       blobs,
       serverId: "server-d"
     })
-    expect(result.status.published).toEqual(["cached"])
-    expect(blobs.has(hash)).toBe(true)
+    expect(result.status.published.toSorted()).toEqual(["cached", "prepacked"])
+    expect(await verifySkillArchive(hash, await blobs.read(hash))).toBe(true)
+    expect(await verifySkillArchive(prepackedHash, await blobs.read(prepackedHash))).toBe(true)
+
+    // Settled second pass: nothing republishes, and the verified blob is
+    // trusted without another unpack.
+    const again = await reconcileSkills({
+      db: services.db,
+      skills,
+      blobs,
+      serverId: "server-d"
+    })
+    expect(again.status.published).toEqual([])
   })
 
   it("adopts identical and renames conflicting first-contact skills", async () => {

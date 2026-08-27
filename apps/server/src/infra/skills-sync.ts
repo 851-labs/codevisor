@@ -65,7 +65,11 @@ const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise
 
 const tarExec = (args: ReadonlyArray<string>, input?: Buffer): Promise<Buffer> =>
   new Promise((resolve, reject) => {
-    const child = spawn("tar", args)
+    // COPYFILE_DISABLE stops macOS bsdtar from injecting AppleDouble
+    // (`._*`) entries. A Linux receiver extracts those as real files, the
+    // unpacked tree hash stops matching the blob id, and the ferry is
+    // rejected forever. Harmless on every other platform.
+    const child = spawn("tar", args, { env: { ...process.env, COPYFILE_DISABLE: "1" } })
     const chunks: Array<Buffer> = []
     child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk))
     child.once("error", reject)
@@ -82,6 +86,10 @@ export const packSkillArchive = (skillPath: string): Promise<Buffer> =>
   tarExec(["-czf", "-", "-C", skillPath, "."])
 
 const EXCLUDED: ReadonlySet<string> = new Set([MANAGED_MARKER])
+
+/// Content-addressed archives verified this process lifetime: a blob whose
+/// bytes reproduced its id once cannot stop doing so.
+const verifiedBlobIds = new Set<string>()
 
 /// Unpacks an archive into a fresh temp directory and returns its path and
 /// tree hash — the caller compares the hash to the claimed blob id (and
@@ -147,6 +155,21 @@ export const reconcileSkills = async (deps: SkillsSyncDeps): Promise<SkillsSyncR
   // side (the fleet version applies under the original name below).
   for (const [directoryName, skill] of [...localSkills]) {
     const localHash = localHashes.get(directoryName) as string
+    // Repack when the cached archive is absent or no longer verifies —
+    // archives packed before COPYFILE_DISABLE carry AppleDouble junk under
+    // a correct id and would otherwise be served (and rejected by every
+    // receiver) forever. Runs before the settled short-circuit, and the
+    // process-lifetime cache keeps a verified content-addressed blob from
+    // being unpacked again.
+    if (!verifiedBlobIds.has(localHash)) {
+      if (
+        !deps.blobs.has(localHash) ||
+        !(await verifySkillArchive(localHash, await deps.blobs.read(localHash)))
+      ) {
+        deps.blobs.write(localHash, await packSkillArchive(skill.path))
+      }
+      verifiedBlobIds.add(localHash)
+    }
     if (appliedByKey.get(directoryName) === localHash) continue
     let key = directoryName
     let path = skill.path
@@ -170,9 +193,6 @@ export const reconcileSkills = async (deps: SkillsSyncDeps): Promise<SkillsSyncR
       localHashes.set(key, localHash)
       await deps.skills.sync({ directoryNames: [key] })
       renamed.push({ from: directoryName, to: key })
-    }
-    if (!deps.blobs.has(localHash)) {
-      deps.blobs.write(localHash, await packSkillArchive(path))
     }
     replicaWrites.push({
       key,
