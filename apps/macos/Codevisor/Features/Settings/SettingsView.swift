@@ -45,22 +45,11 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     }
 }
 
-/// A page pushed inside the Machines section's detail column. Every case
-/// carries the machine it is scoped to, so a page keeps addressing its
-/// machine even if the app's selected machine changes underneath the open
-/// Settings window.
-enum MachineSettingsRoute: Hashable {
-    case harnesses(String)
-    case mcps(String)
-    case skills(String)
-    case plugins(String)
-}
-
-/// A place in Settings: the sidebar section plus any machine pages pushed
-/// over it. The unit of the router's back/forward history.
+/// A place in Settings — the sidebar section. The unit of the router's
+/// back/forward history. Machine scoping lives inside each pane now: every
+/// config pane is machine-first, so there are no pushed machine pages.
 struct SettingsLocation: Equatable {
     var tab: SettingsTab
-    var machinesPath: [MachineSettingsRoute]
 }
 
 /// Routes programmatic Settings navigation (e.g. the sidebar's
@@ -71,8 +60,6 @@ struct SettingsLocation: Equatable {
 final class SettingsRouter {
     static let shared = SettingsRouter()
     var selectedTab: SettingsTab = .general
-    /// The Machines section's navigation stack (machine detail and its pages).
-    var machinesPath: [MachineSettingsRoute] = []
     /// Pages behind and ahead of the current one. Every navigation — sidebar
     /// selection, push, deep link — lands the previous page in `backHistory`;
     /// going back moves the current page to `forwardHistory` (cleared again
@@ -82,12 +69,9 @@ final class SettingsRouter {
     /// One-shot: set while back/forward applies a location so the change
     /// observer doesn't record time travel as a new navigation.
     @ObservationIgnored var suppressHistoryRecording = false
-    /// Resolves the app's selected machine for deep links that don't carry
-    /// one ("Manage Harnesses…" from a chat). Injected at app startup.
-    @ObservationIgnored var selectedMachineIdProvider: () -> String? = { nil }
 
     var currentLocation: SettingsLocation {
-        SettingsLocation(tab: selectedTab, machinesPath: machinesPath)
+        SettingsLocation(tab: selectedTab)
     }
 
     var canGoBack: Bool { !backHistory.isEmpty }
@@ -116,36 +100,23 @@ final class SettingsRouter {
     private func apply(_ location: SettingsLocation) {
         suppressHistoryRecording = true
         selectedTab = location.tab
-        machinesPath = location.machinesPath
     }
 
     func showMachines() {
-        machinesPath = []
         selectedTab = .machines
     }
 
-    /// Opens the Agents pane. Config is fleet-synced, so the top-level pane
-    /// (scoped to the app's selected machine) is the primary surface; an
-    /// explicit OTHER machine still opens its pushed page — install state
-    /// and sign-ins are per machine.
+    /// Opens the Harnesses pane. Every machine's harnesses live right there
+    /// as disclosures, so a deep link needs no machine-specific page — the
+    /// machineId is accepted for callers that have one but changes nothing.
     func showHarnesses(machineId: String? = nil) {
-        if let id = machineId, id != selectedMachineIdProvider() {
-            selectedTab = .machines
-            machinesPath = [.harnesses(id)]
-            return
-        }
-        machinesPath = []
+        _ = machineId
         selectedTab = .agents
     }
 
-    /// Opens the Plugins pane; same fleet-first routing as showHarnesses.
+    /// Opens the Plugins pane; same machine-first shape as showHarnesses.
     func showPlugins(machineId: String? = nil) {
-        if let id = machineId, id != selectedMachineIdProvider() {
-            selectedTab = .machines
-            machinesPath = [.plugins(id)]
-            return
-        }
-        machinesPath = []
+        _ = machineId
         selectedTab = .plugins
     }
 
@@ -205,8 +176,8 @@ extension View {
     }
 }
 
-/// The machine a Settings subtree is scoped to. Set at the root of a pushed
-/// machine page; panes and their sheets resolve the server they talk to from
+/// The machine a Settings subtree is scoped to. Set at the root of each
+/// machine's disclosure content; sheets resolve the server they talk to from
 /// this, falling back to the app's selected machine (onboarding, previews).
 private struct SettingsMachineIdKey: EnvironmentKey {
     static let defaultValue: String? = nil
@@ -247,12 +218,9 @@ struct SettingsView: View {
             // would just leave an empty content window here.
             .toolbar(removing: .sidebarToggle)
         } detail: {
-            NavigationStack(path: $router.machinesPath) {
+            NavigationStack {
                 detailRoot
                     .settingsNavigationToolbar()
-                    .navigationDestination(for: MachineSettingsRoute.self) { route in
-                        destination(for: route)
-                    }
             }
             .themedToolbarBackground(theme, role: .content)
         }
@@ -276,14 +244,11 @@ struct SettingsView: View {
         .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
     }
 
-    /// Selecting a sidebar section resets any machine pages pushed over the
-    /// previous section's content.
     private var sidebarSelection: Binding<SettingsTab?> {
         Binding(
             get: { router.selectedTab },
             set: { tab in
                 guard let tab else { return }
-                if tab != router.selectedTab { router.machinesPath = [] }
                 router.selectedTab = tab
             }
         )
@@ -320,37 +285,6 @@ struct SettingsView: View {
             MachinesSettingsView()
                 .navigationTitle("Machines")
         }
-    }
-
-    /// The pushed machine pages. Each subtree is pinned to its machine via
-    /// `settingsMachineId`, so the panes and every sheet they present keep
-    /// talking to that machine regardless of the app's selected machine.
-    /// The system back button is hidden everywhere — the persistent
-    /// back/forward pair in the toolbar is the one navigation control.
-    @ViewBuilder
-    private func destination(for route: MachineSettingsRoute) -> some View {
-        Group {
-            switch route {
-            case let .harnesses(id):
-                HarnessesSettingsView()
-                    .navigationTitle("Harnesses")
-                    .environment(\.settingsMachineId, id)
-            case let .mcps(id):
-                McpSettingsView()
-                    .navigationTitle("MCP Servers")
-                    .environment(\.settingsMachineId, id)
-            case let .skills(id):
-                SkillsSettingsView()
-                    .navigationTitle("Skills")
-                    .environment(\.settingsMachineId, id)
-            case let .plugins(id):
-                PluginsSettingsView()
-                    .navigationTitle("Plugins")
-                    .environment(\.settingsMachineId, id)
-            }
-        }
-        .navigationBarBackButtonHidden(true)
-        .settingsNavigationToolbar()
     }
 }
 

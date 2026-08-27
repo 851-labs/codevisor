@@ -82,9 +82,6 @@ struct CodevisorApp: App {
         environment.attentionCoordinator.notificationDelivery = ChatNotificationManager.shared
         // Deep links that open machine-scoped Settings pages ("Manage
         // Harnesses…") resolve the selected machine through this.
-        SettingsRouter.shared.selectedMachineIdProvider = { [weak environment] in
-            environment?.machines.selectedMachineId
-        }
         return (environment, sparkleUpdater)
     }
 
@@ -283,7 +280,7 @@ struct RootView: View {
             else { return }
             Task { await openNotificationSession(sessionId, serverId: serverId) }
         }
-        .task { await reconcileSkippedPermissions() }
+        .task { await reconcileSkippedPermissions(environment: environment) }
         // An update arrived and the Computer Use permissions are not set up:
         // ask once per version, as a dialog over the app rather than a
         // takeover. An overlay rather than a sheet — see the gate view; a
@@ -369,33 +366,6 @@ struct RootView: View {
                 // Initialize the terminal runtime up front, in a clean context,
                 // so opening the terminal later can't re-enter its dispatch_once.
                 TerminalRuntime.prewarm()
-            }
-        }
-    }
-
-    /// Heals a half-applied "Set Up Later": the skip choice persists locally
-    /// but the Computer Use disable is a server call that can be lost (the
-    /// app may quit before it lands). Skipped + permissions missing means
-    /// Computer Use must be off; skipped + permissions granted means the
-    /// skip is obsolete.
-    private func reconcileSkippedPermissions() async {
-        guard !AppPreview.isRunning, environment.settings.permissionsSetupSkipped else { return }
-        let probes = ComputerUsePermissionProbes.live
-        if probes.isAccessibilityGranted() && probes.isScreenRecordingGranted() {
-            environment.settings.setPermissionsSetupSkipped(false)
-            return
-        }
-        for attempt in 0..<30 {
-            if let servers = try? await environment.serverClient.listMcpServers(),
-                let computer = servers.first(where: { $0.kind == "computerUse" })
-            {
-                if computer.enabled {
-                    McpFleet.disableLocally(environment.configSync, name: computer.name)
-                }
-                return
-            }
-            if attempt < 29 {
-                try? await Task.sleep(for: .seconds(2))
             }
         }
     }

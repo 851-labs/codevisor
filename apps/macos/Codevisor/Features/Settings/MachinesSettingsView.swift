@@ -46,7 +46,6 @@ struct MachinesSettingsView: View {
     private var isPollingActive: Bool {
         controlActiveState != .inactive
             && SettingsRouter.shared.selectedTab == .machines
-            && SettingsRouter.shared.machinesPath.isEmpty
     }
 
     /// A Bool presentation binding over optional state ("present while

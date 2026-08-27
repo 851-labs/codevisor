@@ -26,7 +26,6 @@ struct CloudSettingsView: View {
     private var isPollingActive: Bool {
         controlActiveState != .inactive
             && SettingsRouter.shared.selectedTab == .machines
-            && SettingsRouter.shared.machinesPath.isEmpty
     }
 
     var body: some View {
