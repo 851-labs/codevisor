@@ -3,6 +3,7 @@ import { makeBlobStore } from "@codevisor/sync"
 import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { gzipSync } from "node:zlib"
 import { describe, expect, it } from "vitest"
 import { makeAgents, makeServices, run, tempDirs } from "../test-support.js"
 import {
@@ -10,7 +11,8 @@ import {
   reconcileSkills,
   SKILLS_SYNC_NAMESPACE,
   skillTreeHash,
-  verifySkillArchive
+  verifySkillArchive,
+  archiveEntryNames
 } from "./skills-sync.js"
 
 const makeSkills = () => {
@@ -152,6 +154,58 @@ describe("skills sync", () => {
     expect(await verifySkillArchive("a".repeat(64), bytes)).toBe(false)
     // Bytes tar cannot unpack are rejected the same way.
     expect(await verifySkillArchive(hash, Buffer.from("not a tarball"))).toBe(false)
+  })
+
+  it("rejects and repacks archives carrying macOS metadata junk", async () => {
+    // A synthetic tar with an AppleDouble companion — the shape macOS bsdtar
+    // used to produce and then HIDE from its own listings, while Linux
+    // extracted it as a real file and rejected the hash forever.
+    const header = (name: string, size: number): Buffer => {
+      const block = Buffer.alloc(512)
+      block.write(name, 0, "utf8")
+      block.write(size.toString(8).padStart(11, "0") + "\0", 124, "ascii")
+      block.write("0", 156, "ascii")
+      return block
+    }
+    const body = Buffer.from("junk")
+    const tar = Buffer.concat([
+      header("./SKILL.md", body.length),
+      Buffer.concat([body], 512),
+      header("./._SKILL.md", body.length),
+      Buffer.concat([body], 512),
+      Buffer.alloc(1024)
+    ])
+    const junkArchive = gzipSync(tar)
+    expect(archiveEntryNames(junkArchive)).toEqual(["./SKILL.md", "./._SKILL.md"])
+    expect(await verifySkillArchive("f".repeat(64), junkArchive)).toBe(false)
+
+    // Parser edge cases: an empty size field reads as zero, bare-slash
+    // names are not junk, and junk-free bytes tar cannot unpack still fail
+    // verification through the unpack path.
+    const emptySize = Buffer.alloc(512)
+    emptySize.write("/", 0, "utf8")
+    expect(archiveEntryNames(gzipSync(Buffer.concat([emptySize, Buffer.alloc(1024)])))).toEqual([
+      "/"
+    ])
+    expect(
+      await verifySkillArchive(
+        "a".repeat(64),
+        gzipSync(Buffer.concat([emptySize, Buffer.alloc(1024)]))
+      )
+    ).toBe(false)
+
+    // A donor with that archive cached repacks it even though its own
+    // platform tar would unpack it "clean".
+    const { services } = await makeServices("server-j")
+    const skills = makeSkills()
+    const blobs = makeBlobs()
+    await skills.create({ name: "Junked", description: "tainted cache" })
+    const path = (await skills.list()).global[0]?.path ?? ""
+    const hash = await skillTreeHash(path)
+    blobs.write(hash, junkArchive)
+    await reconcileSkills({ db: services.db, skills, blobs, serverId: "server-j" })
+    expect(archiveEntryNames(await blobs.read(hash)).some((n) => n.includes("._"))).toBe(false)
+    expect(await verifySkillArchive(hash, await blobs.read(hash))).toBe(true)
   })
 
   it("repacks a tainted cached blob and settles afterward", async () => {

@@ -10,6 +10,7 @@ import {
 } from "@codevisor/sync"
 import { Effect } from "effect"
 import { spawn } from "node:child_process"
+import { gunzipSync } from "node:zlib"
 import { cp, mkdtemp, rename, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -80,10 +81,17 @@ const tarExec = (args: ReadonlyArray<string>, input?: Buffer): Promise<Buffer> =
     child.stdin.end()
   })
 
+/// bsdtar-only: without it macOS embeds AppleDouble (`._*`) companions for
+/// every file carrying metadata, and hides them again when listing — a
+/// Linux receiver extracts them as real files and the tree hash never
+/// matches. GNU tar rejects the flag, so it applies on macOS alone.
+/* v8 ignore next -- resolved once per platform; the other side never runs here. */
+const MAC_METADATA_FLAGS = process.platform === "darwin" ? ["--no-mac-metadata"] : []
+
 /// Packs a skill directory's CONTENTS (not the directory itself, so the
 /// destination name is the replica's business, not the archive's).
 export const packSkillArchive = (skillPath: string): Promise<Buffer> =>
-  tarExec(["-czf", "-", "-C", skillPath, "."])
+  tarExec(["-czf", "-", ...MAC_METADATA_FLAGS, "-C", skillPath, "."])
 
 const EXCLUDED: ReadonlySet<string> = new Set([MANAGED_MARKER])
 
@@ -273,10 +281,44 @@ export const reconcileSkills = async (deps: SkillsSyncDeps): Promise<SkillsSyncR
   }
 }
 
-/// PUT /v1/sync/blobs verification: the archive's unpacked tree hash must
-/// equal the claimed id, or the bytes are rejected.
+/// Entry names read straight from the tar bytes. Platform tar binaries
+/// cannot be trusted for this: macOS bsdtar silently recombines AppleDouble
+/// (`._*`) pairs when listing OR extracting, so a mac donor unpacking its
+/// own tainted archive sees a clean tree — while every Linux receiver sees
+/// the junk files and a mismatched hash.
+export const archiveEntryNames = (bytes: Buffer): ReadonlyArray<string> => {
+  const tar = gunzipSync(bytes)
+  const names: Array<string> = []
+  let offset = 0
+  while (offset + 512 <= tar.length) {
+    const header = tar.subarray(offset, offset + 512)
+    if (header.every((byte) => byte === 0)) break
+    names.push(
+      header
+        .subarray(0, 100)
+        .toString("utf8")
+        .replace(/\0[^]*$/, "")
+    )
+    const size = Number.parseInt(
+      header.subarray(124, 136).toString("ascii").replaceAll("\0", "").trim() || "0",
+      8
+    )
+    offset += 512 + Math.ceil(size / 512) * 512
+  }
+  return names
+}
+
+const isMacMetadataJunk = (name: string): boolean => {
+  const base = name.split("/").filter(Boolean).at(-1) ?? ""
+  return base.startsWith("._") || base === ".DS_Store"
+}
+
+/// PUT /v1/sync/blobs verification: the archive must be free of macOS
+/// metadata junk and its unpacked tree hash must equal the claimed id, or
+/// the bytes are rejected.
 export const verifySkillArchive = async (id: string, bytes: Buffer): Promise<boolean> => {
   try {
+    if (archiveEntryNames(bytes).some(isMacMetadataJunk)) return false
     const unpacked = await unpackSkillArchive(bytes)
     const matches = unpacked.hash === id
     await rm(unpacked.path, { recursive: true, force: true })
