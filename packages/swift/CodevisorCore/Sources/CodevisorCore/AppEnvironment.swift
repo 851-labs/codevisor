@@ -34,6 +34,11 @@ public final class AppEnvironment {
     /// While true, the root view presents the blocking permissions gate
     /// instead of the main split. Cleared when the gate completes.
     public var requiresPermissionsReview = false
+
+    /// App-installed: fired when a machine's route flips (direct ↔ relay)
+    /// so the platform's chat cache can re-home live sessions onto a client
+    /// resolved over the new route.
+    @ObservationIgnored public var onMachineRouteChanged: ((String) -> Void)?
     /// Persists each session's pane-group state (terminal tabs, selection,
     /// panel visibility/height) so panes reattach to their shells after
     /// app restarts.
@@ -155,6 +160,7 @@ public final class AppEnvironment {
             self?.harnessCatalogDidChange(onServer: $0)
         }
         machines.onMachineConnected = { [weak self] in self?.noteMachineConnected($0) }
+        machines.onMachineRouteChanged = { [weak self] in self?.onMachineRouteChanged?($0) }
         machines.onMachineAdded = { [weak self] in self?.fleetRoster.publishMachine($0) }
         machines.onMachineRemoved = { [weak self] in
             self?.fleetRoster.publishRemoval(localMachineId: $0)

@@ -139,6 +139,10 @@ struct CodevisorApp: App {
         // outside the focused chat).
         ChatNotificationManager.shared.configure(settings: environment.settings)
         environment.attentionCoordinator.notificationDelivery = ChatNotificationManager.shared
+        environment.onMachineRouteChanged = { [weak environment] machineId in
+            guard let environment else { return }
+            ChatControllerCache.shared.rerouteControllers(on: machineId, environment: environment)
+        }
         let machines = environment.machines
         let selectedIsConfiguredRemote = machines.machines.contains {
             $0.id == machines.selectedMachineId && !$0.isLocal

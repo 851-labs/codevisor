@@ -9,6 +9,7 @@ extension MachineController {
     public func refreshStatus(for id: String) async {
         let client = client(for: id)
         let connection = connection(for: id)
+        defer { noteRouteAfterProbe(connection, id: id) }
         do {
             let info = try await client.info()
             connection.status = MachineStatus(
@@ -107,5 +108,18 @@ extension MachineController {
             route: .relay,
             serverId: info.id
         )
+    }
+
+    /// Route-flip detection: a probe that lands on a different route than
+    /// the last successful one means every live socket to this machine
+    /// rides a dead transport. Re-home the shell stream and tell the app
+    /// so open chats re-home too.
+    private func noteRouteAfterProbe(_ connection: MachineConnection, id: String) {
+        guard let newRoute = connection.status?.route else { return }
+        let known = connection.lastKnownRoute
+        connection.lastKnownRoute = newRoute
+        guard let known, known != newRoute else { return }
+        rerouteStreams(for: id)
+        onMachineRouteChanged?(id)
     }
 }

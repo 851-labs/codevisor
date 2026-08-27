@@ -31,6 +31,10 @@ public final class MachineConnection {
     /// This machine's live shell-event subscription. Every machine holds its
     /// own; selection changes never touch another machine's stream.
     @ObservationIgnored var eventSyncTask: Task<Void, Never>?
+    /// The last non-nil route this machine was reached over. Route-flip
+    /// detection compares against this, so an unreachable gap between
+    /// probes never masks a direct↔relay change.
+    @ObservationIgnored var lastKnownRoute: MachineRoute?
     /// Guards one background connect at a time per machine.
     @ObservationIgnored var backgroundConnectInFlight = false
     /// Consecutive background stream failures, for reconnect backoff. Reset

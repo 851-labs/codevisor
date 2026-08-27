@@ -166,6 +166,11 @@ public final class MachineController {
     /// Invoked after a machine is removed locally — the roster tombstones it.
     @ObservationIgnored public var onMachineRemoved: ((String) -> Void)?
 
+    /// Fired after a machine's route flips (direct ↔ relay) and its shell
+    /// stream has been re-homed, so app-level chat caches can re-home their
+    /// per-session streams onto the new transport too.
+    @ObservationIgnored public var onMachineRouteChanged: ((String) -> Void)?
+
     public init(
         store: any PersistenceStore,
         projectList: ProjectListModel,

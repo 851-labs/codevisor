@@ -100,6 +100,25 @@ extension MachineController {
         connectionsById[machineId]?.eventSyncTask = nil
     }
 
+    /// Re-homes one machine's live shell stream after its route flips: the
+    /// old socket rides a dead transport, so tear it down and catch up
+    /// gaplessly through a client resolved over the NEW route. Background
+    /// machines just drop the dead stream — their full snapshot happens
+    /// when they are next selected, as always.
+    func rerouteStreams(for machineId: String) {
+        stopEventSync(for: machineId)
+        guard machineId == selectedMachine.id else { return }
+        let client = client(for: machineId)
+        connection(for: machineId).navigationSyncState = .catchingUp
+        Task { [weak self] in
+            await self?.synchronizeNavigationState(
+                serverId: machineId,
+                client: client,
+                presentation: .catchUp
+            )
+        }
+    }
+
     private func handleSyncEvent(
         _ event: ServerEventEnvelope,
         serverId: String,

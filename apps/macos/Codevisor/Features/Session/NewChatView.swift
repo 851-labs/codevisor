@@ -95,6 +95,13 @@ struct NewChatView: View {
     @State private var projectSetup = ProjectSetupModel()
 
     var projects: [Project] { environment.projectList.activeProjects }
+
+    /// The draft machine's current route — direct or relay — so the
+    /// composer notices a failover that leaves the machine set unchanged.
+    private var routeForDraftMachine: MachineRoute? {
+        let serverId = controller?.project.serverId ?? environment.machines.selectedMachineId
+        return environment.machines.statusByMachineId[serverId]?.route
+    }
     private var selectedProject: Project? {
         projects.first { $0.id == selectedProjectId } ?? projects.first
     }
@@ -301,6 +308,14 @@ struct NewChatView: View {
             guard controller.preparationState == .failed || controller.harnesses.isEmpty
             else { return }
             Task { await controller.prepare() }
+        }
+        // A route flip (direct ↔ relay) doesn't change the machine set, so
+        // watch it separately: the draft's next send must ride the new route.
+        .onChange(of: routeForDraftMachine) { _, _ in
+            guard let controller else { return }
+            controller.adoptServerClient(
+                environment.machines.client(for: controller.project.serverId)
+            )
         }
         // Update knowledge is fetched separately from the picker's plain
         // list so the composer stays snappy; the update banner reads this.

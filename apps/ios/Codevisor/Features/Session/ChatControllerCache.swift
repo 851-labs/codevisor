@@ -195,6 +195,20 @@ final class ChatControllerCache {
     /// strand a turn in ways stream replay alone cannot fix (a reconcile
     /// that failed while unreachable, a server-side repair missed while
     /// asleep); idle chats are a no-op.
+    /// A route flip (direct ↔ relay) leaves cached controllers streaming
+    /// over a dead transport. Re-home each affected chat: adopt a client
+    /// resolved over the new route, then reconnect — which replays history
+    /// and resumes from the durable cursor.
+    func rerouteControllers(on machineId: String, environment: AppEnvironment) {
+        for (key, controller) in controllers where key.serverId == machineId {
+            controller.adoptServerClient(environment.machines.client(for: machineId))
+            Task { await controller.reconnect() }
+        }
+        // Drafts have no live stream, but their next send must ride the new
+        // route too.
+        draftsByServer[machineId]?.adoptServerClient(environment.machines.client(for: machineId))
+    }
+
     func reconcileInFlightControllers() async {
         for controller in controllers.values where controller.isSending {
             await controller.reconcileInFlightTurn()
