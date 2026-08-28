@@ -46,6 +46,9 @@ struct ComposerDraftStoreTests {
         let reloaded = ComposerDraftStore(store: store)
         #expect(reloaded.draft(forServer: "local") == expected)
         #expect(reloaded.draft(forServer: "local")?.projectServerId == "remote-b")
+        let targeted = reloaded.draft(targetingServer: "remote-b")
+        #expect(targeted?.slotServerId == "local")
+        #expect(targeted?.draft == expected)
     }
 
     @Test("Pane drafts persist per pane, with attachment bytes, across instances")

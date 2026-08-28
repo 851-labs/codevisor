@@ -271,11 +271,8 @@ public final class MachineController {
             // process lifecycle for this controller to await.
             markReady(for: selectedMachine.id)
         }
-        projectList.selectServer(
-            serverId: selectedMachine.id,
-            serverClient: selectedClient,
-            refresh: false
-        )
+        projectList.selectServer(serverId: selectedMachine.id, serverClient: selectedClient, refresh: false)
+        projectList.configureServerClientProvider { [weak self] in self?.clientIfKnown(for: $0) }
     }
 
     /// Bridges the cloud account feature in (set once at composition time).

@@ -122,6 +122,8 @@ public final class ProjectListModel {
     private let legacyMigrationStore: (any PersistenceStore)?
     private var legacyMigrationTasks: [String: Task<Void, Error>] = [:]
     var serverClient: (any CodevisorServerClienting)?
+    /// Fleet-aware resolver installed by `MachineController`.
+    @ObservationIgnored var serverClientProvider: ((String) -> (any CodevisorServerClienting)?)?
     /// Server-owned session → workspace membership, scoped by the client-side
     /// machine id. Pane layout stays in `WorkspaceRepository`; this mapping is
     /// refreshed with the same authoritative session snapshot as the sidebar.
@@ -373,10 +375,6 @@ public final class ProjectListModel {
             .sorted { $0.createdAt > $1.createdAt }
     }
 
-    public var hasArchivedProjects: Bool {
-        projects.contains { $0.serverId == selectedServerId && $0.isArchived }
-    }
-
     /// Adds a project for a folder, reusing an existing entry if the folder
     /// is already present (un-archiving it if needed).
     @discardableResult
@@ -486,7 +484,7 @@ public final class ProjectListModel {
                 $0.serverId == session.serverId && $0.id == session.id
             })
         else { return }
-        if serverClient != nil, session.serverId == selectedServerId {
+        if clientForServer(session.serverId) != nil {
             pendingArchivedSessionIds.insert(
                 ScopedSessionID(serverId: session.serverId, id: session.id)
             )
@@ -582,7 +580,7 @@ public final class ProjectListModel {
         // being created by SessionController. Only mark rows when a client is
         // configured: JSON records loaded before server authority is selected
         // are legacy cache, not active in-flight creations.
-        if serverClient != nil {
+        if clientForServer(session.serverId) != nil {
             pendingServerSessionIds.insert(ScopedSessionID(serverId: session.serverId, id: session.id))
         }
         persistSessions()
@@ -634,7 +632,7 @@ public final class ProjectListModel {
         }
         persistSessions()
         emitAttentionTransition(old: before, new: sessions[index], origin: .localMarkRead)
-        guard let serverClient, serverId == selectedServerId else { return }
+        guard let serverClient = clientForServer(serverId) else { return }
         Task {
             do {
                 if let remote = try await serverClient.markSessionRead(
@@ -647,7 +645,7 @@ public final class ProjectListModel {
                 Log.sync.error(
                     "Failed to mark session \(sessionId.uuidString, privacy: .public) read: \(String(describing: error), privacy: .public)"
                 )
-                await refreshFromServer()
+                _ = await refreshFromServer(serverId: serverId, client: serverClient)
             }
         }
     }
@@ -665,7 +663,7 @@ public final class ProjectListModel {
         }
         persistSessions()
         emitAttentionTransition(old: before, new: sessions[index], origin: .localMarkUnread)
-        guard let serverClient, serverId == selectedServerId else { return }
+        guard let serverClient = clientForServer(serverId) else { return }
         Task {
             do {
                 if let remote = try await serverClient.markSessionUnread(id: sessionId) {
@@ -675,7 +673,7 @@ public final class ProjectListModel {
                 Log.sync.error(
                     "Failed to mark session \(sessionId.uuidString, privacy: .public) unread: \(String(describing: error), privacy: .public)"
                 )
-                await refreshFromServer()
+                _ = await refreshFromServer(serverId: serverId, client: serverClient)
             }
         }
     }
@@ -810,7 +808,7 @@ public final class ProjectListModel {
         }
         persistProjects()
         persistSessions()
-        syncAllToServer()
+        syncAllToServer(serverId: serverId)
     }
 
     /// Imports sessions into a specific project (they were discovered for its
@@ -844,7 +842,7 @@ public final class ProjectListModel {
         }
         guard didChange else { return }
         persistSessions()
-        syncAllToServer()
+        syncAllToServer(serverId: project.serverId)
     }
 
     /// Native-session discovery is also our source of truth for activity that
@@ -971,7 +969,7 @@ public final class ProjectListModel {
         sessions.removeAll { $0.serverId == selectedServerId }
         persistProjects()
         persistSessions()
-        deleteAllFromServer(projectIDs: projectIDs, sessionIDs: sessionIDs)
+        deleteAllFromServer(serverId: selectedServerId, projectIDs: projectIDs, sessionIDs: sessionIDs)
     }
 
     public func selectServer(

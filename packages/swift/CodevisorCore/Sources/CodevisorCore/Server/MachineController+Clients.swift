@@ -6,6 +6,11 @@ import Foundation
 /// configured machines, and a loudly-failing client when a cloud id
 /// can't be routed yet.
 extension MachineController {
+    func clientIfKnown(for machineId: String) -> (any CodevisorServerClienting)? {
+        guard machine(for: machineId) != nil else { return nil }
+        return client(for: machineId)
+    }
+
     public func client(for machineId: String) -> any CodevisorServerClienting {
         // Cloud machines get a real HTTP client whose transports tunnel every
         // request/WebSocket through the account's encrypted relay, so all

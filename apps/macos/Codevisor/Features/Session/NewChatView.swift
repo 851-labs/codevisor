@@ -87,7 +87,7 @@ struct NewChatView: View {
     var requiresInitialProjectResolution = false
     var onInitialProjectResolutionCompleted: (() -> Void)? = nil
 
-    @State private var controller: SessionController?
+    @State var controller: SessionController?
     @State var selectedProjectId: UUID?
     @State private var focus = TerminalFocusController()
     @State var newProjectTarget: NewProjectTarget?
@@ -95,38 +95,15 @@ struct NewChatView: View {
     @Namespace private var composerGlassNamespace
     @Environment(\.openSettings) var openSettings
 
-    var projects: [Project] { environment.projectList.activeProjects }
-
-    /// The draft machine's current route — direct or relay — so the
-    /// composer notices a failover that leaves the machine set unchanged.
-    private var routeForDraftMachine: MachineRoute? {
-        let serverId = controller?.project.serverId ?? environment.machines.selectedMachineId
-        return environment.machines.statusByMachineId[serverId]?.route
-    }
     private var selectedProject: Project? {
         projects.first { $0.id == selectedProjectId } ?? projects.first
     }
-    private var setupIdentity: String {
-        "\(environment.machines.selectedMachineId):\(preferredProjectId?.uuidString ?? "default"):\(requiresInitialProjectResolution ? "resolving" : "ready")"
-    }
-    private var harnessCatalogRevision: UInt64 {
-        // The DRAFT's machine, not the globally selected one: a composer
-        // pointed at a fleet machine must react to that machine's catalog.
-        environment.harnessCatalogRevision(
-            for: controller?.project.serverId ?? environment.machines.selectedMachineId)
-    }
 
     var body: some View {
-        if paneDraftId == nil {
-            // Page mode only: an embedded draft pane must not override the
-            // workspace window's title.
-            content.navigationTitle("New chat")
-        } else {
-            content
-        }
+        machineScopedBody
     }
 
-    private var content: some View {
+    var content: some View {
         VStack {
             if requiresInitialProjectResolution {
                 DelayedNewChatLoadingView()
@@ -252,15 +229,23 @@ struct NewChatView: View {
             ManageProjectSheet(
                 project: project,
                 client: environment.machines.client(for: project.serverId),
-                didUpdate: { await environment.projectList.refreshFromServer() },
+                didUpdate: {
+                    await environment.projectList.refreshFromServer(
+                        serverId: project.serverId,
+                        client: environment.machines.client(for: project.serverId)
+                    )
+                },
                 onArchive: { archiveManagedProject(project, controller: controller) }
             )
         }
         // Established installs stay stale-while-revalidate. The one-shot
         // onboarding handoff keeps its loading surface mounted until this
         // same authoritative refresh finishes.
-        .task {
-            await environment.projectList.refreshFromServer()
+        .task(id: composerServerId) {
+            await environment.projectList.refreshFromServer(
+                serverId: composerServerId,
+                client: environment.machines.client(for: composerServerId)
+            )
             if requiresInitialProjectResolution {
                 onInitialProjectResolutionCompleted?()
             }
@@ -304,7 +289,7 @@ struct NewChatView: View {
         // list so the composer stays snappy; the update banner reads this.
         .task(id: harnessCatalogRevision) {
             await environment.refreshHarnessLifecycle(
-                for: environment.machines.selectedMachineId
+                for: composerServerId
             )
         }
         .focusedSceneValue(
@@ -367,7 +352,7 @@ struct NewChatView: View {
         selectedProjectId = preferredProjectId ?? projects.first?.id
         let project =
             selectedProject
-            ?? Project.runTargetPlaceholder(serverId: environment.machines.selectedMachineId)
+            ?? Project.runTargetPlaceholder(serverId: composerServerId)
         // Keep the original draft controller path: it owns both the complete
         // per-composer snapshot and its correctly-scoped composer defaults.
         let controller: SessionController
@@ -394,7 +379,9 @@ struct NewChatView: View {
         if paneDraftId == nil,
             let explicitProjectId,
             controller.project.id != explicitProjectId,
-            let explicit = projects.first(where: { $0.id == explicitProjectId })
+            let explicit = environment.projectList.fleetActiveProjects.first(where: {
+                $0.id == explicitProjectId
+            })
         {
             selectTargetProject(explicit, controller: controller)
         }
@@ -510,13 +497,8 @@ struct NewChatView: View {
                     // animation delay.
                     await Task.yield()
                     guard controller?.serverSession?.id == session.id else { return }
-                    // A chat sent to ANOTHER machine's project switches the
-                    // app there now — the machine picker deferred to first
-                    // send. Same contract as sidebar click-through.
-                    if session.serverId != environment.machines.selectedMachineId {
-                        environment.machines.selectMachine(session.serverId)
-                        await environment.prepareSelectedMachine()
-                    }
+                    // The destination route already carries the machine id;
+                    // navigation is identical for local and remote chats.
                     selection = .session(serverId: session.serverId, id: session.id)
                 }
             }

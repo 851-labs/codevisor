@@ -5,8 +5,22 @@ import Foundation
 /// from flickering optimistic rows. Extracted from ProjectListModel.swift
 /// (file-length ratchet); behavior unchanged.
 extension ProjectListModel {
+    /// Installs fleet routing without making any machine the navigation
+    /// selection. Every mutation subsequently resolves its record's client.
+    public func configureServerClientProvider(
+        _ provider: @escaping (String) -> (any CodevisorServerClienting)?
+    ) {
+        serverClientProvider = provider
+    }
+
+    func clientForServer(_ serverId: String) -> (any CodevisorServerClienting)? {
+        if let serverClientProvider { return serverClientProvider(serverId) }
+        guard serverId == selectedServerId else { return nil }
+        return serverClient
+    }
+
     func syncProject(_ project: Project) {
-        guard let serverClient, project.serverId == selectedServerId else { return }
+        guard let serverClient = clientForServer(project.serverId) else { return }
         pendingServerProjectIds.insert(
             ScopedSessionID(serverId: project.serverId, id: project.id)
         )
@@ -31,9 +45,7 @@ extension ProjectListModel {
         // tabs) have no harness until their first send, and MUST still
         // reach the server — an unsynced row is dropped by the next
         // authoritative refresh once its pending marker is gone.
-        guard let serverClient,
-            session.serverId == selectedServerId
-        else { return }
+        guard let serverClient = clientForServer(session.serverId) else { return }
         let project = projects.first { $0.serverId == session.serverId && $0.id == session.projectId }
         Task {
             do {
@@ -56,10 +68,10 @@ extension ProjectListModel {
         }
     }
 
-    func syncAllToServer() {
-        guard let serverClient else { return }
-        let currentProjects = projects.filter { $0.serverId == selectedServerId }
-        let currentSessions = sessions.filter { $0.serverId == selectedServerId && !$0.harnessId.isEmpty }
+    func syncAllToServer(serverId: String) {
+        guard let serverClient = clientForServer(serverId) else { return }
+        let currentProjects = projects.filter { $0.serverId == serverId }
+        let currentSessions = sessions.filter { $0.serverId == serverId && !$0.harnessId.isEmpty }
         Task {
             var failureCount = 0
             for project in currentProjects {
@@ -93,7 +105,7 @@ extension ProjectListModel {
     }
 
     func deleteSessionFromServer(_ sessionID: UUID, serverId: String) {
-        guard let serverClient, serverId == selectedServerId else { return }
+        guard let serverClient = clientForServer(serverId) else { return }
         Task {
             do {
                 try await serverClient.deleteSession(id: sessionID)
@@ -111,7 +123,7 @@ extension ProjectListModel {
         serverId: String,
         removedSessionIDs: [UUID]
     ) {
-        guard let serverClient, serverId == selectedServerId else { return }
+        guard let serverClient = clientForServer(serverId) else { return }
         Task {
             var didFail = false
             for sessionID in removedSessionIDs {
@@ -142,8 +154,12 @@ extension ProjectListModel {
         }
     }
 
-    func deleteAllFromServer(projectIDs: [UUID], sessionIDs: [UUID]) {
-        guard let serverClient else { return }
+    func deleteAllFromServer(
+        serverId: String,
+        projectIDs: [UUID],
+        sessionIDs: [UUID]
+    ) {
+        guard let serverClient = clientForServer(serverId) else { return }
         Task {
             var didFail = false
             for sessionID in sessionIDs {

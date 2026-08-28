@@ -9,7 +9,7 @@ import Foundation
 /// choices into the standalone page or another workspace.
 @MainActor
 public final class ComposerDefaultsStore {
-    nonisolated private static let schemaVersion = 4
+    nonisolated private static let schemaVersion = 5
     nonisolated private static let legacyServerId = "local"
 
     public enum Scope: Sendable, Equatable {
@@ -24,7 +24,7 @@ public final class ComposerDefaultsStore {
         }
     }
 
-    private struct MachineDefaults: Codable, Sendable {
+    fileprivate struct MachineDefaults: Codable, Sendable {
         var lastHarnessId: String?
         /// The project used by the last standalone New Chat page on this
         /// machine. UUIDs that no longer exist are ignored by callers.
@@ -38,7 +38,7 @@ public final class ComposerDefaultsStore {
         var configSelections: [String: [String: String]] = [:]
     }
 
-    private struct WorkspaceDefaults: Codable, Sendable {
+    fileprivate struct WorkspaceDefaults: Codable, Sendable {
         /// Protects against a stale workspace id being interpreted under a
         /// different machine after an import.
         var serverId: String?
@@ -48,57 +48,18 @@ public final class ComposerDefaultsStore {
 
     private struct Defaults: Codable, Sendable {
         var version = ComposerDefaultsStore.schemaVersion
+        /// The machine targeted by the standalone New Chat composer most
+        /// recently. Navigation never writes this; explicit composer project
+        /// choices and successful first sends do.
+        var lastNewWorkspaceServerId: String?
         var machines: [String: MachineDefaults] = [:]
         var workspaces: [String: WorkspaceDefaults] = [:]
-    }
-
-    /// The format shipped immediately before workspace-scoped inheritance.
-    private struct DefaultsV3: Decodable {
-        var version: Int?
-        var machines: [String: MachineDefaultsV3]
-    }
-
-    private struct MachineDefaultsV3: Decodable {
-        var lastHarnessId: String?
-        var newWorkspaceInWorktree: Bool?
-        var configSelections: [String: [String: String]]?
-    }
-
-    /// V2 already carried workspace snapshots. V3 retired them; V4 restores
-    /// the feature with clearer "last focused chat" semantics. Preserve V2
-    /// snapshots both on a direct upgrade and from V3's safety backup.
-    private struct ScopedDefaultsV2: Decodable {
-        var machines: [String: MachineDefaultsV2]
-        var workspaces: [String: WorkspaceDefaultsV2]?
-    }
-
-    private struct MachineDefaultsV2: Decodable {
-        var lastHarnessId: String?
-        /// Legacy field, decode-only: run location is no longer remembered.
-        var runInWorktree: Bool?
-        var configSelections: [String: [String: String]]?
-    }
-
-    private struct WorkspaceDefaultsV2: Decodable {
-        var lastHarnessId: String?
-        var configSelections: [String: [String: String]]?
-    }
-
-    /// The flat pre-machine-scoping payload. All fields remain optional so a
-    /// partial legacy file still migrates rather than being quarantined.
-    private struct FlatDefaultsV1: Decodable {
-        var lastHarnessId: String?
-        var runInWorktree: Bool?
-        var configSelections: [String: [String: String]]?
-
-        var isRecognized: Bool {
-            lastHarnessId != nil || runInWorktree != nil || configSelections != nil
-        }
     }
 
     private let store: any PersistenceStore
     private let key: String
     private let migrationBackupKey: String
+    private let previousMigrationBackupKey: String
     private let legacyMigrationBackupKey: String
     private let persistenceOwner = UUID()
     private var defaults: Defaults
@@ -113,7 +74,8 @@ public final class ComposerDefaultsStore {
         PersistenceEncoding.drain()
         self.store = store
         self.key = key
-        migrationBackupKey = "\(key)-pre-v4-backup"
+        migrationBackupKey = "\(key)-pre-v5-backup"
+        previousMigrationBackupKey = "\(key)-pre-v4-backup"
         legacyMigrationBackupKey = "\(key)-pre-v3-backup"
         guard let data = store.loadData(forKey: key) else {
             defaults = Defaults()
@@ -125,6 +87,17 @@ public final class ComposerDefaultsStore {
             current.version == Self.schemaVersion
         {
             defaults = current
+            return
+        }
+
+        if let version4 = try? decoder.decode(DefaultsV4.self, from: data),
+            version4.version == 4
+        {
+            defaults = Defaults(
+                machines: version4.machines,
+                workspaces: version4.workspaces
+            )
+            backupAndPersistMigratedPayload(data)
             return
         }
 
@@ -267,10 +240,22 @@ public final class ComposerDefaultsStore {
         defaults.machines[serverId]?.lastProjectId
     }
 
+    /// The standalone New Chat composer's last explicit machine target.
+    /// This is a composer preference, not application navigation state.
+    public var lastNewWorkspaceServerId: String? {
+        defaults.lastNewWorkspaceServerId
+    }
+
+    public func rememberNewWorkspaceServer(serverId: String) {
+        defaults.lastNewWorkspaceServerId = serverId
+        persist()
+    }
+
     public func rememberNewWorkspaceProject(serverId: String, projectId: UUID) {
         var machine = defaults.machines[serverId] ?? MachineDefaults()
         machine.lastProjectId = projectId
         defaults.machines[serverId] = machine
+        defaults.lastNewWorkspaceServerId = serverId
         persist()
     }
 
@@ -438,7 +423,11 @@ public final class ComposerDefaultsStore {
     /// "Delete all data").
     public func clear() {
         defaults = Defaults()
-        for backupKey in [migrationBackupKey, legacyMigrationBackupKey] {
+        for backupKey in [
+            migrationBackupKey,
+            previousMigrationBackupKey,
+            legacyMigrationBackupKey,
+        ] {
             do {
                 try store.removeData(forKey: backupKey)
             } catch {
@@ -499,6 +488,61 @@ public final class ComposerDefaultsStore {
                 Log.persistence.error(
                     "Failed to save \(key, privacy: .public): \(String(describing: error), privacy: .public)")
             }
+        }
+    }
+}
+
+private extension ComposerDefaultsStore {
+    /// V4 introduced project/worktree memory and workspace-scoped profiles,
+    /// but still relied on the app-wide selected machine to choose which
+    /// machine the standalone composer opened on.
+    struct DefaultsV4: Decodable {
+        var version: Int?
+        fileprivate var machines: [String: MachineDefaults]
+        fileprivate var workspaces: [String: WorkspaceDefaults]
+    }
+
+    /// The format shipped immediately before workspace-scoped inheritance.
+    struct DefaultsV3: Decodable {
+        var version: Int?
+        var machines: [String: MachineDefaultsV3]
+    }
+
+    struct MachineDefaultsV3: Decodable {
+        var lastHarnessId: String?
+        var newWorkspaceInWorktree: Bool?
+        var configSelections: [String: [String: String]]?
+    }
+
+    /// V2 already carried workspace snapshots. V3 retired them; V4 restores
+    /// the feature with clearer "last focused chat" semantics. Preserve V2
+    /// snapshots both on a direct upgrade and from V3's safety backup.
+    struct ScopedDefaultsV2: Decodable {
+        var machines: [String: MachineDefaultsV2]
+        var workspaces: [String: WorkspaceDefaultsV2]?
+    }
+
+    struct MachineDefaultsV2: Decodable {
+        var lastHarnessId: String?
+        /// Legacy field, decode-only: run location is no longer remembered.
+        var runInWorktree: Bool?
+        var configSelections: [String: [String: String]]?
+    }
+
+    struct WorkspaceDefaultsV2: Decodable {
+        var lastHarnessId: String?
+        var configSelections: [String: [String: String]]?
+    }
+
+    /// The flat pre-machine-scoping payload. All fields remain optional so a
+    /// partial legacy file still migrates rather than being quarantined.
+    struct FlatDefaultsV1: Decodable {
+        var lastHarnessId: String?
+        var runInWorktree: Bool?
+        var configSelections: [String: [String: String]]?
+
+        var isRecognized: Bool {
+            lastHarnessId != nil || runInWorktree != nil || configSelections != nil
         }
     }
 }

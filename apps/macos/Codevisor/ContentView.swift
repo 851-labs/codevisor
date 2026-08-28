@@ -210,7 +210,6 @@ struct RootView: View {
     @State private var store: SessionStore?
     @State private var preferredProjectId: UUID?
     @State private var requiresInitialNewChatProjectResolution = false
-    @State private var preparedMachineId: String?
     @State private var quickLook = QuickLookController()
     @State private var panelLayout = AdaptivePanelLayout()
 
@@ -278,7 +277,7 @@ struct RootView: View {
                 let sessionId = UUID(uuidString: sessionIdString),
                 let serverId = note.userInfo?["serverId"] as? String
             else { return }
-            Task { await openNotificationSession(sessionId, serverId: serverId) }
+            openNotificationSession(sessionId, serverId: serverId)
         }
         .task { await reconcileSkippedPermissions(environment: environment) }
         // An update arrived and the Computer Use permissions are not set up:
@@ -348,20 +347,10 @@ struct RootView: View {
         // "Open in Codevisor" button.
         .modifier(PluginInstallDeeplinkHandling())
         .task(id: environment.machines.selectedMachineId) {
-            // Warm the harness config cache in the background so the composer
-            // pickers are populated instantly.
+            // The legacy selected machine remains a boot/settings default, not
+            // navigation state. Preparing it must never replace this window's
+            // explicit chat route.
             if !AppPreview.isRunning {
-                // Machine switches (from the picker or Settings) leave the old
-                // machine's session behind. This must happen synchronously,
-                // before any await: resetting after `prepare` finishes would
-                // race with (and clobber) a session the user clicked meanwhile.
-                let machineId = environment.machines.selectedMachineId
-                if let preparedMachineId, preparedMachineId != machineId {
-                    selection = .newChat(nil)
-                    preferredProjectId = nil
-                    requiresInitialNewChatProjectResolution = false
-                }
-                preparedMachineId = machineId
                 await environment.prepareSelectedMachine()
                 // Initialize the terminal runtime up front, in a clean context,
                 // so opening the terminal later can't re-enter its dispatch_once.
@@ -370,11 +359,7 @@ struct RootView: View {
         }
     }
 
-    private func openNotificationSession(_ sessionId: UUID, serverId: String) async {
-        if environment.machines.selectedMachineId != serverId {
-            environment.machines.selectMachine(serverId)
-            await environment.prepareSelectedMachine()
-        }
+    private func openNotificationSession(_ sessionId: UUID, serverId: String) {
         guard
             let session = environment.projectList.sessions.first(where: {
                 $0.serverId == serverId && $0.id == sessionId
@@ -441,7 +426,6 @@ struct RootView: View {
                 width: min(270, panelLayout.windowWidth - 16)
             ) {
                 SidebarView(selection: $selection, store: store, publishesSceneActions: false)
-                    .id(environment.machines.selectedMachineId)
                     .themedSurface(.sidebar, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .shadow(color: .black.opacity(0.22), radius: 18, y: 6)
@@ -469,86 +453,56 @@ struct RootView: View {
 
     @ViewBuilder
     private func detail(_ store: SessionStore, selection: SidebarSelection?) -> some View {
-        if blocksSelectedServerContent {
-            let machine = environment.machines.selectedMachine
-            ServerAvailabilityView(
-                machineId: machine.id,
-                availability: environment.machines.selectedServerAvailability,
-                machineName: machine.name,
-                isLocal: machine.isLocal,
-                dataUpgradeProgress: machine.isLocal
-                    ? environment.localServer?.dataUpgradeProgress
-                    : nil,
-                appUpdateInProgress: environment.appUpdate.isUpdating
-            ) {
-                Task { await environment.machines.retrySelectedMachine() }
-            }
-        } else {
-            switch selection {
-            case let .session(serverId, sessionId):
-                if serverId == environment.machines.selectedMachineId,
-                    let session = environment.projectList.sessions.first(where: {
-                        $0.serverId == serverId && $0.id == sessionId
-                    }),
-                    let project = environment.projectList.projects.first(where: {
-                        $0.serverId == serverId && $0.id == session.projectId
-                    })
-                {
-                    let controller = store.controller(for: session, project: project)
-                    // Identity is the WORKSPACE, not the chat: clicking a
-                    // sibling chat swaps only the routed session (the container
-                    // selects + focuses it) instead of tearing down and
-                    // rebuilding the same panes — which also cancelled the
-                    // shared controllers' in-flight history loads. Sessions
-                    // without a workspace yet (first open backfills one) fall
-                    // back to session identity.
-                    SessionContainerView(
-                        session: session,
-                        project: project,
-                        store: store,
-                        controller: controller,
-                        // Focus moved to a sibling chat: the sidebar selection
-                        // follows (same workspace identity — no remount, the
-                        // container just re-routes).
-                        onFocusedChatChanged: { chatId in
-                            self.selection = .session(serverId: serverId, id: chatId)
-                        }
-                    )
-                    .id(
-                        "\(session.serverId):\((environment.workspaces.workspaceId(forSession: session.id) ?? session.id).uuidString)"
-                    )
-                    .onChange(of: session, initial: true) { _, updatedSession in
-                        store.reconcile(controller, for: updatedSession, project: project)
-                    }
-                    .onChange(of: project) { _, updatedProject in
-                        store.reconcile(controller, for: session, project: updatedProject)
-                    }
-                    .onAppear { preferredProjectId = project.id }
-                } else {
-                    // The routed session can't be resolved (machine switch,
-                    // deletion): fall back to the new-chat page.
-                    newChat(store, projectId: nil)
-                }
-            case let .newChat(projectId):
-                newChat(store, projectId: projectId)
-            case .none:
-                newChat(store, projectId: nil)
-            }
+        switch selection {
+        case let .session(serverId, sessionId):
+            sessionDetail(store, serverId: serverId, sessionId: sessionId)
+        case let .newChat(projectId):
+            newChat(store, projectId: projectId)
+        case .none:
+            newChat(store, projectId: nil)
         }
     }
 
-    private var blocksSelectedServerContent: Bool {
-        if environment.appUpdate.isUpdating { return true }
-        if environment.machines.selectedMachine.isLocal,
-            let progress = environment.localServer?.dataUpgradeProgress,
-            progress.state == "running" || progress.state == "failed"
+    @ViewBuilder
+    private func sessionDetail(
+        _ store: SessionStore,
+        serverId: String,
+        sessionId: UUID
+    ) -> some View {
+        if let session = environment.projectList.sessions.first(where: {
+            $0.serverId == serverId && $0.id == sessionId
+        }),
+            let project = environment.projectList.projects.first(where: {
+                $0.serverId == serverId && $0.id == session.projectId
+            })
         {
-            return true
+            let controller = store.controller(for: session, project: project)
+            SessionContainerView(
+                session: session,
+                project: project,
+                store: store,
+                controller: controller,
+                onFocusedChatChanged: { chatId in
+                    self.selection = .session(serverId: serverId, id: chatId)
+                }
+            )
+            .id(
+                "\(session.serverId):\((environment.workspaces.workspaceId(forSession: session.id) ?? session.id).uuidString)"
+            )
+            .onChange(of: session, initial: true) { _, updatedSession in
+                store.reconcile(controller, for: updatedSession, project: project)
+            }
+            .onChange(of: project) { _, updatedProject in
+                store.reconcile(controller, for: session, project: updatedProject)
+            }
+            .onAppear { preferredProjectId = project.id }
+        } else {
+            ContentUnavailableView(
+                "Chat Unavailable",
+                systemImage: "bubble.left.and.exclamationmark.bubble.right",
+                description: Text("This chat is no longer available on its machine.")
+            )
         }
-        if case .ready = environment.machines.selectedServerAvailability {
-            return false
-        }
-        return true
     }
 
     /// The standalone new-chat page. Creates NOTHING until the first message
@@ -566,7 +520,6 @@ struct RootView: View {
                 requiresInitialNewChatProjectResolution = false
             }
         )
-        .id(environment.machines.selectedMachineId)
     }
 }
 

@@ -50,7 +50,7 @@ final class SessionStore {
     /// `ComposerDraftStore`. A controller permanently owns the server client
     /// it was created with, so reusing a draft after a machine switch can send
     /// the new machine's project id to the old server.
-    @ObservationIgnored private var draftsByServer: [String: SessionController] = [:]
+    @ObservationIgnored var draftsByServer: [String: SessionController] = [:]
     /// One draft controller per DRAFT CHAT PANE (the in-workspace new-chat
     /// composer), keyed by pane id. Promoted to the session cache on first
     /// send; discarded when the pane closes unsent.
@@ -86,7 +86,7 @@ final class SessionStore {
     private static let maxIdleControllers = 12
     // Internal so split-off extension files (workspace helpers) reach it.
     let environment: AppEnvironment
-    private let notificationDelivery: any ChatNotificationDelivering
+    let notificationDelivery: any ChatNotificationDelivering
 
     init(
         environment: AppEnvironment,
@@ -110,7 +110,10 @@ final class SessionStore {
         }
         // Drafts have no live stream, but their next send must ride the new
         // route too.
-        draftsByServer[machineId]?.adoptServerClient(environment.machines.client(for: machineId))
+        for controller in draftsByServer.values
+        where controller.project.serverId == machineId {
+            controller.adoptServerClient(environment.machines.client(for: machineId))
+        }
     }
 
     /// Returns the cached controller for a session, creating + configuring it
@@ -199,60 +202,6 @@ final class SessionStore {
         controller.reconcileExistingSession(session)
     }
 
-    /// Returns the retained draft controller for the new-chat page, restoring
-    /// its disk snapshot first or seeding it from last-used composer defaults
-    /// if none exists. The draft is retained until its first send promotes it
-    /// to a real session, so unsent composer state survives navigation and
-    /// relaunches.
-    func draft(project: Project) -> SessionController {
-        if let draft = draftsByServer[project.serverId], draft.serverSession == nil {
-            return draft
-        }
-        let persisted = environment.composerDrafts.draft(forServer: project.serverId)
-        let restoredProject =
-            persisted.flatMap { saved in
-                // The saved draft may target ANOTHER machine's project (the
-                // picker is fleet-wide); older drafts carry no server id and
-                // mean this machine.
-                saved.restoredProject(
-                    in: environment.projectList.projects,
-                    defaultServerId: project.serverId
-                )
-            } ?? environment.composerDefaults.lastProjectId(forServer: project.serverId).flatMap {
-                rememberedId in
-                environment.projectList.activeProjects.first {
-                    $0.serverId == project.serverId && $0.id == rememberedId
-                }
-            } ?? project
-        environment.composerDefaults.rememberNewWorkspaceProject(
-            serverId: restoredProject.serverId,
-            projectId: restoredProject.id
-        )
-        let controller = SessionController(
-            project: restoredProject,
-            configCache: environment.configCache,
-            composerDefaults: environment.composerDefaults,
-            composerDefaultsScope: .newWorkspace(serverId: restoredProject.serverId),
-            // The restored project's OWN machine — a retargeted draft keeps
-            // talking to the machine it was pointed at across relaunches.
-            serverClient: environment.machines.client(for: restoredProject.serverId),
-            notificationDelivery: notificationDelivery
-        )
-        controller.applyComposerDefaults()
-        // Fresh drafts start from the machine's remembered run-location
-        // choice (worktrees only apply to git projects). Retained drafts
-        // returned above keep whatever the user toggled.
-        controller.wantsNewWorktree =
-            restoredProject.isGitRepository
-            && environment.composerDefaults.prefersWorktreeForNewWorkspaces(
-                forServer: restoredProject.serverId
-            )
-        if let persisted { controller.restoreDraft(persisted) }
-        enableDraftPersistence(for: controller)
-        draftsByServer[project.serverId] = controller
-        return controller
-    }
-
     /// The live controller for a session WITHOUT creating one — a pure read,
     /// safe in view bodies. For an eagerly-created unsent chat this is its
     /// pane-draft controller, not a second generic session controller.
@@ -305,7 +254,7 @@ final class SessionStore {
                 id: workspaceId,
                 serverId: project.serverId
             ),
-            serverClient: environment.serverClient,
+            serverClient: environment.machines.client(for: project.serverId),
             notificationDelivery: notificationDelivery
         )
         controller.applyComposerDefaults()
@@ -343,8 +292,11 @@ final class SessionStore {
         environment.composerDrafts.savePaneDraft(controller.draftSnapshot(), forPane: paneId)
     }
 
-    private func enableDraftPersistence(for controller: SessionController) {
-        let serverId = controller.project.serverId
+    func enableDraftPersistence(
+        for controller: SessionController,
+        slotServerId: String? = nil
+    ) {
+        let serverId = slotServerId ?? controller.project.serverId
         controller.onDraftChange = { [weak drafts = environment.composerDrafts] draft in
             drafts?.saveDraft(draft, forServer: serverId)
         }
@@ -749,7 +701,10 @@ final class SessionStore {
     /// draft/defaults persistence until the retry succeeds.
     func restoreDraftPersistence(_ controller: SessionController) {
         draftsByServer[controller.project.serverId] = controller
-        enableDraftPersistence(for: controller)
+        enableDraftPersistence(
+            for: controller,
+            slotServerId: controller.project.serverId
+        )
     }
 
     /// Detaches and evicts the session's workspace bottom-panel model.

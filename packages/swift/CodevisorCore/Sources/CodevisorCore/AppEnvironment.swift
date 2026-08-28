@@ -328,8 +328,8 @@ public final class AppEnvironment {
         workspaces.save(updated)
         workspaceSync.noteLocalMutation()
 
-        guard workspace.serverId == machines.selectedMachineId else { return }
-        let client = serverClient
+        guard machines.machine(for: workspace.serverId) != nil else { return }
+        let client = machines.client(for: workspace.serverId)
         Task {
             do {
                 try await client.setWorkspaceArchived(id: workspace.id, isArchived: isArchived)

@@ -227,6 +227,7 @@ extension NewChatView {
     /// it still exists, else its most recently used one.
     func selectTargetMachine(_ machine: CodevisorMachine, controller: SessionController) {
         guard machine.id != controller.project.serverId else { return }
+        environment.composerDefaults.rememberNewWorkspaceServer(serverId: machine.id)
         let scoped = pickerProjects.filter { $0.serverId == machine.id }
         let remembered = environment.composerDefaults.lastProjectId(forServer: machine.id)
         guard let project = scoped.first(where: { $0.id == remembered }) ?? scoped.first
@@ -263,8 +264,8 @@ extension NewChatView {
         Task {
             if project.serverId != controller.project.serverId {
                 // Another machine's project: the draft re-points there in
-                // place — client, catalog and all. The app's selected
-                // machine follows at first send, not now.
+                // place — client, catalog and all. The eventual route carries
+                // this machine id; no app-wide selection changes.
                 await controller.retarget(
                     to: project,
                     serverClient: environment.machines.client(for: project.serverId)

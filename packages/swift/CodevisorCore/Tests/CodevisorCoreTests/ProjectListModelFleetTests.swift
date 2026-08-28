@@ -113,4 +113,43 @@ struct ProjectListModelFleetTests {
         #expect(again.id == added.id)
         #expect(model.projects.filter { $0.serverId == "remote-b" }.count == 1)
     }
+
+    @Test("Remote record mutations use the record's machine client")
+    func remoteMutationsUseFleetClient() async throws {
+        let store = InMemoryStore()
+        let projectRepository = DefaultProjectRepository(store: store)
+        let remoteProject = Project.fromFolder(
+            URL(fileURLWithPath: "/srv/studio-work"),
+            serverId: "remote-b"
+        )
+        projectRepository.save([remoteProject])
+        let model = ProjectListModel(
+            projectRepository: projectRepository,
+            sessionRepository: DefaultSessionRepository(store: store),
+            selectedServerId: "local"
+        )
+        let remoteClient = FakeServerClient()
+        model.configureServerClientProvider { serverId in
+            serverId == "remote-b" ? remoteClient : nil
+        }
+        let session = model.newSession(
+            in: remoteProject,
+            harnessId: "codex",
+            syncToServer: false
+        )
+
+        model.archiveSession(session)
+
+        try await waitUntilAsync {
+            await remoteClient.snapshot().upsertedSessionIDs.contains(
+                session.id.uuidString
+            )
+        }
+        model.removeProject(remoteProject)
+        try await waitUntilAsync {
+            let snapshot = await remoteClient.snapshot()
+            return snapshot.deletedProjectIDs.contains(remoteProject.id.uuidString)
+                && snapshot.deletedSessionIDs.contains(session.id.uuidString)
+        }
+    }
 }

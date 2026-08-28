@@ -5,6 +5,10 @@ import Foundation
 /// sessions merge into the shared serverId-keyed repositories, selected or
 /// not — the flattened sidebar's data precondition.
 extension ProjectListModel {
+    public var hasArchivedProjects: Bool {
+        projects.contains { $0.serverId == selectedServerId && $0.isArchived }
+    }
+
     /// One machine's authoritative snapshot, merged into the shared
     /// serverId-keyed repositories — machine-agnostic, so BACKGROUND
     /// machines' chats are present (and orderable in a flattened list)

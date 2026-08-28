@@ -1005,16 +1005,9 @@ struct SidebarView: View {
         }
         let target = SidebarSelection.session(serverId: session.serverId, id: session.id)
         guard selection != target else { return }
-        // Flattened sidebar: a chat on another machine selects that machine
-        // under the hood first — same contract as a notification tap.
-        if session.serverId != environment.machines.selectedMachineId {
-            environment.machines.selectMachine(session.serverId)
-            Task {
-                await environment.prepareSelectedMachine()
-                selection = target
-            }
-            return
-        }
+        // A route owns its machine identity. Opening a chat on another machine
+        // is the same synchronous selection change as opening a sibling chat;
+        // its controller resolves that machine's client independently.
         selection = target
     }
 

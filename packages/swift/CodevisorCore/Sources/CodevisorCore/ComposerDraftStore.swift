@@ -177,6 +177,29 @@ public final class ComposerDraftStore {
         drafts[serverId]
     }
 
+    /// Finds the durable page draft whose current project targets `serverId`.
+    /// A draft can live in its original machine slot after the fleet picker
+    /// retargets it, so looking up only by slot would make it disappear after
+    /// relaunch when New Chat restores the new target machine.
+    public func draft(
+        targetingServer serverId: String
+    ) -> (
+        slotServerId: String, draft: Draft
+    )? {
+        if let exact = drafts[serverId],
+            (exact.projectServerId ?? serverId) == serverId
+        {
+            return (serverId, exact)
+        }
+        for slotServerId in drafts.keys.sorted() {
+            guard let draft = drafts[slotServerId],
+                (draft.projectServerId ?? slotServerId) == serverId
+            else { continue }
+            return (slotServerId, draft)
+        }
+        return nil
+    }
+
     public func saveDraft(_ draft: Draft, forServer serverId: String) {
         let previousIds = Set(drafts[serverId]?.attachments.map(\.id) ?? [])
         let currentIds = Set(draft.attachments.map(\.id))
