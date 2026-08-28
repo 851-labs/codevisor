@@ -138,6 +138,23 @@ export const BackgroundTasksPayload = Schema.Struct({
   backgroundTasks: Schema.Array(BackgroundTask)
 })
 export type BackgroundTasksPayload = typeof BackgroundTasksPayload.Type
+
+/** One step in the agent's current execution checklist. The checklist is a
+ *  full session-level snapshot: every `plan` update replaces all prior steps. */
+export const SessionPlanEntry = Schema.Struct({
+  content: Schema.String,
+  priority: Schema.Literals(["high", "medium", "low"]),
+  status: Schema.Literals(["pending", "in_progress", "completed"])
+})
+export type SessionPlanEntry = typeof SessionPlanEntry.Type
+
+/** The latest durable todo/checklist state for a session. This is distinct
+ *  from `plan_document`, the markdown proposal shown during plan mode. */
+export const SessionPlan = Schema.Struct({
+  entries: Schema.Array(SessionPlanEntry)
+})
+export type SessionPlan = typeof SessionPlan.Type
+
 /** Plan-document payload carried on `session.output` envelopes. A free-form
  *  markdown plan the agent proposes before implementing (Claude plan mode's
  *  ExitPlanMode, codex plan-mode plan items) — distinct from the ACP `plan`

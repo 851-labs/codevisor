@@ -344,6 +344,7 @@ public struct ServerSessionDetail: Decodable, Equatable, Sendable {
     public var pendingPlanApproval: Bool
     public var backgroundTasks: [BackgroundTaskInfo]?
     public var goal: SessionGoal?
+    public var sessionPlan: Plan?
 
     public init(
         session: ServerSession,
@@ -353,7 +354,8 @@ public struct ServerSessionDetail: Decodable, Equatable, Sendable {
         pendingQuestion: QuestionRequest? = nil,
         pendingPlanApproval: Bool = false,
         backgroundTasks: [BackgroundTaskInfo]? = nil,
-        goal: SessionGoal? = nil
+        goal: SessionGoal? = nil,
+        sessionPlan: Plan? = nil
     ) {
         self.session = session
         self.conversation = conversation
@@ -363,6 +365,7 @@ public struct ServerSessionDetail: Decodable, Equatable, Sendable {
         self.pendingPlanApproval = pendingPlanApproval
         self.backgroundTasks = backgroundTasks
         self.goal = goal
+        self.sessionPlan = sessionPlan
     }
 
     enum CodingKeys: String, CodingKey {
@@ -373,6 +376,7 @@ public struct ServerSessionDetail: Decodable, Equatable, Sendable {
         case pendingQuestion, pendingPlanApproval
         case backgroundTasks
         case goal
+        case sessionPlan
     }
 
     public init(from decoder: any Decoder) throws {
@@ -385,6 +389,7 @@ public struct ServerSessionDetail: Decodable, Equatable, Sendable {
         pendingPlanApproval = try container.decodeIfPresent(Bool.self, forKey: .pendingPlanApproval) ?? false
         backgroundTasks = try container.decodeIfPresent([BackgroundTaskInfo].self, forKey: .backgroundTasks)
         goal = try container.decodeIfPresent(SessionGoal.self, forKey: .goal)
+        sessionPlan = try container.decodeIfPresent(Plan.self, forKey: .sessionPlan)
     }
 }
 
@@ -477,6 +482,7 @@ public struct ServerTranscriptPage: Decodable, Equatable, Sendable {
     public var pendingPlanApproval: Bool
     public var backgroundTasks: [BackgroundTaskInfo]?
     public var goal: SessionGoal?
+    public var sessionPlan: Plan?
     public var usage: ServerSessionUsage?
 
     public init(
@@ -488,6 +494,7 @@ public struct ServerTranscriptPage: Decodable, Equatable, Sendable {
         pendingPlanApproval: Bool = false,
         backgroundTasks: [BackgroundTaskInfo]? = nil,
         goal: SessionGoal? = nil,
+        sessionPlan: Plan? = nil,
         usage: ServerSessionUsage? = nil
     ) {
         self.items = items
@@ -498,6 +505,7 @@ public struct ServerTranscriptPage: Decodable, Equatable, Sendable {
         self.pendingPlanApproval = pendingPlanApproval
         self.backgroundTasks = backgroundTasks
         self.goal = goal
+        self.sessionPlan = sessionPlan
         self.usage = usage
     }
 
@@ -510,6 +518,7 @@ public struct ServerTranscriptPage: Decodable, Equatable, Sendable {
         case pendingPlanApproval
         case backgroundTasks
         case goal
+        case sessionPlan
         case usage
     }
 
@@ -525,6 +534,7 @@ public struct ServerTranscriptPage: Decodable, Equatable, Sendable {
         backgroundTasks =
             try container.decodeIfPresent([BackgroundTaskInfo].self, forKey: .backgroundTasks)
         goal = try container.decodeIfPresent(SessionGoal.self, forKey: .goal)
+        sessionPlan = try container.decodeIfPresent(Plan.self, forKey: .sessionPlan)
         usage = try container.decodeIfPresent(ServerSessionUsage.self, forKey: .usage)
     }
 }

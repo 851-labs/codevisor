@@ -1,4 +1,12 @@
-import type { AttachmentRef, BackgroundTask, EventKind, QuestionPayload } from "@codevisor/api"
+import {
+  SessionPlan as SessionPlanSchema,
+  type AttachmentRef,
+  type BackgroundTask,
+  type EventKind,
+  type QuestionPayload,
+  type SessionPlan
+} from "@codevisor/api"
+import { Schema } from "effect"
 
 export type JsonRecord = Record<string, unknown>
 
@@ -38,6 +46,22 @@ export const pendingQuestionFromRaw = (raw: string | null): QuestionPayload | un
 
 export const backgroundTasksFromRaw = (raw: string): ReadonlyArray<BackgroundTask> =>
   JSON.parse(raw) as ReadonlyArray<BackgroundTask>
+
+/** Validates the full-snapshot `plan` payload before it becomes durable
+ * session state. Extra envelope fields (such as `sessionUpdate`) are ignored. */
+export const sessionPlanFromPayload = (payload: JsonRecord): SessionPlan | undefined => {
+  try {
+    return Schema.decodeUnknownSync(SessionPlanSchema)({ entries: payload.entries })
+  } catch {
+    return undefined
+  }
+}
+
+export const sessionPlanFromRaw = (raw: string | null): SessionPlan | undefined => {
+  if (raw === null) return undefined
+  const payload = parseJsonRecord(raw)
+  return payload === undefined ? undefined : sessionPlanFromPayload(payload)
+}
 
 export const payloadText = (payload: JsonRecord): string | undefined => {
   if (typeof payload.text === "string") {

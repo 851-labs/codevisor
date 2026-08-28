@@ -13,7 +13,8 @@ import {
   conversationEventPayload,
   hasRenderableWorkedDetail,
   jsonRecord,
-  parseJsonRecord
+  parseJsonRecord,
+  sessionPlanFromPayload
 } from "./event-payloads.js"
 import { serializeAttachments } from "./row-mappers.js"
 import type { SessionEventRow } from "./rows.js"
@@ -169,6 +170,17 @@ export const projectChatEvent = (
   // append so reconnect snapshots cannot advance past the event while losing
   // the question needed to release the provider's pending continuation.
   const update = typeof payload.sessionUpdate === "string" ? payload.sessionUpdate : undefined
+  if (event.kind === "session.output" && update === "plan") {
+    const sessionPlan = sessionPlanFromPayload(payload)
+    // A malformed provider update must not erase the last valid checklist.
+    // Empty and fully completed plans are valid snapshots and stay durable;
+    // clients apply their own visibility rule.
+    if (sessionPlan !== undefined) {
+      sqlite
+        .prepare("update sessions set session_plan = ? where id = ?")
+        .run(JSON.stringify(sessionPlan), sessionId)
+    }
+  }
   if (
     event.kind === "session.output" &&
     update === "question" &&

@@ -1983,7 +1983,7 @@ describe("sessions routes", () => {
   })
 
   it("opens a session in one round-trip, creating project and session only when missing", async () => {
-    const { agents, server } = await start()
+    const { agents, server, services } = await start()
     const projectRoot = mkdtempSync(join(tmpdir(), "codevisor-server-open-"))
     tempDirs.push(projectRoot)
     const workspaceFolder = join(projectRoot, "workspace")
@@ -2011,6 +2011,13 @@ describe("sessions routes", () => {
     })
     expect(agents.creations).toEqual([["codex", workspaceFolder]])
 
+    await run(
+      services.db.appendEvent("session.output", "open-session-1", {
+        sessionUpdate: "plan",
+        entries: [{ content: "Implement", priority: "medium", status: "in_progress" }]
+      })
+    )
+
     const unchanged = await jsonRequest(server, "/v1/sessions/open-session-1/open", {
       body: JSON.stringify({
         session: { harnessId: "codex", projectId: "open-project-1" }
@@ -2018,7 +2025,14 @@ describe("sessions routes", () => {
       method: "POST"
     })
     expect(unchanged.status).toBe(200)
-    expect(unchanged.body).toMatchObject({ session: { title: "Open flow" } })
+    expect(unchanged.body).toMatchObject({
+      session: { title: "Open flow" },
+      transcript: {
+        sessionPlan: {
+          entries: [{ content: "Implement", priority: "medium", status: "in_progress" }]
+        }
+      }
+    })
 
     // Archive the project, then re-open with the original (now stale)
     // snapshot: the existing project must NOT be reverted to unarchived, the

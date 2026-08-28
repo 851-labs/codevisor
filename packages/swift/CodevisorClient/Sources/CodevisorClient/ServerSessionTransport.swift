@@ -3,174 +3,11 @@ import CodevisorProtocol
 import Foundation
 import TranscriptKit
 
-public struct ServerSessionSnapshot: Equatable, Sendable {
-    public var conversation: [ConversationItem]
-    public var promptQueue: [ServerPromptQueueItem]
-    public var eventCursor: Int
-    public var pendingQuestion: QuestionRequest?
-    public var pendingPlanApproval: Bool = false
-    public var backgroundTasks: [BackgroundTaskInfo]?
-    public var goal: SessionGoal?
-}
-
-public struct TranscriptHistoryPage: Equatable, Sendable {
-    public var conversation: [ConversationItem]
-    public var nextBefore: String?
-    public var hasMore: Bool
-    public var eventCursor: Int
-    public var pendingQuestion: QuestionRequest? = nil
-    public var pendingPlanApproval: Bool = false
-    public var backgroundTasks: [BackgroundTaskInfo]? = nil
-    public var goal: SessionGoal? = nil
-    public var usage: SessionUsage? = nil
-}
-
-public enum SessionTurnInitiator: String, Equatable, Sendable {
-    case user
-    case agent
-}
-
-public enum SessionRuntimeState: String, Equatable, Sendable {
-    case running
-    case idle
-    case requiresAction = "requires_action"
-}
-
-public enum ServerSessionStreamEvent: Equatable, Sendable {
-    case update(SessionUpdate)
-    /// A persisted user message. Carried outside `SessionUpdate` because the
-    /// ACP update type cannot carry attachments.
-    case userMessage(id: String?, text: String, attachments: [Attachment])
-    /// The server-owned identity of the assistant transcript item for a newly
-    /// started turn. Live rows adopt this before they settle so their identity
-    /// matches snapshots and unread attention targets.
-    case assistantItemStarted(UUID)
-    /// Server-finalized assistant Markdown plus immutable promoted artifacts.
-    case assistantFinalized(markdown: String, messageId: String?, attachments: [Attachment])
-    case queueUpdated([ServerPromptQueueItem])
-    /// A turn ended. `stopDetail` is a short human-readable reason present only
-    /// when the ending was abnormal (error / limit / refusal / gave-up
-    /// truncation); the client renders it as a per-turn line. `chatItemId` is
-    /// the server-owned identity of the assistant item this turn belongs to —
-    /// the same routing the server projection uses — so the closure lands on
-    /// that bubble even when it is no longer the active one.
-    case finished(
-        StopReason,
-        stopDetail: String?,
-        stopKind: String? = nil,
-        retryable: Bool = false,
-        initiatedBy: SessionTurnInitiator = .user,
-        chatItemId: UUID? = nil
-    )
-    /// A transient failure is being retried; the turn stays alive. Drives the
-    /// visible reconnecting status, with progress when the harness provides it.
-    case retrying(RetryStatus)
-    /// The server is holding this session's prompts while its harness
-    /// updates; `waiting: false` releases the marker. Replaceable: the
-    /// latest event wins.
-    case updateGate(waiting: Bool, harnessName: String)
-    case failed(String, retryable: Bool = false, chatItemId: UUID? = nil)
-    /// The harness rejected its credentials. Kept distinct from generic
-    /// failures so clients can offer the relevant authentication settings.
-    case authenticationRequired(String)
-    /// Full replace-on-update snapshot of the agent's in-flight background
-    /// tasks (backgrounded shells, subagents). Empty means none pending.
-    case backgroundTasks([BackgroundTaskInfo])
-    /// Claude's main turn-loop state. `idle` is paired with the background-task
-    /// snapshot; detached terminal processes do not prevent quiescence.
-    case runtimeState(SessionRuntimeState)
-    /// Durable form of Codex's synthetic post-plan approval prompt.
-    case planApprovalRequired(Bool)
-    /// The harness's selected model declined the request and the turn was
-    /// re-run on a fallback model. The swap is sticky for the session, so this
-    /// is session-level state rather than a per-turn line.
-    case modelFallback(SessionModelFallback)
-}
-
-/// A refusal-driven model swap reported by the harness: the selected model's
-/// safety classifiers declined the request and another model served it.
-public struct SessionModelFallback: Sendable, Equatable {
-    /// Raw model identifiers as reported by the harness. Display names are
-    /// resolved against the live model option, which may no longer list the
-    /// original — hence raw values here rather than presentation strings.
-    public var originalModel: String
-    public var fallbackModel: String
-    /// Refusal category (`cyber`, `bio`, …). An open string on the wire: new
-    /// categories ship ahead of schema updates, so this is never parsed.
-    public var category: String?
-
-    public init(originalModel: String, fallbackModel: String, category: String? = nil) {
-        self.originalModel = originalModel
-        self.fallbackModel = fallbackModel
-        self.category = category
-    }
-}
-
-/// One in-flight background task owned by the agent process, from the
-/// `session.updated` `backgroundTasks` snapshot payload.
-public struct BackgroundTaskInfo: Sendable, Equatable, Codable, Identifiable {
-    public var id: String
-    public var description: String
-    public var status: String
-    public var taskType: String
-    public var toolUseId: String?
-    /// Set when the task's process streams through a server-owned terminal.
-    /// Clients attach with the regular terminal API (`sessionId: terminalKey`,
-    /// `attachOnly: true`) and render the task as a live terminal tab instead
-    /// of the "Waiting on…" indicator.
-    public var terminalKey: String?
-    /// The terminal is a read-only mirror: input and kill are unavailable
-    /// while the task runs (codex owns its command executions).
-    public var readOnly: Bool?
-
-    public init(
-        id: String,
-        description: String,
-        status: String,
-        taskType: String,
-        toolUseId: String? = nil,
-        terminalKey: String? = nil,
-        readOnly: Bool? = nil
-    ) {
-        self.id = id
-        self.description = description
-        self.status = status
-        self.taskType = taskType
-        self.toolUseId = toolUseId
-        self.terminalKey = terminalKey
-        self.readOnly = readOnly
-    }
-}
-
-public extension ServerAttachmentRef {
-    var attachment: Attachment {
-        Attachment(
-            fileId: fileId,
-            name: name,
-            mimeType: mimeType,
-            sizeBytes: sizeBytes,
-            kind: kind == .image ? .image : .file
-        )
-    }
-}
-
-public extension Attachment {
-    var serverRef: ServerAttachmentRef {
-        ServerAttachmentRef(
-            fileId: fileId,
-            name: name,
-            mimeType: mimeType,
-            sizeBytes: sizeBytes,
-            kind: kind == .image ? .image : .file
-        )
-    }
-}
-
 public struct ServerSessionTransport: Sendable {
     public static let liveOnlyEventCursor = 9_007_199_254_740_991
 
-    private let client: any CodevisorServerClienting
-    private let sessionId: UUID
+    let client: any CodevisorServerClienting
+    let sessionId: UUID
 
     public init(client: any CodevisorServerClienting, sessionId: UUID) {
         self.client = client
@@ -179,93 +16,6 @@ public struct ServerSessionTransport: Sendable {
 }
 
 extension ServerSessionTransport {
-    public func prompt(
-        _ text: String,
-        attachments: [Attachment] = [],
-        messageId: String? = nil
-    ) async throws -> ServerPromptAccepted {
-        try await client.promptSession(
-            id: sessionId,
-            text: text,
-            attachments: attachments.map(\.serverRef),
-            messageId: messageId
-        )
-    }
-
-    public func uploadFile(name: String, mimeType: String, data: Data) async throws -> ServerFileMetadata {
-        try await client.uploadFile(name: name, mimeType: mimeType, data: data)
-    }
-
-    public func fileData(id: String) async throws -> Data {
-        try await client.fileData(id: id)
-    }
-
-    public func fileData(path: String) async throws -> Data {
-        try await client.fileData(sessionId: sessionId, path: path)
-    }
-
-    public func updateQueuedPrompt(id: String, text: String) async throws -> ServerPromptQueueItem {
-        try await client.updateQueuedPrompt(sessionId: sessionId, queueItemId: id, text: text)
-    }
-
-    public func reorderQueuedPrompts(ids: [String]) async throws -> [ServerPromptQueueItem] {
-        try await client.reorderQueuedPrompts(sessionId: sessionId, queueItemIds: ids)
-    }
-
-    public func deleteQueuedPrompt(id: String) async throws {
-        try await client.deleteQueuedPrompt(sessionId: sessionId, queueItemId: id)
-    }
-
-    public func cancel() async throws {
-        try await client.cancelSession(id: sessionId)
-    }
-
-    public func setMode(_ modeId: String) async throws {
-        try await client.setSessionMode(id: sessionId, modeId: modeId)
-    }
-
-    public func setConfigOption(
-        configId: String,
-        value: String
-    ) async throws -> [SessionConfigOption]? {
-        try await client.setSessionConfigAndReturnOptions(
-            id: sessionId,
-            configId: configId,
-            value: value
-        )
-    }
-
-    @discardableResult
-    public func setGoal(
-        objective: String? = nil,
-        status: GoalStatus? = nil,
-        tokenBudget: TokenBudgetUpdate = .keep
-    ) async throws -> SessionGoal {
-        try await client.setSessionGoal(
-            id: sessionId,
-            objective: objective,
-            status: status,
-            tokenBudget: tokenBudget
-        )
-    }
-
-    public func clearGoal() async throws {
-        try await client.clearSessionGoal(id: sessionId)
-    }
-
-    public func answerQuestion(
-        id questionId: String,
-        outcome: String,
-        answers: [String: QuestionAnswerEntry]?
-    ) async throws {
-        try await client.answerSessionQuestion(
-            id: sessionId,
-            questionId: questionId,
-            outcome: outcome,
-            answers: answers
-        )
-    }
-
     public func snapshot() async throws -> ServerSessionSnapshot {
         let detail = try await client.sessionDetail(id: sessionId)
         return ServerSessionSnapshot(
@@ -275,7 +25,8 @@ extension ServerSessionTransport {
             pendingQuestion: detail.pendingQuestion,
             pendingPlanApproval: detail.pendingPlanApproval,
             backgroundTasks: detail.backgroundTasks,
-            goal: detail.goal
+            goal: detail.goal,
+            sessionPlan: detail.sessionPlan
         )
     }
 
@@ -311,6 +62,7 @@ extension ServerSessionTransport {
             pendingPlanApproval: page.pendingPlanApproval,
             backgroundTasks: page.backgroundTasks,
             goal: page.goal,
+            sessionPlan: page.sessionPlan,
             usage: page.usage?.sessionUsage
         )
     }

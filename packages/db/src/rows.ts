@@ -116,6 +116,7 @@ export interface SessionRow {
   readonly cost_kind: "reported" | "estimated" | null
   readonly pending_question: string | null
   readonly background_tasks: string
+  readonly session_plan: string | null
   readonly config_selections: string
   readonly attention_latest_sequence: number
   readonly attention_last_seen_sequence: number

@@ -64,6 +64,10 @@ extension SessionModel {
                 hasBackgroundTaskSnapshot = true
             }
             goal = page.goal
+            // The page and cursor form one durable session snapshot. Seed the
+            // latest full checklist before subscribing after that cursor so a
+            // plan event can never be skipped on reopen or another device.
+            sessionPlan = page.sessionPlan
             isSending = lastTurnIsGenerating
             if isSending { noteProviderActivity(.modelStream) }
             serverEventCursor = page.eventCursor
@@ -171,6 +175,7 @@ extension SessionModel {
                 pendingQuestion = snapshot.pendingQuestion
                 pendingPlanApproval = snapshot.pendingPlanApproval
                 goal = snapshot.goal
+                sessionPlan = snapshot.sessionPlan
                 if let tasks = snapshot.backgroundTasks {
                     backgroundTasks = tasks
                     hasBackgroundTaskSnapshot = true

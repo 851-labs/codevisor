@@ -5,8 +5,8 @@ import ACPKit
 
 @Suite("Domain models")
 struct ModelTests {
-    @Test("Transcript pages preserve plan approval and accept older server payloads")
-    func transcriptPagePlanApprovalCompatibility() throws {
+    @Test("Transcript pages preserve session state and accept older server payloads")
+    func transcriptPageStateCompatibility() throws {
         let legacy = try JSONDecoder().decode(
             ServerTranscriptPage.self,
             from: Data(#"{"items":[],"hasMore":false,"eventCursor":5}"#.utf8)
@@ -14,12 +14,16 @@ struct ModelTests {
         let current = try JSONDecoder().decode(
             ServerTranscriptPage.self,
             from: Data(
-                #"{"items":[],"hasMore":false,"eventCursor":6,"pendingPlanApproval":true}"#.utf8
+                #"{"items":[],"hasMore":false,"eventCursor":6,"pendingPlanApproval":true,"sessionPlan":{"entries":[{"content":"Implement","priority":"medium","status":"in_progress"}]}}"#
+                    .utf8
             )
         )
 
         #expect(legacy.pendingPlanApproval == false)
+        #expect(legacy.sessionPlan == nil)
         #expect(current.pendingPlanApproval == true)
+        #expect(current.sessionPlan?.entries.first?.content == "Implement")
+        #expect(current.sessionPlan?.entries.first?.status == .inProgress)
     }
 
     @Test("Harness auth terminal prefers its attach key and supports older servers")

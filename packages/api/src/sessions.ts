@@ -4,6 +4,7 @@ import {
   MessagePhase,
   QuestionAnswerEntry,
   QuestionPayload,
+  SessionPlan,
   TurnStopKind
 } from "./session-updates.js"
 import { GoalStatus, SessionGoal, SessionOrigin } from "./session-config.js"
@@ -231,6 +232,10 @@ export const TranscriptPage = Schema.Struct({
   backgroundTasks: Schema.optional(Schema.Array(BackgroundTask)),
   /** Latest durable goal snapshot at the same revision as `eventCursor`. */
   goal: Schema.optional(SessionGoal),
+  /** Latest full todo/checklist snapshot at the same revision as
+   * `eventCursor`. Completed plans remain durable; clients decide whether the
+   * pinned checklist is useful enough to show. */
+  sessionPlan: Schema.optional(SessionPlan),
   /** Durable usage snapshot at the same revision as the transcript. */
   usage: Schema.optional(SessionUsage)
 })
@@ -265,7 +270,8 @@ export const SessionDetail = Schema.Struct({
    * compatibility with servers that predate durable plan approval. */
   pendingPlanApproval: Schema.optional(Schema.Boolean),
   backgroundTasks: Schema.optional(Schema.Array(BackgroundTask)),
-  goal: Schema.optional(SessionGoal)
+  goal: Schema.optional(SessionGoal),
+  sessionPlan: Schema.optional(SessionPlan)
 })
 export type SessionDetail = typeof SessionDetail.Type
 

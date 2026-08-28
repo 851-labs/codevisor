@@ -175,6 +175,72 @@ describe("@codevisor/db", () => {
     verified.close()
   })
 
+  it("upgrades a v44 database and backfills the newest valid session checklist", async () => {
+    const filename = tempDatabase()
+    const current = await run(makeDatabase({ filename, serverId: "local" }))
+    const project = await run(current.createProject({ folderPath: "/tmp/v44-checklists" }))
+    const active = await run(current.createSession({ projectId: project.id, harnessId: "codex" }))
+    const completed = await run(
+      current.createSession({ projectId: project.id, harnessId: "claude-code" })
+    )
+    const activePlan = {
+      entries: [{ content: "Implement", priority: "medium", status: "in_progress" }]
+    }
+    const completedPlan = {
+      entries: [{ content: "Verify", priority: "high", status: "completed" }]
+    }
+    await run(
+      current.appendEvent("session.output", active.id, {
+        sessionUpdate: "plan",
+        entries: [{ content: "Inspect", priority: "low", status: "completed" }]
+      })
+    )
+    await run(
+      current.appendEvent("session.output", active.id, {
+        sessionUpdate: "plan",
+        ...activePlan
+      })
+    )
+    // The migration must walk past an invalid newest event and recover the
+    // last valid full snapshot rather than dropping this existing checklist.
+    await run(
+      current.appendEvent("session.output", active.id, {
+        sessionUpdate: "plan",
+        entries: [{ content: "Invalid", priority: "urgent", status: "pending" }]
+      })
+    )
+    await run(
+      current.appendEvent("session.output", completed.id, {
+        sessionUpdate: "plan",
+        ...completedPlan
+      })
+    )
+    await Effect.runPromise(current.close)
+
+    const legacy = new Database(filename)
+    legacy.exec(`
+      alter table sessions drop column session_plan;
+      delete from schema_migrations where id = 45;
+    `)
+    legacy.close()
+
+    const upgraded = await run(makeDatabase({ filename, serverId: "local" }))
+    expect((await run(upgraded.getTranscriptPage(active.id, undefined, 8))).sessionPlan).toEqual(
+      activePlan
+    )
+    expect((await run(upgraded.getTranscriptPage(completed.id, undefined, 8))).sessionPlan).toEqual(
+      completedPlan
+    )
+    expect(await run(upgraded.migrate)).toEqual([])
+    await Effect.runPromise(upgraded.close)
+
+    const verified = new Database(filename)
+    expect(verified.prepare("select name from schema_migrations where id = 45").get()).toEqual({
+      name: "durable session checklists"
+    })
+    verified.close()
+  })
+
   it("backfills archived timestamps for rows archived before the column existed", async () => {
     const filename = tempDatabase()
     buildV4Fixture(filename)

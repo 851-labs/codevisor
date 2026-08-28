@@ -171,6 +171,60 @@ extension SessionModelTests {
         await settleUntil { model.queuedPrompts == [queueItem] }
     }
 
+    @Test("Paginated history restores the durable checklist and hides it once completed")
+    func paginatedHistoryRestoresSessionPlan() async {
+        let sessionId = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionId)
+        client.initialTranscriptPage = ServerTranscriptPage(
+            items: [],
+            hasMore: false,
+            eventCursor: 7,
+            sessionPlan: Plan(entries: [
+                PlanEntry(content: "Implement", priority: .medium, status: .inProgress)
+            ])
+        )
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+            sessionId: sessionId.uuidString
+        )
+        let controller = SessionController(
+            project: Project.fromFolder(URL(fileURLWithPath: "/tmp/paginated-plan-restore")),
+            configCache: ConfigOptionCache(store: InMemoryStore())
+        )
+        controller.model = model
+
+        await model.loadHistory()
+        await settleUntil { client.sessionEventSinceValues == [7] }
+
+        #expect(model.sessionPlan?.entries.first?.status == .inProgress)
+        #expect(controller.visibleTodos?.entries.first?.content == "Implement")
+
+        client.emit(
+            ServerEventEnvelope(
+                id: 8,
+                serverId: "local",
+                kind: "session.output",
+                subjectId: sessionId.uuidString,
+                createdAt: "2026-08-28T00:00:00.000Z",
+                payload: .object([
+                    "sessionUpdate": .string("plan"),
+                    "entries": .array([
+                        .object([
+                            "content": .string("Implement"),
+                            "priority": .string("medium"),
+                            "status": .string("completed"),
+                        ])
+                    ]),
+                ])
+            ))
+        await settleUntil { model.sessionPlan?.entries.first?.status == .completed }
+
+        // Completed state remains in the durable model but no longer occupies
+        // the pinned checklist UI.
+        #expect(model.sessionPlan?.entries.first?.status == .completed)
+        #expect(controller.visibleTodos == nil)
+    }
+
     @Test("Deferred prompt queue cannot overwrite a newer stream event")
     func deferredPromptQueuePreservesNewerStreamState() async {
         let sessionId = UUID()

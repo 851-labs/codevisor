@@ -175,8 +175,8 @@ extension SessionController {
     /// The session's latest todo checklist, pinned above the composer.
     public var todos: Plan? { model?.sessionPlan }
 
-    /// Completed checklists stay in the transcript but no longer occupy the
-    /// persistent composer chrome.
+    /// Fully completed snapshots remain durable for sync/cursor correctness,
+    /// but no longer occupy any pinned checklist UI.
     public var visibleTodos: Plan? {
         guard let todos,
             todos.entries.contains(where: { $0.status != .completed })

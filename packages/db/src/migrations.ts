@@ -1,6 +1,10 @@
 import type Database from "better-sqlite3"
 import { randomUUID } from "node:crypto"
-import { isRenderableWorkedEvent, parseJsonRecord } from "./event-payloads.js"
+import {
+  isRenderableWorkedEvent,
+  parseJsonRecord,
+  sessionPlanFromPayload
+} from "./event-payloads.js"
 import type { CodevisorDatabaseConfig } from "./service.js"
 
 interface Migration {
@@ -1242,5 +1246,37 @@ export const migrations: ReadonlyArray<Migration> = [
     sql: `
       alter table chat_items add column stop_kind text;
     `
+  },
+  {
+    id: 45,
+    name: "durable session checklists",
+    sql: `
+      alter table sessions add column session_plan text;
+    `,
+    run: (sqlite) => {
+      // Plans are full snapshots. Walk newest-first and retain the first valid
+      // one for each session so existing chats gain durable cross-device
+      // checklist state immediately after the upgrade.
+      const restored = new Set<string>()
+      const candidates = sqlite
+        .prepare(
+          `select session_id, payload from session_events
+           where kind = 'session.output'
+             and json_valid(payload)
+             and json_extract(payload, '$.sessionUpdate') = 'plan'
+           order by session_id, revision desc`
+        )
+        .all() as ReadonlyArray<{ readonly session_id: string; readonly payload: string }>
+      const update = sqlite.prepare("update sessions set session_plan = ? where id = ?")
+      for (const candidate of candidates) {
+        if (restored.has(candidate.session_id)) continue
+        // The SQL predicates guarantee a JSON object with sessionUpdate.
+        const payload = parseJsonRecord(candidate.payload)!
+        const plan = sessionPlanFromPayload(payload)
+        if (plan === undefined) continue
+        update.run(JSON.stringify(plan), candidate.session_id)
+        restored.add(candidate.session_id)
+      }
+    }
   }
 ]

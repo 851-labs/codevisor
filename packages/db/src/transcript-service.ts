@@ -8,7 +8,11 @@ import {
   setChatRoute
 } from "./chat-items.js"
 import { attempt } from "./errors.js"
-import { backgroundTasksFromRaw, pendingQuestionFromRaw } from "./event-payloads.js"
+import {
+  backgroundTasksFromRaw,
+  pendingQuestionFromRaw,
+  sessionPlanFromRaw
+} from "./event-payloads.js"
 import { canonicalUuid } from "./ids.js"
 import {
   conversationFromRow,
@@ -70,15 +74,18 @@ export const makeTranscriptService = (
         const session = getSession(id)
         const state = sqlite
           .prepare(
-            "select revision as cursor, pending_question, background_tasks from sessions where id = ?"
+            `select revision as cursor, pending_question, background_tasks, session_plan
+             from sessions where id = ?`
           )
           .get(id) as {
           readonly cursor: number
           readonly pending_question: string | null
           readonly background_tasks: string
+          readonly session_plan: string | null
         }
         const pendingQuestion = pendingQuestionFromRaw(state.pending_question)
         const backgroundTasks = backgroundTasksFromRaw(state.background_tasks)
+        const sessionPlan = sessionPlanFromRaw(state.session_plan)
         const goal = sessionGoalSnapshot(sqlite, id)
         return {
           session,
@@ -100,7 +107,8 @@ export const makeTranscriptService = (
           ...(pendingQuestion === undefined ? {} : { pendingQuestion }),
           pendingPlanApproval: session.pendingPlanApproval === true,
           backgroundTasks,
-          ...(goal === undefined ? {} : { goal })
+          ...(goal === undefined ? {} : { goal }),
+          ...(sessionPlan === undefined ? {} : { sessionPlan })
         }
       }),
     getTranscriptPage: (rawSessionId, before, limit) =>
@@ -151,15 +159,18 @@ export const makeTranscriptService = (
         const cursor = pageRows.at(-1)?.position
         const state = sqlite
           .prepare(
-            "select revision as cursor, pending_question, background_tasks from sessions where id = ?"
+            `select revision as cursor, pending_question, background_tasks, session_plan
+             from sessions where id = ?`
           )
           .get(sessionId) as {
           readonly cursor: number
           readonly pending_question: string | null
           readonly background_tasks: string
+          readonly session_plan: string | null
         }
         const pendingQuestion = pendingQuestionFromRaw(state.pending_question)
         const backgroundTasks = backgroundTasksFromRaw(state.background_tasks)
+        const sessionPlan = sessionPlanFromRaw(state.session_plan)
         const goal = sessionGoalSnapshot(sqlite, sessionId)
         return {
           items,
@@ -170,6 +181,7 @@ export const makeTranscriptService = (
           pendingPlanApproval: session.pendingPlanApproval === true,
           backgroundTasks,
           ...(goal === undefined ? {} : { goal }),
+          ...(sessionPlan === undefined ? {} : { sessionPlan }),
           usage: session.usage
         }
       }),
