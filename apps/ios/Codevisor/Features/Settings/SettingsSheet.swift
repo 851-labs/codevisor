@@ -34,17 +34,17 @@ struct SettingsSheet: View {
                 }
                 Section {
                     NavigationLink {
-                        GeneralSettingsScreen(dismissSettings: { dismiss() })
-                    } label: {
-                        Label("General", systemImage: "gearshape")
-                    }
-                    NavigationLink {
                         UpdatesSettingsScreen()
                     } label: {
                         // badge(0) hides itself — the ambient signal simply
                         // is not there when everything is current.
                         Label("Updates", systemImage: "arrow.down.circle")
                             .badge(environment.updateCenter.availableCount)
+                    }
+                    NavigationLink {
+                        GeneralSettingsScreen(dismissSettings: { dismiss() })
+                    } label: {
+                        Label("Privacy & Data", systemImage: "hand.raised")
                     }
                     NavigationLink {
                         AppearanceSettingsScreen()
@@ -61,7 +61,7 @@ struct SettingsSheet: View {
                     NavigationLink {
                         HarnessesSettingsScreen()
                     } label: {
-                        Label("Harnesses", systemImage: "cpu")
+                        Label("Harnesses", systemImage: "brain")
                     }
                     NavigationLink {
                         McpSettingsScreen()

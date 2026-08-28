@@ -314,7 +314,7 @@ struct OnboardingView: View {
             )
             .padding(.top, 12)
 
-            Text("You can change this at any time in Settings → General.")
+            Text("You can change this at any time in Settings → Privacy & Data.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -728,7 +728,7 @@ struct OnboardingView: View {
         if case let .unavailable(message) = environment.localServer?.state {
             return message
         }
-        return "The Codevisor server didn't respond. Try again, or check Settings → General for server status."
+        return "The Codevisor server didn't respond. Try again, or check Settings → Machines."
     }
 
     // MARK: - Projects

@@ -6,32 +6,88 @@ import SwiftUI
 /// (app, servers, agents, plugins), grouped by kind, with per-row installs
 /// and one properly ordered "Update All".
 struct UpdateCenterView: View {
+    enum Context {
+        case sheet
+        case settings
+    }
+
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
 
+    let context: Context
+
+    init(context: Context = .sheet) {
+        self.context = context
+    }
+
     private var center: UpdateCenter { environment.updateCenter }
 
     var body: some View {
+        Group {
+            switch context {
+            case .sheet:
+                sheetContent
+            case .settings:
+                settingsContent
+            }
+        }
+        .task { await center.refresh(force: true) }
+    }
+
+    private var sheetContent: some View {
         VStack(spacing: 0) {
             Form {
-                if center.components.isEmpty {
-                    emptySection
-                } else {
-                    section(titled: "App", kind: .app)
-                    section(titled: "Servers", kind: .server)
-                    section(titled: "Harnesses", kind: .harness)
-                    section(titled: "Plugins", kind: .plugin)
-                }
+                componentSections
             }
             .formStyle(.grouped)
             .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
             Divider().overlay(theme.isSystem ? Color.clear : theme.separator)
-            footer
+            footer(showsDoneButton: true)
+                .themedSurface(.sheet)
         }
         .frame(width: 560, height: 480)
         .themedSurface(.sheet)
-        .task { await center.refresh(force: true) }
+    }
+
+    private var settingsContent: some View {
+        VStack(spacing: 0) {
+            Form {
+                updateChannelSection
+                componentSections
+            }
+            .settingsPaneFormStyle(theme)
+            Divider().overlay(theme.isSystem ? Color.clear : theme.separator)
+            footer(showsDoneButton: false)
+        }
+    }
+
+    private var updateChannelSection: some View {
+        Section {
+            Toggle(isOn: alphaUpdatesEnabled) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Alpha updates")
+                    Text("Receive Alpha builds before stable releases.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .toggleStyle(.switch)
+        } header: {
+            Text("Update Channel")
+        }
+    }
+
+    @ViewBuilder
+    private var componentSections: some View {
+        if center.components.isEmpty {
+            emptySection
+        } else {
+            section(titled: "App", kind: .app)
+            section(titled: "Servers", kind: .server)
+            section(titled: "Harnesses", kind: .harness)
+            section(titled: "Plugins", kind: .plugin)
+        }
     }
 
     private var emptySection: some View {
@@ -115,7 +171,7 @@ struct UpdateCenterView: View {
         }
     }
 
-    private var footer: some View {
+    private func footer(showsDoneButton: Bool) -> some View {
         HStack(spacing: 10) {
             if center.isRefreshing {
                 ProgressView()
@@ -136,11 +192,22 @@ struct UpdateCenterView: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(center.isUpdatingAll)
             }
-            Button("Done") { dismiss() }
-                .settingsActionTint(theme)
-                .keyboardShortcut(.cancelAction)
+            if showsDoneButton {
+                Button("Done") { dismiss() }
+                    .settingsActionTint(theme)
+                    .keyboardShortcut(.cancelAction)
+            }
         }
         .padding()
-        .themedSurface(.sheet)
+    }
+
+    private var alphaUpdatesEnabled: Binding<Bool> {
+        Binding(
+            get: { environment.settings.alphaUpdatesEnabled },
+            set: { enabled in
+                environment.setAlphaUpdatesEnabled(enabled)
+                Task { await environment.appUpdate.checkForUpdates() }
+            }
+        )
     }
 }

@@ -6,7 +6,7 @@ import SwiftUI
 import UserNotifications
 import os
 
-// MARK: - General
+// MARK: - Privacy & Data
 
 struct GeneralSettingsScreen: View {
     @Environment(AppEnvironment.self) private var environment
@@ -47,7 +47,7 @@ struct GeneralSettingsScreen: View {
                 )
             }
         }
-        .navigationTitle("General")
+        .navigationTitle("Privacy & Data")
         .navigationBarTitleDisplayMode(.inline)
         .alert("Delete all local data?", isPresented: $isConfirmingDelete) {
             Button("Delete", role: .destructive) {

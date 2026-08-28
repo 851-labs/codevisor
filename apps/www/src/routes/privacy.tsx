@@ -198,7 +198,7 @@ const sections = [
         <ul>
           <li>
             Turn usage analytics or crash and error reporting on or off independently in Codevisor
-            Settings → General → Privacy.
+            Settings → Privacy &amp; Data.
           </li>
           <li>Stop Browser Use from Codevisor.</li>
           <li>Choose Codevisor’s separate managed browser instead of your Chrome session.</li>

@@ -7,7 +7,7 @@ import UserNotifications
 import CodevisorUI
 
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case general, appearance, notifications
+    case updates, general, appearance, notifications
     case shortcuts
     // Fleet-synced config planes: the panes render the app's selected
     // machine, whose content converges with every other machine.
@@ -18,7 +18,8 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .general: "General"
+        case .updates: "Updates"
+        case .general: "Privacy & Data"
         case .appearance: "Appearance"
         case .notifications: "Notifications"
         case .shortcuts: "Shortcuts"
@@ -32,11 +33,12 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
-        case .general: "gearshape"
+        case .updates: "arrow.down.circle"
+        case .general: "hand.raised"
         case .appearance: "paintpalette"
         case .notifications: "bell"
         case .shortcuts: "keyboard"
-        case .agents: "cpu"
+        case .agents: "brain"
         case .mcps: "puzzlepiece.extension"
         case .skills: "book.closed"
         case .plugins: "puzzlepiece"
@@ -61,7 +63,7 @@ struct SettingsLocation: Equatable {
 @Observable
 final class SettingsRouter {
     static let shared = SettingsRouter()
-    var selectedTab: SettingsTab = .general
+    var selectedTab: SettingsTab = .updates
     /// Machine pages pushed over the current pane (list row → machine page).
     var panePath: [MachinePaneRoute] = []
     /// Pages behind and ahead of the current one. Every navigation —
@@ -204,7 +206,7 @@ extension EnvironmentValues {
 /// The app's Settings window (⌘, / Codevisor ▸ Settings…) in the modern
 /// sidebar style (System Settings, Xcode 26): sections on the left, the
 /// selected section's content on the right with push navigation for
-/// per-item pages. Client-scoped sections (General, Appearance,
+/// per-item pages. Client-scoped sections (Updates, Privacy & Data, Appearance,
 /// Notifications, Shortcuts) sit alongside Machines, which owns everything
 /// scoped to a specific machine: its server, harnesses, MCP servers, and
 /// skills.
@@ -218,6 +220,7 @@ struct SettingsView: View {
             List(selection: sidebarSelection) {
                 ForEach(SettingsTab.allCases) { tab in
                     Label(tab.title, systemImage: tab.systemImage)
+                        .badge(tab == .updates ? environment.updateCenter.availableCount : 0)
                         .tag(tab)
                 }
             }
@@ -275,9 +278,12 @@ struct SettingsView: View {
     @ViewBuilder
     private var detailRoot: some View {
         switch router.selectedTab {
+        case .updates:
+            UpdateCenterView(context: .settings)
+                .navigationTitle("Updates")
         case .general:
             GeneralSettingsView()
-                .navigationTitle("General")
+                .navigationTitle("Privacy & Data")
         case .appearance:
             AppearanceSettingsView()
                 .navigationTitle("Appearance")
@@ -357,8 +363,8 @@ extension View {
     }
 }
 
-/// General app settings: updates, privacy, and local data. Everything scoped
-/// to a machine (server status, remote access) lives in Settings ▸ Machines.
+/// Privacy and local data settings. Everything scoped to a machine (server
+/// status, remote access) lives in Settings ▸ Machines.
 struct GeneralSettingsView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.theme) private var theme
@@ -366,21 +372,6 @@ struct GeneralSettingsView: View {
 
     var body: some View {
         Form {
-            Section {
-                UpdatesSettingsEntry()
-                Toggle(isOn: alphaUpdatesEnabled) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Alpha updates")
-                        Text("Receive Alpha builds before stable releases.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .toggleStyle(.switch)
-            } header: {
-                Text("Updates")
-            }
-
             Section {
                 Toggle("Share usage analytics", isOn: shareAnalytics)
                     .toggleStyle(.switch)
@@ -440,16 +431,6 @@ struct GeneralSettingsView: View {
         Binding(
             get: { environment.settings.shareCrashReports },
             set: { environment.setShareCrashReports($0) }
-        )
-    }
-
-    private var alphaUpdatesEnabled: Binding<Bool> {
-        Binding(
-            get: { environment.settings.alphaUpdatesEnabled },
-            set: { enabled in
-                environment.setAlphaUpdatesEnabled(enabled)
-                Task { await environment.appUpdate.checkForUpdates() }
-            }
         )
     }
 
