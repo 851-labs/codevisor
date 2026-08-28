@@ -59,6 +59,73 @@ struct TranscriptRowProjectionTests {
         #expect(rows.last?.id == .assistantChrome(message.id, .epilogue))
     }
 
+    @Test func activeAndSettledMarkdownShareBlockLayoutKeys() throws {
+        let id = UUID()
+        let markdown = "# Heading\n\nParagraph\n\n- one\n- two"
+        let activeItem = ConversationItem.assistant(
+            AssistantMessage(
+                id: id,
+                turn: AssistantTurn(
+                    entries: [.text(id: "answer", markdown: markdown)],
+                    isGenerating: true
+                )
+            )
+        )
+        let settledItem = ConversationItem.assistant(
+            AssistantMessage(
+                id: id,
+                turn: AssistantTurn(entries: [.text(id: "answer", markdown: markdown)])
+            )
+        )
+
+        let activeRows = TranscriptActiveRowProjection.rows(for: activeItem)
+        let settledRows = try TranscriptRowProjectionCache.project(
+            makeInput(settled: [settledItem]),
+            options: .init(includesConnectingRow: true)
+        )
+
+        #expect(activeRows.map(\.layoutKey) == settledRows.map(\.layoutKey))
+        #expect(activeRows.allSatisfy { $0.id.isActiveRow })
+        #expect(
+            activeRows.compactMap { row -> TranscriptMarkdownBlock? in
+                if case let .markdownBlock(block) = row.content { block } else { nil }
+            }.allSatisfy { $0.lifecycle == .receiving }
+        )
+    }
+
+    @Test func activeBlockRowsReplaceOnlyTheirMatchingProjectionSlot() throws {
+        let first = ConversationItem.assistant(
+            AssistantMessage(
+                turn: AssistantTurn(
+                    entries: [.text(id: "answer", markdown: "First\n\nSecond")],
+                    isGenerating: true
+                )
+            )
+        )
+        let next = ConversationItem.assistant(
+            AssistantMessage(turn: AssistantTurn(isGenerating: true))
+        )
+        let baseRows = try TranscriptRowProjectionCache.project(
+            makeInput(active: first),
+            options: .init(includesConnectingRow: true)
+        )
+        let activeRows = TranscriptActiveRowProjection.rows(for: first)
+        let staleRows = TranscriptActiveRowProjection.rows(for: next)
+
+        #expect(
+            TranscriptActiveRowProjection.replacingActiveSlot(
+                in: baseRows,
+                with: activeRows
+            ).count == activeRows.count
+        )
+        #expect(
+            TranscriptActiveRowProjection.replacingActiveSlot(
+                in: baseRows,
+                with: staleRows
+            ) == baseRows
+        )
+    }
+
     @Test func completedActiveRowCarriesItsFinishedResponseIdentity() throws {
         let responseItemId = UUID()
         let completed = ConversationItem.assistant(

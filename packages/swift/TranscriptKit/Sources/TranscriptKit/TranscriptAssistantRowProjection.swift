@@ -66,7 +66,59 @@ public enum TranscriptAssistantChromeSlice: Sendable, Equatable {
     }
 }
 
+/// Builds only the live transcript slice. Callers can parse this snapshot off
+/// the UI actor and splice it over the projection cache's single active slot,
+/// leaving the settled transcript untouched on token flushes.
+public enum TranscriptActiveRowProjection {
+    public static func rows(
+        for item: ConversationItem,
+        waitingOnBackgroundTask: String? = nil
+    ) -> [TranscriptPresentationRow] {
+        TranscriptAssistantRowProjection.activeRows(
+            for: item,
+            waitingOnBackgroundTask: waitingOnBackgroundTask
+        )
+    }
+
+    public static func replacingActiveSlot(
+        in rows: [TranscriptPresentationRow],
+        with activeRows: [TranscriptPresentationRow]
+    ) -> [TranscriptPresentationRow] {
+        guard !activeRows.isEmpty,
+            let activeIndex = rows.firstIndex(where: { $0.id.isActiveRow }),
+            case let .active(activeMessageID) = rows[activeIndex].id,
+            activeRows.first?.id.messageID == activeMessageID
+        else { return rows }
+        var result = rows
+        result.replaceSubrange(activeIndex...activeIndex, with: activeRows)
+        return result
+    }
+}
+
 enum TranscriptAssistantRowProjection {
+    static func activeRows(
+        for item: ConversationItem,
+        waitingOnBackgroundTask: String?
+    ) -> [TranscriptPresentationRow] {
+        guard case let .assistant(message) = item,
+            message.turn.planDocument?.isEmpty != false
+        else { return [activeFallbackRow(for: item)] }
+
+        var rows: [TranscriptPresentationRow] = []
+        let lifecycle: TranscriptBlockLifecycle =
+            message.turn.isGenerating ? .receiving : .settled
+        guard
+            appendAssistantResponse(
+                message,
+                prelude: .completePrelude,
+                waitingOnBackgroundTask: waitingOnBackgroundTask,
+                lifecycle: lifecycle,
+                to: &rows
+            )
+        else { return [activeFallbackRow(for: item)] }
+        return rows
+    }
+
     static func appendSettled(
         _ item: ConversationItem,
         waitingOnBackgroundTask: String?,
@@ -91,6 +143,7 @@ enum TranscriptAssistantRowProjection {
                 message,
                 prelude: .completePrelude,
                 waitingOnBackgroundTask: waitingOnBackgroundTask,
+                lifecycle: .settled,
                 to: &rows
             ) {
                 return
@@ -132,6 +185,7 @@ enum TranscriptAssistantRowProjection {
             message,
             prelude: .resultPrelude,
             waitingOnBackgroundTask: waitingOnBackgroundTask,
+            lifecycle: .settled,
             to: &rows
         ),
             !message.turn.workedItemsAfterPlan.isEmpty
@@ -159,6 +213,7 @@ enum TranscriptAssistantRowProjection {
         _ message: AssistantMessage,
         prelude: TranscriptAssistantChromeSlice,
         waitingOnBackgroundTask: String?,
+        lifecycle: TranscriptBlockLifecycle,
         to rows: inout [TranscriptPresentationRow]
     ) -> Bool {
         guard case let .text(entryID, markdown)? = message.turn.finalText else { return false }
@@ -183,15 +238,16 @@ enum TranscriptAssistantRowProjection {
                         ordinal: ordinal,
                         block: block,
                         documentSource: source,
-                        lifecycle: .settled,
+                        lifecycle: lifecycle,
                         container: .assistantResponse
                     )
                     responseRows.append(
                         .init(
-                            id: .assistantMarkdown(
-                                message.id,
+                            id: markdownID(
+                                messageID: message.id,
                                 sourceID: sourceID,
-                                ordinal: ordinal
+                                ordinal: ordinal,
+                                lifecycle: lifecycle
                             ),
                             content: .markdownBlock(projected),
                             estimatedHeight: estimatedHeight(for: block),
@@ -207,14 +263,15 @@ enum TranscriptAssistantRowProjection {
                     ordinal: ordinal,
                     file: file,
                     label: label,
-                    lifecycle: .settled
+                    lifecycle: lifecycle
                 )
                 responseRows.append(
                     .init(
-                        id: .assistantAttachment(
-                            message.id,
+                        id: attachmentID(
+                            messageID: message.id,
                             sourceID: sourceID,
-                            ordinal: ordinal
+                            ordinal: ordinal,
+                            lifecycle: lifecycle
                         ),
                         content: .assistantAttachment(attachment),
                         estimatedHeight: 180,
@@ -229,7 +286,7 @@ enum TranscriptAssistantRowProjection {
         if hasPrelude(message.turn, slice: prelude) {
             rows.append(
                 .init(
-                    id: .assistantChrome(message.id, prelude),
+                    id: chromeID(messageID: message.id, slice: prelude, lifecycle: lifecycle),
                     content: .assistantChrome(
                         message,
                         slice: prelude,
@@ -256,7 +313,7 @@ enum TranscriptAssistantRowProjection {
         rows.append(contentsOf: responseRows)
         rows.append(
             .init(
-                id: .assistantChrome(message.id, .epilogue),
+                id: chromeID(messageID: message.id, slice: .epilogue, lifecycle: lifecycle),
                 content: .assistantChrome(
                     message,
                     slice: .epilogue,
@@ -269,6 +326,51 @@ enum TranscriptAssistantRowProjection {
                 )
             ))
         return true
+    }
+
+    private static func activeFallbackRow(
+        for item: ConversationItem
+    ) -> TranscriptPresentationRow {
+        .init(
+            id: .active(item.id),
+            content: .active(item),
+            estimatedHeight: 320
+        )
+    }
+
+    private static func chromeID(
+        messageID: UUID,
+        slice: TranscriptAssistantChromeSlice,
+        lifecycle: TranscriptBlockLifecycle
+    ) -> TranscriptPresentationRow.ID {
+        switch lifecycle {
+        case .receiving: .activeChrome(messageID, slice)
+        case .settled: .assistantChrome(messageID, slice)
+        }
+    }
+
+    private static func markdownID(
+        messageID: UUID,
+        sourceID: String,
+        ordinal: Int,
+        lifecycle: TranscriptBlockLifecycle
+    ) -> TranscriptPresentationRow.ID {
+        switch lifecycle {
+        case .receiving: .activeMarkdown(messageID, sourceID: sourceID, ordinal: ordinal)
+        case .settled: .assistantMarkdown(messageID, sourceID: sourceID, ordinal: ordinal)
+        }
+    }
+
+    private static func attachmentID(
+        messageID: UUID,
+        sourceID: String,
+        ordinal: Int,
+        lifecycle: TranscriptBlockLifecycle
+    ) -> TranscriptPresentationRow.ID {
+        switch lifecycle {
+        case .receiving: .activeAttachment(messageID, sourceID: sourceID, ordinal: ordinal)
+        case .settled: .assistantAttachment(messageID, sourceID: sourceID, ordinal: ordinal)
+        }
     }
 
     static func isUser(_ item: ConversationItem) -> Bool {

@@ -99,6 +99,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         case plan(UUID)
         case assistantResult(UUID)
         case assistantChrome(UUID, TranscriptAssistantChromeSlice)
+        case activeChrome(UUID, TranscriptAssistantChromeSlice)
         case assistantMarkdown(UUID, sourceID: String, ordinal: Int)
         case activeMarkdown(UUID, sourceID: String, ordinal: Int)
         case assistantAttachment(UUID, sourceID: String, ordinal: Int)
@@ -119,7 +120,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
             case let .assistantPlanning(id): "message:\(id.uuidString):planning"
             case let .plan(id): "message:\(id.uuidString):plan"
             case let .assistantResult(id): "message:\(id.uuidString):result"
-            case let .assistantChrome(id, slice):
+            case let .assistantChrome(id, slice), let .activeChrome(id, slice):
                 "message:\(id.uuidString):chrome:\(slice.layoutComponent)"
             case let .assistantMarkdown(id, sourceID, ordinal),
                 let .activeMarkdown(id, sourceID, ordinal):
@@ -146,8 +147,9 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
             case .message, .assistantPlanning, .plan, .assistantResult,
                 .assistantChrome, .assistantMarkdown, .assistantAttachment:
                 true
-            case .active, .activeMarkdown, .activeAttachment, .setup, .backgroundTask,
-                .updateGate, .connecting, .serverWait, .error, .statusError, .bottomSpacer:
+            case .active, .activeChrome, .activeMarkdown, .activeAttachment, .setup,
+                .backgroundTask, .updateGate, .connecting, .serverWait, .error, .statusError,
+                .bottomSpacer:
                 false
             }
         }
@@ -158,8 +160,23 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
 
         public var isActiveRow: Bool {
             switch self {
-            case .active, .activeMarkdown, .activeAttachment: true
+            case .active, .activeChrome, .activeMarkdown, .activeAttachment: true
             default: false
+            }
+        }
+
+        var messageID: UUID? {
+            switch self {
+            case let .message(id), let .assistantPlanning(id), let .plan(id),
+                let .assistantResult(id), let .active(id):
+                id
+            case let .assistantChrome(id, _), let .activeChrome(id, _),
+                let .assistantMarkdown(id, _, _), let .activeMarkdown(id, _, _),
+                let .assistantAttachment(id, _, _), let .activeAttachment(id, _, _):
+                id
+            case .setup, .backgroundTask, .updateGate, .connecting, .serverWait, .error,
+                .statusError, .bottomSpacer:
+                nil
             }
         }
     }
@@ -235,7 +252,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
                 case let .assistantResult(message, waitingOnBackgroundTask: _):
                     message.id
                 case let .assistantChrome(message, slice, waitingOnBackgroundTask: _):
-                    slice == .epilogue ? message.id : nil
+                    slice == .epilogue && !message.turn.isGenerating ? message.id : nil
                 case .markdownBlock, .assistantAttachment:
                     nil
                 case let .active(item):
