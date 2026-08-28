@@ -62,22 +62,27 @@ extension HomeView {
         .background(.ultraThinMaterial)
     }
 
-    /// A full-height native scroll surface preserves centered state content
-    /// while allowing the standard iOS pull-to-refresh gesture even when
-    /// there are no rows to make the content scroll naturally.
+    /// Keep state content fixed over the same native list surface used when
+    /// rows exist. The list owns refresh and rubber-band scrolling; the
+    /// overlay stays centered in the visible viewport instead of moving with
+    /// the scroll content.
     func refreshableState<Content: View>(
+        allowsStateHitTesting: Bool = true,
         @ViewBuilder content: @escaping () -> Content
     ) -> some View {
-        ScrollView {
-            content()
-                .frame(maxWidth: .infinity)
-                // Exactly the visible height: the state stays centered and
-                // the only scroll left is the rubber-band pull-to-refresh
-                // needs — no phantom scrolling past an empty page.
-                .containerRelativeFrame(.vertical)
+        List {
+            EmptyView()
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(Color(.systemBackground))
         .refreshable {
             await refreshNavigation()
+        }
+        .overlay {
+            content()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .allowsHitTesting(allowsStateHitTesting)
         }
     }
 

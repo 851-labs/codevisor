@@ -489,7 +489,7 @@ struct HomeView: View {
         } else if anyMachineSynced {
             // At least one machine answered with a real (empty) list: the
             // honest presentation is "no chats", banner for any stragglers.
-            refreshableState {
+            refreshableState(allowsStateHitTesting: false) {
                 emptyState
             }
             .safeAreaInset(edge: .top, spacing: 0) {
@@ -510,7 +510,7 @@ struct HomeView: View {
         } else if initialSyncPending {
             // Nothing cached yet: the one legitimate spinner — and even it
             // may not outlive its budget.
-            refreshableState {
+            refreshableState(allowsStateHitTesting: false) {
                 HomeNavigationSyncView(
                     state: .loading(machineName: failedSyncMachineNames)
                 )
@@ -525,7 +525,7 @@ struct HomeView: View {
                 initialSyncDeadlineExpired = true
             }
         } else {
-            refreshableState {
+            refreshableState(allowsStateHitTesting: false) {
                 emptyState
             }
         }
@@ -589,7 +589,6 @@ struct HomeView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(Color(.systemBackground))
-        .contentMargins(.bottom, 64, for: .scrollContent)
         .refreshable {
             await refreshNavigation()
         }
@@ -1198,13 +1197,9 @@ struct HomeView: View {
     /// Mail-style empty state: the navigation title already supplies the
     /// context, so the body needs only a quiet confirmation that it is empty.
     private var emptyState: some View {
-        VStack {
-            Text("No \(organization.title)")
-                .font(.title3.weight(.bold))
-                .padding(.top, 80)
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        Text("No \(organization.title)")
+            .font(.title3.weight(.bold))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Toolbar
