@@ -36,10 +36,9 @@ struct HarnessInstallHintRow: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
                 HarnessIcon(harnessId: harness.id, fallbackSymbolName: harness.symbolName, size: 15)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
                     .frame(width: 20)
                 Text(harness.name)
-                    .foregroundStyle(.secondary)
                 Spacer()
                 trailingContent
             }
@@ -73,6 +72,7 @@ struct HarnessInstallHintRow: View {
             Button(lifecyclePhase == "failed" ? "Try Again" : "Install") {
                 showsConfirm = true
             }
+            .settingsActionTint(theme)
             .popover(isPresented: $showsConfirm, arrowEdge: .bottom) {
                 HarnessInstallPopover(harness: harness, methods: availableMethods) { methodId in
                     showsConfirm = false
@@ -82,7 +82,7 @@ struct HarnessInstallHintRow: View {
         } else {
             Text(harness.readiness.detail ?? "Not installed")
                 .font(.callout)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
         }
     }
 

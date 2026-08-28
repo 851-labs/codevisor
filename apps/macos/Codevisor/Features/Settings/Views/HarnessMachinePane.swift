@@ -24,7 +24,6 @@ struct HarnessMachinePane: View {
     @State private var isScanning = true
     @State private var scanError: String?
     @State private var toggleError: ToggleError?
-    @State private var showsNotInstalled = false
     @State private var authenticationHarness: ServerHarness?
     @State private var detailHarness: ServerHarness?
     @State private var showsCustomEditor = false
@@ -85,15 +84,9 @@ struct HarnessMachinePane: View {
                     Text(error.message)
                 }
             if !serverNotInstalled.isEmpty {
-                Section {
-                    SettingsDisclosureRow(
-                        "Not installed (\(serverNotInstalled.count))",
-                        isExpanded: $showsNotInstalled
-                    ) {
-                        ForEach(serverNotInstalled, id: \.id) { harness in
-                            serverNotInstalledRow(harness)
-                                .padding(.top, 6)
-                        }
+                Section("Not installed") {
+                    ForEach(serverNotInstalled, id: \.id) { harness in
+                        serverNotInstalledRow(harness)
                     }
                 }
             }
