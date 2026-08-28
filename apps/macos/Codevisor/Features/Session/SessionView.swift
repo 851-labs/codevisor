@@ -5,8 +5,7 @@ import CodevisorUI
 
 /// The active session screen: hosts the center pane group (the chat pane —
 /// see ChatScreen — plus any terminals beside it) over the ⌘J bottom panel,
-/// and owns the wiring both share: focus routing and the attachment
-/// store/drop target.
+/// and owns the wiring both share: focus routing and the attachment store.
 struct SessionScreen: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Bindable var controller: SessionController
@@ -110,7 +109,6 @@ struct SessionScreen: View {
             splitDragCoordinator?.dragCancelled()
         }
         .environment(\.attachmentImages, attachmentImages)
-        .attachmentDropTarget(controller)
     }
 
     private func installAttachmentImageStoreIfNeeded() {

@@ -59,6 +59,10 @@ struct ChatPaneContentView: View {
                     .onChange(of: chatProject) { _, updatedProject in
                         store.reconcile(controller, for: chatSession, project: updatedProject)
                     }
+                    // Keep this as the final visual modifier so the hover
+                    // overlay sits above the transcript and floating composer,
+                    // while remaining scoped to this chat pane.
+                    .attachmentDropTarget(controller)
                 }
             } else {
                 // The referenced session was deleted (e.g. from another

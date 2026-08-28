@@ -14,20 +14,28 @@ extension SessionController {
 
     public func attachFileURLs(_ urls: [URL]) {
         for url in urls {
-            attachFileURL(url)
+            let id = UUID()
+            let metadata = Self.attachmentMetadata(for: url)
+            guard
+                beginLoadingAttachment(
+                    id: id,
+                    name: metadata.name,
+                    mimeType: metadata.mimeType,
+                    kind: metadata.kind
+                )
+            else { continue }
+            resolveLoadingAttachment(id: id, fromFileURL: url)
         }
     }
 
-    /// Stages one dropped/picked file. The bytes are read off the main
-    /// thread so a large file or one on a slow network volume does not freeze
-    /// the run loop.
-    private func attachFileURL(_ url: URL) {
-        let type = UTType(filenameExtension: url.pathExtension)
-        let mimeType = type?.preferredMIMEType ?? "application/octet-stream"
-        let kind: Attachment.Kind =
-            (type?.conforms(to: .image) ?? false) || mimeType.hasPrefix("image/")
-            ? .image
-            : .file
+    /// Resolves a placeholder that was inserted as soon as a file URL was
+    /// accepted. The bytes are read off the main thread so a large file or
+    /// one on a slow network volume does not freeze the run loop.
+    public func resolveLoadingAttachment(id: UUID, fromFileURL url: URL) {
+        let metadata = Self.attachmentMetadata(for: url)
+        guard composerAttachments.contains(where: { $0.id == id && $0.state == .loading }) else {
+            return
+        }
         Task { [weak self] in
             let result: (data: Data?, readError: String?) = await Task.detached(priority: .userInitiated) {
                 do {
@@ -38,19 +46,39 @@ extension SessionController {
             }.value
             guard let self else { return }
             if let data = result.data {
-                self.stageAttachment(name: url.lastPathComponent, mimeType: mimeType, kind: kind, data: data)
+                self.resolveLoadingAttachmentReportingFailure(
+                    id: id,
+                    name: metadata.name,
+                    mimeType: metadata.mimeType,
+                    kind: metadata.kind,
+                    data: data
+                )
             } else {
                 Log.attachments.error(
-                    "attachment read failed for \(url.lastPathComponent, privacy: .public): \(result.readError ?? "unknown", privacy: .public)"
+                    "attachment read failed for \(metadata.name, privacy: .public): \(result.readError ?? "unknown", privacy: .public)"
                 )
-                self.stageAttachment(
-                    name: url.lastPathComponent, mimeType: mimeType, kind: kind,
-                    data: Data(),
-                    failureMessage:
-                        "Couldn't read “\(url.lastPathComponent)”. Check that you have permission to open it, then try again."
+                self.failLoadingAttachment(
+                    id: id,
+                    name: metadata.name,
+                    mimeType: metadata.mimeType,
+                    kind: metadata.kind,
+                    message:
+                        "Couldn't read “\(metadata.name)”. Check that you have permission to open it, then try again."
                 )
             }
         }
+    }
+
+    private static func attachmentMetadata(
+        for url: URL
+    ) -> (name: String, mimeType: String, kind: Attachment.Kind) {
+        let type = UTType(filenameExtension: url.pathExtension)
+        let mimeType = type?.preferredMIMEType ?? "application/octet-stream"
+        let kind: Attachment.Kind =
+            (type?.conforms(to: .image) ?? false) || mimeType.hasPrefix("image/")
+            ? .image
+            : .file
+        return (url.lastPathComponent, mimeType, kind)
     }
 
     public func attachImageData(
@@ -117,6 +145,27 @@ extension SessionController {
         return nil
     }
 
+    /// Resolves a placeholder and surfaces validation failures through the
+    /// session status. Native drop targets use this path because they do not
+    /// own a separate inline error presentation like the iOS picker does.
+    public func resolveLoadingAttachmentReportingFailure(
+        id: UUID,
+        name: String,
+        mimeType: String,
+        kind: Attachment.Kind,
+        data: Data
+    ) {
+        if let message = resolveLoadingAttachment(
+            id: id,
+            name: name,
+            mimeType: mimeType,
+            kind: kind,
+            data: data
+        ) {
+            status = .failed(message)
+        }
+    }
+
     /// Provider failures cannot be retried without another paste operation,
     /// so remove the empty placeholder. The platform composer that owns the
     /// paste interaction presents the failure beside that composer instead
@@ -128,6 +177,24 @@ extension SessionController {
         else { return false }
         composerAttachments.remove(at: index)
         return true
+    }
+
+    private func failLoadingAttachment(
+        id: UUID,
+        name: String,
+        mimeType: String,
+        kind: Attachment.Kind,
+        message: String
+    ) {
+        guard let index = composerAttachments.firstIndex(where: { $0.id == id }),
+            composerAttachments[index].state == .loading
+        else { return }
+        var attachment = composerAttachments[index]
+        attachment.name = name
+        attachment.mimeType = mimeType
+        attachment.kind = kind
+        attachment.state = .failed(message)
+        composerAttachments[index] = attachment
     }
 
     public func removeAttachment(id: UUID) {
@@ -188,8 +255,7 @@ extension SessionController {
     }
 
     private func stageAttachment(
-        name: String, mimeType: String, kind: Attachment.Kind, data: Data,
-        failureMessage: String? = nil
+        name: String, mimeType: String, kind: Attachment.Kind, data: Data
     ) {
         guard composerAttachments.count < Self.maxAttachments else {
             status = .failed("A message can carry at most \(Self.maxAttachments) attachments.")
@@ -199,7 +265,7 @@ extension SessionController {
             status = .failed("“\(name)” is too large to upload. Choose a file smaller than 32 MB.")
             return
         }
-        var attachment = ComposerAttachment(
+        let attachment = ComposerAttachment(
             id: UUID(),
             name: name,
             mimeType: mimeType,
@@ -207,11 +273,6 @@ extension SessionController {
             localData: data,
             state: .uploading
         )
-        if let failureMessage {
-            attachment.state = .failed(failureMessage)
-            composerAttachments.append(attachment)
-            return
-        }
         composerAttachments.append(attachment)
         startUpload(attachment)
     }

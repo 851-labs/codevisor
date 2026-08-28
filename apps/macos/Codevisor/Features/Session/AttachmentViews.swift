@@ -252,7 +252,7 @@ struct AttachmentFileChip: View {
 
 // MARK: - Drop target
 
-/// Makes the whole page a drop target for files and images, with a full-area
+/// Makes one chat pane a drop target for files and images, with a full-area
 /// "Drop to attach" overlay while a file hovers. Only file/image types are
 /// registered, so text drags never light it up.
 struct AttachmentDropModifier: ViewModifier {
@@ -277,20 +277,65 @@ struct AttachmentDropModifier: ViewModifier {
         for provider in providers {
             if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
                 handled = true
+                let id = UUID()
+                let name = provider.suggestedName ?? "Dropped file"
+                let type = UTType(filenameExtension: (name as NSString).pathExtension)
+                let mimeType = type?.preferredMIMEType ?? "application/octet-stream"
+                let kind: Attachment.Kind =
+                    (type?.conforms(to: .image) ?? false) || mimeType.hasPrefix("image/")
+                    ? .image
+                    : .file
+                guard
+                    controller.beginLoadingAttachment(
+                        id: id,
+                        name: name,
+                        mimeType: mimeType,
+                        kind: kind
+                    )
+                else { continue }
                 provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
                     let url =
                         (item as? URL)
                         ?? (item as? Data).flatMap { URL(dataRepresentation: $0, relativeTo: nil) }
-                    guard let url, url.isFileURL else { return }
-                    Task { @MainActor in controller.attachFileURLs([url]) }
+                    Task { @MainActor in
+                        guard let url, url.isFileURL else {
+                            controller.discardLoadingAttachment(id: id)
+                            return
+                        }
+                        controller.resolveLoadingAttachment(id: id, fromFileURL: url)
+                    }
                 }
             } else if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
                 handled = true
+                let id = UUID()
                 let suggestedName = provider.suggestedName
+                let name =
+                    suggestedName.map { name in
+                        (name as NSString).pathExtension.isEmpty ? "\(name).png" : name
+                    } ?? "Dropped image.png"
+                guard
+                    controller.beginLoadingAttachment(
+                        id: id,
+                        name: name,
+                        mimeType: "image/png",
+                        kind: .image
+                    )
+                else { continue }
                 provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, _ in
-                    guard let data, let png = pngData(from: data) else { return }
+                    guard let data, let png = pngData(from: data) else {
+                        Task { @MainActor in
+                            controller.discardLoadingAttachment(id: id)
+                        }
+                        return
+                    }
                     Task { @MainActor in
-                        controller.attachImageData(png, suggestedName: suggestedName.map { "\($0).png" })
+                        controller.resolveLoadingAttachmentReportingFailure(
+                            id: id,
+                            name: name,
+                            mimeType: "image/png",
+                            kind: .image,
+                            data: png
+                        )
                     }
                 }
             }

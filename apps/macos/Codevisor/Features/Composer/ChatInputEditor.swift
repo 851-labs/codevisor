@@ -277,7 +277,7 @@ final class SubmittingTextView: NSTextView {
     /// `updateDragTypeRegistration()` consults — NSTextView does NOT route
     /// its registration through `registerForDraggedTypes`, so overriding that
     /// is a no-op) leaves the text view unregistered for file drags, so
-    /// AppKit routes them past the composer to the session page's attachment
+    /// AppKit routes them past the composer to the chat pane's attachment
     /// dropzone (`AttachmentDropModifier`) and the file attaches instead.
     override var acceptableDragTypes: [NSPasteboard.PasteboardType] { [.string] }
 

@@ -109,6 +109,24 @@ struct ComposerAttachmentTests {
     }
 
     @MainActor
+    @Test("File URL attachments appear synchronously while their bytes load")
+    func fileURLAttachmentAppearsSynchronously() throws {
+        let controller = SessionController(
+            project: Project.fromFolder(URL(fileURLWithPath: "/tmp/attachment-tests")),
+            configCache: ConfigOptionCache(store: InMemoryStore())
+        )
+        let url = URL(fileURLWithPath: "/tmp/optimistic-image.png")
+
+        controller.attachFileURLs([url])
+
+        let attachment = try #require(controller.composerAttachments.first)
+        #expect(attachment.name == "optimistic-image.png")
+        #expect(attachment.kind == .image)
+        #expect(attachment.localData.isEmpty)
+        #expect(attachment.state == .loading)
+    }
+
+    @MainActor
     @Test("Discarding an unreadable paste stays local to the composer")
     func discardedPasteDoesNotBecomeSessionFailure() {
         let controller = SessionController(
