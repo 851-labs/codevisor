@@ -2,11 +2,8 @@
   "name": "@codevisor/macos",
   "private": true,
   "type": "module",
-  "description": "Build-time script dependencies for the native macOS app (theme vendoring, highlighter bundling). No runtime JS ships from here except the committed highlighter bundle.",
+  "description": "Build-time script dependencies for vendoring native app themes.",
   "devDependencies": {
-    "@shikijs/core": "^4",
-    "@shikijs/engine-javascript": "^4",
-    "@shikijs/langs": "^4",
     "@shikijs/themes": "^4"
   }
 }

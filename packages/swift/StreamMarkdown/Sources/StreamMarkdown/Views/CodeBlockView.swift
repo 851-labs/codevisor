@@ -11,6 +11,7 @@ import SwiftUI
 /// the highlighted version swaps in as it resolves (debounced mid-stream so
 /// large blocks don't re-tokenize on every chunk).
 struct CodeBlockView: View {
+    let id: String
     let language: String?
     let code: String
     let isComplete: Bool
@@ -101,7 +102,13 @@ struct CodeBlockView: View {
                 try? await Task.sleep(for: .milliseconds(150))
                 if Task.isCancelled { return }
             }
-            if let result = await highlighter(code, language), !Task.isCancelled {
+            let request = CodeHighlightRequest(
+                id: id,
+                code: code,
+                language: language,
+                isComplete: isComplete
+            )
+            if let result = await highlighter(request), !Task.isCancelled {
                 // Only settled blocks enter the shared cache: mid-stream
                 // texts change every flush and would churn the LRU.
                 if isComplete {
@@ -387,13 +394,18 @@ private final class PlainCodeMemo {
 }
 
 #Preview("Complete") {
-    CodeBlockView(language: "swift", code: "let x = 1\nprint(x)", isComplete: true)
+    CodeBlockView(id: "preview", language: "swift", code: "let x = 1\nprint(x)", isComplete: true)
         .padding()
         .frame(width: 360)
 }
 
 #Preview("Streaming") {
-    CodeBlockView(language: "python", code: "def main():\n    return", isComplete: false)
-        .padding()
-        .frame(width: 360)
+    CodeBlockView(
+        id: "preview",
+        language: "python",
+        code: "def main():\n    return",
+        isComplete: false
+    )
+    .padding()
+    .frame(width: 360)
 }

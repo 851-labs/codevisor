@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The active Shiki highlight theme (stable key + full theme JSON), injected
+/// The active VS Code/Shiki highlight theme (stable key + full theme JSON), injected
 /// at the themed root so code-rendering views outside StreamMarkdown — the
 /// diff viewer — can highlight without reaching back to the ThemeManager.
 public struct CodeHighlightTheme: Equatable {

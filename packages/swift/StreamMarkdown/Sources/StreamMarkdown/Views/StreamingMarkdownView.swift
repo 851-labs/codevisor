@@ -435,7 +435,12 @@ struct MarkdownBlockView: View {
             #endif
 
         case let .codeBlock(language, code, isComplete):
-            CodeBlockView(language: language, code: code, isComplete: isComplete)
+            CodeBlockView(
+                id: animationPath,
+                language: language,
+                code: code,
+                isComplete: isComplete
+            )
 
         case let .list(list):
             MarkdownRecursiveListView(

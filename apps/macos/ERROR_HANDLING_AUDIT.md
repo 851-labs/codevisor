@@ -86,8 +86,6 @@ Persistence and sync failures that lose state invisibly:
 - `Codevisor/Features/Terminal/CodevisorGhosttyApp.swift:268` — terminal config write fails → silent default fonts/colors
 - `Packages/CodevisorTheming/.../ThemeCatalog.swift:171-180` — unparseable imported theme silently omitted from picker
 - `Packages/CodevisorTheming/.../ThemeCatalog.swift:146` — `try? removeItem` → orphaned file, UI says gone
-- `Packages/CodeHighlighter/CodeHighlighter.swift:107-121` — missing/broken `highlighter.js` → ALL highlighting silently off for the session, never retried
-- `Packages/CodeHighlighter/CodeHighlighter.swift:113` — JSContext has **no `exceptionHandler`**; JS errors invisible
 - `Packages/ACPKit/.../ToolCall.swift:77` — malformed tool-call content element dropped from array
 - `CodevisorCore/Services/AppUpdateModel.swift:157` — background update-check failure resets to `.idle` silently
 

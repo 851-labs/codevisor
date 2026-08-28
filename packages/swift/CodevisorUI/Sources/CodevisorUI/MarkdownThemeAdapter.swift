@@ -5,7 +5,7 @@ import StreamMarkdown
 import SwiftUI
 
 /// Bridges the app theme into StreamMarkdown: on-palette code/quote/table
-/// colors plus the Shiki highlighter closure. System themes keep the stock
+/// colors plus the native highlighter closure. System themes keep the stock
 /// markdown look but still get highlighting via GitHub Light/Dark, so code
 /// blocks always have the IDE feel.
 /// Loaded highlight-theme JSON per theme id. `ThemedRoot.body` resolves the
@@ -52,13 +52,15 @@ public func makeMarkdownTheme(theme: Theme, highlight: (key: String, json: Strin
     }
     if let highlight {
         markdown.codeThemeKey = highlight.key
-        markdown.codeHighlighter = { code, language in
+        markdown.codeHighlighter = { request in
             guard
                 let tokens = await CodeHighlighter.shared.highlight(
-                    code: code,
-                    language: language,
+                    code: request.code,
+                    language: request.language,
                     themeKey: highlight.key,
-                    themeJSON: highlight.json
+                    themeJSON: highlight.json,
+                    sessionID: request.id,
+                    isComplete: request.isComplete
                 )
             else { return nil }
             return attributedCode(tokens)

@@ -61,7 +61,7 @@ public final class DiffRenderCache {
 /// A compact line-numbered diff for a tool-call file edit, computed by
 /// `LineDiff` (real Myers line diff, git hunk ordering) with old/new gutters.
 /// Shared indentation is stripped (edit snippets carry the source's full
-/// nesting) and rows are Shiki-highlighted asynchronously via the path's
+/// nesting) and rows are syntax-highlighted asynchronously via the path's
 /// language.
 public struct DiffView: View {
     let path: String
@@ -76,7 +76,7 @@ public struct DiffView: View {
     @State private var cachedKey: Int = 0
     @State private var dedentedOld: String?
     @State private var dedentedNew: String = ""
-    /// Highlighted text per row id, swapped in when Shiki catches up; rows
+    /// Highlighted text per row id, swapped in when the native lexer catches up; rows
     /// render plain until then. Cleared on content change so stale colors
     /// never map onto shifted lines.
     @State private var highlightedRows: [Int: AttributedString] = [:]
@@ -215,7 +215,7 @@ public struct DiffView: View {
     #endif
 
     #if canImport(AppKit) || canImport(UIKit)
-        /// Row text: Shiki-highlighted when the path's language and the theme
+        /// Row text: syntax-highlighted when the path's language and the theme
         /// allow it, plain otherwise. Blank lines render a space to keep height.
         private func rowText(
             _ row: LineDiff.Row,

@@ -1,13 +1,27 @@
 import Foundation
 import SwiftUI
 
+/// A complete code-block snapshot. `id` remains stable while a streaming block
+/// grows so a native highlighter can reuse its previous lexical state.
+public struct CodeHighlightRequest: Sendable {
+    public let id: String
+    public let code: String
+    public let language: String?
+    public let isComplete: Bool
+
+    public init(id: String, code: String, language: String?, isComplete: Bool) {
+        self.id = id
+        self.code = code
+        self.language = language
+        self.isComplete = isComplete
+    }
+}
+
 /// Asynchronously turns a fenced code block into a syntax-highlighted
-/// attributed string, or nil to keep plain text (unknown language,
-/// highlighter unavailable). Injected by the host app; the package itself
-/// ships no highlighter.
+/// attributed string, or nil to keep plain text. Injected by the host app; the
+/// markdown package itself remains independent of a highlighting engine.
 public typealias CodeHighlighting =
-    @Sendable (_ code: String, _ language: String?) async ->
-    AttributedString?
+    @Sendable (_ request: CodeHighlightRequest) async -> AttributedString?
 
 /// Lets a host intercept links rendered by StreamMarkdown's native TextKit
 /// views. Returning `true` means the host handled the URL; returning `false`
