@@ -9,7 +9,7 @@ public enum EntitySystemSymbol {
 
     public static func machine(_ machine: CodevisorMachine) -> String {
         if machine.isLocal { return "desktopcomputer" }
-        if machine.isCloud { return "cloud" }
-        return "network"
+        if machine.isCloud { return "cloud.fill" }
+        return "globe.fill"
     }
 }

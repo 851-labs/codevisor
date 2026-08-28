@@ -235,6 +235,7 @@ let package = Package(
             name: "CodevisorUITests",
             dependencies: [
                 "CodevisorUI",
+                "CodevisorClient",
                 "ACPKit",
             ],
             path: "CodevisorUI/Tests/CodevisorUITests",

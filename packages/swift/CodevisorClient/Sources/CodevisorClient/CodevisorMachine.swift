@@ -43,7 +43,7 @@ public struct CodevisorMachine: Identifiable, Sendable, Codable, Equatable {
 
     public static let local = CodevisorMachine(
         id: "local",
-        name: "Local",
+        name: ProcessInfo.processInfo.hostName,
         baseURL: URL(string: "http://127.0.0.1:\(CodevisorServerConfig.localPort)")!,
         kind: "local"
     )
