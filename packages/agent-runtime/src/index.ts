@@ -527,7 +527,11 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
       }
     }
   ),
-  executableHarness("kimi", "Kimi CLI", "k.square", ["kimi"], "kimi", ["acp"]),
+  executableHarness("kimi", "Kimi CLI", "k.square", ["kimi"], "kimi", ["acp"], {
+    installMethods: [
+      { command: "curl -LsSf https://code.kimi.com/install.sh | bash", kind: "curl" }
+    ]
+  }),
   executableHarness(
     "factory-droid",
     "Factory Droid",
@@ -556,8 +560,15 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
       }
     }
   ),
-  executableHarness("devin", "Devin", "brain", ["devin"], "devin", ["acp"]),
+  executableHarness("devin", "Devin", "brain", ["devin"], "devin", ["acp"], {
+    installMethods: [
+      { command: "curl -fsSL https://cli.devin.ai/install.sh | bash", kind: "curl" }
+    ]
+  }),
   executableHarness("grok-build", "Grok Build", "x.square", ["grok"], "grok", ["agent", "stdio"], {
+    installMethods: [
+      { command: "curl -fsSL https://x.ai/cli/install.sh | bash", kind: "curl" }
+    ],
     provider: "grok-build"
   }),
   executableHarness("kilo", "Kilo", "shippingbox", ["kilo"], "kilo", ["acp"], {
