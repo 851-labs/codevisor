@@ -337,8 +337,13 @@ extension SessionModel {
         if isTakingLongerThanExpected { isTakingLongerThanExpected = false }
         stalledTurnTask?.cancel()
         let quietInterval = stalledTurnQuietInterval
+        let sleep = quietTurnSleep
         stalledTurnTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: quietInterval)
+            do {
+                try await sleep(quietInterval)
+            } catch {
+                return
+            }
             guard let self, !Task.isCancelled, self.isSending else { return }
             self.isTakingLongerThanExpected = true
             // A turn this quiet may be dead in a way no transport signal

@@ -268,6 +268,7 @@ public final class SessionModel {
     private let sessionId: String
     let now: @Sendable () -> Date
     let stalledTurnQuietInterval: Duration
+    let quietTurnSleep: @MainActor @Sendable (Duration) async throws -> Void
     var serverEventCursor: Int?
     /// History contains complete config-option snapshots from the runtime that
     /// originally created the chat. During replay, retain only their selected
@@ -330,6 +331,9 @@ public final class SessionModel {
         configOptions: [SessionConfigOption] = [],
         now: @escaping @Sendable () -> Date = { Date() },
         stalledTurnQuietInterval: Duration = .seconds(300),
+        quietTurnSleep: @escaping @MainActor @Sendable (Duration) async throws -> Void = {
+            try await Task.sleep(for: $0)
+        },
         connectionRecoveryStatusDelay: Duration = .seconds(5),
         connectionRecoveryFailureDelay: Duration = .seconds(30),
         connectionRecoveryRetryBaseDelay: Duration = .milliseconds(500),
@@ -341,6 +345,7 @@ public final class SessionModel {
         self.configOptions = configOptions
         self.now = now
         self.stalledTurnQuietInterval = stalledTurnQuietInterval
+        self.quietTurnSleep = quietTurnSleep
         self.connectionRecoveryStatusDelay = connectionRecoveryStatusDelay
         self.connectionRecoveryFailureDelay = connectionRecoveryFailureDelay
         self.connectionRecoveryRetryBaseDelay = connectionRecoveryRetryBaseDelay
