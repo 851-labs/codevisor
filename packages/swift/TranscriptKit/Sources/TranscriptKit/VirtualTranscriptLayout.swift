@@ -1,6 +1,19 @@
 import CoreGraphics
 import Foundation
 
+/// A stable pixel coordinate inside one virtual row. Unlike a raw
+/// bottom-relative distance, this survives height corrections elsewhere in
+/// the document without moving the reader's visible content.
+public struct VirtualTranscriptAnchor: Sendable, Equatable {
+    public let key: String
+    public let offsetFromRowTop: CGFloat
+
+    public init(key: String, offsetFromRowTop: CGFloat) {
+        self.key = key
+        self.offsetFromRowTop = offsetFromRowTop
+    }
+}
+
 /// Platform-neutral geometry for a bottom-anchored, variable-height transcript.
 ///
 /// AppKit and UIKit adapters can share this layout: the platform scroll view
@@ -237,6 +250,26 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
     public func renderedRange(anchorKey: String, count: Int) -> Range<Int>? {
         guard let start = indexByKey[anchorKey] else { return nil }
         return start..<min(keys.count, start + max(1, count))
+    }
+
+    /// Captures the row at the viewport's top edge and the exact pixel offset
+    /// into that row. A top edge inside inter-row spacing is represented as a
+    /// negative offset from the following row, preserving the gap exactly.
+    public func viewportAnchor(at viewportTop: CGFloat) -> VirtualTranscriptAnchor? {
+        guard !keys.isEmpty else { return nil }
+        let index = firstIndexWhoseBottomExceeds(viewportTop)
+        return VirtualTranscriptAnchor(
+            key: keys[index],
+            offsetFromRowTop: viewportTop - topOffsets[index]
+        )
+    }
+
+    /// Resolves a previously captured row-relative pixel coordinate in the
+    /// current geometry. Missing rows deliberately return nil so callers can
+    /// fall back to their bottom-relative coordinate.
+    public func viewportTop(restoring anchor: VirtualTranscriptAnchor) -> CGFloat? {
+        guard let index = indexByKey[anchor.key] else { return nil }
+        return topOffsets[index] + anchor.offsetFromRowTop
     }
 
     private func firstIndexWhoseBottomExceeds(_ value: CGFloat) -> Int {

@@ -800,7 +800,15 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     }
 
     func persistViewport() {
-        republishLastStableScrollState()
+        guard !isDetaching else {
+            republishLastStableScrollState()
+            return
+        }
+        // NSViewRepresentable calls this while the clip view still owns its
+        // live bounds. Capture the final compensated coordinate, including
+        // measurements learned since the user's last wheel event, before
+        // AppKit begins teardown.
+        emitViewportSnapshot()
     }
 
     private func transferActiveHeightIfNeeded(
@@ -1103,16 +1111,24 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         updateMountedRows(rangeOverride: restoredRange)
 
         if let state = pendingInitialState, !state.isAtBottom {
-            let maximumDistance = max(
-                0,
-                transcriptDocumentView.frame.height - contentView.bounds.height
-            )
-            if state.distanceFromBottom > maximumDistance + 0.5, hasOlderHistory {
-                setViewportTop(0)
-                checkForHistoryPrefetch(force: true)
-                return
+            if let restoredTop = restoredViewportTop(from: state) {
+                setViewportTop(restoredTop)
+                // Subsequent asynchronous measurements preserve the restored
+                // anchor from this resolved coordinate, not the stale fallback
+                // distance that preceded it.
+                lockedRestoreDistance = currentDistanceFromBottom()
+            } else {
+                let maximumDistance = max(
+                    0,
+                    transcriptDocumentView.frame.height - contentView.bounds.height
+                )
+                if state.distanceFromBottom > maximumDistance + 0.5, hasOlderHistory {
+                    setViewportTop(0)
+                    checkForHistoryPrefetch(force: true)
+                    return
+                }
+                setDistanceFromBottom(state.distanceFromBottom)
             }
-            setDistanceFromBottom(state.distanceFromBottom)
             publishBottomState(currentDistanceFromBottom() <= Self.atBottomThreshold)
         } else {
             lockedRestoreDistance = nil
@@ -1131,6 +1147,23 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
 
     private func currentDistanceFromBottom() -> CGFloat {
         max(0, transcriptDocumentView.frame.height - contentView.bounds.maxY)
+    }
+
+    private var transcriptRowsOrigin: CGFloat {
+        paginationHeaderLayout.rowOrigin(topPadding: Self.topPadding, rowOffset: 0)
+    }
+
+    private func currentViewportAnchor() -> VirtualTranscriptAnchor? {
+        virtualLayout.viewportAnchor(
+            at: contentView.bounds.minY - transcriptRowsOrigin
+        )
+    }
+
+    private func restoredViewportTop(from state: SessionScrollState) -> CGFloat? {
+        guard let anchor = state.virtualTranscript?.viewportAnchor,
+            let rowRelativeTop = virtualLayout.viewportTop(restoring: anchor)
+        else { return nil }
+        return transcriptRowsOrigin + rowRelativeTop
     }
 
     private func setDistanceFromBottom(_ distance: CGFloat) {
@@ -1648,7 +1681,9 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             distanceFromBottom: distance,
             measurementCaches: measurementCaches,
             measurementCacheLRU: measurementCacheLRU,
-            virtualTranscript: currentVirtualRestoreState(),
+            virtualTranscript: currentVirtualRestoreState(
+                viewportAnchor: currentViewportAnchor()
+            ),
             followMode: followsLatest ? .followingLatest : .staticPosition
         )
         lastStableScrollState = state
@@ -1661,12 +1696,16 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         // the next mount, but they do not authorize a different position.
         state.measurementCaches = measurementCaches
         state.measurementCacheLRU = measurementCacheLRU
-        state.virtualTranscript = currentVirtualRestoreState()
+        state.virtualTranscript = currentVirtualRestoreState(
+            viewportAnchor: state.virtualTranscript?.viewportAnchor
+        )
         lastStableScrollState = state
         onViewportChange?(state)
     }
 
-    private func currentVirtualRestoreState() -> SessionVirtualTranscriptRestoreState {
+    private func currentVirtualRestoreState(
+        viewportAnchor: VirtualTranscriptAnchor?
+    ) -> SessionVirtualTranscriptRestoreState {
         let indices = mountedHosts.keys.compactMap { virtualLayout.indexByKey[$0] }.sorted()
         let renderedWindow: SessionRenderedTranscriptWindow? = indices.first.flatMap { first in
             guard let last = indices.last,
@@ -1687,7 +1726,8 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             // so restore can reject settled-row heights whose content changed
             // while the pane was closed.
             settledRowsByKey: settledRowHeightSnapshot,
-            renderedWindow: renderedWindow
+            renderedWindow: renderedWindow,
+            viewportAnchor: viewportAnchor
         )
     }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import TranscriptKit
 
 /// One measured settled-row height. The revision prevents a stale height from
 /// being reused if the row's content changed while it was offscreen.
@@ -52,17 +53,23 @@ public struct SessionVirtualTranscriptRestoreState: Equatable {
     /// background subagent streaming into an already-ended turn).
     public var settledRowsByKey: [String: SessionMeasuredRow] = [:]
     public var renderedWindow: SessionRenderedTranscriptWindow?
+    /// The exact visible block and pixel offset at the viewport's top edge.
+    /// This remains stable when estimates elsewhere are replaced by measured
+    /// heights; `distanceFromBottom` is retained as a missing-row fallback.
+    public var viewportAnchor: VirtualTranscriptAnchor?
 
     public init(
         measurementCacheKey: SessionMeasurementCacheKey?,
         rowHeightsByKey: [String: CGFloat],
         settledRowsByKey: [String: SessionMeasuredRow] = [:],
-        renderedWindow: SessionRenderedTranscriptWindow? = nil
+        renderedWindow: SessionRenderedTranscriptWindow? = nil,
+        viewportAnchor: VirtualTranscriptAnchor? = nil
     ) {
         self.measurementCacheKey = measurementCacheKey
         self.rowHeightsByKey = rowHeightsByKey
         self.settledRowsByKey = settledRowsByKey
         self.renderedWindow = renderedWindow
+        self.viewportAnchor = viewportAnchor
     }
 }
 
@@ -81,8 +88,8 @@ public enum SessionTranscriptFollowMode: Equatable {
 /// kept on the cached controller so navigating away and back reopens the
 /// transcript at the same place instead of pinned to the bottom.
 public struct SessionScrollState {
-    /// The single persisted viewport coordinate, matching ChatGPT's thread
-    /// scroll model. Zero means the latest content is visible.
+    /// Bottom-relative fallback used when the exact virtual row anchor is no
+    /// longer present. Zero means the latest content is visible.
     public var distanceFromBottom: CGFloat
     /// A tiny, bounded LRU of exact settled-row measurements. Dictionary
     /// snapshots are copy-on-write, so publishing scroll state remains O(1).

@@ -170,6 +170,38 @@ struct VirtualTranscriptLayoutTests {
         #expect(layout.renderedRange(anchorKey: "missing", count: 2) == nil)
     }
 
+    @Test func rowRelativeViewportAnchorSurvivesIndependentHeightCorrections() throws {
+        let estimated = VirtualTranscriptLayout(items: items, measuredHeights: [:], spacing: 10)
+        let anchor = try #require(estimated.viewportAnchor(at: 375))
+
+        #expect(anchor == VirtualTranscriptAnchor(key: "c", offsetFromRowTop: 55))
+
+        let measured = VirtualTranscriptLayout(
+            items: items,
+            measuredHeights: ["a": 180, "d": 600],
+            spacing: 10
+        )
+        #expect(measured.viewportTop(restoring: anchor) == 455)
+        #expect(
+            measured.viewportTop(
+                restoring: VirtualTranscriptAnchor(key: "missing", offsetFromRowTop: 0)
+            ) == nil)
+    }
+
+    @Test func rowRelativeViewportAnchorPreservesInterRowSpacing() throws {
+        let estimated = VirtualTranscriptLayout(items: items, measuredHeights: [:], spacing: 10)
+        let anchor = try #require(estimated.viewportAnchor(at: 105))
+
+        #expect(anchor == VirtualTranscriptAnchor(key: "b", offsetFromRowTop: -5))
+
+        let measured = VirtualTranscriptLayout(
+            items: items,
+            measuredHeights: ["a": 180],
+            spacing: 10
+        )
+        #expect(measured.viewportTop(restoring: anchor) == 185)
+    }
+
     @Test func bottomDistanceSurvivesPrependingRows() {
         let original = VirtualTranscriptLayout(items: items, measuredHeights: [:], spacing: 10)
         let viewportHeight: CGFloat = 250
