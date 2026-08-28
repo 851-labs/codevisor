@@ -12,6 +12,7 @@ let package = Package(
     ],
     products: [
         .library(name: "ACPKit", targets: ["ACPKit"]),
+        .library(name: "MarkdownCore", targets: ["MarkdownCore"]),
         .library(name: "StreamMarkdown", targets: ["StreamMarkdown"]),
         .library(name: "CodevisorTheming", targets: ["CodevisorTheming"]),
         .library(name: "CodeHighlighter", targets: ["CodeHighlighter"]),
@@ -63,8 +64,14 @@ let package = Package(
             publicHeadersPath: "include"
         ),
         .target(
-            name: "StreamMarkdown",
+            name: "MarkdownCore",
             dependencies: ["CMD4C"],
+            path: "MarkdownCore/Sources/MarkdownCore",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .target(
+            name: "StreamMarkdown",
+            dependencies: ["MarkdownCore"],
             path: "StreamMarkdown/Sources/StreamMarkdown",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
@@ -115,6 +122,7 @@ let package = Package(
             dependencies: [
                 "ACPKit",
                 "CodevisorProtocol",
+                "MarkdownCore",
             ],
             path: "TranscriptKit/Sources/TranscriptKit",
             swiftSettings: [.swiftLanguageMode(.v6)]
