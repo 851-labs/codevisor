@@ -260,6 +260,7 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
     /// legitimately exceed that (for example a broad repository search), so
     /// leave bounded headroom without altering the event payload.
     static let eventWebSocketMaximumMessageSize = 16 * 1024 * 1024
+    static let requestGateTimeout: Duration = .seconds(60)
     let config: CodevisorServerConfig
     let requestTransport: any ServerRequestTransport
     let webSocketTransport: any ServerWebSocketTransport
@@ -411,7 +412,10 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
                 "CLOUDRELAYDBG request.gate.begin machine=\(machineId, privacy: .public) path=\(path, privacy: .public)"
             )
         #endif
-        try await requestGate.waitUntilReady(for: machineId)
+        try await requestGate.waitUntilReady(
+            for: machineId,
+            timeout: Self.requestGateTimeout
+        )
         #if DEBUG || NAVIGATION_DIAGNOSTICS
             Log.cloud.notice(
                 "CLOUDRELAYDBG request.gate.end machine=\(machineId, privacy: .public) path=\(path, privacy: .public)"

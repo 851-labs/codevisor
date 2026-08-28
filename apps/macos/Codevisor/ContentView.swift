@@ -172,6 +172,17 @@ struct CodevisorApp: App {
             environment = runtime.environment
             sparkleUpdater = runtime.updater
             startupError = nil
+            if !AppPreview.isRunning {
+                // Machine readiness belongs to the app runtime, not a window.
+                // Settings can be the only restored scene at launch, so waiting
+                // until RootView mounts leaves every normal server request gated.
+                Task { @MainActor in
+                    await runtime.environment.prepareSelectedMachine()
+                    // Initialize the terminal runtime up front, in a clean context,
+                    // so opening the terminal later can't re-enter its dispatch_once.
+                    TerminalRuntime.prewarm()
+                }
+            }
         } catch {
             startupError = error.localizedDescription
         }
@@ -346,17 +357,6 @@ struct RootView: View {
         // codevisor://install-plugin deeplinks — the web plugin directory's
         // "Open in Codevisor" button.
         .modifier(PluginInstallDeeplinkHandling())
-        .task(id: environment.machines.selectedMachineId) {
-            // The legacy selected machine remains a boot/settings default, not
-            // navigation state. Preparing it must never replace this window's
-            // explicit chat route.
-            if !AppPreview.isRunning {
-                await environment.prepareSelectedMachine()
-                // Initialize the terminal runtime up front, in a clean context,
-                // so opening the terminal later can't re-enter its dispatch_once.
-                TerminalRuntime.prewarm()
-            }
-        }
     }
 
     private func openNotificationSession(_ sessionId: UUID, serverId: String) {

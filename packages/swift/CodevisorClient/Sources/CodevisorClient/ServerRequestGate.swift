@@ -104,4 +104,20 @@ public final class ServerRequestGate: @unchecked Sendable {
             continuation?.resume(throwing: CancellationError())
         }
     }
+
+    public func waitUntilReady(for machineId: String, timeout: Duration) async throws {
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask {
+                try await self.waitUntilReady(for: machineId)
+            }
+            group.addTask {
+                try await Task.sleep(for: timeout)
+                throw ServerRequestGateError(
+                    message: "Timed out waiting for the server to become ready."
+                )
+            }
+            defer { group.cancelAll() }
+            _ = try await group.next()
+        }
+    }
 }

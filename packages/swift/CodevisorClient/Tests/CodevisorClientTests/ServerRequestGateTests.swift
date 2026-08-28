@@ -45,6 +45,16 @@ struct ServerRequestGateTests {
         let gate = ServerRequestGate()
         try await gate.waitUntilReady(for: "unmanaged")
     }
+
+    @Test("A readiness wait times out instead of hanging forever")
+    func timeoutReleasesWaiter() async {
+        let gate = ServerRequestGate()
+        gate.beginWaiting(for: "stuck")
+
+        await #expect(throws: ServerRequestGateError.self) {
+            try await gate.waitUntilReady(for: "stuck", timeout: .milliseconds(20))
+        }
+    }
 }
 
 private actor CompletionFlag {
