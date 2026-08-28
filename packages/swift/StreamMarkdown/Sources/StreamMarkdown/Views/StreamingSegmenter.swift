@@ -55,13 +55,16 @@ final class StreamingMarkdownParseCoordinator: ObservableObject {
     struct Presentation: Sendable {
         let text: String
         let isComplete: Bool
-        let segments: [MarkdownSegment]
+        let renderSegments: [MarkdownRenderSegment]
+
+        var segments: [MarkdownSegment] { renderSegments.map(\.segment) }
     }
 
     @Published private(set) var presentation: Presentation
     private var requestedText: String
     private var requestedIsComplete: Bool
     private var generation: UInt64 = 0
+    private var nextSegmentID: UInt64
     private let snapshotParser: SnapshotParser
 
     init(
@@ -78,7 +81,13 @@ final class StreamingMarkdownParseCoordinator: ObservableObject {
             isComplete
             ? MarkdownSegmentCache.shared.segments(for: text)
             : snapshotParser(text, false)
-        presentation = Presentation(text: text, isComplete: isComplete, segments: segments)
+        let renderSegments = MarkdownRenderSegment.initial(segments)
+        nextSegmentID = UInt64(renderSegments.count)
+        presentation = Presentation(
+            text: text,
+            isComplete: isComplete,
+            renderSegments: renderSegments
+        )
     }
 
     func update(text: String, isComplete: Bool) async {
@@ -112,15 +121,57 @@ final class StreamingMarkdownParseCoordinator: ObservableObject {
             isComplete == requestedIsComplete
         else { return }
 
-        var reconciled = parsed
-        let previous = presentation.segments
-        let sharedCount = min(reconciled.count, previous.count)
-        var index = 0
-        while index < sharedCount, reconciled[index] == previous[index] {
-            reconciled[index] = previous[index]
-            index += 1
+        let previous = presentation.renderSegments
+        let reconciled = reconcile(parsed, with: previous)
+        if isComplete { MarkdownSegmentCache.shared.store(parsed, for: text) }
+        presentation = Presentation(
+            text: text,
+            isComplete: isComplete,
+            renderSegments: reconciled
+        )
+    }
+
+    /// Preserves the equal prefix and suffix, plus the first changing tail
+    /// block. That tail is the steady-state append target while streaming.
+    private func reconcile(
+        _ parsed: [MarkdownSegment],
+        with previous: [MarkdownRenderSegment]
+    ) -> [MarkdownRenderSegment] {
+        let sharedCount = min(parsed.count, previous.count)
+        var prefixCount = 0
+        while prefixCount < sharedCount,
+            parsed[prefixCount] == previous[prefixCount].segment
+        {
+            prefixCount += 1
         }
-        if isComplete { MarkdownSegmentCache.shared.store(reconciled, for: text) }
-        presentation = Presentation(text: text, isComplete: isComplete, segments: reconciled)
+
+        var suffixCount = 0
+        while suffixCount < sharedCount - prefixCount,
+            parsed[parsed.count - 1 - suffixCount]
+                == previous[previous.count - 1 - suffixCount].segment
+        {
+            suffixCount += 1
+        }
+
+        var result: [MarkdownRenderSegment] = []
+        result.reserveCapacity(parsed.count)
+        result.append(contentsOf: previous.prefix(prefixCount))
+
+        let changedEnd = parsed.count - suffixCount
+        for index in prefixCount..<changedEnd {
+            let id: UInt64
+            if index == prefixCount, index < previous.count - suffixCount {
+                id = previous[index].id
+            } else {
+                id = nextSegmentID
+                nextSegmentID &+= 1
+            }
+            result.append(MarkdownRenderSegment(id: id, segment: parsed[index]))
+        }
+
+        if suffixCount > 0 {
+            result.append(contentsOf: previous.suffix(suffixCount))
+        }
+        return result
     }
 }

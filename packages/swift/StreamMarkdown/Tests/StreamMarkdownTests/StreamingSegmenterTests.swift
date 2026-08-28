@@ -118,6 +118,32 @@ struct StreamingSegmenterTests {
         #expect(finalized == streaming)
     }
 
+    @Test("Finalization preserves every render identity")
+    func finalizationPreservesIdentity() async {
+        let text = "one\n\ntwo\n\nthree"
+        let coordinator = StreamingMarkdownParseCoordinator(text: text, isComplete: false)
+        let streamingIDs = coordinator.presentation.renderSegments.map(\.id)
+
+        await coordinator.update(text: text, isComplete: true)
+
+        #expect(coordinator.presentation.renderSegments.map(\.id) == streamingIDs)
+    }
+
+    @Test("A growing tail keeps its render identity")
+    func growingTailPreservesIdentity() async {
+        let coordinator = StreamingMarkdownParseCoordinator(
+            text: "settled\n\ntail",
+            isComplete: false
+        )
+        let original = coordinator.presentation.renderSegments
+
+        await coordinator.update(text: "settled\n\ntail grows", isComplete: false)
+
+        let updated = coordinator.presentation.renderSegments
+        #expect(updated.map(\.id) == original.map(\.id))
+        #expect(updated.first == original.first)
+    }
+
     @Test("Settled segments keep their instances across flushes")
     func pointerStability() {
         let segmenter = StreamingSegmenter()

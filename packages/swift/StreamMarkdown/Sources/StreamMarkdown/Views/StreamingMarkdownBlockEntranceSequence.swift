@@ -33,7 +33,7 @@ final class StreamingMarkdownBlockEntranceSequence {
     private var revealingBlockID: String?
 
     func resolve(
-        segments: [MarkdownSegment],
+        segments: [MarkdownRenderSegment],
         animationPath: String,
         animationEnabled: Bool,
         animatesInitialContent: Bool,
@@ -75,6 +75,24 @@ final class StreamingMarkdownBlockEntranceSequence {
         )
     }
 
+    /// Convenience for nested/static Markdown callers whose positional IDs
+    /// are already stable for the lifetime of the view.
+    func resolve(
+        segments: [MarkdownSegment],
+        animationPath: String,
+        animationEnabled: Bool,
+        animatesInitialContent: Bool,
+        reduceMotion: Bool
+    ) -> Resolution {
+        resolve(
+            segments: MarkdownRenderSegment.initial(segments),
+            animationPath: animationPath,
+            animationEnabled: animationEnabled,
+            animatesInitialContent: animatesInitialContent,
+            reduceMotion: reduceMotion
+        )
+    }
+
     /// Starts a block entrance or resumes one whose view task was cancelled by
     /// a temporary disappearance. Resumption preserves the original timeline
     /// deadline instead of replaying the fade.
@@ -94,13 +112,13 @@ final class StreamingMarkdownBlockEntranceSequence {
     }
 
     private static func blockPositions(
-        in segments: [MarkdownSegment],
+        in segments: [MarkdownRenderSegment],
         animationPath: String
     ) -> [BlockPosition] {
-        segments.enumerated().compactMap { index, segment in
-            guard case let .block(block) = segment else { return nil }
+        segments.enumerated().compactMap { index, renderSegment in
+            guard case let .block(block) = renderSegment.segment else { return nil }
             return BlockPosition(
-                id: "\(animationPath).\(index).\(kind(of: block))",
+                id: "\(animationPath).\(renderSegment.id).\(kind(of: block))",
                 segmentIndex: index
             )
         }

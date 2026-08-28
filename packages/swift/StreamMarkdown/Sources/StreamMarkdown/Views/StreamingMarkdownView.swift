@@ -122,7 +122,7 @@ public struct StreamingMarkdownView: View {
         let presentsAnimation = !parsed.isComplete && animationEnabled
         let pacingSourceID = streamID ?? "root"
         MarkdownSegmentListView(
-            segments: parsed.segments,
+            segments: parsed.renderSegments,
             foregroundColor: foregroundColor ?? theme.textForeground,
             animationTimeline: presentsAnimation ? resolvedAnimationTimeline : nil,
             animatesInitialContent: mount.animatesInitialContent,
@@ -223,7 +223,7 @@ struct MarkdownSegmentsView: View {
 
     var body: some View {
         MarkdownSegmentListView(
-            segments: MarkdownSegment.segments(from: blocks),
+            segments: MarkdownRenderSegment.initial(MarkdownSegment.segments(from: blocks)),
             foregroundColor: foregroundColor,
             animationTimeline: animationTimeline,
             animatesInitialContent: animatesInitialContent,
@@ -237,7 +237,7 @@ struct MarkdownSegmentsView: View {
 
 /// Renders pre-computed markdown segments in document order.
 struct MarkdownSegmentListView: View {
-    let segments: [MarkdownSegment]
+    let segments: [MarkdownRenderSegment]
     let foregroundColor: Color
     let animationTimeline: StreamingTextAnimationTimeline?
     let animatesInitialContent: Bool
@@ -259,17 +259,17 @@ struct MarkdownSegmentListView: View {
         )
         let _ = blockEntranceRevision
         VStack(alignment: .leading, spacing: theme.blockSpacing) {
-            ForEach(Array(segments.enumerated()), id: \.offset) { index, segment in
+            ForEach(Array(segments.enumerated()), id: \.element.id) { index, renderSegment in
                 if index < resolution.visibleSegmentCount {
                     MarkdownSegmentView(
-                        segment: segment,
+                        segment: renderSegment.segment,
                         foregroundColor: foregroundColor,
                         animationTimeline: animationTimeline,
                         animationEnabled: animationTimeline != nil,
                         animatesInitialContent: animatesInitialContent,
                         documentSource: documentSource,
                         pacingSourceID: pacingSourceID,
-                        animationPath: "\(animationPath).\(index)",
+                        animationPath: "\(animationPath).\(renderSegment.id)",
                         reduceMotion: reduceMotion
                     )
                     .equatable()

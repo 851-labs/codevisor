@@ -27,3 +27,16 @@ public enum MarkdownSegment: Sendable, Equatable {
         }
     }
 }
+
+/// A document-local identity reconciled across complete MD4C snapshots.
+/// Content may grow or even change block kind while its identity stays mounted.
+struct MarkdownRenderSegment: Identifiable, Sendable, Equatable {
+    let id: UInt64
+    let segment: MarkdownSegment
+
+    static func initial(_ segments: [MarkdownSegment]) -> [MarkdownRenderSegment] {
+        segments.enumerated().map { index, segment in
+            MarkdownRenderSegment(id: UInt64(index), segment: segment)
+        }
+    }
+}
