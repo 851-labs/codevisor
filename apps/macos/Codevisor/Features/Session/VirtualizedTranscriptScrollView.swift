@@ -1,3 +1,5 @@
+// swiftlint:disable file_length type_body_length
+
 import AppKit
 import CodevisorCore
 import QuartzCore
@@ -921,7 +923,11 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                 incrementallyUpdatedLayout(changedHeights: changedHeights)
                 ?? VirtualTranscriptLayout(
                     items: rows.map {
-                        .init(key: $0.layoutKey, estimatedHeight: $0.estimatedHeight)
+                        .init(
+                            key: $0.layoutKey,
+                            estimatedHeight: $0.estimatedHeight,
+                            spacingAfter: $0.spacingAfter
+                        )
                     },
                     measuredHeights: measurements.heightsByKey,
                     spacing: Self.rowSpacing

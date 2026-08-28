@@ -1,5 +1,6 @@
 import CodevisorCore
 import CodevisorUI
+import StreamMarkdown
 import SwiftUI
 import TranscriptKit
 
@@ -33,6 +34,28 @@ struct TranscriptVirtualRowContent: View {
                 waitingOnBackgroundTask: waitingOnBackgroundTask,
                 presentation: .result
             )
+        case let .assistantChrome(message, slice, waitingOnBackgroundTask):
+            AssistantTurnBody(
+                turn: message.turn,
+                turnId: message.id,
+                isWaitingOnUser: controller.pendingQuestion != nil,
+                waitingOnBackgroundTask: waitingOnBackgroundTask,
+                presentation: assistantPresentation(for: slice)
+            )
+        case let .markdownBlock(block):
+            MarkdownBlockRenderView(
+                block: block.block,
+                documentSource: block.documentSource,
+                streamID: row.layoutKey,
+                isStreaming: block.lifecycle == .receiving
+            )
+        case let .assistantAttachment(attachment):
+            VStack(alignment: .leading, spacing: 4) {
+                AttachmentThumbnailView(file: attachment.file, inline: true)
+                Text(attachment.label)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         case let .active(item):
             TranscriptActiveItemView(controller: controller, projectedItem: item)
         case let .setup(phases):
@@ -64,6 +87,16 @@ struct TranscriptVirtualRowContent: View {
             }
         case let .bottomSpacer(height):
             Color.clear.frame(height: height)
+        }
+    }
+
+    private func assistantPresentation(
+        for slice: TranscriptAssistantChromeSlice
+    ) -> AssistantTurnPresentation {
+        switch slice {
+        case .completePrelude: .completePrelude
+        case .resultPrelude: .resultPrelude
+        case .epilogue: .epilogue
         }
     }
 

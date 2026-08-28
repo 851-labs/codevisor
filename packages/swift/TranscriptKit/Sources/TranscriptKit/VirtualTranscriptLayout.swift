@@ -10,10 +10,12 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
     public struct Item: Sendable, Equatable {
         public let key: String
         public let estimatedHeight: CGFloat
+        public let spacingAfter: CGFloat?
 
-        public init(key: String, estimatedHeight: CGFloat) {
+        public init(key: String, estimatedHeight: CGFloat, spacingAfter: CGFloat? = nil) {
             self.key = key
             self.estimatedHeight = estimatedHeight
+            self.spacingAfter = spacingAfter
         }
     }
 
@@ -47,7 +49,7 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
             indexByKey[item.key] = index
             cursor += height
             if index < items.count - 1 {
-                cursor += spacing
+                cursor += item.spacingAfter ?? spacing
             }
         }
 

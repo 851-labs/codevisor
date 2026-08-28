@@ -1,3 +1,5 @@
+// swiftlint:disable type_body_length
+
 import ACPKit
 import CodevisorCore
 import CodevisorUI
@@ -51,6 +53,9 @@ struct AssistantTurnBody: View {
         case .complete: [.turn(turnId), .turnImplementation(turnId)]
         case .planning: [.turn(turnId)]
         case .result: [.turnImplementation(turnId)]
+        case .completePrelude: [.turn(turnId), .turnImplementation(turnId)]
+        case .resultPrelude: [.turnImplementation(turnId)]
+        case .epilogue: []
         }
     }
 
@@ -85,7 +90,7 @@ struct AssistantTurnBody: View {
             if presentation.showsPlanDocument, let planDocument = turn.planDocument {
                 PlanDocumentView(markdown: planDocument)
             }
-            if presentation.showsResult {
+            if presentation.showsResultWork {
                 // Deferred detail hydrates through the first section only;
                 // this row begins with post-plan implementation work.
                 workedSection(
@@ -94,6 +99,8 @@ struct AssistantTurnBody: View {
                     showsTimer: true,
                     allowsDeferred: false
                 )
+            }
+            if presentation.showsActivity {
                 if !isWaitingOnUser, isGenerating, let retry = turn.retryStatus {
                     ChatActivityRow(retryLabel(retry))
                 } else if !isWaitingOnUser, isGenerating,
@@ -113,18 +120,14 @@ struct AssistantTurnBody: View {
                         ShimmeringText(text: "Waiting on harness...")
                     }
                 }
+            }
+            if presentation.showsResponse {
                 if case let .text(entryID, markdown) = finalText {
                     assistantResponse(
                         entryID: entryID,
                         markdown: markdown,
                         animationEnabled: animationEnabled
                     )
-                    if let waitingOnBackgroundTask {
-                        ShimmeringText.waitingOnBackgroundTask(waitingOnBackgroundTask)
-                    }
-                    if !isGenerating {
-                        MessageCopyButton(text: markdown, help: "Copy response")
-                    }
                 }
                 if finalText == nil, !turn.attachments.isEmpty {
                     assistantResponse(
@@ -132,6 +135,16 @@ struct AssistantTurnBody: View {
                         markdown: "",
                         animationEnabled: animationEnabled
                     )
+                }
+            }
+            if presentation.showsEpilogue {
+                if case let .text(_, markdown) = finalText {
+                    if let waitingOnBackgroundTask {
+                        ShimmeringText.waitingOnBackgroundTask(waitingOnBackgroundTask)
+                    }
+                    if !isGenerating {
+                        MessageCopyButton(text: markdown, help: "Copy response")
+                    }
                 }
                 if !isWaitingOnUser, let postResponseGoalActivity {
                     ShimmeringText(text: goalActivityLabel(postResponseGoalActivity))

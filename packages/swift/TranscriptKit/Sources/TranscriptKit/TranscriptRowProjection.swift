@@ -98,6 +98,11 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         case assistantPlanning(UUID)
         case plan(UUID)
         case assistantResult(UUID)
+        case assistantChrome(UUID, TranscriptAssistantChromeSlice)
+        case assistantMarkdown(UUID, sourceID: String, ordinal: Int)
+        case activeMarkdown(UUID, sourceID: String, ordinal: Int)
+        case assistantAttachment(UUID, sourceID: String, ordinal: Int)
+        case activeAttachment(UUID, sourceID: String, ordinal: Int)
         case active(UUID)
         case setup
         case backgroundTask
@@ -114,6 +119,14 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
             case let .assistantPlanning(id): "message:\(id.uuidString):planning"
             case let .plan(id): "message:\(id.uuidString):plan"
             case let .assistantResult(id): "message:\(id.uuidString):result"
+            case let .assistantChrome(id, slice):
+                "message:\(id.uuidString):chrome:\(slice.layoutComponent)"
+            case let .assistantMarkdown(id, sourceID, ordinal),
+                let .activeMarkdown(id, sourceID, ordinal):
+                "message:\(id.uuidString):markdown:\(sourceID):\(ordinal)"
+            case let .assistantAttachment(id, sourceID, ordinal),
+                let .activeAttachment(id, sourceID, ordinal):
+                "message:\(id.uuidString):attachment:\(sourceID):\(ordinal)"
             // An ordinary assistant keeps the same native host and measurement
             // when it moves from the live slot into settled history.
             case let .active(id): "message:\(id.uuidString)"
@@ -130,9 +143,11 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
 
         public var isCacheableSettledRow: Bool {
             switch self {
-            case .message, .assistantPlanning, .plan, .assistantResult: true
-            case .active, .setup, .backgroundTask, .updateGate, .connecting,
-                .serverWait, .error, .statusError, .bottomSpacer:
+            case .message, .assistantPlanning, .plan, .assistantResult,
+                .assistantChrome, .assistantMarkdown, .assistantAttachment:
+                true
+            case .active, .activeMarkdown, .activeAttachment, .setup, .backgroundTask,
+                .updateGate, .connecting, .serverWait, .error, .statusError, .bottomSpacer:
                 false
             }
         }
@@ -142,7 +157,10 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         }
 
         public var isActiveRow: Bool {
-            if case .active = self { true } else { false }
+            switch self {
+            case .active, .activeMarkdown, .activeAttachment: true
+            default: false
+            }
         }
     }
 
@@ -151,6 +169,13 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         case assistantPlanning(AssistantMessage)
         case planDocument(String)
         case assistantResult(AssistantMessage, waitingOnBackgroundTask: String?)
+        case assistantChrome(
+            AssistantMessage,
+            slice: TranscriptAssistantChromeSlice,
+            waitingOnBackgroundTask: String?
+        )
+        case markdownBlock(TranscriptMarkdownBlock)
+        case assistantAttachment(TranscriptAssistantAttachment)
         case active(ConversationItem)
         case setup([SessionSetupPhase])
         case optimistic(UserMessage, showsStartingAgent: Bool)
@@ -167,6 +192,8 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     public let estimatedHeight: CGFloat
     public let measurementRevision: Int
     public let layoutKey: String
+    /// Overrides ordinary message spacing for adjacent blocks in one document.
+    public let spacingAfter: CGFloat?
     /// The completed assistant item represented by this visible slice. The
     /// active slot can carry this after generation ends without changing its
     /// stable row identity.
@@ -189,12 +216,14 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         content: Content,
         estimatedHeight: CGFloat,
         measurementRevision: Int = 0,
+        spacingAfter: CGFloat? = nil,
         finishedResponseItemId: UUID? = nil
     ) {
         self.id = id
         self.content = content
         self.estimatedHeight = estimatedHeight
         self.measurementRevision = measurementRevision
+        self.spacingAfter = spacingAfter
         layoutKey = id.layoutKey
         if let finishedResponseItemId {
             self.finishedResponseItemId = finishedResponseItemId
@@ -205,6 +234,10 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
                     if case let .assistant(message) = item { message.id } else { nil }
                 case let .assistantResult(message, waitingOnBackgroundTask: _):
                     message.id
+                case let .assistantChrome(message, slice, waitingOnBackgroundTask: _):
+                    slice == .epilogue ? message.id : nil
+                case .markdownBlock, .assistantAttachment:
+                    nil
                 case let .active(item):
                     if case let .assistant(message) = item, !message.turn.isGenerating {
                         message.id
@@ -319,7 +352,7 @@ public actor TranscriptRowProjectionCache {
                         id: .message(message.id),
                         content: .optimistic(message, showsStartingAgent: showsStartingAgent),
                         estimatedHeight: 90,
-                        measurementRevision: optimisticMeasurementRevision(
+                        measurementRevision: TranscriptAssistantRowProjection.optimisticMeasurementRevision(
                             for: message,
                             showsStartingAgent: showsStartingAgent
                         )
@@ -356,7 +389,7 @@ public actor TranscriptRowProjectionCache {
 
         for (index, item) in settled.enumerated() {
             if index.isMultiple(of: 32), Task.isCancelled { throw CancellationError() }
-            if index == 0, hasSetup, isAssistant(item) {
+            if index == 0, hasSetup, TranscriptAssistantRowProjection.isAssistant(item) {
                 rows.append(
                     .init(
                         id: .setup,
@@ -364,14 +397,14 @@ public actor TranscriptRowProjectionCache {
                         estimatedHeight: 80
                     ))
             }
-            appendSettled(
+            TranscriptAssistantRowProjection.appendSettled(
                 item,
                 waitingOnBackgroundTask: item.id == waitingAssistantID
                     ? waitingDescription
                     : nil,
                 to: &rows
             )
-            if index == 0, hasSetup, isUser(item) {
+            if index == 0, hasSetup, TranscriptAssistantRowProjection.isUser(item) {
                 rows.append(
                     .init(
                         id: .setup,
@@ -403,7 +436,7 @@ public actor TranscriptRowProjectionCache {
                     id: .message(message.id),
                     content: .optimistic(message, showsStartingAgent: false),
                     estimatedHeight: 90,
-                    measurementRevision: optimisticMeasurementRevision(
+                    measurementRevision: TranscriptAssistantRowProjection.optimisticMeasurementRevision(
                         for: message,
                         showsStartingAgent: false
                     )
@@ -443,143 +476,4 @@ public actor TranscriptRowProjectionCache {
         return rows
     }
 
-    private static func appendSettled(
-        _ item: ConversationItem,
-        waitingOnBackgroundTask: String?,
-        to rows: inout [TranscriptPresentationRow]
-    ) {
-        guard case let .assistant(message) = item,
-            let planDocument = message.turn.planDocument,
-            !planDocument.isEmpty
-        else {
-            rows.append(
-                .init(
-                    id: .message(item.id),
-                    content: .message(item, waitingOnBackgroundTask: waitingOnBackgroundTask),
-                    estimatedHeight: estimatedHeight(for: item),
-                    measurementRevision: measurementRevision(
-                        for: item,
-                        waitingOnBackgroundTask: waitingOnBackgroundTask
-                    )
-                ))
-            return
-        }
-
-        let revision = measurementRevision(
-            for: item,
-            waitingOnBackgroundTask: waitingOnBackgroundTask
-        )
-        if message.turn.hasDeferredWorkedDetails || !message.turn.workedItemsBeforePlan.isEmpty {
-            rows.append(
-                .init(
-                    id: .assistantPlanning(message.id),
-                    content: .assistantPlanning(message),
-                    estimatedHeight: 44,
-                    measurementRevision: revision
-                ))
-        }
-        rows.append(
-            .init(
-                id: .plan(message.id),
-                content: .planDocument(planDocument),
-                estimatedHeight: estimatedPlanHeight(planDocument),
-                measurementRevision: planMeasurementRevision(planDocument)
-            ))
-        if !message.turn.workedItemsAfterPlan.isEmpty
-            || message.turn.finalText != nil
-            || message.turn.stopDetail != nil
-            || message.turn.isGenerating
-        {
-            rows.append(
-                .init(
-                    id: .assistantResult(message.id),
-                    content: .assistantResult(
-                        message,
-                        waitingOnBackgroundTask: waitingOnBackgroundTask
-                    ),
-                    estimatedHeight: 240,
-                    measurementRevision: revision
-                ))
-        }
-    }
-
-    private static func isUser(_ item: ConversationItem) -> Bool {
-        if case .user = item { return true }
-        return false
-    }
-
-    private static func isAssistant(_ item: ConversationItem) -> Bool {
-        if case .assistant = item { return true }
-        return false
-    }
-
-    private static func estimatedHeight(for item: ConversationItem) -> CGFloat {
-        switch item {
-        case let .user(message):
-            max(52, min(240, 48 + CGFloat(message.text.count / 72) * 18))
-        case .assistant:
-            320
-        }
-    }
-
-    private static func estimatedPlanHeight(_ markdown: String) -> CGFloat {
-        max(120, min(640, 72 + CGFloat(markdown.utf8.count / 72) * 18))
-    }
-
-    private static func planMeasurementRevision(_ markdown: String) -> Int {
-        var hasher = Hasher()
-        hasher.combine(markdown.utf8.count)
-        return hasher.finalize()
-    }
-
-    private static func optimisticMeasurementRevision(
-        for message: UserMessage,
-        showsStartingAgent: Bool
-    ) -> Int {
-        var hasher = Hasher()
-        hasher.combine(2)
-        hasher.combine(message.text.utf8.count)
-        hasher.combine(message.attachments.count)
-        for attachment in message.attachments {
-            hasher.combine(attachment.id)
-            hasher.combine(attachment.sizeBytes)
-        }
-        hasher.combine(showsStartingAgent)
-        return hasher.finalize()
-    }
-
-    private static func measurementRevision(
-        for item: ConversationItem,
-        waitingOnBackgroundTask: String?
-    ) -> Int {
-        var hasher = Hasher()
-        switch item {
-        case let .user(message):
-            hasher.combine(0)
-            hasher.combine(message.text.utf8.count)
-            hasher.combine(message.attachments.count)
-            for attachment in message.attachments {
-                hasher.combine(attachment.id)
-                hasher.combine(attachment.sizeBytes)
-            }
-        case let .assistant(message):
-            let turn = message.turn
-            hasher.combine(1)
-            hasher.combine(turn.entries.count)
-            hasher.combine(turn.isGenerating)
-            hasher.combine(turn.detailRevision)
-            hasher.combine(turn.hasDeferredWorkedDetails)
-            hasher.combine(turn.contextCompactionStatus?.rawValue)
-            hasher.combine(turn.planDocument?.utf8.count ?? 0)
-            hasher.combine(turn.stopDetail?.utf8.count ?? 0)
-            hasher.combine(turn.subagentActivityFingerprint)
-            hasher.combine(turn.attachments.count)
-            for attachment in turn.attachments {
-                hasher.combine(attachment.id)
-                hasher.combine(attachment.sizeBytes)
-            }
-        }
-        hasher.combine(waitingOnBackgroundTask)
-        return hasher.finalize()
-    }
 }

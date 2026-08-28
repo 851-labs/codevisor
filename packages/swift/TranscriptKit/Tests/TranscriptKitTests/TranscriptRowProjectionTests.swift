@@ -20,9 +20,43 @@ struct TranscriptRowProjectionTests {
             options: .init(includesConnectingRow: true)
         )
 
-        #expect(rows.first(where: { $0.id == .message(ordinary.id) })?.finishedResponseItemId == ordinary.id)
+        #expect(
+            rows.first(where: { $0.id == .assistantChrome(ordinary.id, .epilogue) })?
+                .finishedResponseItemId == ordinary.id
+        )
         #expect(rows.first(where: { $0.id == .plan(plan.id) })?.finishedResponseItemId == nil)
-        #expect(rows.first(where: { $0.id == .assistantResult(plan.id) })?.finishedResponseItemId == plan.id)
+        #expect(
+            rows.first(where: { $0.id == .assistantChrome(plan.id, .epilogue) })?
+                .finishedResponseItemId == plan.id
+        )
+        #expect(rows.filter { $0.finishedResponseItemId != nil }.count == 2)
+    }
+
+    @Test func settledAssistantMarkdownProjectsOneVirtualRowPerBlock() throws {
+        let message = AssistantMessage(
+            turn: AssistantTurn(
+                entries: [
+                    .text(
+                        id: "answer",
+                        markdown: "# Heading\n\nParagraph\n\n- one\n- two"
+                    )
+                ]
+            )
+        )
+
+        let rows = try TranscriptRowProjectionCache.project(
+            makeInput(settled: [.assistant(message)]),
+            options: .init(includesConnectingRow: true)
+        )
+        let blocks = rows.compactMap { row -> TranscriptMarkdownBlock? in
+            if case let .markdownBlock(block) = row.content { block } else { nil }
+        }
+
+        #expect(blocks.count == 3)
+        #expect(blocks.map(\.ordinal) == [0, 1, 2])
+        #expect(blocks.allSatisfy { $0.lifecycle == .settled })
+        #expect(rows.dropLast().map(\.spacingAfter) == [10, 10, 14])
+        #expect(rows.last?.id == .assistantChrome(message.id, .epilogue))
     }
 
     @Test func completedActiveRowCarriesItsFinishedResponseIdentity() throws {

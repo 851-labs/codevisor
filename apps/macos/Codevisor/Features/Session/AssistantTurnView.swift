@@ -12,10 +12,26 @@ enum AssistantTurnPresentation: Equatable {
     case complete
     case planning
     case result
+    case completePrelude
+    case resultPrelude
+    case epilogue
 
-    var showsPlanning: Bool { self != .result }
+    var showsPlanning: Bool {
+        switch self {
+        case .complete, .planning, .completePrelude: true
+        case .result, .resultPrelude, .epilogue: false
+        }
+    }
     var showsPlanDocument: Bool { self == .complete }
-    var showsResult: Bool { self != .planning }
+    var showsResultWork: Bool {
+        switch self {
+        case .complete, .result, .completePrelude, .resultPrelude: true
+        case .planning, .epilogue: false
+        }
+    }
+    var showsActivity: Bool { showsResultWork }
+    var showsResponse: Bool { self == .complete || self == .result }
+    var showsEpilogue: Bool { showsResponse || self == .epilogue }
 }
 
 /// Renders one assistant turn: reasoning text and tool-call groups collapse into
@@ -85,6 +101,9 @@ struct AssistantTurnView: View {
         case .complete: [.turn(turnID), .turnImplementation(turnID)]
         case .planning: [.turn(turnID)]
         case .result: [.turnImplementation(turnID)]
+        case .completePrelude: [.turn(turnID), .turnImplementation(turnID)]
+        case .resultPrelude: [.turnImplementation(turnID)]
+        case .epilogue: []
         }
     }
 
@@ -141,17 +160,17 @@ struct AssistantTurnView: View {
             // Once the plan is approved, the implementation gets its own
             // "Worked for…" section BELOW the plan, so approved work reads in
             // order (plan → build) instead of piling up above the plan card.
-            if presentation.showsResult, !afterPlan.isEmpty {
+            if presentation.showsResultWork, !afterPlan.isEmpty {
                 workedSection(items: afterPlan, key: .turnImplementation(turnID), timerLabel: true)
             }
 
             // A transient failure (e.g. 529 overload) is being retried — show it
             // instead of the plain "Thinking…" so the chat isn't a silent freeze.
-            if presentation.showsResult,
+            if presentation.showsActivity,
                 !isWaitingOnUser, turn.isGenerating, let retry = turn.retryStatus
             {
                 ChatActivityRow(retryLabel(retry))
-            } else if postResponseGoalActivity == nil, presentation.showsResult,
+            } else if postResponseGoalActivity == nil, presentation.showsActivity,
                 !isWaitingOnUser, turn.showsActivityIndicator,
                 turn.contextCompactionStatus != .started
             {
@@ -170,23 +189,33 @@ struct AssistantTurnView: View {
             // provider retro-tags it (Claude preamble before a tool call) or a
             // newer text span starts — codex tags messages up front, so its
             // candidate never demotes.
-            if presentation.showsResult,
+            if presentation.showsResponse,
                 let final = finalText, case let .text(entryID, markdown) = final
             {
                 // Selection lives inside each native TextKit run. Keeping it
                 // there avoids a selection modifier on the segment VStack and
                 // keeps first-click geometry identical to display geometry.
                 //
-                // isComplete keys the streaming render mode: while generating,
-                // the segmenter re-parses only the growing tail and skips
-                // text-run merging, so a flush costs O(growing block) instead
-                // of O(whole answer). The finalize flip merges runs back into
-                // one selectable TextKit storage.
+                // Streaming and settled responses use the same block renderer,
+                // so completing a turn does not replace its text geometry.
                 assistantResponse(
                     entryID: entryID,
                     markdown: markdown,
                     animationEnabled: animationEnabled
                 )
+            }
+
+            if presentation.showsResponse, finalText == nil, !turn.attachments.isEmpty {
+                assistantResponse(
+                    entryID: "attachments",
+                    markdown: "",
+                    animationEnabled: animationEnabled
+                )
+            }
+
+            if presentation.showsEpilogue,
+                let final = finalText, case let .text(_, markdown) = final
+            {
                 if let waitingOnBackgroundTask {
                     ShimmeringText.waitingOnBackgroundTask(waitingOnBackgroundTask)
                 }
@@ -198,15 +227,7 @@ struct AssistantTurnView: View {
                 }
             }
 
-            if presentation.showsResult, finalText == nil, !turn.attachments.isEmpty {
-                assistantResponse(
-                    entryID: "attachments",
-                    markdown: "",
-                    animationEnabled: animationEnabled
-                )
-            }
-
-            if presentation.showsResult, !isWaitingOnUser, let postResponseGoalActivity {
+            if presentation.showsEpilogue, !isWaitingOnUser, let postResponseGoalActivity {
                 ShimmeringText(text: goalActivityLabel(postResponseGoalActivity))
             }
 
@@ -214,7 +235,7 @@ struct AssistantTurnView: View {
             // here, attached to this turn — never a silent "stopped for no
             // reason". Clean completions and silently-recovered turns carry no
             // stopDetail and render nothing.
-            if presentation.showsResult,
+            if presentation.showsEpilogue,
                 !turn.isGenerating, let stopDetail = turn.stopDetail
             {
                 turnErrorRow(stopDetail)

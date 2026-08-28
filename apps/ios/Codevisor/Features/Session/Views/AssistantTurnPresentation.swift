@@ -8,8 +8,24 @@ enum AssistantTurnPresentation {
     case complete
     case planning
     case result
+    case completePrelude
+    case resultPrelude
+    case epilogue
 
-    var showsPlanning: Bool { self != .result }
+    var showsPlanning: Bool {
+        switch self {
+        case .complete, .planning, .completePrelude: true
+        case .result, .resultPrelude, .epilogue: false
+        }
+    }
     var showsPlanDocument: Bool { self == .complete }
-    var showsResult: Bool { self != .planning }
+    var showsResultWork: Bool {
+        switch self {
+        case .complete, .result, .completePrelude, .resultPrelude: true
+        case .planning, .epilogue: false
+        }
+    }
+    var showsActivity: Bool { showsResultWork }
+    var showsResponse: Bool { self == .complete || self == .result }
+    var showsEpilogue: Bool { showsResponse || self == .epilogue }
 }

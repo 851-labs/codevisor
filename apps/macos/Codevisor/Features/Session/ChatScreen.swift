@@ -1,3 +1,5 @@
+// swiftlint:disable file_length type_body_length
+
 //  The chat pane's content: the streaming transcript with the composer
 //  floating over the bottom of the history (no divider), and enough bottom
 //  inset that the last message can scroll clear of the composer.
@@ -612,6 +614,28 @@ struct ChatScreen: View {
                 waitingOnBackgroundTask: waitingOnBackgroundTask,
                 presentation: .result
             )
+        case let .assistantChrome(message, slice, waitingOnBackgroundTask):
+            AssistantTurnView(
+                turn: message.turn,
+                turnID: message.id,
+                isWaitingOnUser: controller.pendingQuestion != nil,
+                waitingOnBackgroundTask: waitingOnBackgroundTask,
+                presentation: assistantPresentation(for: slice)
+            )
+        case let .markdownBlock(block):
+            MarkdownBlockRenderView(
+                block: block.block,
+                documentSource: block.documentSource,
+                streamID: row.layoutKey,
+                isStreaming: block.lifecycle == .receiving
+            )
+        case let .assistantAttachment(attachment):
+            VStack(alignment: .leading, spacing: 4) {
+                AttachmentThumbnailView(file: attachment.file, inline: true)
+                Text(attachment.label)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         case let .active(item):
             TranscriptActiveItemView(controller: controller, projectedItem: item)
         case let .setup(phases):
@@ -635,6 +659,16 @@ struct ChatScreen: View {
             errorBanner(message)
         case let .bottomSpacer(height):
             Color.clear.frame(height: height)
+        }
+    }
+
+    private func assistantPresentation(
+        for slice: TranscriptAssistantChromeSlice
+    ) -> AssistantTurnPresentation {
+        switch slice {
+        case .completePrelude: .completePrelude
+        case .resultPrelude: .resultPrelude
+        case .epilogue: .epilogue
         }
     }
 

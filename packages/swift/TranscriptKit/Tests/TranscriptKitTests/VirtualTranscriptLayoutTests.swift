@@ -3,6 +3,21 @@ import Testing
 @testable import TranscriptKit
 
 struct VirtualTranscriptLayoutTests {
+    @Test func itemSpacingOverridesKeepBlocksGrouped() {
+        let layout = VirtualTranscriptLayout(
+            items: [
+                .init(key: "block-1", estimatedHeight: 20, spacingAfter: 10),
+                .init(key: "block-2", estimatedHeight: 30, spacingAfter: 14),
+                .init(key: "footer", estimatedHeight: 12),
+            ],
+            measuredHeights: [:],
+            spacing: 20
+        )
+
+        #expect(layout.topOffsets == [0, 30, 74])
+        #expect(layout.totalHeight == 86)
+    }
+
     @Test func retainedRowsCanAnimateAcrossAnInstantBottomJump() throws {
         let previous = VirtualTranscriptLayout(
             items: [
