@@ -204,7 +204,10 @@ struct AppEnvironmentTests {
         environment.archiveSession(session)
 
         #expect(environment.projectList.sessions.first?.isArchived == true)
-        #expect(environment.workspaces.workspace(id: workspace.id)?.isArchived == false)
+        let retainedWorkspace = environment.workspaces.workspace(id: workspace.id)
+        #expect(retainedWorkspace?.isArchived == false)
+        #expect(retainedWorkspace?.pane(containingChat: session.id) == nil)
+        #expect(retainedWorkspace?.centerTree.allGroups[0].state.selectedPane?.kind == .newTab)
     }
 
     @Test("Sidebar archiving the final active chat archives its workspace")
@@ -235,9 +238,14 @@ struct AppEnvironmentTests {
         environment.workspaces.save(workspace)
 
         #expect(!environment.archiveSessionAndWorkspaceIfEmpty(first))
-        #expect(environment.workspaces.workspace(id: workspace.id)?.isArchived == false)
+        let afterFirstArchive = environment.workspaces.workspace(id: workspace.id)
+        #expect(afterFirstArchive?.isArchived == false)
+        #expect(afterFirstArchive?.pane(containingChat: first.id) == nil)
+        #expect(afterFirstArchive?.pane(containingChat: second.id) != nil)
         #expect(environment.archiveSessionAndWorkspaceIfEmpty(second))
-        #expect(environment.workspaces.workspace(id: workspace.id)?.isArchived == true)
+        let afterFinalArchive = environment.workspaces.workspace(id: workspace.id)
+        #expect(afterFinalArchive?.isArchived == true)
+        #expect(afterFinalArchive?.pane(containingChat: second.id) != nil)
         #expect(environment.projectList.sessions.allSatisfy { $0.isArchived })
     }
 

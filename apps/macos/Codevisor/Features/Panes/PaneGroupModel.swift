@@ -388,7 +388,7 @@ final class PaneGroupModel: Identifiable {
         chatSessionId: UUID? = nil,
         name: String? = nil,
         pluginId: String? = nil,
-        pluginPaneType: String? = nil
+        pluginPaneType: String? = nil, publishChange: Bool = true
     ) {
         guard let previous = state.panes.first(where: { $0.id == id }),
             let converted = state.convertNewTabPane(
@@ -401,7 +401,7 @@ final class PaneGroupModel: Identifiable {
             discardLivePane(id: id)
         }
         persist()
-        onPaneChanged?(converted)
+        if publishChange { onPaneChanged?(converted) }
         pane(for: converted).visibilityChanged(true)
         DispatchQueue.main.async { [weak self] in self?.focusSelectedPane() }
     }

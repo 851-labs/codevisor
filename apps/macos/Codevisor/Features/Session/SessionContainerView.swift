@@ -855,17 +855,17 @@ struct SessionContainerView: View {
         in model: PaneGroupModel?
     ) {
         guard let model else { return }
+        guard model.state.panes.contains(where: { $0.id == paneId }) else { return }
         let workspace = store.workspace(for: session, project: project)
-        let created = environment.projectList.newSession(
-            in: project,
-            title: "New Chat",
-            worktreeName: workspace.worktreeName,
-            cwd: workspace.rootDirectory
-        )
-        model.convertNewTabPane(
-            id: paneId, to: .chat,
-            chatSessionId: created.id, name: created.title
-        )
+        guard
+            let created = NewChatPanePromoter.promote(
+                paneId: paneId,
+                in: model,
+                project: project,
+                workspace: workspace,
+                environment: environment
+            )
+        else { return }
         // The pane's composer takes focus once it mounts; the responder
         // observer then walks the sidebar selection over to the new chat.
         sessionFocus.requestComposerFocus(forChat: created.id)
