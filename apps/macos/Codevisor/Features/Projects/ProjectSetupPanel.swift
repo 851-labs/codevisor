@@ -253,7 +253,7 @@ struct ProjectSetupSelectionView: View {
             systemImage: "plus.circle",
             title: isLocalMachine
                 ? (model.folderChoices.isEmpty ? "Choose a folder…" : "Add another folder…")
-                : "Browse \(machineName)…"
+                : "Browse Files…"
         ) {
             onPickFolder()
         }

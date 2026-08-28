@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import CodevisorCore
+import CodevisorUI
 
 /// The shared add-project flow: one entry point that asks where the project
 /// comes from — a folder that already exists on the selected machine, or a
@@ -45,18 +46,16 @@ private struct AddProjectFlowModifier: ViewModifier {
                 isPresented: $flow.showingSourcePicker,
                 titleVisibility: .visible
             ) {
-                Button("Clone Git Repository…") {
-                    flow.showingGitClone = true
-                }
-                Button(folderButtonTitle) {
+                Button("Browse Files…") {
                     if isLocalTarget {
                         flow.showingLocalImporter = true
                     } else {
                         flow.showingRemoteBrowser = true
                     }
                 }
-            } message: {
-                Text("Clone a repository onto \(machineName), or use a folder already on it.")
+                Button("Clone Repository…") {
+                    flow.showingGitClone = true
+                }
             }
             .fileImporter(
                 isPresented: $flow.showingLocalImporter,
@@ -105,10 +104,6 @@ private struct AddProjectFlowModifier: ViewModifier {
 
     private var isLocalTarget: Bool {
         targetMachine?.isLocal ?? environment.machines.selectedMachine.isLocal
-    }
-
-    private var folderButtonTitle: String {
-        isLocalTarget ? "Choose Folder…" : "Browse \(machineName)…"
     }
 
     private var machineName: String {

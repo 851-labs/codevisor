@@ -54,6 +54,17 @@ export const Project = Schema.Struct({
 })
 export type Project = typeof Project.Type
 
+/// A folder inferred from sessions in the machine's installed harnesses.
+/// Discovery runs on the server so remote and iOS clients never try to probe
+/// another machine's filesystem locally.
+export const ProjectRecommendation = Schema.Struct({
+  path: Schema.String,
+  name: Schema.String,
+  sessionCount: Schema.Number,
+  lastActivity: Schema.optional(Schema.String)
+})
+export type ProjectRecommendation = typeof ProjectRecommendation.Type
+
 export const CreateProjectRequest = Schema.Struct({
   id: Schema.optional(Schema.String),
   folderPath: Schema.String,

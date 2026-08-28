@@ -48,6 +48,11 @@ private struct DelayedNewChatLoadingView: View {
     }
 }
 
+struct NewProjectTarget: Identifiable {
+    let serverId: String
+    var id: String { serverId }
+}
+
 struct NewChatView: View {
     @Environment(AppEnvironment.self) var environment
     @Environment(\.theme) private var theme
@@ -85,15 +90,10 @@ struct NewChatView: View {
     @State private var controller: SessionController?
     @State var selectedProjectId: UUID?
     @State private var focus = TerminalFocusController()
-    @State var addProjectFlow = AddProjectFlow()
+    @State var newProjectTarget: NewProjectTarget?
     @State var managedProject: Project?
     @Namespace private var composerGlassNamespace
-    /// Setup state for the no-projects panel. Owned here (not by the panel)
-    /// because a clone registers its project immediately — the page must keep
-    /// showing the panel with the clone as a selected row, exactly like
-    /// onboarding, instead of flipping to the composer mid-setup.
     @Environment(\.openSettings) var openSettings
-    @State private var projectSetup = ProjectSetupModel()
 
     var projects: [Project] { environment.projectList.activeProjects }
 
@@ -116,13 +116,6 @@ struct NewChatView: View {
             for: controller?.project.serverId ?? environment.machines.selectedMachineId)
     }
 
-    /// The setup panel shows while the machine has no projects, and stays up
-    /// while the user has staged-but-unconfirmed work (a completed clone
-    /// already counts as a project, but setup isn't done until confirmed).
-    private var showsProjectSetup: Bool {
-        projects.isEmpty || projectSetup.hasStagedWork
-    }
-
     var body: some View {
         if paneDraftId == nil {
             // Page mode only: an embedded draft pane must not override the
@@ -143,17 +136,7 @@ struct NewChatView: View {
                 Spacer()
                 VStack(spacing: 22) {
                     title
-                    if showsProjectSetup {
-                        // Inline setup instead of pointing at the sidebar's "+":
-                        // onboarding's project step, adapted to the selected
-                        // machine. This is the first thing a user sees after
-                        // adding a fresh (often headless remote) machine.
-                        ProjectSetupPanel(model: projectSetup) { project in
-                            projectSetup = ProjectSetupModel()
-                            selectedProjectId = project.id
-                            selection = .newChat(project.id)
-                        }
-                    } else if let controller {
+                    if let controller {
                         VStack(alignment: .leading, spacing: 8) {
                             GlassEffectContainer(spacing: ComposerGlassStyle.clusterSpacing) {
                                 VStack(alignment: .leading, spacing: ComposerGlassStyle.clusterSpacing) {
@@ -244,14 +227,25 @@ struct NewChatView: View {
             }
         }
         .attachmentDropTarget(controller)
-        // Same add-project flow as the sidebar's +. On the page the fresh
-        // project simply becomes the picker's selection.
-        .addProjectFlow(addProjectFlow) { project in
-            if let controller, showsRunPickers {
+        .sheet(item: $newProjectTarget) { target in
+            NewProjectSheet(serverId: target.serverId) { project in
+                if let controller, showsRunPickers {
+                    selectTargetProject(project, controller: controller)
+                } else {
+                    selectedProjectId = project.id
+                    selection = .newChat(project.id)
+                }
+            }
+        }
+        .onChange(of: projects.map(\.id)) { _, _ in
+            if let controller, controller.project.isRunTargetPlaceholder,
+                let project = environment.projectList.fleetActiveProjects.first(where: {
+                    $0.serverId == controller.project.serverId && !$0.isScratch
+                })
+            {
                 selectTargetProject(project, controller: controller)
-            } else {
-                selectedProjectId = project.id
-                selection = .newChat(project.id)
+            } else if controller == nil, !requiresInitialProjectResolution {
+                setUpController()
             }
         }
         .sheet(item: $managedProject) { project in
@@ -273,18 +267,6 @@ struct NewChatView: View {
         }
         .task(id: setupIdentity) {
             guard !requiresInitialProjectResolution else { return }
-            setUpController()
-        }
-        // A machine's projects can arrive after this view's initial task has
-        // already returned. Retry when the active project set changes so the
-        // composer does not remain hidden after the first project appears.
-        .onChange(of: projects.map(\.id)) { _, _ in
-            // Not while setup is staging: a clone registers its project
-            // immediately, and eagerly connecting an agent there would be
-            // premature — the user may confirm with a different selection.
-            guard controller == nil, !requiresInitialProjectResolution,
-                !showsProjectSetup
-            else { return }
             setUpController()
         }
         // Settings lives in a separate window, so this page can remain mounted
@@ -334,15 +316,9 @@ struct NewChatView: View {
 
     // MARK: - Title
 
-    @ViewBuilder
     private var title: some View {
-        if showsProjectSetup {
-            Text("Add a project to start")
-                .font(.emptyStateTitle)
-        } else {
-            Text("What should we build?")
-                .font(.emptyStateTitle)
-        }
+        Text("What should we build?")
+            .font(.emptyStateTitle)
     }
 
     /// A rebooting server remains a calm loading state beneath the composer.
@@ -389,7 +365,9 @@ struct NewChatView: View {
 
     private func setUpController() {
         selectedProjectId = preferredProjectId ?? projects.first?.id
-        guard let project = selectedProject else { return }
+        let project =
+            selectedProject
+            ?? Project.runTargetPlaceholder(serverId: environment.machines.selectedMachineId)
         // Keep the original draft controller path: it owns both the complete
         // per-composer snapshot and its correctly-scoped composer defaults.
         let controller: SessionController
@@ -404,10 +382,12 @@ struct NewChatView: View {
         } else {
             controller = store.draft(project: project)
         }
-        if controller.project.id != project.id {
+        if controller.project.id != project.id || controller.project.serverId != project.serverId {
             // Follow the draft's own project so the title matches the
             // composer state the user left.
-            selectedProjectId = controller.project.id
+            selectedProjectId =
+                controller.project.isRunTargetPlaceholder
+                ? nil : controller.project.id
         }
         // An explicit entry point ("New chat here") re-points even a retained
         // draft at that project; the generic entry follows the draft.

@@ -181,15 +181,14 @@ struct WorkspaceScreen: View {
     /// The persisted project snapshot is good enough to construct New Chat's
     /// draft immediately. The server refresh that follows may update this
     /// list, but it must not hold the sheet behind a loading surface.
-    /// FLEET-wide: the draft can target any machine's project (the picker
-    /// and the retargeting draft both handle foreign machines), so a fresh
-    /// phone whose selected machine has no projects still lands on a real
-    /// composer when any machine does.
+    /// Keep the initial choice on the selected machine: a newly added, empty
+    /// machine should show the project placeholder instead of silently
+    /// targeting a project on another machine.
     private var draftProjectCandidate: Project? {
-        environment.projectList.fleetActiveProjectsByWorkspaceRecency(
-            environment.workspaces.loadAll()
+        environment.projectList.firstNonScratchProject(
+            on: environment.machines.selectedMachineId,
+            byWorkspaceRecency: environment.workspaces.loadAll()
         )
-        .first { !$0.isScratch }
     }
 
     /// The workspace's project. `prepare()` caches it in state, but it also
@@ -1314,9 +1313,9 @@ struct WorkspaceScreen: View {
         Task { await controller.prepare() }
     }
 
-    /// No project exists anywhere yet: the composer still renders, bound to
+    /// No project exists on the selected machine yet: the composer still renders, bound to
     /// a sentinel project — send stays disabled and the run-target chip
-    /// reads "Select a Project…". Never prepared, never cached, never
+    /// reads "Select a project". Never prepared, never cached, never
     /// persisted; picking (or adding) a real project swaps it out.
     private func setUpPlaceholderDraftIfNeeded() {
         guard draftController == nil else { return }

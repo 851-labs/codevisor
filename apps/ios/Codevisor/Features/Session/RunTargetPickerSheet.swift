@@ -26,16 +26,7 @@ struct RunTargetPickerSheet: View {
         case runLocation(serverId: String, projectId: UUID)
     }
 
-    /// The machine whose filesystem "New Project…" browses, and the sheet
-    /// trigger for it (Identifiable so `.sheet(item:)` can present it from
-    /// whichever step is on top).
-    private struct AddProjectTarget: Identifiable {
-        let serverId: String
-        var id: String { serverId }
-    }
-
     @State private var path: [Route] = []
-    @State private var addProjectTarget: AddProjectTarget?
 
     /// Every machine's projects, most recently used first (scratch backing
     /// projects are internal and never listed).
@@ -81,11 +72,6 @@ struct RunTargetPickerSheet: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
-        .sheet(item: $addProjectTarget) { target in
-            AddProjectSheet(serverId: target.serverId) { project in
-                advance(with: project)
-            }
-        }
     }
 
     // MARK: - Steps
@@ -104,31 +90,8 @@ struct RunTargetPickerSheet: View {
     }
 
     private func projectStep(serverId: String) -> some View {
-        List {
-            ForEach(pickerProjects.filter { $0.serverId == serverId }) { project in
-                if project.isGitRepository {
-                    NavigationLink(
-                        value: Route.runLocation(serverId: serverId, projectId: project.id)
-                    ) {
-                        Label(project.name, systemImage: EntitySystemSymbol.project)
-                            .foregroundStyle(Color.primary)
-                    }
-                } else {
-                    // Non-git projects have no run-location choice; picking
-                    // one completes the flow.
-                    Button {
-                        finish(project, wantsWorktree: false)
-                    } label: {
-                        Label(project.name, systemImage: EntitySystemSymbol.project)
-                            .foregroundStyle(Color.primary)
-                    }
-                }
-            }
-            Button {
-                addProjectTarget = AddProjectTarget(serverId: serverId)
-            } label: {
-                Label("New Project…", systemImage: "folder.badge.plus")
-            }
+        ProjectSelectionScreen(serverId: serverId) { project in
+            advance(with: project)
         }
     }
 

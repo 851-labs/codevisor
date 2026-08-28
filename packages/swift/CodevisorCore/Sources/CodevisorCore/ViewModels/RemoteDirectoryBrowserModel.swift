@@ -205,6 +205,52 @@ public final class RemoteDirectoryBrowserModel {
         goToError = nil
     }
 
+    /// Refreshes the parent after New Folder succeeds, selects the new folder,
+    /// and appends its children without discarding any columns to the left.
+    public func revealCreatedFolder(_ path: String, parentPath: String) async {
+        invalidateCachedListing(for: parentPath)
+        invalidateCachedListing(for: path)
+        guard let parentIndex = columns.firstIndex(where: { $0.path == parentPath }) else {
+            await open(path)
+            return
+        }
+
+        generation += 1
+        let requestGeneration = generation
+        columns[parentIndex].selectedEntryPath = path
+        columns.removeSubrange((parentIndex + 1)...)
+        var child = Column(path: path)
+        child.isLoading = true
+        columns.append(child)
+
+        do {
+            let parentListing = try await fetch(path: parentPath, showHidden: showHidden)
+            guard generation == requestGeneration else { return }
+            var refreshedParent = resolvedColumn(for: parentListing)
+            refreshedParent.selectedEntryPath = path
+            columns[parentIndex] = refreshedParent
+        } catch {
+            guard generation == requestGeneration else { return }
+            // Folder creation already succeeded. Keep the previous parent
+            // listing and continue opening the new child instead of losing
+            // the user's column history to a transient refresh failure.
+        }
+
+        do {
+            let childListing = try await fetch(path: path, showHidden: showHidden)
+            guard generation == requestGeneration else { return }
+            columns[parentIndex + 1] = resolvedColumn(for: childListing)
+        } catch {
+            guard generation == requestGeneration else { return }
+            columns[parentIndex + 1].isLoading = false
+            columns[parentIndex + 1].errorMessage = Self.guidance(
+                code: serverErrorCode(error),
+                fallback: serverErrorMessage(error),
+                machineName: machineName
+            )
+        }
+    }
+
     /// Toggles hidden folders and reloads every column under the new flag.
     /// Selections survive when the selected folder is still listed; a
     /// selection that pointed at a now-hidden folder truncates from there.
@@ -256,6 +302,15 @@ public final class RemoteDirectoryBrowserModel {
         // Also key by the resolved path so "~" and "/home/user" share an entry.
         cache["\(showHidden ? "h" : "v"):\(listing.path)"] = listing
         return listing
+    }
+
+    private func invalidateCachedListing(for path: String) {
+        cache.removeValue(forKey: "v:\(path)")
+        cache.removeValue(forKey: "h:\(path)")
+        if path == homePath {
+            cache.removeValue(forKey: "v:~")
+            cache.removeValue(forKey: "h:~")
+        }
     }
 
     /// Actionable messages for the server's classified `fs/list` failures.

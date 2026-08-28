@@ -50,6 +50,7 @@ import {
   type EventFanout
 } from "../server-context.js"
 import { cloneDirectoryName, looksLikeGitUrl } from "./project-git-url.js"
+import { projectRecommendationsForRequest } from "./project-recommendations.js"
 
 export const routeProjects = async (
   services: CodevisorServerServices,
@@ -67,6 +68,11 @@ export const routeProjects = async (
       200,
       await Promise.all(projects.map((project) => probeProject(serverId, project)))
     )
+    return true
+  }
+
+  if (request.method === "GET" && url.pathname === "/v1/projects/recommendations") {
+    writeJson(response, 200, await projectRecommendationsForRequest(services, url))
     return true
   }
 

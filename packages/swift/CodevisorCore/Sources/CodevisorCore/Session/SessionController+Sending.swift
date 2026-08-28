@@ -7,7 +7,8 @@ extension SessionController {
     /// Worktree and agent setup render after the optimistic first user message.
     public func send() async {
         let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty || !composerAttachments.isEmpty,
+        guard !project.isRunTargetPlaceholder,
+            !text.isEmpty || !composerAttachments.isEmpty,
             !isConnecting,
             configurationValidationState == .ready,
             !isSubmitting

@@ -165,6 +165,7 @@ extension SessionController {
     /// Changes the project (new-chat picker) and reconnects.
     public func selectProject(_ project: Project) async {
         guard project.id != self.project.id else { return }
+        let replacesPlaceholder = self.project.isRunTargetPlaceholder
         self.project = project
         // A worktree kept from a reverted first send belongs to the old
         // project; the new project gets its own on the next send.
@@ -172,6 +173,9 @@ extension SessionController {
         worktreeName = nil
         if seedFromCachedServerCapabilities() {
             preparationState = .ready
+        }
+        if replacesPlaceholder {
+            await prepare()
         }
         await reconnect()
     }

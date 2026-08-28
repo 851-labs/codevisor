@@ -5,6 +5,33 @@ import Testing
 @MainActor
 @Suite("ComposerDraftStore")
 struct ComposerDraftStoreTests {
+    @Test("Draft project restoration preserves real and placeholder targets")
+    func restoresDraftProject() {
+        let project = Project.fromFolder(
+            URL(fileURLWithPath: "/srv/project"),
+            serverId: "remote-b"
+        )
+        let savedProject = ComposerDraftStore.Draft(
+            projectId: project.id,
+            projectServerId: project.serverId
+        )
+        let savedPlaceholder = ComposerDraftStore.Draft(
+            projectId: Project.runTargetPlaceholderID,
+            projectServerId: "fresh-vnc"
+        )
+
+        #expect(savedProject.restoredProject(in: [project], defaultServerId: "local") == project)
+        let placeholder = savedPlaceholder.restoredProject(in: [project], defaultServerId: "local")
+        #expect(placeholder?.isRunTargetPlaceholder == true)
+        #expect(placeholder?.serverId == "fresh-vnc")
+        #expect(
+            ComposerDraftStore.Draft(projectId: UUID()).restoredProject(
+                in: [project],
+                defaultServerId: "local"
+            ) == nil
+        )
+    }
+
     @Test("A draft targeting another machine's project persists its server id")
     func crossMachineDraftPersists() {
         let store = InMemoryStore()

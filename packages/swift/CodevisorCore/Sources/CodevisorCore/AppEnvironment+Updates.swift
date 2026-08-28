@@ -174,16 +174,44 @@ extension AppEnvironment {
 
     // MARK: - Session import discovery (moved from AppEnvironment.swift for the size ratchet)
 
-    /// Project-folder suggestions based on the user's most recent harness
-    /// sessions (used by onboarding's project step). Worktree activity is
-    /// attributed to its primary checkout — see `ProjectRecommender`.
+    /// Project-folder suggestions for an explicit machine. Discovery and path
+    /// validation run on that machine, which is required for remote and iOS
+    /// clients whose local filesystem cannot resolve the returned paths.
+    public func recommendedProjects(
+        serverId: String,
+        limit: Int = 12
+    ) async throws -> [ProjectRecommendation] {
+        let records = try await machines.client(for: serverId).projectRecommendations(limit: limit)
+        return records.map { record in
+            ProjectRecommendation(
+                folderURL: URL(fileURLWithPath: record.path),
+                name: record.name,
+                sessionCount: record.sessionCount,
+                lastActivity: record.lastActivity.flatMap(Self.recommendationDate(from:))
+            )
+        }
+    }
+
+    /// Backward-compatible selected-machine entry point used by onboarding.
+    /// Older servers lack the recommendation endpoint, so the local desktop
+    /// path retains the existing client-side fallback.
     public func recommendedProjects(limit: Int = 12) async -> [ProjectRecommendation] {
+        let serverId = machines.selectedMachineId
+        if let remote = try? await recommendedProjects(serverId: serverId, limit: limit) {
+            return remote
+        }
         let imported = await sessionImporter.fetchAll()
         // Recommendation probes the filesystem per session (worktree `.git`
         // metadata, directory checks); keep those syscalls off the main actor.
         return await Task.detached {
             ProjectRecommender.recommend(from: imported, limit: limit)
         }.value
+    }
+
+    private static func recommendationDate(from string: String) -> Date? {
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return fractional.date(from: string) ?? ISO8601DateFormatter().date(from: string)
     }
 
     /// Harness sessions whose working directory is the given folder and that

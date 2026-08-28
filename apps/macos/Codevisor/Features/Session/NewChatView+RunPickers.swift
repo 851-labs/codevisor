@@ -21,12 +21,6 @@ extension NewChatView {
     /// The machine picker shows only when there is a choice to make.
     var showsMachinePicker: Bool { environment.machines.allMachines.count > 1 }
 
-    /// Projects offered by the project picker: the picked machine's only.
-    /// The machine chip to its left is what changes machines.
-    func machineScopedProjects(for controller: SessionController) -> [Project] {
-        pickerProjects.filter { $0.serverId == controller.project.serverId }
-    }
-
     /// The live project record. The controller holds a snapshot from when
     /// the project was picked; the server's git probe lands on the list
     /// afterwards, and the worktree picker must follow the probed value.
@@ -93,54 +87,79 @@ extension NewChatView {
 
     /// Choose the project the chat (and the workspace created around it on
     /// first send) will work in.
+    @ViewBuilder
     func projectPicker(_ controller: SessionController) -> some View {
         let selected = controller.project
-        return Menu {
-            // Toggle for the native selected checkmark; MenuSymbolIcon
-            // because AppKit menus drop plain SF Symbol images.
-            ForEach(machineScopedProjects(for: controller)) { project in
-                Toggle(
-                    isOn: Binding(
-                        get: {
-                            selected.serverId == project.serverId
-                                && selected.id == project.id
-                        },
-                        set: { isOn in
-                            guard isOn else { return }
-                            selectTargetProject(project, controller: controller)
+        let projects = pickerProjects.filter { $0.serverId == selected.serverId }
+
+        if projects.isEmpty {
+            Button {
+                newProjectTarget = NewProjectTarget(serverId: selected.serverId)
+            } label: {
+                PickerChip(text: "Select a project") {
+                    Image(systemName: "folder.badge.questionmark")
+                        .font(.system(size: 12))
+                }
+            }
+            .buttonStyle(HoverIconButtonStyle(shape: .chip))
+            .fixedSize()
+            .help("Add a project")
+            .accessibilityLabel("Select a project")
+        } else {
+            Menu {
+                // Toggle for the native selected checkmark; MenuSymbolIcon
+                // because AppKit menus drop plain SF Symbol images.
+                ForEach(projects) { project in
+                    Toggle(
+                        isOn: Binding(
+                            get: {
+                                selected.serverId == project.serverId
+                                    && selected.id == project.id
+                            },
+                            set: { isOn in
+                                guard isOn else { return }
+                                selectTargetProject(project, controller: controller)
+                            }
+                        )
+                    ) {
+                        Label {
+                            Text(project.name)
+                        } icon: {
+                            MenuSymbolIcon(systemName: EntitySystemSymbol.project)
                         }
-                    )
-                ) {
-                    Label {
-                        Text(project.name)
-                    } icon: {
-                        MenuSymbolIcon(systemName: EntitySystemSymbol.project)
                     }
                 }
-            }
-            Divider()
-            Button {
-                addProjectFlow.begin(serverId: controller.project.serverId)
+                Divider()
+                Button {
+                    newProjectTarget = NewProjectTarget(serverId: selected.serverId)
+                } label: {
+                    Label {
+                        Text("New Project…")
+                    } icon: {
+                        MenuSymbolIcon(systemName: "folder.badge.plus")
+                    }
+                }
             } label: {
-                Label {
-                    Text("New project…")
-                } icon: {
-                    MenuSymbolIcon(systemName: "folder.badge.plus")
+                PickerChip(
+                    text: selected.isRunTargetPlaceholder ? "Select a project" : selected.name
+                ) {
+                    Image(
+                        systemName: selected.isRunTargetPlaceholder
+                            ? "folder.badge.questionmark" : EntitySystemSymbol.project
+                    )
+                    .font(.system(size: 12))
                 }
             }
-        } label: {
-            PickerChip(text: selected.name) {
-                Image(systemName: EntitySystemSymbol.project)
-                    .font(.system(size: 12))
-            }
+            .menuStyle(.button)
+            .buttonStyle(HoverIconButtonStyle(shape: .chip))
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Choose where this chat works")
+            .accessibilityLabel("Project")
+            .accessibilityValue(
+                selected.isRunTargetPlaceholder ? "No project selected" : selected.name
+            )
         }
-        .menuStyle(.button)
-        .buttonStyle(HoverIconButtonStyle(shape: .chip))
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("Choose where this chat works")
-        .accessibilityLabel("Project")
-        .accessibilityValue(selected.name)
     }
 
     /// "Project directory" vs "New worktree" for where the chat (and its
@@ -212,9 +231,17 @@ extension NewChatView {
         let remembered = environment.composerDefaults.lastProjectId(forServer: machine.id)
         guard let project = scoped.first(where: { $0.id == remembered }) ?? scoped.first
         else {
-            // An empty machine is never disabled (fleet parity with iOS):
-            // picking it goes straight to adding its first project.
-            addProjectFlow.begin(serverId: machine.id)
+            // An empty machine is a stable run-target state. Keep the draft
+            // and composer in place, show "Select a project", and wait for an
+            // explicit click instead of surprising the user with a dialog.
+            selectedProjectId = nil
+            Task {
+                await controller.retarget(
+                    to: .runTargetPlaceholder(serverId: machine.id),
+                    serverClient: environment.machines.client(for: machine.id)
+                )
+                await environment.refreshHarnessLifecycle(for: machine.id)
+            }
             return
         }
         selectTargetProject(project, controller: controller)
@@ -260,8 +287,15 @@ extension NewChatView {
 
     func archiveManagedProject(_ project: Project, controller: SessionController?) {
         environment.projectList.archive(project)
-        guard let controller, let replacement = pickerProjects.first else { return }
-        selectTargetProject(replacement, controller: controller)
+        guard let controller else { return }
+        if let replacement = pickerProjects.first(where: { $0.serverId == project.serverId }) {
+            selectTargetProject(replacement, controller: controller)
+        } else {
+            selectedProjectId = nil
+            Task {
+                await controller.selectProject(.runTargetPlaceholder(serverId: project.serverId))
+            }
+        }
     }
 
     private func selectRunLocation(newWorktree: Bool, controller: SessionController) {

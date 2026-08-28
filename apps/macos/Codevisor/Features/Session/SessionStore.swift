@@ -214,10 +214,10 @@ final class SessionStore {
                 // The saved draft may target ANOTHER machine's project (the
                 // picker is fleet-wide); older drafts carry no server id and
                 // mean this machine.
-                environment.projectList.projects.first {
-                    $0.serverId == (saved.projectServerId ?? project.serverId)
-                        && $0.id == saved.projectId
-                }
+                saved.restoredProject(
+                    in: environment.projectList.projects,
+                    defaultServerId: project.serverId
+                )
             } ?? environment.composerDefaults.lastProjectId(forServer: project.serverId).flatMap {
                 rememberedId in
                 environment.projectList.activeProjects.first {

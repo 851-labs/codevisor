@@ -2,7 +2,7 @@ import Database from "better-sqlite3"
 import { Effect } from "effect"
 import { execFile } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 import { describe, expect, it } from "vitest"
@@ -14,11 +14,72 @@ import {
   run,
   runningServers,
   start,
+  startWithApp,
   tempDirs,
   waitFor
 } from "../test-support.js"
 
 describe("project routes", () => {
+  it("returns machine-local project recommendations from installed harness sessions", async () => {
+    const { agents, services } = await makeServices("server-a")
+    const folder = mkdtempSync(join(homedir(), ".codevisor-project-route-recommendation-"))
+    tempDirs.push(folder)
+    const server = await startWithApp({
+      ...services,
+      agents: {
+        ...agents,
+        listAgentSessions: () =>
+          Effect.succeed([
+            {
+              sessionId: "native-one",
+              cwd: folder,
+              updatedAt: "2026-08-27T12:00:00Z"
+            },
+            {
+              sessionId: "native-two",
+              cwd: folder,
+              updatedAt: "2026-08-27T13:00:00Z"
+            }
+          ])
+      }
+    })
+    runningServers.push(server)
+
+    const response = await jsonRequest(server, "/v1/projects/recommendations?limit=1")
+
+    expect(response.status).toBe(200)
+    expect(response.body).toEqual([
+      {
+        path: folder,
+        name: folder.split("/").at(-1),
+        sessionCount: 2,
+        lastActivity: "2026-08-27T13:00:00Z"
+      }
+    ])
+
+    const defaultLimit = await jsonRequest(server, "/v1/projects/recommendations")
+    const invalidLimit = await jsonRequest(server, "/v1/projects/recommendations?limit=invalid")
+    expect(defaultLimit.body).toEqual(response.body)
+    expect(invalidLimit.body).toEqual(response.body)
+  })
+
+  it("keeps unavailable harness stores from breaking project recommendations", async () => {
+    const { agents, services } = await makeServices("server-a")
+    const server = await startWithApp({
+      ...services,
+      agents: {
+        ...agents,
+        listAgentSessions: () => Effect.die(new Error("native store unavailable"))
+      }
+    })
+    runningServers.push(server)
+
+    const response = await jsonRequest(server, "/v1/projects/recommendations")
+
+    expect(response.status).toBe(200)
+    expect(response.body).toEqual([])
+  })
+
   it("clones a git remote into the managed repos dir as a project", async () => {
     const execFileAsync = promisify(execFile)
     const git = (args: ReadonlyArray<string>, cwd: string) =>

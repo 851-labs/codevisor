@@ -232,8 +232,9 @@ extension SessionController {
     public var runningSubagentToolCallIds: Set<String> { model?.runningSubagentToolCallIds ?? [] }
 
     public var canSend: Bool {
-        (!composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || !composerAttachments.isEmpty)
+        !project.isRunTargetPlaceholder
+            && (!composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || !composerAttachments.isEmpty)
             && !isConnecting
             && !composerAttachments.contains { $0.state == .loading }
             && configurationValidationState == .ready

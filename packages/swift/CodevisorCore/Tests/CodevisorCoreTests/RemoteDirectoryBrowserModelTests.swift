@@ -30,6 +30,10 @@ private final class FakeRemoteFs: @unchecked Sendable {
         lock.withLock { _fetchedPaths }
     }
 
+    func setListing(_ listing: ServerFsListing) {
+        lock.withLock { listings[listing.path] = listing }
+    }
+
     func lister() -> RemoteDirectoryBrowserModel.Lister {
         { [self] path, showHidden in
             let resolved = path ?? homePath
@@ -46,6 +50,28 @@ private final class FakeRemoteFs: @unchecked Sendable {
                 )
             }
             return listing
+        }
+    }
+}
+
+private final class FakeRemoteDirectoryCreator: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _createdPaths: [String] = []
+    private let failure: CodevisorServerClientError?
+
+    init(failure: CodevisorServerClientError? = nil) {
+        self.failure = failure
+    }
+
+    var createdPaths: [String] {
+        lock.withLock { _createdPaths }
+    }
+
+    func creator() -> RemoteDirectoryCreationModel.Creator {
+        { [self] path in
+            lock.withLock { _createdPaths.append(path) }
+            if let failure { throw failure }
+            return path
         }
     }
 }
@@ -307,6 +333,74 @@ struct RemoteDirectoryBrowserModelTests {
         #expect(
             Model.guidance(code: nil, fallback: "server said no", machineName: "devbox")
                 == "server said no")
+    }
+
+    @Test("Revealing a created folder preserves its ancestor columns and refreshes its parent")
+    func revealCreatedFolderInvalidatesParent() async {
+        let fs = makeFs()
+        let model = makeModel(fs)
+        await model.open("/")
+        await model.select("/home", inColumn: "/")
+        await model.select("/home/user", inColumn: "/home")
+        fs.setListing(listing("/home/user", children: ["docs", "fresh", "src"]))
+        fs.setListing(listing("/home/user/fresh", children: []))
+
+        await model.revealCreatedFolder("/home/user/fresh", parentPath: "/home/user")
+        #expect(model.columns.map(\.path) == ["/", "/home", "/home/user", "/home/user/fresh"])
+        #expect(model.columns[2].selectedEntryPath == "/home/user/fresh")
+        #expect(model.columns[2].listing?.entries.map(\.name).contains("fresh") == true)
+        #expect(model.chosenPath == "/home/user/fresh")
+        #expect(fs.fetchedPaths.filter { $0 == "/home/user" }.count == 2)
+    }
+}
+
+@MainActor
+@Suite("RemoteDirectoryCreationModel")
+struct RemoteDirectoryCreationModelTests {
+    @Test("Trims a valid name and creates exactly one child folder")
+    func createsChildFolder() async {
+        let fake = FakeRemoteDirectoryCreator()
+        let model = RemoteDirectoryCreationModel(machineName: "devbox", create: fake.creator())
+
+        let path = await model.createFolder(named: "  fresh  ", in: "/home/user")
+
+        #expect(path == "/home/user/fresh")
+        #expect(fake.createdPaths == ["/home/user/fresh"])
+        #expect(model.errorMessage == nil)
+        #expect(!model.isCreating)
+    }
+
+    @Test("Rejects empty, path-like, dot, and duplicate names before calling the server")
+    func rejectsInvalidNames() async {
+        let fake = FakeRemoteDirectoryCreator()
+        let model = RemoteDirectoryCreationModel(machineName: "devbox", create: fake.creator())
+
+        #expect(await model.createFolder(named: "   ", in: "/home/user") == nil)
+        #expect(await model.createFolder(named: "nested/folder", in: "/home/user") == nil)
+        #expect(await model.createFolder(named: "..", in: "/home/user") == nil)
+        #expect(
+            await model.createFolder(
+                named: "docs",
+                in: "/home/user",
+                existingNames: ["docs"]
+            ) == nil)
+        #expect(fake.createdPaths.isEmpty)
+        #expect(model.errorMessage?.contains("already exists") == true)
+    }
+
+    @Test("Maps classified server failures to actionable creation guidance")
+    func mapsCreationFailure() async {
+        let failure = CodevisorServerClientError.httpStatus(
+            403,
+            #"{"error":"Permission denied","code":"permission_denied"}"#
+        )
+        let fake = FakeRemoteDirectoryCreator(failure: failure)
+        let model = RemoteDirectoryCreationModel(machineName: "devbox", create: fake.creator())
+
+        #expect(await model.createFolder(named: "fresh", in: "/locked") == nil)
+        #expect(model.errorMessage?.contains("isn't allowed to create") == true)
+        #expect(fake.createdPaths == ["/locked/fresh"])
+        #expect(!model.isCreating)
     }
 }
 

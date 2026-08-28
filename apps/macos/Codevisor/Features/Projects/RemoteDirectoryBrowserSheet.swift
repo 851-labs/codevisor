@@ -1,17 +1,16 @@
 import SwiftUI
 import CodevisorCore
+import CodevisorUI
 
-/// A Finder-style folder picker for remote machines, modeled on
-/// NSOpenPanel's choose-folder mode: a sidebar (Home, machine root, recent
-/// picks), a multi-column browser with real list selection, a breadcrumb
-/// popup for ancestors, ⇧⌘G go-to-folder for power users, and ⇧⌘. for
-/// hidden folders. Single click selects and previews children in the next
-/// column; Choose acts on the selection.
+/// A compact Finder-style folder picker for remote machines. It opens at the
+/// machine root, uses column navigation, and keeps less common actions in the
+/// options and context menus.
 struct RemoteDirectoryBrowserSheet: View {
-    private enum SidebarItem: Hashable {
-        case home
-        case root
-        case recent(String)
+    private struct NewFolderTarget: Identifiable {
+        let path: String
+        let existingNames: Set<String>
+
+        var id: String { path }
     }
 
     let client: any CodevisorServerClienting
@@ -20,12 +19,9 @@ struct RemoteDirectoryBrowserSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var model: RemoteDirectoryBrowserModel
-    @State private var recentsStore = RemoteBrowserRecentsStore()
-    @State private var recents: [String] = []
     @State private var showingGoTo = false
     @State private var goToText = ""
-    @State private var showingNewFolder = false
-    @State private var newFolderName = ""
+    @State private var newFolderTarget: NewFolderTarget?
     @FocusState private var focusedColumn: String?
     @FocusState private var goToFieldFocused: Bool
 
@@ -54,22 +50,24 @@ struct RemoteDirectoryBrowserSheet: View {
                     .padding(.bottom, 10)
             }
             Divider()
-            HStack(spacing: 0) {
-                sidebar
-                Divider()
-                columnBrowser
-            }
+            columnBrowser
             Divider()
             footer
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
         }
-        .alert("New Folder", isPresented: $showingNewFolder) {
-            TextField("Folder name", text: $newFolderName)
-            Button("Create") { createFolder() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Created inside \(model.chosenPath ?? model.columns.last?.path ?? "the current folder").")
+        .sheet(item: $newFolderTarget) { target in
+            NewRemoteFolderSheet(
+                machineName: machineName,
+                parentPath: target.path,
+                existingNames: target.existingNames,
+                create: { path in try await client.createDirectory(path: path) }
+            ) { createdPath in
+                Task {
+                    await model.revealCreatedFolder(createdPath, parentPath: target.path)
+                    focusedColumn = model.columns.last?.id
+                }
+            }
         }
         .background(hiddenShortcuts)
         .frame(
@@ -77,8 +75,7 @@ struct RemoteDirectoryBrowserSheet: View {
             minHeight: 400, idealHeight: 450, maxHeight: .infinity
         )
         .task {
-            recents = recentsStore.recents(forMachine: machineName)
-            await model.loadInitial()
+            await model.open("/")
             focusedColumn = model.columns.first?.id
         }
     }
@@ -87,34 +84,11 @@ struct RemoteDirectoryBrowserSheet: View {
 
     private var header: some View {
         HStack {
-            Text("Choose a folder on \(machineName)")
+            Text("Choose Folder")
                 .font(.headline)
             Spacer()
-            breadcrumbMenu
+            optionsMenu
         }
-    }
-
-    /// The open-panel-style path popup: current browse root plus its
-    /// ancestors, deepest first.
-    private var breadcrumbMenu: some View {
-        Menu {
-            ForEach(model.breadcrumb, id: \.self) { path in
-                Button {
-                    browse(to: path)
-                } label: {
-                    Label(displayName(for: path), systemImage: icon(for: path))
-                }
-            }
-        } label: {
-            Label(
-                model.breadcrumb.first.map(displayName(for:)) ?? machineName,
-                systemImage: model.breadcrumb.first.map(icon(for:)) ?? "folder"
-            )
-        }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
-        .disabled(model.breadcrumb.isEmpty)
-        .help("Current folder")
     }
 
     private var goToBar: some View {
@@ -146,56 +120,6 @@ struct RemoteDirectoryBrowserSheet: View {
                     .font(.caption)
                     .foregroundStyle(.red)
                     .padding(.leading, 24)
-            }
-        }
-    }
-
-    // MARK: - Sidebar
-
-    private var sidebar: some View {
-        List(selection: sidebarSelection) {
-            Section("Favorites") {
-                Label("Home", systemImage: "house")
-                    .tag(SidebarItem.home)
-                Label(machineName, systemImage: "server.rack")
-                    .tag(SidebarItem.root)
-                    .help("The root of \(machineName)'s filesystem")
-            }
-            if !recents.isEmpty {
-                Section("Recents") {
-                    ForEach(recents, id: \.self) { path in
-                        Label(displayName(for: path), systemImage: "clock")
-                            .tag(SidebarItem.recent(path))
-                            .help(path)
-                            .contextMenu {
-                                Button("Remove from Recents") {
-                                    recentsStore.remove(path, forMachine: machineName)
-                                    recents = recentsStore.recents(forMachine: machineName)
-                                }
-                            }
-                    }
-                }
-            }
-        }
-        .listStyle(.sidebar)
-        .frame(width: 168)
-    }
-
-    /// Sidebar highlight is derived from the current browse root, so
-    /// navigating by breadcrumb or ⌘↑ keeps it honest.
-    private var sidebarSelection: Binding<SidebarItem?> {
-        Binding {
-            guard let root = model.columns.first?.listing?.path else { return nil }
-            if root == model.homePath { return .home }
-            if root == "/" { return .root }
-            if recents.contains(root) { return .recent(root) }
-            return nil
-        } set: { item in
-            switch item {
-            case .home: browse(to: nil)
-            case .root: browse(to: "/")
-            case let .recent(path): browse(to: path)
-            case nil: break
             }
         }
     }
@@ -237,6 +161,7 @@ struct RemoteDirectoryBrowserSheet: View {
         .scrollContentBackground(.hidden)
         .focused($focusedColumn, equals: column.id)
         .frame(width: 224)
+        .contentShape(Rectangle())
         .overlay {
             if column.isLoading {
                 ProgressView()
@@ -254,6 +179,12 @@ struct RemoteDirectoryBrowserSheet: View {
                     .font(.callout)
                     .foregroundStyle(.tertiary)
             }
+        }
+        .contextMenu {
+            Button("New Folder…") {
+                presentNewFolder(in: column)
+            }
+            .disabled(column.listing == nil)
         }
     }
 
@@ -294,16 +225,6 @@ struct RemoteDirectoryBrowserSheet: View {
 
     private var footer: some View {
         HStack(spacing: 12) {
-            optionsMenu
-            if let chosen = model.chosenPath {
-                Text(chosen)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .frame(maxWidth: 280, alignment: .leading)
-                    .help(chosen)
-            }
             Spacer()
             Button("Cancel") { dismiss() }
                 .keyboardShortcut(.cancelAction)
@@ -315,13 +236,11 @@ struct RemoteDirectoryBrowserSheet: View {
 
     private var optionsMenu: some View {
         Menu {
-            Toggle("Show Hidden Folders", isOn: showHiddenBinding)
+            Button("New Folder…") { presentNewFolder() }
+                .disabled(currentColumn == nil)
             Divider()
             Button("Go to Folder…") { openGoTo() }
-            Button("New Folder…") {
-                newFolderName = ""
-                showingNewFolder = true
-            }
+            Toggle("Show Hidden Folders", isOn: showHiddenBinding)
         } label: {
             Image(systemName: "ellipsis.circle")
                 .imageScale(.large)
@@ -333,10 +252,13 @@ struct RemoteDirectoryBrowserSheet: View {
     }
 
     /// Always-installed keyboard shortcuts (open-panel idioms) that have no
-    /// visible chrome: ⇧⌘. hidden folders, ⇧⌘G go to folder, ⌘↑ enclosing
-    /// folder.
+    /// visible chrome: ⇧⌘N new folder, ⇧⌘. hidden folders, ⇧⌘G go to
+    /// folder, ⌘↑ enclosing folder.
     private var hiddenShortcuts: some View {
         Group {
+            Button("") { presentNewFolder() }
+                .keyboardShortcut("n", modifiers: [.command, .shift])
+                .disabled(currentColumn == nil)
             Button("") { showHiddenBinding.wrappedValue.toggle() }
                 .keyboardShortcut(".", modifiers: [.command, .shift])
             Button("") { openGoTo() }
@@ -365,13 +287,6 @@ struct RemoteDirectoryBrowserSheet: View {
         }
     }
 
-    private func browse(to path: String?) {
-        Task {
-            await model.open(path)
-            focusedColumn = model.columns.first?.id
-        }
-    }
-
     private func openGoTo() {
         goToText = model.chosenPath ?? ""
         model.clearGoToError()
@@ -395,21 +310,8 @@ struct RemoteDirectoryBrowserSheet: View {
         }
     }
 
-    /// Creates a folder inside the current selection (or the deepest open
-    /// column) and navigates the browser to it.
-    private func createFolder() {
-        let name = newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, let base = model.chosenPath ?? model.columns.last?.path else { return }
-        Task {
-            if let created = try? await client.createDirectory(path: base + "/" + name) {
-                _ = await model.goToPath(created)
-            }
-        }
-    }
-
     private func choose() {
         guard let path = model.chosenPath else { return }
-        recentsStore.record(path, forMachine: machineName)
         onChoose(path)
         dismiss()
     }
@@ -439,18 +341,21 @@ struct RemoteDirectoryBrowserSheet: View {
         return .handled
     }
 
-    // MARK: - Presentation helpers
-
-    private func displayName(for path: String) -> String {
-        if path == "/" { return machineName }
-        if path == model.homePath { return "Home" }
-        let name = (path as NSString).lastPathComponent
-        return name.isEmpty ? path : name
+    private var currentColumn: RemoteDirectoryBrowserModel.Column? {
+        guard let column = model.columns.last, column.listing != nil else { return nil }
+        return column
     }
 
-    private func icon(for path: String) -> String {
-        if path == "/" { return "server.rack" }
-        if path == model.homePath { return "house" }
-        return "folder"
+    private func presentNewFolder() {
+        guard let currentColumn else { return }
+        presentNewFolder(in: currentColumn)
+    }
+
+    private func presentNewFolder(in column: RemoteDirectoryBrowserModel.Column) {
+        guard let listing = column.listing else { return }
+        newFolderTarget = NewFolderTarget(
+            path: listing.path,
+            existingNames: Set(listing.entries.map(\.name))
+        )
     }
 }

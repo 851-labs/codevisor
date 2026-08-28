@@ -159,6 +159,24 @@ struct SessionControllerConfigurationTests {
         #expect(snapshot.projectId == remoteProject.id)
     }
 
+    @Test("A project placeholder cannot send or materialize a chat")
+    func placeholderCannotSend() async {
+        let controller = SessionController(
+            project: .runTargetPlaceholder(serverId: "fresh-vnc"),
+            configCache: ConfigOptionCache(store: InMemoryStore())
+        )
+        controller.composerText = "keep this draft while I choose a project"
+        var didMaterialize = false
+        controller.onFirstSend = { didMaterialize = true }
+
+        #expect(!controller.canSend)
+        await controller.send()
+
+        #expect(!didMaterialize)
+        #expect(controller.composerText == "keep this draft while I choose a project")
+        #expect(!controller.hasSentFirst)
+    }
+
     @Test("A deferred durable chat cannot connect before first send")
     func deferredChatDoesNotConnect() async {
         var deferred = session()

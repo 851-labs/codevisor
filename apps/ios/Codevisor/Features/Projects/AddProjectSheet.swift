@@ -23,15 +23,21 @@ struct AddProjectSheet: View {
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
-            RemoteDirectoryScreen(serverId: targetServerId, directory: .home) { path in
-                addProject(at: path)
-            }
+            RemoteDirectoryScreen(
+                serverId: targetServerId,
+                directory: .root,
+                onOpen: { navigationPath.append($0) },
+                onPick: addProject(at:)
+            )
             .navigationTitle("New Project")
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(for: RemoteDirectory.self) { directory in
-                RemoteDirectoryScreen(serverId: targetServerId, directory: directory) { path in
-                    addProject(at: path)
-                }
+                RemoteDirectoryScreen(
+                    serverId: targetServerId,
+                    directory: directory,
+                    onOpen: { navigationPath.append($0) },
+                    onPick: addProject(at:)
+                )
             }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -58,30 +64,29 @@ struct AddProjectSheet: View {
     }
 }
 
-/// A spot in the remote filesystem: nil path = the machine's home directory
-/// (the server resolves it on the first listing).
+/// A spot in the remote filesystem.
 struct RemoteDirectory: Hashable {
     let path: String?
     let name: String
 
-    static let home = RemoteDirectory(path: nil, name: "Home")
+    static let root = RemoteDirectory(path: "/", name: "Files")
 }
 
 /// One level of the remote filesystem, Files-style: folder rows that push
-/// deeper, git repositories badged, hidden folders behind the ellipsis menu,
-/// and a fixed call to action that turns the current folder into a project.
+/// deeper, git repositories badged, secondary actions behind the ellipsis
+/// menu, and a fixed call to action for the current folder.
 struct RemoteDirectoryScreen: View {
     @Environment(AppEnvironment.self) private var environment
     /// The machine whose filesystem is browsed. Nil means the selected one.
     var serverId: String? = nil
     let directory: RemoteDirectory
+    let onOpen: (RemoteDirectory) -> Void
     let onPick: (String) -> Void
 
     @State private var listing: ServerFsListing?
     @State private var errorMessage: String?
     @State private var showHidden = false
     @State private var showingNewFolder = false
-    @State private var newFolderName = ""
 
     var body: some View {
         Group {
@@ -103,11 +108,12 @@ struct RemoteDirectoryScreen: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button {
-                        newFolderName = ""
                         showingNewFolder = true
                     } label: {
                         Label("New Folder…", systemImage: "folder.badge.plus")
                     }
+                    .disabled(listing == nil)
+                    Divider()
                     Toggle("Show Hidden Folders", isOn: $showHidden)
                 } label: {
                     Image(systemName: "ellipsis.circle")
@@ -120,7 +126,7 @@ struct RemoteDirectoryScreen: View {
                 Button {
                     onPick(listing.path)
                 } label: {
-                    Label("Add “\(directory.name)” as Project", systemImage: "folder.badge.plus")
+                    Text("Choose")
                         .font(.body.weight(.semibold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 14)
@@ -132,10 +138,17 @@ struct RemoteDirectoryScreen: View {
             }
         }
         .task(id: showHidden) { await load() }
-        .alert("New Folder", isPresented: $showingNewFolder) {
-            TextField("Folder name", text: $newFolderName)
-            Button("Create") { createFolder() }
-            Button("Cancel", role: .cancel) {}
+        .sheet(isPresented: $showingNewFolder) {
+            if let listing {
+                NewRemoteFolderSheet(
+                    machineName: machineName,
+                    parentPath: listing.path,
+                    existingNames: Set(listing.entries.map(\.name)),
+                    create: { path in try await client.createDirectory(path: path) },
+                    onCreated: didCreateFolder(at:)
+                )
+                .presentationDetents([.medium])
+            }
         }
     }
 
@@ -143,13 +156,16 @@ struct RemoteDirectoryScreen: View {
         environment.machines.client(for: serverId ?? environment.machines.selectedMachineId)
     }
 
-    private func createFolder() {
-        let name = newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, let listing else { return }
-        Task {
-            _ = try? await client.createDirectory(path: listing.path + "/" + name)
-            await load()
-        }
+    private var machineName: String {
+        let targetServerId = serverId ?? environment.machines.selectedMachineId
+        return environment.machines.machine(for: targetServerId)?.name
+            ?? environment.machines.selectedMachine.name
+    }
+
+    private func didCreateFolder(at path: String) {
+        Task { await load() }
+        let name = (path as NSString).lastPathComponent
+        onOpen(RemoteDirectory(path: path, name: name.isEmpty ? path : name))
     }
 
     private func folderList(_ listing: ServerFsListing) -> some View {

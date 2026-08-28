@@ -35,7 +35,7 @@ extension ComposerBar {
                         ? "arrow.triangle.branch" : "folder.fill"
                 )
                 .font(.caption)
-                Text(isPlaceholder ? "Select a Project…" : controller.project.name)
+                Text(isPlaceholder ? "Select a project" : controller.project.name)
                     .lineLimit(1)
             }
             .foregroundStyle(.secondary)

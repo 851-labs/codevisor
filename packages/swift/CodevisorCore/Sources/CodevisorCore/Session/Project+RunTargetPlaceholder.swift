@@ -23,3 +23,18 @@ extension Project {
         id == Self.runTargetPlaceholderID
     }
 }
+
+extension ComposerDraftStore.Draft {
+    /// Resolves a saved draft without turning the no-project sentinel into a
+    /// missing project after relaunch.
+    public func restoredProject(
+        in projects: [Project],
+        defaultServerId: String
+    ) -> Project? {
+        let serverId = projectServerId ?? defaultServerId
+        if projectId == Project.runTargetPlaceholderID {
+            return .runTargetPlaceholder(serverId: serverId)
+        }
+        return projects.first { $0.serverId == serverId && $0.id == projectId }
+    }
+}
