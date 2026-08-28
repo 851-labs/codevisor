@@ -24,7 +24,9 @@ struct TranscriptRowProjectionTests {
             rows.first(where: { $0.id == .assistantChrome(ordinary.id, .epilogue) })?
                 .finishedResponseItemId == ordinary.id
         )
-        #expect(rows.first(where: { $0.id == .plan(plan.id) })?.finishedResponseItemId == nil)
+        #expect(
+            rows.first(where: { $0.id == .planHeader(plan.id) })?.finishedResponseItemId == nil
+        )
         #expect(
             rows.first(where: { $0.id == .assistantChrome(plan.id, .epilogue) })?
                 .finishedResponseItemId == plan.id
@@ -124,6 +126,32 @@ struct TranscriptRowProjectionTests {
                 with: staleRows
             ) == baseRows
         )
+    }
+
+    @Test func planMarkdownUsesTheSameBlockRowsWhileActiveAndSettled() throws {
+        let id = UUID()
+        let markdown = "# Plan\n\n1. First\n2. Second\n\nVerify the result."
+        let active = ConversationItem.assistant(
+            AssistantMessage(
+                id: id,
+                turn: AssistantTurn(isGenerating: true, planDocument: markdown)
+            )
+        )
+        let settled = ConversationItem.assistant(
+            AssistantMessage(id: id, turn: AssistantTurn(planDocument: markdown))
+        )
+
+        let activePlanRows = TranscriptActiveRowProjection.rows(for: active).filter(\.isPlanSlice)
+        let settledPlanRows = try TranscriptRowProjectionCache.project(
+            makeInput(settled: [settled]),
+            options: .init(includesConnectingRow: true)
+        ).filter(\.isPlanSlice)
+
+        #expect(activePlanRows.count == 4)
+        #expect(activePlanRows.map(\.layoutKey) == settledPlanRows.map(\.layoutKey))
+        #expect(activePlanRows.allSatisfy { $0.spacingAfter == 0 })
+        #expect(activePlanRows.first?.id == .activePlanHeader(id))
+        #expect(settledPlanRows.first?.id == .planHeader(id))
     }
 
     @Test func completedActiveRowCarriesItsFinishedResponseIdentity() throws {
@@ -300,5 +328,18 @@ struct TranscriptRowProjectionTests {
             sessionErrorMessage: sessionError,
             status: status
         )
+    }
+}
+
+private extension TranscriptPresentationRow {
+    var isPlanSlice: Bool {
+        switch content {
+        case .planHeader:
+            true
+        case let .markdownBlock(block):
+            block.container == .planDocument
+        default:
+            false
+        }
     }
 }

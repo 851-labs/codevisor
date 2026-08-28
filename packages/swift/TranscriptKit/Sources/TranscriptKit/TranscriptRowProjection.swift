@@ -96,8 +96,14 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     public enum ID: Hashable, Sendable {
         case message(UUID)
         case assistantPlanning(UUID)
+        case activePlanning(UUID)
         case plan(UUID)
+        case planHeader(UUID)
+        case activePlanHeader(UUID)
+        case planMarkdown(UUID, ordinal: Int)
+        case activePlanMarkdown(UUID, ordinal: Int)
         case assistantResult(UUID)
+        case activeResult(UUID)
         case assistantChrome(UUID, TranscriptAssistantChromeSlice)
         case activeChrome(UUID, TranscriptAssistantChromeSlice)
         case assistantMarkdown(UUID, sourceID: String, ordinal: Int)
@@ -117,9 +123,15 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         public var layoutKey: String {
             switch self {
             case let .message(id): "message:\(id.uuidString)"
-            case let .assistantPlanning(id): "message:\(id.uuidString):planning"
+            case let .assistantPlanning(id), let .activePlanning(id):
+                "message:\(id.uuidString):planning"
             case let .plan(id): "message:\(id.uuidString):plan"
-            case let .assistantResult(id): "message:\(id.uuidString):result"
+            case let .planHeader(id), let .activePlanHeader(id):
+                "message:\(id.uuidString):plan:header"
+            case let .planMarkdown(id, ordinal), let .activePlanMarkdown(id, ordinal):
+                "message:\(id.uuidString):plan:markdown:\(ordinal)"
+            case let .assistantResult(id), let .activeResult(id):
+                "message:\(id.uuidString):result"
             case let .assistantChrome(id, slice), let .activeChrome(id, slice):
                 "message:\(id.uuidString):chrome:\(slice.layoutComponent)"
             case let .assistantMarkdown(id, sourceID, ordinal),
@@ -144,12 +156,13 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
 
         public var isCacheableSettledRow: Bool {
             switch self {
-            case .message, .assistantPlanning, .plan, .assistantResult,
-                .assistantChrome, .assistantMarkdown, .assistantAttachment:
+            case .message, .assistantPlanning, .plan, .planHeader, .planMarkdown,
+                .assistantResult, .assistantChrome, .assistantMarkdown, .assistantAttachment:
                 true
-            case .active, .activeChrome, .activeMarkdown, .activeAttachment, .setup,
-                .backgroundTask, .updateGate, .connecting, .serverWait, .error, .statusError,
-                .bottomSpacer:
+            case .active, .activePlanning, .activePlanHeader, .activePlanMarkdown,
+                .activeResult, .activeChrome, .activeMarkdown, .activeAttachment, .setup,
+                .backgroundTask, .updateGate, .connecting, .serverWait, .error,
+                .statusError, .bottomSpacer:
                 false
             }
         }
@@ -160,15 +173,19 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
 
         public var isActiveRow: Bool {
             switch self {
-            case .active, .activeChrome, .activeMarkdown, .activeAttachment: true
+            case .active, .activePlanning, .activePlanHeader, .activePlanMarkdown,
+                .activeResult, .activeChrome, .activeMarkdown, .activeAttachment:
+                true
             default: false
             }
         }
 
         public var messageID: UUID? {
             switch self {
-            case let .message(id), let .assistantPlanning(id), let .plan(id),
-                let .assistantResult(id), let .active(id):
+            case let .message(id), let .assistantPlanning(id), let .activePlanning(id),
+                let .plan(id), let .planHeader(id), let .activePlanHeader(id),
+                let .planMarkdown(id, _), let .activePlanMarkdown(id, _),
+                let .assistantResult(id), let .activeResult(id), let .active(id):
                 id
             case let .assistantChrome(id, _), let .activeChrome(id, _),
                 let .assistantMarkdown(id, _, _), let .activeMarkdown(id, _, _),
@@ -185,6 +202,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         case message(ConversationItem, waitingOnBackgroundTask: String?)
         case assistantPlanning(AssistantMessage)
         case planDocument(String)
+        case planHeader(lifecycle: TranscriptBlockLifecycle)
         case assistantResult(AssistantMessage, waitingOnBackgroundTask: String?)
         case assistantChrome(
             AssistantMessage,
@@ -253,7 +271,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
                     message.id
                 case let .assistantChrome(message, slice, waitingOnBackgroundTask: _):
                     slice == .epilogue && !message.turn.isGenerating ? message.id : nil
-                case .markdownBlock, .assistantAttachment:
+                case .planHeader, .markdownBlock, .assistantAttachment:
                     nil
                 case let .active(item):
                     if case let .assistant(message) = item, !message.turn.isGenerating {

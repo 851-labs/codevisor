@@ -23,6 +23,7 @@ public struct TranscriptMarkdownBlock: Sendable, Equatable {
     public let documentSource: String
     public let lifecycle: TranscriptBlockLifecycle
     public let container: TranscriptMarkdownContainer
+    public let blockCount: Int
 
     public init(
         messageID: UUID,
@@ -31,7 +32,8 @@ public struct TranscriptMarkdownBlock: Sendable, Equatable {
         block: MarkdownBlock,
         documentSource: String,
         lifecycle: TranscriptBlockLifecycle,
-        container: TranscriptMarkdownContainer
+        container: TranscriptMarkdownContainer,
+        blockCount: Int = 1
     ) {
         self.messageID = messageID
         self.sourceID = sourceID
@@ -40,6 +42,7 @@ public struct TranscriptMarkdownBlock: Sendable, Equatable {
         self.documentSource = documentSource
         self.lifecycle = lifecycle
         self.container = container
+        self.blockCount = blockCount
     }
 }
 
@@ -66,59 +69,7 @@ public enum TranscriptAssistantChromeSlice: Sendable, Equatable {
     }
 }
 
-/// Builds only the live transcript slice. Callers can parse this snapshot off
-/// the UI actor and splice it over the projection cache's single active slot,
-/// leaving the settled transcript untouched on token flushes.
-public enum TranscriptActiveRowProjection {
-    public static func rows(
-        for item: ConversationItem,
-        waitingOnBackgroundTask: String? = nil
-    ) -> [TranscriptPresentationRow] {
-        TranscriptAssistantRowProjection.activeRows(
-            for: item,
-            waitingOnBackgroundTask: waitingOnBackgroundTask
-        )
-    }
-
-    public static func replacingActiveSlot(
-        in rows: [TranscriptPresentationRow],
-        with activeRows: [TranscriptPresentationRow]
-    ) -> [TranscriptPresentationRow] {
-        guard !activeRows.isEmpty,
-            let activeIndex = rows.firstIndex(where: { $0.id.isActiveRow }),
-            case let .active(activeMessageID) = rows[activeIndex].id,
-            activeRows.first?.id.messageID == activeMessageID
-        else { return rows }
-        var result = rows
-        result.replaceSubrange(activeIndex...activeIndex, with: activeRows)
-        return result
-    }
-}
-
 enum TranscriptAssistantRowProjection {
-    static func activeRows(
-        for item: ConversationItem,
-        waitingOnBackgroundTask: String?
-    ) -> [TranscriptPresentationRow] {
-        guard case let .assistant(message) = item,
-            message.turn.planDocument?.isEmpty != false
-        else { return [activeFallbackRow(for: item)] }
-
-        var rows: [TranscriptPresentationRow] = []
-        let lifecycle: TranscriptBlockLifecycle =
-            message.turn.isGenerating ? .receiving : .settled
-        guard
-            appendAssistantResponse(
-                message,
-                prelude: .completePrelude,
-                waitingOnBackgroundTask: waitingOnBackgroundTask,
-                lifecycle: lifecycle,
-                to: &rows
-            )
-        else { return [activeFallbackRow(for: item)] }
-        return rows
-    }
-
     static func appendSettled(
         _ item: ConversationItem,
         waitingOnBackgroundTask: String?,
@@ -174,13 +125,12 @@ enum TranscriptAssistantRowProjection {
                     measurementRevision: revision
                 ))
         }
-        rows.append(
-            .init(
-                id: .plan(message.id),
-                content: .planDocument(planDocument),
-                estimatedHeight: estimatedPlanHeight(planDocument),
-                measurementRevision: planMeasurementRevision(planDocument)
-            ))
+        TranscriptPlanRowProjection.append(
+            messageID: message.id,
+            markdown: planDocument,
+            lifecycle: .settled,
+            to: &rows
+        )
         if !appendAssistantResponse(
             message,
             prelude: .resultPrelude,
@@ -209,7 +159,7 @@ enum TranscriptAssistantRowProjection {
     /// Splits a final response into independently measurable rows. Error-only
     /// and still-forming turns keep their ordinary assistant shell.
     @discardableResult
-    private static func appendAssistantResponse(
+    static func appendAssistantResponse(
         _ message: AssistantMessage,
         prelude: TranscriptAssistantChromeSlice,
         waitingOnBackgroundTask: String?,
@@ -328,7 +278,7 @@ enum TranscriptAssistantRowProjection {
         return true
     }
 
-    private static func activeFallbackRow(
+    static func activeFallbackRow(
         for item: ConversationItem
     ) -> TranscriptPresentationRow {
         .init(
@@ -336,6 +286,26 @@ enum TranscriptAssistantRowProjection {
             content: .active(item),
             estimatedHeight: 320
         )
+    }
+
+    static func planningID(
+        messageID: UUID,
+        lifecycle: TranscriptBlockLifecycle
+    ) -> TranscriptPresentationRow.ID {
+        switch lifecycle {
+        case .receiving: .activePlanning(messageID)
+        case .settled: .assistantPlanning(messageID)
+        }
+    }
+
+    static func resultID(
+        messageID: UUID,
+        lifecycle: TranscriptBlockLifecycle
+    ) -> TranscriptPresentationRow.ID {
+        switch lifecycle {
+        case .receiving: .activeResult(messageID)
+        case .settled: .assistantResult(messageID)
+        }
     }
 
     private static func chromeID(
@@ -459,17 +429,7 @@ enum TranscriptAssistantRowProjection {
         }
     }
 
-    private static func estimatedPlanHeight(_ markdown: String) -> CGFloat {
-        max(120, min(640, 72 + CGFloat(markdown.utf8.count / 72) * 18))
-    }
-
-    private static func planMeasurementRevision(_ markdown: String) -> Int {
-        var hasher = Hasher()
-        hasher.combine(markdown.utf8.count)
-        return hasher.finalize()
-    }
-
-    private static func measurementRevision(
+    static func measurementRevision(
         for item: ConversationItem,
         waitingOnBackgroundTask: String?
     ) -> Int {

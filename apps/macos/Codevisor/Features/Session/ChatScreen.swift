@@ -616,6 +616,8 @@ struct ChatScreen: View {
             )
         case let .planDocument(markdown):
             PlanDocumentView(markdown: markdown)
+        case .planHeader:
+            PlanDocumentHeaderView()
         case let .assistantResult(message, waitingOnBackgroundTask):
             AssistantTurnView(
                 turn: message.turn,
@@ -633,12 +635,23 @@ struct ChatScreen: View {
                 presentation: assistantPresentation(for: slice)
             )
         case let .markdownBlock(block):
-            MarkdownBlockRenderView(
-                block: block.block,
-                documentSource: block.documentSource,
-                streamID: row.layoutKey,
-                isStreaming: block.lifecycle == .receiving
-            )
+            if block.container == .planDocument {
+                PlanDocumentBlockView(
+                    block: block.block,
+                    documentSource: block.documentSource,
+                    streamID: row.layoutKey,
+                    isStreaming: block.lifecycle == .receiving,
+                    isFirst: block.ordinal == 0,
+                    isLast: block.ordinal == block.blockCount - 1
+                )
+            } else {
+                MarkdownBlockRenderView(
+                    block: block.block,
+                    documentSource: block.documentSource,
+                    streamID: row.layoutKey,
+                    isStreaming: block.lifecycle == .receiving
+                )
+            }
         case let .assistantAttachment(attachment):
             VStack(alignment: .leading, spacing: 4) {
                 AttachmentThumbnailView(file: attachment.file, inline: true)
