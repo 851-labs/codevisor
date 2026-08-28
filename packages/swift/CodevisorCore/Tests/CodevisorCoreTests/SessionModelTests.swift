@@ -330,7 +330,7 @@ struct SessionModelTests {
     func quietTurnSurfacesStalledState() async {
         let sessionId = UUID()
         let client = FakeSessionServerClient(sessionId: sessionId)
-        let sleeper = ManualSessionSleeper()
+        let scheduler = ManualSessionQuietTurnScheduler()
         client.echoOnPrompt = false
         // The stall's automatic reconcile re-reads durable history; a page
         // still reporting a live turn must leave the stalled state intact.
@@ -346,12 +346,12 @@ struct SessionModelTests {
             serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
             sessionId: sessionId.uuidString,
             stalledTurnQuietInterval: .seconds(300),
-            quietTurnSleep: { try await sleeper.sleep(for: $0) }
+            quietTurnScheduler: scheduler.scheduler
         )
 
         await model.send("wait quietly")
-        await sleeper.waitForCallCount(1)
-        sleeper.advance()
+        #expect(scheduler.callCount == 1)
+        await scheduler.advance()
         await settleUntil {
             model.isTakingLongerThanExpected && !client.transcriptPageRequests.isEmpty
         }
@@ -369,7 +369,6 @@ struct SessionModelTests {
         await settleUntil { !model.isSending }
         #expect(model.isTakingLongerThanExpected == false)
         #expect(model.providerActivityPhase == nil)
-        sleeper.cancelAll()
     }
 
     /// Regression guard for the observable-write guards in
@@ -388,7 +387,7 @@ struct SessionModelTests {
     func steadyActivityNeverReportsStalled() async {
         let sessionId = UUID()
         let client = FakeSessionServerClient(sessionId: sessionId)
-        let sleeper = ManualSessionSleeper()
+        let scheduler = ManualSessionQuietTurnScheduler()
         client.echoOnPrompt = false
         // Durable history for the stall's automatic reconcile: still live, so
         // the stalled state must survive the reload. The cursor covers every
@@ -403,12 +402,12 @@ struct SessionModelTests {
             serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
             sessionId: sessionId.uuidString,
             stalledTurnQuietInterval: .seconds(300),
-            quietTurnSleep: { try await sleeper.sleep(for: $0) }
+            quietTurnScheduler: scheduler.scheduler
         )
 
         // `send` itself notes .modelStream activity, arming the first window.
         await model.send("stream steadily")
-        await sleeper.waitForCallCount(1)
+        #expect(scheduler.callCount == 1)
 
         // Apply chunks under the SAME phase. Each one must cancel the current
         // sleep and arm a new generation even though the observable phase does
@@ -422,7 +421,7 @@ struct SessionModelTests {
                         parentToolCallId: nil,
                         phase: nil
                     )))
-            await sleeper.waitForCallCount(id + 1)
+            #expect(scheduler.callCount == id + 1)
             #expect(
                 model.isTakingLongerThanExpected == false,
                 "a steadily streaming turn must never report itself stalled (chunk \(id))"
@@ -434,10 +433,9 @@ struct SessionModelTests {
 
         // Only the latest timer generation is allowed to declare the turn
         // quiet. No wall-clock duration is involved.
-        sleeper.advance()
+        await scheduler.advance()
         await settleUntil { model.isTakingLongerThanExpected }
         model.endTurn()
-        sleeper.cancelAll()
     }
 
     @Test("Attachments allow empty text and ride the prompt to the server")

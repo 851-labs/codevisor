@@ -268,7 +268,7 @@ public final class SessionModel {
     private let sessionId: String
     let now: @Sendable () -> Date
     let stalledTurnQuietInterval: Duration
-    let quietTurnSleep: @MainActor @Sendable (Duration) async throws -> Void
+    let quietTurnScheduler: SessionQuietTurnScheduler
     var serverEventCursor: Int?
     /// History contains complete config-option snapshots from the runtime that
     /// originally created the chat. During replay, retain only their selected
@@ -281,7 +281,7 @@ public final class SessionModel {
     /// delivers updates continuously — including agent-initiated turns with no
     /// prompt in flight — so one consumer runs for the model's lifetime.
     var consumerTask: Task<Void, Never>?
-    @ObservationIgnored var stalledTurnTask: Task<Void, Never>?
+    @ObservationIgnored var stalledTurnSchedule: SessionQuietTurnCancellation?
     @ObservationIgnored var connectionRecoveryTask: Task<Void, Never>?
     @ObservationIgnored var surfacedConnectionRecoveryError: String?
 
@@ -331,9 +331,7 @@ public final class SessionModel {
         configOptions: [SessionConfigOption] = [],
         now: @escaping @Sendable () -> Date = { Date() },
         stalledTurnQuietInterval: Duration = .seconds(300),
-        quietTurnSleep: @escaping @MainActor @Sendable (Duration) async throws -> Void = {
-            try await Task.sleep(for: $0)
-        },
+        quietTurnScheduler: SessionQuietTurnScheduler = .continuous,
         connectionRecoveryStatusDelay: Duration = .seconds(5),
         connectionRecoveryFailureDelay: Duration = .seconds(30),
         connectionRecoveryRetryBaseDelay: Duration = .milliseconds(500),
@@ -345,7 +343,7 @@ public final class SessionModel {
         self.configOptions = configOptions
         self.now = now
         self.stalledTurnQuietInterval = stalledTurnQuietInterval
-        self.quietTurnSleep = quietTurnSleep
+        self.quietTurnScheduler = quietTurnScheduler
         self.connectionRecoveryStatusDelay = connectionRecoveryStatusDelay
         self.connectionRecoveryFailureDelay = connectionRecoveryFailureDelay
         self.connectionRecoveryRetryBaseDelay = connectionRecoveryRetryBaseDelay

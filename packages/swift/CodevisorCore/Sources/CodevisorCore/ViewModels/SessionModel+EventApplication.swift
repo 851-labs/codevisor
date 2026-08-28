@@ -314,8 +314,8 @@ extension SessionModel {
         let wasSending = isSending
         isSending = false
         stopConnectionRecovery()
-        stalledTurnTask?.cancel()
-        stalledTurnTask = nil
+        stalledTurnSchedule?.cancel()
+        stalledTurnSchedule = nil
         isTakingLongerThanExpected = false
         providerActivityPhase = nil
         if wasSending { onTurnEnded?() }
@@ -335,16 +335,10 @@ extension SessionModel {
         // its FIRST chunk and falsely report itself stalled mid-stream.
         if providerActivityPhase != phase { providerActivityPhase = phase }
         if isTakingLongerThanExpected { isTakingLongerThanExpected = false }
-        stalledTurnTask?.cancel()
+        stalledTurnSchedule?.cancel()
         let quietInterval = stalledTurnQuietInterval
-        let sleep = quietTurnSleep
-        stalledTurnTask = Task { @MainActor [weak self] in
-            do {
-                try await sleep(quietInterval)
-            } catch {
-                return
-            }
-            guard let self, !Task.isCancelled, self.isSending else { return }
+        stalledTurnSchedule = quietTurnScheduler.schedule(quietInterval) { [weak self] in
+            guard let self, self.isSending else { return }
             self.isTakingLongerThanExpected = true
             // A turn this quiet may be dead in a way no transport signal
             // caught, or its terminal event may have been lost. Re-derive the

@@ -248,8 +248,8 @@ extension SessionModel {
             // the event path's `endTurn` cleanup never runs — settle the
             // stall/activity state here or a healed turn keeps its stalled
             // flag (and quiet-turn timer) forever.
-            stalledTurnTask?.cancel()
-            stalledTurnTask = nil
+            stalledTurnSchedule?.cancel()
+            stalledTurnSchedule = nil
             isTakingLongerThanExpected = false
             providerActivityPhase = nil
             lastTurnInitiator = .user
