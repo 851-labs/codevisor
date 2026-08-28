@@ -39,6 +39,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     private var projectedRows: [TranscriptVirtualRow] = []
     private var projectedRowsVersion: UInt64?
     private var activeRows: [TranscriptVirtualRow] = []
+    private var activeRowsVersion: UInt64?
     private var activeRowsRange: Range<Int>?
     private var virtualLayout = VirtualTranscriptLayout(
         items: [],
@@ -267,6 +268,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     func configure(
         rows newProjectedRows: [TranscriptVirtualRow],
         activeRows newActiveRows: [TranscriptVirtualRow],
+        activeRowsVersion newActiveRowsVersion: UInt64,
         rowsVersion newRowsVersion: UInt64,
         initialState: SessionScrollState?,
         followsLatest newFollowsLatest: Bool,
@@ -313,7 +315,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             return
         }
         let projectedRowsChanged = projectedRowsVersion != newRowsVersion
-        let activeRowsChanged = activeRows != newActiveRows
+        let activeRowsChanged = activeRowsVersion != newActiveRowsVersion
         hasOlderHistory = newHasOlderHistory
         let paginationHeaderReservationChanged = paginationHeaderLayout.reserveIfNeeded(
             hasOlderHistory: newHasOlderHistory,
@@ -381,6 +383,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             projectedRows = newProjectedRows
             projectedRowsVersion = newRowsVersion
             activeRows = newActiveRows
+            activeRowsVersion = newActiveRowsVersion
             let resolution = resolvedRows(
                 projectedRows: newProjectedRows,
                 activeRows: newActiveRows
@@ -407,12 +410,14 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
                 activeRows: newActiveRows
             )
             activeRows = newActiveRows
+            activeRowsVersion = newActiveRowsVersion
             deferredRowsDuringScroll = resolution.rows
             deferredActiveRowsRange = resolution.activeRange
             rebuiltRows = false
         } else if activeRowsChanged {
             deferredRowsDuringScroll = nil
             deferredActiveRowsRange = nil
+            activeRowsVersion = newActiveRowsVersion
             rebuiltRows = applyActiveRows(newActiveRows)
         } else {
             rebuiltRows = false

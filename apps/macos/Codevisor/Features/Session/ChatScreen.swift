@@ -154,10 +154,11 @@ struct ChatScreen: View {
                 ActiveTranscriptProjectionScope(
                     controller: controller,
                     projectedRows: projectedRows
-                ) { activeRows in
+                ) { activeRows, activeRowsVersion in
                     NativeTranscriptView(
                         rows: projectedRows,
                         activeRows: activeRows,
+                        activeRowsVersion: activeRowsVersion,
                         rowsVersion: projectedRowsVersion,
                         initialState: controller.scrollState,
                         followsLatest: autoFollow,

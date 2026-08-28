@@ -8,13 +8,14 @@ import TranscriptKit
 struct ActiveTranscriptProjectionScope<Content: View>: View {
     let controller: SessionController
     let projectedRows: [TranscriptVirtualRow]
-    let content: ([TranscriptVirtualRow]) -> Content
+    let content: ([TranscriptVirtualRow], UInt64) -> Content
     @State private var activeRows: [TranscriptVirtualRow] = []
+    @State private var activeRowsVersion: UInt64 = 0
 
     init(
         controller: SessionController,
         projectedRows: [TranscriptVirtualRow],
-        @ViewBuilder content: @escaping ([TranscriptVirtualRow]) -> Content
+        @ViewBuilder content: @escaping ([TranscriptVirtualRow], UInt64) -> Content
     ) {
         self.controller = controller
         self.projectedRows = projectedRows
@@ -22,10 +23,11 @@ struct ActiveTranscriptProjectionScope<Content: View>: View {
     }
 
     var body: some View {
-        content(activeRows)
+        content(activeRows, activeRowsVersion)
             .task(id: taskKey) {
                 guard let projectedItem else {
                     activeRows = []
+                    activeRowsVersion &+= 1
                     return
                 }
                 let revision = controller.activeItemRevision
@@ -46,6 +48,7 @@ struct ActiveTranscriptProjectionScope<Content: View>: View {
                     taskKey.projectedID == projectedItem.id
                 else { return }
                 activeRows = nextRows
+                activeRowsVersion &+= 1
             }
     }
 

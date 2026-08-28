@@ -28,6 +28,7 @@ final class TranscriptViewController: UIViewController {
     func configure(
         rows: [TranscriptVirtualRow],
         activeRows: [TranscriptVirtualRow],
+        activeRowsVersion: UInt64,
         rowsVersion: UInt64,
         initialState: SessionScrollState?,
         followsLatest: Bool,
@@ -62,6 +63,7 @@ final class TranscriptViewController: UIViewController {
         transcriptScrollView.configure(
             rows: rows,
             activeRows: activeRows,
+            activeRowsVersion: activeRowsVersion,
             rowsVersion: rowsVersion,
             initialState: initialState,
             followsLatest: followsLatest,

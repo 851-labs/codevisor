@@ -97,6 +97,7 @@ struct TranscriptSendAnimationTarget {
 struct NativeTranscriptView: UIViewControllerRepresentable {
     let rows: [TranscriptVirtualRow]
     let activeRows: [TranscriptVirtualRow]
+    let activeRowsVersion: UInt64
     let rowsVersion: UInt64
     let initialState: SessionScrollState?
     let followsLatest: Bool
@@ -152,6 +153,7 @@ struct NativeTranscriptView: UIViewControllerRepresentable {
         controller.configure(
             rows: rows,
             activeRows: activeRows,
+            activeRowsVersion: activeRowsVersion,
             rowsVersion: rowsVersion,
             initialState: initialState,
             followsLatest: followsLatest,

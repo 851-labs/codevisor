@@ -33,6 +33,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private var projectedRows: [TranscriptVirtualRow] = []
     private var projectedRowsVersion: UInt64?
     private var activeRows: [TranscriptVirtualRow] = []
+    private var activeRowsVersion: UInt64?
     private var activeRowsRange: Range<Int>?
     private var virtualLayout = VirtualTranscriptLayout(items: [], measuredHeights: [:], spacing: rowSpacing)
     /// Measured row heights plus staleness. The ledger's invariant is the fix
@@ -305,6 +306,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     func configure(
         rows newProjectedRows: [TranscriptVirtualRow],
         activeRows newActiveRows: [TranscriptVirtualRow],
+        activeRowsVersion newActiveRowsVersion: UInt64,
         rowsVersion newRowsVersion: UInt64,
         initialState: SessionScrollState?,
         followsLatest newFollowsLatest: Bool,
@@ -338,7 +340,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             return
         }
         let projectedRowsChanged = projectedRowsVersion != newRowsVersion
-        let activeRowsChanged = activeRows != newActiveRows
+        let activeRowsChanged = activeRowsVersion != newActiveRowsVersion
         hasOlderHistory = newHasOlderHistory
         let paginationHeaderReservationChanged = paginationHeaderLayout.reserveIfNeeded(
             hasOlderHistory: newHasOlderHistory,
@@ -393,6 +395,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             projectedRows = newProjectedRows
             projectedRowsVersion = newRowsVersion
             activeRows = newActiveRows
+            activeRowsVersion = newActiveRowsVersion
             let resolution = resolvedRows(
                 projectedRows: newProjectedRows,
                 activeRows: newActiveRows
@@ -403,6 +406,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                 layoutFingerprintChanged: layoutFingerprintChanged
             )
         } else if activeRowsChanged {
+            activeRowsVersion = newActiveRowsVersion
             rebuiltRows = applyActiveRows(newActiveRows)
         } else {
             rebuiltRows = false

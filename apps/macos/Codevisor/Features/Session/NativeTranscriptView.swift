@@ -18,6 +18,7 @@ struct TranscriptScrollCommand: Equatable {
 struct NativeTranscriptView: NSViewRepresentable {
     let rows: [TranscriptVirtualRow]
     let activeRows: [TranscriptVirtualRow]
+    let activeRowsVersion: UInt64
     let rowsVersion: UInt64
     let initialState: SessionScrollState?
     let followsLatest: Bool
@@ -50,6 +51,7 @@ struct NativeTranscriptView: NSViewRepresentable {
         view.configure(
             rows: rows,
             activeRows: activeRows,
+            activeRowsVersion: activeRowsVersion,
             rowsVersion: rowsVersion,
             initialState: initialState,
             followsLatest: followsLatest,
@@ -78,6 +80,7 @@ struct NativeTranscriptView: NSViewRepresentable {
         nsView.configure(
             rows: rows,
             activeRows: activeRows,
+            activeRowsVersion: activeRowsVersion,
             rowsVersion: rowsVersion,
             initialState: initialState,
             followsLatest: followsLatest,
