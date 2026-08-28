@@ -98,7 +98,7 @@ struct HarnessMachinePane: View {
     /// modifiers (task, sheets, alert) exactly once — a Group would apply
     /// them to every section.
     private var installedSection: some View {
-        Section("Installed") {
+        Section {
             if isScanning, serverHarnesses.isEmpty {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
@@ -116,7 +116,11 @@ struct HarnessMachinePane: View {
                     serverInstalledRow(harness)
                 }
             }
+        } header: {
+            Text("Installed")
+        } footer: {
             HStack(spacing: 10) {
+                Spacer(minLength: 0)
                 Button {
                     Task { await scan() }
                 } label: {
@@ -130,6 +134,7 @@ struct HarnessMachinePane: View {
                 }
                 .settingsActionTint(theme)
             }
+            .font(.body)
         }
     }
 
