@@ -3,6 +3,8 @@ import SwiftUI
 
 /// The Agents-list chat row: title plus a project/worktree subtitle.
 struct SidebarChronologicalSessionRow: View {
+    @Environment(AppEnvironment.self) private var environment
+
     let session: ChatSession
     let project: Project
     let store: SessionStore?
@@ -104,14 +106,17 @@ struct SidebarChronologicalSessionRow: View {
     }
 
     private var subtitle: String {
+        let machineName = environment.machines.fleetMachineName(for: session.serverId)
+
         if !showsProjectName {
-            guard let worktreeName = session.worktreeName, !worktreeName.isEmpty else {
-                return project.name
-            }
-            return worktreeName
+            let context = session.worktreeName.flatMap { $0.isEmpty ? nil : $0 } ?? project.name
+            return [context, machineName]
+                .compactMap { $0 }
+                .filter { !$0.isEmpty }
+                .joined(separator: " · ")
         }
 
-        return [project.name, session.worktreeName]
+        return [project.name, session.worktreeName, machineName]
             .compactMap { $0 }
             .filter { !$0.isEmpty }
             .joined(separator: " · ")
