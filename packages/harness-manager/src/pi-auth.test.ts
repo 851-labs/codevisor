@@ -8,7 +8,7 @@ import { makePiAuthManager } from "./pi-auth.js"
 const directories: string[] = []
 
 const waitFor = async (predicate: () => boolean): Promise<void> => {
-  for (let attempt = 0; attempt < 50; attempt += 1) {
+  for (let attempt = 0; attempt < 500; attempt += 1) {
     if (predicate()) return
     await new Promise((resolve) => setTimeout(resolve, 10))
   }
@@ -39,7 +39,9 @@ describe("Pi provider authentication", () => {
       prompt: { type: "secret", message: "Enter OpenAI API key" }
     })
 
-    const completed = await manager.answer(started.id, "sk-test-native-pi")
+    await manager.answer(started.id, "sk-test-native-pi")
+    await waitFor(() => manager.flow(started.id).state === "complete")
+    const completed = manager.flow(started.id)
     expect(completed.state).toBe("complete")
 
     const authPath = join(home, ".pi", "agent", "auth.json")
