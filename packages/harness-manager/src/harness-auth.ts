@@ -46,6 +46,7 @@ const execFileAsync = promisify(execFile)
 /// the explicit settings refresh) all force past this cache, so staleness
 /// here only ever delays a *passive* re-check.
 const AUTH_CACHE_MS = 300_000
+const CODEX_PROBE_TIMEOUT_MS = 10_000
 const CLAUDE_AUTH_OVERRIDE_ENV_VARS = [
   "ANTHROPIC_API_KEY",
   "ANTHROPIC_AUTH_TOKEN",
@@ -83,6 +84,24 @@ const parseClaudeAuthStatus = (output: string | undefined): ClaudeAuthStatus | u
     return JSON.parse(output) as ClaudeAuthStatus
   } catch {
     return undefined
+  }
+}
+
+const withTimeout = async <A>(
+  operation: Promise<A>,
+  timeoutMs: number,
+  message: string
+): Promise<A> => {
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<A>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(message)), timeoutMs)
+      })
+    ])
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout)
   }
 }
 
@@ -334,19 +353,26 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
       env: await accountEnv(account)
     })
     try {
-      await client.request("initialize", {
-        capabilities: { experimentalApi: true },
-        clientInfo: { name: "Codevisor", title: "Codevisor", version: "0.1.0" }
-      })
+      const deadline = Date.now() + CODEX_PROBE_TIMEOUT_MS
+      const requestBeforeDeadline = <A>(operation: Promise<A>): Promise<A> =>
+        withTimeout(operation, Math.max(1, deadline - Date.now()), "Codex sign-in check timed out")
+      await requestBeforeDeadline(
+        client.request("initialize", {
+          capabilities: { experimentalApi: true },
+          clientInfo: { name: "Codevisor", title: "Codevisor", version: "0.1.0" }
+        })
+      )
       client.notify("initialized")
-      const response = await client.request<{
-        account?: null | {
-          type?: string
-          email?: string | null
-          planType?: string | null
-        }
-        requiresOpenaiAuth?: boolean
-      }>("account/read", { refreshToken: false })
+      const response = await requestBeforeDeadline(
+        client.request<{
+          account?: null | {
+            type?: string
+            email?: string | null
+            planType?: string | null
+          }
+          requiresOpenaiAuth?: boolean
+        }>("account/read", { refreshToken: false })
+      )
       if (response.account === null || response.account === undefined) {
         const notRequired = response.requiresOpenaiAuth === false
         return persistProbe(account, {
@@ -497,7 +523,7 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
 
   const loginMethods = (harnessId: string): ReadonlyArray<HarnessAuthMethod> => {
     if (harnessId === "codex") {
-      return [
+      const methods: ReadonlyArray<HarnessAuthMethod> = [
         {
           id: "chatgpt",
           name: "Sign in with ChatGPT",
@@ -517,6 +543,13 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
           description: "Use API billing instead of a ChatGPT subscription."
         }
       ]
+      // Codex's ordinary browser handoff returns to the machine that launched
+      // it, so it cannot complete through a remote Codevisor server. Remote
+      // servers expose device code and API key only; both native clients get
+      // the same honest method list from this snapshot.
+      return config.preferDeviceCode === true
+        ? methods.filter((method) => method.id !== "chatgpt")
+        : methods
     }
     if (harnessId === "claude-code") {
       return [
@@ -574,6 +607,19 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
     )
   }
 
+  const refreshAccount = async (account: HarnessAccountRecord, force: boolean): Promise<void> => {
+    try {
+      await probeAccount(account.id, force)
+    } catch (cause) {
+      await persistProbe(account, {
+        authState: "error",
+        canLogin: account.canLogin,
+        canLogout: false,
+        detail: cause instanceof Error ? cause.message : String(cause)
+      })
+    }
+  }
+
   const decorateHarnesses = async (
     harnesses: ReadonlyArray<Harness>,
     force = false
@@ -585,15 +631,13 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
           return { ...harness, desiredEnabled, enabled: false }
         }
         const account = await ensureDefault(harness)
-        try {
-          await probeAccount(account.id, force)
-        } catch (cause) {
-          await persistProbe(account, {
-            authState: "error",
-            canLogin: account.canLogin,
-            canLogout: false,
-            detail: cause instanceof Error ? cause.message : String(cause)
-          })
+        if (force) {
+          await refreshAccount(account, true)
+        } else {
+          // Capability discovery is latency-sensitive. Return the persisted
+          // auth snapshot immediately and refresh it in the background; auth
+          // events invalidate mounted catalogs when the probe finishes.
+          void refreshAccount(account, false).catch(() => undefined)
         }
         const auth = await authSnapshot(harness.id)
         const usable = auth.state === "authenticated" || auth.state === "notRequired"

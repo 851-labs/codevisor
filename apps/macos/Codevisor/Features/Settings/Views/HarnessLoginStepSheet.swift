@@ -31,6 +31,7 @@ struct HarnessLoginStepSheet: View {
     @State private var input = ""
     @State private var isSubmitting = false
     @State private var errorText: String?
+    @State private var copiedCode = false
 
     var body: some View {
         VStack(spacing: 16) {
@@ -62,35 +63,40 @@ struct HarnessLoginStepSheet: View {
                 .textFieldStyle(.roundedBorder)
                 .onSubmit { submit() }
             if let url = flowURL(flow) {
-                Button("Open the browser again") { NSWorkspace.shared.open(url) }
+                Button("Open Browser") { NSWorkspace.shared.open(url) }
                     .buttonStyle(.link)
             }
 
         case .flow(let flow) where flow.kind == "deviceCode":
-            instruction("Enter this code in your browser to continue.")
-            HStack(spacing: 8) {
+            instruction("Copy this code, then open the sign-in page in your browser.")
+            VStack(spacing: 8) {
                 Text(flow.userCode ?? "")
                     .font(.system(.title2, design: .monospaced, weight: .semibold))
                     .textSelection(.enabled)
                 Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(flow.userCode ?? "", forType: .string)
+                    copyCode(flow.userCode ?? "")
                 } label: {
-                    Image(systemName: "doc.on.doc")
+                    Label(
+                        copiedCode ? "Copied" : "Copy Code",
+                        systemImage: copiedCode ? "checkmark" : "doc.on.doc"
+                    )
                 }
-                .buttonStyle(.borderless)
-                .help("Copy code")
+                .buttonStyle(.bordered)
             }
             if let value = flow.verificationUrl, let url = URL(string: value) {
-                Button("Open the browser again") { NSWorkspace.shared.open(url) }
-                    .buttonStyle(.link)
+                Button {
+                    NSWorkspace.shared.open(url)
+                } label: {
+                    Label("Open Browser", systemImage: "safari")
+                }
+                .buttonStyle(.borderedProminent)
             }
             waiting
 
         case .flow(let flow):
             instruction("Finish signing in in your browser.")
             if let url = flowURL(flow) {
-                Button("Open the browser again") { NSWorkspace.shared.open(url) }
+                Button("Open Browser") { NSWorkspace.shared.open(url) }
                     .buttonStyle(.link)
             }
             waiting
@@ -145,6 +151,16 @@ struct HarnessLoginStepSheet: View {
 
     private func flowURL(_ flow: ServerHarnessAuthFlow) -> URL? {
         (flow.url ?? flow.verificationUrl).flatMap(URL.init(string:))
+    }
+
+    private func copyCode(_ code: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(code, forType: .string)
+        copiedCode = true
+        Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            copiedCode = false
+        }
     }
 
     private func submit() {

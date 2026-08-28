@@ -2,8 +2,7 @@ import CodevisorCore
 import SwiftUI
 import UIKit
 
-/// One sign-in attempt as its own focused sheet, mirroring the macOS
-/// HarnessLoginStepSheet: one instruction, one input, clear actions.
+/// One sign-in attempt presented as a compact, platform-standard form.
 enum HarnessLoginStep: Identifiable {
     case flow(ServerHarnessAuthFlow)
     case apiKey(account: ServerHarnessAccount, method: ServerHarnessAuthMethod)
@@ -28,97 +27,136 @@ struct HarnessLoginStepScreen: View {
     @State private var input = ""
     @State private var isSubmitting = false
     @State private var errorText: String?
+    @State private var copiedCode = false
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 20) {
-                HarnessIconView(harnessId: harness.id, fallbackSymbolName: harness.symbolName, size: 44)
-                    .padding(.top, 12)
-                Text("Sign in to \(harness.name)")
-                    .font(.title3.weight(.semibold))
-
+            Form {
                 content
 
                 if let errorText {
-                    Text(errorText)
-                        .font(.footnote)
-                        .foregroundStyle(.red)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Section {
+                        Label(errorText, systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+            .navigationTitle(harness.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .disabled(isSubmitting)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel", role: .cancel) { cancel() }
                 }
 
                 if needsSubmit {
-                    Button {
-                        submit()
-                    } label: {
-                        Text(isSubmitting ? "Verifying…" : "Continue")
-                            .frame(maxWidth: .infinity)
+                    ToolbarItem(placement: .confirmationAction) {
+                        if isSubmitting {
+                            ProgressView()
+                        } else {
+                            Button("Continue") { submit() }
+                                .disabled(trimmedInput.isEmpty)
+                        }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(
-                        input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            || isSubmitting)
-                }
-                Spacer()
-            }
-            .padding(20)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { cancel() }
                 }
             }
         }
+        .safeAreaInset(edge: .bottom) {
+            if let browserURL {
+                VStack(spacing: 12) {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Waiting for sign-in…")
+                    }
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+
+                    Button {
+                        openURL(browserURL)
+                    } label: {
+                        Label("Open \(harness.name) Sign-in", systemImage: "safari")
+                            .fontWeight(.semibold)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.capsule)
+                    .controlSize(.large)
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
+            }
+        }
         .presentationDetents([.medium])
+        .interactiveDismissDisabled(isSubmitting)
     }
 
     @ViewBuilder
     private var content: some View {
         switch step {
         case .flow(let flow) where flow.kind == "pasteCode":
-            instruction("Approve the request in your browser, then paste the code it shows you.")
-            TextField("Code", text: $input)
-                .textFieldStyle(.roundedBorder)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .onSubmit { submit() }
+            Section {
+                TextField("Code", text: $input)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .submitLabel(.continue)
+                    .onSubmit { submit() }
+            } footer: {
+                Text("Approve the request in your browser, then paste the code it shows you.")
+            }
+
             if let url = flowURL(flow) {
-                Button("Open the browser again") { openURL(url) }
-                    .font(.callout)
+                Section {
+                    Button {
+                        openURL(url)
+                    } label: {
+                        Label("Open Browser", systemImage: "safari")
+                    }
+                }
             }
 
         case .flow(let flow) where flow.kind == "deviceCode":
-            instruction("Enter this code in your browser to continue.")
-            HStack(spacing: 10) {
-                Text(flow.userCode ?? "")
-                    .font(.system(.title2, design: .monospaced, weight: .semibold))
-                    .textSelection(.enabled)
-                Button {
-                    UIPasteboard.general.string = flow.userCode ?? ""
-                } label: {
-                    Image(systemName: "doc.on.doc")
+            Section {
+                LabeledContent("Code") {
+                    HStack(spacing: 12) {
+                        Text(flow.userCode ?? "")
+                            .font(.headline.monospaced())
+                            .textSelection(.enabled)
+                        Button {
+                            copyCode(flow.userCode ?? "")
+                        } label: {
+                            Image(systemName: copiedCode ? "checkmark" : "doc.on.doc")
+                                .contentTransition(.symbolEffect(.replace))
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel(copiedCode ? "Copied" : "Copy Code")
+                    }
                 }
+            } footer: {
+                Text("Copy this code, then open the sign-in page in your browser.")
             }
-            if let value = flow.verificationUrl, let url = URL(string: value) {
-                Button("Open the browser again") { openURL(url) }
-                    .font(.callout)
-            }
-            waiting
 
-        case .flow(let flow):
-            instruction("Finish signing in in your browser.")
-            if let url = flowURL(flow) {
-                Button("Open the browser again") { openURL(url) }
-                    .font(.callout)
+        case .flow:
+            Section {
+                Label("Finish signing in in your browser.", systemImage: "safari")
             }
-            waiting
 
         case .apiKey(_, let method):
-            instruction(method.description ?? "The key is stored only on this machine.")
-            SecureField("API key", text: $input)
-                .textFieldStyle(.roundedBorder)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .onSubmit { submit() }
+            Section {
+                SecureField("API key", text: $input)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .privacySensitive()
+                    .submitLabel(.continue)
+                    .onSubmit { submit() }
+            } footer: {
+                Text(method.description ?? "The key is stored only on this machine.")
+            }
         }
+    }
+
+    private var trimmedInput: String {
+        input.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private var needsSubmit: Bool {
@@ -128,39 +166,40 @@ struct HarnessLoginStepScreen: View {
         }
     }
 
-    private var waiting: some View {
-        HStack(spacing: 8) {
-            ProgressView()
-            Text("Waiting for sign-in…")
-                .foregroundStyle(.secondary)
-        }
-        .font(.callout)
+    private var waitsForBrowser: Bool {
+        guard case .flow(let flow) = step else { return false }
+        return flow.kind != "pasteCode"
     }
 
-    private func instruction(_ text: String) -> some View {
-        Text(text)
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .multilineTextAlignment(.center)
-            .fixedSize(horizontal: false, vertical: true)
+    private var browserURL: URL? {
+        guard case .flow(let flow) = step, flow.kind != "pasteCode" else { return nil }
+        return flowURL(flow)
     }
 
     private func flowURL(_ flow: ServerHarnessAuthFlow) -> URL? {
         (flow.url ?? flow.verificationUrl).flatMap(URL.init(string:))
     }
 
+    private func copyCode(_ code: String) {
+        UIPasteboard.general.string = code
+        copiedCode = true
+        Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            copiedCode = false
+        }
+    }
+
     private func submit() {
-        let value = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty, !isSubmitting else { return }
+        guard !trimmedInput.isEmpty, !isSubmitting else { return }
         isSubmitting = true
         errorText = nil
         Task {
             defer { isSubmitting = false }
             switch step {
             case .flow:
-                errorText = await submitCode(value)
+                errorText = await submitCode(trimmedInput)
             case .apiKey(let account, let method):
-                errorText = await submitApiKey(account, method, value)
+                errorText = await submitApiKey(account, method, trimmedInput)
             }
         }
     }

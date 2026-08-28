@@ -26,7 +26,26 @@ struct HarnessAuthenticationScreen: View {
         environment.machines.client(for: serverId)
     }
 
+    @ViewBuilder
     var body: some View {
+        if harness.id == "pi" {
+            PiProviderAuthenticationScreen(
+                serverId: serverId,
+                harness: harness,
+                onAuthenticated: onAuthenticated
+            )
+        } else if harness.id == "opencode" {
+            OpenCodeProviderAuthenticationScreen(
+                serverId: serverId,
+                harness: harness,
+                onAuthenticated: onAuthenticated
+            )
+        } else {
+            standardAuthentication
+        }
+    }
+
+    private var standardAuthentication: some View {
         accountsForm
             .sheet(item: $loginStep) { step in
                 HarnessLoginStepScreen(
@@ -166,7 +185,7 @@ struct HarnessAuthenticationScreen: View {
     // MARK: - Actions
 
     private func load() async {
-        methods = harness.auth?.loginMethods ?? []
+        methods = supportedLoginMethods(harness.auth?.loginMethods ?? [])
         do {
             accounts = try await client.listHarnessAccounts(harnessId: harness.id)
             errorMessage = nil
@@ -265,8 +284,12 @@ struct HarnessAuthenticationScreen: View {
             )
             flow = next.kind == "complete" ? nil : next
             loginStep = next.kind == "complete" ? nil : .flow(next)
-            if let value = next.url, let url = URL(string: value) { openURL(url) }
-            if let value = next.verificationUrl, let url = URL(string: value) { openURL(url) }
+            if next.kind != "deviceCode",
+                let value = next.url ?? next.verificationUrl,
+                let url = URL(string: value)
+            {
+                openURL(url)
+            }
             if next.kind == "complete" {
                 await finishAuthentication(accountId: account.id)
                 return
@@ -337,8 +360,17 @@ struct HarnessAuthenticationScreen: View {
             harnessId: harness.id, onServer: serverId)
         {
             harness = updated
-            methods = updated.auth?.loginMethods ?? methods
+            methods = supportedLoginMethods(updated.auth?.loginMethods ?? methods)
         }
+    }
+
+    private func supportedLoginMethods(
+        _ candidates: [ServerHarnessAuthMethod]
+    ) -> [ServerHarnessAuthMethod] {
+        guard harness.id == "codex", serverId != CodevisorMachine.local.id else {
+            return candidates
+        }
+        return candidates.filter { $0.id != "chatgpt" }
     }
 
     private func perform(_ operation: () async throws -> Void) async {

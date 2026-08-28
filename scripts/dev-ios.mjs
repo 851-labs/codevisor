@@ -1,8 +1,7 @@
-// iOS development loop: starts the standalone "Dev Direct" Codevisor server on
-// this Mac (the same isolated instance scripts/dev.mjs runs alongside the macOS
-// app) plus the cloud-joined "Dev Cloud" server, starts a development cloud,
-// then builds and launches the iOS app in the visible Simulator. No macOS app
-// is built or launched — the iOS app is a pure client of the dev servers.
+// iOS development loop: starts the same isolated Dev Direct and Dev Cloud
+// machines as scripts/dev.mjs (Linux containers by default), starts a
+// development cloud, then builds and launches the iOS app in the visible
+// Simulator. No macOS app is built or launched — iOS is a pure client.
 import { createHash } from "node:crypto"
 import { spawn } from "node:child_process"
 import { cp, mkdir, readFile, realpath, rm } from "node:fs/promises"
@@ -11,6 +10,13 @@ import process from "node:process"
 import { fileURLToPath } from "node:url"
 
 import { bootstrapDevelopment } from "./dev-bootstrap.mjs"
+import { parseDevelopmentRunnerArguments } from "./dev-arguments.mjs"
+import {
+  launchDevRemoteServer,
+  prepareDevContainers,
+  readDevRemoteConnectionToken,
+  resolveContainerEngine
+} from "./dev-containers.mjs"
 import {
   developmentLayout,
   ensureDevelopmentDirectories,
@@ -39,6 +45,9 @@ import {
 } from "./dev-shared.mjs"
 
 const repoRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)))
+const { wantsContainers, containerEnginePreference } = parseDevelopmentRunnerArguments(
+  process.argv.slice(2)
+)
 const worktreeName = basename(repoRoot)
 const instanceHash = createHash("sha256").update(repoRoot).digest("hex").slice(0, 10)
 const instanceName = `${worktreeName}-${instanceHash}`
@@ -122,6 +131,24 @@ console.log(`  cloud:     ${cloudURL}${externalCloudURL === undefined ? " (manag
 await bootstrapDevelopment(repoRoot, { environment: process.env })
 await run("bun", ["run", "--cwd", "apps/server", "build"])
 
+// Match dev/dev:macos: real Linux remotes by default, same-host only when
+// explicitly requested or when neither supported engine is available.
+const containerEngine = wantsContainers
+  ? await resolveContainerEngine(containerEnginePreference)
+  : undefined
+if (wantsContainers && containerEngine === undefined) {
+  console.warn("No usable container engine; dev remotes run as same-host processes.")
+}
+const containerContext =
+  containerEngine === undefined
+    ? undefined
+    : await prepareDevContainers({
+        repoRoot,
+        containerRoot: join(layout.tmpRoot, "container"),
+        engine: containerEngine,
+        worktreeHash: instanceHash
+      })
+
 // Match the macOS development runner: unless an external dev cloud was
 // explicitly supplied, own a worktree-isolated Worker and hand its dev-user
 // session to both the standalone server and the iOS app. This keeps the
@@ -158,6 +185,7 @@ if (externalCloudURL === undefined) {
       "x",
       "wrangler",
       "dev",
+      ...(containerContext === undefined ? [] : ["--ip", "0.0.0.0"]),
       "--port",
       String(cloudPort),
       "--persist-to",
@@ -188,70 +216,36 @@ const directRemoteEnvironment = {
 }
 delete directRemoteEnvironment.CODEVISOR_DEV_CLOUD_URL
 delete directRemoteEnvironment.CODEVISOR_DEV_CLOUD_TOKEN
-const server = spawn(
-  "node",
-  [
-    join(repoRoot, "apps/server/dist/main.js"),
-    "serve",
-    "--host",
-    "0.0.0.0",
-    "--port",
-    String(remotePort),
-    "--db",
-    join(remoteDataDirectory, "codevisor-server.sqlite"),
-    "--auth",
-    "token",
-    "--kind",
-    "remote",
-    "--name",
-    remoteName,
-    "--upgrade-status",
-    join(remoteDataDirectory, "data-upgrade.json")
-  ],
-  {
-    cwd: repoRoot,
-    env: directRemoteEnvironment,
-    stdio: "inherit"
-  }
-)
+const server = await launchDevRemoteServer({
+  containerContext,
+  repoRoot,
+  remoteRootHost: join(layout.tmpRoot, "remote"),
+  serverRoots: layout.remote,
+  port: remotePort,
+  serverName: remoteName,
+  environment: directRemoteEnvironment
+})
 
 // Dev Cloud: a second standalone server that signs into the dev cloud and is
 // reached through the relay — the hub's realistic "machine somewhere else".
-const cloudRemoteServer = spawn(
-  "node",
-  [
-    join(repoRoot, "apps/server/dist/main.js"),
-    "serve",
-    "--host",
-    "0.0.0.0",
-    "--port",
-    String(cloudRemotePort),
-    "--db",
-    join(layout.remoteCloud.data, "codevisor-server.sqlite"),
-    "--auth",
-    "token",
-    "--kind",
-    "remote",
-    "--name",
-    cloudRemoteName,
-    "--upgrade-status",
-    join(layout.remoteCloud.data, "data-upgrade.json")
-  ],
-  {
-    cwd: repoRoot,
-    env: {
-      ...remoteDevelopmentEnvironment(layout, process.env, layout.remoteCloud),
-      CODEVISOR_DEV_INSTANCE_ID: `${instanceName}-cloud`,
-      ...(cloudSession === undefined
-        ? {}
-        : {
-            CODEVISOR_DEV_CLOUD_URL: cloudSession.url,
-            CODEVISOR_DEV_CLOUD_TOKEN: cloudSession.token
-          })
-    },
-    stdio: "inherit"
+const cloudRemoteServer = await launchDevRemoteServer({
+  containerContext,
+  repoRoot,
+  remoteRootHost: join(layout.tmpRoot, "remote-cloud"),
+  serverRoots: layout.remoteCloud,
+  port: cloudRemotePort,
+  serverName: cloudRemoteName,
+  environment: {
+    ...remoteDevelopmentEnvironment(layout, process.env, layout.remoteCloud),
+    CODEVISOR_DEV_INSTANCE_ID: `${instanceName}-cloud`,
+    ...(cloudSession === undefined
+      ? {}
+      : {
+          CODEVISOR_DEV_CLOUD_URL: cloudSession.url,
+          CODEVISOR_DEV_CLOUD_TOKEN: cloudSession.token
+        })
   }
-)
+})
 
 let stopping = false
 let iosTarget
@@ -310,8 +304,10 @@ try {
     environment: process.env
   })
 
-  await waitForHealth(remotePort, server)
-  await waitForHealth(cloudRemotePort, cloudRemoteServer)
+  // First container boots may need to provision Linux dependencies.
+  const remoteHealthAttempts = containerContext === undefined ? 120 : 2400
+  await waitForHealth(remotePort, server, remoteHealthAttempts)
+  await waitForHealth(cloudRemotePort, cloudRemoteServer, remoteHealthAttempts)
   const token = await readConnectionToken()
 
   await launchIOSDevelopmentApp({
@@ -341,8 +337,7 @@ try {
 
 async function readConnectionToken() {
   try {
-    const response = await fetch(`${serverURL}/v1/auth/connection-token`)
-    if (response.ok) return (await response.json()).token
+    return await readDevRemoteConnectionToken(server, serverURL)
   } catch {
     // Fall through: the address alone is enough to add the machine manually.
   }

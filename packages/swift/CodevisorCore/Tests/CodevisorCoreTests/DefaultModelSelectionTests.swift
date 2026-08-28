@@ -10,6 +10,24 @@ import Testing
 @MainActor
 @Suite("DefaultModelSelection")
 struct DefaultModelSelectionTests {
+    @Test("A project-less draft loads capabilities using the server fallback directory")
+    func placeholderDraftLoadsCapabilities() async {
+        let client = SyncFakeServerClient(projects: [], sessions: [])
+        client.capabilitiesHandler = { cwd in
+            guard cwd.isEmpty else { throw CancellationError() }
+            return ServerCapabilities(harnesses: [])
+        }
+        let controller = SessionController(
+            project: .runTargetPlaceholder(serverId: "machine-a"),
+            configCache: ConfigOptionCache(store: InMemoryStore()),
+            serverClient: client
+        )
+
+        await controller.prepare()
+
+        #expect(controller.preparationState == .ready)
+    }
+
     @Test("A draft with no usable model choice pends the first option")
     func defaultsToFirstModel() throws {
         let controller = SessionController.preview()

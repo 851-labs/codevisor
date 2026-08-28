@@ -13,7 +13,7 @@
 //   same per-worktree hash as ports and bundle identifiers.
 import { execFile, spawn } from "node:child_process"
 import { EventEmitter } from "node:events"
-import { mkdir } from "node:fs/promises"
+import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { pathExists } from "./dev-shared.mjs"
 import { syncLinuxWorkspace } from "./dev-container-workspace.mjs"
@@ -198,7 +198,7 @@ export async function prepareDevContainers({ repoRoot, containerRoot, engine, wo
 /// existing waitForExit / waitForHealth / stop() logic works unchanged on
 /// both modes. exitCode flips (and "exit" fires) when the container is
 /// gone — it runs with --rm, so stopping and exiting look identical.
-const makeContainerHandle = (binary, name) => {
+const makeContainerHandle = (binary, name, port) => {
   const emitter = new EventEmitter()
   const handle = {
     exitCode: null,
@@ -207,6 +207,26 @@ const makeContainerHandle = (binary, name) => {
     kill: () => {
       void tryEngine(binary, ["rm", "--force", name])
       return true
+    },
+    readConnectionToken: async () => {
+      const script = [
+        `const response = await fetch("http://127.0.0.1:${port}/v1/auth/connection-token")`,
+        "if (!response.ok) throw new Error(`connection token returned ${response.status}`)",
+        "process.stdout.write(await response.text())"
+      ].join(";")
+      const output = await execEngine(binary, [
+        "exec",
+        name,
+        "node",
+        "--input-type=module",
+        "-e",
+        script
+      ])
+      const parsed = JSON.parse(output)
+      if (typeof parsed.token !== "string" || parsed.token.length === 0) {
+        throw new Error("Container returned an invalid development connection token")
+      }
+      return parsed.token
     }
   }
   let misses = 0
@@ -230,6 +250,39 @@ const makeContainerHandle = (binary, name) => {
   return handle
 }
 
+/// A published container port is non-loopback from the server's perspective,
+/// so the unauthenticated development token endpoint correctly rejects the
+/// host request. Read it inside the container, where 127.0.0.1 really is the
+/// server's loopback; same-host runners retain the ordinary fetch path.
+export async function readDevRemoteConnectionToken(server, serverUrl) {
+  if (typeof server.readConnectionToken === "function") return await server.readConnectionToken()
+  const response = await fetch(`${serverUrl}/v1/auth/connection-token`)
+  if (!response.ok) throw new Error(`connection token returned ${response.status}`)
+  const parsed = await response.json()
+  if (typeof parsed.token !== "string" || parsed.token.length === 0) {
+    throw new Error("Server returned an invalid development connection token")
+  }
+  return parsed.token
+}
+
+/// Dev remote state deliberately survives runner restarts, including its
+/// machine API key. The route to the worktree-local cloud does not: it is
+/// localhost in same-host mode and the VM gateway in container mode. Keep the
+/// persisted credential pointed at the current route so its built-in validity
+/// probe can either reuse the API key or re-provision it after a cloud reset.
+export async function alignDevCloudCredentialUrl(credentialsPath, serverUrl) {
+  let parsed
+  try {
+    parsed = JSON.parse(await readFile(credentialsPath, "utf8"))
+  } catch {
+    return
+  }
+  if (parsed === null || typeof parsed !== "object" || parsed.serverUrl === serverUrl) return
+  await writeFile(credentialsPath, `${JSON.stringify({ ...parsed, serverUrl }, null, 2)}\n`, {
+    mode: 0o600
+  })
+}
+
 /// Launches one dev remote server in either mode, returning a
 /// ChildProcess-compatible handle. Container mode runs the identical
 /// `serve` command inside Linux, with the server's roots bind-mounted from
@@ -248,6 +301,20 @@ export async function launchDevRemoteServer({
   // collides across the fleet's sync namespaces (every machine's
   // readiness would publish under the same key).
   const serverId = environment.CODEVISOR_DEV_INSTANCE_ID ?? serverName
+  const rewriteHost = (value) =>
+    typeof value === "string" && containerContext !== undefined
+      ? value
+          .replace("127.0.0.1", containerContext.hostAddress)
+          .replace("localhost", containerContext.hostAddress)
+      : value
+  const cloudUrl = rewriteHost(environment.CODEVISOR_DEV_CLOUD_URL)
+  if (
+    typeof cloudUrl === "string" &&
+    typeof environment.CODEVISOR_DEV_CLOUD_TOKEN === "string" &&
+    environment.CODEVISOR_DEV_CLOUD_TOKEN.length > 0
+  ) {
+    await alignDevCloudCredentialUrl(join(serverRoots.data, "cloud.json"), cloudUrl)
+  }
   if (containerContext === undefined) {
     return spawn(
       "node",
@@ -274,14 +341,10 @@ export async function launchDevRemoteServer({
       { cwd: repoRoot, env: environment, stdio: "inherit" }
     )
   }
-  const { engine, worktreeHash, appRoot, stateRoot, entryScript, hostAddress } = containerContext
+  const { engine, worktreeHash, appRoot, stateRoot, entryScript } = containerContext
   const binary = engine === "apple" ? "container" : "docker"
   const toContainerPath = (hostPath) => hostPath.replace(remoteRootHost, "/codevisor-data")
   const containerName = `codevisor-dev-${serverName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${worktreeHash.slice(0, 10)}`
-  const rewriteHost = (value) =>
-    typeof value === "string"
-      ? value.replace("127.0.0.1", hostAddress).replace("localhost", hostAddress)
-      : value
   const env = {}
   for (const [key, value] of Object.entries(environment)) {
     if (!key.startsWith("CODEVISOR_") && !key.startsWith("HERDMAN_")) continue
@@ -289,8 +352,11 @@ export async function launchDevRemoteServer({
     env[key] = key === "CODEVISOR_DEV_CLOUD_URL" ? rewriteHost(value) : toContainerPath(value)
   }
   await tryEngine(binary, ["rm", "--force", containerName])
-  // The bind-mounted home must exist host-side before `run` references it.
-  await mkdir(join(stateRoot, "root-home"), { recursive: true })
+  // Harness credentials and installs are machine state, not shared cache:
+  // Dev Direct and Dev Cloud need separate homes to remain honest separate
+  // machines. Each home persists beside that remote's server data.
+  const rootHome = join(remoteRootHost, ".container-home")
+  await mkdir(rootHome, { recursive: true })
   const args = [
     "run",
     "--detach",
@@ -309,7 +375,7 @@ export async function launchDevRemoteServer({
     "--volume",
     `${stateRoot}:/codevisor-state`,
     "--volume",
-    `${join(stateRoot, "root-home")}:/root`,
+    `${rootHome}:/root`,
     "--volume",
     `${remoteRootHost}:/codevisor-data`,
     "--volume",
@@ -348,5 +414,5 @@ export async function launchDevRemoteServer({
   )
   await execEngine(binary, args)
   console.log(`  container ${containerName} (${engine}) → 127.0.0.1:${port}`)
-  return makeContainerHandle(binary, containerName)
+  return makeContainerHandle(binary, containerName, port)
 }

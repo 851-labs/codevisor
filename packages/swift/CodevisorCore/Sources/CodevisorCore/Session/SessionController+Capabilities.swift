@@ -22,7 +22,7 @@ extension SessionController {
         // client) store its response under the NEW machine's cache key.
         let target = CapabilityFetchTarget(
             serverId: project.serverId,
-            cwd: project.folderURL.path
+            cwd: capabilityCwd
         )
         if seedFromCachedServerCapabilities() {
             preparationState = .ready
@@ -132,7 +132,7 @@ extension SessionController {
             serverClient,
             target: CapabilityFetchTarget(
                 serverId: project.serverId,
-                cwd: project.folderURL.path
+                cwd: capabilityCwd
             ),
             requestRevision: requestRevision,
             force: true
@@ -260,6 +260,13 @@ extension SessionController {
     struct CapabilityFetchTarget {
         let serverId: String
         let cwd: String
+    }
+
+    /// A project-less iOS draft can still inspect its machine's harnesses.
+    /// Sending an empty cwd asks the server to use its own temporary directory
+    /// instead of treating the sentinel's `/` path as a real workspace.
+    var capabilityCwd: String {
+        project.isRunTargetPlaceholder ? "" : project.folderURL.path
     }
 
     @discardableResult

@@ -356,7 +356,7 @@ extension SessionController {
         selections["model"] = expectedModelValue
         do {
             let response = try await serverClient.capabilities(
-                cwd: project.folderURL.path,
+                cwd: capabilityCwd,
                 harnessId: harnessId,
                 configSelections: selections
             )

@@ -115,8 +115,11 @@ struct HarnessSignInSheet: View {
 
 extension View {
     /// Presents the sign-in sheet bound to an optional request.
-    func harnessSignInSheet(request: Binding<HarnessSignInRequest?>) -> some View {
-        sheet(item: request) { pending in
+    func harnessSignInSheet(
+        request: Binding<HarnessSignInRequest?>,
+        onDismiss: @escaping () -> Void = {}
+    ) -> some View {
+        sheet(item: request, onDismiss: onDismiss) { pending in
             HarnessSignInSheet(request: pending)
         }
     }

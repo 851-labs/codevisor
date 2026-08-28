@@ -46,6 +46,12 @@ if ! command -v node-gyp >/dev/null 2>&1; then
   npm install -g --prefix "$STATE/npm-tools" node-gyp >/dev/null 2>&1
 fi
 
+# Harness installs belong to the machine, not the disposable container
+# filesystem. `/root` is a per-remote bind mount, so keep global npm CLIs and
+# the common user-local installer locations there and put them on PATH.
+export NPM_CONFIG_PREFIX=/root/.npm-global
+export PATH="/root/.npm-global/bin:/root/.local/bin:/root/bin:$PATH"
+
 cd "$APP"
 LOCK_SIGNATURE="$(cat bun.lock bun.lockb 2>/dev/null | cksum | cut -d' ' -f1)"
 INSTALLED_SIGNATURE="$(cat "$STATE/installed.signature" 2>/dev/null || true)"

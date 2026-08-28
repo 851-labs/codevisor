@@ -7,6 +7,7 @@ import process from "node:process"
 import { fileURLToPath } from "node:url"
 
 import { bootstrapDevelopment } from "./dev-bootstrap.mjs"
+import { parseDevelopmentRunnerArguments } from "./dev-arguments.mjs"
 import {
   developmentLayout,
   ensureDevelopmentDirectories,
@@ -17,6 +18,7 @@ import {
 import {
   launchDevRemoteServer,
   prepareDevContainers,
+  readDevRemoteConnectionToken,
   resolveContainerEngine
 } from "./dev-containers.mjs"
 import {
@@ -42,16 +44,9 @@ import { runXcodebuild } from "./xcodebuild.mjs"
 
 const repoRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)))
 const arguments_ = process.argv.slice(2)
-const unknownArguments = arguments_.filter(
-  (argument) =>
-    argument !== "--no-ios" &&
-    argument !== "--containers" &&
-    argument !== "--no-containers" &&
-    !argument.startsWith("--container-engine=")
-)
-if (unknownArguments.length > 0) {
-  throw new Error(`Unknown development runner argument: ${unknownArguments.join(", ")}`)
-}
+const { wantsContainers, containerEnginePreference } = parseDevelopmentRunnerArguments(arguments_, {
+  allowedArguments: ["--no-ios"]
+})
 // Both apps by default — `dev` means the whole rig. `--no-ios` backs the
 // dev:macos script; it is plumbing, not a user-facing option (the public
 // surface is dev / dev:macos / dev:ios plus the container flags).
@@ -59,11 +54,6 @@ const includesIOS = !arguments_.includes("--no-ios")
 // Containerized dev remotes are the default: real Linux machines make
 // cross-machine sync honest. --no-containers opts out; a missing engine
 // falls back to same-host processes with a warning either way.
-const wantsContainers = !arguments_.includes("--no-containers")
-const containerEnginePreference = arguments_
-  .find((argument) => argument.startsWith("--container-engine="))
-  ?.slice("--container-engine=".length)
-
 // Sanitize ambient Codevisor variables before anything inherits our env.
 // This script is often launched from inside a running Codevisor instance
 // (agent sessions, app terminals) whose server exports CODEVISOR_* state —
@@ -265,7 +255,7 @@ await run(
 ).catch((error) => {
   console.error(`Cloud dev migrations failed (${error instanceof Error ? error.message : error})`)
 })
-// Containerized dev remotes (opt-in): Dev Direct and Dev Cloud run as
+// Containerized dev remotes: Dev Direct and Dev Cloud run as
 // real Linux machines so config-plane sync is tested across genuinely
 // separate filesystems. Falls back to same-host processes when no engine
 // is available — never boots a stopped Docker daemon.
@@ -593,8 +583,10 @@ try {
 async function announceDevRemote() {
   let token = "(start the server to read it)"
   try {
-    const response = await fetch(`http://127.0.0.1:${directRemotePort}/v1/auth/connection-token`)
-    if (response.ok) token = (await response.json()).token
+    token = await readDevRemoteConnectionToken(
+      directRemoteServer,
+      `http://127.0.0.1:${directRemotePort}`
+    )
   } catch {
     // Non-fatal: the address alone is enough to add the machine.
   }

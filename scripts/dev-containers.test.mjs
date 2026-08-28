@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
 
-import { syncLinuxWorkspace } from "./dev-containers.mjs"
+import { alignDevCloudCredentialUrl, syncLinuxWorkspace } from "./dev-containers.mjs"
 
 const makeFakeRepo = async (root) => {
   await mkdir(join(root, "apps/server/dist"), { recursive: true })
@@ -47,6 +47,25 @@ test("syncLinuxWorkspace copies dists and manifests, never sources", async () =>
       await readFile(join(third.appRoot, "apps/server/dist/main.js"), "utf8"),
       "console.log(2)"
     )
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test("alignDevCloudCredentialUrl preserves credentials while changing the runner route", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codevisor-devc-credential-"))
+  const credentialsPath = join(root, "cloud.json")
+  try {
+    await writeFile(
+      credentialsPath,
+      JSON.stringify({ serverUrl: "http://localhost:4000", apiKey: "key", deviceId: "device" })
+    )
+    await alignDevCloudCredentialUrl(credentialsPath, "http://192.168.64.1:4000")
+    assert.deepEqual(JSON.parse(await readFile(credentialsPath, "utf8")), {
+      serverUrl: "http://192.168.64.1:4000",
+      apiKey: "key",
+      deviceId: "device"
+    })
   } finally {
     await rm(root, { recursive: true, force: true })
   }

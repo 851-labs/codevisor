@@ -226,7 +226,7 @@ struct HarnessAuthenticationView: View {
 
 extension HarnessAuthenticationView {
     private func load() async {
-        methods = harness.auth?.loginMethods ?? []
+        methods = supportedLoginMethods(harness.auth?.loginMethods ?? [])
         do {
             accounts = try await client.listHarnessAccounts(harnessId: harness.id)
             errorMessage = nil
@@ -323,8 +323,12 @@ extension HarnessAuthenticationView {
             )
             flow = next.kind == "complete" ? nil : next
             loginStep = next.kind == "complete" ? nil : .flow(next)
-            if let value = next.url, let url = URL(string: value) { NSWorkspace.shared.open(url) }
-            if let value = next.verificationUrl, let url = URL(string: value) { NSWorkspace.shared.open(url) }
+            if next.kind != "deviceCode",
+                let value = next.url ?? next.verificationUrl,
+                let url = URL(string: value)
+            {
+                NSWorkspace.shared.open(url)
+            }
             if next.kind == "complete" { await finishAuthentication(accountId: account.id); return }
             Task { await poll(accountId: account.id) }
         }
@@ -379,9 +383,18 @@ extension HarnessAuthenticationView {
         if let updated = try? await environment.refreshHarnessAuthentication(
             harnessId: harness.id, onServer: scopedServerId)
         {
-            methods = updated.auth?.loginMethods ?? methods
+            methods = supportedLoginMethods(updated.auth?.loginMethods ?? methods)
             onChange(updated)
         }
+    }
+
+    private func supportedLoginMethods(
+        _ candidates: [ServerHarnessAuthMethod]
+    ) -> [ServerHarnessAuthMethod] {
+        guard harness.id == "codex", scopedServerId != CodevisorMachine.local.id else {
+            return candidates
+        }
+        return candidates.filter { $0.id != "chatgpt" }
     }
 
     private func perform(_ operation: () async throws -> Void) async {

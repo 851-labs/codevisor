@@ -1313,26 +1313,27 @@ struct WorkspaceScreen: View {
         Task { await controller.prepare() }
     }
 
-    /// No project exists on the selected machine yet: the composer still renders, bound to
-    /// a sentinel project — send stays disabled and the run-target chip
-    /// reads "Select a project". Never prepared, never cached, never
-    /// persisted; picking (or adding) a real project swaps it out.
+    /// No project exists on the selected machine yet: the composer still
+    /// renders, bound to a sentinel project. Send stays disabled and the
+    /// run-target chip reads "Select a Project…". The sentinel can load the
+    /// selected machine's harness catalog but is never cached or persisted.
+    /// Picking a real project swaps it for the durable draft while preserving the chosen harness.
     private func setUpPlaceholderDraftIfNeeded() {
         guard draftController == nil else { return }
-        let controller = SessionController(
-            project: .runTargetPlaceholder(
-                serverId: environment.machines.selectedMachineId
-            ),
-            configCache: environment.configCache
+        let serverId = environment.machines.selectedMachineId
+        let controller = SessionController.runTargetPlaceholder(
+            serverId: serverId,
+            environment: environment
         )
         serverConfig = environment.machines.serverConfig(
-            for: environment.machines.selectedMachineId
+            for: serverId
         )
         if paneState == nil {
             paneState = PaneGroupState.centerInitial(sessionId: draftPlaceholderId)
         }
         draftIsPlaceholderBorn = true
         draftController = controller
+        Task { await controller.prepare() }
     }
 
     /// The draft's first send: create the session and become its workspace,
