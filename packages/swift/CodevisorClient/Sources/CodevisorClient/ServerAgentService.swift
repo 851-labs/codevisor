@@ -97,7 +97,7 @@ public struct ServerHarnessService: HarnessServicing {
 }
 
 public extension ServerHarness {
-    var isReady: Bool { readiness.state == "ready" }
+    var isReady: Bool { readiness.resolvedState == .ready }
 }
 
 extension ServerHarness: Identifiable {}

@@ -127,8 +127,8 @@ struct OnboardingView: View {
             guard authenticationHarness == nil, step == .harnesses else { return }
             for harness in current where harness.isReady {
                 let before = previous.first { $0.id == harness.id }
-                guard before?.lifecycle?.phase == "installing", before?.isReady != true,
-                    harness.auth != nil, !canUse(harness)
+                guard before?.lifecycle?.resolvedPhase == .installing, before?.isReady != true,
+                    harness.requiresAuthentication
                 else { continue }
                 authenticationHarness = harness
                 break
@@ -596,53 +596,49 @@ struct OnboardingView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            if harness.auth != nil && !canUse(harness) {
+            if harness.requiresAuthentication {
                 Button("Sign In…") { authenticationHarness = harness }
             } else {
                 if harness.auth?.supportsMultipleAccounts == true {
                     Button("Accounts…") { authenticationHarness = harness }
                 }
-                Toggle(
-                    "Enable \(harness.name)",
-                    isOn: Binding(
-                        get: { harness.enabled },
-                        set: { enabled in Task { await setHarness(harness, enabled: enabled) } }
-                    )
-                )
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
             }
+            Toggle(
+                "Enable \(harness.name)",
+                isOn: Binding(
+                    get: { harness.isDesiredEnabled },
+                    set: { enabled in Task { await setHarness(harness, enabled: enabled) } }
+                )
+            )
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .controlSize(.small)
         }
         .padding(.vertical, 10)
-    }
-
-    private func canUse(_ harness: ServerHarness) -> Bool {
-        harness.auth?.state == "authenticated" || harness.auth?.state == "notRequired"
     }
 
     private func authStatus(_ harness: ServerHarness) -> String {
         guard let auth = harness.auth else { return "Sign-in status unavailable" }
         let account = auth.accounts.first(where: { $0.id == auth.activeAccountId }) ?? auth.accounts.first
-        switch auth.state {
-        case "authenticated": return account?.email.map { "Signed in as \($0)" } ?? "Signed in"
-        case "notRequired": return "No sign-in required"
-        case "checking": return "Checking sign-in…"
-        case "expired": return "Sign-in expired"
+        switch auth.resolvedState {
+        case .authenticated: return account?.email.map { "Signed in as \($0)" } ?? "Signed in"
+        case .notRequired: return "No sign-in required"
+        case .checking: return "Checking sign-in…"
+        case .expired: return "Sign-in expired"
         // Deliberately plain language, and deliberately not the probe's
         // `detail`: that carries a crashed CLI's stderr, which was rendering
         // here as kilobytes of minified JavaScript. The technical cause is
         // still summarized and persisted server-side for diagnosis.
-        case "error": return "Something went wrong starting the CLI"
-        default: return "Not signed in"
+        case .error: return "Something went wrong starting the CLI"
+        case .unauthenticated, .unavailable, .unknown: return "Not signed in"
         }
     }
 
     private func setHarness(_ harness: ServerHarness, enabled: Bool) async {
-        updateHarness(harness.id, enabled: enabled)
+        updateHarnessDesiredEnabled(harness.id, enabled: enabled)
         do {
-            let updated = try await environment.serverClient.setHarnessEnabled(id: harness.id, enabled: enabled)
-            environment.settings.setHarness(harness.id, enabled: updated.enabled)
+            let updated = try await environment.serverClient.setHarnessDesiredEnabled(id: harness.id, enabled: enabled)
+            environment.settings.setHarness(harness.id, enabled: updated.isDesiredEnabled)
             replaceHarness(updated)
         } catch {
             replaceHarness(harness)
@@ -656,9 +652,9 @@ struct OnboardingView: View {
         }
     }
 
-    private func updateHarness(_ id: String, enabled: Bool) {
+    private func updateHarnessDesiredEnabled(_ id: String, enabled: Bool) {
         guard let index = harnesses.firstIndex(where: { $0.id == id }) else { return }
-        harnesses[index].enabled = enabled
+        harnesses[index].desiredEnabled = enabled
     }
 
     private func replaceHarness(_ harness: ServerHarness) {

@@ -457,15 +457,6 @@ export const routeHarnesses = async (
   const harnessId = matchRoute(url.pathname, "/v1/harnesses/:id")
   if (harnessId !== undefined && request.method === "PATCH") {
     const payload = await readSchema(request, UpdateHarnessRequestSchema)
-    if (payload.enabled && services.auth !== undefined) {
-      const candidate = (await discoverHarnesses(services, true)).find(
-        (harness) => harness.id === harnessId
-      )
-      const state = candidate?.auth?.state
-      if (state !== "authenticated" && state !== "notRequired") {
-        throw new HttpFailure(409, "Sign in before enabling this harness")
-      }
-    }
     await run(services.db.setHarnessEnabled(harnessId, payload.enabled))
     const harness = (await discoverHarnesses(services)).find(
       (candidate) => candidate.id === harnessId

@@ -31,6 +31,7 @@ struct HarnessMachinePane: View {
     /// Bridges the button click to the server's returned lifecycle snapshot;
     /// otherwise the row can briefly fall back to Update after the 202 ack.
     @State private var startingHarnessIds: Set<String> = []
+    @State private var preferenceMutationIds: [String: UUID] = [:]
 
     private var serverId: String { machine.id }
     private var serverInstalled: [ServerHarness] { serverHarnesses.filter(\.isReady) }
@@ -51,8 +52,8 @@ struct HarnessMachinePane: View {
                     guard authenticationHarness == nil else { return }
                     for harness in current where harness.isReady {
                         let before = previous.first { $0.id == harness.id }
-                        guard before?.lifecycle?.phase == "installing", before?.isReady != true,
-                            harness.auth != nil, !canUse(harness)
+                        guard before?.lifecycle?.resolvedPhase == .installing, before?.isReady != true,
+                            harness.requiresAuthentication
                         else { continue }
                         authenticationHarness = harness
                         break
@@ -155,38 +156,40 @@ struct HarnessMachinePane: View {
                 }
             }
             Spacer()
-            if harness.auth != nil && !canUse(harness) {
-                // Sign-in is the row's one call to action — the update offer
-                // waits until the harness is usable.
+            if harness.requiresAuthentication {
+                // Keep sign-in available without hiding the user's fleet
+                // preference. A signed-out harness can still be turned off so
+                // its sign-in-required models disappear from the picker.
                 Button("Sign In…") { authenticationHarness = harness }
                     .settingsActionTint(theme)
             } else {
-                if startingHarnessIds.contains(harness.id) || harness.lifecycle?.phase == "updating" {
+                if startingHarnessIds.contains(harness.id) || harness.lifecycle?.resolvedPhase == .updating {
                     ProgressView()
                         .controlSize(.small)
                         .help("Updating \(harness.name)…")
-                } else if harness.lifecycle?.phase == "pendingUpdate" {
+                } else if harness.lifecycle?.resolvedPhase == .pendingUpdate {
                     Text("Queued")
                         .foregroundStyle(.secondary)
                         .help("Updates when active \(harness.name) chats finish")
                 } else if harness.updateInfo?.updateAvailable == true {
-                    Button(harness.lifecycle?.phase == "failed" ? "Try Again" : "Update") {
+                    Button(harness.lifecycle?.resolvedPhase == .failed ? "Try Again" : "Update") {
                         Task { await updateHarness(harness) }
                     }
                     .settingsActionTint(theme)
                     .help(updateHelp(harness))
                 }
-                Toggle(
-                    "Enable \(harness.name)",
-                    isOn: Binding(
-                        get: { harness.enabled },
-                        set: { enabled in Task { await setServerHarness(harness.id, enabled: enabled) } }
-                    )
-                )
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
             }
+            Toggle(
+                "Enable \(harness.name)",
+                isOn: Binding(
+                    get: { harness.isDesiredEnabled },
+                    set: { enabled in Task { await setServerHarness(harness.id, enabled: enabled) } }
+                )
+            )
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .disabled(preferenceMutationIds[harness.id] != nil)
             rowMenu(harness)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
@@ -218,19 +221,15 @@ struct HarnessMachinePane: View {
         .accessibilityLabel("\(harness.name) options")
     }
 
-    private func canUse(_ harness: ServerHarness) -> Bool {
-        harness.auth?.state == "authenticated" || harness.auth?.state == "notRequired"
-    }
-
     /// Auth status, replaced by live update progress/failure when relevant.
     /// A plain "update available" never rides here — the Update button IS
     /// that signal.
     private func rowSubtitle(_ harness: ServerHarness) -> String {
-        if harness.lifecycle?.phase == "updating" {
+        if harness.lifecycle?.resolvedPhase == .updating {
             let target = harness.lifecycle?.targetVersion
             return target.map { "Updating to \($0)…" } ?? "Updating…"
         }
-        if harness.lifecycle?.phase == "failed" {
+        if harness.lifecycle?.resolvedPhase == .failed {
             let reason = harness.lifecycle?.error?
                 .split(whereSeparator: \.isNewline).first.map(String.init)
             return reason.map { "Update failed: \($0)" } ?? "Update failed"
@@ -278,15 +277,15 @@ struct HarnessMachinePane: View {
     private func authStatus(_ harness: ServerHarness) -> String {
         guard let auth = harness.auth else { return "Sign-in status unavailable" }
         let account = auth.accounts.first(where: { $0.id == auth.activeAccountId }) ?? auth.accounts.first
-        switch auth.state {
-        case "authenticated": return account?.email.map { "Signed in as \($0)" } ?? "Signed in"
-        case "notRequired": return "No sign-in required"
-        case "checking": return "Checking sign-in…"
-        case "expired": return "Sign-in expired"
+        switch auth.resolvedState {
+        case .authenticated: return account?.email.map { "Signed in as \($0)" } ?? "Signed in"
+        case .notRequired: return "No sign-in required"
+        case .checking: return "Checking sign-in…"
+        case .expired: return "Sign-in expired"
         // Plain language, never the probe's `detail` — that carries a crashed
         // CLI's stderr. The cause is summarized and persisted server-side.
-        case "error": return "Something went wrong starting the CLI"
-        default: return "Not signed in"
+        case .error: return "Something went wrong starting the CLI"
+        case .unauthenticated, .unavailable, .unknown: return "Not signed in"
         }
     }
 
@@ -333,14 +332,24 @@ struct HarnessMachinePane: View {
     }
 
     private func setServerHarness(_ id: String, enabled: Bool) async {
-        updateServerHarness(id, enabled: enabled)
+        guard let previous = serverHarnesses.first(where: { $0.id == id }) else { return }
+        let mutationId = UUID()
+        preferenceMutationIds[id] = mutationId
+        updateServerHarnessDesiredEnabled(id, enabled: enabled)
+        defer {
+            if preferenceMutationIds[id] == mutationId {
+                preferenceMutationIds[id] = nil
+            }
+        }
         do {
             let updated = try await environment.machines.client(for: serverId)
-                .setHarnessEnabled(id: id, enabled: enabled)
+                .setHarnessDesiredEnabled(id: id, enabled: enabled)
+            guard preferenceMutationIds[id] == mutationId else { return }
             replaceServerHarness(updated)
             environment.harnessCatalogDidChange(onServer: serverId)
         } catch {
-            updateServerHarness(id, enabled: !enabled)
+            guard preferenceMutationIds[id] == mutationId else { return }
+            updateServerHarnessDesiredEnabled(id, enabled: previous.isDesiredEnabled)
             Log.server.error(
                 "Setting harness \(id, privacy: .public) enabled=\(enabled, privacy: .public) failed: \(String(describing: error), privacy: .public)"
             )
@@ -352,9 +361,9 @@ struct HarnessMachinePane: View {
         }
     }
 
-    private func updateServerHarness(_ id: String, enabled: Bool) {
+    private func updateServerHarnessDesiredEnabled(_ id: String, enabled: Bool) {
         guard let index = serverHarnesses.firstIndex(where: { $0.id == id }) else { return }
-        serverHarnesses[index].enabled = enabled
+        serverHarnesses[index].desiredEnabled = enabled
     }
 
     private func replaceServerHarness(_ harness: ServerHarness) {

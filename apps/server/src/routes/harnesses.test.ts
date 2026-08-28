@@ -79,17 +79,21 @@ describe("harness routes", () => {
     const auth: HarnessAuthManager = {
       answerLogin: () => Promise.reject(new Error("unused")),
       decorateHarnesses: async (values) =>
-        values.map((harness) => ({
-          ...harness,
-          desiredEnabled: harness.enabled,
-          auth: {
-            state: authState,
-            activeAccountId: account.id,
-            accounts: accountList,
-            loginMethods: [{ id: "browser", name: "Browser", kind: "browser" }],
-            supportsMultipleAccounts: true
+        values.map((harness) => {
+          const desiredEnabled = harness.enabled
+          return {
+            ...harness,
+            desiredEnabled,
+            enabled: desiredEnabled && authState === "authenticated",
+            auth: {
+              state: authState,
+              activeAccountId: account.id,
+              accounts: accountList,
+              loginMethods: [{ id: "browser", name: "Browser", kind: "browser" }],
+              supportsMultipleAccounts: true
+            }
           }
-        })),
+        }),
       refresh: vi.fn(async () => undefined),
       accounts: vi.fn(async () => accountList),
       createAccount: vi.fn(async () => account),
@@ -260,13 +264,28 @@ describe("harness routes", () => {
     ).toBe(200)
     authState = "unauthenticated"
     expect(
-      (
-        await jsonRequest(server, "/v1/harnesses/codex", {
-          method: "PATCH",
-          body: JSON.stringify({ enabled: true })
-        })
-      ).status
-    ).toBe(409)
+      await jsonRequest(server, "/v1/harnesses/codex", {
+        method: "PATCH",
+        body: JSON.stringify({ enabled: false })
+      })
+    ).toMatchObject({
+      status: 200,
+      body: { id: "codex", enabled: false, desiredEnabled: false }
+    })
+    expect(
+      await jsonRequest(server, "/v1/harnesses/codex", {
+        method: "PATCH",
+        body: JSON.stringify({ enabled: true })
+      })
+    ).toMatchObject({
+      status: 200,
+      body: {
+        id: "codex",
+        enabled: false,
+        desiredEnabled: true,
+        auth: { state: "unauthenticated" }
+      }
+    })
     authState = "authenticated"
     expect(
       (

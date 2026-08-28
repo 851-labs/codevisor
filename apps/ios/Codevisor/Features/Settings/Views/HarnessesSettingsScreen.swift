@@ -208,7 +208,7 @@ private struct HarnessMachineSections: View {
 
     @ViewBuilder
     private func availableHarnessRow(_ harness: ServerHarness) -> some View {
-        if harness.lifecycle?.phase == "installing" {
+        if harness.lifecycle?.resolvedPhase == .installing {
             HStack(spacing: 12) {
                 harnessLabel(harness)
                 Spacer()
@@ -314,11 +314,6 @@ private struct HarnessDetailScreen: View {
         environment.machines.client(for: machine.id)
     }
 
-    private var requiresSignIn: Bool {
-        guard let state = harness.auth?.state else { return false }
-        return state != "authenticated" && state != "notRequired"
-    }
-
     var body: some View {
         Form {
             if let errorMessage {
@@ -332,31 +327,31 @@ private struct HarnessDetailScreen: View {
                 Toggle(
                     "Enabled",
                     isOn: Binding(
-                        get: { harness.enabled },
+                        get: { harness.isDesiredEnabled },
                         set: { enabled in Task { await setEnabled(enabled) } }
                     )
                 )
-                .disabled(isChangingEnabled || requiresSignIn)
+                .disabled(isChangingEnabled)
             }
 
-            if let auth = harness.auth, auth.state != "notRequired" {
+            if let auth = harness.auth, auth.resolvedState != .notRequired {
                 Section {
                     Button {
                         showsAuthentication = true
                     } label: {
                         HStack {
                             Label(
-                                auth.state == "authenticated" ? "Manage Accounts" : "Sign In",
+                                auth.isSatisfied ? "Manage Accounts" : "Sign In",
                                 systemImage: "person.crop.circle"
                             )
                             Spacer()
-                            if auth.state == "checking" {
+                            if auth.resolvedState == .checking {
                                 ProgressView()
                                     .controlSize(.small)
                             }
                         }
                     }
-                    .disabled(auth.state == "checking")
+                    .disabled(auth.resolvedState == .checking)
                 }
             }
         }
@@ -382,7 +377,7 @@ private struct HarnessDetailScreen: View {
         isChangingEnabled = true
         defer { isChangingEnabled = false }
         do {
-            harness = try await client.setHarnessEnabled(id: harness.id, enabled: enabled)
+            harness = try await client.setHarnessDesiredEnabled(id: harness.id, enabled: enabled)
             errorMessage = nil
             onChanged(harness)
             environment.harnessCatalogDidChange(onServer: machine.id)

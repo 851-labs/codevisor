@@ -2,6 +2,64 @@ import ACPKit
 import CodevisorProtocol
 import Foundation
 
+public enum ServerHarnessReadinessState: Equatable, Sendable {
+    case ready
+    case unavailable
+    case unknown(String)
+
+    public init(rawValue: String) {
+        switch rawValue {
+        case "ready": self = .ready
+        case "unavailable": self = .unavailable
+        default: self = .unknown(rawValue)
+        }
+    }
+}
+
+public enum ServerHarnessAuthenticationState: Equatable, Sendable {
+    case checking
+    case authenticated
+    case unauthenticated
+    case expired
+    case notRequired
+    case unavailable
+    case error
+    case unknown(String)
+
+    public init(rawValue: String) {
+        switch rawValue {
+        case "checking": self = .checking
+        case "authenticated": self = .authenticated
+        case "unauthenticated": self = .unauthenticated
+        case "expired": self = .expired
+        case "notRequired": self = .notRequired
+        case "unavailable": self = .unavailable
+        case "error": self = .error
+        default: self = .unknown(rawValue)
+        }
+    }
+}
+
+public enum ServerHarnessLifecyclePhase: Equatable, Sendable {
+    case idle
+    case installing
+    case updating
+    case pendingUpdate
+    case failed
+    case unknown(String)
+
+    public init(rawValue: String) {
+        switch rawValue {
+        case "idle": self = .idle
+        case "installing": self = .installing
+        case "updating": self = .updating
+        case "pendingUpdate": self = .pendingUpdate
+        case "failed": self = .failed
+        default: self = .unknown(rawValue)
+        }
+    }
+}
+
 public struct ServerHarnessReadiness: Codable, Equatable, Sendable {
     public var state: String
     public var detail: String?
@@ -277,6 +335,39 @@ public struct ServerHarnessAuth: Codable, Equatable, Sendable {
     public var accounts: [ServerHarnessAccount]
     public var loginMethods: [ServerHarnessAuthMethod]
     public var supportsMultipleAccounts: Bool
+}
+
+public extension ServerHarnessReadiness {
+    var resolvedState: ServerHarnessReadinessState { .init(rawValue: state) }
+}
+
+public extension ServerHarnessLifecycleState {
+    var resolvedPhase: ServerHarnessLifecyclePhase { .init(rawValue: phase) }
+}
+
+public extension ServerHarnessAuth {
+    var resolvedState: ServerHarnessAuthenticationState { .init(rawValue: state) }
+
+    var isSatisfied: Bool {
+        resolvedState == .authenticated || resolvedState == .notRequired
+    }
+}
+
+public extension ServerHarness {
+    /// The user's persisted fleet preference. Older servers only return the
+    /// effective value, so preserve that as a compatibility fallback.
+    var isDesiredEnabled: Bool { desiredEnabled ?? enabled }
+
+    /// Whether the server can expose this harness to new chats right now,
+    /// after readiness and authentication gates have been applied.
+    var isEffectivelyEnabled: Bool { enabled }
+
+    /// True only when this harness declares authentication and that
+    /// requirement has not yet been satisfied.
+    var requiresAuthentication: Bool {
+        guard let auth else { return false }
+        return !auth.isSatisfied
+    }
 }
 
 public struct ServerHarnessAuthFlow: Codable, Equatable, Sendable {
