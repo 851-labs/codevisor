@@ -219,7 +219,6 @@ struct RootView: View {
     @State private var selection: SidebarSelection?
     @ClientPreference("sidebar.collapsed", default: false) private var sidebarCollapsed
     @State private var store: SessionStore?
-    @State private var preferredProjectId: UUID?
     @State private var requiresInitialNewChatProjectResolution = false
     @State private var quickLook = QuickLookController()
     @State private var panelLayout = AdaptivePanelLayout()
@@ -234,12 +233,11 @@ struct RootView: View {
                 OnboardingView(
                     initialStep: OnboardingView.resumeStep(from: environment.settings)
                 ) { project in
-                    preferredProjectId = project?.id
                     requiresInitialNewChatProjectResolution = true
                     // Land on the new-workspace page (picker) rather than the
                     // quick-create fast path — the user should name/configure
                     // their first workspace, not get a random one auto-made.
-                    selection = .newChat(project?.id)
+                    selection = .newChat(project.map(NewChatTarget.init))
                 }
             }
         }
@@ -365,7 +363,6 @@ struct RootView: View {
                 $0.serverId == serverId && $0.id == sessionId
             })
         else { return }
-        preferredProjectId = session.projectId
         selection = .session(serverId: serverId, id: sessionId)
     }
 
@@ -389,7 +386,6 @@ struct RootView: View {
             guard replacementId != sessionId else { return }
             selection = .session(serverId: serverId, id: replacementId)
         case .dismiss:
-            preferredProjectId = nil
             selection = .newChat(nil)
         }
     }
@@ -456,10 +452,10 @@ struct RootView: View {
         switch selection {
         case let .session(serverId, sessionId):
             sessionDetail(store, serverId: serverId, sessionId: sessionId)
-        case let .newChat(projectId):
-            newChat(store, projectId: projectId)
+        case let .newChat(target):
+            newChat(store, target: target)
         case .none:
-            newChat(store, projectId: nil)
+            newChat(store, target: nil)
         }
     }
 
@@ -495,7 +491,6 @@ struct RootView: View {
             .onChange(of: project) { _, updatedProject in
                 store.reconcile(controller, for: session, project: updatedProject)
             }
-            .onAppear { preferredProjectId = project.id }
         } else {
             ContentUnavailableView(
                 "Chat Unavailable",
@@ -509,12 +504,11 @@ struct RootView: View {
     /// is sent — sending resolves the picked directory (project folder or a
     /// fresh worktree) and materializes the workspace around the started
     /// chat. A sidebar per-project button preselects that project.
-    private func newChat(_ store: SessionStore, projectId: UUID?) -> some View {
+    private func newChat(_ store: SessionStore, target: NewChatTarget?) -> some View {
         NewChatView(
             store: store,
             selection: $selection,
-            preferredProjectId: projectId,
-            explicitProjectId: projectId,
+            initialProjectTarget: target,
             requiresInitialProjectResolution: requiresInitialNewChatProjectResolution,
             onInitialProjectResolutionCompleted: {
                 requiresInitialNewChatProjectResolution = false
@@ -526,7 +520,24 @@ struct RootView: View {
 /// Identifies the current sidebar selection.
 enum SidebarSelection: Hashable {
     case session(serverId: String, id: UUID)
-    case newChat(UUID?)
+    case newChat(NewChatTarget?)
+}
+
+/// A project id is only unique inside one machine snapshot: synced machines
+/// deliberately carry the same logical project ids. Navigation therefore
+/// keeps the machine and project together instead of guessing from UUID alone.
+struct NewChatTarget: Hashable {
+    let serverId: String
+    let projectId: UUID
+
+    init(serverId: String, projectId: UUID) {
+        self.serverId = serverId
+        self.projectId = projectId
+    }
+
+    init(_ project: Project) {
+        self.init(serverId: project.serverId, projectId: project.id)
+    }
 }
 
 #Preview("Root") {

@@ -84,6 +84,9 @@ extension ComposerBar {
             } else {
                 await controller.selectProject(project)
             }
+            guard controller.project.serverId == project.serverId,
+                controller.project.id == project.id
+            else { return }
             controller.wantsNewWorktree = effectiveWorktree
         }
         // Re-probe git capability on the picked project's machine so the

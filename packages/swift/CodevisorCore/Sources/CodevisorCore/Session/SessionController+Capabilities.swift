@@ -26,6 +26,7 @@ extension SessionController {
         )
         if seedFromCachedServerCapabilities() {
             preparationState = .ready
+            await resolveAutomaticSelectionIfNeeded()
             guard
                 configCache.needsCapabilityRevalidation(
                     forServer: target.serverId,
@@ -34,11 +35,12 @@ extension SessionController {
             else { return }
             let requestRevision = beginHarnessCapabilityRefresh()
             Task {
-                await self.prepareFromServerCapabilities(
+                _ = await self.prepareFromServerCapabilities(
                     serverClient,
                     target: target,
                     requestRevision: requestRevision
                 )
+                await self.resolveAutomaticSelectionIfNeeded()
             }
             return
         }
@@ -52,6 +54,7 @@ extension SessionController {
             target: target,
             requestRevision: requestRevision
         )
+        await resolveAutomaticSelectionIfNeeded()
     }
 
     /// Refreshes only the harness used by a resumed chat. This runs beside
@@ -137,6 +140,7 @@ extension SessionController {
             requestRevision: requestRevision,
             force: true
         )
+        await resolveAutomaticSelectionIfNeeded()
     }
 
     /// Marks a mounted draft stale after authentication, account, enablement,
@@ -348,14 +352,7 @@ extension SessionController {
             supportsGoalsByHarness[capability.harness.id] = capability.supportsGoals ?? false
         }
         if isNewChat {
-            if selectedHarnessId == nil || !harnesses.contains(where: { $0.id == selectedHarnessId }) {
-                selectedHarnessId = harnesses.first?.id
-            }
-            // Capability inspection describes fresh-session defaults. Paint
-            // this draft's pending/remembered choices back over that snapshot
-            // so a background refresh cannot move an open picker underneath
-            // the user.
-            seedRememberedConfig()
+            applyNewChatSelectionPolicy(capabilities)
         } else if selectedHarnessId == nil {
             selectedHarnessId = harnesses.first?.id
         }

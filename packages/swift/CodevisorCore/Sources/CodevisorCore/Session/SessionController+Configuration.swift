@@ -251,6 +251,7 @@ extension SessionController {
 
     public func setConfigOption(_ configId: String, _ value: String) async {
         guard !isConnectingToHarness else { return }
+        clearAutomaticSelection()
         let optionBeforeChange = configOptions.first { $0.id == configId }
         let previousValue = optionBeforeChange?.currentValue
         let changesModel =
@@ -386,6 +387,123 @@ extension SessionController {
             // remains the final validator if this best-effort inspection fails.
             return true
         }
+    }
+
+    /// Validates an automatically carried machine-switch selection against a
+    /// temporary destination inspection. The model is resolved first by the
+    /// server; each dependent setting then prefers the outgoing value, the
+    /// destination machine's remembered value, and finally the harness default.
+    /// Automatic carry remains draft-local until an explicit picker action or
+    /// first send records it as this machine's new default.
+    func resolveRetargetedComposerSelection(
+        _ intent: ComposerSelectionIntent,
+        targetServerId: String
+    ) async {
+        guard project.serverId == targetServerId,
+            automaticSelectionIntent == intent,
+            selectedHarnessId == intent.harnessId,
+            let client = serverClient
+        else {
+            if project.serverId == targetServerId, !harnesses.isEmpty,
+                automaticSelectionIntent == intent
+            {
+                clearAutomaticSelection()
+            }
+            return
+        }
+        guard let modelValue = intent.modelValue else {
+            automaticSelectionNeedsResolution = false
+            return
+        }
+        guard let currentOptions = configOptionsByHarness[intent.harnessId],
+            let currentModel = Self.modelOption(in: currentOptions),
+            currentModel.options.contains(where: { $0.value == modelValue })
+        else {
+            clearAutomaticSelection()
+            applyDestinationMachineDefaults()
+            return
+        }
+
+        modelConfigurationResolutionRevision &+= 1
+        let revision = modelConfigurationResolutionRevision
+        isResolvingModelConfiguration = true
+        defer {
+            if modelConfigurationResolutionRevision == revision {
+                isResolvingModelConfiguration = false
+            }
+        }
+
+        let destinationValues =
+            composerDefaults?.configSelections(
+                forHarness: intent.harnessId,
+                in: resolvedComposerDefaultsScope
+            ) ?? [:]
+        var requested = destinationValues
+        requested.merge(intent.configValues) { _, carried in carried }
+        requested[currentModel.id] = modelValue
+
+        do {
+            let response = try await client.capabilities(
+                cwd: capabilityCwd,
+                harnessId: intent.harnessId,
+                configSelections: requested
+            )
+            guard modelConfigurationResolutionRevision == revision,
+                project.serverId == targetServerId,
+                automaticSelectionIntent == intent,
+                let capability = response.harnesses.first(where: {
+                    $0.harness.id == intent.harnessId
+                }),
+                !capability.configOptions.isEmpty
+            else { return }
+
+            guard let resolvedModel = Self.modelOption(in: capability.configOptions),
+                resolvedModel.currentValue == modelValue
+            else {
+                pendingConfigByHarness[intent.harnessId] = nil
+                clearAutomaticSelection()
+                applyDestinationMachineDefaults()
+                return
+            }
+
+            var options = capability.configOptions
+            var resolvedValues: [String: String] = [:]
+            for index in options.indices
+            where Self.rememberedConfigCategories.contains(options[index].category ?? "") {
+                let option = options[index]
+                let carriedValue =
+                    option.id == resolvedModel.id ? modelValue : intent.configValues[option.id]
+                let acceptedCarriedValue =
+                    option.currentValue == carriedValue ? carriedValue : nil
+                let value = [acceptedCarriedValue, destinationValues[option.id], option.currentValue]
+                    .compactMap { $0 }
+                    .first { candidate in
+                        option.options.contains { $0.value == candidate }
+                    }
+                guard let value else { continue }
+                options[index].currentValue = value
+                resolvedValues[option.id] = value
+            }
+            configOptionsByHarness[intent.harnessId] = options
+            pendingConfigByHarness[intent.harnessId] = resolvedValues
+            automaticSelectionIntent = ComposerSelectionIntent(
+                harnessId: intent.harnessId,
+                configValues: resolvedValues,
+                modelValue: modelValue
+            )
+            automaticSelectionNeedsResolution = false
+        } catch {
+            // Keep the optimistic carried values queued. A live catalog refresh
+            // or first connection remains the final validator when this
+            // best-effort inspection is unavailable.
+        }
+    }
+
+    func resolveAutomaticSelectionIfNeeded() async {
+        guard automaticSelectionNeedsResolution, let intent = automaticSelectionIntent else {
+            return
+        }
+        await resolveRetargetedComposerSelection(intent, targetServerId: project.serverId)
     }
 }
 

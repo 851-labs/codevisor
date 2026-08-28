@@ -31,8 +31,7 @@ struct ChatPaneContentView: View {
                     NewChatView(
                         store: store,
                         selection: .constant(nil),
-                        preferredProjectId: chatProject.id,
-                        explicitProjectId: chatProject.id,
+                        initialProjectTarget: NewChatTarget(chatProject),
                         paneDraftId: descriptor.id,
                         onCreatedInPane: { created in
                             (group ?? store.centerPaneGroup(for: session, project: project))
@@ -81,8 +80,7 @@ struct ChatPaneContentView: View {
             NewChatView(
                 store: store,
                 selection: .constant(nil),
-                preferredProjectId: project.id,
-                explicitProjectId: project.id,
+                initialProjectTarget: NewChatTarget(project),
                 paneDraftId: descriptor.id,
                 onCreatedInPane: { created in
                     // Bind through the pane's OWNING group (the draft may

@@ -8,11 +8,7 @@ extension NewChatView {
     /// bootstrap fallback for installs that have not recorded a preference.
     var composerServerId: String {
         if let controller { return controller.project.serverId }
-        if let preferred = environment.projectList.fleetActiveProjects.first(where: {
-            $0.id == preferredProjectId
-        }) {
-            return preferred.serverId
-        }
+        if let initialProjectTarget { return initialProjectTarget.serverId }
         if let remembered = environment.composerDefaults.lastNewWorkspaceServerId,
             environment.machines.allMachines.contains(where: { $0.id == remembered })
         {
@@ -34,11 +30,35 @@ extension NewChatView {
     }
 
     var setupIdentity: String {
-        "\(composerServerId):\(preferredProjectId?.uuidString ?? "default"):\(requiresInitialProjectResolution ? "resolving" : "ready")"
+        let target =
+            initialProjectTarget.map {
+                "\($0.serverId):\($0.projectId.uuidString)"
+            } ?? "default"
+        return "\(target):\(requiresInitialProjectResolution ? "resolving" : "ready")"
     }
 
     var harnessCatalogRevision: UInt64 {
         environment.harnessCatalogRevision(for: composerServerId)
+    }
+
+    /// A draft restored before machine discovery can still point at the cloud
+    /// twin of a configured machine. Once the status probe links the two,
+    /// move the draft to the configured identity while preserving the exact
+    /// logical project when that machine has it.
+    func canonicalProjectTarget(for controller: SessionController) -> Project? {
+        let current = controller.project
+        guard
+            let canonicalServerId = environment.machines.canonicalComposerMachineId(
+                for: current.serverId
+            ),
+            canonicalServerId != current.serverId
+        else { return nil }
+        if current.isRunTargetPlaceholder {
+            return .runTargetPlaceholder(serverId: canonicalServerId)
+        }
+        return environment.projectList.fleetActiveProjects.first {
+            $0.serverId == canonicalServerId && $0.id == current.id
+        } ?? .runTargetPlaceholder(serverId: canonicalServerId)
     }
 
     @ViewBuilder

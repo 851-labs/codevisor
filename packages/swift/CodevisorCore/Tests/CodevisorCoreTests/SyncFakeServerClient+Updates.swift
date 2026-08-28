@@ -333,6 +333,19 @@ extension SyncFakeServerClient {
         if let capabilitiesHandler { return try await capabilitiesHandler(cwd) }
         return ServerCapabilities(harnesses: [])
     }
+    func capabilities(
+        cwd: String,
+        harnessId: String,
+        configSelections: [String: String]
+    ) async throws -> ServerCapabilities {
+        if let resolvedCapabilitiesHandler {
+            return try await resolvedCapabilitiesHandler(cwd, harnessId, configSelections)
+        }
+        let response = try await capabilities(cwd: cwd)
+        return ServerCapabilities(
+            harnesses: response.harnesses.filter { $0.harness.id == harnessId }
+        )
+    }
     func listHarnesses() async throws -> [ServerHarness] { lock.withLock { _harnesses } }
     func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness { fatalError("unused") }
     func upsertProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }

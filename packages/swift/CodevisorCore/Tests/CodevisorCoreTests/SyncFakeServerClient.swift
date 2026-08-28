@@ -9,6 +9,7 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
     var _infoCloudDeviceId: String?
     /// Tests that need capability responses (or to delay them) install one.
     var capabilitiesHandler: (@Sendable (String) async throws -> ServerCapabilities)?
+    var resolvedCapabilitiesHandler: (@Sendable (String, String, [String: String]) async throws -> ServerCapabilities)?
 
     let lock = NSLock()
     private var _projects: [ServerProject]

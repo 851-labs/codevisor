@@ -58,11 +58,10 @@ struct NewChatView: View {
     @Environment(\.theme) private var theme
     let store: SessionStore
     @Binding var selection: SidebarSelection?
-    var preferredProjectId: UUID?
-    /// Set when the page was opened for a specific project (sidebar "+" /
-    /// "New chat here"); nil for the generic new-chat entry. An explicit
-    /// project moves a retained draft; an implicit one follows the draft.
-    var explicitProjectId: UUID?
+    /// Set when navigation opened the page for a specific machine/project.
+    /// It initializes the retained draft once; after that, the run-target
+    /// pickers own the draft and navigation must not reassert this value.
+    var initialProjectTarget: NewChatTarget?
     /// In-pane draft mode: the id of the DRAFT CHAT PANE hosting this
     /// composer (inside a workspace). The created session binds to the pane
     /// via `onCreatedInPane` instead of navigating, and the composer uses a
@@ -89,6 +88,7 @@ struct NewChatView: View {
 
     @State var controller: SessionController?
     @State var selectedProjectId: UUID?
+    @State private var appliedInitialProjectTarget: NewChatTarget?
     @State private var focus = TerminalFocusController()
     @State var newProjectTarget: NewProjectTarget?
     @State var managedProject: Project?
@@ -210,7 +210,7 @@ struct NewChatView: View {
                     selectTargetProject(project, controller: controller)
                 } else {
                     selectedProjectId = project.id
-                    selection = .newChat(project.id)
+                    selection = .newChat(NewChatTarget(project))
                 }
             }
         }
@@ -270,6 +270,19 @@ struct NewChatView: View {
         // when the reachable machine set changes.
         .onChange(of: environment.machines.allMachines.map(\.id)) { _, _ in
             guard let controller else { return }
+            if let canonical = canonicalProjectTarget(for: controller) {
+                selectedProjectId = canonical.isRunTargetPlaceholder ? nil : canonical.id
+                environment.composerDefaults.rememberNewWorkspaceServer(
+                    serverId: canonical.serverId
+                )
+                Task {
+                    await controller.retarget(
+                        to: canonical,
+                        serverClient: environment.machines.client(for: canonical.serverId)
+                    )
+                }
+                return
+            }
             controller.adoptServerClient(
                 environment.machines.client(for: controller.project.serverId)
             )
@@ -349,7 +362,7 @@ struct NewChatView: View {
     // MARK: - Setup
 
     private func setUpController() {
-        selectedProjectId = preferredProjectId ?? projects.first?.id
+        selectedProjectId = initialProjectTarget?.projectId ?? projects.first?.id
         let project =
             selectedProject
             ?? Project.runTargetPlaceholder(serverId: composerServerId)
@@ -374,16 +387,24 @@ struct NewChatView: View {
                 controller.project.isRunTargetPlaceholder
                 ? nil : controller.project.id
         }
-        // An explicit entry point ("New chat here") re-points even a retained
-        // draft at that project; the generic entry follows the draft.
+        // An explicit entry point ("New chat here") initializes even a
+        // retained draft, but only once for this navigation target. Machine
+        // and project picker actions after mount own the draft and must not be
+        // undone when setup-related tasks re-evaluate.
         if paneDraftId == nil,
-            let explicitProjectId,
-            controller.project.id != explicitProjectId,
+            let initialProjectTarget,
+            appliedInitialProjectTarget != initialProjectTarget,
             let explicit = environment.projectList.fleetActiveProjects.first(where: {
-                $0.id == explicitProjectId
+                $0.serverId == initialProjectTarget.serverId
+                    && $0.id == initialProjectTarget.projectId
             })
         {
-            selectTargetProject(explicit, controller: controller)
+            appliedInitialProjectTarget = initialProjectTarget
+            if controller.project.serverId != explicit.serverId
+                || controller.project.id != explicit.id
+            {
+                selectTargetProject(explicit, controller: controller)
+            }
         }
         controller.onFirstSend = { [weak controller] in
             guard let controller else { return }
@@ -587,7 +608,7 @@ struct FlowLayout: Layout {
     return NewChatView(
         store: SessionStore(environment: environment),
         selection: $selection,
-        preferredProjectId: nil
+        initialProjectTarget: nil
     )
     .environment(environment)
     .frame(width: 900, height: 640)

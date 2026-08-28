@@ -87,6 +87,190 @@ struct DefaultModelSelectionTests {
         #expect(controller.modelOption == nil)
     }
 
+    @Test("A machine switch carries an available harness, model, and settings")
+    func retargetCarriesCompatibleSelection() async {
+        let defaults = ComposerDefaultsStore(store: InMemoryStore())
+        defaults.rememberHarnessSelection(serverId: "machine-b", harnessId: "claude-code")
+        defaults.rememberConfigSelections(
+            serverId: "machine-b",
+            harnessId: "claude-code",
+            configValues: ["model": "fable", "reasoning": "low"]
+        )
+        defaults.rememberConfigSelections(
+            serverId: "machine-b",
+            harnessId: "codex",
+            configValues: ["model": "gpt-5.5", "reasoning": "high"]
+        )
+
+        let sourceCodex = capability(
+            harnessId: "codex",
+            currentModel: "gpt-5.6-sol",
+            models: ["gpt-5.5", "gpt-5.6-sol"],
+            currentReasoning: "xhigh",
+            reasoning: ["low", "high", "xhigh"]
+        )
+        let destinationClaude = capability(
+            harnessId: "claude-code",
+            currentModel: "fable",
+            models: ["fable"],
+            currentReasoning: "low",
+            reasoning: ["low", "high"]
+        )
+        let destinationCodex = capability(
+            harnessId: "codex",
+            currentModel: "gpt-5.5",
+            models: ["gpt-5.5", "gpt-5.6-sol"],
+            currentReasoning: "low",
+            reasoning: ["low", "high", "xhigh"]
+        )
+        let resolvedCodex = capability(
+            harnessId: "codex",
+            currentModel: "gpt-5.6-sol",
+            models: ["gpt-5.5", "gpt-5.6-sol"],
+            currentReasoning: "xhigh",
+            reasoning: ["low", "high", "xhigh"]
+        )
+        let client = SyncFakeServerClient(projects: [], sessions: [])
+        client.capabilitiesHandler = { _ in
+            ServerCapabilities(harnesses: [destinationClaude, destinationCodex])
+        }
+        client.resolvedCapabilitiesHandler = { _, harnessId, _ in
+            ServerCapabilities(harnesses: harnessId == "codex" ? [resolvedCodex] : [])
+        }
+
+        let controller = SessionController(
+            project: project(serverId: "machine-a"),
+            configCache: ConfigOptionCache(store: InMemoryStore()),
+            composerDefaults: defaults
+        )
+        controller.harnesses = [sourceCodex.harness]
+        controller.selectedHarnessId = "codex"
+        controller.configOptionsByHarness["codex"] = sourceCodex.configOptions
+        controller.preparationState = .ready
+
+        await controller.retarget(
+            to: project(serverId: "machine-b"),
+            serverClient: client
+        )
+
+        #expect(controller.selectedHarnessId == "codex")
+        #expect(controller.modelOption?.currentValue == "gpt-5.6-sol")
+        #expect(controller.thoughtLevelOptions.first?.currentValue == "xhigh")
+        // Browsing to the machine does not replace its durable fallback.
+        #expect(defaults.lastHarnessId(forServer: "machine-b") == "claude-code")
+        #expect(
+            defaults.configSelections(forHarness: "codex", onServer: "machine-b") == [
+                "model": "gpt-5.5", "reasoning": "high",
+            ])
+    }
+
+    @Test("An unavailable carried model falls back to that machine's profile")
+    func retargetFallsBackToDestinationProfile() async {
+        let defaults = ComposerDefaultsStore(store: InMemoryStore())
+        defaults.rememberHarnessSelection(serverId: "machine-b", harnessId: "codex")
+        defaults.rememberConfigSelections(
+            serverId: "machine-b",
+            harnessId: "codex",
+            configValues: ["model": "gpt-5.5", "reasoning": "high"]
+        )
+
+        let sourceCodex = capability(
+            harnessId: "codex",
+            currentModel: "gpt-5.6-sol",
+            models: ["gpt-5.6-sol"],
+            currentReasoning: "xhigh",
+            reasoning: ["xhigh"]
+        )
+        let destinationClaude = capability(
+            harnessId: "claude-code",
+            currentModel: "fable",
+            models: ["fable"],
+            currentReasoning: "low",
+            reasoning: ["low"]
+        )
+        let destinationCodex = capability(
+            harnessId: "codex",
+            currentModel: "gpt-5.5",
+            models: ["gpt-5.5"],
+            currentReasoning: "low",
+            reasoning: ["low", "high"]
+        )
+        let client = SyncFakeServerClient(projects: [], sessions: [])
+        client.capabilitiesHandler = { _ in
+            // Claude being first reproduces the catalog-order regression.
+            ServerCapabilities(harnesses: [destinationClaude, destinationCodex])
+        }
+
+        let controller = SessionController(
+            project: project(serverId: "machine-a"),
+            configCache: ConfigOptionCache(store: InMemoryStore()),
+            composerDefaults: defaults
+        )
+        controller.harnesses = [sourceCodex.harness]
+        controller.selectedHarnessId = "codex"
+        controller.configOptionsByHarness["codex"] = sourceCodex.configOptions
+
+        await controller.retarget(
+            to: project(serverId: "machine-b"),
+            serverClient: client
+        )
+
+        #expect(controller.selectedHarnessId == "codex")
+        #expect(controller.modelOption?.currentValue == "gpt-5.5")
+        #expect(controller.thoughtLevelOptions.first?.currentValue == "high")
+    }
+
+    @Test("Unavailable carried settings use the destination harness profile")
+    func retargetReconcilesSettings() async {
+        let defaults = ComposerDefaultsStore(store: InMemoryStore())
+        defaults.rememberHarnessSelection(serverId: "machine-b", harnessId: "codex")
+        defaults.rememberConfigSelections(
+            serverId: "machine-b",
+            harnessId: "codex",
+            configValues: ["model": "gpt-5.6-sol", "reasoning": "high"]
+        )
+
+        let sourceCodex = capability(
+            harnessId: "codex",
+            currentModel: "gpt-5.6-sol",
+            models: ["gpt-5.6-sol"],
+            currentReasoning: "xhigh",
+            reasoning: ["low", "high", "xhigh"]
+        )
+        let destinationCodex = capability(
+            harnessId: "codex",
+            currentModel: "gpt-5.6-sol",
+            models: ["gpt-5.6-sol"],
+            currentReasoning: "low",
+            reasoning: ["low", "high"]
+        )
+        let client = SyncFakeServerClient(projects: [], sessions: [])
+        client.capabilitiesHandler = { _ in
+            ServerCapabilities(harnesses: [destinationCodex])
+        }
+        client.resolvedCapabilitiesHandler = { _, _, _ in
+            ServerCapabilities(harnesses: [destinationCodex])
+        }
+
+        let controller = SessionController(
+            project: project(serverId: "machine-a"),
+            configCache: ConfigOptionCache(store: InMemoryStore()),
+            composerDefaults: defaults
+        )
+        controller.harnesses = [sourceCodex.harness]
+        controller.selectedHarnessId = "codex"
+        controller.configOptionsByHarness["codex"] = sourceCodex.configOptions
+
+        await controller.retarget(
+            to: project(serverId: "machine-b"),
+            serverClient: client
+        )
+
+        #expect(controller.selectedHarnessId == "codex")
+        #expect(controller.modelOption?.currentValue == "gpt-5.6-sol")
+        #expect(controller.thoughtLevelOptions.first?.currentValue == "high")
+    }
+
     @Test("A sign-in-only catalog is settled: refreshes never flicker the spinner")
     func signInOnlyCatalogHoldsSteady() async throws {
         let store = InMemoryStore()
@@ -191,6 +375,55 @@ struct DefaultModelSelectionTests {
         #expect(controller.configCache.capabilities(forServer: "machine-b").isEmpty)
         #expect(controller.configOptionsByHarness["claude-code"] == nil)
         #expect(controller.modelOption == nil)
+    }
+
+    private func project(serverId: String) -> Project {
+        Project.fromFolder(
+            URL(fileURLWithPath: "/tmp/\(serverId)"),
+            serverId: serverId
+        )
+    }
+
+    private func capability(
+        harnessId: String,
+        currentModel: String,
+        models: [String],
+        currentReasoning: String,
+        reasoning: [String]
+    ) -> ServerHarnessCapability {
+        ServerHarnessCapability(
+            harness: ServerHarness(
+                id: harnessId,
+                name: harnessId == "codex" ? "Codex" : "Claude Code",
+                symbolName: "sparkle",
+                source: "registry",
+                launchKind: "executable",
+                enabled: true,
+                readiness: ServerHarnessReadiness(state: "ready", detail: nil)
+            ),
+            modes: nil,
+            configOptions: [
+                SessionConfigOption(
+                    id: "model",
+                    name: "Model",
+                    category: SessionConfigOption.Category.model,
+                    currentValue: currentModel,
+                    options: models.map {
+                        SessionConfigSelectOption(value: $0, name: $0)
+                    }
+                ),
+                SessionConfigOption(
+                    id: "reasoning",
+                    name: "Reasoning",
+                    category: SessionConfigOption.Category.thoughtLevel,
+                    currentValue: currentReasoning,
+                    options: reasoning.map {
+                        SessionConfigSelectOption(value: $0, name: $0)
+                    }
+                ),
+            ],
+            supportsGoals: false
+        )
     }
 }
 

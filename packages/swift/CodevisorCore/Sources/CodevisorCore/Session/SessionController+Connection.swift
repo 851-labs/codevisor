@@ -143,6 +143,7 @@ extension SessionController {
     /// Selects a different harness (user action) and reconnects.
     public func selectHarness(_ id: String) async {
         guard id != selectedHarnessId else { return }
+        clearAutomaticSelection()
         let previousHarnessId = selectedHarnessId
         selectedHarnessId = id
         captureHarnessSelected(harnessId: id, previousHarnessId: previousHarnessId)
@@ -194,6 +195,15 @@ extension SessionController {
             await selectProject(project)
             return
         }
+        retargetRevision &+= 1
+        let revision = retargetRevision
+        let selectionIntent = currentComposerSelectionIntent()
+        automaticSelectionIntent = selectionIntent
+        automaticSelectionNeedsResolution = selectionIntent != nil
+        // Supersede model-dependent inspection work that was started with the
+        // old machine's client and catalog.
+        modelConfigurationResolutionRevision &+= 1
+        isResolvingModelConfiguration = false
         serverClient = client
         composerDefaultsScope = .newWorkspace(serverId: project.serverId)
         self.project = project
@@ -218,6 +228,10 @@ extension SessionController {
         // Reload harnesses/capabilities from the new machine, then rebuild
         // whatever connection state a draft is allowed to hold.
         await prepare()
+        guard revision == retargetRevision,
+            self.project.serverId == project.serverId,
+            self.project.id == project.id
+        else { return }
         await reconnect()
     }
 

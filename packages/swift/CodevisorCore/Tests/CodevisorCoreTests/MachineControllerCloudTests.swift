@@ -196,7 +196,7 @@ struct MachineControllerCloudTests {
         // The twin's records are gone, and connecting to the twin is refused.
         #expect(!projectList.projects.contains { $0.serverId == twinId })
         #expect(!projectList.sessions.contains { $0.serverId == twinId })
-        #expect(controller.isCloudTwinOfConfiguredMachine(twinId))
+        #expect(controller.canonicalComposerMachineId(for: twinId) == remote.id)
     }
 
     @Test("Dead cloud identities' records are pruned after a roster refresh")

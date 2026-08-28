@@ -25,8 +25,14 @@ extension SessionStore {
             persisted.flatMap { saved in
                 // The saved draft may target ANOTHER machine's project (the
                 // picker is fleet-wide); older drafts carry no server id and
-                // mean this machine.
-                saved.restoredProject(
+                // mean this machine. A configured machine's now-hidden cloud
+                // twin is the same target under an obsolete identity.
+                var canonical = saved
+                let savedServerId = saved.projectServerId ?? project.serverId
+                canonical.projectServerId =
+                    environment.machines.canonicalComposerMachineId(for: savedServerId)
+                    ?? savedServerId
+                return canonical.restoredProject(
                     in: environment.projectList.projects,
                     defaultServerId: project.serverId
                 )

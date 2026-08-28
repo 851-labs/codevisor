@@ -407,7 +407,7 @@ struct SidebarView: View {
             }
             .addProjectFlow(addProjectFlow) { project in
                 expanded.insert(project.id)
-                selection = .newChat(project.id)
+                selection = .newChat(NewChatTarget(project))
                 offerSessionImport(for: project)
             }
     }
@@ -683,7 +683,7 @@ struct SidebarView: View {
             machineName: environment.machines.fleetMachineName(for: project.serverId),
             onDisclosureToggle: { toggle(project.id) },
             onRestoreRequest: { restoreRequest = ArchivedRestoreRequest(target: .project(project)) },
-            onNewChat: { selection = .newChat(project.id) },
+            onNewChat: { selection = .newChat(NewChatTarget(project)) },
             onArchive: { list.archive(project) }
         )
     }

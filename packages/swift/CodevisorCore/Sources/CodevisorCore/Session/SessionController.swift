@@ -222,6 +222,13 @@ final public class SessionController {
     /// Keep these scoped to their harness so switching away and back does not
     /// discard that harness's model, thinking, or speed selection.
     var pendingConfigByHarness: [String: [String: String]] = [:] { didSet { draftDidChange() } }
+    /// A compatible selection carried from another machine. Only ids and
+    /// selected values cross the boundary; destination capability metadata
+    /// remains the sole authority for whether they can be used. This stays
+    /// alive after validation so a restored draft can distinguish the
+    /// transient selection from the destination's durable fallback profile.
+    @ObservationIgnored var automaticSelectionIntent: ComposerSelectionIntent?
+    @ObservationIgnored var automaticSelectionNeedsResolution = false
     var pendingModeId: String? { didSet { draftDidChange() } }
     @ObservationIgnored public var onDraftChange: ((ComposerDraftStore.Draft) -> Void)?
     @ObservationIgnored var isRestoringDraft = false
@@ -248,6 +255,10 @@ final public class SessionController {
     /// Invalidates older capability responses when a newer refresh starts or
     /// Settings changes the harness catalog while a request is in flight.
     var harnessCapabilityRequestRevision: UInt64 = 0
+    /// Invalidates the completion phase of an older cross-machine retarget.
+    /// Picker actions apply their target immediately, but capability fetches
+    /// can suspend; only the newest target may reconnect afterwards.
+    var retargetRevision: UInt64 = 0
     /// True while a model change is resolving the model-owned controls that
     /// accompany it. The composer keeps its popover geometry stable and shows
     /// an explicit loading state instead of briefly presenting stale settings.
@@ -302,6 +313,12 @@ final public class SessionController {
             preparationState = .ready
         }
     }
+}
+
+struct ComposerSelectionIntent: Equatable {
+    let harnessId: String
+    let configValues: [String: String]
+    let modelValue: String?
 }
 
 public enum SessionControllerError: Error {

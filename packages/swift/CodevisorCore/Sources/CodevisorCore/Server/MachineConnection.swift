@@ -255,6 +255,23 @@ extension MachineController {
         allMachines.first { $0.id == id }
     }
 
+    /// Resolves a persisted machine target to the fleet identity the composer
+    /// can actually use. A configured machine's cloud twin disappears from
+    /// `allMachines` after its `/v1/info` probe links the two identities; old
+    /// drafts can still name that hidden twin. Map it back to the configured
+    /// machine instead of silently constructing a client for another target.
+    public func canonicalComposerMachineId(for id: String) -> String? {
+        if machine(for: id) != nil, !isCloudTwinOfConfiguredMachine(id) {
+            return id
+        }
+        guard let deviceId = CodevisorMachine.cloudDeviceId(forMachineId: id) else {
+            return nil
+        }
+        return machines.first {
+            statusByMachineId[$0.id]?.cloudDeviceId == deviceId
+        }?.id
+    }
+
     /// A machine's display name as ROW METADATA for flattened lists: nil
     /// for single-machine fleets, so machine context never appears until
     /// it actually means something.

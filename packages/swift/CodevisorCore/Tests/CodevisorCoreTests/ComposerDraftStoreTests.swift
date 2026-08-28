@@ -146,6 +146,33 @@ struct ComposerDraftStoreTests {
         #expect(ComposerDraftStore(store: store).draft(forServer: "local") == expected)
     }
 
+    @Test("Drafts from before immediate defaults persistence request one compatibility backfill")
+    func legacyDraftRequestsDefaultsBackfill() throws {
+        let projectId = UUID()
+        let metadata = """
+            {
+              "machines": {
+                "machine-b": {
+                  "projectId": "\(projectId.uuidString)",
+                  "composerText": "legacy draft",
+                  "attachments": [],
+                  "selectedHarnessId": "codex",
+                  "configByHarness": {"codex": {"model": "gpt-5.6-sol"}},
+                  "isGoalComposerArmed": false,
+                  "isGoalEditing": false
+                }
+              }
+            }
+            """
+        let store = InMemoryStore(storage: [
+            "composer-drafts": try #require(metadata.data(using: .utf8))
+        ])
+
+        let draft = try #require(ComposerDraftStore(store: store).draft(forServer: "machine-b"))
+
+        #expect(!draft.usesImmediateDefaultsPersistence)
+    }
+
     @Test("Keeps machines isolated")
     func machineIsolation() {
         let store = InMemoryStore()

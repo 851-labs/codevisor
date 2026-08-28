@@ -34,6 +34,14 @@ public final class ComposerDraftStore {
         public var isGoalComposerArmed: Bool
         public var isGoalEditing: Bool
         public var composerTextBeforeGoalEdit: String?
+        /// Newer drafts have already persisted every explicit picker change to
+        /// composer defaults. Older drafts need a one-time compatibility
+        /// promotion when restored.
+        public var usesImmediateDefaultsPersistence: Bool
+        /// True when this draft is temporarily carrying a compatible
+        /// selection from another machine instead of using this machine's
+        /// durable fallback profile.
+        public var selectionWasAutomaticallyCarried: Bool
 
         public init(
             projectId: UUID,
@@ -45,7 +53,9 @@ public final class ComposerDraftStore {
             modeId: String? = nil,
             isGoalComposerArmed: Bool = false,
             isGoalEditing: Bool = false,
-            composerTextBeforeGoalEdit: String? = nil
+            composerTextBeforeGoalEdit: String? = nil,
+            usesImmediateDefaultsPersistence: Bool = true,
+            selectionWasAutomaticallyCarried: Bool = false
         ) {
             self.projectId = projectId
             self.projectServerId = projectServerId
@@ -57,6 +67,8 @@ public final class ComposerDraftStore {
             self.isGoalComposerArmed = isGoalComposerArmed
             self.isGoalEditing = isGoalEditing
             self.composerTextBeforeGoalEdit = composerTextBeforeGoalEdit
+            self.usesImmediateDefaultsPersistence = usesImmediateDefaultsPersistence
+            self.selectionWasAutomaticallyCarried = selectionWasAutomaticallyCarried
         }
     }
 
@@ -78,6 +90,8 @@ public final class ComposerDraftStore {
         var isGoalComposerArmed: Bool
         var isGoalEditing: Bool
         var composerTextBeforeGoalEdit: String?
+        var usesImmediateDefaultsPersistence: Bool?
+        var selectionWasAutomaticallyCarried: Bool?
     }
 
     private struct PersistedDrafts: Codable, Sendable {
@@ -152,7 +166,11 @@ public final class ComposerDraftStore {
             modeId: persisted.modeId,
             isGoalComposerArmed: persisted.isGoalComposerArmed,
             isGoalEditing: persisted.isGoalEditing,
-            composerTextBeforeGoalEdit: persisted.composerTextBeforeGoalEdit
+            composerTextBeforeGoalEdit: persisted.composerTextBeforeGoalEdit,
+            // Absence identifies a draft written before explicit selections
+            // were persisted immediately.
+            usesImmediateDefaultsPersistence: persisted.usesImmediateDefaultsPersistence ?? false,
+            selectionWasAutomaticallyCarried: persisted.selectionWasAutomaticallyCarried ?? false
         )
     }
 
@@ -169,7 +187,9 @@ public final class ComposerDraftStore {
             modeId: draft.modeId,
             isGoalComposerArmed: draft.isGoalComposerArmed,
             isGoalEditing: draft.isGoalEditing,
-            composerTextBeforeGoalEdit: draft.composerTextBeforeGoalEdit
+            composerTextBeforeGoalEdit: draft.composerTextBeforeGoalEdit,
+            usesImmediateDefaultsPersistence: draft.usesImmediateDefaultsPersistence,
+            selectionWasAutomaticallyCarried: draft.selectionWasAutomaticallyCarried
         )
     }
 
