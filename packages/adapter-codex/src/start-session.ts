@@ -17,6 +17,21 @@ import { killCodexCommandProcesses, type CodexCommandKiller } from "./process-ki
 import { cancelPendingQuestions, serverRequestResponse } from "./questions.js"
 import type { CodexSession } from "./session.js"
 
+const NATIVE_CODEX_PLUGIN_SKILL_NAMES = [
+  "browser:control-in-app-browser",
+  "chrome:control-chrome",
+  "computer-use:computer-use",
+  "documents:documents",
+  "pdf:pdf",
+  "presentations:Presentations",
+  "sites:sites-building",
+  "sites:sites-hosting",
+  "spreadsheets:Spreadsheets",
+  "spreadsheets:excel-live-control",
+  "template-creator:template-creator",
+  "visualize:visualize"
+] as const
+
 export interface CodexStartSessionDeps {
   readonly config: {
     readonly backgroundTerminals?: BackgroundTerminalIntegration
@@ -63,28 +78,26 @@ export const makeStartSession = ({
     const nativeAutomationDisables = NATIVE_AUTOMATION_MCP_SERVERS.filter(
       (name) => configuredServers?.has(name) ?? false
     )
-    const threadConfig =
-      toolGateway === undefined
-        ? undefined
+    // Keep Codex's bundled and first-party plugin skills out of
+    // Codevisor-owned threads without changing the user's global settings.
+    // Codevisor, repository, and user skills remain available. Plugin
+    // enablement itself is resolved before thread overrides, while bundled-
+    // skill and named-skill rules are honored here.
+    const threadConfig = {
+      skills: {
+        bundled: { enabled: false },
+        config: NATIVE_CODEX_PLUGIN_SKILL_NAMES.map((name) => ({ name, enabled: false }))
+      },
+      features: {
+        browser_use: false,
+        browser_use_external: false,
+        browser_use_full_cdp_access: false,
+        computer_use: false,
+        in_app_browser: false
+      },
+      ...(toolGateway === undefined
+        ? {}
         : {
-            // Keep the native automation skills and their transports out of
-            // Codevisor-owned threads without changing the user's global Codex
-            // settings. Plugin enablement itself is resolved before thread
-            // overrides, while skill rules and MCP server flags are honored here.
-            skills: {
-              config: [
-                { name: "computer-use:computer-use", enabled: false },
-                { name: "browser:control-in-app-browser", enabled: false },
-                { name: "chrome:control-chrome", enabled: false }
-              ]
-            },
-            features: {
-              browser_use: false,
-              browser_use_external: false,
-              browser_use_full_cdp_access: false,
-              computer_use: false,
-              in_app_browser: false
-            },
             mcp_servers: {
               ...Object.fromEntries(
                 nativeAutomationDisables.map((name) => [name, { enabled: false }])
@@ -95,19 +108,20 @@ export const makeStartSession = ({
                 default_tools_approval_mode: "approve"
               }
             }
-          }
+          })
+    }
     let response: { thread?: { id?: string }; model?: string }
     if (resumeThreadId === undefined) {
       response = await client.request("thread/start", {
         cwd,
-        ...(threadConfig === undefined ? {} : { config: threadConfig })
+        config: threadConfig
       })
     } else {
       try {
         response = await client.request("thread/resume", {
           cwd,
           threadId: resumeThreadId,
-          ...(threadConfig === undefined ? {} : { config: threadConfig })
+          config: threadConfig
         })
       } catch {
         // Sessions created by the old codex-acp adapter may not be app-server
@@ -115,7 +129,7 @@ export const makeStartSession = ({
         // session outright (history is lost, the session keeps working).
         response = await client.request("thread/start", {
           cwd,
-          ...(threadConfig === undefined ? {} : { config: threadConfig })
+          config: threadConfig
         })
       }
     }

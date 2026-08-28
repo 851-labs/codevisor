@@ -3,21 +3,33 @@ import type { ToolGatewayConfig } from "@codevisor/agent-runtime"
 import { makeCodexProvider } from "./provider.js"
 import { definition, environment, FakeCodexClient, run, setup } from "./test-support.js"
 
+const expectedNativeCodexSkills = {
+  bundled: { enabled: false },
+  config: [
+    { name: "browser:control-in-app-browser", enabled: false },
+    { name: "chrome:control-chrome", enabled: false },
+    { name: "computer-use:computer-use", enabled: false },
+    { name: "documents:documents", enabled: false },
+    { name: "pdf:pdf", enabled: false },
+    { name: "presentations:Presentations", enabled: false },
+    { name: "sites:sites-building", enabled: false },
+    { name: "sites:sites-hosting", enabled: false },
+    { name: "spreadsheets:Spreadsheets", enabled: false },
+    { name: "spreadsheets:excel-live-control", enabled: false },
+    { name: "template-creator:template-creator", enabled: false },
+    { name: "visualize:visualize", enabled: false }
+  ]
+}
+
 describe("CodexProvider", () => {
-  it("routes automation through Codevisor and disables native Codex automation", async () => {
+  it("routes tools through Codevisor and disables native Codex skills and automation", async () => {
     const toolGateway: ToolGatewayConfig = {
       name: "codevisor",
       url: "http://127.0.0.1:49361/mcp/gateway?gateway=test",
       bearerToken: "secret"
     }
     const expectedConfig = {
-      skills: {
-        config: [
-          { name: "computer-use:computer-use", enabled: false },
-          { name: "browser:control-in-app-browser", enabled: false },
-          { name: "chrome:control-chrome", enabled: false }
-        ]
-      },
+      skills: expectedNativeCodexSkills,
       features: {
         browser_use: false,
         browser_use_external: false,
@@ -52,6 +64,14 @@ describe("CodexProvider", () => {
     expect(resume?.params).toMatchObject({
       config: expectedConfig
     })
+  })
+
+  it("disables native Codex skills without a tool gateway", async () => {
+    const { client } = await setup()
+    const start = client.requests.find((request) => request.method === "thread/start")
+    const params = start?.params as { config: Record<string, unknown> }
+    expect(params.config).toMatchObject({ skills: expectedNativeCodexSkills })
+    expect(params.config).not.toHaveProperty("mcp_servers")
   })
 
   it("omits native automation disables when the codex config does not define those servers", async () => {
