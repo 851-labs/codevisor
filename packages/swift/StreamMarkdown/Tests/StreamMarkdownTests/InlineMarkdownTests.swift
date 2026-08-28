@@ -89,4 +89,11 @@ struct InlineMarkdownTests {
         let attributed = InlineMarkdown.attributedString(from: "an **unfinished")
         #expect(String(attributed.characters).contains("unfinished"))
     }
+
+    @Test("Unsafe link schemes remain non-interactive")
+    func unsafeLinks() {
+        let attributed = InlineMarkdown.attributedString(from: "[do not run](javascript:alert(1))")
+        #expect(String(attributed.characters) == "do not run")
+        #expect(attributed.runs.allSatisfy { $0.link == nil })
+    }
 }

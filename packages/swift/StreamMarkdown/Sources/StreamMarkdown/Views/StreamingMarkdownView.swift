@@ -58,16 +58,15 @@ private final class StreamingMarkdownAnimationMount {
     }
 }
 
-/// Renders markdown text, re-parsing on change so streamed responses display
-/// incrementally. Blocks render in document order, including tool output and
-/// partially-arrived code fences.
+/// Renders Markdown text as complete MD4C document snapshots so streamed
+/// responses remain CommonMark-correct while they grow. Blocks render in
+/// document order, including tool output and partially-arrived code fences.
 ///
-/// Pass `isComplete: false` while the text is still streaming: the segmenter
-/// then re-parses only the unsettled tail per flush and renders each block as
-/// its own segment, so per-flush work scales with the growing block instead
-/// of the whole document. When the flag flips back to true the segments merge
-/// into selectable runs again (one full re-render at finalize). The default
-/// (`true`) is right for any text that arrives whole.
+/// Pass `isComplete: false` while the text is still streaming. Snapshot parsing
+/// then runs off the main actor, stale results are discarded, and unchanged
+/// prefix values are reused to preserve SwiftUI identity. When the flag flips
+/// back to true, the final result is cached and segments merge into selectable
+/// runs. The default (`true`) is right for text that arrives whole.
 public struct StreamingMarkdownView: View {
     private let text: String
     private let isComplete: Bool
@@ -78,14 +77,9 @@ public struct StreamingMarkdownView: View {
     private let animationEnabled: Bool
     @Environment(\.markdownTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// Per-view-identity incremental state (see `StreamingSegmenter`). A
-    /// plain non-observable class held in `@State`: `body` runs far more
-    /// often than the text changes (theme changes, sibling observable churn,
-    /// the per-frame re-renders of a streaming transcript), and it must
-    /// persist across body evaluations without cache writes re-rendering the
-    /// view. Fresh identities fall through to the process-level
-    /// `MarkdownSegmentCache`.
-    @State private var segmenter = StreamingSegmenter()
+    /// Per-view-identity parse state. Streaming updates parse off MainActor and
+    /// stale generations are discarded before they can replace newer text.
+    @StateObject private var parseCoordinator: StreamingMarkdownParseCoordinator
     /// Message-wide visual cadence. Individual native text surfaces retain
     /// their own word identities but draw start times from this one queue.
     @State private var animationTimeline = StreamingTextAnimationTimeline()
@@ -112,6 +106,9 @@ public struct StreamingMarkdownView: View {
         self.animationPresentation = animationPresentation
         self.animationCoordinator = animationCoordinator
         self.animationEnabled = animationEnabled
+        _parseCoordinator = StateObject(
+            wrappedValue: StreamingMarkdownParseCoordinator(text: text, isComplete: isComplete)
+        )
     }
 
     public var body: some View {
@@ -121,14 +118,15 @@ public struct StreamingMarkdownView: View {
         )
         let _ = animationMountRevision
         let resolvedAnimationTimeline = animationCoordinator?.timeline ?? animationTimeline
-        let presentsAnimation = !isComplete && animationEnabled
+        let parsed = parseCoordinator.presentation
+        let presentsAnimation = !parsed.isComplete && animationEnabled
         let pacingSourceID = streamID ?? "root"
         MarkdownSegmentListView(
-            segments: segmenter.segments(for: text, isComplete: isComplete),
+            segments: parsed.segments,
             foregroundColor: foregroundColor ?? theme.textForeground,
             animationTimeline: presentsAnimation ? resolvedAnimationTimeline : nil,
             animatesInitialContent: mount.animatesInitialContent,
-            documentSource: text,
+            documentSource: parsed.text,
             pacingSourceID: pacingSourceID,
             // A reused SwiftUI/native surface must reset its word reconciler
             // when the semantic transcript entry changes.
@@ -181,7 +179,15 @@ public struct StreamingMarkdownView: View {
                 animationMountRevision &+= 1
             }
         }
+        .task(id: MarkdownParseRequest(text: text, isComplete: isComplete)) {
+            await parseCoordinator.update(text: text, isComplete: isComplete)
+        }
     }
+}
+
+private struct MarkdownParseRequest: Hashable {
+    let text: String
+    let isComplete: Bool
 }
 
 /// Aggregates the entrance-animation state of every streamed Markdown surface
@@ -330,10 +336,10 @@ struct MarkdownSegmentListView: View {
     }
 }
 
-/// A settled streaming segment is an explicit SwiftUI equality boundary.
+/// An unchanged streaming segment is an explicit SwiftUI equality boundary.
 /// Growing the hosting surface still lays out the stack, but it cannot rebuild
 /// or repaint the already-rendered prefix; only the changing tail crosses this
-/// boundary. `StreamingSegmenter` preserves the values of settled segments,
+/// boundary. The parse coordinator reuses equal prefix values,
 /// making the comparison O(1) in the steady state.
 private struct MarkdownSegmentView: View, Equatable {
     let segment: MarkdownSegment
@@ -434,6 +440,18 @@ struct MarkdownBlockView: View {
         case let .codeBlock(language, code, isComplete):
             CodeBlockView(language: language, code: code, isComplete: isComplete)
 
+        case let .list(list):
+            MarkdownRecursiveListView(
+                list: list,
+                foregroundColor: foregroundColor,
+                animationTimeline: animationTimeline,
+                animatesInitialContent: animatesInitialContent,
+                documentSource: documentSource,
+                pacingSourceID: pacingSourceID,
+                animationPath: animationPath,
+                reduceMotion: reduceMotion
+            )
+
         case let .blockQuote(blocks):
             HStack(spacing: 8) {
                 Rectangle()
@@ -462,6 +480,50 @@ struct MarkdownBlockView: View {
         case .thematicBreak:
             Divider()
         }
+    }
+}
+
+private struct MarkdownRecursiveListView: View {
+    let list: MarkdownList
+    let foregroundColor: Color
+    let animationTimeline: StreamingTextAnimationTimeline?
+    let animatesInitialContent: Bool
+    let documentSource: String
+    let pacingSourceID: String
+    let animationPath: String
+    let reduceMotion: Bool
+    @Environment(\.markdownTheme) private var theme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: theme.listItemSpacing) {
+            ForEach(Array(list.items.enumerated()), id: \.offset) { index, item in
+                // `MarkdownSegmentsView` is backed by nested VStacks and a
+                // native TextKit surface, so it does not propagate its first
+                // text baseline to this row. Baseline alignment consequently
+                // placed the marker one line above the item. Their top edges
+                // both correspond to the first rendered line.
+                HStack(alignment: .top, spacing: 8) {
+                    Text(marker(for: item, at: index))
+                        .foregroundStyle(theme.secondaryTextForeground)
+                        .monospacedDigit()
+                    MarkdownSegmentsView(
+                        blocks: item.blocks,
+                        foregroundColor: foregroundColor,
+                        animationTimeline: animationTimeline,
+                        animatesInitialContent: animatesInitialContent,
+                        documentSource: documentSource,
+                        pacingSourceID: pacingSourceID,
+                        animationPath: "\(animationPath).item.\(index)",
+                        reduceMotion: reduceMotion
+                    )
+                }
+            }
+        }
+    }
+
+    private func marker(for item: MarkdownListItem, at index: Int) -> String {
+        if item.isTask { return item.isChecked ? "☑" : "☐" }
+        return list.isOrdered ? "\(list.start + index)\(list.delimiter)" : "•"
     }
 }
 

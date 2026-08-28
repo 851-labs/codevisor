@@ -11,9 +11,9 @@
     import UIKit
 
     struct MarkdownPortableTableView: View {
-        let headers: [String]
+        let headers: [MarkdownText]
         let alignments: [ColumnAlignment]
-        let rows: [[String]]
+        let rows: [[MarkdownText]]
         @Environment(\.markdownTheme) private var theme
         @Environment(\.markdownTableBleed) private var bleed
         /// The width the transcript actually grants the table. Measured on the
@@ -72,7 +72,7 @@
             }
         }
 
-        private func markdown(row: Int, column: Int) -> String {
+        private func markdown(row: Int, column: Int) -> MarkdownText {
             let values = row == 0 ? headers : rows[row - 1]
             return column < values.count ? values[column] : ""
         }
@@ -158,7 +158,7 @@
     @MainActor
     private enum TableCellMeasurement {
         private struct Key: Hashable {
-            let markdown: String
+            let markdown: MarkdownText
             let isHeader: Bool
             let themeFingerprint: Int
         }
@@ -172,7 +172,7 @@
         /// horizontal padding — the width below which word wrapping runs out and
         /// per-character breaking would begin.
         static func minimumContentWidth(
-            markdown: String,
+            markdown: MarkdownText,
             isHeader: Bool,
             theme: MarkdownTheme
         ) -> CGFloat {
@@ -193,7 +193,7 @@
         }
 
         private static func measure(
-            markdown: String,
+            markdown: MarkdownText,
             isHeader: Bool,
             theme: MarkdownTheme
         ) -> CGFloat {
@@ -419,10 +419,12 @@
                 rows: [
                     [
                         "zats/permiso", "Swift",
-                        "Permission dialog for accessibility settings **as seen in Codex "
-                            + "Computer Use**. SwiftPM package; API is "
-                            + "`PermisoAssistant.shared.present(panel: .accessibility)`. "
-                            + "Ships a sample app.",
+                        MarkdownText(
+                            "Permission dialog for accessibility settings **as seen in Codex "
+                                + "Computer Use**. SwiftPM package; API is "
+                                + "`PermisoAssistant.shared.present(panel: .accessibility)`. "
+                                + "Ships a sample app."
+                        ),
                     ],
                     ["Ann", "30", "New York"],
                 ]

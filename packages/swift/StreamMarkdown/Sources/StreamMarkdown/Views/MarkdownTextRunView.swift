@@ -12,7 +12,7 @@
         let foregroundColor: Color
         let animationContext: StreamingTextAnimationContext?
         @Environment(\.markdownTheme) private var theme
-        /// The segmenter pointer-stabilizes settled blocks, so this memo makes
+        /// The parse coordinator value-stabilizes unchanged blocks, so this memo makes
         /// repeated transcript body evaluations O(1) for unchanged text.
         @State private var memo = TextRunMemo()
 
@@ -108,13 +108,13 @@
                     chipBackground: chipBackground
                 )
 
-            case .codeBlock, .blockQuote, .table, .thematicBreak:
+            case .codeBlock, .list, .blockQuote, .table, .thematicBreak:
                 NSAttributedString()
             }
         }
 
         private static func list(
-            items: [(marker: String, text: String)],
+            items: [(marker: String, text: MarkdownText)],
             theme: MarkdownTheme,
             foreground: NSColor,
             chipBackground: TextKitRoundedBackground
@@ -154,7 +154,7 @@
         }
 
         private static func inlineAttributed(
-            _ markdown: String,
+            _ markdown: MarkdownText,
             baseFont: NSFont,
             theme: MarkdownTheme,
             foreground: NSColor,
@@ -187,6 +187,9 @@
                     foreground: run.link == nil ? foreground : .linkColor,
                     lineSpacing: theme.lineSpacing
                 )
+                if intent?.contains(.strikethrough) == true {
+                    attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
+                }
                 if let link = run.link {
                     if markdownUsesServerFileLinkAttribute(link) {
                         attributes[.streamMarkdownServerFileLink] = link
@@ -260,7 +263,7 @@
 
     /// Last-value memo for the immutable attributed string handed to both the
     /// displayed TextKit view and its scratch measurer. Returning the same object
-    /// identity lets both paths skip unchanged settled Markdown in O(1).
+    /// identity lets both paths skip unchanged Markdown in O(1).
     @MainActor
     private final class TextRunMemo {
         private var blocks: [MarkdownBlock]?

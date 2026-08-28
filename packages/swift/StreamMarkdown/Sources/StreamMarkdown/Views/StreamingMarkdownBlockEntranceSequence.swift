@@ -110,6 +110,7 @@ final class StreamingMarkdownBlockEntranceSequence {
         switch block {
         case .heading, .paragraph, .bulletList, .orderedList: "text"
         case .codeBlock: "code"
+        case .list: "list"
         case .blockQuote: "quote"
         case .table: "table"
         case .thematicBreak: "rule"

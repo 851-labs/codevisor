@@ -38,6 +38,12 @@ public final class MarkdownSegmentCache {
         return segments
     }
 
+    func cachedSegments(for text: String) -> [MarkdownSegment]? {
+        guard let cached = entries[text] else { return nil }
+        markUsed(text)
+        return cached
+    }
+
     /// Parses without touching the LRU. Streaming rewrites a message's text
     /// every ~16ms flush; routing those intermediates through the cache
     /// evicted the settled texts scrolling actually re-encounters, for
@@ -51,7 +57,7 @@ public final class MarkdownSegmentCache {
         entries[text] != nil
     }
 
-    private func store(_ segments: [MarkdownSegment], for text: String) {
+    func store(_ segments: [MarkdownSegment], for text: String) {
         entries[text] = segments
         order.append(text)
         if order.count > limit {

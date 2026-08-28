@@ -100,13 +100,13 @@
                     chipBackground: chipBackground
                 )
 
-            case .codeBlock, .blockQuote, .table, .thematicBreak:
+            case .codeBlock, .list, .blockQuote, .table, .thematicBreak:
                 NSAttributedString()
             }
         }
 
         private static func list(
-            items: [(marker: String, text: String)],
+            items: [(marker: String, text: MarkdownText)],
             theme: MarkdownTheme,
             foreground: UIColor,
             chipBackground: UIKitTextKitRoundedBackground
@@ -146,7 +146,7 @@
         }
 
         private static func inlineAttributed(
-            _ markdown: String,
+            _ markdown: MarkdownText,
             baseFont: UIFont,
             theme: MarkdownTheme,
             foreground: UIColor,
@@ -176,6 +176,9 @@
                     foreground: run.link == nil ? foreground : .link,
                     lineSpacing: theme.lineSpacing
                 )
+                if intent?.contains(.strikethrough) == true {
+                    attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
+                }
                 if let link = run.link {
                     attributes[.link] = link
                 }

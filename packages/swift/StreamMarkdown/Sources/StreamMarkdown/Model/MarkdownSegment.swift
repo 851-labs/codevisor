@@ -20,7 +20,7 @@ public enum MarkdownSegment: Sendable, Equatable {
         switch block {
         case .heading, .paragraph, .bulletList, .orderedList:
             return true
-        case .codeBlock, .blockQuote, .table, .thematicBreak:
+        case .codeBlock, .list, .blockQuote, .table, .thematicBreak:
             return false
         }
     }
@@ -59,12 +59,12 @@ public enum MarkdownSegment: Sendable, Equatable {
     private static func textLength(of block: MarkdownBlock) -> Int {
         switch block {
         case let .heading(_, text), let .paragraph(text):
-            return text.count
+            return text.characterCount
         case let .bulletList(items):
-            return items.reduce(0) { $0 + $1.count }
+            return items.reduce(0) { $0 + $1.characterCount }
         case let .orderedList(items):
-            return items.reduce(0) { $0 + $1.text.count }
-        case .codeBlock, .blockQuote, .table, .thematicBreak:
+            return items.reduce(0) { $0 + $1.text.characterCount }
+        case .codeBlock, .list, .blockQuote, .table, .thematicBreak:
             return 0
         }
     }

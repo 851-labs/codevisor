@@ -20,7 +20,11 @@ struct MarkdownParserTests {
     @Test("Parses a paragraph and joins soft-wrapped lines")
     func paragraph() {
         #expect(parser.parse("Hello world") == [.paragraph("Hello world")])
-        #expect(parser.parse("line one\nline two") == [.paragraph("line one\nline two")])
+        #expect(
+            parser.parse("line one\nline two") == [
+                .paragraph(MarkdownText(spans: [.text("line one"), .softBreak, .text("line two")]))
+            ]
+        )
     }
 
     @Test("Separates paragraphs on blank lines")
@@ -47,13 +51,13 @@ struct MarkdownParserTests {
         #expect(blocks == [.codeBlock(language: nil, code: "code", isComplete: true)])
     }
 
-    @Test("Parses bullet lists")
+    @Test("Parses bullet lists and honors marker changes")
     func bulletList() {
         let blocks = parser.parse("- a\n- b\n* c\n+ d")
-        #expect(blocks == [.bulletList(["a", "b", "c", "d"])])
+        #expect(blocks == [.bulletList(["a", "b"]), .bulletList(["c"]), .bulletList(["d"])])
     }
 
-    @Test("Parses ordered lists preserving numbers")
+    @Test("Parses ordered lists with CommonMark delimiter boundaries")
     func orderedList() {
         let blocks = parser.parse("1. first\n2. second\n10) tenth")
         #expect(
@@ -61,8 +65,8 @@ struct MarkdownParserTests {
                 .orderedList([
                     OrderedListItem(number: 1, text: "first"),
                     OrderedListItem(number: 2, text: "second"),
-                    OrderedListItem(number: 10, text: "tenth"),
-                ])
+                ]),
+                .orderedList([OrderedListItem(number: 10, text: "tenth")]),
             ])
     }
 
@@ -77,7 +81,13 @@ struct MarkdownParserTests {
     @Test("Parses block quotes recursively")
     func blockQuote() {
         let blocks = parser.parse("> quoted text\n> more")
-        #expect(blocks == [.blockQuote([.paragraph("quoted text\nmore")])])
+        #expect(
+            blocks == [
+                .blockQuote([
+                    .paragraph(MarkdownText(spans: [.text("quoted text"), .softBreak, .text("more")]))
+                ])
+            ]
+        )
     }
 
     @Test("Parses a GFM table with alignments")
@@ -145,5 +155,100 @@ struct MarkdownParserTests {
         let blocks = parser.parse("# A\n\nB")
         #expect(Set(blocks.map(\.id)).count == 2)
         #expect(MarkdownBlock.thematicBreak.id == "hr")
+    }
+
+    @Test("Resolves reference links using the complete document")
+    func referenceLinks() {
+        let blocks = parser.parse(
+            "Read [the guide][docs].\n\n[docs]: <https://example.com/guide?a=1&amp;b=2>"
+        )
+        guard case let .paragraph(text) = blocks.first else {
+            Issue.record("expected a paragraph")
+            return
+        }
+        let attributed = InlineMarkdown.attributedString(from: text)
+        #expect(String(attributed.characters) == "Read the guide.")
+        #expect(
+            attributed.runs.contains {
+                $0.link?.absoluteString == "https://example.com/guide?a=1&b=2"
+            }
+        )
+    }
+
+    @Test("Retains nested and task list structure")
+    func recursiveTaskList() {
+        let blocks = parser.parse("- [x] shipped\n  - nested\n- [ ] pending")
+        guard case let .list(list) = blocks.first else {
+            Issue.record("expected a recursive list")
+            return
+        }
+        #expect(list.items.count == 2)
+        #expect(list.items[0].isTask)
+        #expect(list.items[0].isChecked)
+        #expect(list.items[0].blocks.count == 2)
+        #expect(list.items[1].isTask)
+        #expect(!list.items[1].isChecked)
+    }
+
+    @Test("Decodes numeric and HTML5 named entities")
+    func entities() {
+        guard case let .paragraph(text) = parser.parse("&euro; &#x1F642; &NotEqualTilde;").first else {
+            Issue.record("expected a paragraph")
+            return
+        }
+        #expect(text.plainText == "€ 🙂 ≂̸")
+    }
+
+    @Test("Treats raw HTML as text")
+    func htmlIsText() {
+        guard case let .paragraph(text) = parser.parse("<b>safe</b>").first else {
+            Issue.record("expected literal HTML text")
+            return
+        }
+        #expect(text.plainText == "<b>safe</b>")
+    }
+
+    @Test("Detects incomplete fences inside block quotes")
+    func quotedFenceCompletion() {
+        let open = parser.parse("> ```swift\n> let value = 1")
+        guard case let .blockQuote(openBlocks) = open.first,
+            case let .codeBlock(_, _, openComplete) = openBlocks.first
+        else {
+            Issue.record("expected quoted code")
+            return
+        }
+        #expect(!openComplete)
+
+        let closed = parser.parse("> ```swift\n> let value = 1\n> ```")
+        guard case let .blockQuote(closedBlocks) = closed.first,
+            case let .codeBlock(_, _, closedComplete) = closedBlocks.first
+        else {
+            Issue.record("expected quoted code")
+            return
+        }
+        #expect(closedComplete)
+    }
+
+    @Test("Detects incomplete fences in ordered-list and quote containers")
+    func nestedContainerFenceCompletion() {
+        let open = parser.parse("1. > ```swift\n   > let value = 1")
+        guard case let .list(openList) = open.first,
+            case let .blockQuote(openBlocks) = openList.items.first?.blocks.first,
+            case let .codeBlock(_, _, openComplete) = openBlocks.first
+        else {
+            Issue.record("expected fenced code in an ordered-list quote")
+            return
+        }
+        #expect(!openComplete)
+
+        let closed = parser.parse("1. > ```swift\n   > let value = 1\n   > ```")
+        guard case let .list(closedList) = closed.first,
+            case let .blockQuote(closedBlocks) = closedList.items.first?.blocks.first,
+            case let .codeBlock(_, _, closedComplete) = closedBlocks.first
+        else {
+            Issue.record("expected closed fenced code in an ordered-list quote")
+            return
+        }
+        #expect(closedComplete)
     }
 }

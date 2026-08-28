@@ -1,0 +1,5 @@
+module CMD4C {
+    header "md4c.h"
+    header "entity.h"
+    export *
+}

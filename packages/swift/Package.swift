@@ -58,7 +58,13 @@ let package = Package(
 
         // MARK: StreamMarkdown
         .target(
+            name: "CMD4C",
+            path: "StreamMarkdown/Vendor/CMD4C",
+            publicHeadersPath: "include"
+        ),
+        .target(
             name: "StreamMarkdown",
+            dependencies: ["CMD4C"],
             path: "StreamMarkdown/Sources/StreamMarkdown",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),

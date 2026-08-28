@@ -48,6 +48,11 @@
     /// segment concatenation and the renderer.
     @ViewBuilder
     func portableInlineText(_ markdown: String, theme: MarkdownTheme) -> some View {
+        portableInlineText(MarkdownParser().parseInline(markdown), theme: theme)
+    }
+
+    @ViewBuilder
+    func portableInlineText(_ markdown: MarkdownText, theme: MarkdownTheme) -> some View {
         let attributed = InlineMarkdown.attributedString(from: markdown, theme: theme)
         let pieces = InlineMarkdown.chipPieces(in: attributed)
         if pieces.contains(where: { $0.isChip }) {

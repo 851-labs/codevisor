@@ -2,10 +2,8 @@ import Foundation
 import Testing
 @testable import StreamMarkdown
 
-/// The segmenter's incremental streaming path must produce, at every prefix,
-/// exactly the blocks a full parse of that prefix produces — the settled-cut
-/// optimization is only allowed to change *when* text is parsed, never what
-/// it parses to.
+/// Every streaming snapshot is a complete MD4C parse. These tests protect the
+/// segment shaping and prefix-reconciliation layer around that parse.
 @MainActor
 @Suite("StreamingSegmenter")
 struct StreamingSegmenterTests {
@@ -81,7 +79,7 @@ struct StreamingSegmenterTests {
     func headingTrapEquivalence() {
         // "#" alone parses as an empty heading; once it grows into "#not a
         // heading" the line is paragraph content and must merge back into
-        // the preceding paragraph — proving un-settled blocks re-parse.
+        // the preceding paragraph, proving every snapshot is parsed in full.
         assertStreamingEquivalence("intro text\n#not a heading, actually", chunkSize: 11)
     }
 
@@ -91,15 +89,15 @@ struct StreamingSegmenterTests {
     }
 
     @Test("Text appended after a trailing blank line does not rejoin the paragraph")
-    func settledParagraphBoundary() {
+    func paragraphBoundary() {
         let segmenter = StreamingSegmenter()
         _ = segmenter.segments(for: "para\n\n", isComplete: false)
         let segments = segmenter.segments(for: "para\n\nnext", isComplete: false)
         #expect(blocks(of: segments) == [.paragraph("para"), .paragraph("next")])
     }
 
-    @Test("Blank lines inside an open code fence never settle a cut")
-    func openFenceBlocksSettling() {
+    @Test("Blank lines inside an open code fence remain part of the code block")
+    func openFenceRemainsWhole() {
         let document = "```\nline one\n\nline two\n\nline three"
         let segmenter = StreamingSegmenter()
         var streamed = ""
@@ -134,18 +132,20 @@ struct StreamingSegmenterTests {
         // previous flush returned (SwiftUI diffs String storage pointers).
         #expect(first.first == second.first)
         if case let .textRun(oldBlocks) = first[0], case let .textRun(newBlocks) = second[0],
-            case let .paragraph(oldText) = oldBlocks[0], case let .paragraph(newText) = newBlocks[0]
+            case let .paragraph(oldText) = oldBlocks[0], case let .paragraph(newText) = newBlocks[0],
+            case let .text(oldStorage) = oldText.spans.first,
+            case let .text(newStorage) = newText.spans.first
         {
             #expect(
-                oldText.utf8.withContiguousStorageIfAvailable { $0.baseAddress }
-                    == newText.utf8.withContiguousStorageIfAvailable { $0.baseAddress })
+                oldStorage.utf8.withContiguousStorageIfAvailable { $0.baseAddress }
+                    == newStorage.utf8.withContiguousStorageIfAvailable { $0.baseAddress })
         } else {
             Issue.record("expected leading text runs")
         }
     }
 
-    @Test("A rewritten (non-prefix) text resets the incremental state")
-    func rewriteResets() {
+    @Test("A rewritten non-prefix snapshot replaces the previous result")
+    func rewriteReplacesPreviousResult() {
         let segmenter = StreamingSegmenter()
         _ = segmenter.segments(for: "first candidate answer", isComplete: false)
         let segments = segmenter.segments(for: "different text", isComplete: false)
@@ -157,33 +157,24 @@ struct StreamingSegmenterTests {
         assertStreamingEquivalence("emoji 👩‍👩‍👧‍👦 and accents éü\n\nnext 🎛️ paragraph", chunkSize: 1)
     }
 
-    @Test("utf8Suffix returns the appended delta and rejects non-prefixes")
-    func utf8Suffix() {
-        #expect(StreamingSegmenter.utf8Suffix(of: "hello world", after: "hello") == " world")
-        #expect(StreamingSegmenter.utf8Suffix(of: "hello", after: "hello") == "")
-        #expect(StreamingSegmenter.utf8Suffix(of: "hello", after: "help") == nil)
-        #expect(StreamingSegmenter.utf8Suffix(of: "hi", after: "hello") == nil)
+    @Test("Async parsing discards an out-of-order stale snapshot")
+    func staleAsyncSnapshot() async {
+        let coordinator = StreamingMarkdownParseCoordinator(
+            text: "initial",
+            isComplete: false,
+            snapshotParser: { text, _ in
+                if text == "slow" { Thread.sleep(forTimeInterval: 0.05) }
+                return [.textRun([.paragraph(text)])]
+            }
+        )
+
+        async let slow: Void = coordinator.update(text: "slow", isComplete: false)
+        await Task.yield()
+        await coordinator.update(text: "fast", isComplete: false)
+        _ = await slow
+
+        #expect(coordinator.presentation.text == "fast")
+        #expect(coordinator.presentation.segments == [.textRun([.paragraph("fast")])])
     }
 
-    @Test("settledCut ignores the final line, blanks inside blocks, and all-content tails")
-    func settledCutRules() {
-        // Final line can still grow: no cut in "para\n" (lines: para, "").
-        #expect(
-            StreamingSegmenter.settledCut(
-                lines: ["para", ""],
-                blocks: parser.parseBlocks("para\n")
-            ) == nil)
-        // A blank between two settled paragraphs is a cut.
-        #expect(
-            StreamingSegmenter.settledCut(
-                lines: ["a", "", "b", "more"],
-                blocks: parser.parseBlocks("a\n\nb\nmore")
-            ) == 1)
-        // The blank inside an open fence is fence content, not a cut.
-        #expect(
-            StreamingSegmenter.settledCut(
-                lines: ["```", "code", "", "tail"],
-                blocks: parser.parseBlocks("```\ncode\n\ntail")
-            ) == nil)
-    }
 }
