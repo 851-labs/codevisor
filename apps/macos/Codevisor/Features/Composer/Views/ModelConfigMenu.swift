@@ -503,9 +503,6 @@ private extension ModelConfigMenu {
                 Text(option.currentName)
                     .foregroundStyle(.secondary)
             }
-            Image(systemName: "chevron.up.chevron.down")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.tertiary)
         }
         .contentShape(Rectangle())
     }
