@@ -43,9 +43,6 @@ jobs:
         run: bunx wrangler d1 migrations apply codevisor-cloud --remote
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      - name: Build CSS
-        working-directory: apps/cloud
-        run: bun run build:css
       # All at once, deliberately. A deploy restarts every UserHub Durable
       # Object and drops its WebSockets (a platform behavior — DO sockets
       # cannot be drained), but clients ride that out on their own: they

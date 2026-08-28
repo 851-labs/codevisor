@@ -156,7 +156,6 @@ const containerContext =
 // `wrangler dev` process.
 let cloud
 if (externalCloudURL === undefined) {
-  await run("bun", ["run", "build:css"], join(repoRoot, "apps/cloud"))
   await run(
     "bun",
     [

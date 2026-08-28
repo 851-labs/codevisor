@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "wrangler dev --var DEV_AUTH:1 --var PUBLIC_BASE_URL:http://localhost:8787 --var 'INSTANCE_NAME:Codevisor Cloud (dev)'",
     "build": "bun run build:css && tsc --noEmit",
-    "build:css": "tailwindcss -i src/pages/tailwind.css -o src/pages/generated/styles.css --minify",
+    "build:css": "tailwindcss -i src/pages/tailwind.css -o src/generated/styles.css --minify",
     "typecheck": "bun run build:css && tsc --noEmit --pretty false",
     "test": "bun run build:css && vitest run",
     "test:coverage": "bun run test",

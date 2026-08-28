@@ -8,9 +8,16 @@
   "observability": {
     "enabled": true
   },
+  // Tailwind is a source compiler, not part of Wrangler's CSS text-module
+  // handling. Build it before dev/deploy and rebuild it when page sources
+  // change. The output lives outside watch_dir so it cannot trigger itself.
+  "build": {
+    "command": "bun run build:css",
+    "watch_dir": "src/pages"
+  },
   // Inline the generated Tailwind stylesheet as a text module so the Worker
   // stays fully self-contained (no static-asset hosting required to self-host).
-  "rules": [{ "type": "Text", "globs": ["**/*.css"] }],
+  "rules": [{ "type": "Text", "globs": ["**/*.css"], "fallthrough": true }],
   "durable_objects": {
     "bindings": [{ "name": "USER_HUB", "class_name": "UserHub" }]
   },

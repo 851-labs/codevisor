@@ -36,5 +36,5 @@ apps/ios/Codevisor/Resources/AppIconDevGenerated.icon/
 apps/macos/Codevisor/Resources/AppIconDevGenerated.icon/
 
 # apps/cloud build artifacts
-apps/cloud/src/pages/generated/
+apps/cloud/src/generated/
 .dev.vars
