@@ -12,14 +12,14 @@ public struct NewRemoteFolderSheet: View {
 
     private let parentPath: String
     private let existingNames: Set<String>
-    private let onCreated: (String) -> Void
+    private let onCreated: @MainActor (String) -> Void
 
     public init(
         machineName: String,
         parentPath: String,
         existingNames: Set<String>,
         create: @escaping RemoteDirectoryCreationModel.Creator,
-        onCreated: @escaping (String) -> Void
+        onCreated: @escaping @MainActor (String) -> Void
     ) {
         self.parentPath = parentPath
         self.existingNames = existingNames
@@ -146,7 +146,7 @@ public struct NewRemoteFolderSheet: View {
 
     private func createFolder() {
         guard canCreate, !model.isCreating else { return }
-        Task {
+        Task { @MainActor in
             if let path = await model.createFolder(
                 named: name,
                 in: parentPath,

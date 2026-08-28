@@ -26,7 +26,22 @@ struct RunTargetPickerSheet: View {
         case runLocation(serverId: String, projectId: UUID)
     }
 
+    private enum ProjectCreationSheet: Identifiable {
+        case openFolder(serverId: String)
+        case cloneRepository(serverId: String)
+
+        var id: String {
+            switch self {
+            case let .openFolder(serverId):
+                "open-folder:\(serverId)"
+            case let .cloneRepository(serverId):
+                "clone-repository:\(serverId)"
+            }
+        }
+    }
+
     @State private var path: [Route] = []
+    @State private var projectCreationSheet: ProjectCreationSheet?
 
     /// Every machine's projects, most recently used first (scratch backing
     /// projects are internal and never listed).
@@ -46,14 +61,14 @@ struct RunTargetPickerSheet: View {
             Group {
                 if machines.count > 1 {
                     machineStep
-                        .navigationTitle("Select a machine")
+                        .navigationTitle("Select Machine")
                 } else {
                     projectStep(
                         serverId: machines.first?.id
                             ?? initialServerId
                             ?? environment.machines.selectedMachineId
                     )
-                    .navigationTitle("Select a project")
+                    .navigationTitle("Select Project")
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -61,23 +76,31 @@ struct RunTargetPickerSheet: View {
                 switch route {
                 case let .projects(serverId):
                     projectStep(serverId: serverId)
-                        .navigationTitle("Select a project")
+                        .navigationTitle("Select Project")
                         .navigationBarTitleDisplayMode(.inline)
                 case let .runLocation(serverId, projectId):
                     runLocationStep(serverId: serverId, projectId: projectId)
-                        .navigationTitle("Select a location")
+                        .navigationTitle("Select Location")
                         .navigationBarTitleDisplayMode(.inline)
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
                 }
             }
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+        .sheet(item: $projectCreationSheet) { sheet in
+            projectCreationView(for: sheet)
+        }
     }
 
     // MARK: - Steps
 
     /// Machines are never disabled here: a machine with no projects opens an
-    /// empty project step whose "New Project…" adds the first one.
+    /// empty project step whose add action creates the first one.
     private var machineStep: some View {
         List {
             ForEach(machines) { machine in
@@ -90,8 +113,28 @@ struct RunTargetPickerSheet: View {
     }
 
     private func projectStep(serverId: String) -> some View {
-        ProjectSelectionScreen(serverId: serverId) { project in
-            advance(with: project)
+        ProjectSelectionScreen(
+            serverId: serverId,
+            onOpenFolder: { projectCreationSheet = .openFolder(serverId: serverId) },
+            onCloneRepository: {
+                projectCreationSheet = .cloneRepository(serverId: serverId)
+            },
+            onSelected: advance(with:)
+        )
+    }
+
+    @ViewBuilder
+    private func projectCreationView(for sheet: ProjectCreationSheet) -> some View {
+        switch sheet {
+        case let .openFolder(serverId):
+            AddProjectSheet(serverId: serverId, onAdded: advance(with:))
+        case let .cloneRepository(serverId):
+            GitCloneSheet(
+                client: environment.machines.client(for: serverId),
+                machineName: environment.machines.machine(for: serverId)?.name ?? "this machine",
+                serverId: serverId,
+                onCloned: advance(with:)
+            )
         }
     }
 

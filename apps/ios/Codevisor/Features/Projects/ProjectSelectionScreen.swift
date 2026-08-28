@@ -3,18 +3,20 @@ import CodevisorUI
 import SwiftUI
 
 /// The native iOS project step used by the run-target sheet. Existing and
-/// recommended projects use a standard list, while an empty machine keeps its
-/// creation actions in the empty state.
+/// recommended projects use a standard list, with project creation exposed as
+/// a consistent add action in both populated and empty states.
 struct ProjectSelectionScreen: View {
     @Environment(AppEnvironment.self) private var environment
 
     let serverId: String
+    let onOpenFolder: () -> Void
+    let onCloneRepository: () -> Void
     let onSelected: (Project) -> Void
 
     @State private var recommendations: [ProjectRecommendation] = []
     @State private var addingRecommendationPath: String?
-    @State private var showingBrowser = false
-    @State private var showingGitClone = false
+    @State private var isLoading = true
+    @State private var hasLoadError = false
 
     private var projects: [Project] {
         environment.projectList
@@ -42,22 +44,32 @@ struct ProjectSelectionScreen: View {
     }
 
     var body: some View {
-        Group {
-            if hasChoices {
-                projectList
-            } else {
-                emptyState
+        projectList
+            .overlay {
+                if !hasChoices {
+                    unavailableContent
+                }
             }
-        }
-        .task(id: serverId) { await load() }
-        .sheet(isPresented: $showingBrowser) {
-            AddProjectSheet(serverId: serverId, onAdded: onSelected)
-        }
-        .sheet(isPresented: $showingGitClone) {
-            GitCloneSheet(client: client, machineName: machineName, serverId: serverId) {
-                onSelected($0)
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    addProjectMenu
+                }
             }
+            .task(id: serverId) { await load() }
+    }
+
+    private var addProjectMenu: some View {
+        Menu {
+            Button(action: onOpenFolder) {
+                Label("Open Folder…", systemImage: "folder.badge.plus")
+            }
+            Button(action: onCloneRepository) {
+                Label("Clone Repository…", systemImage: "square.and.arrow.down")
+            }
+        } label: {
+            Image(systemName: "plus")
         }
+        .accessibilityLabel("Add Project")
     }
 
     private var projectList: some View {
@@ -98,34 +110,31 @@ struct ProjectSelectionScreen: View {
                 }
             }
 
-            Section {
-                Button {
-                    showingBrowser = true
-                } label: {
-                    Label("Browse Files…", systemImage: "folder.badge.plus")
-                }
-                Button {
-                    showingGitClone = true
-                } label: {
-                    Label("Clone Repository…", systemImage: "square.and.arrow.down")
-                }
-            } header: {
-                Text("Add Project")
-            }
         }
     }
 
-    private var emptyState: some View {
-        ContentUnavailableView {
-            Label("No Projects", systemImage: "folder")
-        } description: {
-            EmptyView()
-        } actions: {
-            VStack(spacing: 10) {
-                Button("Browse Files…") { showingBrowser = true }
-                    .buttonStyle(.borderedProminent)
-                Button("Clone Repository…") { showingGitClone = true }
-                    .buttonStyle(.bordered)
+    @ViewBuilder
+    private var unavailableContent: some View {
+        if isLoading {
+            ProgressView()
+                .accessibilityLabel("Loading Projects")
+        } else if hasLoadError {
+            ContentUnavailableView {
+                Label("Projects Unavailable", systemImage: "exclamationmark.triangle")
+            } description: {
+                Text("Codevisor couldn’t load projects from \(machineName).")
+            } actions: {
+                Button("Try Again") {
+                    Task { await load() }
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        } else {
+            ContentUnavailableView {
+                Text("No Projects")
+                    .font(.title3.weight(.semibold))
+            } description: {
+                Text("Open a folder or clone a repository to add one.")
             }
         }
     }
@@ -165,13 +174,22 @@ struct ProjectSelectionScreen: View {
     }
 
     private func load() async {
-        recommendations = []
+        if !hasChoices {
+            isLoading = true
+        }
+        hasLoadError = false
         async let refresh: ServerNavigationRefreshResult = environment.projectList.refreshFromServer(
             serverId: serverId,
             client: client
         )
-        recommendations = (try? await environment.recommendedProjects(serverId: serverId)) ?? []
-        _ = await refresh
+        let loadedRecommendations = try? await environment.recommendedProjects(serverId: serverId)
+        if let loadedRecommendations {
+            recommendations = loadedRecommendations
+        }
+        if case .failed = await refresh {
+            hasLoadError = true
+        }
+        isLoading = false
     }
 
     private func add(_ recommendation: ProjectRecommendation) {

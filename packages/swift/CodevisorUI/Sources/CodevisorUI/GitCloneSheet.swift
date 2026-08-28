@@ -35,15 +35,13 @@ public struct GitCloneSheet: View {
         #if os(iOS)
             NavigationStack {
                 Form {
-                    Section {
+                    Section("Repository") {
                         repositoryFields
-                    }
-                    if isCloning || !logLines.isEmpty {
-                        Section("Progress") { cloneLog }
                     }
                     if let errorMessage {
                         Section {
-                            Text(errorMessage)
+                            Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                                .font(.callout)
                                 .foregroundStyle(.red)
                                 .textSelection(.enabled)
                         }
@@ -57,19 +55,30 @@ public struct GitCloneSheet: View {
                             .disabled(isCloning)
                     }
                     ToolbarItem(placement: .confirmationAction) {
-                        Button(isCloning ? "Cloning…" : "Clone") { clone() }
-                            .disabled(isCloning || trimmedUrl.isEmpty)
+                        Button(action: clone) {
+                            ZStack {
+                                Text("Clone")
+                                    .opacity(isCloning ? 0 : 1)
+                                if isCloning {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                }
+                            }
+                        }
+                        .disabled(isCloning || trimmedUrl.isEmpty)
+                        .accessibilityLabel(isCloning ? "Cloning Repository" : "Clone")
                     }
                 }
             }
             .interactiveDismissDisabled(isCloning)
-            .presentationDetents([.large])
+            .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         #else
             VStack(alignment: .leading, spacing: 12) {
                 Text("Clone Repository")
                     .font(.headline)
                 repositoryFields
+                    .textFieldStyle(.roundedBorder)
                 if isCloning || !logLines.isEmpty { cloneLog }
                 if let errorMessage {
                     Text(errorMessage)
@@ -98,21 +107,18 @@ public struct GitCloneSheet: View {
 
     private var repositoryFields: some View {
         Group {
-            TextField(
-                "Repository URL",
-                text: $url,
-                prompt: Text(verbatim: "https://github.com/you/project.git")
-            )
-            .textFieldStyle(.roundedBorder)
-            .font(.body.monospaced())
-            .disabled(isCloning)
-            .onSubmit { clone() }
-            .onChange(of: url) { _, newValue in
-                if !nameWasEdited { name = Self.derivedName(from: newValue) }
-            }
+            #if os(iOS)
+                repositoryURLField
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+                    .textContentType(.URL)
+            #else
+                repositoryURLField
+            #endif
 
             TextField(
-                "Project name",
+                "Project Name (Optional)",
                 text: Binding(
                     get: { name },
                     set: {
@@ -120,10 +126,23 @@ public struct GitCloneSheet: View {
                         nameWasEdited = true
                     }
                 ),
-                prompt: Text("Project name (optional)")
+                prompt: Text("Project Name (Optional)")
             )
-            .textFieldStyle(.roundedBorder)
             .disabled(isCloning)
+        }
+    }
+
+    private var repositoryURLField: some View {
+        TextField(
+            "Repository URL",
+            text: $url,
+            prompt: Text(verbatim: "https://github.com/you/project.git")
+        )
+        .font(.body.monospaced())
+        .disabled(isCloning)
+        .onSubmit { clone() }
+        .onChange(of: url) { _, newValue in
+            if !nameWasEdited { name = Self.derivedName(from: newValue) }
         }
     }
 
@@ -139,10 +158,8 @@ public struct GitCloneSheet: View {
                             .id(index)
                     }
                 }
-                .padding(8)
             }
             .frame(minHeight: 100, maxHeight: 180)
-            .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
             .onChange(of: logLines.count) { _, count in
                 guard count > 0 else { return }
                 proxy.scrollTo(count - 1, anchor: .bottom)
