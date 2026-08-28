@@ -1,3 +1,4 @@
+import AppKit
 import CodevisorCore
 import SwiftUI
 
@@ -11,6 +12,7 @@ struct UpdateCenterPresentation: ViewModifier {
         content
             .sheet(isPresented: Bindable(environment.updateCenter).isPresented) {
                 UpdateCenterView()
+                    .background(UpdateCenterTerminationPermit())
             }
             .task {
                 // Fleet-wide upkeep, deliberately NOT keyed to the selected
@@ -32,5 +34,25 @@ struct UpdateCenterPresentation: ViewModifier {
                     await environment.configSync.synchronizeAll()
                 }
             }
+    }
+}
+
+/// Lets Sparkle's normal quit request close the app while the Update Center
+/// sheet is open. AppKit otherwise rejects termination whenever a modal sheet
+/// is attached, leaving Sparkle's installer waiting for this process to exit.
+private struct UpdateCenterTerminationPermit: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        WindowProbe()
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        nsView.window?.preventsApplicationTerminationWhenModal = false
+    }
+
+    private final class WindowProbe: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            window?.preventsApplicationTerminationWhenModal = false
+        }
     }
 }
