@@ -17,6 +17,8 @@ struct TranscriptScrollCommand: Equatable {
 /// observation-ignored viewport snapshot.
 struct NativeTranscriptView: NSViewRepresentable {
     let rows: [TranscriptVirtualRow]
+    let activeRows: [TranscriptVirtualRow]
+    let rowsVersion: UInt64
     let initialState: SessionScrollState?
     let followsLatest: Bool
     let hasOlderHistory: Bool
@@ -47,6 +49,8 @@ struct NativeTranscriptView: NSViewRepresentable {
         onScrollViewReady?(view)
         view.configure(
             rows: rows,
+            activeRows: activeRows,
+            rowsVersion: rowsVersion,
             initialState: initialState,
             followsLatest: followsLatest,
             hasOlderHistory: hasOlderHistory,
@@ -73,6 +77,8 @@ struct NativeTranscriptView: NSViewRepresentable {
         nsView.onInitialPresentationReady = reportInitialPresentationReady
         nsView.configure(
             rows: rows,
+            activeRows: activeRows,
+            rowsVersion: rowsVersion,
             initialState: initialState,
             followsLatest: followsLatest,
             hasOlderHistory: hasOlderHistory,

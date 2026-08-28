@@ -36,6 +36,10 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
 
     private var rows: [TranscriptVirtualRow] = []
     private var rowByKey: [String: TranscriptVirtualRow] = [:]
+    private var projectedRows: [TranscriptVirtualRow] = []
+    private var projectedRowsVersion: UInt64?
+    private var activeRows: [TranscriptVirtualRow] = []
+    private var activeRowsRange: Range<Int>?
     private var virtualLayout = VirtualTranscriptLayout(
         items: [],
         measuredHeights: [:],
@@ -58,6 +62,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     private var initialPresentationGate = TranscriptInitialPresentationGate()
     private var bottomJumpGate = TranscriptBottomJumpGate()
     private var deferredRowsDuringScroll: [TranscriptVirtualRow]?
+    private var deferredActiveRowsRange: Range<Int>?
 
     private struct DisclosureViewportAnchor {
         let id: UUID
@@ -260,7 +265,9 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     }
 
     func configure(
-        rows newRows: [TranscriptVirtualRow],
+        rows newProjectedRows: [TranscriptVirtualRow],
+        activeRows newActiveRows: [TranscriptVirtualRow],
+        rowsVersion newRowsVersion: UInt64,
         initialState: SessionScrollState?,
         followsLatest newFollowsLatest: Bool,
         hasOlderHistory newHasOlderHistory: Bool,
@@ -305,6 +312,8 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             setNeedsLayout()
             return
         }
+        let projectedRowsChanged = projectedRowsVersion != newRowsVersion
+        let activeRowsChanged = activeRows != newActiveRows
         hasOlderHistory = newHasOlderHistory
         let paginationHeaderReservationChanged = paginationHeaderLayout.reserveIfNeeded(
             hasOlderHistory: newHasOlderHistory,
@@ -340,7 +349,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         }
         if let request = pendingSendAnimationRequest {
             let requestedKey = TranscriptVirtualRow.ID.message(request.messageID).layoutKey
-            if newRows.contains(where: {
+            if newProjectedRows.contains(where: {
                 $0.layoutKey == requestedKey && $0.isUserMessage
             }) {
                 pendingSendAnimationRowKey = requestedKey
@@ -367,19 +376,46 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             scrollCommand = newScrollCommand
         }
 
-        let prependedItemCount = reversePrependCount(from: rows, to: newRows)
         let rebuiltRows: Bool
-        if prependedItemCount != nil, isNativeScrollInteractionActive,
-            !layoutFingerprintChanged
-        {
-            deferredRowsDuringScroll = newRows
-            rebuiltRows = false
-        } else {
-            deferredRowsDuringScroll = nil
-            rebuiltRows = applyRows(
-                newRows,
-                layoutFingerprintChanged: layoutFingerprintChanged
+        if projectedRowsChanged || layoutFingerprintChanged {
+            projectedRows = newProjectedRows
+            projectedRowsVersion = newRowsVersion
+            activeRows = newActiveRows
+            let resolution = resolvedRows(
+                projectedRows: newProjectedRows,
+                activeRows: newActiveRows
             )
+            let prependedItemCount = reversePrependCount(from: rows, to: resolution.rows)
+            if prependedItemCount != nil, isNativeScrollInteractionActive,
+                !layoutFingerprintChanged
+            {
+                deferredRowsDuringScroll = resolution.rows
+                deferredActiveRowsRange = resolution.activeRange
+                rebuiltRows = false
+            } else {
+                deferredRowsDuringScroll = nil
+                deferredActiveRowsRange = nil
+                activeRowsRange = resolution.activeRange
+                rebuiltRows = applyRows(
+                    resolution.rows,
+                    layoutFingerprintChanged: layoutFingerprintChanged
+                )
+            }
+        } else if activeRowsChanged, deferredRowsDuringScroll != nil {
+            let resolution = resolvedRows(
+                projectedRows: projectedRows,
+                activeRows: newActiveRows
+            )
+            activeRows = newActiveRows
+            deferredRowsDuringScroll = resolution.rows
+            deferredActiveRowsRange = resolution.activeRange
+            rebuiltRows = false
+        } else if activeRowsChanged {
+            deferredRowsDuringScroll = nil
+            deferredActiveRowsRange = nil
+            rebuiltRows = applyActiveRows(newActiveRows)
+        } else {
+            rebuiltRows = false
         }
         if paginationHeaderReservationChanged, !rebuiltRows {
             rebuildDocumentGeometry()
@@ -417,6 +453,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         pendingMeasurements.removeAll(keepingCapacity: false)
         bottomJumpGate.cancel()
         deferredRowsDuringScroll = nil
+        deferredActiveRowsRange = nil
         olderHistoryPresentationTarget = nil
         disclosureAnchorReleaseTask?.cancel()
         interruptSendPresentation()
@@ -484,6 +521,75 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             refreshChangedMountedRootViews(previousRowsByKey: previousRowsByKey)
             return false
         }
+    }
+
+    @discardableResult
+    private func applyActiveRows(_ newActiveRows: [TranscriptVirtualRow]) -> Bool {
+        let resolution = resolvedRows(
+            projectedRows: projectedRows,
+            activeRows: newActiveRows
+        )
+        defer {
+            activeRows = newActiveRows
+            activeRowsRange = resolution.activeRange
+        }
+        guard let oldRange = activeRowsRange,
+            let newRange = resolution.activeRange,
+            oldRange.count == newRange.count
+        else {
+            return applyRows(resolution.rows, layoutFingerprintChanged: false)
+        }
+
+        let previousRows = Array(rows[oldRange])
+        let replacement = Array(resolution.rows[newRange])
+        guard zip(previousRows, replacement).allSatisfy({ $0.layoutKey == $1.layoutKey }) else {
+            return applyRows(resolution.rows, layoutFingerprintChanged: false)
+        }
+
+        let previousRowsByKey = Dictionary(
+            uniqueKeysWithValues: previousRows.map { ($0.layoutKey, $0) }
+        )
+        rows.replaceSubrange(oldRange, with: replacement)
+        for row in replacement {
+            rowByKey[row.layoutKey] = row
+        }
+        evictChangedActiveParkedHosts(previousRows: previousRows)
+        refreshChangedMountedRootViews(previousRowsByKey: previousRowsByKey)
+        return false
+    }
+
+    private func evictChangedActiveParkedHosts(
+        previousRows: [TranscriptVirtualRow]
+    ) {
+        let staleKeys = previousRows.compactMap { previous -> String? in
+            guard let row = rowByKey[previous.layoutKey],
+                previous.content != row.content
+                    || previous.measurementRevision != row.measurementRevision
+            else { return nil }
+            return previous.layoutKey
+        }
+        for key in staleKeys {
+            parkedHosts.removeValue(forKey: key)?.detachFromParent()
+        }
+        parkedHostLRU.removeAll { staleKeys.contains($0) }
+    }
+
+    private func resolvedRows(
+        projectedRows: [TranscriptVirtualRow],
+        activeRows: [TranscriptVirtualRow]
+    ) -> (rows: [TranscriptVirtualRow], activeRange: Range<Int>?) {
+        guard
+            let activeIndex = projectedRows.firstIndex(where: {
+                if case .active = $0.id { true } else { false }
+            })
+        else { return (projectedRows, nil) }
+        guard case let .active(messageID) = projectedRows[activeIndex].id,
+            activeRows.first?.id.messageID == messageID
+        else { return (projectedRows, activeIndex..<(activeIndex + 1)) }
+
+        var result = projectedRows
+        result.replaceSubrange(activeIndex...activeIndex, with: activeRows)
+        return (result, activeIndex..<(activeIndex + activeRows.count))
     }
 
     private func reversePrependCount(
@@ -952,6 +1058,8 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         if let deferredRowsDuringScroll {
             self.deferredRowsDuringScroll = nil
             applyRows(deferredRowsDuringScroll, layoutFingerprintChanged: false)
+            activeRowsRange = deferredActiveRowsRange
+            deferredActiveRowsRange = nil
         }
         commitPendingMeasurements()
         updateMountedRows()

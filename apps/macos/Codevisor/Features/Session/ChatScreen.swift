@@ -41,6 +41,7 @@ struct ChatScreen: View {
     @State private var isInitialTranscriptReady = false
     @State private var showsInitialLoadingSpinner = false
     @State private var projectedRows: [TranscriptVirtualRow] = []
+    @State private var projectedRowsVersion: UInt64 = 0
     @State private var projectedSessionID: UUID?
     @State private var isPreparingTranscript = true
     @State private var textAnimationVisibility = StreamingTextAnimationVisibility.initiallyHidden
@@ -113,6 +114,7 @@ struct ChatScreen: View {
                 let input = controller.transcriptProjectionInput
                 if projectedSessionID != key.sessionID {
                     projectedRows = []
+                    projectedRowsVersion &+= 1
                     projectedSessionID = key.sessionID
                     isPreparingTranscript = true
                 }
@@ -126,6 +128,7 @@ struct ChatScreen: View {
                         transcriptProjectionRequest == request
                     else { return }
                     projectedRows = rows
+                    projectedRowsVersion &+= 1
                     isPreparingTranscript = false
                 } catch is CancellationError {
                     return
@@ -148,81 +151,88 @@ struct ChatScreen: View {
         ZStack {
             theme.windowBackground
             if isTranscriptMounted {
-                NativeTranscriptView(
-                    rows: projectedRows,
-                    initialState: controller.scrollState,
-                    followsLatest: autoFollow,
-                    hasOlderHistory: controller.hasOlderHistory,
-                    showsOlderHistoryLoadingIndicator: olderHistoryPresentation.isPresented,
-                    olderHistoryPresentationTarget: olderHistoryPresentation.presentationTarget,
-                    isLoadingInitialHistory: controller.isLoadingInitialHistory,
-                    isPreparingInitialProjection: isPreparingTranscript,
-                    layoutFingerprint: dynamicTypeSize.hashValue,
-                    scrollCommand: scrollCommand,
-                    sendAnimationRequest: controller.userSendAnimationRequest,
-                    reduceMotion: reduceMotion,
-                    claimSendAnimation: { request in
-                        controller.claimUserSendAnimation(request)
-                    },
-                    rowContent: { row in
-                        AnyView(
-                            virtualRowContent(row)
-                                .environment(\.theme, theme)
-                                .environment(\.attachmentImages, attachmentImages)
-                                .environment(\.hoverTrackingSuspended, controller.isSending)
-                                .environment(\.transcriptDisclosure, controller.disclosure)
-                                .environment(\.transcriptController, controller)
-                                .environment(
-                                    \.streamingTextAnimationVisibility,
-                                    textAnimationVisibility
-                                )
-                                .environment(
-                                    \.runningSubagentToolCallIds,
-                                    controller.runningSubagentToolCallIds
-                                )
-                        )
-                    },
-                    onViewportChange: { state in
-                        controller.scrollState = state
-                    },
-                    onBottomStateChange: { atBottom in
-                        // AppKit can publish a transient edge and its corrected final
-                        // edge during one layout pass. Defer the SwiftUI mutation, but
-                        // preserve every callback in order so the final geometry wins.
-                        DispatchQueue.main.async {
-                            if isAtBottom != atBottom { isAtBottom = atBottom }
+                ActiveTranscriptProjectionScope(
+                    controller: controller,
+                    projectedRows: projectedRows
+                ) { activeRows in
+                    NativeTranscriptView(
+                        rows: projectedRows,
+                        activeRows: activeRows,
+                        rowsVersion: projectedRowsVersion,
+                        initialState: controller.scrollState,
+                        followsLatest: autoFollow,
+                        hasOlderHistory: controller.hasOlderHistory,
+                        showsOlderHistoryLoadingIndicator: olderHistoryPresentation.isPresented,
+                        olderHistoryPresentationTarget: olderHistoryPresentation.presentationTarget,
+                        isLoadingInitialHistory: controller.isLoadingInitialHistory,
+                        isPreparingInitialProjection: isPreparingTranscript,
+                        layoutFingerprint: dynamicTypeSize.hashValue,
+                        scrollCommand: scrollCommand,
+                        sendAnimationRequest: controller.userSendAnimationRequest,
+                        reduceMotion: reduceMotion,
+                        claimSendAnimation: { request in
+                            controller.claimUserSendAnimation(request)
+                        },
+                        rowContent: { row in
+                            AnyView(
+                                virtualRowContent(row)
+                                    .environment(\.theme, theme)
+                                    .environment(\.attachmentImages, attachmentImages)
+                                    .environment(\.hoverTrackingSuspended, controller.isSending)
+                                    .environment(\.transcriptDisclosure, controller.disclosure)
+                                    .environment(\.transcriptController, controller)
+                                    .environment(
+                                        \.streamingTextAnimationVisibility,
+                                        textAnimationVisibility
+                                    )
+                                    .environment(
+                                        \.runningSubagentToolCallIds,
+                                        controller.runningSubagentToolCallIds
+                                    )
+                            )
+                        },
+                        onViewportChange: { state in
+                            controller.scrollState = state
+                        },
+                        onBottomStateChange: { atBottom in
+                            // AppKit can publish a transient edge and its corrected final
+                            // edge during one layout pass. Defer the SwiftUI mutation, but
+                            // preserve every callback in order so the final geometry wins.
+                            DispatchQueue.main.async {
+                                if isAtBottom != atBottom { isAtBottom = atBottom }
+                            }
+                        },
+                        onFollowStateChange: { follows in
+                            DispatchQueue.main.async {
+                                if autoFollow != follows { autoFollow = follows }
+                            }
+                        },
+                        onNearTop: {
+                            requestOlderHistoryLoad()
+                        },
+                        onOlderHistoryPresented: { token in
+                            DispatchQueue.main.async {
+                                olderHistoryPresentation.didPresent(token: token)
+                            }
+                        },
+                        onInitialPresentationReady: {
+                            isInitialTranscriptReady = true
+                        },
+                        onScrollViewReady: { scrollView in
+                            focus.transcriptView = scrollView
+                            // Keyed: EVERY chat's transcript is a click-to-blur zone in
+                            // multi-chat workspaces (the single slot is last-mounted).
+                            if let chatId = controller.serverSession?.id {
+                                focus.registerTranscript(scrollView, forChat: chatId)
+                            }
                         }
-                    },
-                    onFollowStateChange: { follows in
-                        DispatchQueue.main.async {
-                            if autoFollow != follows { autoFollow = follows }
-                        }
-                    },
-                    onNearTop: {
-                        requestOlderHistoryLoad()
-                    },
-                    onOlderHistoryPresented: { token in
-                        DispatchQueue.main.async {
-                            olderHistoryPresentation.didPresent(token: token)
-                        }
-                    },
-                    onInitialPresentationReady: {
-                        isInitialTranscriptReady = true
-                    },
-                    onScrollViewReady: { scrollView in
-                        focus.transcriptView = scrollView
-                        // Keyed: EVERY chat's transcript is a click-to-blur zone in
-                        // multi-chat workspaces (the single slot is last-mounted).
-                        if let chatId = controller.serverSession?.id {
-                            focus.registerTranscript(scrollView, forChat: chatId)
-                        }
-                    }
-                )
-                .mask {
-                    ComposerTranscriptMask(
-                        composerSize: composerMaskSize,
-                        bottomInset: Self.composerBottomMargin
                     )
+                    .mask {
+                        ComposerTranscriptMask(
+                            composerSize: composerMaskSize,
+                            bottomInset: Self.composerBottomMargin
+                        )
+                    }
                 }
             }
         }

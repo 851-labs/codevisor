@@ -165,7 +165,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
             }
         }
 
-        var messageID: UUID? {
+        public var messageID: UUID? {
             switch self {
             case let .message(id), let .assistantPlanning(id), let .plan(id),
                 let .assistantResult(id), let .active(id):

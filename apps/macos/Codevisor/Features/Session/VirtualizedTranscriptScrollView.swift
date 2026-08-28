@@ -30,6 +30,10 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     )
     private var rows: [TranscriptVirtualRow] = []
     private var rowByKey: [String: TranscriptVirtualRow] = [:]
+    private var projectedRows: [TranscriptVirtualRow] = []
+    private var projectedRowsVersion: UInt64?
+    private var activeRows: [TranscriptVirtualRow] = []
+    private var activeRowsRange: Range<Int>?
     private var virtualLayout = VirtualTranscriptLayout(items: [], measuredHeights: [:], spacing: rowSpacing)
     /// Measured row heights plus staleness. The ledger's invariant is the fix
     /// for settled rows whose content keeps changing (background subagents
@@ -299,7 +303,9 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     }
 
     func configure(
-        rows newRows: [TranscriptVirtualRow],
+        rows newProjectedRows: [TranscriptVirtualRow],
+        activeRows newActiveRows: [TranscriptVirtualRow],
+        rowsVersion newRowsVersion: UInt64,
         initialState: SessionScrollState?,
         followsLatest newFollowsLatest: Bool,
         hasOlderHistory newHasOlderHistory: Bool,
@@ -331,6 +337,8 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             needsLayout = true
             return
         }
+        let projectedRowsChanged = projectedRowsVersion != newRowsVersion
+        let activeRowsChanged = activeRows != newActiveRows
         hasOlderHistory = newHasOlderHistory
         let paginationHeaderReservationChanged = paginationHeaderLayout.reserveIfNeeded(
             hasOlderHistory: newHasOlderHistory,
@@ -352,7 +360,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         }
         if let request = pendingSendAnimationRequest {
             let requestedKey = TranscriptVirtualRow.ID.message(request.messageID).layoutKey
-            if newRows.contains(where: {
+            if newProjectedRows.contains(where: {
                 $0.layoutKey == requestedKey && $0.isUserMessage
             }) {
                 pendingSendAnimationRowKey = requestedKey
@@ -380,6 +388,49 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             scrollCommand = newScrollCommand
         }
 
+        let rebuiltRows: Bool
+        if projectedRowsChanged || layoutFingerprintChanged {
+            projectedRows = newProjectedRows
+            projectedRowsVersion = newRowsVersion
+            activeRows = newActiveRows
+            let resolution = resolvedRows(
+                projectedRows: newProjectedRows,
+                activeRows: newActiveRows
+            )
+            activeRowsRange = resolution.activeRange
+            rebuiltRows = applyRows(
+                resolution.rows,
+                layoutFingerprintChanged: layoutFingerprintChanged
+            )
+        } else if activeRowsChanged {
+            rebuiltRows = applyActiveRows(newActiveRows)
+        } else {
+            rebuiltRows = false
+        }
+        if paginationHeaderReservationChanged, !rebuiltRows {
+            rebuildDocumentGeometry()
+        }
+
+        if newScrollCommand != scrollCommand {
+            scrollCommand = newScrollCommand
+            lockedRestoreDistance = nil
+            followsLatest = true
+            scrollToBottom()
+        }
+
+        applyPendingInitialPositionIfPossible()
+        startPendingSendAnimationIfPossible()
+        updateInitialPresentationReadiness()
+        resolveBottomJumpIfPossible()
+        checkForHistoryPrefetch()
+        acknowledgeOlderHistoryPresentationIfPossible()
+    }
+
+    @discardableResult
+    private func applyRows(
+        _ newRows: [TranscriptVirtualRow],
+        layoutFingerprintChanged: Bool
+    ) -> Bool {
         // Compare only layout identity/estimates. Deep equality here would
         // walk every historical Markdown string whenever the container
         // updates. Mounted hosts receive fresh content below; unmounted rows
@@ -406,37 +457,71 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                     measurements.setExact(height, for: row.layoutKey)
                 }
             }
-            // Row-set changes mount and recycle only the affected hosts below.
-            // Preserve every other hosting tree so an insertion/removal cannot
-            // blank the whole visible transcript for a SwiftUI commit.
             if layoutFingerprintChanged {
                 refreshMountedRootViews()
             } else {
                 refreshChangedMountedRootViews(previousRowsByKey: previousRowsByKey)
             }
             rebuildDocumentGeometry()
-        } else {
-            rows = newRows
-            rowByKey = Dictionary(uniqueKeysWithValues: newRows.map { ($0.layoutKey, $0) })
-            refreshChangedMountedRootViews(previousRowsByKey: previousRowsByKey)
-            if paginationHeaderReservationChanged {
-                rebuildDocumentGeometry()
-            }
+            return true
         }
 
-        if newScrollCommand != scrollCommand {
-            scrollCommand = newScrollCommand
-            lockedRestoreDistance = nil
-            followsLatest = true
-            scrollToBottom()
+        rows = newRows
+        rowByKey = Dictionary(uniqueKeysWithValues: newRows.map { ($0.layoutKey, $0) })
+        refreshChangedMountedRootViews(previousRowsByKey: previousRowsByKey)
+        return false
+    }
+
+    @discardableResult
+    private func applyActiveRows(_ newActiveRows: [TranscriptVirtualRow]) -> Bool {
+        let resolution = resolvedRows(
+            projectedRows: projectedRows,
+            activeRows: newActiveRows
+        )
+        defer {
+            activeRows = newActiveRows
+            activeRowsRange = resolution.activeRange
+        }
+        guard let oldRange = activeRowsRange,
+            let newRange = resolution.activeRange,
+            oldRange.count == newRange.count
+        else {
+            return applyRows(resolution.rows, layoutFingerprintChanged: false)
         }
 
-        applyPendingInitialPositionIfPossible()
-        startPendingSendAnimationIfPossible()
-        updateInitialPresentationReadiness()
-        resolveBottomJumpIfPossible()
-        checkForHistoryPrefetch()
-        acknowledgeOlderHistoryPresentationIfPossible()
+        let previousRows = Array(rows[oldRange])
+        let replacement = Array(resolution.rows[newRange])
+        guard zip(previousRows, replacement).allSatisfy({ $0.layoutKey == $1.layoutKey }) else {
+            return applyRows(resolution.rows, layoutFingerprintChanged: false)
+        }
+
+        let previousRowsByKey = Dictionary(
+            uniqueKeysWithValues: previousRows.map { ($0.layoutKey, $0) }
+        )
+        rows.replaceSubrange(oldRange, with: replacement)
+        for row in replacement {
+            rowByKey[row.layoutKey] = row
+        }
+        refreshChangedMountedRootViews(previousRowsByKey: previousRowsByKey)
+        return false
+    }
+
+    private func resolvedRows(
+        projectedRows: [TranscriptVirtualRow],
+        activeRows: [TranscriptVirtualRow]
+    ) -> (rows: [TranscriptVirtualRow], activeRange: Range<Int>?) {
+        guard
+            let activeIndex = projectedRows.firstIndex(where: {
+                if case .active = $0.id { true } else { false }
+            })
+        else { return (projectedRows, nil) }
+        guard case let .active(messageID) = projectedRows[activeIndex].id,
+            activeRows.first?.id.messageID == messageID
+        else { return (projectedRows, activeIndex..<(activeIndex + 1)) }
+
+        var result = projectedRows
+        result.replaceSubrange(activeIndex...activeIndex, with: activeRows)
+        return (result, activeIndex..<(activeIndex + activeRows.count))
     }
 
     /// AppKit applies prepended rows synchronously, but the acknowledgement is
