@@ -57,6 +57,9 @@ struct SidebarView: View {
     private var expandedProjectsRaw
     @ClientPreference("sidebar.expandedWorkspaces", default: "")
     private var expandedWorkspacesRaw
+    @ClientPreference("sidebar.showEmptyProjects", default: false) private var showEmptyProjects
+    @ClientPreference("sidebar.showEmptyWorkspaces", default: false)
+    private var showEmptyWorkspaces
     /// Archived content is hidden until explicitly enabled from the sidebar
     /// filter menu, and the choice survives relaunches.
     @ClientPreference("sidebar.showArchived", default: false) private var showArchived
@@ -120,7 +123,7 @@ struct SidebarView: View {
         return orderingCache.sessions(
             sessions,
             priority: { order == .updated ? sessionPriority(for: $0) : .idle },
-            timestamp: timestamp
+            timestamp: { SidebarOrderingCache.timestamp(for: $0, order: order) }
         )
     }
 
@@ -128,7 +131,10 @@ struct SidebarView: View {
     /// (the single-use folder behind a no-project chat) are not projects —
     /// their chats render at the list root instead.
     private var projectSectionProjects: [Project] {
-        visibleProjects.filter { !$0.isScratch }
+        visibleProjects.filter { project in
+            !project.isScratch
+                && (showEmptyProjects || !list.fleetSessions(in: project).isEmpty)
+        }
     }
 
     /// Match iOS by placing scratch-backed chats at the root and keeping
@@ -168,9 +174,9 @@ struct SidebarView: View {
         return projectIDs + sessionIDs
     }
 
-    /// "By workspace": every workspace on the selected machine, ordered like
-    /// the chronological chat list (via each workspace's primary chat), with
-    /// session-less workspaces last by creation date.
+    /// "By workspace": workspaces with visible agents, plus empty workspaces
+    /// when requested. Groups follow the chronological agent list, with empty
+    /// workspaces last by creation date.
     private var workspaceItems: [SidebarWorkspaceListItem] {
         _ = workspaceRevision
         _ = environment.workspaceSync.revision
@@ -186,13 +192,16 @@ struct SidebarView: View {
         let workspaces = environment.workspaces.loadAll().filter { !$0.isArchived }
         return
             workspaces
-            .map { workspace -> (item: SidebarWorkspaceListItem, rank: Int, created: Date) in
-                let workspaceSessionItems = workspace.chatSessionIds.compactMap { id -> SidebarSessionListItem? in
-                    guard environment.workspaces.workspaceId(forSession: id) == workspace.id else {
-                        return nil
-                    }
-                    return sessionsById[id]
+            .compactMap { workspace -> (item: SidebarWorkspaceListItem, rank: Int, created: Date)? in
+                let routedSessionIDs = workspace.chatSessionIds.filter {
+                    environment.workspaces.workspaceId(forSession: $0) == workspace.id
                 }
+                // Suppress superseded automatic workspaces whose agents moved
+                // to another group; they are stale records, not empty groups.
+                guard workspace.chatSessionIds.isEmpty || !routedSessionIDs.isEmpty else {
+                    return nil
+                }
+                let workspaceSessionItems = routedSessionIDs.compactMap { sessionsById[$0] }
                 let workspaceSessions = workspaceSessionItems.map(\.session)
                 let primary = workspaceSessionItems.first
                 // A legacy or draft CHAT-LESS workspace stays openable
@@ -222,6 +231,7 @@ struct SidebarView: View {
                     workspace.createdAt
                 )
             }
+            .filter { showEmptyWorkspaces || !$0.item.sessions.isEmpty }
             .sorted {
                 if $0.rank != $1.rank { return $0.rank < $1.rank }
                 return $0.created > $1.created
@@ -366,7 +376,7 @@ struct SidebarView: View {
                 .padding(.bottom, 8)
                 .animation(Motion.listReflow(reduceMotion: reduceMotion), value: workspaceItems.map(\.id))
                 .animation(Motion.listReflow(reduceMotion: reduceMotion), value: chronologicalSessions.map(\.id))
-                .animation(Motion.listReflow(reduceMotion: reduceMotion), value: visibleProjects.map(\.id))
+                .animation(Motion.listReflow(reduceMotion: reduceMotion), value: projectSectionProjects.map(\.id))
                 .animation(Motion.listReflow(reduceMotion: reduceMotion), value: expanded)
                 .animation(Motion.listReflow(reduceMotion: reduceMotion), value: expandedWorkspaces)
                 // Same reflow the project/workspace disclosures use, so the
@@ -565,6 +575,8 @@ struct SidebarView: View {
         SidebarFilterMenu(
             organization: organization,
             order: order,
+            showEmptyProjects: $showEmptyProjects,
+            showEmptyWorkspaces: $showEmptyWorkspaces,
             showArchived: $showArchived,
             onSetOrganization: { organizationRaw = $0.rawValue },
             onSetOrder: { setOrder($0) },
@@ -1186,8 +1198,8 @@ struct SidebarView: View {
                 return leftPriority.rawValue < rightPriority.rawValue
             }
         }
-        let leftTimestamp = timestamp(for: left)
-        let rightTimestamp = timestamp(for: right)
+        let leftTimestamp = SidebarOrderingCache.timestamp(for: left, order: order)
+        let rightTimestamp = SidebarOrderingCache.timestamp(for: right, order: order)
         if leftTimestamp != rightTimestamp {
             return leftTimestamp > rightTimestamp
         }
@@ -1223,17 +1235,6 @@ struct SidebarView: View {
     /// Whether the row is currently badged as unread, by either count or error.
     private func isUnread(_ session: ChatSession) -> Bool {
         unreadCount(for: session) != nil || store?.hasUnreadError(session) == true
-    }
-
-    private func timestamp(for session: ChatSession) -> Date {
-        switch order {
-        case .none:
-            return session.sidebarStateChangedAt
-        case .updated:
-            return session.sidebarStateChangedAt
-        case .created:
-            return session.createdAt
-        }
     }
 
     private func projectTimestamp(for project: Project) -> Date {

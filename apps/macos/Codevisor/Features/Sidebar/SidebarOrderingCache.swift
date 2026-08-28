@@ -8,6 +8,15 @@ import Foundation
 /// remapped onto the cached ids so row content never goes stale.
 @MainActor
 final class SidebarOrderingCache {
+    static func timestamp(for session: ChatSession, order: SidebarOrder) -> Date {
+        switch order {
+        case .none, .updated:
+            return session.sidebarStateChangedAt
+        case .created:
+            return session.createdAt
+        }
+    }
+
     private struct SessionInput: Equatable {
         let id: UUID
         let priority: Int

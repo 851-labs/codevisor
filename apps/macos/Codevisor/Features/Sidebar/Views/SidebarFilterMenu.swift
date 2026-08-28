@@ -5,6 +5,8 @@ import SwiftUI
 struct SidebarFilterMenu: View {
     let organization: SidebarOrganization
     let order: SidebarOrder
+    let showEmptyProjects: Binding<Bool>
+    let showEmptyWorkspaces: Binding<Bool>
     let showArchived: Binding<Bool>
     let onSetOrganization: (SidebarOrganization) -> Void
     let onSetOrder: (SidebarOrder) -> Void
@@ -33,7 +35,16 @@ struct SidebarFilterMenu: View {
                 Text(option.title).tag(option)
             }
         }
-        Divider()
+        switch organization {
+        case .compact:
+            Divider()
+        case .byWorkspace:
+            Divider()
+            Toggle("Show empty workspaces", isOn: showEmptyWorkspaces)
+        case .byProject:
+            Divider()
+            Toggle("Show empty projects", isOn: showEmptyProjects)
+        }
         Toggle("Show Archived", isOn: showArchived)
         if order == .none {
             Divider()

@@ -3,10 +3,9 @@ import CodevisorUI
 import SwiftUI
 import UIKit
 
-/// The workspaces navigation screen: every workspace on the paired machine,
-/// organized and ordered like the macOS sidebar, with settings at the top
-/// left, the organize menu at the top right, and a fixed compose button at
-/// the bottom trailing edge.
+/// The workspace navigation screen, organized and ordered like the macOS
+/// sidebar, with settings at the top left, the organize menu at the top
+/// right, and a fixed compose button at the bottom trailing edge.
 struct HomeView: View {
     private static let newChatTransitionID = "home-new-chat"
 
@@ -27,6 +26,10 @@ struct HomeView: View {
     private var expandedProjectsRaw
     @ClientPreference("sidebar.expandedWorkspaces", default: "")
     private var expandedWorkspacesRaw
+    @ClientPreference("sidebar.showEmptyProjects", default: false)
+    private var showEmptyProjects
+    @ClientPreference("sidebar.showEmptyWorkspaces", default: false)
+    private var showEmptyWorkspaces
     @ClientPreference("ios.onboarding.dismissed", default: false)
     private var onboardingDismissed
     @State private var onboardingStart = OnboardingView.Step.welcome
@@ -148,20 +151,21 @@ struct HomeView: View {
         )
         let items = environment.workspaces.loadAll()
             .filter { !$0.isArchived }
-            .map { workspace -> HomeWorkspaceListItem in
+            .compactMap { workspace -> HomeWorkspaceListItem? in
                 // Honor the repository's grow-only routing index when healing
                 // layouts from older iOS builds. A superseded automatic
                 // one-chat workspace can remain on disk, but must not produce
                 // a duplicate navigation row after its chat moves home.
-                let sessions = workspace.chatSessionIds.compactMap { id -> ChatSession? in
-                    guard environment.workspaces.workspaceId(forSession: id) == workspace.id else {
-                        return nil
+                let routedSessionIDs = workspace.chatSessionIds.filter {
+                    environment.workspaces.workspaceId(forSession: $0) == workspace.id
+                }
+                guard workspace.chatSessionIds.isEmpty || !routedSessionIDs.isEmpty else {
+                    return nil
+                }
+                let sessions = routedSessionIDs.compactMap { sessionsById[$0] }
+                    .sorted {
+                        (sessionRank[$0.id] ?? Int.max) < (sessionRank[$1.id] ?? Int.max)
                     }
-                    return sessionsById[id]
-                }
-                .sorted {
-                    (sessionRank[$0.id] ?? Int.max) < (sessionRank[$1.id] ?? Int.max)
-                }
                 let primary = sessions.first
                 let routingSession =
                     primary
@@ -178,7 +182,9 @@ struct HomeView: View {
                     project: project
                 )
             }
-            .filter { !$0.sessions.isEmpty || $0.primarySession != nil }
+            .filter {
+                showEmptyWorkspaces || !$0.sessions.isEmpty || $0.primarySession != nil
+            }
         return manuallyOrdered(
             items,
             ids: preferenceIDs(from: manualWorkspaceOrder),
@@ -190,8 +196,10 @@ struct HomeView: View {
         let items: [HomeProjectListItem] = projectList.fleetActiveProjects
             .filter { !$0.isScratch }
             .compactMap { project -> HomeProjectListItem? in
-                let sessions = visibleSessions.filter { $0.projectId == project.id }
-                guard !sessions.isEmpty else { return nil }
+                let sessions = visibleSessions.filter {
+                    $0.serverId == project.serverId && $0.projectId == project.id
+                }
+                guard showEmptyProjects || !sessions.isEmpty else { return nil }
                 return HomeProjectListItem(project: project, sessions: sessions)
             }
         return manuallyOrdered(
@@ -202,10 +210,26 @@ struct HomeView: View {
     }
 
     private var looseProjectSessions: [ChatSession] {
-        let projectIDs = Set(
-            projectList.fleetActiveProjects.lazy.filter { !$0.isScratch }.map(\.id)
+        let projectKeys = Set(
+            projectList.fleetActiveProjects.lazy.filter { !$0.isScratch }.map {
+                "\($0.serverId)|\($0.id)"
+            }
         )
-        return visibleSessions.filter { !projectIDs.contains($0.projectId) }
+        return visibleSessions.filter {
+            !projectKeys.contains("\($0.serverId)|\($0.projectId)")
+        }
+    }
+
+    private var hasNavigationContent: Bool {
+        if !visibleSessions.isEmpty { return true }
+        switch organization {
+        case .compact:
+            return false
+        case .byWorkspace:
+            return !workspaceItems.isEmpty
+        case .byProject:
+            return !projectItems.isEmpty
+        }
     }
 
     private var expandedProjects: Set<UUID> {
@@ -453,7 +477,7 @@ struct HomeView: View {
     /// each need a real ScrollView rather than a static replacement view.
     @ViewBuilder
     private var refreshableNavigationContent: some View {
-        if !visibleSessions.isEmpty {
+        if hasNavigationContent {
             // The cached fleet list always renders — no single machine's
             // sync gets to blank the world. Sync trouble rides a banner.
             sessionList
@@ -1230,12 +1254,14 @@ struct HomeView: View {
                 EmptyView()
             case .byWorkspace:
                 Divider()
+                Toggle("Show empty workspaces", isOn: $showEmptyWorkspaces)
                 Toggle(
                     "Reorder workspaces",
                     isOn: groupReorderBinding(for: .byWorkspace)
                 )
             case .byProject:
                 Divider()
+                Toggle("Show empty projects", isOn: $showEmptyProjects)
                 Toggle(
                     "Reorder projects",
                     isOn: groupReorderBinding(for: .byProject)
@@ -1644,34 +1670,6 @@ struct HomeView: View {
 
     private func shortID(_ id: UUID) -> String {
         String(id.uuidString.prefix(8))
-    }
-
-    private func navigationPathSummary(_ routes: [HomeRoute]) -> String {
-        guard !routes.isEmpty else { return "[]" }
-        return "["
-            + routes.map { route in
-                switch route {
-                case let .workspace(
-                    serverId,
-                    workspaceId,
-                    anchorSessionId,
-                    preferredChatSessionId
-                ):
-                    let preferred = preferredChatSessionId.map(shortID) ?? "nil"
-                    return "workspace(\(serverId)/\(shortID(workspaceId))/\(shortID(anchorSessionId))/\(preferred))"
-                }
-            }.joined(separator: ",") + "]"
-    }
-
-    private func routeDispositionSummary(_ disposition: WorkspaceRouteDisposition) -> String {
-        switch disposition {
-        case .keep:
-            return "keep"
-        case let .selectSession(sessionId):
-            return "selectSession(\(shortID(sessionId)))"
-        case .dismiss:
-            return "dismiss"
-        }
     }
 
     /// Folder rows add type-erased values to the sheet's own NavigationPath.
