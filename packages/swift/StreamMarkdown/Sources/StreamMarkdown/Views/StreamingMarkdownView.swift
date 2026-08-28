@@ -65,8 +65,8 @@ private final class StreamingMarkdownAnimationMount {
 /// Pass `isComplete: false` while the text is still streaming. Snapshot parsing
 /// then runs off the main actor, stale results are discarded, and unchanged
 /// prefix values are reused to preserve SwiftUI identity. When the flag flips
-/// back to true, the final result is cached and segments merge into selectable
-/// runs. The default (`true`) is right for text that arrives whole.
+/// back to true, the final result is cached without changing block topology.
+/// The default (`true`) is right for text that arrives whole.
 public struct StreamingMarkdownView: View {
     private let text: String
     private let isComplete: Bool
@@ -209,10 +209,8 @@ private struct StreamingMarkdownPendingEntrancePreferenceKey: PreferenceKey {
     }
 }
 
-/// Renders markdown blocks as segments: consecutive text-like blocks merge
-/// into a single selectable TextKit storage so selection can span multiple
-/// lines and blocks, while code blocks, tables, quotes, and rules keep their
-/// own views.
+/// Renders Markdown blocks with the same one-block-per-segment topology used
+/// by the streaming and settled document paths.
 struct MarkdownSegmentsView: View {
     let blocks: [MarkdownBlock]
     let foregroundColor: Color
@@ -414,9 +412,8 @@ struct MarkdownBlockView: View {
     var body: some View {
         switch block {
         case .heading, .paragraph, .bulletList, .orderedList:
-            // Normally coalesced into a MarkdownTextRunView by
-            // MarkdownSegmentsView; render standalone blocks the same way so
-            // they stay selectable.
+            // Text-like blocks use the same selectable TextKit surface in live
+            // and settled documents.
             #if canImport(AppKit) || canImport(UIKit)
                 MarkdownTextRunView(
                     blocks: [block],

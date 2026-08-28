@@ -15,15 +15,10 @@ final class StreamingSegmenter {
     func segments(for text: String, isComplete: Bool) -> [MarkdownSegment] {
         if text == lastText, isComplete == lastIsComplete { return lastSegments }
 
-        var segments: [MarkdownSegment]
-        if isComplete {
-            segments = MarkdownSegmentCache.shared.segments(for: text)
-        } else {
-            // One block per segment while streaming keeps the changing tail's
-            // native TextKit surface small. Finalization merges adjacent prose
-            // again to restore cross-block selection.
-            segments = parser.parse(text).map(Self.streamingSegment)
-        }
+        var segments =
+            isComplete
+            ? MarkdownSegmentCache.shared.segments(for: text)
+            : MarkdownSegment.segments(from: parser.parse(text))
 
         // Reuse the value storage of the equal prefix. MD4C parses the whole
         // snapshot, but SwiftUI only needs to invalidate the first semantically
@@ -41,19 +36,12 @@ final class StreamingSegmenter {
         return segments
     }
 
-    private static func streamingSegment(_ block: MarkdownBlock) -> MarkdownSegment {
-        MarkdownSegment.isTextRunBlock(block) ? .textRun([block]) : .block(block)
-    }
-
     nonisolated static func parseSnapshot(
         text: String,
         isComplete: Bool
     ) -> [MarkdownSegment] {
         let blocks = MarkdownParser().parse(text)
-        if isComplete { return MarkdownSegment.segments(from: blocks) }
-        return blocks.map { block in
-            MarkdownSegment.isTextRunBlock(block) ? .textRun([block]) : .block(block)
-        }
+        return MarkdownSegment.segments(from: blocks)
     }
 }
 

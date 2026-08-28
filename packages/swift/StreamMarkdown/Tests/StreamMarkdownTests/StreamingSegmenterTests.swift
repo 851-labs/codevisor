@@ -21,7 +21,7 @@ struct StreamingSegmenterTests {
 
     /// Streams `document` into a fresh segmenter in fixed-size character
     /// chunks, asserting block-level equivalence with a full parse at every
-    /// step, and merged-segment equivalence after the finalize flip.
+    /// step, and identical block segmentation after the finalize flip.
     private func assertStreamingEquivalence(_ document: String, chunkSize: Int) {
         let segmenter = StreamingSegmenter()
         var streamed = ""
@@ -108,15 +108,14 @@ struct StreamingSegmenterTests {
         }
     }
 
-    @Test("Streaming segments render one block per segment; finalize merges runs")
-    func mergeShape() {
+    @Test("Finalization preserves streaming block topology")
+    func finalizationPreservesShape() {
         let segmenter = StreamingSegmenter()
         let text = "one\n\ntwo\n\nthree"
         let streaming = segmenter.segments(for: text, isComplete: false)
         #expect(streaming.count == 3)
         let finalized = segmenter.segments(for: text, isComplete: true)
-        // Three consecutive text blocks merge into a single selectable run.
-        #expect(finalized == [.textRun([.paragraph("one"), .paragraph("two"), .paragraph("three")])])
+        #expect(finalized == streaming)
     }
 
     @Test("Settled segments keep their instances across flushes")

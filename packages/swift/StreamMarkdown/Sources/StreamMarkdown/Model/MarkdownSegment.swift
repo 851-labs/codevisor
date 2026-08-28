@@ -1,17 +1,12 @@
 import Foundation
 
-/// A renderable segment of a markdown document: either a run of consecutive
-/// text-like blocks that can merge into one selectable TextKit storage, or a
-/// standalone block that needs its own view (code, table, quote, rule).
+/// A renderable block of a Markdown document. Text-like blocks use TextKit;
+/// structural blocks use their dedicated views.
 ///
-/// Merging consecutive text blocks into one native storage is what makes
-/// multi-line / multi-block text selection continuous.
+/// Every parsed block deliberately remains its own segment. Streaming and
+/// settled documents therefore have identical view topology and measurement,
+/// and transcript virtualization can treat this boundary as a stable unit.
 public enum MarkdownSegment: Sendable, Equatable {
-    /// One enormous selectable text storage makes TextKit reflow the whole
-    /// document as it enters/leaves a lazy stack or the chat width changes.
-    /// Chunk at markdown block boundaries so long answers remain cheap to
-    /// mount and scroll. Normal responses still stay a single selectable run.
-    static let maximumTextRunCharacters = 4_096
     case textRun([MarkdownBlock])
     case block(MarkdownBlock)
 
@@ -25,47 +20,10 @@ public enum MarkdownSegment: Sendable, Equatable {
         }
     }
 
-    /// Groups blocks into segments, coalescing consecutive text-like blocks
-    /// into a single `.textRun`.
+    /// Preserves one render segment per parsed block.
     public static func segments(from blocks: [MarkdownBlock]) -> [MarkdownSegment] {
-        var result: [MarkdownSegment] = []
-        var run: [MarkdownBlock] = []
-        var runCharacters = 0
-
-        func flush() {
-            guard !run.isEmpty else { return }
-            result.append(.textRun(run))
-            run = []
-            runCharacters = 0
-        }
-
-        for block in blocks {
-            if isTextRunBlock(block) {
-                let characters = textLength(of: block)
-                if !run.isEmpty, runCharacters + characters > maximumTextRunCharacters {
-                    flush()
-                }
-                run.append(block)
-                runCharacters += characters
-            } else {
-                flush()
-                result.append(.block(block))
-            }
-        }
-        flush()
-        return result
-    }
-
-    private static func textLength(of block: MarkdownBlock) -> Int {
-        switch block {
-        case let .heading(_, text), let .paragraph(text):
-            return text.characterCount
-        case let .bulletList(items):
-            return items.reduce(0) { $0 + $1.characterCount }
-        case let .orderedList(items):
-            return items.reduce(0) { $0 + $1.text.characterCount }
-        case .codeBlock, .list, .blockQuote, .table, .thematicBreak:
-            return 0
+        blocks.map { block in
+            isTextRunBlock(block) ? .textRun([block]) : .block(block)
         }
     }
 }

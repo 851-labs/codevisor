@@ -3,8 +3,8 @@ import Testing
 
 @Suite("MarkdownSegment")
 struct MarkdownSegmentTests {
-    @Test("Consecutive text blocks coalesce into one run")
-    func consecutiveTextBlocksCoalesce() {
+    @Test("Consecutive text blocks remain independent segments")
+    func consecutiveTextBlocksRemainIndependent() {
         let blocks: [MarkdownBlock] = [
             .heading(level: 1, text: "Title"),
             .paragraph("First"),
@@ -12,7 +12,7 @@ struct MarkdownSegmentTests {
             .orderedList([OrderedListItem(number: 1, text: "one")]),
         ]
         let segments = MarkdownSegment.segments(from: blocks)
-        #expect(segments == [.textRun(blocks)])
+        #expect(segments == blocks.map { .textRun([$0]) })
     }
 
     @Test("Non-text blocks split runs")
@@ -27,14 +27,15 @@ struct MarkdownSegmentTests {
         let segments = MarkdownSegment.segments(from: blocks)
         #expect(
             segments == [
-                .textRun([.paragraph("Before"), .paragraph("Still before")]),
+                .textRun([.paragraph("Before")]),
+                .textRun([.paragraph("Still before")]),
                 .block(code),
                 .textRun([.paragraph("After")]),
             ])
     }
 
-    @Test("Large text documents split into bounded layout runs")
-    func largeTextRunsSplitAtBlockBoundaries() {
+    @Test("Large text documents preserve every block boundary")
+    func largeTextRunsPreserveBlockBoundaries() {
         let blocks: [MarkdownBlock] = [
             .paragraph(String(repeating: "a", count: 3_000)),
             .paragraph(String(repeating: "b", count: 3_000)),
@@ -44,7 +45,8 @@ struct MarkdownSegmentTests {
         #expect(
             MarkdownSegment.segments(from: blocks) == [
                 .textRun([blocks[0]]),
-                .textRun([blocks[1], blocks[2]]),
+                .textRun([blocks[1]]),
+                .textRun([blocks[2]]),
             ])
     }
 
