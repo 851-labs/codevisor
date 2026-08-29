@@ -63,7 +63,7 @@ struct ModelFilterField: NSViewRepresentable {
         searchField.delegate = context.coordinator
         searchField.placeholderString = "Filter"
         searchField.controlSize = .large
-        searchField.font = .menuFont(ofSize: 0)
+        searchField.font = XcodeModelPickerMetrics.nativeMenuFont
         searchField.focusRingType = .none
         searchField.sendsSearchStringImmediately = true
         searchField.sendsWholeSearchString = false

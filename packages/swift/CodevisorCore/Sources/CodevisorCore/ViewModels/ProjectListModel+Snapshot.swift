@@ -12,16 +12,22 @@ extension ProjectListModel {
     /// One machine's authoritative snapshot, merged into the shared
     /// serverId-keyed repositories — machine-agnostic, so BACKGROUND
     /// machines' chats are present (and orderable in a flattened list)
-    /// before the user ever selects them. No supersession here: merges are
-    /// per-server and idempotent, and a background fetch can never clobber
-    /// another machine's rows.
+    /// before the user ever selects them. Each server has its own generation:
+    /// a newer refresh or identity prune supersedes only that server's fetch.
     @discardableResult
     public func refreshFromServer(
         serverId: String,
         client: any CodevisorServerClienting
     ) async -> ServerNavigationRefreshResult {
+        let generation = beginSnapshotRefresh(for: serverId)
+        let lifetimeGeneration = recordLifetimeGeneration(for: serverId)
         do {
             let prepared = try await fetchSnapshot(serverId: serverId, client: client)
+            guard isCurrentSnapshotRefresh(generation, for: serverId),
+                isCurrentRecordLifetime(lifetimeGeneration, for: serverId)
+            else {
+                return .superseded
+            }
             commitSnapshot(prepared, serverId: serverId)
             return .committed
         } catch {
@@ -30,6 +36,31 @@ extension ProjectListModel {
             )
             return .failed(String(describing: error))
         }
+    }
+
+    func beginSnapshotRefresh(for serverId: String) -> UInt64 {
+        snapshotRefreshGenerationByServer[serverId, default: 0] &+= 1
+        return snapshotRefreshGenerationByServer[serverId, default: 0]
+    }
+
+    func isCurrentSnapshotRefresh(_ generation: UInt64, for serverId: String) -> Bool {
+        snapshotRefreshGenerationByServer[serverId, default: 0] == generation
+    }
+
+    func invalidateSnapshotRefreshes(for serverId: String) {
+        snapshotRefreshGenerationByServer[serverId, default: 0] &+= 1
+    }
+
+    func recordLifetimeGeneration(for serverId: String) -> UInt64 {
+        recordLifetimeGenerationByServer[serverId, default: 0]
+    }
+
+    func isCurrentRecordLifetime(_ generation: UInt64, for serverId: String) -> Bool {
+        recordLifetimeGenerationByServer[serverId, default: 0] == generation
+    }
+
+    func invalidateRecordLifetime(for serverId: String) {
+        recordLifetimeGenerationByServer[serverId, default: 0] &+= 1
     }
 
     func fetchSnapshot(

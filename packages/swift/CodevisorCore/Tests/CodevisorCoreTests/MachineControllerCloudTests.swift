@@ -199,6 +199,66 @@ struct MachineControllerCloudTests {
         #expect(controller.canonicalComposerMachineId(for: twinId) == remote.id)
     }
 
+}
+
+extension MachineControllerCloudTests {
+    @Test("An in-flight cloud twin snapshot cannot resurrect pruned records")
+    func inFlightTwinSnapshotCannotResurrectRecords() async throws {
+        let deviceId = "dev-racing-twin"
+        let twinId = "cloud:\(deviceId)"
+        let projectId = UUID()
+        let sessionId = UUID()
+        let local = SyncFakeServerClient(projects: [], sessions: [])
+        local.configureInfoId("local")
+        local.configureInfoCloudDeviceId(deviceId)
+        let (controller, projectList, provider) = makeController(clientFactory: { _ in local })
+        provider.cloudMachines = [makeCloudMachine(deviceId: deviceId, name: "Local (Cloud)")]
+        provider.requestTransport.responsesByPath["/v1/info"] = """
+            {"id":"local","name":"Local","kind":"local","version":"0.1.0",
+             "platform":"darwin","bindHost":"127.0.0.1","cloudDeviceId":"\(deviceId)"}
+            """
+        provider.requestTransport.responsesByPath["/v1/events/cursor"] = #"{"cursor":0}"#
+        provider.requestTransport.responsesByPath["/v1/projects"] = """
+            [{"id":"\(projectId.uuidString)","name":"racing-twin","isArchived":false,
+              "origin":"codevisor","createdAt":"2026-06-30T00:00:00.000Z",
+              "locations":[{"id":"loc-1","projectId":"\(projectId.uuidString)",
+                "serverId":"local","folderPath":"/srv/racing-twin",
+                "createdAt":"2026-06-30T00:00:00.000Z","isGitRepository":false}]}]
+            """
+        provider.requestTransport.responsesByPath["/v1/sessions"] = """
+            [{"id":"\(sessionId.uuidString)","projectId":"\(projectId.uuidString)",
+              "serverId":"local","harnessId":"codex","agentSessionId":null,
+              "title":"racing twin chat","origin":"codevisor","isArchived":false,
+              "createdAt":"2026-06-30T00:00:01.000Z",
+              "updatedAt":"2026-06-30T00:00:02.000Z","usage":null}]
+            """
+        provider.requestTransport.delaysByPath["/v1/sessions"] = 250_000_000
+        var connectedMachineIds: [String] = []
+        controller.onMachineConnected = { connectedMachineIds.append($0) }
+
+        // Let the twin pass its status probe and enter the authoritative list
+        // fetch. The configured local probe then discovers both ids are the
+        // same device and prunes the twin while that fetch is suspended.
+        let connect = Task { await controller.connectMachine(twinId) }
+        for _ in 0..<100 {
+            if provider.requestTransport.requestCount(for: "/v1/sessions") > 0 { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(provider.requestTransport.requestCount(for: "/v1/sessions") == 1)
+
+        await controller.refreshStatus(for: "local")
+        await connect.value
+
+        #expect(!projectList.projects.contains { $0.serverId == twinId })
+        #expect(!projectList.sessions.contains { $0.serverId == twinId })
+        #expect(controller.statusByMachineId[twinId] == nil)
+        #expect(!connectedMachineIds.contains(twinId))
+        #expect(controller.allMachines.map(\.id) == ["local"])
+    }
+
+}
+
+extension MachineControllerCloudTests {
     @Test("Dead cloud identities' records are pruned after a roster refresh")
     func deadCloudRecordPrune() throws {
         let (controller, projectList, provider) = makeController()

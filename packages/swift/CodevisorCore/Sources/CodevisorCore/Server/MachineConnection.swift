@@ -157,6 +157,18 @@ extension MachineController {
         }
     }
 
+    /// A background connect keeps its original connection record across
+    /// network suspension points. Identity pruning removes that exact record;
+    /// object identity keeps the old operation from committing more state.
+    private func isCurrentBackgroundConnection(
+        _ connection: MachineConnection,
+        for machineId: String
+    ) -> Bool {
+        connectionsById[machineId] === connection
+            && machine(for: machineId) != nil
+            && !isCloudTwinOfConfiguredMachine(machineId)
+    }
+
     /// Opens a machine's live event stream in the background — status probe,
     /// cursor capture, then subscribe — without touching selection, the
     /// request gate, or navigation sync. The selected machine's lifecycle
@@ -173,6 +185,7 @@ extension MachineController {
         defer { connection.backgroundConnectInFlight = false }
         let client = client(for: machineId)
         await refreshStatus(for: machineId)
+        guard isCurrentBackgroundConnection(connection, for: machineId) else { return }
         guard connection.status?.isReachable == true else {
             // Unreachable is an ANSWER, not silence: fleet-aggregated UIs
             // must be able to count this machine as failed instead of
@@ -181,12 +194,16 @@ extension MachineController {
             return
         }
         let cursor = (try? await client.latestShellEventCursor()) ?? 0
+        guard isCurrentBackgroundConnection(connection, for: machineId) else { return }
         // Full snapshot BEFORE the stream starts (the cursor above replays
         // anything racing the fetch): a machine's chats and workspaces are
         // present — and orderable in a flattened sidebar — without it ever
         // being selected.
         let snapshot = await projectList.refreshFromServer(serverId: machineId, client: client)
+        guard isCurrentBackgroundConnection(connection, for: machineId) else { return }
+        if case .superseded = snapshot { return }
         await workspaceSync?.refreshFromServer(serverId: machineId, client: client)
+        guard isCurrentBackgroundConnection(connection, for: machineId) else { return }
         // Selection may have taken this machine over while we probed; its
         // navigation sync owns the stream then.
         guard connection.eventSyncTask == nil else { return }

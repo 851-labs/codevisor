@@ -18,7 +18,7 @@ final class SidebarOrderingCache {
     }
 
     private struct SessionInput: Equatable {
-        let id: UUID
+        let id: SidebarFleetItemID
         let priority: Int
         let timestamp: Date
         let title: String
@@ -26,7 +26,7 @@ final class SidebarOrderingCache {
     }
 
     private struct ProjectInput: Equatable {
-        let id: UUID
+        let id: SidebarFleetItemID
         let priority: Int
         let timestamp: Date
         let name: String
@@ -34,9 +34,9 @@ final class SidebarOrderingCache {
     }
 
     private var sessionInputs: [SessionInput] = []
-    private var orderedSessionIDs: [UUID] = []
+    private var orderedSessionIDs: [SidebarFleetItemID] = []
     private var projectInputs: [ProjectInput] = []
-    private var orderedProjectIDs: [UUID] = []
+    private var orderedProjectIDs: [SidebarFleetItemID] = []
 
     func sessions(
         _ values: [ChatSession],
@@ -45,7 +45,7 @@ final class SidebarOrderingCache {
     ) -> [ChatSession] {
         let inputs = values.enumerated().map { index, session in
             SessionInput(
-                id: session.id,
+                id: session.sidebarFleetItemID,
                 priority: priority(session).rawValue,
                 timestamp: timestamp(session),
                 title: session.title,
@@ -62,7 +62,10 @@ final class SidebarOrderingCache {
                 return left.sourceIndex < right.sourceIndex
             }.map(\.id)
         }
-        let byID = Dictionary(values.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let byID = Dictionary(
+            values.map { ($0.sidebarFleetItemID, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
         return orderedSessionIDs.compactMap { byID[$0] }
     }
 
@@ -73,7 +76,7 @@ final class SidebarOrderingCache {
         let inputs = values.enumerated().map { index, project in
             let key = orderingKey(project)
             return ProjectInput(
-                id: project.id,
+                id: project.sidebarFleetItemID,
                 priority: key.priority.rawValue,
                 timestamp: key.timestamp,
                 name: project.name,
@@ -90,7 +93,10 @@ final class SidebarOrderingCache {
                 return left.sourceIndex < right.sourceIndex
             }.map(\.id)
         }
-        let byID = Dictionary(values.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let byID = Dictionary(
+            values.map { ($0.sidebarFleetItemID, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
         return orderedProjectIDs.compactMap { byID[$0] }
     }
 }

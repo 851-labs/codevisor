@@ -10,14 +10,22 @@ final class FakeRelayRequestTransport: ServerRequestTransport, @unchecked Sendab
     private let lock = NSLock()
     private var requestedPaths: [String] = []
     var responsesByPath: [String: String] = [:]
+    var delaysByPath: [String: UInt64] = [:]
 
     var paths: [String] {
         lock.withLock { requestedPaths }
     }
 
+    func requestCount(for path: String) -> Int {
+        lock.withLock { requestedPaths.count { $0 == path } }
+    }
+
     func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         let path = request.url?.path ?? ""
         lock.withLock { requestedPaths.append(path) }
+        if let delay = delaysByPath[path], delay > 0 {
+            try await Task.sleep(nanoseconds: delay)
+        }
         guard let body = responsesByPath[path] else {
             throw URLError(.fileDoesNotExist)
         }

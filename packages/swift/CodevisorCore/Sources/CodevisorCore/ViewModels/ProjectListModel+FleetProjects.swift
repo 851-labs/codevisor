@@ -6,6 +6,10 @@ extension ProjectListModel {
     /// twin), whose synced records would otherwise render as doubled
     /// projects and chats forever.
     public func removeAllRecords(serverId: String) {
+        // Invalidate first, even when nothing has committed yet. The duplicate
+        // identity is commonly discovered while its initial fetch is in flight.
+        invalidateRecordLifetime(for: serverId)
+        invalidateSnapshotRefreshes(for: serverId)
         let hadProjects = projects.contains { $0.serverId == serverId }
         let hadSessions = sessions.contains { $0.serverId == serverId }
         guard hadProjects || hadSessions else { return }

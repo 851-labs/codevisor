@@ -47,8 +47,12 @@ enum XcodeModelPickerMetrics {
     static let footerTitleInset = rowHorizontalInset
     static let footerBottomCornerRadius: CGFloat = 14
 
+    static var nativeMenuFont: NSFont {
+        NSFont.menuFont(ofSize: NSFont.systemFontSize)
+    }
+
     static var menuFont: Font {
-        Font(NSFont.menuFont(ofSize: 0))
+        Font(nativeMenuFont)
     }
 
     static var sectionFont: Font {
@@ -86,7 +90,7 @@ enum XcodeModelPickerMetrics {
     static func menuTextWidth(_ text: String) -> CGFloat {
         ceil(
             (text as NSString).size(
-                withAttributes: [.font: NSFont.menuFont(ofSize: 0)]
+                withAttributes: [.font: nativeMenuFont]
             ).width
         )
     }

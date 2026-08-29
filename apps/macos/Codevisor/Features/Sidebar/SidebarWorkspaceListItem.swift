@@ -10,5 +10,5 @@ struct SidebarWorkspaceListItem: Identifiable {
     let primarySession: ChatSession?
     let project: Project?
 
-    var id: UUID { workspace.id }
+    var id: SidebarFleetItemID { .workspace(workspace) }
 }

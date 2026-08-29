@@ -14,9 +14,9 @@ private let archivedPageSize = 10
 /// Built on `ScrollView` + `LazyVStack` (not `List`), because the sidebar-styled
 /// `List` outline coordinator crashes on the current macOS SDK.
 struct SidebarView: View {
-    @Environment(AppEnvironment.self) private var environment
+    @Environment(AppEnvironment.self) var environment
     @Environment(\.theme) private var theme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
     @Binding var selection: SidebarSelection?
     var store: SessionStore? = nil
     var publishesSceneActions = true
@@ -34,12 +34,12 @@ struct SidebarView: View {
     @State private var workspaceRenameTitle = ""
     /// Bumped after workspace mutations (backfill sweep, renames) so the
     /// non-observable repository is re-read.
-    @State private var workspaceRevision = 0
+    @State var workspaceRevision = 0
     @State private var draggingProjectID: UUID?
     @State private var draggingSessionID: UUID?
     @State private var isPointerInsideSidebar = false
-    @State private var deferredProjectOrder = InteractionDeferredOrder<UUID>()
-    @State private var deferredSessionOrder = InteractionDeferredOrder<UUID>()
+    @State private var deferredProjectOrder = InteractionDeferredOrder<String>()
+    @State private var deferredSessionOrder = InteractionDeferredOrder<String>()
     @State private var orderingCache = SidebarOrderingCache()
     /// Non-nil while a burst of automatic reorders is settling (the deferred
     /// orders are locked without the pointer being inside the sidebar).
@@ -48,11 +48,11 @@ struct SidebarView: View {
     @ClientPreference("sidebar.organization", default: SidebarOrganization.compact.rawValue)
     private var organizationRaw
     @ClientPreference("sidebar.order", default: SidebarOrder.updated.rawValue)
-    private var orderRaw
+    var orderRaw
     @ClientPreference("sidebar.manualProjectOrder", default: "")
-    private var manualProjectOrderRaw
+    var manualProjectOrderRaw
     @ClientPreference("sidebar.manualSessionOrder", default: "")
-    private var manualSessionOrderRaw
+    var manualSessionOrderRaw
     @ClientPreference("sidebar.expandedProjects", default: "")
     private var expandedProjectsRaw
     @ClientPreference("sidebar.expandedWorkspaces", default: "")
@@ -73,37 +73,49 @@ struct SidebarView: View {
     /// The item a click is asking to restore, driving the confirmation alert.
     @State private var restoreRequest: ArchivedRestoreRequest?
 
-    private var list: ProjectListModel { environment.projectList }
+    var list: ProjectListModel { environment.projectList }
     private var organization: SidebarOrganization { SidebarOrganization(rawValue: organizationRaw) ?? .compact }
-    private var order: SidebarOrder { SidebarOrder(rawValue: orderRaw) ?? .updated }
+    var order: SidebarOrder { SidebarOrder(rawValue: orderRaw) ?? .updated }
     private var isReordering: Bool { draggingProjectID != nil || draggingSessionID != nil }
     private var itemTitleFont: Font { .body }
     private var hierarchyIndent: CGFloat { 8 }
     private var notificationColor: Color { theme.isSystem ? .blue : theme.accent }
 
-    private var projectOrder: [UUID] {
+    var projectOrder: [UUID] {
         manualProjectOrderRaw
             .split(separator: "\n")
             .compactMap { UUID(uuidString: String($0)) }
     }
 
-    private var sessionOrder: [UUID] {
+    var sessionOrder: [UUID] {
         manualSessionOrderRaw
             .split(separator: "\n")
             .compactMap { UUID(uuidString: String($0)) }
     }
 
-    private var visibleProjects: [Project] {
-        let active = list.fleetActiveProjects
+    /// Cached rows can briefly outlive a removed or newly-canonicalized
+    /// machine identity. They remain useful for offline live machines, but an
+    /// identity absent from the current fleet must never become a route.
+    private var canonicalFleetProjects: [Project] {
+        list.fleetActiveProjects.filter {
+            environment.machines.machine(for: $0.serverId) != nil
+        }
+    }
+
+    var visibleProjects: [Project] {
+        let active = canonicalFleetProjects
         if order == .none {
             return manuallyOrdered(active, ids: projectOrder, id: \.id)
         }
-        return deferredProjectOrder.applying(to: automaticallySortedProjects, id: \.id)
+        return deferredProjectOrder.applying(
+            to: automaticallySortedProjects,
+            id: \.sidebarFleetOrderID
+        )
     }
 
     private var automaticallySortedProjects: [Project] {
         orderingCache.projects(
-            list.fleetActiveProjects,
+            canonicalFleetProjects,
             orderingKey: projectOrderingKey
         )
     }
@@ -111,7 +123,7 @@ struct SidebarView: View {
     private var automaticallySortedSessions: [ChatSession] {
         // Flattened fleet: (serverId, projectId) pairs scope membership, so
         // one machine's project can never claim another machine's chats.
-        let activeProjectKeys = Set(list.fleetActiveProjects.map { "\($0.serverId)|\($0.id)" })
+        let activeProjectKeys = Set(canonicalFleetProjects.map { "\($0.serverId)|\($0.id)" })
         // The cache applies the final global order, so sourcing sessions via
         // `sessions(in:)` would first perform a throwaway per-project sort.
         // Filter the model's value array once instead.
@@ -154,7 +166,7 @@ struct SidebarView: View {
                 else { return nil }
                 return SidebarSessionListItem(session: session, project: project)
             }
-            return deferredSessionOrder.applying(to: sorted, id: \.id)
+            return deferredSessionOrder.applying(to: sorted, id: \.orderingID)
         }
         let sessions = visibleProjects.flatMap { project in
             list.fleetSessions(in: project).map {
@@ -167,10 +179,10 @@ struct SidebarView: View {
     /// The identity order the automatic sort wants right now, ignoring the
     /// hover and settle holds. Watched to coalesce bursts of reorders into a
     /// single reflow; empty under manual ordering, which never auto-reorders.
-    private var desiredAutomaticOrderIDs: [UUID] {
+    private var desiredAutomaticOrderIDs: [String] {
         guard order != .none else { return [] }
-        let projectIDs = automaticallySortedProjects.map(\.id)
-        let sessionIDs = automaticallySortedSessions.map(\.id)
+        let projectIDs = automaticallySortedProjects.map(\.sidebarFleetOrderID)
+        let sessionIDs = automaticallySortedSessions.map(\.sidebarFleetOrderID)
         return projectIDs + sessionIDs
     }
 
@@ -182,14 +194,16 @@ struct SidebarView: View {
         _ = environment.workspaceSync.revision
         let sessionItems = chronologicalSessions
         let sessionRank = Dictionary(
-            sessionItems.enumerated().map { ($0.element.session.id, $0.offset) },
+            sessionItems.enumerated().map { ($0.element.id, $0.offset) },
             uniquingKeysWith: min
         )
         let sessionsById = Dictionary(
-            sessionItems.map { ($0.session.id, $0) },
+            sessionItems.map { ($0.id, $0) },
             uniquingKeysWith: { first, _ in first }
         )
-        let workspaces = environment.workspaces.loadAll().filter { !$0.isArchived }
+        let workspaces = environment.workspaces.loadAll().filter {
+            !$0.isArchived && environment.machines.machine(for: $0.serverId) != nil
+        }
         return
             workspaces
             .compactMap { workspace -> (item: SidebarWorkspaceListItem, rank: Int, created: Date)? in
@@ -201,7 +215,9 @@ struct SidebarView: View {
                 guard workspace.chatSessionIds.isEmpty || !routedSessionIDs.isEmpty else {
                     return nil
                 }
-                let workspaceSessionItems = routedSessionIDs.compactMap { sessionsById[$0] }
+                let workspaceSessionItems = routedSessionIDs.compactMap {
+                    sessionsById[.session(serverId: workspace.serverId, id: $0)]
+                }
                 let workspaceSessions = workspaceSessionItems.map(\.session)
                 let primary = workspaceSessionItems.first
                 // A legacy or draft CHAT-LESS workspace stays openable
@@ -227,7 +243,7 @@ struct SidebarView: View {
                         primarySession: routingSession,
                         project: routingProject
                     ),
-                    primary.flatMap { sessionRank[$0.session.id] } ?? Int.max,
+                    primary.flatMap { sessionRank[$0.id] } ?? Int.max,
                     workspace.createdAt
                 )
             }
@@ -320,7 +336,7 @@ struct SidebarView: View {
                     // its leading icon) animates each subview's position
                     // independently, which reads as shearing/jitter.
                     if organization == .byProject {
-                        ForEach(projectSectionProjects) { project in
+                        ForEach(projectSectionProjects, id: \.sidebarFleetItemID) { project in
                             projectFolder(project)
                                 .geometryGroup()
                         }
@@ -376,7 +392,10 @@ struct SidebarView: View {
                 .padding(.bottom, 8)
                 .animation(Motion.listReflow(reduceMotion: reduceMotion), value: workspaceItems.map(\.id))
                 .animation(Motion.listReflow(reduceMotion: reduceMotion), value: chronologicalSessions.map(\.id))
-                .animation(Motion.listReflow(reduceMotion: reduceMotion), value: projectSectionProjects.map(\.id))
+                .animation(
+                    Motion.listReflow(reduceMotion: reduceMotion),
+                    value: projectSectionProjects.map(\.sidebarFleetItemID)
+                )
                 .animation(Motion.listReflow(reduceMotion: reduceMotion), value: expanded)
                 .animation(Motion.listReflow(reduceMotion: reduceMotion), value: expandedWorkspaces)
                 // Same reflow the project/workspace disclosures use, so the
@@ -447,12 +466,16 @@ struct SidebarView: View {
             .onChange(of: organizationRaw, initial: true) { _, _ in
                 backfillWorkspaces()
             }
-            .onChange(of: chronologicalSessions.map(\.id)) { oldIDs, newIDs in
+            .onChange(of: chronologicalSessions.map(\.orderingID)) { oldIDs, newIDs in
                 deferredSessionOrder.incorporate(newIDs)
                 backfillWorkspaces()
-                revealNewChatWorkspaces(Set(newIDs).subtracting(Set(oldIDs)))
+                let addedOrderIDs = Set(newIDs).subtracting(Set(oldIDs))
+                let addedSessionIDs = chronologicalSessions.compactMap { item in
+                    addedOrderIDs.contains(item.orderingID) ? item.session.id : nil
+                }
+                revealNewChatWorkspaces(Set(addedSessionIDs))
             }
-            .onChange(of: visibleProjects.map(\.id)) { _, newIDs in
+            .onChange(of: visibleProjects.map(\.sidebarFleetOrderID)) { _, newIDs in
                 deferredProjectOrder.incorporate(newIDs)
             }
             // Bursty automatic reorders (several agents changing state at once)
@@ -595,7 +618,7 @@ struct SidebarView: View {
         // exactly as the user left it.
         if isProjectVisuallyExpanded(project.id) {
             let sessions = orderedSessions(in: project)
-            ForEach(sessions) { session in
+            ForEach(sessions, id: \.sidebarFleetItemID) { session in
                 reorderableChronologicalSessionRow(session, project: project, isNested: true)
                     .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
             }
@@ -612,14 +635,14 @@ struct SidebarView: View {
 
     @ViewBuilder
     private func workspaceFolder(_ item: SidebarWorkspaceListItem) -> some View {
-        let isExpanded = expandedWorkspaces.contains(item.id)
+        let isExpanded = expandedWorkspaces.contains(item.workspace.id)
         workspaceRow(
             item,
             isExpanded: isExpanded,
-            onToggle: { toggleWorkspace(item.id) }
+            onToggle: { toggleWorkspace(item.workspace.id) }
         )
 
-        if expandedWorkspaces.contains(item.id) {
+        if expandedWorkspaces.contains(item.workspace.id) {
             if let project = item.project {
                 ForEach(item.sessions) { session in
                     reorderableChronologicalSessionRow(session, project: project, isNested: true)
@@ -739,7 +762,7 @@ struct SidebarView: View {
         if !projects.isEmpty || !chats.isEmpty {
             archivedHeader
             if archivedExpanded {
-                ForEach(projects) { project in
+                ForEach(projects, id: \.sidebarFleetItemID) { project in
                     archivedProjectRow(project)
                         .transition(Motion.unfold(reduceMotion: reduceMotion))
                 }
@@ -922,7 +945,7 @@ struct SidebarView: View {
     /// Moves the selection off a chat that is leaving the screen (archive,
     /// mark-as-unread) to the most recent OTHER active chat. Only when none
     /// remain does the empty fallback create a fresh scratch workspace.
-    private func selectNextChat(excluding excluded: Set<UUID>, serverId: String) {
+    func selectNextChat(excluding excluded: Set<UUID>, serverId: String) {
         let next = environment.projectList.sessions
             .filter { $0.serverId == serverId && !$0.isArchived && !excluded.contains($0.id) }
             .max { ($0.updatedAt ?? $0.createdAt) < ($1.updatedAt ?? $1.createdAt) }
@@ -1090,11 +1113,13 @@ struct SidebarView: View {
     }
 
     private func orderedSessions(in project: Project) -> [ChatSession] {
-        let sessions = list.sessions(in: project)
+        let sessions = list.fleetSessions(in: project)
         guard order == .none else {
             return deferredSessionOrder.applying(
-                to: automaticallySortedSessions.filter { $0.projectId == project.id },
-                id: \.id
+                to: automaticallySortedSessions.filter {
+                    $0.serverId == project.serverId && $0.projectId == project.id
+                },
+                id: \.sidebarFleetOrderID
             )
         }
         return manuallyOrderedSessions(sessions, session: \.self)
@@ -1109,8 +1134,8 @@ struct SidebarView: View {
             // is first-snapshot-wins, so the frozen order is preserved) and
             // owns it until the pointer leaves.
             cancelReorderSettleHold()
-            deferredProjectOrder.lock(to: visibleProjects.map(\.id))
-            deferredSessionOrder.lock(to: chronologicalSessions.map(\.id))
+            deferredProjectOrder.lock(to: visibleProjects.map(\.sidebarFleetOrderID))
+            deferredSessionOrder.lock(to: chronologicalSessions.map(\.orderingID))
         } else {
             releaseDeferredOrder(animated: true)
         }
@@ -1125,8 +1150,8 @@ struct SidebarView: View {
     private func scheduleReorderSettleHold() {
         guard order != .none, !isPointerInsideSidebar else { return }
         if !deferredProjectOrder.isLocked, !deferredSessionOrder.isLocked {
-            deferredProjectOrder.lock(to: visibleProjects.map(\.id))
-            deferredSessionOrder.lock(to: chronologicalSessions.map(\.id))
+            deferredProjectOrder.lock(to: visibleProjects.map(\.sidebarFleetOrderID))
+            deferredSessionOrder.lock(to: chronologicalSessions.map(\.orderingID))
             reorderSettleHoldStart = Date()
         }
         let holdStart = reorderSettleHoldStart ?? Date()
@@ -1160,235 +1185,6 @@ struct SidebarView: View {
         }
     }
 
-    private func archiveChat(_ session: ChatSession) {
-        let archivedWorkspace = environment.archiveSessionAndWorkspaceIfEmpty(session)
-        if selection == .session(serverId: session.serverId, id: session.id) {
-            selectNextChat(excluding: [session.id], serverId: session.serverId)
-        }
-        if archivedWorkspace {
-            workspaceRevision += 1
-        }
-    }
-
-    private func sortedProjects(_ projects: [Project]) -> [Project] {
-        projects.sorted(by: compareProjects)
-    }
-
-    private func compareProjects(_ left: Project, _ right: Project) -> Bool {
-        if order == .updated {
-            let leftPriority = projectPriority(for: left)
-            let rightPriority = projectPriority(for: right)
-            if leftPriority != rightPriority {
-                return leftPriority.rawValue < rightPriority.rawValue
-            }
-        }
-        let leftTimestamp = projectTimestamp(for: left)
-        let rightTimestamp = projectTimestamp(for: right)
-        if leftTimestamp != rightTimestamp {
-            return leftTimestamp > rightTimestamp
-        }
-        return left.name.localizedCaseInsensitiveCompare(right.name) == .orderedAscending
-    }
-
-    private func compareSessions(_ left: ChatSession, _ right: ChatSession) -> Bool {
-        if order == .updated {
-            let leftPriority = sessionPriority(for: left)
-            let rightPriority = sessionPriority(for: right)
-            if leftPriority != rightPriority {
-                return leftPriority.rawValue < rightPriority.rawValue
-            }
-        }
-        let leftTimestamp = SidebarOrderingCache.timestamp(for: left, order: order)
-        let rightTimestamp = SidebarOrderingCache.timestamp(for: right, order: order)
-        if leftTimestamp != rightTimestamp {
-            return leftTimestamp > rightTimestamp
-        }
-        return left.title.localizedCaseInsensitiveCompare(right.title) == .orderedAscending
-    }
-
-    private func projectPriority(for project: Project) -> SidebarSessionPriority {
-        projectOrderingKey(for: project).priority
-    }
-
-    /// Classifies a session into its sort tier. The checks MUST mirror
-    /// `ChatSessionLeadingIcon`'s precedence (error → waiting → in progress →
-    /// unread): a mid-run agent with buffered unread turns shows the spinner,
-    /// not the badge, so it must sort as in progress too. Classifying it as
-    /// unread made opening it silently drop it a tier — the row slid down on
-    /// click with no visible state change. Rank order across tiers is
-    /// `SidebarSessionPriority`; only classification follows the icon.
-    private func sessionPriority(for session: ChatSession) -> SidebarSessionPriority {
-        if store?.hasUnreadError(session) == true { return .errored }
-        if store?.isWaitingOnUser(session) == true { return .waitingForUser }
-        if store?.isInProgress(session) == true { return .inProgress }
-        if unreadCount(for: session) != nil { return .unread }
-        return .idle
-    }
-
-    /// The unread-turn count for a session's badge; nil when there is nothing
-    /// to badge so the row falls through to the relative timestamp.
-    private func unreadCount(for session: ChatSession) -> Int? {
-        guard let count = store?.unreadCount(session), count > 0 else { return nil }
-        return count
-    }
-
-    /// Whether the row is currently badged as unread, by either count or error.
-    private func isUnread(_ session: ChatSession) -> Bool {
-        unreadCount(for: session) != nil || store?.hasUnreadError(session) == true
-    }
-
-    private func projectTimestamp(for project: Project) -> Date {
-        switch order {
-        case .none, .created:
-            return project.createdAt
-        case .updated:
-            return projectOrderingKey(for: project).timestamp
-        }
-    }
-
-    /// Computes the project tier and its recency in one pass. The old pair of
-    /// helpers each fetched and sorted the same project sessions, multiplying
-    /// work during every SwiftUI sidebar evaluation.
-    private func projectOrderingKey(
-        for project: Project
-    ) -> (priority: SidebarSessionPriority, timestamp: Date) {
-        guard order == .updated else { return (.idle, project.createdAt) }
-        var leadingPriority: SidebarSessionPriority?
-        var leadingTimestamp = project.createdAt
-        for session in list.sessions
-        where
-            session.serverId == project.serverId
-            && session.projectId == project.id
-            && !session.isArchived
-            && (session.origin == .codevisor || list.showsImportedSessions)
-        {
-            let priority = sessionPriority(for: session)
-            guard let currentPriority = leadingPriority else {
-                leadingPriority = priority
-                leadingTimestamp = session.sidebarStateChangedAt
-                continue
-            }
-            if priority.rawValue < currentPriority.rawValue {
-                leadingPriority = priority
-                leadingTimestamp = session.sidebarStateChangedAt
-            } else if priority == currentPriority,
-                session.sidebarStateChangedAt > leadingTimestamp
-            {
-                leadingTimestamp = session.sidebarStateChangedAt
-            }
-        }
-        return (leadingPriority ?? .idle, leadingTimestamp)
-    }
-
-    private func setOrder(_ newOrder: SidebarOrder) {
-        guard newOrder != order else { return }
-        if newOrder == .none {
-            seedManualOrdersIfNeeded()
-        }
-        orderRaw = newOrder.rawValue
-    }
-
-    private func seedManualOrdersIfNeeded() {
-        if projectOrder.isEmpty {
-            saveProjectOrder(sortedProjects(list.activeProjects).map(\.id))
-        }
-        if sessionOrder.isEmpty {
-            let sessions = list.activeProjects.flatMap { list.sessions(in: $0) }
-            saveSessionOrder(sessions.sorted(by: compareSessions).map(\.id))
-        }
-    }
-
-    private func resetManualOrder() {
-        let sessions = list.activeProjects.flatMap { list.sessions(in: $0) }
-        saveSessionOrder(
-            sessions.sorted { left, right in
-                let leftTimestamp = left.sidebarStateChangedAt
-                let rightTimestamp = right.sidebarStateChangedAt
-                if leftTimestamp != rightTimestamp { return leftTimestamp > rightTimestamp }
-                return left.title.localizedCaseInsensitiveCompare(right.title) == .orderedAscending
-            }.map(\.id))
-    }
-
-    private func moveProject(_ sourceID: UUID, before destinationID: UUID) {
-        guard sourceID != destinationID else { return }
-        var ids = visibleProjects.map(\.id)
-        guard let sourceIndex = ids.firstIndex(of: sourceID),
-            let destinationIndex = ids.firstIndex(of: destinationID)
-        else { return }
-        withAnimation(.snappy(duration: 0.22)) {
-            let moved = ids.remove(at: sourceIndex)
-            ids.insert(moved, at: destinationIndex)
-            saveProjectOrder(ids)
-        }
-    }
-
-    private func saveProjectOrder(_ ids: [UUID]) {
-        manualProjectOrderRaw = ids.map(\.uuidString).joined(separator: "\n")
-    }
-
-    private func moveSession(_ sourceID: UUID, before destinationID: UUID) {
-        guard sourceID != destinationID else { return }
-        let sessions = list.activeProjects.flatMap { list.sessions(in: $0) }
-        var ids = manuallyOrderedSessions(sessions, session: \.self).map(\.id)
-        guard let sourceIndex = ids.firstIndex(of: sourceID),
-            let destinationIndex = ids.firstIndex(of: destinationID)
-        else { return }
-        withAnimation(.snappy(duration: 0.22)) {
-            let moved = ids.remove(at: sourceIndex)
-            ids.insert(moved, at: destinationIndex)
-            saveSessionOrder(ids)
-        }
-    }
-
-    private func saveSessionOrder(_ ids: [UUID]) {
-        manualSessionOrderRaw = ids.map(\.uuidString).joined(separator: "\n")
-    }
-
-    /// Applies persisted session ranks while placing chats that do not have a
-    /// saved rank yet at the top. New chats are ordered newest-first until the
-    /// next manual move persists their positions.
-    private func manuallyOrderedSessions<Value>(
-        _ values: [Value],
-        session: KeyPath<Value, ChatSession>
-    ) -> [Value] {
-        let ranks = Dictionary(uniqueKeysWithValues: sessionOrder.enumerated().map { ($0.element, $0.offset) })
-        return values.enumerated().sorted { left, right in
-            let leftSession = left.element[keyPath: session]
-            let rightSession = right.element[keyPath: session]
-            let leftRank = ranks[leftSession.id]
-            let rightRank = ranks[rightSession.id]
-            switch (leftRank, rightRank) {
-            case let (leftRank?, rightRank?): return leftRank < rightRank
-            case (_?, nil): return false
-            case (nil, _?): return true
-            case (nil, nil):
-                if leftSession.createdAt != rightSession.createdAt {
-                    return leftSession.createdAt > rightSession.createdAt
-                }
-                return left.offset < right.offset
-            }
-        }.map(\.element)
-    }
-
-    /// Applies persisted ranks while keeping newly-created projects in the
-    /// source's stable order at the end until the next manual move.
-    private func manuallyOrdered<Value>(
-        _ values: [Value],
-        ids: [UUID],
-        id: KeyPath<Value, UUID>
-    ) -> [Value] {
-        let ranks = Dictionary(uniqueKeysWithValues: ids.enumerated().map { ($0.element, $0.offset) })
-        return values.enumerated().sorted { left, right in
-            let leftRank = ranks[left.element[keyPath: id]]
-            let rightRank = ranks[right.element[keyPath: id]]
-            switch (leftRank, rightRank) {
-            case let (leftRank?, rightRank?): return leftRank < rightRank
-            case (_?, nil): return true
-            case (nil, _?): return false
-            case (nil, nil): return left.offset < right.offset
-            }
-        }.map(\.element)
-    }
 }
 
 #Preview {
