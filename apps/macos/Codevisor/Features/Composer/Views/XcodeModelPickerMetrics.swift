@@ -1,0 +1,95 @@
+import AppKit
+import ACPKit
+import CodevisorCore
+import SwiftUI
+
+struct ModelMenuGroup: Identifiable {
+    let id: String
+    let name: String
+    let symbolName: String
+    let modelOption: SessionConfigOption
+
+    func matchingModels(query: String) -> [SessionConfigSelectOption] {
+        guard !query.isEmpty else { return modelOption.options }
+        if name.localizedCaseInsensitiveContains(query) { return modelOption.options }
+        return modelOption.options.filter {
+            $0.name.localizedCaseInsensitiveContains(query)
+                || $0.value.localizedCaseInsensitiveContains(query)
+        }
+    }
+}
+
+/// Xcode's searchable pickers use native menu typography and a 24-point item
+/// grid even though they are presented in a popover. Keeping those system
+/// metrics in one place prevents the individual rows from drifting apart.
+enum XcodeModelPickerMetrics {
+    static let popoverMinimumWidth: CGFloat = 220
+    static let popoverMaximumWidth: CGFloat = 402
+    static let searchFieldHeight: CGFloat = 28
+    static let searchHorizontalInset: CGFloat = 8
+    static let searchTopInset: CGFloat = 8
+    static let searchBottomInset: CGFloat = 0
+    static let listHorizontalInset: CGFloat = 5
+    static let rowHeight: CGFloat = 24
+    static let rowCornerRadius: CGFloat = 6
+    static let rowHorizontalInset: CGFloat = 11
+    static let stateColumnWidth: CGFloat = 18
+    static let stateTitleSpacing: CGFloat = 4
+    static let modelSectionTitleInset = rowHorizontalInset
+    static let harnessSectionTitleInset =
+        rowHorizontalInset + stateColumnWidth + stateTitleSpacing
+    static let footerHorizontalInset = listHorizontalInset
+    static let footerVerticalInset = listHorizontalInset
+    static let footerTitleInset = rowHorizontalInset
+    static let footerBottomCornerRadius: CGFloat = 14
+
+    static var menuFont: Font {
+        Font(NSFont.menuFont(ofSize: 0))
+    }
+
+    static var sectionFont: Font {
+        .system(size: 12)
+    }
+
+    static func menuTextWidth(_ text: String) -> CGFloat {
+        ceil(
+            (text as NSString).size(
+                withAttributes: [.font: NSFont.menuFont(ofSize: 0)]
+            ).width
+        )
+    }
+
+    static func popoverWidth(
+        for modelGroups: [ModelMenuGroup],
+        signInHarnesses: [ServerHarness]
+    ) -> CGFloat {
+        let regularRowChrome =
+            (2 * listHorizontalInset)
+            + (2 * rowHorizontalInset)
+            + 8
+        let regularTitles =
+            modelGroups.flatMap { group in
+                [group.name] + group.modelOption.options.map(\.name)
+            } + ["Manage Harnesses…"]
+        let widestRegularRow = regularTitles.reduce(CGFloat.zero) { width, title in
+            max(width, menuTextWidth(title) + regularRowChrome)
+        }
+
+        let signInRowChrome =
+            (2 * listHorizontalInset)
+            + (2 * rowHorizontalInset)
+            + stateColumnWidth
+            + 16
+            + (4 * stateTitleSpacing)
+            + 8
+            + menuTextWidth("Sign In")
+        let widestSignInRow = signInHarnesses.reduce(CGFloat.zero) { width, harness in
+            max(width, menuTextWidth(harness.name) + signInRowChrome)
+        }
+
+        return min(
+            max(ceil(max(widestRegularRow, widestSignInRow)), popoverMinimumWidth),
+            popoverMaximumWidth
+        )
+    }
+}

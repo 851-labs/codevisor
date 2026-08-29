@@ -3,9 +3,9 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// One model-centric control shared by draft and connected composers. Models
-/// scroll independently from the controls owned by the selected model, so a
-/// large catalog never buries reasoning, speed, context, or thinking toggles.
+/// Separate model and parameter controls shared by draft and connected
+/// composers. The model picker follows Xcode's searchable picker presentation;
+/// parameters use a native menu grouped by option.
 struct ModelConfigMenu: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.openSettings) private var openSettings
@@ -18,13 +18,8 @@ struct ModelConfigMenu: View {
     @State private var isSwitchingHarness = false
     @State private var pendingModelValue: String?
     @State private var pendingModelGroupId: String?
-
-    private struct HarnessGroup: Identifiable {
-        let id: String
-        let name: String
-        let symbolName: String
-        let modelOption: SessionConfigOption
-    }
+    @State private var keyboardTarget: ModelPickerKeyboardTarget?
+    @State private var hoverTarget: ModelPickerKeyboardTarget?
 
     var body: some View {
         // A background revalidation must not replace an already-usable model
@@ -40,111 +35,343 @@ struct ModelConfigMenu: View {
             || !environment.configCache.signInRequired(forServer: controller.project.serverId)
                 .isEmpty
         {
-            Button {
-                isPresented.toggle()
-            } label: {
-                chipLabel
-            }
-            .buttonStyle(HoverIconButtonStyle(shape: .chip))
-            .fixedSize()
-            .help("Model and settings")
-            .accessibilityLabel("Model settings")
-            .accessibilityValue(accessibilityValue)
-            .popover(
-                isPresented: $isPresented,
-                attachmentAnchor: .rect(.bounds),
-                arrowEdge: .bottom
-            ) {
-                configurationPopover
+            HStack(spacing: 10) {
+                if !modelGroups.isEmpty || showsPendingSignInHarnesses {
+                    modelButton
+                }
+                if !settingsOptions.isEmpty {
+                    parametersMenu
+                }
             }
         }
     }
 }
 
 private extension ModelConfigMenu {
-    private var configurationPopover: some View {
-        HStack(spacing: 0) {
-            modelColumn
-                .frame(width: 300)
-
-            Divider()
-
-            settingsColumn
-                .frame(width: 320)
+    private var modelButton: some View {
+        Button {
+            modelSearch = ""
+            isPresented.toggle()
+        } label: {
+            modelChipLabel
         }
-        .frame(height: 410)
+        .buttonStyle(HoverIconButtonStyle(shape: .chip))
+        .fixedSize()
+        .disabled(isSwitchingHarness)
+        .help("Choose model")
+        .accessibilityLabel("Model")
+        .accessibilityValue(controller.modelOption?.currentName ?? "No model selected")
+        .popover(
+            isPresented: $isPresented,
+            attachmentAnchor: .rect(.bounds),
+            arrowEdge: .bottom
+        ) {
+            modelPickerPopover
+        }
     }
 
-    private var modelColumn: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Choose model")
-                    .font(.headline)
-
-                HStack(spacing: 7) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.secondary)
-                    TextField("Search models", text: $modelSearch)
-                        .textFieldStyle(.plain)
-                }
-                .padding(.horizontal, 9)
-                .padding(.vertical, 7)
-                .background(
-                    RoundedRectangle(cornerRadius: 7)
-                        .fill(Color.secondary.opacity(0.09))
-                )
-            }
-            .padding(14)
-
-            Divider()
-
-            if filteredModelGroups.isEmpty, !showsPendingSignInRows {
-                ContentUnavailableView.search(text: modelSearch)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12) {
-                        ForEach(filteredModelGroups) { group in
-                            modelGroup(group)
-                        }
-                        // Sign-in-pending harnesses live at the BOTTOM of the
-                        // scrolling list: discoverable without dominating the
-                        // picker for harnesses the user never signs into.
-                        if showsPendingSignInRows {
-                            SignInRequiredRows(
-                                harnesses: environment.configCache.signInRequired(
-                                    forServer: controller.project.serverId)
-                            ) { harness in
-                                isPresented = false
-                                onSignIn?(harness)
-                            }
+    private var parametersMenu: some View {
+        Menu {
+            ForEach(settingsOptions) { option in
+                Section(option.name) {
+                    ForEach(option.options) { value in
+                        Toggle(
+                            isOn: parameterSelectionBinding(option: option, value: value.value)
+                        ) {
+                            Text(value.name)
                         }
                     }
-                    .padding(8)
                 }
             }
+        } label: {
+            parameterChipLabel
+        }
+        .menuStyle(.button)
+        .buttonStyle(HoverIconButtonStyle(shape: .chip))
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .disabled(isLoadingSettings)
+        .help("Model parameters")
+        .accessibilityLabel("Model parameters")
+        .accessibilityValue(parameterAccessibilityValue)
+    }
+
+    private var modelPickerPopover: some View {
+        VStack(spacing: 0) {
+            modelSearchField
+
+            Group {
+                if filteredModelGroups.isEmpty, !showsPendingSignInRows {
+                    Text("No matching models")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 6) {
+                                ForEach(filteredModelGroups) { group in
+                                    modelGroup(group)
+                                }
+
+                                if showsPendingSignInRows {
+                                    signInRequiredSection
+                                }
+                            }
+                            .padding(
+                                .horizontal,
+                                XcodeModelPickerMetrics.listHorizontalInset
+                            )
+                            .padding(.vertical, 4)
+                        }
+                        .onChange(of: keyboardTarget) { _, target in
+                            scrollKeyboardTargetIntoView(target, using: proxy)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             Divider()
 
-            Button(action: showHarnessSettings) {
-                HStack(spacing: 8) {
-                    Image(systemName: "gearshape")
-                        .frame(width: 16)
-                    Text("Manage Harnesses…")
-                    Spacer(minLength: 8)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 11)
-            .help("Open Harness Settings")
+            ModelPickerFooterRow(
+                title: "Manage Harnesses…",
+                isKeyboardHighlighted: highlightedTarget == .manageHarnesses,
+                onHover: { isHovering in
+                    updateHoverTarget(.manageHarnesses, isHovering: isHovering)
+                },
+                action: showHarnessSettings
+            )
         }
+        .frame(width: modelPickerPopoverWidth, height: 430)
+        .onAppear {
+            modelSearch = ""
+            hoverTarget = nil
+            keyboardTarget = nil
+        }
+        .onDisappear {
+            modelSearch = ""
+            hoverTarget = nil
+            keyboardTarget = nil
+        }
+        .onChange(of: normalizedModelSearch) {
+            hoverTarget = nil
+            reconcileKeyboardTarget()
+        }
+        .onHover { isHovering in
+            if !isHovering {
+                hoverTarget = nil
+            }
+        }
+        .background {
+            ModelPickerKeyMonitor(
+                onMoveUp: { moveKeyboardTarget(by: -1) },
+                onMoveDown: { moveKeyboardTarget(by: 1) },
+                onSubmit: activateKeyboardTarget,
+                onCancel: { isPresented = false }
+            )
+            .frame(width: 0, height: 0)
+        }
+    }
+
+    private var modelSearchField: some View {
+        ModelFilterField(
+            text: $modelSearch,
+            onMoveUp: { moveKeyboardTarget(by: -1) },
+            onMoveDown: { moveKeyboardTarget(by: 1) },
+            onSubmit: activateKeyboardTarget,
+            onCancel: { isPresented = false }
+        )
+        .frame(height: XcodeModelPickerMetrics.searchFieldHeight)
+        .padding(.horizontal, XcodeModelPickerMetrics.searchHorizontalInset)
+        .padding(.top, XcodeModelPickerMetrics.searchTopInset)
+        .padding(.bottom, XcodeModelPickerMetrics.searchBottomInset)
+        .accessibilityLabel("Filter models")
+    }
+
+    private func modelGroup(_ group: ModelMenuGroup) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(group.name)
+                .font(XcodeModelPickerMetrics.sectionFont)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, XcodeModelPickerMetrics.modelSectionTitleInset)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
+
+            ForEach(group.matchingModels(query: normalizedModelSearch)) { model in
+                let isSelected = isCurrent(model, in: group)
+                XcodeModelPickerRow(
+                    title: model.name,
+                    isSelected: isSelected,
+                    isKeyboardHighlighted: highlightedTarget == modelTarget(model, in: group),
+                    isDisabled: isSwitchingHarness,
+                    onHover: { isHovering in
+                        updateHoverTarget(
+                            modelTarget(model, in: group),
+                            isHovering: isHovering
+                        )
+                    }
+                ) {
+                    if isSelected {
+                        isPresented = false
+                    } else {
+                        choose(model: model.value, in: group)
+                    }
+                }
+                .id(modelTarget(model, in: group))
+            }
+        }
+    }
+
+    private var signInRequiredSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Sign in required")
+                .font(XcodeModelPickerMetrics.sectionFont)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, XcodeModelPickerMetrics.harnessSectionTitleInset)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
+
+            ForEach(
+                signInRequiredHarnesses,
+                id: \.id
+            ) { harness in
+                let target = ModelPickerKeyboardTarget.signIn(harnessID: harness.id)
+                XcodeHarnessSignInRow(
+                    harness: harness,
+                    isKeyboardHighlighted: highlightedTarget == target,
+                    onHover: { isHovering in
+                        updateHoverTarget(target, isHovering: isHovering)
+                    }
+                ) {
+                    isPresented = false
+                    onSignIn?(harness)
+                }
+                .id(target)
+            }
+        }
+    }
+
+    private var signInRequiredHarnesses: [ServerHarness] {
+        environment.configCache.signInRequired(forServer: controller.project.serverId)
+    }
+
+    private var visibleKeyboardTargets: [ModelPickerKeyboardTarget] {
+        var targets = filteredModelGroups.flatMap { group in
+            group.matchingModels(query: normalizedModelSearch).map { modelTarget($0, in: group) }
+        }
+        if showsPendingSignInRows {
+            targets.append(
+                contentsOf: signInRequiredHarnesses.map {
+                    .signIn(harnessID: $0.id)
+                }
+            )
+        }
+        targets.append(.manageHarnesses)
+        return targets
+    }
+
+    private var highlightedTarget: ModelPickerKeyboardTarget? {
+        hoverTarget ?? keyboardTarget
+    }
+
+    private func modelTarget(
+        _ model: SessionConfigSelectOption,
+        in group: ModelMenuGroup
+    ) -> ModelPickerKeyboardTarget {
+        .model(groupID: group.id, value: model.value)
+    }
+
+    private func reconcileKeyboardTarget() {
+        guard let keyboardTarget else { return }
+        if !visibleKeyboardTargets.contains(keyboardTarget) {
+            self.keyboardTarget = nil
+        }
+    }
+
+    private func updateHoverTarget(
+        _ target: ModelPickerKeyboardTarget,
+        isHovering: Bool
+    ) {
+        if isHovering {
+            hoverTarget = target
+        } else if hoverTarget == target {
+            hoverTarget = nil
+        }
+    }
+
+    private func moveKeyboardTarget(by offset: Int) {
+        hoverTarget = nil
+        let targets = visibleKeyboardTargets
+        guard !targets.isEmpty else {
+            keyboardTarget = nil
+            return
+        }
+
+        guard let keyboardTarget, let index = targets.firstIndex(of: keyboardTarget) else {
+            self.keyboardTarget = offset < 0 ? targets.last : targets.first
+            return
+        }
+
+        let nextIndex = min(max(index + offset, targets.startIndex), targets.index(before: targets.endIndex))
+        self.keyboardTarget = targets[nextIndex]
+    }
+
+    private func activateKeyboardTarget() {
+        guard let keyboardTarget else { return }
+        switch keyboardTarget {
+        case let .model(groupID, value):
+            guard
+                let group = filteredModelGroups.first(where: { $0.id == groupID }),
+                let model = group.matchingModels(query: normalizedModelSearch).first(where: {
+                    $0.value == value
+                })
+            else { return }
+            if isCurrent(model, in: group) {
+                isPresented = false
+            } else {
+                choose(model: value, in: group)
+            }
+        case let .signIn(harnessID):
+            guard let harness = signInRequiredHarnesses.first(where: { $0.id == harnessID }) else {
+                return
+            }
+            isPresented = false
+            onSignIn?(harness)
+        case .manageHarnesses:
+            showHarnessSettings()
+        }
+    }
+
+    private func scrollKeyboardTargetIntoView(
+        _ target: ModelPickerKeyboardTarget?,
+        using proxy: ScrollViewProxy
+    ) {
+        guard let target, target != .manageHarnesses else { return }
+        proxy.scrollTo(target, anchor: .center)
+    }
+
+    private var normalizedModelSearch: String {
+        modelSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var modelPickerPopoverWidth: CGFloat {
+        XcodeModelPickerMetrics.popoverWidth(
+            for: modelGroups,
+            signInHarnesses: signInRequiredHarnesses
+        )
+    }
+
+    private var filteredModelGroups: [ModelMenuGroup] {
+        modelGroups.filter { !$0.matchingModels(query: normalizedModelSearch).isEmpty }
     }
 
     private var showsPendingSignInRows: Bool {
+        normalizedModelSearch.isEmpty && showsPendingSignInHarnesses
+    }
+
+    private var showsPendingSignInHarnesses: Bool {
         !environment.configCache.signInRequired(forServer: controller.project.serverId).isEmpty
-            && modelSearch.isEmpty
     }
 
     private func showHarnessSettings() {
@@ -153,224 +380,25 @@ private extension ModelConfigMenu {
         openSettings()
     }
 
-    private func modelGroup(_ group: HarnessGroup) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 6) {
-                HarnessIcon(
-                    harnessId: group.id,
-                    fallbackSymbolName: group.symbolName,
-                    size: 14
-                )
-                .frame(width: 16, height: 16)
-                Text(group.name)
-                    .font(.caption.weight(.semibold))
-            }
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 10)
-            .padding(.bottom, 2)
-
-            ForEach(matchingModels(in: group)) { model in
-                modelRow(model, in: group)
-            }
-        }
-    }
-
-    private func modelRow(_ model: SessionConfigSelectOption, in group: HarnessGroup) -> some View {
-        let isSelected = isCurrent(model, in: group)
-        return ModelMenuRow(
-            model: model,
-            isSelected: isSelected,
-            isDisabled: isSwitchingHarness
-        ) {
-            guard !isSelected else { return }
-            choose(model: model.value, in: group)
-        }
-    }
-
-    @ViewBuilder
-    private var settingsColumn: some View {
-        if isLoadingSettings {
-            VStack(spacing: 10) {
-                ProgressView()
-                    .controlSize(.small)
-                Text("Loading settings…")
-                    .font(.callout.weight(.medium))
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            VStack(alignment: .leading, spacing: 0) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Settings for")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(controller.modelOption?.currentName ?? "this model")
-                        .font(.headline)
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(14)
-
-                Divider()
-
-                if settingsOptions.isEmpty {
-                    VStack(spacing: 8) {
-                        Image(systemName: "slider.horizontal.3")
-                            .font(.title2)
-                            .foregroundStyle(.tertiary)
-                        Text("No additional settings")
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 18) {
-                            ForEach(settingsOptions) { option in
-                                settingControl(option)
-                            }
-                        }
-                        .padding(14)
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func settingControl(_ option: SessionConfigOption) -> some View {
-        if option.category == SessionConfigOption.Category.thoughtLevel, option.options.count > 1 {
-            reasoningControl(option)
-        } else if let toggleValues = toggleValues(for: option) {
-            Toggle(
-                isOn: Binding(
-                    get: {
-                        controller.configOptions.first { $0.id == option.id }?.currentValue
-                            == toggleValues.on
-                    },
-                    set: { isOn in
-                        Task {
-                            await controller.setConfigOption(
-                                option.id,
-                                isOn ? toggleValues.on : toggleValues.off
-                            )
-                        }
-                    }
-                )
-            ) {
-                settingLabel(option)
-            }
-            .toggleStyle(.switch)
-        } else {
-            VStack(alignment: .leading, spacing: 8) {
-                settingLabel(option)
-
-                if shouldUseSegments(option) {
-                    Picker(option.name, selection: selectionBinding(for: option)) {
-                        ForEach(option.options) { value in
-                            Text(value.name).tag(value.value)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
-                } else {
-                    Picker(option.name, selection: selectionBinding(for: option)) {
-                        ForEach(option.options) { value in
-                            Text(value.name).tag(value.value)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-        }
-    }
-
-    private func reasoningControl(_ option: SessionConfigOption) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline) {
-                settingLabel(option)
-                Spacer(minLength: 12)
-                Text(currentValueName(for: option))
-                    .font(.callout.weight(.medium))
-                    .foregroundStyle(.secondary)
-            }
-
-            Slider(
-                value: reasoningSelectionBinding(for: option),
-                in: 0...Double(max(option.options.count - 1, 0)),
-                step: 1
-            )
-            .accessibilityLabel(option.name)
-            .accessibilityValue(currentValueName(for: option))
-        }
-    }
-
-    private func settingLabel(_ option: SessionConfigOption) -> some View {
-        Text(option.name)
-            .font(.callout.weight(.medium))
-    }
-
-    private func selectionBinding(for option: SessionConfigOption) -> Binding<String> {
+    private func parameterSelectionBinding(
+        option: SessionConfigOption,
+        value: String
+    ) -> Binding<Bool> {
         Binding(
             get: {
-                controller.configOptions.first { $0.id == option.id }?.currentValue
+                let current =
+                    controller.configOptions.first { $0.id == option.id }?.currentValue
                     ?? option.currentValue
+                return current == value
             },
-            set: { value in
+            set: { isSelected in
+                guard isSelected else { return }
                 Task { await controller.setConfigOption(option.id, value) }
             }
         )
     }
 
-    private func reasoningSelectionBinding(for option: SessionConfigOption) -> Binding<Double> {
-        Binding(
-            get: {
-                Double(
-                    option.options.firstIndex { $0.value == currentValue(for: option) }
-                        ?? 0
-                )
-            },
-            set: { value in
-                let index = min(max(Int(value.rounded()), 0), option.options.count - 1)
-                let selection = option.options[index].value
-                guard selection != currentValue(for: option) else { return }
-                Task { await controller.setConfigOption(option.id, selection) }
-            }
-        )
-    }
-
-    private func currentValue(for option: SessionConfigOption) -> String {
-        controller.configOptions.first { $0.id == option.id }?.currentValue
-            ?? option.currentValue
-    }
-
-    private func currentValueName(for option: SessionConfigOption) -> String {
-        let value = currentValue(for: option)
-        return option.options.first { $0.value == value }?.name ?? value
-    }
-
-    private func toggleValues(for option: SessionConfigOption) -> (off: String, on: String)? {
-        guard option.category != SessionConfigOption.Category.speed,
-            option.options.count == 2
-        else { return nil }
-        let values = Dictionary(
-            uniqueKeysWithValues: option.options.map { ($0.value.lowercased(), $0.value) }
-        )
-        for pair in [("off", "on"), ("false", "true"), ("disabled", "enabled")] {
-            if let off = values[pair.0], let on = values[pair.1] {
-                return (off, on)
-            }
-        }
-        return nil
-    }
-
-    private func shouldUseSegments(_ option: SessionConfigOption) -> Bool {
-        option.options.count <= 4
-            && option.options.reduce(0) { $0 + $1.name.count } <= 34
-    }
-
-    private var modelGroups: [HarnessGroup] {
+    private var modelGroups: [ModelMenuGroup] {
         let serverId = controller.project.serverId
         if controller.canChooseHarness {
             // Derived straight from the per-machine cache: the list is
@@ -396,7 +424,7 @@ private extension ModelConfigMenu {
                         $0.category == SessionConfigOption.Category.model && !$0.options.isEmpty
                     })
                 else { return nil }
-                return HarnessGroup(
+                return ModelMenuGroup(
                     id: harness.id,
                     name: harness.name,
                     symbolName: harness.symbolName,
@@ -405,9 +433,11 @@ private extension ModelConfigMenu {
             }
         }
         guard let model = controller.modelOption else { return [] }
-        let harness = controller.selectedHarness
+        let harness =
+            controller.harnesses.first { $0.id == controller.activeHarnessId }
+            ?? controller.selectedHarness
         return [
-            HarnessGroup(
+            ModelMenuGroup(
                 id: controller.activeHarnessId ?? "active",
                 name: harness?.name ?? "Model",
                 symbolName: harness?.symbolName ?? "sparkle",
@@ -416,33 +446,22 @@ private extension ModelConfigMenu {
         ]
     }
 
-    private var filteredModelGroups: [HarnessGroup] {
-        modelGroups.filter { !matchingModels(in: $0).isEmpty }
-    }
-
-    private func matchingModels(in group: HarnessGroup) -> [SessionConfigSelectOption] {
-        guard !modelSearch.isEmpty else { return group.modelOption.options }
-        if group.name.localizedCaseInsensitiveContains(modelSearch) {
-            return group.modelOption.options
-        }
-        return group.modelOption.options.filter {
-            $0.name.localizedCaseInsensitiveContains(modelSearch)
-                || $0.value.localizedCaseInsensitiveContains(modelSearch)
-        }
-    }
-
-    private func isCurrent(_ model: SessionConfigSelectOption, in group: HarnessGroup) -> Bool {
+    private func isCurrent(
+        _ model: SessionConfigSelectOption,
+        in group: ModelMenuGroup
+    ) -> Bool {
         if let pendingModelValue, let pendingModelGroupId {
             return pendingModelGroupId == group.id && pendingModelValue == model.value
         }
-        return group.id == controller.activeHarnessId
+        return controller.activeHarnessId == group.id
             && group.modelOption.currentValue == model.value
     }
 
-    private func choose(model value: String, in group: HarnessGroup) {
+    private func choose(model value: String, in group: ModelMenuGroup) {
         isSwitchingHarness = true
         pendingModelValue = value
         pendingModelGroupId = group.id
+        isPresented = false
         Task {
             if controller.activeHarnessId != group.id, controller.canChooseHarness {
                 await controller.selectHarness(group.id)
@@ -482,70 +501,56 @@ private extension ModelConfigMenu {
             }
     }
 
-    private var accessibilityValue: String {
-        ([controller.modelOption?.currentName].compactMap { $0 }
-            + settingsOptions.map { "\($0.name), \($0.currentName)" })
+    private var parameterAccessibilityValue: String {
+        let summary = summarizedSettingsOptions.map { "\($0.name), \($0.currentName)" }
             .joined(separator: ", ")
+        return summary.isEmpty ? "Default" : summary
     }
 
-    private var chipLabel: some View {
+    private var summarizedSettingsOptions: [SessionConfigOption] {
+        settingsOptions.filter { option in
+            let isSpeed =
+                option.category == SessionConfigOption.Category.speed
+                || option.id == "speed"
+            return !isSpeed
+                || option.currentValue != "standard"
+        }
+    }
+
+    private var parameterChipSummary: String {
+        let summary = summarizedSettingsOptions.map(\.currentName).joined(separator: " · ")
+        return summary.isEmpty ? "Options" : summary
+    }
+
+    private var modelChipLabel: some View {
         HStack(spacing: 5) {
+            if let group = activeModelGroup {
+                HarnessIcon(harnessId: group.id, fallbackSymbolName: group.symbolName, size: 14)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16, height: 16)
+                    .accessibilityHidden(true)
+            }
+
             if let model = controller.modelOption {
                 Text(model.currentName)
                     .foregroundStyle(.primary)
-            } else if controller.thoughtLevelOptions.isEmpty {
-                // No selectable models on this machine yet — say what the
-                // click does instead of showing bare chevrons.
+            } else {
                 Text("Select a harness")
-                    .foregroundStyle(.secondary)
-            }
-            ForEach(controller.thoughtLevelOptions) { option in
-                Text(option.currentName)
                     .foregroundStyle(.secondary)
             }
         }
         .contentShape(Rectangle())
     }
-}
 
-private struct ModelMenuRow: View {
-    let model: SessionConfigSelectOption
-    let isSelected: Bool
-    let isDisabled: Bool
-    let action: () -> Void
-
-    @State private var isHovered = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 9) {
-                Text(model.name)
-                    .lineLimit(1)
-                    .foregroundStyle(.primary)
-                Spacer(minLength: 8)
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.tint)
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 7)
-                    .fill(backgroundColor)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 7))
-        }
-        .buttonStyle(.plain)
-        .disabled(isDisabled)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .onHover { isHovered = $0 }
+    private var activeModelGroup: ModelMenuGroup? {
+        guard let activeHarnessId = controller.activeHarnessId else { return modelGroups.first }
+        return modelGroups.first { $0.id == activeHarnessId } ?? modelGroups.first
     }
 
-    private var backgroundColor: Color {
-        if isSelected { return Color.accentColor.opacity(0.14) }
-        return isHovered ? Color.primary.opacity(0.06) : .clear
+    private var parameterChipLabel: some View {
+        Text(parameterChipSummary)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .contentShape(Rectangle())
     }
 }
