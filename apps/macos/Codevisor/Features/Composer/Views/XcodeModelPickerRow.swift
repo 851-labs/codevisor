@@ -7,39 +7,72 @@ struct XcodeModelPickerRow: View {
     let isSelected: Bool
     let isKeyboardHighlighted: Bool
     let isDisabled: Bool
+    let favoriteAction: ModelPickerFavoriteAction
     let onHover: (Bool) -> Void
+    let onFavoriteAction: () -> Void
     let action: () -> Void
 
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 0) {
-                Text(title)
-                    .font(XcodeModelPickerMetrics.menuFont)
-                    .lineLimit(1)
+    @State private var isHovering = false
 
-                Spacer(minLength: 8)
-            }
-            .foregroundStyle(isKeyboardHighlighted ? Color.white : Color.primary)
-            .padding(.horizontal, XcodeModelPickerMetrics.rowHorizontalInset)
-            .frame(height: XcodeModelPickerMetrics.rowHeight)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                if isKeyboardHighlighted {
-                    XcodeMenuSelectionBackground()
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            Button(action: action) {
+                HStack(spacing: 0) {
+                    Text(title)
+                        .font(XcodeModelPickerMetrics.menuFont)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 8)
                 }
-            }
-            .contentShape(
-                RoundedRectangle(
-                    cornerRadius: XcodeModelPickerMetrics.rowCornerRadius,
-                    style: .continuous
+                .foregroundStyle(isKeyboardHighlighted ? Color.white : Color.primary)
+                .padding(.leading, XcodeModelPickerMetrics.rowHorizontalInset)
+                .padding(
+                    .trailing,
+                    XcodeModelPickerMetrics.rowHorizontalInset
+                        + XcodeModelPickerMetrics.rowFavoriteActionWidth
                 )
-            )
+                .frame(height: XcodeModelPickerMetrics.rowHeight)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background {
+                    if isKeyboardHighlighted {
+                        XcodeMenuSelectionBackground()
+                    }
+                }
+                .contentShape(
+                    RoundedRectangle(
+                        cornerRadius: XcodeModelPickerMetrics.rowCornerRadius,
+                        style: .continuous
+                    )
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+            .accessibilityAction(named: favoriteAction.label) {
+                onFavoriteAction()
+            }
+
+            if isHovering, !isDisabled {
+                Button(action: onFavoriteAction) {
+                    Image(systemName: favoriteAction.symbolName)
+                        .font(.system(size: 11, weight: .regular))
+                        .frame(
+                            width: XcodeModelPickerMetrics.rowFavoriteActionWidth,
+                            height: XcodeModelPickerMetrics.rowHeight
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(isKeyboardHighlighted ? Color.white : Color.secondary)
+                .padding(.trailing, XcodeModelPickerMetrics.rowFavoriteActionTrailingInset)
+                .help(favoriteAction.label)
+            }
         }
-        .buttonStyle(.plain)
         .disabled(isDisabled)
         .opacity(isDisabled ? 0.55 : 1)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .onHover(perform: onHover)
+        .onHover { isHovering in
+            self.isHovering = isHovering
+            onHover(isHovering)
+        }
     }
 }
 

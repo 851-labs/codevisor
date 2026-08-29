@@ -13,6 +13,8 @@ struct ModelConfigMenu: View {
     /// Presents the sign-in sheet for a fleet-enabled harness blocked on auth.
     var onSignIn: ((ServerHarness) -> Void)? = nil
 
+    @ClientPreference("composer.favoriteModels", default: [])
+    private var favoriteModelIDs: [ModelPickerFavorite]
     @State private var isPresented = false
     @State private var modelSearch = ""
     @State private var isSwitchingHarness = false
@@ -101,7 +103,9 @@ private extension ModelConfigMenu {
             modelSearchField
 
             Group {
-                if filteredModelGroups.isEmpty, !showsPendingSignInRows {
+                if resolvedFavoriteModels.isEmpty, filteredModelGroups.isEmpty,
+                    !showsPendingSignInRows
+                {
                     Text("No matching models")
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
@@ -110,6 +114,10 @@ private extension ModelConfigMenu {
                     ScrollViewReader { proxy in
                         ScrollView {
                             LazyVStack(alignment: .leading, spacing: 6) {
+                                if !resolvedFavoriteModels.isEmpty {
+                                    favoritesSection
+                                }
+
                                 ForEach(filteredModelGroups) { group in
                                     modelGroup(group)
                                 }
@@ -190,65 +198,63 @@ private extension ModelConfigMenu {
     }
 
     private func modelGroup(_ group: ModelMenuGroup) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(group.name)
-                .font(XcodeModelPickerMetrics.sectionFont)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, XcodeModelPickerMetrics.modelSectionTitleInset)
-                .padding(.top, 8)
-                .padding(.bottom, 4)
+        modelSection(
+            title: group.name,
+            items: visibleModels(in: group).map {
+                ModelPickerModelItem(group: group, model: $0)
+            },
+            favoriteAction: .add
+        )
+    }
 
-            ForEach(group.matchingModels(query: normalizedModelSearch)) { model in
-                let isSelected = isCurrent(model, in: group)
-                XcodeModelPickerRow(
-                    title: model.name,
-                    isSelected: isSelected,
-                    isKeyboardHighlighted: highlightedTarget == modelTarget(model, in: group),
-                    isDisabled: isSwitchingHarness,
-                    onHover: { isHovering in
-                        updateHoverTarget(
-                            modelTarget(model, in: group),
-                            isHovering: isHovering
-                        )
-                    }
-                ) {
-                    if isSelected {
-                        isPresented = false
-                    } else {
-                        choose(model: model.value, in: group)
-                    }
+    private var favoritesSection: some View {
+        modelSection(
+            title: "Favorites",
+            items: resolvedFavoriteModels,
+            favoriteAction: .remove
+        )
+    }
+
+    private func modelSection(
+        title: String,
+        items: [ModelPickerModelItem],
+        favoriteAction: ModelPickerFavoriteAction
+    ) -> some View {
+        ModelPickerModelSection(
+            title: title,
+            items: items,
+            favoriteAction: favoriteAction,
+            highlightedTarget: highlightedTarget,
+            isDisabled: isSwitchingHarness,
+            isSelected: { isCurrent($0.model, in: $0.group) },
+            onHover: { updateHoverTarget($0, isHovering: $1) },
+            onFavoriteAction: { item in
+                switch favoriteAction {
+                case .add: favorite(item.model, in: item.group)
+                case .remove: unfavorite(ModelPickerFavorite(model: item.model, group: item.group))
                 }
-                .id(modelTarget(model, in: group))
-            }
-        }
+            },
+            onSelect: selectModelItem
+        )
     }
 
     private var signInRequiredSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Sign in required")
-                .font(XcodeModelPickerMetrics.sectionFont)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, XcodeModelPickerMetrics.harnessSectionTitleInset)
-                .padding(.top, 8)
-                .padding(.bottom, 4)
-
-            ForEach(
-                signInRequiredHarnesses,
-                id: \.id
-            ) { harness in
-                let target = ModelPickerKeyboardTarget.signIn(harnessID: harness.id)
-                XcodeHarnessSignInRow(
-                    harness: harness,
-                    isKeyboardHighlighted: highlightedTarget == target,
-                    onHover: { isHovering in
-                        updateHoverTarget(target, isHovering: isHovering)
-                    }
-                ) {
-                    isPresented = false
-                    onSignIn?(harness)
-                }
-                .id(target)
+        ModelPickerSignInSection(
+            harnesses: signInRequiredHarnesses,
+            highlightedTarget: highlightedTarget,
+            onHover: { updateHoverTarget($0, isHovering: $1) },
+            onSelect: { harness in
+                isPresented = false
+                onSignIn?(harness)
             }
+        )
+    }
+
+    private func selectModelItem(_ item: ModelPickerModelItem) {
+        if isCurrent(item.model, in: item.group) {
+            isPresented = false
+        } else {
+            choose(model: item.model.value, in: item.group)
         }
     }
 
@@ -257,9 +263,14 @@ private extension ModelConfigMenu {
     }
 
     private var visibleKeyboardTargets: [ModelPickerKeyboardTarget] {
-        var targets = filteredModelGroups.flatMap { group in
-            group.matchingModels(query: normalizedModelSearch).map { modelTarget($0, in: group) }
+        var targets = resolvedFavoriteModels.map {
+            modelTarget($0.model, in: $0.group)
         }
+        targets.append(
+            contentsOf: filteredModelGroups.flatMap { group in
+                visibleModels(in: group).map { modelTarget($0, in: group) }
+            }
+        )
         if showsPendingSignInRows {
             targets.append(
                 contentsOf: signInRequiredHarnesses.map {
@@ -322,8 +333,9 @@ private extension ModelConfigMenu {
         switch keyboardTarget {
         case let .model(groupID, value):
             guard
-                let group = filteredModelGroups.first(where: { $0.id == groupID }),
-                let model = group.matchingModels(query: normalizedModelSearch).first(where: {
+                visibleKeyboardTargets.contains(keyboardTarget),
+                let group = modelGroups.first(where: { $0.id == groupID }),
+                let model = group.modelOption.options.first(where: {
                     $0.value == value
                 })
             else { return }
@@ -363,7 +375,40 @@ private extension ModelConfigMenu {
     }
 
     private var filteredModelGroups: [ModelMenuGroup] {
-        modelGroups.filter { !$0.matchingModels(query: normalizedModelSearch).isEmpty }
+        modelCatalog.regularGroups
+    }
+
+    private var resolvedFavoriteModels: [ModelPickerModelItem] {
+        modelCatalog.favorites
+    }
+
+    private func visibleModels(in group: ModelMenuGroup) -> [SessionConfigSelectOption] {
+        modelCatalog.regularModels(in: group)
+    }
+
+    private var modelCatalog: ModelPickerCatalog {
+        ModelPickerCatalog(
+            groups: modelGroups,
+            favoriteIDs: favoriteModelIDs,
+            query: normalizedModelSearch
+        )
+    }
+
+    private func favorite(_ model: SessionConfigSelectOption, in group: ModelMenuGroup) {
+        let favorite = ModelPickerFavorite(model: model, group: group)
+        guard !favoriteModelIDs.contains(favorite) else { return }
+        clearModelHighlight()
+        favoriteModelIDs = favoriteModelIDs + [favorite]
+    }
+
+    private func unfavorite(_ favorite: ModelPickerFavorite) {
+        clearModelHighlight()
+        favoriteModelIDs = favoriteModelIDs.filter { $0 != favorite }
+    }
+
+    private func clearModelHighlight() {
+        hoverTarget = nil
+        keyboardTarget = nil
     }
 
     private var showsPendingSignInRows: Bool {
@@ -475,30 +520,10 @@ private extension ModelConfigMenu {
         }
     }
 
-    private var isLoadingSettings: Bool {
-        isSwitchingHarness || controller.isResolvingModelConfiguration
-    }
+    private var isLoadingSettings: Bool { isSwitchingHarness || controller.isResolvingModelConfiguration }
 
     private var settingsOptions: [SessionConfigOption] {
-        let order = [
-            SessionConfigOption.Category.thoughtLevel: 0,
-            SessionConfigOption.Category.speed: 1,
-            SessionConfigOption.Category.modelConfig: 2,
-        ]
-        return controller.configOptions
-            .filter { option in
-                !option.options.isEmpty
-                    && option.category != SessionConfigOption.Category.model
-                    && option.category != SessionConfigOption.Category.mode
-                    && option.id != "model"
-                    && option.id != "mode"
-            }
-            .sorted { left, right in
-                let leftOrder = order[left.category ?? ""] ?? 99
-                let rightOrder = order[right.category ?? ""] ?? 99
-                if leftOrder == rightOrder { return left.name < right.name }
-                return leftOrder < rightOrder
-            }
+        ModelParameterMenu.options(from: controller.configOptions)
     }
 
     private var parameterAccessibilityValue: String {
@@ -508,13 +533,7 @@ private extension ModelConfigMenu {
     }
 
     private var summarizedSettingsOptions: [SessionConfigOption] {
-        settingsOptions.filter { option in
-            let isSpeed =
-                option.category == SessionConfigOption.Category.speed
-                || option.id == "speed"
-            return !isSpeed
-                || option.currentValue != "standard"
-        }
+        ModelParameterMenu.summarized(settingsOptions)
     }
 
     private var parameterChipSummary: String {
@@ -523,23 +542,10 @@ private extension ModelConfigMenu {
     }
 
     private var modelChipLabel: some View {
-        HStack(spacing: 5) {
-            if let group = activeModelGroup {
-                HarnessIcon(harnessId: group.id, fallbackSymbolName: group.symbolName, size: 14)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 16, height: 16)
-                    .accessibilityHidden(true)
-            }
-
-            if let model = controller.modelOption {
-                Text(model.currentName)
-                    .foregroundStyle(.primary)
-            } else {
-                Text("Select a harness")
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .contentShape(Rectangle())
+        ModelPickerChipLabel(
+            group: activeModelGroup,
+            modelName: controller.modelOption?.currentName
+        )
     }
 
     private var activeModelGroup: ModelMenuGroup? {

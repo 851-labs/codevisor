@@ -33,6 +33,8 @@ enum XcodeModelPickerMetrics {
     static let rowHeight: CGFloat = 24
     static let rowCornerRadius: CGFloat = 6
     static let rowHorizontalInset: CGFloat = 11
+    static let rowFavoriteActionWidth: CGFloat = 22
+    static let rowFavoriteActionTrailingInset: CGFloat = 2
     static let stateColumnWidth: CGFloat = 18
     static let stateTitleSpacing: CGFloat = 4
     static let modelSectionTitleInset = rowHorizontalInset
@@ -66,6 +68,7 @@ enum XcodeModelPickerMetrics {
         let regularRowChrome =
             (2 * listHorizontalInset)
             + (2 * rowHorizontalInset)
+            + rowFavoriteActionWidth
             + 8
         let regularTitles =
             modelGroups.flatMap { group in
