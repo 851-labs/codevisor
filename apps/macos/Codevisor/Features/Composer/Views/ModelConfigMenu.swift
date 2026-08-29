@@ -10,8 +10,6 @@ struct ModelConfigMenu: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.openSettings) private var openSettings
     @Bindable var controller: SessionController
-    /// Presents the sign-in sheet for a fleet-enabled harness blocked on auth.
-    var onSignIn: ((ServerHarness) -> Void)? = nil
 
     @ClientPreference("composer.favoriteModels", default: [])
     private var favoriteModelIDs: [ModelPickerFavorite]
@@ -33,12 +31,9 @@ struct ModelConfigMenu: View {
                 .frame(minWidth: 96)
                 .help("Loading model settings")
                 .accessibilityLabel("Loading model settings")
-        } else if !modelGroups.isEmpty || controller.hasModelMenu || !settingsOptions.isEmpty
-            || !environment.configCache.signInRequired(forServer: controller.project.serverId)
-                .isEmpty
-        {
+        } else if !modelGroups.isEmpty || !settingsOptions.isEmpty {
             HStack(spacing: 10) {
-                if !modelGroups.isEmpty || showsPendingSignInHarnesses {
+                if !modelGroups.isEmpty {
                     modelButton
                 }
                 if !settingsOptions.isEmpty {
@@ -103,9 +98,7 @@ private extension ModelConfigMenu {
             modelSearchField
 
             Group {
-                if resolvedFavoriteModels.isEmpty, filteredModelGroups.isEmpty,
-                    !showsPendingSignInRows
-                {
+                if resolvedFavoriteModels.isEmpty, filteredModelGroups.isEmpty {
                     Text("No matching models")
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
@@ -120,10 +113,6 @@ private extension ModelConfigMenu {
 
                                 ForEach(filteredModelGroups) { group in
                                     modelGroup(group)
-                                }
-
-                                if showsPendingSignInRows {
-                                    signInRequiredSection
                                 }
                             }
                             .padding(
@@ -238,28 +227,12 @@ private extension ModelConfigMenu {
         )
     }
 
-    private var signInRequiredSection: some View {
-        ModelPickerSignInSection(
-            harnesses: signInRequiredHarnesses,
-            highlightedTarget: highlightedTarget,
-            onHover: { updateHoverTarget($0, isHovering: $1) },
-            onSelect: { harness in
-                isPresented = false
-                onSignIn?(harness)
-            }
-        )
-    }
-
     private func selectModelItem(_ item: ModelPickerModelItem) {
         if isCurrent(item.model, in: item.group) {
             isPresented = false
         } else {
             choose(model: item.model.value, in: item.group)
         }
-    }
-
-    private var signInRequiredHarnesses: [ServerHarness] {
-        environment.configCache.signInRequired(forServer: controller.project.serverId)
     }
 
     private var visibleKeyboardTargets: [ModelPickerKeyboardTarget] {
@@ -271,13 +244,6 @@ private extension ModelConfigMenu {
                 visibleModels(in: group).map { modelTarget($0, in: group) }
             }
         )
-        if showsPendingSignInRows {
-            targets.append(
-                contentsOf: signInRequiredHarnesses.map {
-                    .signIn(harnessID: $0.id)
-                }
-            )
-        }
         targets.append(.manageHarnesses)
         return targets
     }
@@ -344,12 +310,6 @@ private extension ModelConfigMenu {
             } else {
                 choose(model: value, in: group)
             }
-        case let .signIn(harnessID):
-            guard let harness = signInRequiredHarnesses.first(where: { $0.id == harnessID }) else {
-                return
-            }
-            isPresented = false
-            onSignIn?(harness)
         case .manageHarnesses:
             showHarnessSettings()
         }
@@ -368,10 +328,7 @@ private extension ModelConfigMenu {
     }
 
     private var modelPickerPopoverWidth: CGFloat {
-        XcodeModelPickerMetrics.popoverWidth(
-            for: modelGroups,
-            signInHarnesses: signInRequiredHarnesses
-        )
+        XcodeModelPickerMetrics.popoverWidth(for: modelGroups)
     }
 
     private var filteredModelGroups: [ModelMenuGroup] {
@@ -409,14 +366,6 @@ private extension ModelConfigMenu {
     private func clearModelHighlight() {
         hoverTarget = nil
         keyboardTarget = nil
-    }
-
-    private var showsPendingSignInRows: Bool {
-        normalizedModelSearch.isEmpty && showsPendingSignInHarnesses
-    }
-
-    private var showsPendingSignInHarnesses: Bool {
-        !environment.configCache.signInRequired(forServer: controller.project.serverId).isEmpty
     }
 
     private func showHarnessSettings() {

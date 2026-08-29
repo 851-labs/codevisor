@@ -35,11 +35,7 @@ enum XcodeModelPickerMetrics {
     static let rowHorizontalInset: CGFloat = 11
     static let rowFavoriteActionWidth: CGFloat = 22
     static let rowFavoriteActionTrailingInset: CGFloat = 2
-    static let stateColumnWidth: CGFloat = 18
-    static let stateTitleSpacing: CGFloat = 4
     static let modelSectionTitleInset = rowHorizontalInset
-    static let harnessSectionTitleInset =
-        rowHorizontalInset + stateColumnWidth + stateTitleSpacing
     static let footerHorizontalInset = listHorizontalInset
     static let footerVerticalInset = listHorizontalInset
     static let footerTitleInset = rowHorizontalInset
@@ -61,10 +57,7 @@ enum XcodeModelPickerMetrics {
         )
     }
 
-    static func popoverWidth(
-        for modelGroups: [ModelMenuGroup],
-        signInHarnesses: [ServerHarness]
-    ) -> CGFloat {
+    static func popoverWidth(for modelGroups: [ModelMenuGroup]) -> CGFloat {
         let regularRowChrome =
             (2 * listHorizontalInset)
             + (2 * rowHorizontalInset)
@@ -78,20 +71,8 @@ enum XcodeModelPickerMetrics {
             max(width, menuTextWidth(title) + regularRowChrome)
         }
 
-        let signInRowChrome =
-            (2 * listHorizontalInset)
-            + (2 * rowHorizontalInset)
-            + stateColumnWidth
-            + 16
-            + (4 * stateTitleSpacing)
-            + 8
-            + menuTextWidth("Sign In")
-        let widestSignInRow = signInHarnesses.reduce(CGFloat.zero) { width, harness in
-            max(width, menuTextWidth(harness.name) + signInRowChrome)
-        }
-
         return min(
-            max(ceil(max(widestRegularRow, widestSignInRow)), popoverMinimumWidth),
+            max(ceil(widestRegularRow), popoverMinimumWidth),
             popoverMaximumWidth
         )
     }

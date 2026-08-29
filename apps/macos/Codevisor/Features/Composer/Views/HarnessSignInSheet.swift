@@ -3,19 +3,15 @@ import SwiftUI
 
 /// The in-flow sign-in surface: presents the full harness authentication
 /// experience (browser, device-code, or API-key flows) for ONE harness on
-/// ONE machine, wherever the need surfaces — the composer's model picker,
-/// an auth-dead chat — so nobody has to know Settings exists to get a
-/// fleet machine working. Reuses the settings/onboarding authentication
-/// view verbatim, pinned to the target machine.
+/// ONE machine when an auth-dead chat needs it. Reuses the
+/// settings/onboarding authentication view verbatim, pinned to the target
+/// machine.
 struct HarnessSignInSheet: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.dismiss) private var dismiss
 
     let serverId: String
     let harnessId: String
-    /// Skips the lookup when the presenter already holds the harness row.
-    var initialHarness: ServerHarness? = nil
-
     @State private var harness: ServerHarness?
     @State private var loadFailed = false
 
@@ -37,10 +33,6 @@ struct HarnessSignInSheet: View {
         .environment(\.settingsMachineId, serverId)
         .task {
             guard harness == nil else { return }
-            if let initialHarness {
-                harness = initialHarness
-                return
-            }
             harness = try? await environment.machines.client(for: serverId)
                 .listHarnesses()
                 .first { $0.id == harnessId }
@@ -95,11 +87,6 @@ struct HarnessSignInTarget: Identifiable {
     var id: String { harnessId }
 }
 
-struct PendingHarnessSignIn: Identifiable {
-    let harness: ServerHarness
-    var id: String { harness.id }
-}
-
 extension View {
     /// Presents the sign-in sheet bound to an optional harness id (auth-dead
     /// chats know only the id).
@@ -112,62 +99,5 @@ extension View {
         ) { target in
             HarnessSignInSheet(serverId: serverId, harnessId: target.harnessId)
         }
-    }
-
-    /// Presents the sign-in sheet for a harness row the picker already holds.
-    func harnessSignInSheet(harness: Binding<ServerHarness?>, serverId: String) -> some View {
-        sheet(
-            item: Binding(
-                get: { harness.wrappedValue.map(PendingHarnessSignIn.init(harness:)) },
-                set: { harness.wrappedValue = $0?.harness }
-            )
-        ) { pending in
-            HarnessSignInSheet(
-                serverId: serverId,
-                harnessId: pending.harness.id,
-                initialHarness: pending.harness
-            )
-        }
-    }
-}
-
-/// The model picker's "sign in required" rows for fleet-enabled harnesses
-/// blocked on auth — selection hands the harness to the sign-in sheet.
-struct SignInRequiredRows: View {
-    let harnesses: [ServerHarness]
-    let onSelect: (ServerHarness) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("Sign in required")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 14)
-                .padding(.top, 10)
-            ForEach(harnesses, id: \.id) { harness in
-                Button {
-                    onSelect(harness)
-                } label: {
-                    HStack(spacing: 8) {
-                        HarnessIcon(
-                            harnessId: harness.id,
-                            fallbackSymbolName: harness.symbolName,
-                            size: 14
-                        )
-                        .frame(width: 16, height: 16)
-                        Text(harness.name)
-                        Spacer(minLength: 8)
-                        Text("Sign In")
-                            .foregroundStyle(.tint)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 6)
-                .help("Sign in to \(harness.name) on this machine")
-            }
-        }
-        .padding(.bottom, 6)
     }
 }

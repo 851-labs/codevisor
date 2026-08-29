@@ -1,5 +1,4 @@
 import AppKit
-import CodevisorCore
 import SwiftUI
 
 struct XcodeModelPickerRow: View {
@@ -73,59 +72,6 @@ struct XcodeModelPickerRow: View {
             self.isHovering = isHovering
             onHover(isHovering)
         }
-    }
-}
-
-struct XcodeHarnessSignInRow: View {
-    let harness: ServerHarness
-    let isKeyboardHighlighted: Bool
-    let onHover: (Bool) -> Void
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: XcodeModelPickerMetrics.stateTitleSpacing) {
-                Color.clear
-                    .frame(width: XcodeModelPickerMetrics.stateColumnWidth, height: 1)
-
-                HarnessIcon(
-                    harnessId: harness.id,
-                    fallbackSymbolName: harness.symbolName,
-                    size: 14
-                )
-                .frame(width: 16, height: 16)
-
-                Text(harness.name)
-                    .font(XcodeModelPickerMetrics.menuFont)
-                    .lineLimit(1)
-
-                Spacer(minLength: 8)
-
-                Text("Sign In")
-                    .font(XcodeModelPickerMetrics.menuFont)
-                    .foregroundStyle(
-                        isKeyboardHighlighted ? Color.white : Color.accentColor
-                    )
-            }
-            .foregroundStyle(isKeyboardHighlighted ? Color.white : Color.primary)
-            .padding(.horizontal, XcodeModelPickerMetrics.rowHorizontalInset)
-            .frame(height: XcodeModelPickerMetrics.rowHeight)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                if isKeyboardHighlighted {
-                    XcodeMenuSelectionBackground()
-                }
-            }
-            .contentShape(
-                RoundedRectangle(
-                    cornerRadius: XcodeModelPickerMetrics.rowCornerRadius,
-                    style: .continuous
-                )
-            )
-        }
-        .buttonStyle(.plain)
-        .onHover(perform: onHover)
-        .help("Sign in to \(harness.name) on this machine")
     }
 }
 

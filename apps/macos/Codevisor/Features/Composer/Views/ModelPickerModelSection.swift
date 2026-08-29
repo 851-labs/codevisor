@@ -1,5 +1,4 @@
 import ACPKit
-import CodevisorCore
 import SwiftUI
 
 struct ModelPickerModelSection: View {
@@ -34,35 +33,6 @@ struct ModelPickerModelSection: View {
                     action: { onSelect(item) }
                 )
                 .id(item.id)
-            }
-        }
-    }
-}
-
-struct ModelPickerSignInSection: View {
-    let harnesses: [ServerHarness]
-    let highlightedTarget: ModelPickerKeyboardTarget?
-    let onHover: (ModelPickerKeyboardTarget, Bool) -> Void
-    let onSelect: (ServerHarness) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Sign in required")
-                .font(XcodeModelPickerMetrics.sectionFont)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, XcodeModelPickerMetrics.harnessSectionTitleInset)
-                .padding(.top, 8)
-                .padding(.bottom, 4)
-
-            ForEach(harnesses, id: \.id) { harness in
-                let target = ModelPickerKeyboardTarget.signIn(harnessID: harness.id)
-                XcodeHarnessSignInRow(
-                    harness: harness,
-                    isKeyboardHighlighted: highlightedTarget == target,
-                    onHover: { onHover(target, $0) },
-                    action: { onSelect(harness) }
-                )
-                .id(target)
             }
         }
     }

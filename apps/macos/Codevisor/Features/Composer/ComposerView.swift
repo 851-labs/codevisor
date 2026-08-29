@@ -16,7 +16,6 @@ extension EnvironmentValues {
 /// (models grouped by harness plus every model-owned setting), active modes,
 /// and a send button.
 struct ComposerCard: View {
-    @State private var signInHarness: ServerHarness?
     static let cornerRadius = ComposerGlassStyle.composerCornerRadius
 
     @Bindable var controller: SessionController
@@ -98,8 +97,15 @@ struct ComposerCard: View {
         .overlay(alignment: .top) {
             ZStack(alignment: .top) {
                 if controller.activeQuestion == nil, showsSlashCommandPopup {
-                    slashCommandPopup
-                        .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
+                    ComposerSlashCommandPopup(
+                        isLoading: isLoadingSlashCommands,
+                        matches: visibleSlashMatches,
+                        selectedIndex: slashSelection,
+                        height: paletteHeight,
+                        onContentHeightChange: { slashMenuContentHeight = $0 },
+                        onSelect: acceptSlashCommand
+                    )
+                    .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
                 }
             }
             // Lift the palette's own (measured) height plus one cluster gap
@@ -207,13 +213,7 @@ private extension ComposerCard {
                     }
                 } else {
                     attachButton
-                    ModelConfigMenu(controller: controller) { harness in
-                        signInHarness = harness
-                    }
-                    .harnessSignInSheet(
-                        harness: $signInHarness,
-                        serverId: controller.project.serverId
-                    )
+                    ModelConfigMenu(controller: controller)
                     // Active modes show as removable chips (turned on via
                     // the /plan and /goal slash commands).
                     if controller.hasPlanMode, controller.isPlanModeOn {
@@ -259,89 +259,6 @@ private extension ComposerCard {
 
     private var isQuestionResolving: Bool {
         didStartResolvingQuestion || controller.isResolvingQuestion
-    }
-
-    @ViewBuilder
-    private var slashCommandPopup: some View {
-        if isLoadingSlashCommands {
-            HStack(spacing: 8) {
-                ProgressView()
-                    .controlSize(.small)
-                Text("Connecting to harness…")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .onGeometryChange(for: CGFloat.self) {
-                $0.size.height
-            } action: {
-                slashMenuContentHeight = $0
-            }
-            .composerGlassSurface(cornerRadius: ComposerGlassStyle.accessoryCornerRadius)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Connecting to harness")
-        } else if !visibleSlashMatches.isEmpty {
-            let matches = visibleSlashMatches
-            let selectedIndex = min(slashSelection, matches.count - 1)
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 2) {
-                        ForEach(Array(matches.enumerated()), id: \.element.id) { index, command in
-                            slashCommandRow(command, isSelected: index == selectedIndex)
-                                .id(command.id)
-                        }
-                    }
-                    .padding(6)
-                    .onGeometryChange(for: CGFloat.self) {
-                        $0.size.height
-                    } action: {
-                        slashMenuContentHeight = $0
-                    }
-                }
-                .frame(height: paletteHeight)
-                .onChange(of: selectedIndex) { _, index in
-                    guard matches.indices.contains(index) else { return }
-                    proxy.scrollTo(matches[index].id)
-                }
-            }
-            .composerGlassSurface(cornerRadius: ComposerGlassStyle.accessoryCornerRadius)
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel("Slash commands")
-            .accessibilityHint("Use the up and down arrows to choose a command, Return to accept, Escape to close")
-        }
-    }
-
-    private func slashCommandRow(_ command: ComposerSlashItem, isSelected: Bool) -> some View {
-        Button {
-            acceptSlashCommand(command)
-        } label: {
-            HStack(spacing: 10) {
-                Text("/\(command.name)")
-                    .fontWeight(.medium)
-                Text(command.description)
-                    .lineLimit(1)
-                    .foregroundStyle(isSelected ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.secondary))
-                Spacer(minLength: 0)
-                if let hint = command.hint {
-                    Text(hint)
-                        .lineLimit(1)
-                        .foregroundStyle(isSelected ? AnyShapeStyle(.white.opacity(0.7)) : AnyShapeStyle(.tertiary))
-                }
-            }
-            .foregroundStyle(isSelected ? Color.white : Color.primary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(isSelected ? theme.accent : .clear)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 6))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("/\(command.name), \(command.description)")
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     /// Leaves edit-goal mode without changing the goal (the banner returns).

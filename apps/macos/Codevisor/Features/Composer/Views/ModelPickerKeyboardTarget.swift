@@ -3,7 +3,6 @@ import SwiftUI
 
 enum ModelPickerKeyboardTarget: Hashable {
     case model(groupID: String, value: String)
-    case signIn(harnessID: String)
     case manageHarnesses
 }
 
