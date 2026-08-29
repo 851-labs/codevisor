@@ -5,8 +5,7 @@ import SwiftUI
 ///
 /// - Springs for all movement — interruptible and retargetable with no hard
 ///   stops, so a mid-flight re-tap or auto-collapse redirects smoothly instead
-///   of jumping. Disclosure reveals use `.smooth` (zero bounce): their content
-///   is clipped while height animates, so any overshoot would visibly clip.
+///   of jumping. Disclosure layout commits atomically; only its pixels animate.
 /// - One shared timing per element class, instead of per-call-site durations.
 /// - Reduce Motion honored — SwiftUI does NOT do this automatically for
 ///   `withAnimation`/`.animation`. Animation tokens return `nil` (commit
@@ -16,18 +15,7 @@ import SwiftUI
 public enum Motion {
     // MARK: - Animations
 
-    /// Disclosure content reveal: the measured height + opacity unfold driven
-    /// by `TranscriptDisclosureContentReveal`.
-    public static func reveal(reduceMotion: Bool = false) -> Animation? {
-        reduceMotion ? nil : .smooth(duration: 0.25)
-    }
-
-    /// How long the reveal's phase machine waits before settling to natural
-    /// height — past the spring's perceptual duration so the settle never
-    /// lands mid-animation.
-    public static let revealSettleDelay: Duration = .milliseconds(300)
-
-    /// Entrance of freshly revealed worked content (fade + slight drift).
+    /// Entrance of freshly revealed disclosure content (fade + slight drift).
     public static func entrance(reduceMotion: Bool = false) -> Animation? {
         reduceMotion ? nil : .smooth(duration: 0.2)
     }

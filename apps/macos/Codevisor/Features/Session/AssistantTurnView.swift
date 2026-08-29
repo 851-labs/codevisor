@@ -437,10 +437,6 @@ struct AssistantTurnView: View {
                         if expanded {
                             store.setExpanded(key, false)
                         } else {
-                            store.requestReveal(
-                                key,
-                                presentationKey: textAnimationVisibility?.presentationKey
-                            )
                             store.setExpanded(key, true)
                         }
                         invalidateRowMeasurement?()
@@ -458,31 +454,27 @@ struct AssistantTurnView: View {
             // its collapsed and expanded states.
             Divider()
 
-            if expanded && (!items.isEmpty || turn.hasDeferredWorkedDetails) {
-                WorkedContentReveal(
-                    key: key,
-                    store: store,
-                    presentationKey: textAnimationVisibility?.presentationKey
-                ) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        // Answered questions ride here too: the reducer synthesizes
-                        // a tool call for each, so they group and render inline with
-                        // the other tool calls that surround them.
-                        if turn.hasDeferredWorkedDetails,
-                            let itemId = turn.deferredDetailItemId,
-                            let transcriptController
-                        {
-                            DeferredTranscriptDetails(controller: transcriptController, itemId: itemId)
-                        } else {
-                            TranscriptItemsView(
-                                items: items,
-                                turn: turn,
-                                turnID: turnID,
-                                isTurnActive: turn.isGenerating,
-                                animationPresentation: textAnimationPresentation,
-                                animationEnabled: textAnimationPresentation.animationsEnabled
-                            )
-                        }
+            TranscriptDisclosureContentReveal(
+                isExpanded: expanded && (!items.isEmpty || turn.hasDeferredWorkedDetails)
+            ) {
+                VStack(alignment: .leading, spacing: 12) {
+                    // Answered questions ride here too: the reducer synthesizes
+                    // a tool call for each, so they group and render inline with
+                    // the other tool calls that surround them.
+                    if turn.hasDeferredWorkedDetails,
+                        let itemId = turn.deferredDetailItemId,
+                        let transcriptController
+                    {
+                        DeferredTranscriptDetails(controller: transcriptController, itemId: itemId)
+                    } else {
+                        TranscriptItemsView(
+                            items: items,
+                            turn: turn,
+                            turnID: turnID,
+                            isTurnActive: turn.isGenerating,
+                            animationPresentation: textAnimationPresentation,
+                            animationEnabled: textAnimationPresentation.animationsEnabled
+                        )
                     }
                 }
             }
@@ -537,57 +529,6 @@ struct AssistantTurnView: View {
     private var workedTitle: String {
         guard let duration = turn.duration, duration >= 1 else { return "Worked for a moment" }
         return "Worked for \(format(Int(duration.rounded())))"
-    }
-}
-
-private struct WorkedContentReveal<Content: View>: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let key: TranscriptDisclosureStore.Key
-    let store: TranscriptDisclosureStore
-    let revealGeneration: Int
-    let presentationKey: String?
-    @State private var isVisible: Bool
-    private let content: Content
-
-    init(
-        key: TranscriptDisclosureStore.Key,
-        store: TranscriptDisclosureStore,
-        presentationKey: String?,
-        @ViewBuilder content: () -> Content
-    ) {
-        self.key = key
-        self.store = store
-        self.presentationKey = presentationKey
-        let generation = store.revealGeneration(for: key)
-        revealGeneration = generation
-        _isVisible = State(
-            initialValue: !store.hasUnclaimedReveal(
-                key,
-                generation: generation,
-                presentationKey: presentationKey
-            )
-        )
-        self.content = content()
-    }
-
-    var body: some View {
-        content
-            .opacity(isVisible ? 1 : 0)
-            .offset(y: isVisible || reduceMotion ? 0 : -8)
-            .onAppear {
-                let shouldAnimate = store.claimReveal(
-                    key,
-                    generation: revealGeneration,
-                    presentationKey: presentationKey
-                )
-                guard shouldAnimate, !reduceMotion else {
-                    isVisible = true
-                    return
-                }
-                withAnimation(Motion.entrance()) {
-                    isVisible = true
-                }
-            }
     }
 }
 

@@ -27,7 +27,6 @@ struct SessionSetupPhaseView: View {
     let phase: SessionSetupPhase
     @State private var isExpanded: Bool
     @State private var hasAutoExpandedFailure: Bool
-    @State private var logContentHeight: CGFloat = 0
 
     init(phase: SessionSetupPhase) {
         self.phase = phase
@@ -76,9 +75,8 @@ struct SessionSetupPhaseView: View {
                         logLines
                     }
                 }
-                // Keep the header gap inside the measured reveal. If this is
-                // outer VStack spacing, it survives at zero height until the
-                // reveal settles, then disappears as a final 12pt jump.
+                // The gap belongs to the disclosed body rather than the
+                // always-present header row.
                 .padding(.top, 12)
             }
         }
@@ -142,23 +140,26 @@ struct SessionSetupPhaseView: View {
     private static let logMaxHeight: CGFloat = 200
 
     private var logLines: some View {
-        ScrollView {
-            SelectableTextView(attributedText: logText, fillsWidth: true)
-                .padding(10)
-                .onGeometryChange(for: CGFloat.self) {
-                    $0.size.height
-                } action: {
-                    logContentHeight = $0
-                }
+        ViewThatFits(in: .vertical) {
+            logTextView
+            ScrollView {
+                logTextView
+            }
+            .defaultScrollAnchor(.bottom)
         }
-        // Sized to the content until it overflows, then scrolls pinned to the
-        // newest line as output streams in.
-        .frame(height: min(logContentHeight, Self.logMaxHeight))
-        .defaultScrollAnchor(.bottom)
+        // SelectableTextView supplies a synchronous TextKit sizeThatFits.
+        // ViewThatFits uses the natural-height body until it reaches this cap,
+        // then chooses the scrolling fallback without a geometry/state loop.
+        .frame(maxHeight: Self.logMaxHeight)
         .background(
             RoundedRectangle(cornerRadius: 8)
                 .fill(theme.cardQuietBackground)
         )
+    }
+
+    private var logTextView: some View {
+        SelectableTextView(attributedText: logText, fillsWidth: true)
+            .padding(10)
     }
 
     private var logText: NSAttributedString {

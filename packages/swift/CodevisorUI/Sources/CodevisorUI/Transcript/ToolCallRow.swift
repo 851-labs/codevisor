@@ -96,6 +96,36 @@ public struct ToolCallRow: View {
                 .padding(.top, 6)
             }
         }
+        // Structural diffing is independent of syntax colors. Warm it once a
+        // call settles, while the collapsed title is already mounted, so an
+        // expansion can draw plain rows in its first frame.
+        .task(id: diffPreparationRevision) {
+            await prepareSettledDiffs()
+        }
+    }
+
+    private var diffPreparationRevision: Int {
+        var hasher = Hasher()
+        hasher.combine(call.status)
+        for block in call.content ?? [] {
+            if case let .diff(path, oldText, newText) = block {
+                hasher.combine(path)
+                hasher.combine(oldText?.utf8.count ?? -1)
+                hasher.combine(newText.utf8.count)
+            }
+        }
+        return hasher.finalize()
+    }
+
+    private func prepareSettledDiffs() async {
+        guard call.isSettled else { return }
+        for block in call.content ?? [] {
+            guard case let .diff(_, oldText, newText) = block else { continue }
+            _ = await DiffStructureCache.shared.prepare(
+                DiffStructureCache.Key(oldText: oldText, newText: newText)
+            )
+            guard !Task.isCancelled else { return }
+        }
     }
 }
 

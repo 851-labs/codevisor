@@ -165,9 +165,6 @@ public final class TranscriptDisclosureStore {
 
     private var values: [Key: Bool] = [:]
     @ObservationIgnored private var toolGroupDisclosures: [String: ToolGroupDisclosure] = [:]
-    private var revealGenerations: [Key: Int] = [:]
-    private var claimedRevealGenerations: [Key: Int] = [:]
-    private var revealPresentationKeys: [Key: String] = [:]
     public init() {}
 
     /// Shared throwaway store for previews / detached contexts where no
@@ -204,42 +201,6 @@ public final class TranscriptDisclosureStore {
         let disclosure = ToolGroupDisclosure(policy: policy, context: initialContext)
         toolGroupDisclosures[id] = disclosure
         return disclosure
-    }
-
-    public func requestReveal(_ key: Key, presentationKey: String? = nil) {
-        revealGenerations[key, default: 0] &+= 1
-        revealPresentationKeys[key] = presentationKey ?? "detached"
-    }
-
-    public func revealGeneration(for key: Key) -> Int {
-        revealGenerations[key, default: 0]
-    }
-
-    public func hasUnclaimedReveal(
-        _ key: Key,
-        generation: Int,
-        presentationKey: String? = nil
-    ) -> Bool {
-        generation > 0
-            && claimedRevealGenerations[key, default: 0] < generation
-            && revealPresentationKeys[key, default: "detached"]
-                == presentationKey ?? "detached"
-    }
-
-    public func claimReveal(
-        _ key: Key,
-        generation: Int,
-        presentationKey: String? = nil
-    ) -> Bool {
-        guard
-            hasUnclaimedReveal(
-                key,
-                generation: generation,
-                presentationKey: presentationKey
-            )
-        else { return false }
-        claimedRevealGenerations[key] = generation
-        return true
     }
 
 }

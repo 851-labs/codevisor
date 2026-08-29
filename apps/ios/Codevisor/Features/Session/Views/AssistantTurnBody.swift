@@ -352,10 +352,6 @@ struct AssistantTurnBody: View {
                             if isExpanded {
                                 store.setExpanded(key, false)
                             } else {
-                                store.requestReveal(
-                                    key,
-                                    presentationKey: textAnimationVisibility?.presentationKey
-                                )
                                 store.setExpanded(key, true)
                             }
                             invalidateRowMeasurement?()
@@ -377,32 +373,26 @@ struct AssistantTurnBody: View {
                 // keeps the line collapsed and expanded alike.
                 Divider()
 
-                if isExpanded {
-                    WorkedContentReveal(
-                        key: key,
-                        store: store,
-                        presentationKey: textAnimationVisibility?.presentationKey
-                    ) {
-                        VStack(alignment: .leading, spacing: 12) {
-                            if allowsDeferred, turn.hasDeferredWorkedDetails,
-                                let itemId = turn.deferredDetailItemId,
-                                let transcriptController
-                            {
-                                DeferredWorkedDetails(
-                                    controller: transcriptController,
-                                    itemId: itemId
-                                )
-                            } else {
-                                TurnItemsView(
-                                    items: items,
-                                    turn: turn,
-                                    turnId: turnId,
-                                    depth: 0,
-                                    isTurnActive: isGenerating,
-                                    animationPresentation: textAnimationPresentation,
-                                    animationEnabled: textAnimationPresentation.animationsEnabled
-                                )
-                            }
+                TranscriptDisclosureContentReveal(isExpanded: isExpanded) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        if allowsDeferred, turn.hasDeferredWorkedDetails,
+                            let itemId = turn.deferredDetailItemId,
+                            let transcriptController
+                        {
+                            DeferredWorkedDetails(
+                                controller: transcriptController,
+                                itemId: itemId
+                            )
+                        } else {
+                            TurnItemsView(
+                                items: items,
+                                turn: turn,
+                                turnId: turnId,
+                                depth: 0,
+                                isTurnActive: isGenerating,
+                                animationPresentation: textAnimationPresentation,
+                                animationEnabled: textAnimationPresentation.animationsEnabled
+                            )
                         }
                     }
                 }

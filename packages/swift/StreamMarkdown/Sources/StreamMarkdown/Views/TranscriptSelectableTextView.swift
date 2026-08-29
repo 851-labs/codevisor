@@ -7,7 +7,7 @@
     import SwiftUI
 
     @MainActor
-    public class TranscriptSelectableTextView: NSTextView {
+    open class TranscriptSelectableTextView: NSTextView {
         private struct LinkHit {
             let value: Any
             let range: NSRange

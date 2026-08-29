@@ -227,14 +227,8 @@ struct CodeBlockView: View {
     }
 
     @MainActor
-    private final class CodeScrollView: NSScrollView {
-        private enum GestureAxis {
-            case horizontal
-            case vertical
-        }
-
+    private final class CodeScrollView: TranscriptHorizontalScrollView {
         private let codeTextView: TranscriptSelectableTextView
-        private var gestureAxis: GestureAxis?
         private var renderedText: AttributedString?
         private var renderedForeground: Color?
         private(set) var contentFittingSize = CGSize(width: 1, height: 1)
@@ -263,7 +257,6 @@ struct CodeBlockView: View {
             horizontalScrollElasticity = .automatic
             verticalScrollElasticity = .none
             automaticallyAdjustsContentInsets = false
-            usesPredominantAxisScrolling = true
 
             codeTextView.isEditable = false
             codeTextView.isSelectable = true
@@ -336,42 +329,6 @@ struct CodeBlockView: View {
             return result
         }
 
-        override func scrollWheel(with event: NSEvent) {
-            let hasGesturePhase = !event.phase.isEmpty || !event.momentumPhase.isEmpty
-            if event.phase.contains(.began) || gestureAxis == nil || !hasGesturePhase {
-                gestureAxis = preferredAxis(for: event)
-            }
-
-            if gestureAxis == .vertical, let outerScrollView = enclosingVerticalScrollView {
-                outerScrollView.scrollWheel(with: event)
-            } else {
-                super.scrollWheel(with: event)
-            }
-
-            if !hasGesturePhase || event.phase.contains(.ended) || event.phase.contains(.cancelled)
-                || event.momentumPhase.contains(.ended) || event.momentumPhase.contains(.cancelled)
-            {
-                gestureAxis = nil
-            }
-        }
-
-        private func preferredAxis(for event: NSEvent) -> GestureAxis {
-            if event.modifierFlags.contains(.shift) { return .horizontal }
-            return abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX) ? .vertical : .horizontal
-        }
-
-        private var enclosingVerticalScrollView: NSScrollView? {
-            var ancestor = superview
-            while let view = ancestor {
-                if let scrollView = view as? NSScrollView, scrollView !== self,
-                    scrollView.hasVerticalScroller
-                {
-                    return scrollView
-                }
-                ancestor = view.superview
-            }
-            return nil
-        }
     }
 #endif
 

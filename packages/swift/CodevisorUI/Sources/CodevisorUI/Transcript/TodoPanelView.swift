@@ -36,9 +36,8 @@ public struct TodoPanelView: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
-                // The measured reveal below owns the animation transaction.
-                // Toggling directly keeps sibling layout and the glass surface
-                // from interpolating independently of the clipped content.
+                // The reveal below commits layout atomically and owns only the
+                // content's pixel entrance.
                 isExpanded.toggle()
             } label: {
                 HStack(spacing: 6) {
