@@ -23,7 +23,13 @@ struct MachinesSettingsScreen: View {
     @State private var renamingMachine: CodevisorMachine?
     @State private var renameText = ""
 
+    let focusedMachineID: String?
+
     private var machines: MachineController { environment.machines }
+
+    init(focusedMachineID: String? = nil) {
+        self.focusedMachineID = focusedMachineID
+    }
 
     private var remoteMachines: [CodevisorMachine] {
         machines.allMachines.filter { !$0.isLocal }
@@ -37,39 +43,56 @@ struct MachinesSettingsScreen: View {
     }
 
     var body: some View {
-        List {
-            Section {
-                ForEach(remoteMachines, id: \.id) { machine in
-                    machineRow(machine)
+        ScrollViewReader { proxy in
+            List {
+                Section {
+                    ForEach(remoteMachines, id: \.id) { machine in
+                        Group {
+                            if machine.id == focusedMachineID {
+                                machineRow(machine)
+                                    .listRowBackground(Color.accentColor.opacity(0.12))
+                            } else {
+                                machineRow(machine)
+                            }
+                        }
+                        .id(machine.id)
                         // badge(0) hides itself — quiet unless a machine's
                         // chats actually need attention.
                         .badge(unreadCount(for: machine.id))
-                }
-            } footer: {
-                InlineCodeText("Run `codevisor setup` on a machine to print its address and token.")
-            }
-            if !discovery.discovered.isEmpty {
-                Section {
-                    ForEach(discovery.discovered) { machine in
-                        discoveredRow(machine)
                     }
-                } header: {
-                    Text("On Your Tailnet")
                 } footer: {
-                    Text("Codevisor servers found on your tailnet. Adding one still needs its connection token.")
+                    InlineCodeText("Run `codevisor setup` on a machine to print its address and token.")
+                }
+                if !discovery.discovered.isEmpty {
+                    Section {
+                        ForEach(discovery.discovered) { machine in
+                            discoveredRow(machine)
+                        }
+                    } header: {
+                        Text("On Your Tailnet")
+                    } footer: {
+                        Text("Codevisor servers found on your tailnet. Adding one still needs its connection token.")
+                    }
+                }
+                Section {
+                    Button {
+                        isAddingMachine = true
+                    } label: {
+                        Label("Add Machine…", systemImage: "plus")
+                    }
+                }
+                if let devRemote = CodevisorAppVariant.developmentRemote,
+                    developmentMachine(devRemote) == nil
+                {
+                    developmentSection(devRemote)
                 }
             }
-            Section {
-                Button {
-                    isAddingMachine = true
-                } label: {
-                    Label("Add Machine…", systemImage: "plus")
+            .task(id: focusedMachineID) {
+                guard let focusedMachineID else { return }
+                await Task.yield()
+                withAnimation(.snappy(duration: 0.3)) {
+                    proxy.scrollTo(focusedMachineID, anchor: .center)
                 }
-            }
-            if let devRemote = CodevisorAppVariant.developmentRemote,
-                developmentMachine(devRemote) == nil
-            {
-                developmentSection(devRemote)
             }
         }
         .navigationTitle("Machines")

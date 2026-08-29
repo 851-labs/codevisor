@@ -6,6 +6,20 @@ import SwiftUI
 import UserNotifications
 import os
 
+enum SettingsDestination: Hashable, Identifiable {
+    case root
+    case machines(focusedMachineID: String?)
+
+    var id: String {
+        switch self {
+        case .root:
+            "root"
+        case let .machines(machineID):
+            "machines:\(machineID ?? "all")"
+        }
+    }
+}
+
 /// App settings, mirroring the macOS settings window's tabs as an iOS
 /// navigation list. Agents, MCPs, skills, and plugins are fleet-synced
 /// config, so they sit at the top level (rendered from the selected
@@ -14,11 +28,19 @@ import os
 struct SettingsSheet: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.dismiss) private var dismiss
+    @State private var path: [SettingsDestination]
 
-    private var machines: MachineController { environment.machines }
+    init(initialDestination: SettingsDestination = .root) {
+        switch initialDestination {
+        case .root:
+            _path = State(initialValue: [])
+        case .machines:
+            _path = State(initialValue: [initialDestination])
+        }
+    }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             List {
                 Section {
                     NavigationLink {
@@ -26,9 +48,7 @@ struct SettingsSheet: View {
                     } label: {
                         Label("Account", systemImage: "person.crop.circle")
                     }
-                    NavigationLink {
-                        MachinesSettingsScreen()
-                    } label: {
+                    NavigationLink(value: SettingsDestination.machines(focusedMachineID: nil)) {
                         Label("Machines", systemImage: "desktopcomputer")
                     }
                 }
@@ -85,6 +105,14 @@ struct SettingsSheet: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
+                }
+            }
+            .navigationDestination(for: SettingsDestination.self) { destination in
+                switch destination {
+                case .root:
+                    EmptyView()
+                case let .machines(focusedMachineID):
+                    MachinesSettingsScreen(focusedMachineID: focusedMachineID)
                 }
             }
         }

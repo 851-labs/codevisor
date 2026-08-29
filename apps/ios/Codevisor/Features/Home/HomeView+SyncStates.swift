@@ -1,11 +1,20 @@
 import CodevisorCore
 import SwiftUI
 
-/// The home screen's sync-state chrome, split from HomeView for the size
-/// ratchet: the non-blocking failure banner and the refreshable scroll
-/// wrapper the loading/empty/unavailable states render inside.
+/// The home screen's sync-state presentation: navigation visibility, the
+/// native failure alert, and the refreshable surface used by loading, empty,
+/// and unavailable states.
 extension HomeView {
-    /// Machines whose last sync attempt failed — named in the banner and
+    var settingsButton: some View {
+        Button {
+            presentedSettingsDestination = .root
+        } label: {
+            Image(systemName: "gearshape")
+        }
+        .accessibilityLabel("Settings")
+    }
+
+    /// Machines whose last sync attempt failed — named in the alert and
     /// retried together. Fleet-aggregated: no single "selected" machine
     /// gets to speak for the others.
     var failedSyncMachines: [CodevisorMachine] {
@@ -13,6 +22,51 @@ extension HomeView {
             if case .stale = machines.navigationSyncStateByMachineId[machine.id] { return true }
             return false
         }
+    }
+
+    var failedSyncMachineIDs: Set<String> {
+        Set(failedSyncMachines.map(\.id))
+    }
+
+    /// Cached records stay persisted for recovery, but Home only presents
+    /// content backed by an authoritative current snapshot.
+    var currentNavigationMachineIDs: Set<String> {
+        Set(
+            machines.allMachines.compactMap { machine in
+                machines.navigationSyncStateByMachineId[machine.id] == .current
+                    ? machine.id
+                    : nil
+            }
+        )
+    }
+
+    var showsSyncFailureAlert: Bool {
+        !failedSyncMachineIDs.subtracting(dismissedSyncFailureMachineIDs).isEmpty
+    }
+
+    var syncFailureAlertIsPresented: Binding<Bool> {
+        Binding(
+            get: { showsSyncFailureAlert },
+            set: { isPresented in
+                if !isPresented {
+                    dismissSyncFailureAlert()
+                }
+            }
+        )
+    }
+
+    var syncFailureAlertTitle: String {
+        if let machine = failedSyncMachines.first, failedSyncMachines.count == 1 {
+            return "\(machine.name) is unavailable"
+        }
+        return "\(failedSyncMachines.count) machines are unavailable"
+    }
+
+    var syncFailureAlertMessage: String {
+        if failedSyncMachines.count == 1 {
+            return "Chats from this machine are hidden until it reconnects."
+        }
+        return "Chats from these machines are hidden until they reconnect."
     }
 
     /// True once ANY machine has completed a sync this launch — enough to
@@ -41,25 +95,16 @@ extension HomeView {
         }
     }
 
-    /// Compact, non-blocking: the list stays usable while machines that
-    /// couldn't sync announce themselves and offer retry.
-    var syncFailedBanner: some View {
-        HStack(spacing: 10) {
-            Label(
-                "Couldn't sync with \(failedSyncMachineNames)",
-                systemImage: "exclamationmark.triangle"
-            )
-            .font(.footnote)
-            .lineLimit(2)
-            Spacer(minLength: 8)
-            Button("Retry") {
-                retryFailedMachines()
-            }
-            .font(.footnote.weight(.semibold))
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .background(.ultraThinMaterial)
+    func dismissSyncFailureAlert() {
+        dismissedSyncFailureMachineIDs.formUnion(failedSyncMachineIDs)
+    }
+
+    func openFailedMachineSettings() {
+        let failed = failedSyncMachines
+        dismissSyncFailureAlert()
+        presentedSettingsDestination = .machines(
+            focusedMachineID: failed.count == 1 ? failed[0].id : nil
+        )
     }
 
     /// Keep state content fixed over the same native list surface used when

@@ -39,7 +39,9 @@ struct HomeView: View {
     /// First-launch budget: with nothing cached the spinner is allowed,
     /// but it may never outlive the wait — after this it becomes retry.
     @State private var initialSyncDeadlineExpired = false
-    @State private var isShowingSettings = false
+    @State var presentedSettingsDestination: SettingsDestination?
+    /// Dismissals apply to this outage; recovery lets a later failure alert again.
+    @State var dismissedSyncFailureMachineIDs: Set<String> = []
     @State private var pendingHarnessSignIn: HarnessSignInRequest?
     @State private var newChatFlow: NewChatFlow?
     /// Presentation and promotion have different lifetimes. SwiftUI owns this
@@ -92,9 +94,8 @@ struct HomeView: View {
         machines.allMachines.contains { !$0.isLocal }
     }
 
-    /// True while no machine has synced and none has failed — the fleet is
-    /// still converging. The cached list always renders immediately; this
-    /// only gates the truly-empty first launch.
+    /// True while no machine has synced and none has failed — the fleet is still converging.
+    /// Cached records stay hidden until a current snapshot arrives.
     private var initialSyncPending: Bool {
         !anyMachineSynced && failedSyncMachines.isEmpty && hasRemoteMachines
     }
@@ -110,13 +111,14 @@ struct HomeView: View {
         )
     }
 
-    /// Active chats on the selected machine in the order the sort wants
-    /// right now, before the interaction/settle holds are applied. Watched
-    /// separately from `visibleSessions` to coalesce bursts of automatic
-    /// reorders (the held, displayed order does not change while locked).
+    /// Active chats from current machines before interaction/settle holds apply.
+    /// Watched separately from `visibleSessions` to coalesce automatic reorders
+    /// (the held, displayed order does not change while locked).
     private var desiredVisibleSessions: [ChatSession] {
-        // Flattened fleet: every machine's chats in one list.
-        let sessions = projectList.sessions.filter { !$0.isArchived }
+        // Cached chats stay hidden until their machine has a current snapshot.
+        let sessions = projectList.sessions.filter {
+            !$0.isArchived && currentNavigationMachineIDs.contains($0.serverId)
+        }
         let ordered = preferenceIDs(from: manualSessionOrder)
         let manualRanks = Dictionary(
             uniqueKeysWithValues: ordered.enumerated().map { ($0.element, $0.offset) }
@@ -129,7 +131,7 @@ struct HomeView: View {
         )
     }
 
-    /// Active chats on the selected machine, in the chosen order.
+    /// Active chats from current machines, in the chosen order.
     private var visibleSessions: [ChatSession] {
         let desired = desiredVisibleSessions
         guard order != .none else { return desired }
@@ -150,7 +152,7 @@ struct HomeView: View {
             uniquingKeysWith: { first, _ in first }
         )
         let items = environment.workspaces.loadAll()
-            .filter { !$0.isArchived }
+            .filter { !$0.isArchived && currentNavigationMachineIDs.contains($0.serverId) }
             .compactMap { workspace -> HomeWorkspaceListItem? in
                 // Honor the repository's grow-only routing index when healing
                 // layouts from older iOS builds. A superseded automatic
@@ -194,7 +196,7 @@ struct HomeView: View {
 
     private var projectItems: [HomeProjectListItem] {
         let items: [HomeProjectListItem] = projectList.fleetActiveProjects
-            .filter { !$0.isScratch }
+            .filter { !$0.isScratch && currentNavigationMachineIDs.contains($0.serverId) }
             .compactMap { project -> HomeProjectListItem? in
                 let sessions = visibleSessions.filter {
                     $0.serverId == project.serverId && $0.projectId == project.id
@@ -297,6 +299,10 @@ struct HomeView: View {
                 deferredSessionOrder.incorporate(newIDs)
                 backfillWorkspacesIfNeeded()
             }
+            .onChange(of: failedSyncMachineIDs, initial: true) { _, failedIDs in
+                // Recovery re-arms a future failure alert.
+                dismissedSyncFailureMachineIDs.formIntersection(failedIDs)
+            }
             // Bursty automatic reorders (several agents changing state at
             // once) are jarring. Watching the unheld sort lets a burst land
             // as one animated reflow after it settles.
@@ -360,11 +366,19 @@ struct HomeView: View {
                     )
                 }
             }
-            .sheet(isPresented: $isShowingSettings) {
-                SettingsSheet()
+            .alert(syncFailureAlertTitle, isPresented: syncFailureAlertIsPresented) {
+                Button("Open Settings") {
+                    openFailedMachineSettings()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(syncFailureAlertMessage)
+            }
+            .sheet(item: $presentedSettingsDestination) { destination in
+                SettingsSheet(initialDestination: destination)
             }
             .onReceive(NotificationCenter.default.publisher(for: .codevisorOpenSettings)) { _ in
-                isShowingSettings = true
+                presentedSettingsDestination = .root
             }
             .harnessSignInSheet(request: $pendingHarnessSignIn)
             .onReceive(NotificationCenter.default.publisher(for: .codevisorHarnessSignIn)) {
@@ -478,26 +492,21 @@ struct HomeView: View {
     @ViewBuilder
     private var refreshableNavigationContent: some View {
         if hasNavigationContent {
-            // The cached fleet list always renders — no single machine's
-            // sync gets to blank the world. Sync trouble rides a banner.
+            // Unavailable machines contribute no cached content.
             sessionList
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    if !failedSyncMachines.isEmpty {
-                        syncFailedBanner
-                    }
-                }
         } else if anyMachineSynced {
             // At least one machine answered with a real (empty) list: the
-            // honest presentation is "no chats", banner for any stragglers.
+            // honest presentation is "no chats"; the alert names stragglers.
             refreshableState(allowsStateHitTesting: false) {
                 emptyState
             }
-            .safeAreaInset(edge: .top, spacing: 0) {
-                if !failedSyncMachines.isEmpty {
-                    syncFailedBanner
-                }
+        } else if !failedSyncMachines.isEmpty {
+            // Keep the list blank instead of showing stale cached rows.
+            // The native alert explains the failure and opens machine settings.
+            refreshableState(allowsStateHitTesting: false) {
+                EmptyView()
             }
-        } else if !failedSyncMachines.isEmpty || initialSyncDeadlineExpired {
+        } else if initialSyncDeadlineExpired {
             refreshableState {
                 HomeNavigationSyncView(
                     state: .failed(machineName: failedSyncMachineNames),
@@ -1218,15 +1227,6 @@ struct HomeView: View {
             Image(systemName: "checkmark")
         }
         .accessibilityLabel("Finish reordering")
-    }
-
-    private var settingsButton: some View {
-        Button {
-            isShowingSettings = true
-        } label: {
-            Image(systemName: "gearshape")
-        }
-        .accessibilityLabel("Settings")
     }
 
     /// Organization controls grouping; ordering applies only to agent rows.
