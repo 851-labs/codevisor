@@ -18,8 +18,8 @@ struct ModelPickerModelSection: View {
                 .font(XcodeModelPickerMetrics.sectionFont)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, XcodeModelPickerMetrics.modelSectionTitleInset)
-                .padding(.top, 8)
-                .padding(.bottom, 4)
+                .padding(.top, XcodeModelPickerMetrics.sectionTitleTopInset)
+                .padding(.bottom, XcodeModelPickerMetrics.sectionTitleBottomInset)
 
             ForEach(items) { item in
                 XcodeModelPickerRow(

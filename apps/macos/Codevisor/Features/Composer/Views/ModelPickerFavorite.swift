@@ -44,6 +44,12 @@ struct ModelPickerCatalog {
         groups.filter { !regularModels(in: $0).isEmpty }
     }
 
+    var sectionItemCounts: [Int] {
+        var counts = favorites.isEmpty ? [] : [favorites.count]
+        counts.append(contentsOf: regularGroups.map { regularModels(in: $0).count })
+        return counts
+    }
+
     func regularModels(in group: ModelMenuGroup) -> [SessionConfigSelectOption] {
         group.matchingModels(query: query).filter {
             !favoriteSet.contains(ModelPickerFavorite(model: $0, group: group))

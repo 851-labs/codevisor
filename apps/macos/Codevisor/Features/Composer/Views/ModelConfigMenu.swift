@@ -20,6 +20,7 @@ struct ModelConfigMenu: View {
     @State private var pendingModelGroupId: String?
     @State private var keyboardTarget: ModelPickerKeyboardTarget?
     @State private var hoverTarget: ModelPickerKeyboardTarget?
+    @State private var presentedModelPickerListHeight: CGFloat?
 
     var body: some View {
         // A background revalidation must not replace an already-usable model
@@ -48,7 +49,12 @@ private extension ModelConfigMenu {
     private var modelButton: some View {
         Button {
             modelSearch = ""
-            isPresented.toggle()
+            if isPresented {
+                isPresented = false
+            } else {
+                presentedModelPickerListHeight = unfilteredModelPickerListHeight
+                isPresented = true
+            }
         } label: {
             modelChipLabel
         }
@@ -106,7 +112,10 @@ private extension ModelConfigMenu {
                 } else {
                     ScrollViewReader { proxy in
                         ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 6) {
+                            LazyVStack(
+                                alignment: .leading,
+                                spacing: XcodeModelPickerMetrics.sectionSpacing
+                            ) {
                                 if !resolvedFavoriteModels.isEmpty {
                                     favoritesSection
                                 }
@@ -119,15 +128,17 @@ private extension ModelConfigMenu {
                                 .horizontal,
                                 XcodeModelPickerMetrics.listHorizontalInset
                             )
-                            .padding(.vertical, 4)
+                            .padding(.vertical, XcodeModelPickerMetrics.listVerticalInset)
                         }
+                        .scrollBounceBehavior(modelPickerScrollBounceBehavior)
                         .onChange(of: keyboardTarget) { _, target in
                             scrollKeyboardTargetIntoView(target, using: proxy)
                         }
                     }
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity)
+            .frame(height: modelPickerListHeight)
 
             Divider()
 
@@ -140,14 +151,18 @@ private extension ModelConfigMenu {
                 action: showHarnessSettings
             )
         }
-        .frame(width: modelPickerPopoverWidth, height: 430)
+        .frame(width: modelPickerPopoverWidth)
         .onAppear {
             modelSearch = ""
+            if presentedModelPickerListHeight == nil {
+                presentedModelPickerListHeight = unfilteredModelPickerListHeight
+            }
             hoverTarget = nil
             keyboardTarget = nil
         }
         .onDisappear {
             modelSearch = ""
+            presentedModelPickerListHeight = nil
             hoverTarget = nil
             keyboardTarget = nil
         }
@@ -329,6 +344,33 @@ private extension ModelConfigMenu {
 
     private var modelPickerPopoverWidth: CGFloat {
         XcodeModelPickerMetrics.popoverWidth(for: modelGroups)
+    }
+
+    private var modelPickerListHeight: CGFloat {
+        presentedModelPickerListHeight ?? unfilteredModelPickerListHeight
+    }
+
+    private var modelPickerScrollBounceBehavior: ScrollBounceBehavior {
+        let contentHeight = XcodeModelPickerMetrics.listContentHeight(
+            sectionItemCounts: modelCatalog.sectionItemCounts
+        )
+        return contentHeight > modelPickerListHeight ? .always : .basedOnSize
+    }
+
+    private var unfilteredModelPickerListHeight: CGFloat {
+        modelPickerListHeight(
+            for: ModelPickerCatalog(
+                groups: modelGroups,
+                favoriteIDs: favoriteModelIDs,
+                query: ""
+            )
+        )
+    }
+
+    private func modelPickerListHeight(for catalog: ModelPickerCatalog) -> CGFloat {
+        XcodeModelPickerMetrics.listHeight(
+            sectionItemCounts: catalog.sectionItemCounts
+        )
     }
 
     private var filteredModelGroups: [ModelMenuGroup] {

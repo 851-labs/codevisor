@@ -25,11 +25,17 @@ struct ModelMenuGroup: Identifiable {
 enum XcodeModelPickerMetrics {
     static let popoverMinimumWidth: CGFloat = 220
     static let popoverMaximumWidth: CGFloat = 402
+    static let popoverMaximumHeight: CGFloat = 430
     static let searchFieldHeight: CGFloat = 28
     static let searchHorizontalInset: CGFloat = 8
     static let searchTopInset: CGFloat = 8
     static let searchBottomInset: CGFloat = 0
     static let listHorizontalInset: CGFloat = 5
+    static let listVerticalInset: CGFloat = 4
+    static let emptyListHeight: CGFloat = 64
+    static let sectionSpacing: CGFloat = 6
+    static let sectionTitleTopInset: CGFloat = 8
+    static let sectionTitleBottomInset: CGFloat = 4
     static let rowHeight: CGFloat = 24
     static let rowCornerRadius: CGFloat = 6
     static let rowHorizontalInset: CGFloat = 11
@@ -47,6 +53,34 @@ enum XcodeModelPickerMetrics {
 
     static var sectionFont: Font {
         .system(size: 12)
+    }
+
+    static func listHeight(sectionItemCounts: [Int]) -> CGFloat {
+        let fixedChromeHeight =
+            searchTopInset
+            + searchFieldHeight
+            + searchBottomInset
+            + 1
+            + rowHeight
+            + (2 * footerVerticalInset)
+        return min(
+            listContentHeight(sectionItemCounts: sectionItemCounts),
+            popoverMaximumHeight - fixedChromeHeight
+        )
+    }
+
+    static func listContentHeight(sectionItemCounts: [Int]) -> CGFloat {
+        guard !sectionItemCounts.isEmpty else { return emptyListHeight }
+        let sectionTitleHeight =
+            ceil(NSFont.systemFont(ofSize: 12).boundingRectForFont.height)
+            + sectionTitleTopInset
+            + sectionTitleBottomInset
+        let contentHeight =
+            (2 * listVerticalInset)
+            + (CGFloat(sectionItemCounts.count) * sectionTitleHeight)
+            + (CGFloat(sectionItemCounts.reduce(0, +)) * rowHeight)
+            + (CGFloat(max(sectionItemCounts.count - 1, 0)) * sectionSpacing)
+        return ceil(contentHeight)
     }
 
     static func menuTextWidth(_ text: String) -> CGFloat {
