@@ -294,8 +294,12 @@ public final class SessionModel {
 
     /// Stream events waiting for the next per-frame flush. Deliberately not
     /// observable: buffering must not invalidate views — only applying does.
-    @ObservationIgnored var pendingEvents: [ServerSessionStreamEvent] = []
+    @ObservationIgnored nonisolated let pendingEvents = SessionEventBuffer()
     @ObservationIgnored var isFlushScheduled = false
+    @ObservationIgnored var scheduledFlushTask: Task<Void, Never>?
+    /// Installed by `SessionController`. Returning true means its presentation
+    /// scheduler accepted responsibility for the pending flush.
+    @ObservationIgnored var presentationFrameRequester: (@MainActor () -> Bool)?
     /// Queue claims are published just before their user-message event. Keep
     /// removed ids briefly so the second event can identify a real promotion;
     /// explicit deletions never produce a matching user-message id.
@@ -305,7 +309,7 @@ public final class SessionModel {
     /// needed during rolling upgrades to those actual optimistic rows instead
     /// of treating any repeated user text as a duplicate.
     @ObservationIgnored var pendingOptimisticUserMessageIDs: Set<UUID> = []
-    /// Base interval between buffered-event flushes — roughly one frame. Tests
+    /// Fallback interval used before a native transcript clock attaches. Tests
     /// set this to zero so their yield-based settling needs no wall-clock wait.
     static var eventFlushInterval: Duration = .milliseconds(16)
 
@@ -313,7 +317,7 @@ public final class SessionModel {
     /// Events still apply in order and every lifecycle callback still fires —
     /// just on a coarser tick, so N backgrounded streams stop costing N×60
     /// main-actor reduce/CoW passes per second for pixels nobody can see.
-    /// `viewDidAppear()` flushes immediately, so returning to a chat shows a
+    /// `viewDidAppear()` arms the native clock, so returning to a chat shows a
     /// fully caught-up transcript on its first visible frame.
     static var backgroundEventFlushInterval: Duration = .milliseconds(300)
 

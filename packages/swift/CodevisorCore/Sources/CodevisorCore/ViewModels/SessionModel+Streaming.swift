@@ -21,56 +21,91 @@ extension SessionModel {
                 since: serverEventCursor ?? ServerSessionTransport.liveOnlyEventCursor
             )
         }
-        consumerTask = Task { @MainActor [weak self] in
+        let pendingEvents = self.pendingEvents
+        let consumerGeneration = pendingEvents.beginConsumer()
+        consumerTask = Task.detached(priority: .userInitiated) { [weak self] in
             do {
                 for try await event in events {
-                    guard let self else { break }
-                    self.pendingEvents.append(event)
-                    self.scheduleFlush()
+                    guard !Task.isCancelled, self != nil else { break }
+                    if pendingEvents.append(event, generation: consumerGeneration) {
+                        Task { @MainActor [weak self] in
+                            self?.scheduleFlush()
+                        }
+                    }
                 }
-                self?.flushPendingEvents()
+                await self?.flushPendingEventsAtPresentationBoundary()
             } catch {
-                guard let self, !Task.isCancelled else { return }
-                Log.session.error(
-                    "Session event stream failed; reconciling from server: \(String(describing: error), privacy: .public)"
-                )
-                self.consumerTask = nil
-                await self.reconcileFromServer()
+                guard !Task.isCancelled else { return }
+                await self?.handleEventStreamFailure(error)
             }
         }
     }
 
-    /// A transcript view for this session became visible. Applies everything
-    /// buffered while hidden in one synchronous pass so the first visible
-    /// frame is current, then restores the per-frame cadence.
+    private func handleEventStreamFailure(_ error: any Error) async {
+        Log.session.error(
+            "Session event stream failed; reconciling from server: \(String(describing: error), privacy: .public)"
+        )
+        consumerTask = nil
+        await reconcileFromServer()
+    }
+
+    /// A transcript view for this session became visible. Everything buffered
+    /// while hidden is armed for its first native presentation frame.
     public func viewDidAppear() {
         visibleViewCount += 1
         if visibleViewCount == 1 {
-            flushPendingEvents()
+            reschedulePendingEventsForCurrentVisibility()
         }
     }
 
     public func viewDidDisappear() {
         visibleViewCount = max(0, visibleViewCount - 1)
+        if visibleViewCount == 0 {
+            reschedulePendingEventsForCurrentVisibility()
+        }
     }
 
-    /// Schedules one buffered flush. Visible transcripts stay on one frame-like
-    /// cadence regardless of transcript length; hidden transcripts use a much
-    /// coarser cadence because they have no pixels to present.
+    /// Schedules one buffered flush. Visible transcripts use their native
+    /// display clock; hidden transcripts use a coarse timer because they have
+    /// no pixels to present.
     private func scheduleFlush() {
-        guard !isFlushScheduled else { return }
+        guard !isFlushScheduled, !pendingEvents.isEmpty else { return }
         isFlushScheduled = true
+        if isViewVisible, presentationFrameRequester?() == true {
+            return
+        }
         let interval = Self.flushInterval(
             isViewVisible: isViewVisible,
             foreground: Self.eventFlushInterval,
             background: Self.backgroundEventFlushInterval
         )
-        Task { @MainActor [weak self] in
+        scheduledFlushTask = Task { @MainActor [weak self] in
             if interval > .zero {
                 try? await Task.sleep(for: interval)
             }
+            guard !Task.isCancelled else { return }
             self?.flushPendingEvents()
         }
+    }
+
+    /// Moves an already-armed fallback timer onto the native presentation
+    /// clock as soon as a visible surface becomes available.
+    func preferPresentationFrameIfPending() {
+        guard isFlushScheduled, !pendingEvents.isEmpty, isViewVisible,
+            presentationFrameRequester?() == true
+        else { return }
+        scheduledFlushTask?.cancel()
+        scheduledFlushTask = nil
+    }
+
+    /// Visibility or driver ownership changed while work was pending. Re-arm
+    /// against the correct clock without applying the buffered events early.
+    func reschedulePendingEventsForCurrentVisibility() {
+        guard !pendingEvents.isEmpty else { return }
+        scheduledFlushTask?.cancel()
+        scheduledFlushTask = nil
+        isFlushScheduled = false
+        scheduleFlush()
     }
 
     static func flushInterval(
@@ -88,13 +123,33 @@ extension SessionModel {
     /// Applies every buffered stream event in one synchronous pass — a single
     /// run-loop turn, so SwiftUI renders the whole batch once.
     func flushPendingEvents() {
+        scheduledFlushTask?.cancel()
+        scheduledFlushTask = nil
         isFlushScheduled = false
-        guard !pendingEvents.isEmpty else { return }
-        let events = Self.coalesced(pendingEvents)
-        pendingEvents.removeAll(keepingCapacity: true)
+        let events = Self.coalesced(pendingEvents.takeAll())
+        guard !events.isEmpty else { return }
         for event in events {
             apply(event)
         }
+    }
+
+    /// Semantic barriers (prompt completion, cancellation, stream completion)
+    /// must see all events already in flight, but a visible transcript must not
+    /// bypass its display clock to do so. Wait briefly for the armed native
+    /// frame; only fall back to an immediate flush if a registered surface has
+    /// stopped producing frames (for example while the app is suspended).
+    func flushPendingEventsAtPresentationBoundary() async {
+        guard !pendingEvents.isEmpty else { return }
+        if isViewVisible, presentationFrameRequester?() == true {
+            if !isFlushScheduled {
+                scheduleFlush()
+            }
+            for _ in 0..<50 {
+                guard !pendingEvents.isEmpty else { return }
+                try? await Task.sleep(for: .milliseconds(1))
+            }
+        }
+        flushPendingEvents()
     }
 
     /// Merges runs of adjacent text chunks addressed to the same span (same
@@ -136,9 +191,12 @@ extension SessionModel {
         stopConnectionRecovery()
         consumerTask?.cancel()
         consumerTask = nil
+        scheduledFlushTask?.cancel()
+        scheduledFlushTask = nil
+        isFlushScheduled = false
         promptQueueLoadTask?.cancel()
         promptQueueLoadTask = nil
-        pendingEvents.removeAll()
+        pendingEvents.invalidateConsumer(keepingCapacity: false)
     }
 
     /// Yields until the update consumer stops applying buffered updates, so the
@@ -148,11 +206,13 @@ extension SessionModel {
         var lastCount = appliedUpdateCount
         var iterations = 0
         while stableRounds < 2 && iterations < 500 {
-            // Anything already buffered for the next frame flush counts as
-            // pending work — apply it now so the stability check sees it.
-            flushPendingEvents()
+            await flushPendingEventsAtPresentationBoundary()
             await Task.yield()
             iterations += 1
+            if !pendingEvents.isEmpty {
+                stableRounds = 0
+                continue
+            }
             if appliedUpdateCount == lastCount {
                 stableRounds += 1
             } else {

@@ -16,7 +16,7 @@ struct SessionModelStreamPacingTests {
         .update(.agentMessageChunk(.text(text), messageId: messageId, parentToolCallId: parent, phase: phase))
     }
 
-    @Test("Visible flushing stays frame-paced while hidden flushing stays coarse")
+    @Test("Visible fallback flushing stays fast while hidden flushing stays coarse")
     func visibilityControlsFlushCadence() {
         #expect(
             SessionModel.flushInterval(
@@ -32,6 +32,82 @@ struct SessionModelStreamPacingTests {
                 background: .milliseconds(300)
             ) == .milliseconds(300)
         )
+    }
+
+    @Test("The fastest visible display clock exclusively drives presentation")
+    func fastestDisplayClockWins() {
+        let controller = SessionController.preview()
+        var sixtyHertzRequests = 0
+        var oneTwentyHertzRequests = 0
+        let sixty = controller.registerTranscriptFrameDriver(maximumFramesPerSecond: 60) {
+            sixtyHertzRequests += 1
+        }
+        let oneTwenty = controller.registerTranscriptFrameDriver(maximumFramesPerSecond: 120) {
+            oneTwentyHertzRequests += 1
+        }
+
+        #expect(controller.requestTranscriptPresentationFrame())
+        #expect(sixtyHertzRequests == 0)
+        #expect(oneTwentyHertzRequests == 1)
+
+        let revision = controller.transcriptPresentationFrameRevision
+        controller.transcriptPresentationFrameDidFire(sixty)
+        #expect(controller.transcriptPresentationFrameRevision == revision)
+        controller.transcriptPresentationFrameDidFire(oneTwenty)
+        #expect(controller.transcriptPresentationFrameRevision == revision + 1)
+
+        #expect(controller.requestTranscriptPresentationFrame())
+        controller.unregisterTranscriptFrameDriver(oneTwenty)
+        #expect(sixtyHertzRequests == 1)
+        controller.transcriptPresentationFrameDidFire(sixty)
+        #expect(controller.transcriptPresentationFrameRevision == revision + 2)
+        controller.unregisterTranscriptFrameDriver(sixty)
+    }
+
+    @Test("Stream ingress wakes once per buffered burst and rejects stale consumers")
+    func eventIngressIsLatestGenerationAndSingleWakeup() {
+        let buffer = SessionEventBuffer()
+        let firstGeneration = buffer.beginConsumer()
+
+        #expect(buffer.append(chunk("a"), generation: firstGeneration))
+        #expect(!buffer.append(chunk("b"), generation: firstGeneration))
+        #expect(buffer.takeAll() == [chunk("a"), chunk("b")])
+
+        buffer.invalidateConsumer()
+        let secondGeneration = buffer.beginConsumer()
+        #expect(!buffer.append(chunk("stale"), generation: firstGeneration))
+        #expect(buffer.append(chunk("current"), generation: secondGeneration))
+        #expect(buffer.takeAll() == [chunk("current")])
+    }
+
+    @Test("A visible semantic drain waits for the display boundary")
+    func semanticDrainUsesDisplayBoundary() async {
+        let sessionID = UUID()
+        let client = FakeSessionServerClient(sessionId: sessionID)
+        let model = SessionModel(
+            serverTransport: ServerSessionTransport(client: client, sessionId: sessionID),
+            sessionId: sessionID.uuidString
+        )
+        let generation = model.pendingEvents.beginConsumer()
+        #expect(model.pendingEvents.append(chunk("frame me"), generation: generation))
+        var frameRequests = 0
+        model.presentationFrameRequester = {
+            frameRequests += 1
+            return true
+        }
+        model.viewDidAppear()
+
+        let drain = Task { @MainActor in
+            await model.flushPendingEventsAtPresentationBoundary()
+        }
+        await Task.yield()
+
+        #expect(frameRequests > 0)
+        #expect(!model.pendingEvents.isEmpty)
+        model.flushPendingEvents()
+        await drain.value
+        #expect(model.pendingEvents.isEmpty)
+        model.shutdown()
     }
 
     @Test("Adjacent same-span text chunks merge into one")

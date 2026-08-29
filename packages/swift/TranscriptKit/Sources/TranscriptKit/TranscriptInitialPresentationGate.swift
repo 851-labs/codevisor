@@ -13,12 +13,14 @@ public struct TranscriptInitialPresentationGate: Sendable, Equatable {
     @discardableResult
     public mutating func resolve(
         isHydrating: Bool,
+        isActiveProjectionPending: Bool = false,
         requiredKeys: Set<String>,
         resolvedKeys: Set<String>,
         hasPendingMeasurements: Bool = false,
     ) -> Bool {
         guard !isReady,
             !isHydrating,
+            !isActiveProjectionPending,
             !hasPendingMeasurements,
             requiredKeys.isSubset(of: resolvedKeys)
         else { return false }

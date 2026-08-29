@@ -29,29 +29,60 @@ struct ChatScreen: View {
     @Bindable var controller: SessionController
     /// The session screen's focus coordinator (shared with the terminals).
     let focus: TerminalFocusController
-    @State private var isAtBottom = true
-    @State private var autoFollow = true
-    @State private var composerHeight: CGFloat = 96
-    @State private var isQueueExpanded = true
+    /// The pane's retained AppKit presentation. Reattaching this surface keeps
+    /// its mounted Markdown rows, TextKit layout, and exact native viewport.
+    let presentationSurface: TranscriptPresentationSurface
+    @State private var isAtBottom: Bool
+    @State private var autoFollow: Bool
+    @State private var composerHeight: CGFloat
+    @State private var isQueueExpanded: Bool
     @State private var scrollCommand = TranscriptScrollCommand()
     @State private var historyLoadTask: Task<Void, Never>?
     @State private var olderHistoryPresentation = TranscriptPaginationPresentationGate()
-    @State private var composerMaskSize: CGSize = .zero
-    @State private var isTranscriptMounted = false
-    @State private var isInitialTranscriptReady = false
+    @State private var composerMaskSize: CGSize
+    @State private var isTranscriptMounted: Bool
+    @State private var isInitialTranscriptReady: Bool
     @State private var showsInitialLoadingSpinner = false
     @State private var projectedRows: [TranscriptVirtualRow] = []
     @State private var projectedRowsVersion: UInt64 = 0
     @State private var projectedSessionID: UUID?
-    @State private var isPreparingTranscript = true
-    @State private var textAnimationVisibility = StreamingTextAnimationVisibility.initiallyHidden
+    /// The native gate may open only for the exact projection request whose
+    /// rows have committed. An existing chat first publishes an empty/loading
+    /// request, then a history-backed request; a free-running Bool can briefly
+    /// describe the old rows as ready during that handoff.
+    @State private var projectionPublication =
+        TranscriptProjectionPublicationState<TranscriptProjectionRequest>()
+    @State private var presentationVisibilityOwner = UUID()
     @Namespace private var composerGlassNamespace
+
+    init(
+        controller: SessionController,
+        focus: TerminalFocusController,
+        presentationSurface: TranscriptPresentationSurface
+    ) {
+        self.controller = controller
+        self.focus = focus
+        self.presentationSurface = presentationSurface
+        let isWarm = presentationSurface.isWarm
+        _isAtBottom = State(initialValue: controller.scrollState?.isAtBottom ?? true)
+        _autoFollow = State(
+            initialValue: controller.scrollState?.followMode.followsLatest ?? true
+        )
+        _composerHeight = State(initialValue: presentationSurface.composerHeight)
+        _isQueueExpanded = State(initialValue: presentationSurface.isQueueExpanded)
+        _composerMaskSize = State(initialValue: presentationSurface.composerMaskSize)
+        _isTranscriptMounted = State(initialValue: false)
+        _isInitialTranscriptReady = State(initialValue: isWarm)
+    }
 
     var body: some View {
         transcriptSurface
             .onChange(of: controller.userSendSignal) { _, _ in
                 autoFollow = true
                 scrollCommand.token &+= 1
+            }
+            .onChange(of: isQueueExpanded) { _, isExpanded in
+                presentationSurface.isQueueExpanded = isExpanded
             }
             .overlay { initialLoadingOverlay }
             .harnessSignInSheet(
@@ -64,10 +95,10 @@ struct ChatScreen: View {
                 autoFollow = controller.scrollState?.followMode.followsLatest ?? true
                 isAtBottom = controller.scrollState?.isAtBottom ?? true
                 controller.transcriptViewDidAppear()
-                textAnimationVisibility.appear()
+                presentationSurface.appear(owner: presentationVisibilityOwner)
             }
             .onDisappear {
-                textAnimationVisibility.disappear()
+                presentationSurface.disappear(owner: presentationVisibilityOwner)
                 historyLoadTask?.cancel()
                 historyLoadTask = nil
                 olderHistoryPresentation.cancel()
@@ -77,8 +108,9 @@ struct ChatScreen: View {
             // frame before constructing the AppKit virtualizer. Until then the
             // transcript region is an opaque, correctly-sized blank surface.
             .task(id: ObjectIdentifier(controller)) {
+                let hasWarmPresentation = presentationSurface.isWarm
                 isTranscriptMounted = false
-                isInitialTranscriptReady = false
+                isInitialTranscriptReady = hasWarmPresentation
                 showsInitialLoadingSpinner = false
                 await Task.yield()
                 try? await Task.sleep(for: .milliseconds(16))
@@ -116,7 +148,7 @@ struct ChatScreen: View {
                     projectedRows = []
                     projectedRowsVersion &+= 1
                     projectedSessionID = key.sessionID
-                    isPreparingTranscript = true
+                    projectionPublication.reset()
                 }
                 do {
                     let rows = try await TranscriptRowProjectionCache.shared.rows(
@@ -129,13 +161,13 @@ struct ChatScreen: View {
                     else { return }
                     projectedRows = rows
                     projectedRowsVersion &+= 1
-                    isPreparingTranscript = false
+                    projectionPublication.publish(request)
                 } catch is CancellationError {
                     return
                 } catch {
                     // Projection is pure and currently only throws for
-                    // cancellation. Keep the existing rows if that changes.
-                    isPreparingTranscript = false
+                    // cancellation. Do not authorize a stale projection if
+                    // that contract changes.
                 }
             }
             .task(id: isInitialTranscriptReady) {
@@ -154,8 +186,10 @@ struct ChatScreen: View {
                 ActiveTranscriptProjectionScope(
                     controller: controller,
                     projectedRows: projectedRows
-                ) { activeRows, activeRowsVersion in
+                ) { activeRows, activeRowsVersion, isActiveProjectionPending in
                     NativeTranscriptView(
+                        presentationSurface: presentationSurface,
+                        sessionController: controller,
                         rows: projectedRows,
                         activeRows: activeRows,
                         activeRowsVersion: activeRowsVersion,
@@ -167,6 +201,7 @@ struct ChatScreen: View {
                         olderHistoryPresentationTarget: olderHistoryPresentation.presentationTarget,
                         isLoadingInitialHistory: controller.isLoadingInitialHistory,
                         isPreparingInitialProjection: isPreparingTranscript,
+                        isActiveProjectionPending: isActiveProjectionPending,
                         layoutFingerprint: dynamicTypeSize.hashValue,
                         scrollCommand: scrollCommand,
                         sendAnimationRequest: controller.userSendAnimationRequest,
@@ -184,7 +219,7 @@ struct ChatScreen: View {
                                     .environment(\.transcriptController, controller)
                                     .environment(
                                         \.streamingTextAnimationVisibility,
-                                        textAnimationVisibility
+                                        presentationSurface.textAnimationVisibility
                                     )
                                     .environment(
                                         \.runningSubagentToolCallIds,
@@ -318,6 +353,10 @@ struct ChatScreen: View {
                 bottomSpacerHeight: composerHeight + 24
             )
         )
+    }
+
+    private var isPreparingTranscript: Bool {
+        projectionPublication.isPending(currentRequest: transcriptProjectionRequest)
     }
 
     private var transcriptRows: [TranscriptVirtualRow] {
@@ -766,6 +805,7 @@ struct ChatScreen: View {
                 geometry.size
             } action: { size in
                 composerMaskSize = size
+                presentationSurface.updateComposerMaskSize(size)
             }
         }
         .padding(.horizontal, 24)
@@ -777,6 +817,7 @@ struct ChatScreen: View {
             $0.size.height
         } action: {
             composerHeight = $0
+            presentationSurface.updateComposerHeight($0)
         }
         .animation(Motion.quick(reduceMotion: reduceMotion), value: visibleComposerGlassElements)
         .animation(Motion.quick(reduceMotion: reduceMotion), value: controller.queuedPrompts.map(\.id))

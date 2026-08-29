@@ -95,6 +95,7 @@ struct TranscriptSendAnimationTarget {
 /// controller owns every row host, keeping transcript content out of the
 /// surrounding navigation controller's containment tree.
 struct NativeTranscriptView: UIViewControllerRepresentable {
+    let sessionController: SessionController
     let rows: [TranscriptVirtualRow]
     let activeRows: [TranscriptVirtualRow]
     let activeRowsVersion: UInt64
@@ -106,6 +107,7 @@ struct NativeTranscriptView: UIViewControllerRepresentable {
     let olderHistoryPresentationTarget: TranscriptPaginationPresentationTarget?
     let isLoadingInitialHistory: Bool
     let isPreparingInitialProjection: Bool
+    let isActiveProjectionPending: Bool
     let layoutFingerprint: Int
     let scrollCommand: TranscriptScrollCommand
     let sendAnimationRequest: UserSendAnimationRequest?
@@ -151,6 +153,7 @@ struct NativeTranscriptView: UIViewControllerRepresentable {
 
     private func configure(_ controller: TranscriptViewController) {
         controller.configure(
+            sessionController: sessionController,
             rows: rows,
             activeRows: activeRows,
             activeRowsVersion: activeRowsVersion,
@@ -162,6 +165,7 @@ struct NativeTranscriptView: UIViewControllerRepresentable {
             olderHistoryPresentationTarget: olderHistoryPresentationTarget,
             isLoadingInitialHistory: isLoadingInitialHistory,
             isPreparingInitialProjection: isPreparingInitialProjection,
+            isActiveProjectionPending: isActiveProjectionPending,
             layoutFingerprint: layoutFingerprint,
             scrollCommand: scrollCommand,
             sendAnimationRequest: sendAnimationRequest,

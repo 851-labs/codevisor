@@ -18,6 +18,7 @@
         private let content: Content
         private let fillsWidth: Bool
         private let streamingAnimation: StreamingTextAnimationContext?
+        @Environment(\.streamingTextAnimationFrameClock) private var animationFrameClock
 
         public init(attributedText: NSAttributedString, fillsWidth: Bool = true) {
             content = .attributed(attributedText)
@@ -56,6 +57,7 @@
 
         public func makeNSView(context: Context) -> SelectableTextKitView {
             let view = SelectableTextKitView()
+            view.animationFrameClock = animationFrameClock
             view.linkAction = context.environment.markdownLinkAction
             let prepared = context.coordinator.preparedText(
                 for: content,
@@ -70,6 +72,7 @@
         }
 
         public func updateNSView(_ textView: SelectableTextKitView, context: Context) {
+            textView.animationFrameClock = animationFrameClock
             textView.linkAction = context.environment.markdownLinkAction
             let prepared = context.coordinator.preparedText(
                 for: content,

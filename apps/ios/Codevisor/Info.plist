@@ -4,6 +4,10 @@
 <dict>
 	<key>CFBundleIconName</key>
 	<string>AppIcon</string>
+	<!-- Allow the display-link scheduler to use the full refresh range on
+	     ProMotion devices. The transcript clock remains paused when idle. -->
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
 	<!-- Codevisor servers are self-hosted and speak plain HTTP on tailnet
 	     (100.64/10, *.ts.net) and LAN addresses, where transport security is
 	     WireGuard or the local network — hostnames ATS can't be scoped to in

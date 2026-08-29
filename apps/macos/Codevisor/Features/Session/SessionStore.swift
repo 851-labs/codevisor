@@ -1,3 +1,5 @@
+// swiftlint:disable file_length type_body_length
+
 import Foundation
 import Observation
 import CodevisorCore
@@ -28,12 +30,20 @@ final class SessionStore {
     /// AttributeGraph from inside that same render pass. The controllers are
     /// observable themselves, while `activityRevision` covers aggregate reads.
     @ObservationIgnored private var controllers: [SessionKey: SessionController] = [:]
-    /// Tiny viewport snapshots outlive controller eviction. Observation is
-    /// intentionally disabled: scroll ticks must never invalidate the store's
-    /// sidebar/session observers.
+    /// Tiny viewport snapshots share the controller cache's lifetime. This
+    /// restores an exact position while its transcript remains resident, while
+    /// a genuinely uncached chat opens at the latest content after reloading.
+    /// Observation is intentionally disabled: scroll ticks must never
+    /// invalidate the store's sidebar/session observers.
     @ObservationIgnored private var scrollStates: [SessionKey: SessionScrollState] = [:]
-    /// Per-session todo-panel expansion, kept outside the controller cache for
-    /// the same reason as transcript viewport state.
+    /// Recent chats retain their mounted native transcript window in addition
+    /// to model and geometry state. This is deliberately observation-ignored:
+    /// resolving a pane's presentation surface must remain an identity lookup,
+    /// not invalidate every session view.
+    @ObservationIgnored private var transcriptSurfaces =
+        TranscriptPresentationSurfaceCache()
+    /// Per-session todo-panel expansion deliberately outlives controller
+    /// eviction so pinned checklists retain their disclosure state.
     @ObservationIgnored private var todoExpansionStates: [SessionKey: Bool] = [:]
     /// Bottom-panel models by WORKSPACE (the panel belongs to the
     /// workspace, and its chats share one detail container — a per-session
@@ -185,6 +195,24 @@ final class SessionStore {
         controller.onTurnEnded = { [weak self] in self?.noteTurnEnded() }
         controllers[key] = controller
         return controller
+    }
+
+    /// Returns the pane-specific native transcript presentation. Including the
+    /// pane id lets the same chat appear in two splits without one AppKit view
+    /// being stolen back and forth between them.
+    func transcriptSurface(
+        for session: ChatSession,
+        paneID: UUID,
+        controller: SessionController
+    ) -> TranscriptPresentationSurface {
+        transcriptSurfaces.surface(
+            for: .init(
+                serverID: session.serverId,
+                sessionID: session.id,
+                paneID: paneID
+            ),
+            controller: controller
+        )
     }
 
     /// Reconciles a controller after view construction (or from an explicit
@@ -728,6 +756,7 @@ final class SessionStore {
         let key = SessionKey(session)
         controllers[key]?.model?.shutdown()
         controllers[key] = nil
+        transcriptSurfaces.remove(serverID: key.serverId, sessionID: key.sessionId)
         ephemeralWorkspaces[session.id] = nil
         detachBottomGroup(for: session)
         detachCenterLeaves(for: session)
@@ -767,8 +796,11 @@ final class SessionStore {
         }
         guard idle.count > Self.maxIdleControllers else { return }
         for id in idle.dropLast(Self.maxIdleControllers) {
-            controllers[id]?.model?.shutdown()
-            controllers[id] = nil
+            let controller = controllers.removeValue(forKey: id)
+            controller?.onScrollStateChange = nil
+            controller?.model?.shutdown()
+            scrollStates[id] = nil
+            transcriptSurfaces.remove(serverID: id.serverId, sessionID: id.sessionId)
         }
     }
 }

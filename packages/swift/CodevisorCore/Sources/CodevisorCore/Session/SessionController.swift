@@ -35,7 +35,20 @@ final public class SessionController {
     /// The controller half of the transcript's cheap projection version.
     /// Model-backed row changes carry their own revision below.
     public private(set) var transcriptProjectionRevision: UInt64 = 0
+    /// The only high-frequency presentation signal observed by transcript
+    /// surfaces. It advances from an elected native display-link callback,
+    /// never from ACP arrival or an arbitrary wall-clock timer.
+    public internal(set) var transcriptPresentationFrameRevision: UInt64 = 0
     @ObservationIgnored let transcriptProjectionID = UUID()
+
+    /// Visible transcript surfaces register their display clocks here. A
+    /// session can appear in several windows at once; electing one driver
+    /// prevents independent 60 Hz and 120 Hz clocks from interleaving model
+    /// publications while still choosing the fastest visible display.
+    @ObservationIgnored var transcriptFrameDrivers: [TranscriptFrameDriverToken: TranscriptFrameDriver] = [:]
+    @ObservationIgnored var electedTranscriptFrameDriver: TranscriptFrameDriverToken?
+    @ObservationIgnored var transcriptPresentationFramePending = false
+    @ObservationIgnored var transcriptFallbackFrameTask: Task<Void, Never>?
 
     public var composerText: String = "" { didSet { draftDidChange() } }
     public internal(set) var composerAttachments: [ComposerAttachment] = [] { didSet { draftDidChange() } }
@@ -63,9 +76,16 @@ final public class SessionController {
     public internal(set) var model: SessionModel? {
         didSet {
             if model !== oldValue { transcriptProjectionRevision &+= 1 }
+            if model !== oldValue {
+                oldValue?.presentationFrameRequester = nil
+                oldValue?.reschedulePendingEventsForCurrentVisibility()
+            }
             // A model connected while its transcript is already on screen
             // must start at the visible flush cadence, not the background one.
             guard let model, model !== oldValue else { return }
+            model.presentationFrameRequester = { [weak self] in
+                self?.requestTranscriptPresentationFrame() == true
+            }
             for _ in 0..<visibleTranscriptViews { model.viewDidAppear() }
         }
     }

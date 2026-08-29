@@ -49,7 +49,12 @@ struct ChatPaneContentView: View {
                     let controller = store.controller(for: chatSession, project: chatProject)
                     ChatScreen(
                         controller: controller,
-                        focus: focus
+                        focus: focus,
+                        presentationSurface: store.transcriptSurface(
+                            for: chatSession,
+                            paneID: descriptor.id,
+                            controller: controller
+                        )
                     )
                     .id(chatSession.id)
                     .onChange(of: chatSession, initial: true) { _, updatedSession in

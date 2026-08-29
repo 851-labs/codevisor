@@ -11,6 +11,7 @@
         private let fillsWidth: Bool
         private let streamingAnimation: StreamingTextAnimationContext?
         @Environment(\.markdownLinkAction) private var linkAction
+        @Environment(\.streamingTextAnimationFrameClock) private var animationFrameClock
 
         public init(attributedText: NSAttributedString, fillsWidth: Bool = true) {
             self.attributedText = attributedText
@@ -34,6 +35,7 @@
 
         public func makeUIView(context: Context) -> SelectableTextKitView {
             let view = SelectableTextKitView()
+            view.animationFrameClock = animationFrameClock
             context.coordinator.linkAction = linkAction
             view.delegate = context.coordinator
             let prepared = context.coordinator.preparedText(
@@ -49,6 +51,7 @@
         }
 
         public func updateUIView(_ textView: SelectableTextKitView, context: Context) {
+            textView.animationFrameClock = animationFrameClock
             context.coordinator.linkAction = linkAction
             let prepared = context.coordinator.preparedText(
                 for: attributedText,
@@ -263,11 +266,19 @@
     }
 
     @MainActor
-    public final class SelectableTextKitView: UITextView {
+    public final class SelectableTextKitView: UITextView, StreamingTextAnimationFrameClient {
         private var representedText: NSAttributedString?
         private var latestAnimationEnd: TimeInterval?
         private var activeAnimationRanges: [NSRange] = []
         private var animationDisplayLink: CADisplayLink?
+        public var animationFrameClock: StreamingTextAnimationFrameClock? {
+            didSet {
+                guard animationFrameClock !== oldValue else { return }
+                oldValue?.remove(self)
+                stopAnimation()
+                updateAnimation(until: latestAnimationEnd)
+            }
+        }
 
         init() {
             let textStorage = NSTextStorage()
@@ -357,6 +368,11 @@
             latestAnimationEnd = endTime
             let now = CACurrentMediaTime()
             streamingLayoutManager?.animationTime = now
+            if let animationFrameClock {
+                stopAnimation()
+                animationFrameClock.update(self, until: endTime)
+                return
+            }
             guard let endTime, endTime > now else {
                 stopAnimation()
                 return
@@ -368,11 +384,15 @@
         }
 
         @objc private func animationFrame(_ displayLink: CADisplayLink) {
-            streamingLayoutManager?.animationTime = displayLink.timestamp
-            redrawActiveStreamingText(at: displayLink.timestamp)
+            streamingTextAnimationFrame(at: displayLink.timestamp)
             if let latestAnimationEnd, displayLink.timestamp >= latestAnimationEnd {
                 stopAnimation()
             }
+        }
+
+        public func streamingTextAnimationFrame(at timestamp: TimeInterval) {
+            streamingLayoutManager?.animationTime = timestamp
+            redrawActiveStreamingText(at: timestamp)
         }
 
         private func stopAnimation() {

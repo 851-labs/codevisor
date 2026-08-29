@@ -3,6 +3,7 @@
 import CodevisorCore
 import CodevisorUI
 import QuartzCore
+import StreamMarkdown
 import SwiftUI
 import TranscriptKit
 import UIKit
@@ -27,6 +28,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     private static let maxParkedHostCount = 16
     private static let sendAssistantHoldAnimationKey = "codevisor.send-assistant-hold"
     private let canvasView = UIView()
+    private let streamingTextFrameClock = StreamingTextAnimationFrameClock()
     private let paginationLoadingIndicator = UIHostingConfiguration {
         ShimmeringText(text: "Loading older messages...")
     }
@@ -59,8 +61,14 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     private var rowContent: ((TranscriptVirtualRow) -> AnyView)?
     private var pendingMeasurements: [String: TranscriptRowMeasurement] = [:]
     private var measurementCommitTask: Task<Void, Never>?
+    private weak var sessionController: SessionController?
+    private var presentationFrameDriverToken: TranscriptFrameDriverToken?
+    private var presentationDisplayLink: CADisplayLink?
+    private var displayFrameRequested = false
+    private var modelPresentationFrameRequested = false
     private var measurementCommitGate = TranscriptMeasurementCommitGate()
     private var initialPresentationGate = TranscriptInitialPresentationGate()
+    private var initialBottomPin = TranscriptInitialBottomPin()
     private var bottomJumpGate = TranscriptBottomJumpGate()
     private var deferredRowsDuringScroll: [TranscriptVirtualRow]?
     private var deferredActiveRowsRange: Range<Int>?
@@ -88,6 +96,11 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     /// validate its caches until the first displayable projection arrives
     /// after any initial history hydration.
     private var isPreparingInitialProjection = true
+    /// The outer row projection initially contains one aggregate `.active` row.
+    /// Keep first paint closed until its independently parsed block rows replace
+    /// that provisional topology; otherwise an uncached chat visibly jumps from
+    /// the aggregate estimate to the final block layout.
+    private var isActiveProjectionPending = false
     private var scrollCommand = TranscriptScrollCommand()
     private var receivedSendAnimationToken: UInt64?
     private var pendingSendAnimationRequest: UserSendAnimationRequest?
@@ -138,6 +151,9 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
 
     override init(frame: CGRect) {
         super.init(frame: frame)
+        streamingTextFrameClock.setFrameRequester { [weak self] in
+            self?.requestDisplayFrame()
+        }
         delegate = self
         backgroundColor = .clear
         canvasView.backgroundColor = .clear
@@ -190,6 +206,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     }
 
     deinit {
+        presentationDisplayLink?.invalidate()
         measurementCommitTask?.cancel()
         disclosureAnchorReleaseTask?.cancel()
         sendPresentationWatchdog?.cancel()
@@ -208,10 +225,14 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             republishLastStableScrollState()
             interruptSendPresentation()
             isDetaching = true
+            uninstallPresentationDisplayLink()
         } else if window != nil {
             isDetaching = false
         }
         super.didMoveToWindow()
+        if window != nil {
+            installPresentationDisplayLink()
+        }
     }
 
     override func layoutSubviews() {
@@ -266,6 +287,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     }
 
     func configure(
+        sessionController newSessionController: SessionController,
         rows newProjectedRows: [TranscriptVirtualRow],
         activeRows newActiveRows: [TranscriptVirtualRow],
         activeRowsVersion newActiveRowsVersion: UInt64,
@@ -277,6 +299,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         olderHistoryPresentationTarget newOlderHistoryPresentationTarget: TranscriptPaginationPresentationTarget?,
         isLoadingInitialHistory newIsLoadingInitialHistory: Bool,
         isPreparingInitialProjection newIsPreparingInitialProjection: Bool,
+        isActiveProjectionPending newIsActiveProjectionPending: Bool,
         layoutFingerprint newLayoutFingerprint: Int,
         scrollCommand newScrollCommand: TranscriptScrollCommand,
         sendAnimationRequest newSendAnimationRequest: UserSendAnimationRequest?,
@@ -302,6 +325,10 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         onNearTop: @escaping () -> Void,
         onOlderHistoryPresented: @escaping (UInt64) -> Void,
     ) {
+        if sessionController !== newSessionController {
+            unregisterPresentationFrameDriver()
+            sessionController = newSessionController
+        }
         rowContent = newRowContent
         self.onViewportChange = onViewportChange
         self.onBottomStateChange = onBottomStateChange
@@ -309,6 +336,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         self.onNearTop = onNearTop
         self.onOlderHistoryPresented = onOlderHistoryPresented
         isPreparingInitialProjection = newIsPreparingInitialProjection
+        isActiveProjectionPending = newIsActiveProjectionPending
         isLoadingInitialHistory = newIsLoadingInitialHistory
         guard !newIsPreparingInitialProjection else {
             setNeedsLayout()
@@ -338,6 +366,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             presentationRole == .foreground
             && newPresentationRole != .foreground
         presentationRole = newPresentationRole
+        updatePresentationFrameDriverRegistration()
         if leftForeground {
             interruptSendPresentation()
         }
@@ -364,6 +393,9 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             initialPositionConfigured = true
             pendingInitialState = initialState
             lastStableScrollState = initialState
+            initialBottomPin.configure(
+                restoresNonBottomPosition: initialState.map { !$0.isAtBottom } ?? false
+            )
             followsLatest = initialState?.followMode.followsLatest ?? newFollowsLatest
             if let initialState, !initialState.isAtBottom {
                 lockedRestoreDistance = initialState.distanceFromBottom
@@ -466,6 +498,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             republishLastStableScrollState()
         }
         isDetaching = true
+        uninstallPresentationDisplayLink()
         measurementCommitTask?.cancel()
         measurementCommitTask = nil
         pendingMeasurements.removeAll(keepingCapacity: false)
@@ -481,6 +514,96 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         }
         mountedHosts.removeAll(keepingCapacity: false)
         discardParkedHosts()
+    }
+
+    private func installPresentationDisplayLink() {
+        guard presentationDisplayLink == nil, let window else { return }
+        guard
+            let displayLink = window.screen.displayLink(
+                withTarget: self,
+                selector: #selector(presentationDisplayLinkDidFire(_:))
+            )
+        else { return }
+        let rate = Float(max(1, window.screen.maximumFramesPerSecond))
+        displayLink.preferredFrameRateRange = CAFrameRateRange(
+            minimum: rate,
+            maximum: rate,
+            preferred: rate
+        )
+        displayLink.isPaused = true
+        displayLink.add(to: .main, forMode: .common)
+        presentationDisplayLink = displayLink
+        streamingTextFrameClock.setFrameRequester { [weak self] in
+            self?.requestDisplayFrame()
+        }
+        updatePresentationFrameDriverRegistration()
+        if !pendingMeasurements.isEmpty {
+            requestDisplayFrame()
+        }
+    }
+
+    private func uninstallPresentationDisplayLink() {
+        streamingTextFrameClock.setFrameRequester(nil)
+        unregisterPresentationFrameDriver()
+        presentationDisplayLink?.invalidate()
+        presentationDisplayLink = nil
+        displayFrameRequested = false
+        modelPresentationFrameRequested = false
+    }
+
+    private func updatePresentationFrameDriverRegistration() {
+        guard presentationRole == .foreground,
+            presentationFrameDriverToken == nil,
+            let presentationDisplayLink,
+            let sessionController,
+            let window
+        else {
+            if presentationRole != .foreground {
+                unregisterPresentationFrameDriver()
+            }
+            return
+        }
+        presentationFrameDriverToken = sessionController.registerTranscriptFrameDriver(
+            maximumFramesPerSecond: max(1, window.screen.maximumFramesPerSecond)
+        ) { [weak self] in
+            self?.requestModelPresentationFrame()
+        }
+        // Keep the local link alive only through explicit frame requests.
+        presentationDisplayLink.isPaused = !displayFrameRequested
+    }
+
+    private func unregisterPresentationFrameDriver() {
+        if let presentationFrameDriverToken {
+            sessionController?.unregisterTranscriptFrameDriver(presentationFrameDriverToken)
+            self.presentationFrameDriverToken = nil
+        }
+    }
+
+    private func requestDisplayFrame() {
+        guard let presentationDisplayLink else { return }
+        displayFrameRequested = true
+        presentationDisplayLink.isPaused = false
+    }
+
+    private func requestModelPresentationFrame() {
+        modelPresentationFrameRequested = true
+        requestDisplayFrame()
+    }
+
+    @objc private func presentationDisplayLinkDidFire(_ displayLink: CADisplayLink) {
+        let shouldPresentModel = modelPresentationFrameRequested
+        displayFrameRequested = false
+        modelPresentationFrameRequested = false
+        if shouldPresentModel, let presentationFrameDriverToken {
+            sessionController?.transcriptPresentationFrameDidFire(presentationFrameDriverToken)
+        }
+        if !pendingMeasurements.isEmpty,
+            measurementCommitGate.allowsGeometryCommit
+        {
+            commitPendingMeasurements()
+        }
+        streamingTextFrameClock.tick(at: displayLink.timestamp)
+        displayLink.isPaused = !displayFrameRequested
     }
 
     func discardParkedHosts() {
@@ -753,9 +876,19 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         let previousLayout = virtualLayout
         let previousDistance = initialPositionApplied ? currentDistanceFromBottom() : nil
         let followsStreamingLatest = followsLatest && rows.contains { $0.id.isActiveRow }
-        let pinsExplicitBottom = bottomJumpGate.isActive
+        // Composer geometry is represented by the final spacer row. If its
+        // measured height settles while the reader is already at the bottom,
+        // keep the latest content stationary; ordinary idle-row changes still
+        // preserve their visible block anchor below.
+        let pinsBottomSpacerChange =
+            previousDistance.map { $0 <= Self.atBottomThreshold } == true
+            && bottomSpacerGeometryWillChange(from: previousLayout)
+        let pinsBottom =
+            bottomJumpGate.isActive
+            || initialBottomPin.isActive
+            || pinsBottomSpacerChange
         let visibleAnchorKey: String?
-        if !pinsExplicitBottom,
+        if !pinsBottom,
             !followsStreamingLatest,
             let previousDistance,
             !previousLayout.isEmpty
@@ -782,7 +915,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         let distanceToPreserve: CGFloat? =
             if let lockedRestoreDistance {
                 lockedRestoreDistance
-            } else if pinsExplicitBottom {
+            } else if pinsBottom {
                 0
             } else if initialPositionApplied {
                 followsStreamingLatest ? 0 : currentDistanceFromBottom()
@@ -827,7 +960,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
                 setViewportTop(anchor.viewportTop)
             } else if let distanceToPreserve {
                 let anchoredDistance =
-                    pinsExplicitBottom
+                    pinsBottom
                     ? nil
                     : visibleAnchorKey.flatMap { key in
                         virtualLayout.distanceFromBottom(
@@ -846,6 +979,18 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         }
         updateMountedRows(rangeOverride: initialRestoreRange)
         updateInitialPresentationReadiness()
+    }
+
+    private func bottomSpacerGeometryWillChange(
+        from previousLayout: VirtualTranscriptLayout
+    ) -> Bool {
+        let key = TranscriptVirtualRow.ID.bottomSpacer.layoutKey
+        guard let previousIndex = previousLayout.indexByKey[key],
+            previousLayout.heights.indices.contains(previousIndex),
+            let row = rowByKey[key]
+        else { return false }
+        let nextHeight = measurements[key] ?? row.estimatedHeight
+        return abs(previousLayout.heights[previousIndex] - nextHeight) > 0.5
     }
 
     private func incrementallyUpdatedLayout(
@@ -1272,6 +1417,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         let key = row.layoutKey
         return AnyView(
             rowContent(row)
+                .environment(\.streamingTextAnimationFrameClock, streamingTextFrameClock)
                 .environment(\.transcriptPerformAnchoredDisclosureChange) { [weak self] change in
                     self?.performAnchoredDisclosureChange(in: key, change: change) ?? change()
                 }
@@ -1380,14 +1526,9 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             return
         }
         pendingMeasurements[measurement.key] = measurement
-        // Active output needs its latest geometry without an extra frame.
-        // Ordinary mounted rows batch into one document snapshot, matching
-        // the macOS virtualizer and avoiding redundant anchor corrections.
         guard measurementCommitGate.allowsGeometryCommit else { return }
-        if rowByKey[measurement.key]?.id.isActiveRow == true {
-            measurementCommitTask?.cancel()
-            measurementCommitTask = nil
-            commitPendingMeasurements()
+        if presentationDisplayLink != nil {
+            requestDisplayFrame()
             return
         }
         guard measurementCommitTask == nil else { return }
@@ -1487,12 +1628,17 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         guard
             initialPresentationGate.resolve(
                 isHydrating: isLoadingInitialHistory || isPreparingInitialProjection,
+                isActiveProjectionPending: isActiveProjectionPending,
                 requiredKeys: requiredKeys,
                 resolvedKeys: resolvedKeys,
             )
         else { return }
 
         applyPositionTransaction {
+            if initialBottomPin.isActive {
+                setDistanceFromBottom(0)
+            }
+            initialBottomPin.release()
             canvasView.alpha = 1
             canvasView.accessibilityElementsHidden = false
         }

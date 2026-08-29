@@ -1,6 +1,18 @@
 import Foundation
 import ACPKit
 
+/// Opaque registration for one native transcript surface's display clock.
+/// The controller elects the fastest visible registration as the session's
+/// presentation driver.
+public struct TranscriptFrameDriverToken: Hashable, Sendable {
+    fileprivate let rawValue = UUID()
+}
+
+struct TranscriptFrameDriver {
+    let maximumFramesPerSecond: Int
+    let requestFrame: @MainActor () -> Void
+}
+
 extension SessionController {
     // MARK: - Derived state
 
@@ -91,6 +103,104 @@ extension SessionController {
         guard visibleTranscriptViews > 0 else { return }
         visibleTranscriptViews -= 1
         model?.viewDidDisappear()
+    }
+
+    /// Registers a visible native surface. `requestFrame` must merely arm its
+    /// paused display link; all transcript work happens when that link fires.
+    public func registerTranscriptFrameDriver(
+        maximumFramesPerSecond: Int,
+        requestFrame: @escaping @MainActor () -> Void
+    ) -> TranscriptFrameDriverToken {
+        let token = TranscriptFrameDriverToken()
+        transcriptFrameDrivers[token] = TranscriptFrameDriver(
+            maximumFramesPerSecond: max(1, maximumFramesPerSecond),
+            requestFrame: requestFrame
+        )
+        electTranscriptFrameDriver()
+        if transcriptPresentationFramePending {
+            requestTranscriptPresentationFrame()
+        } else {
+            model?.preferPresentationFrameIfPending()
+        }
+        return token
+    }
+
+    public func unregisterTranscriptFrameDriver(_ token: TranscriptFrameDriverToken) {
+        let wasElected = electedTranscriptFrameDriver == token
+        transcriptFrameDrivers.removeValue(forKey: token)
+        if wasElected {
+            electedTranscriptFrameDriver = nil
+            electTranscriptFrameDriver()
+        }
+        if wasElected, transcriptPresentationFramePending {
+            requestTranscriptPresentationFrame()
+        }
+        if wasElected {
+            model?.reschedulePendingEventsForCurrentVisibility()
+        }
+    }
+
+    /// Called by a registered native display link. Non-elected callbacks are
+    /// ignored so two windows on unrelated display clocks cannot double-commit
+    /// one session inside a single physical frame.
+    public func transcriptPresentationFrameDidFire(_ token: TranscriptFrameDriverToken) {
+        guard token == electedTranscriptFrameDriver,
+            transcriptFrameDrivers[token] != nil,
+            transcriptPresentationFramePending
+        else { return }
+        transcriptFallbackFrameTask?.cancel()
+        transcriptFallbackFrameTask = nil
+        transcriptPresentationFramePending = false
+        model?.flushPendingEvents()
+        transcriptPresentationFrameRevision &+= 1
+    }
+
+    /// Arms the elected display link. Projection workers also call this after
+    /// preparing a new immutable row snapshot, so publication is gated by the
+    /// same clock as ACP event application.
+    @discardableResult
+    public func requestTranscriptPresentationFrame() -> Bool {
+        transcriptPresentationFramePending = true
+        electTranscriptFrameDriver()
+        if let electedTranscriptFrameDriver,
+            let driver = transcriptFrameDrivers[electedTranscriptFrameDriver]
+        {
+            transcriptFallbackFrameTask?.cancel()
+            transcriptFallbackFrameTask = nil
+            driver.requestFrame()
+            return true
+        }
+
+        // A surface can become observable just before AppKit/UIKit attaches it
+        // to a window. Preserve progress during that short gap without making
+        // the ordinary visible path timer-driven.
+        guard transcriptFallbackFrameTask == nil else { return true }
+        transcriptFallbackFrameTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(16))
+            guard !Task.isCancelled, let self,
+                self.transcriptPresentationFramePending
+            else { return }
+            self.transcriptFallbackFrameTask = nil
+            self.transcriptPresentationFramePending = false
+            self.model?.flushPendingEvents()
+            self.transcriptPresentationFrameRevision &+= 1
+        }
+        return true
+    }
+
+    private func electTranscriptFrameDriver() {
+        if let electedTranscriptFrameDriver,
+            let elected = transcriptFrameDrivers[electedTranscriptFrameDriver],
+            transcriptFrameDrivers.values.allSatisfy({
+                $0.maximumFramesPerSecond <= elected.maximumFramesPerSecond
+            })
+        {
+            return
+        }
+        electedTranscriptFrameDriver =
+            transcriptFrameDrivers.max {
+                $0.value.maximumFramesPerSecond < $1.value.maximumFramesPerSecond
+            }?.key
     }
     public var modeState: SessionModeState? {
         if let live = model?.modeState { return live }

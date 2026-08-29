@@ -23,9 +23,9 @@ final class ChatControllerCache {
     /// state survives leaving the page and relaunches; the first send
     /// promotes the controller to a real session and clears the draft.
     private var draftsByServer: [String: SessionController] = [:]
-    /// Viewport snapshots outlive the heavier controller LRU. This mirrors
-    /// macOS's SessionStore: opening enough chats may discard a transcript
-    /// model, but it must not forget where the user was reading.
+    /// Viewport snapshots share the heavier controller LRU's lifetime. An
+    /// exact reading position survives screen remounts while the transcript is
+    /// resident; after eviction, reloaded history opens at its latest content.
     @ObservationIgnored private var scrollStates: [Key: SessionScrollState] = [:]
     /// Todo disclosure outlives the heavier controller LRU, matching the
     /// macOS SessionStore contract for pinned session checklists.
@@ -247,8 +247,10 @@ final class ChatControllerCache {
         }
         while idle.count > Self.maxIdleControllers {
             let key = idle.removeFirst()
-            controllers[key]?.model?.shutdown()
-            controllers[key] = nil
+            let controller = controllers.removeValue(forKey: key)
+            controller?.onScrollStateChange = nil
+            controller?.model?.shutdown()
+            scrollStates[key] = nil
             accessOrder.removeAll { $0 == key }
         }
     }

@@ -79,6 +79,29 @@ struct TranscriptInitialPresentationGateTests {
         #expect(gate.isReady)
     }
 
+    @Test func provisionalActiveRowCannotRevealBeforeBlockProjectionPublishes() {
+        var gate = TranscriptInitialPresentationGate()
+        let keys: Set<String> = ["active-fallback"]
+
+        let provisionalReveal = gate.resolve(
+            isHydrating: false,
+            isActiveProjectionPending: true,
+            requiredKeys: keys,
+            resolvedKeys: keys
+        )
+        #expect(!provisionalReveal)
+        #expect(!gate.isReady)
+
+        let finalTopologyReveal = gate.resolve(
+            isHydrating: false,
+            isActiveProjectionPending: false,
+            requiredKeys: ["markdown-0", "markdown-1"],
+            resolvedKeys: ["markdown-0", "markdown-1"]
+        )
+        #expect(finalTopologyReveal)
+        #expect(gate.isReady)
+    }
+
     @Test func cachedWindowRevealsImmediatelyAndNeverHidesAgain() {
         var gate = TranscriptInitialPresentationGate()
 

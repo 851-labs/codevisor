@@ -1,3 +1,5 @@
+// swiftlint:disable type_body_length
+
 import ACPKit
 import CodevisorCore
 import CodevisorUI
@@ -80,7 +82,11 @@ struct SessionTranscriptView: View {
     @State private var projectedRows: [TranscriptVirtualRow] = []
     @State private var projectedRowsVersion: UInt64 = 0
     @State private var projectedSessionID: UUID?
-    @State private var isPreparingTranscript = true
+    /// Readiness belongs to a particular projection request. Existing chats
+    /// move from an empty/loading request to a history-backed request, and the
+    /// native gate must not treat the old rows as current between those two.
+    @State private var projectionPublication =
+        TranscriptProjectionPublicationState<TranscriptProjectionRequest>()
     @State private var ownsVisibleTranscriptLifecycle = false
     @State private var textAnimationVisibility = StreamingTextAnimationVisibility(
         initiallyVisible: false
@@ -130,7 +136,7 @@ struct SessionTranscriptView: View {
                     projectedRows = []
                     projectedRowsVersion &+= 1
                     projectedSessionID = key.sessionID
-                    isPreparingTranscript = true
+                    projectionPublication.reset()
                 }
                 do {
                     let rows = try await TranscriptRowProjectionCache.shared.rows(
@@ -143,16 +149,12 @@ struct SessionTranscriptView: View {
                     else { return }
                     projectedRows = rows
                     projectedRowsVersion &+= 1
-                    // The empty/loading snapshot is only a placeholder. Keep
-                    // the native transcript parked until the projection that
-                    // follows initial history hydration has arrived, otherwise
-                    // its estimated row frames can reach the first visible
-                    // paint before exact measurements collapse them.
-                    isPreparingTranscript = input.isLoadingInitialHistory
+                    projectionPublication.publish(request)
                 } catch is CancellationError {
                     return
                 } catch {
-                    isPreparingTranscript = false
+                    // Never authorize rows from an older request after an
+                    // unexpected projection failure.
                 }
             }
             .task(id: isLoadingTranscriptContent) {
@@ -384,8 +386,9 @@ struct SessionTranscriptView: View {
         return ActiveTranscriptProjectionScope(
             controller: controller,
             projectedRows: projectedRows
-        ) { activeRows, activeRowsVersion in
+        ) { activeRows, activeRowsVersion, isActiveProjectionPending in
             NativeTranscriptView(
+                sessionController: controller,
                 rows: projectedRows,
                 activeRows: activeRows,
                 activeRowsVersion: activeRowsVersion,
@@ -398,6 +401,7 @@ struct SessionTranscriptView: View {
                 olderHistoryPresentationTarget: olderHistoryPresentation.presentationTarget,
                 isLoadingInitialHistory: controller.isLoadingInitialHistory,
                 isPreparingInitialProjection: isPreparingTranscript,
+                isActiveProjectionPending: isActiveProjectionPending,
                 layoutFingerprint: transcriptLayoutFingerprint,
                 scrollCommand: scrollCommand,
                 sendAnimationRequest: controller.userSendAnimationRequest,
@@ -474,6 +478,10 @@ struct SessionTranscriptView: View {
                 bottomSpacerHeight: composerHeight + 24
             )
         )
+    }
+
+    private var isPreparingTranscript: Bool {
+        projectionPublication.isPending(currentRequest: transcriptProjectionRequest)
     }
 
     private func requestOlderHistoryLoad() {

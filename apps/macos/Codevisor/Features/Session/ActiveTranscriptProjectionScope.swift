@@ -8,14 +8,17 @@ import TranscriptKit
 struct ActiveTranscriptProjectionScope<Content: View>: View {
     let controller: SessionController
     let projectedRows: [TranscriptVirtualRow]
-    let content: ([TranscriptVirtualRow], UInt64) -> Content
+    let content: ([TranscriptVirtualRow], UInt64, Bool) -> Content
     @State private var activeRows: [TranscriptVirtualRow] = []
     @State private var activeRowsVersion: UInt64 = 0
+    @State private var publishedProjectionKey: TaskKey?
+    @State private var projectionStaging = ProjectionStaging()
+    @State private var projectionWorker = TranscriptActiveProjectionWorker()
 
     init(
         controller: SessionController,
         projectedRows: [TranscriptVirtualRow],
-        @ViewBuilder content: @escaping ([TranscriptVirtualRow], UInt64) -> Content
+        @ViewBuilder content: @escaping ([TranscriptVirtualRow], UInt64, Bool) -> Content
     ) {
         self.controller = controller
         self.projectedRows = projectedRows
@@ -23,32 +26,43 @@ struct ActiveTranscriptProjectionScope<Content: View>: View {
     }
 
     var body: some View {
-        content(activeRows, activeRowsVersion)
+        let presentationFrame = controller.transcriptPresentationFrameRevision
+        let projectionKey = taskKey
+        let isActiveProjectionPending =
+            projectedItem != nil
+            && publishedProjectionKey != projectionKey
+        content(activeRows, activeRowsVersion, isActiveProjectionPending)
             .task(id: taskKey) {
                 guard let projectedItem else {
-                    activeRows = []
-                    activeRowsVersion &+= 1
+                    projectionWorker.cancel()
+                    projectionStaging.ready = ReadyProjection(key: taskKey, rows: [])
+                    controller.requestTranscriptPresentationFrame()
                     return
                 }
-                let revision = controller.activeItemRevision
+                let key = taskKey
                 let item = TranscriptActiveItemResolver.resolve(
                     projected: projectedItem,
                     live: controller.activeItem,
                     settled: controller.settledConversation
                 )
                 let waiting = controller.waitingBackgroundTaskDescription
-                let nextRows = await Task.detached(priority: .userInitiated) {
-                    TranscriptActiveRowProjection.rows(
-                        for: item,
+                projectionWorker.submit(
+                    .init(
+                        revision: key.revision,
+                        projectedID: projectedItem.id,
+                        item: item,
                         waitingOnBackgroundTask: waiting
                     )
-                }.value
-                guard !Task.isCancelled,
-                    taskKey.revision == revision,
-                    taskKey.projectedID == projectedItem.id
-                else { return }
-                activeRows = nextRows
-                activeRowsVersion &+= 1
+                ) { output in
+                    projectionStaging.ready = ReadyProjection(key: key, rows: output.rows)
+                    controller.requestTranscriptPresentationFrame()
+                }
+            }
+            .onChange(of: presentationFrame, initial: true) { _, _ in
+                publishReadyProjection()
+            }
+            .onDisappear {
+                projectionWorker.cancel()
             }
     }
 
@@ -70,5 +84,25 @@ struct ActiveTranscriptProjectionScope<Content: View>: View {
         let revision: UInt64
         let projectedID: UUID?
         let waitingDescription: String?
+    }
+
+    private struct ReadyProjection {
+        let key: TaskKey
+        let rows: [TranscriptVirtualRow]
+    }
+
+    @MainActor
+    private final class ProjectionStaging {
+        var ready: ReadyProjection?
+    }
+
+    private func publishReadyProjection() {
+        guard let readyProjection = projectionStaging.ready,
+            readyProjection.key == taskKey
+        else { return }
+        projectionStaging.ready = nil
+        activeRows = readyProjection.rows
+        activeRowsVersion &+= 1
+        publishedProjectionKey = readyProjection.key
     }
 }

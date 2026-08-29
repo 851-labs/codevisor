@@ -156,7 +156,7 @@ extension SessionModel {
         // rebuild from durable history instead of leaving a false Stop state.
         for _ in 0..<20 {
             try? await Task.sleep(for: Self.cancellationTerminalEventWaitDelay)
-            flushPendingEvents()
+            await flushPendingEventsAtPresentationBoundary()
             if !isSending { return }
         }
         await reconcileFromServer()
@@ -233,7 +233,9 @@ extension SessionModel {
         let wasSending = isSending
         consumerTask?.cancel()
         consumerTask = nil
-        pendingEvents.removeAll(keepingCapacity: true)
+        pendingEvents.invalidateConsumer()
+        scheduledFlushTask?.cancel()
+        scheduledFlushTask = nil
         isFlushScheduled = false
         let outcome = await loadHistoryForConnectionRecovery()
         guard case .loaded = outcome else {

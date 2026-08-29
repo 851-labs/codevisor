@@ -26,6 +26,7 @@ final class TranscriptViewController: UIViewController {
     }
 
     func configure(
+        sessionController: SessionController,
         rows: [TranscriptVirtualRow],
         activeRows: [TranscriptVirtualRow],
         activeRowsVersion: UInt64,
@@ -37,6 +38,7 @@ final class TranscriptViewController: UIViewController {
         olderHistoryPresentationTarget: TranscriptPaginationPresentationTarget?,
         isLoadingInitialHistory: Bool,
         isPreparingInitialProjection: Bool,
+        isActiveProjectionPending: Bool,
         layoutFingerprint: Int,
         scrollCommand: TranscriptScrollCommand,
         sendAnimationRequest: UserSendAnimationRequest?,
@@ -61,6 +63,7 @@ final class TranscriptViewController: UIViewController {
     ) {
         loadViewIfNeeded()
         transcriptScrollView.configure(
+            sessionController: sessionController,
             rows: rows,
             activeRows: activeRows,
             activeRowsVersion: activeRowsVersion,
@@ -72,6 +75,7 @@ final class TranscriptViewController: UIViewController {
             olderHistoryPresentationTarget: olderHistoryPresentationTarget,
             isLoadingInitialHistory: isLoadingInitialHistory,
             isPreparingInitialProjection: isPreparingInitialProjection,
+            isActiveProjectionPending: isActiveProjectionPending,
             layoutFingerprint: layoutFingerprint,
             scrollCommand: scrollCommand,
             sendAnimationRequest: sendAnimationRequest,
