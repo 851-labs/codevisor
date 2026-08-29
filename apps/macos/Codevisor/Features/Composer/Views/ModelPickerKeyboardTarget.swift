@@ -6,6 +6,38 @@ enum ModelPickerKeyboardTarget: Hashable {
     case manageHarnesses
 }
 
+/// SwiftUI exposes scroll-indicator visibility but not AppKit's native control
+/// sizes. This zero-size probe keeps the picker on the system scroller style
+/// while using the compact width of a mini vertical scroller.
+struct ModelPickerScrollerConfigurator: NSViewRepresentable {
+    func makeNSView(context: Context) -> ConfiguratorView {
+        ConfiguratorView()
+    }
+
+    func updateNSView(_ view: ConfiguratorView, context: Context) {
+        view.apply()
+    }
+
+    final class ConfiguratorView: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            apply()
+        }
+
+        func apply() {
+            DispatchQueue.main.async { [weak self] in
+                guard
+                    let scrollView = self?.enclosingScrollView,
+                    let scroller = scrollView.verticalScroller,
+                    scroller.controlSize != .mini
+                else { return }
+                scroller.controlSize = .mini
+                scrollView.tile()
+            }
+        }
+    }
+}
+
 struct ModelFilterField: NSViewRepresentable {
     @Binding var text: String
     let onMoveUp: () -> Void

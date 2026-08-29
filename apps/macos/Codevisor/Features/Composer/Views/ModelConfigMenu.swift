@@ -129,6 +129,7 @@ private extension ModelConfigMenu {
                                 XcodeModelPickerMetrics.listHorizontalInset
                             )
                             .padding(.vertical, XcodeModelPickerMetrics.listVerticalInset)
+                            .background(ModelPickerScrollerConfigurator())
                         }
                         .scrollBounceBehavior(modelPickerScrollBounceBehavior)
                         .onChange(of: keyboardTarget) { _, target in
