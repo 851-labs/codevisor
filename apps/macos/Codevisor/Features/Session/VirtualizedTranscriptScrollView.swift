@@ -27,9 +27,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
 
     private let transcriptDocumentView = FlippedTranscriptDocumentView()
     private let streamingTextFrameClock = StreamingTextAnimationFrameClock()
-    private let paginationLoadingIndicator = NSHostingView(
-        rootView: ShimmeringText(text: "Loading older messages...")
-    )
+    private let paginationLoadingIndicator = NSProgressIndicator()
     private var rows: [TranscriptVirtualRow] = []
     private var rowByKey: [String: TranscriptVirtualRow] = [:]
     private var projectedRows: [TranscriptVirtualRow] = []
@@ -88,7 +86,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private var followsLatest = true
     private var hasOlderHistory = false
     private var paginationHeaderLayout = TranscriptPaginationHeaderLayout()
-    private var olderHistoryPresentationTarget: TranscriptPaginationPresentationTarget?
     private var isLoadingInitialHistory = false
     private var isPreparingInitialProjection = true
     /// The outer row projection initially contains one aggregate `.active` row.
@@ -140,7 +137,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private var onBottomStateChange: ((Bool) -> Void)?
     private var onFollowStateChange: ((Bool) -> Void)?
     private var onNearTop: (() -> Void)?
-    private var onOlderHistoryPresented: ((UInt64) -> Void)?
     var onInitialPresentationReady: (() -> Void)?
     var isInitialPresentationReady: Bool { initialPresentationGate.isReady }
     /// The chat history itself can hold keyboard focus: a click anywhere in
@@ -172,7 +168,10 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         transcriptDocumentView.wantsLayer = true
         transcriptDocumentView.layer?.backgroundColor = NSColor.clear.cgColor
         documentView = transcriptDocumentView
-        paginationLoadingIndicator.isHidden = true
+        paginationLoadingIndicator.style = .spinning
+        paginationLoadingIndicator.controlSize = .small
+        paginationLoadingIndicator.isIndeterminate = true
+        paginationLoadingIndicator.isDisplayedWhenStopped = false
         paginationLoadingIndicator.setAccessibilityLabel("Loading older messages")
         transcriptDocumentView.addSubview(paginationLoadingIndicator)
         // Estimated row frames lay out underneath the document but must not
@@ -348,7 +347,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         followsLatest newFollowsLatest: Bool,
         hasOlderHistory newHasOlderHistory: Bool,
         showsOlderHistoryLoadingIndicator newShowsOlderHistoryLoadingIndicator: Bool,
-        olderHistoryPresentationTarget newOlderHistoryPresentationTarget: TranscriptPaginationPresentationTarget?,
         isLoadingInitialHistory newIsLoadingInitialHistory: Bool,
         isPreparingInitialProjection newIsPreparingInitialProjection: Bool,
         isActiveProjectionPending newIsActiveProjectionPending: Bool,
@@ -361,8 +359,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         onViewportChange: @escaping (SessionScrollState) -> Void,
         onBottomStateChange: @escaping (Bool) -> Void,
         onFollowStateChange: @escaping (Bool) -> Void,
-        onNearTop: @escaping () -> Void,
-        onOlderHistoryPresented: @escaping (UInt64) -> Void
+        onNearTop: @escaping () -> Void
     ) {
         if sessionController !== newSessionController {
             uninstallPresentationFrameDriver()
@@ -374,7 +371,12 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         self.onBottomStateChange = onBottomStateChange
         self.onFollowStateChange = onFollowStateChange
         self.onNearTop = onNearTop
-        self.onOlderHistoryPresented = onOlderHistoryPresented
+        // Pagination feedback describes the fetch, not row projection. Apply
+        // it even when the native document is waiting for projected rows so a
+        // completed request can never leave the indicator running.
+        updatePaginationLoadingIndicator(
+            isPresented: newShowsOlderHistoryLoadingIndicator
+        )
         isLoadingInitialHistory = newIsLoadingInitialHistory
         isPreparingInitialProjection = newIsPreparingInitialProjection
         isActiveProjectionPending = newIsActiveProjectionPending
@@ -396,10 +398,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             hasOlderHistory: newHasOlderHistory,
             isPresented: newShowsOlderHistoryLoadingIndicator
         )
-        updatePaginationLoadingIndicator(
-            isPresented: newShowsOlderHistoryLoadingIndicator
-        )
-        olderHistoryPresentationTarget = newOlderHistoryPresentationTarget
+        positionPaginationLoadingIndicator()
         reduceMotion = newReduceMotion
         claimSendAnimation = newClaimSendAnimation
 
@@ -480,7 +479,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         updateInitialPresentationReadiness()
         resolveBottomJumpIfPossible()
         checkForHistoryPrefetch()
-        acknowledgeOlderHistoryPresentationIfPossible()
     }
 
     @discardableResult
@@ -579,17 +577,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         var result = projectedRows
         result.replaceSubrange(activeIndex...activeIndex, with: activeRows)
         return (result, activeIndex..<(activeIndex + activeRows.count))
-    }
-
-    /// AppKit applies prepended rows synchronously, but the acknowledgement is
-    /// still explicit so the SwiftUI feedback lifetime ends at native document
-    /// commit rather than when the request happens to return.
-    private func acknowledgeOlderHistoryPresentationIfPossible() {
-        guard let target = olderHistoryPresentationTarget,
-            rows.first?.layoutKey == target.oldestRowKey
-        else { return }
-        olderHistoryPresentationTarget = nil
-        onOlderHistoryPresented?(target.token)
     }
 
     /// Recreates the reference app's shared-element handoff without moving the
@@ -847,7 +834,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         onBottomStateChange = nil
         onFollowStateChange = nil
         onNearTop = nil
-        onOlderHistoryPresented = nil
         onInitialPresentationReady = nil
     }
 
@@ -1835,7 +1821,11 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     }
 
     private func updatePaginationLoadingIndicator(isPresented: Bool) {
-        paginationLoadingIndicator.isHidden = !isPresented
+        if isPresented {
+            paginationLoadingIndicator.startAnimation(nil)
+        } else {
+            paginationLoadingIndicator.stopAnimation(nil)
+        }
         positionPaginationLoadingIndicator()
     }
 
@@ -1844,7 +1834,8 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             paginationLoadingIndicator.frame = .zero
             return
         }
-        let size = paginationLoadingIndicator.fittingSize
+        paginationLoadingIndicator.sizeToFit()
+        let size = paginationLoadingIndicator.frame.size
         paginationLoadingIndicator.frame = CGRect(
             x: (max(1, contentView.bounds.width) - size.width) / 2,
             y: Self.topPadding

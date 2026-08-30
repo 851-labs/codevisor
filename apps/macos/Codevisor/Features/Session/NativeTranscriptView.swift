@@ -26,7 +26,6 @@ struct NativeTranscriptView: NSViewRepresentable {
     let followsLatest: Bool
     let hasOlderHistory: Bool
     let showsOlderHistoryLoadingIndicator: Bool
-    let olderHistoryPresentationTarget: TranscriptPaginationPresentationTarget?
     let isLoadingInitialHistory: Bool
     let isPreparingInitialProjection: Bool
     let isActiveProjectionPending: Bool
@@ -40,7 +39,6 @@ struct NativeTranscriptView: NSViewRepresentable {
     let onBottomStateChange: @MainActor (Bool) -> Void
     let onFollowStateChange: @MainActor (Bool) -> Void
     let onNearTop: @MainActor () -> Void
-    let onOlderHistoryPresented: @MainActor (UInt64) -> Void
     var onInitialPresentationReady: (@MainActor () -> Void)? = nil
     /// Called once with the underlying scroll view so the session's focus
     /// controller can park keyboard focus on the chat history when it is
@@ -130,7 +128,6 @@ struct NativeTranscriptView: NSViewRepresentable {
             followsLatest: followsLatest,
             hasOlderHistory: hasOlderHistory,
             showsOlderHistoryLoadingIndicator: showsOlderHistoryLoadingIndicator,
-            olderHistoryPresentationTarget: olderHistoryPresentationTarget,
             isLoadingInitialHistory: isLoadingInitialHistory,
             isPreparingInitialProjection: isPreparingInitialProjection,
             isActiveProjectionPending: isActiveProjectionPending,
@@ -143,8 +140,7 @@ struct NativeTranscriptView: NSViewRepresentable {
             onViewportChange: onViewportChange,
             onBottomStateChange: onBottomStateChange,
             onFollowStateChange: onFollowStateChange,
-            onNearTop: onNearTop,
-            onOlderHistoryPresented: onOlderHistoryPresented
+            onNearTop: onNearTop
         )
         if view.isInitialPresentationReady {
             reportInitialPresentationReady()

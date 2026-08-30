@@ -38,7 +38,6 @@ struct ChatScreen: View {
     @State private var isQueueExpanded: Bool
     @State private var scrollCommand = TranscriptScrollCommand()
     @State private var historyLoadTask: Task<Void, Never>?
-    @State private var olderHistoryPresentation = TranscriptPaginationPresentationGate()
     @State private var composerMaskSize: CGSize
     @State private var isTranscriptMounted: Bool
     @State private var isInitialTranscriptReady: Bool
@@ -101,7 +100,6 @@ struct ChatScreen: View {
                 presentationSurface.disappear(owner: presentationVisibilityOwner)
                 historyLoadTask?.cancel()
                 historyLoadTask = nil
-                olderHistoryPresentation.cancel()
                 controller.transcriptViewDidDisappear()
             }
             // Give the new pane shell, split chrome, and composer one committed
@@ -197,8 +195,7 @@ struct ChatScreen: View {
                         initialState: controller.scrollState,
                         followsLatest: autoFollow,
                         hasOlderHistory: controller.hasOlderHistory,
-                        showsOlderHistoryLoadingIndicator: olderHistoryPresentation.isPresented,
-                        olderHistoryPresentationTarget: olderHistoryPresentation.presentationTarget,
+                        showsOlderHistoryLoadingIndicator: controller.isLoadingOlderHistory,
                         isLoadingInitialHistory: controller.isLoadingInitialHistory,
                         isPreparingInitialProjection: isPreparingTranscript,
                         isActiveProjectionPending: isActiveProjectionPending,
@@ -245,11 +242,6 @@ struct ChatScreen: View {
                         },
                         onNearTop: {
                             requestOlderHistoryLoad()
-                        },
-                        onOlderHistoryPresented: { token in
-                            DispatchQueue.main.async {
-                                olderHistoryPresentation.didPresent(token: token)
-                            }
                         },
                         onInitialPresentationReady: {
                             isInitialTranscriptReady = true
@@ -323,25 +315,9 @@ struct ChatScreen: View {
         guard historyLoadTask == nil, controller.hasOlderHistory,
             !controller.isLoadingOlderHistory
         else { return }
-        guard
-            let token = olderHistoryPresentation.begin(
-                hasOlderHistory: controller.hasOlderHistory
-            )
-        else { return }
         historyLoadTask = Task { @MainActor in
             defer { historyLoadTask = nil }
-            let insertedItemCount = await controller.loadOlderHistory()
-            guard !Task.isCancelled else {
-                olderHistoryPresentation.cancel(token: token)
-                return
-            }
-            olderHistoryPresentation.requestDidFinish(
-                token: token,
-                insertedItemCount: insertedItemCount,
-                oldestRowKey: insertedItemCount > 0
-                    ? projectedRows.first?.layoutKey
-                    : nil
-            )
+            await controller.loadOlderHistory()
         }
     }
 
