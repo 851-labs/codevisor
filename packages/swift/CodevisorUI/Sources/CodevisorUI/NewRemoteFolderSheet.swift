@@ -80,6 +80,7 @@ public struct NewRemoteFolderSheet: View {
                 Form {
                     Section {
                         folderNameField
+                            .textInputAutocapitalization(.never)
                     }
                     if let message = displayedMessage {
                         Section {
