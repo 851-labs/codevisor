@@ -86,6 +86,10 @@ public struct TodoPanelView: View {
                             .scrollIndicators(.visible)
                         }
                         .frame(maxHeight: maximumExpandedHeight)
+                        // A flexible frame accepts the full proposed height up
+                        // to its cap. Use its ideal height so short plans hug
+                        // their rows; overflowing plans still scroll at the cap.
+                        .fixedSize(horizontal: false, vertical: true)
                     } else {
                         entries
                     }
