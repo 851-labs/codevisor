@@ -37,7 +37,6 @@ import { discoverCapabilities, routeHarnesses } from "./routes/harnesses.js"
 import { routeMcps, routeMcpScopes, routeNativeMcps } from "./routes/mcps.js"
 import { routeProjects } from "./routes/projects.js"
 import { readMcpOverlays } from "./infra/mcp-fleet.js"
-import { refreshHarnessReadiness, republishAccountsRoster } from "./routes/sync-reconcilers.js"
 import {
   drainPromptQueue,
   makeTurnDispatchListener,
@@ -47,7 +46,11 @@ import {
 } from "./routes/sessions.js"
 import { routePluginProxy, routePlugins } from "./routes/plugins.js"
 import { routeSkills } from "./routes/skills.js"
-import { configMutationNamespace, runBackgroundSyncReconcile } from "./routes/sync-reconcilers.js"
+import {
+  configMutationNamespace,
+  makeAuthSyncRefreshScheduler,
+  runBackgroundSyncReconcile
+} from "./routes/sync-reconcilers.js"
 import { routeSync } from "./routes/sync.js"
 import { routeTerminals } from "./routes/terminals.js"
 import { routeWorkspaces } from "./routes/workspaces.js"
@@ -145,7 +148,8 @@ export const makeCodevisorServerApp = (
         config.sessionActivity?.update(event.subjectId, active)
       })
     : undefined
-  /* v8 ignore next 10 -- the auth manager invokes this thin event-forwarding callback. */
+  const authSyncRefresh = makeAuthSyncRefreshScheduler(services, config, fanout)
+  /* v8 ignore next 9 -- the auth manager invokes this thin event-forwarding callback. */
   const unsubscribeAuth = services.auth?.subscribe((event) => {
     void appendAndPublish(services.db, fanout, event.kind, event.subjectId, event.payload).catch(
       () => undefined
@@ -154,8 +158,7 @@ export const makeCodevisorServerApp = (
     // a session dying of auth, a login completing — republishes this
     // machine's roster immediately instead of waiting for a client sweep.
     if (event.kind === "harness.account.updated") {
-      void republishAccountsRoster(services, config, fanout)
-      void refreshHarnessReadiness(services, config, fanout)
+      authSyncRefresh.request()
     }
   })
   /* v8 ignore next -- the lifecycle manager invokes this thin event-forwarding callback. */
@@ -221,6 +224,7 @@ export const makeCodevisorServerApp = (
       activeSessionIds.clear()
       config.sessionActivity?.stop()
       unsubscribeAuth?.()
+      authSyncRefresh.close()
       unsubscribeLifecycle?.()
       unsubscribePlugins?.()
       unsubscribeGate?.()

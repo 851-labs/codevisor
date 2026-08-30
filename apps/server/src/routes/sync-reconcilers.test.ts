@@ -2,11 +2,17 @@ import { writePluginInstallReceipt } from "@codevisor/plugins"
 import { mkdtemp } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { describe, expect, it } from "vitest"
-import { makeEventFanout, type CodevisorServerConfig } from "../server-context.js"
+import { describe, expect, it, vi } from "vitest"
+import {
+  makeEventFanout,
+  type CodevisorServerConfig,
+  type CodevisorServerServices
+} from "../server-context.js"
 import { jsonRequest, makeServices, run, startWithApp } from "../test-support.js"
 import {
   configMutationNamespace,
+  makeAuthSyncRefreshScheduler,
+  refreshHarnessReadiness,
   refreshMcpReadiness,
   refreshPluginReadiness,
   reconcileForNamespace,
@@ -154,6 +160,59 @@ describe("refreshMcpReadiness", () => {
       mcp: { list: () => Promise.reject(new Error("boom")) }
     } as unknown as typeof services
     await expect(refreshMcpReadiness(poisoned, config, fanout)).resolves.toBeUndefined()
+  })
+})
+
+describe("auth-derived sync refresh", () => {
+  it("derives readiness from stored auth state without starting a passive probe", async () => {
+    const fanout = await run(makeEventFanout)
+    const { services } = await makeServices("server-auth-readiness")
+    const decorateHarnesses = vi.fn(async (harnesses) => harnesses)
+    const decorateHarnessesFromStoredState = vi.fn(async (harnesses) => harnesses)
+    const withAuth = {
+      ...services,
+      auth: {
+        decorateHarnesses,
+        decorateHarnessesFromStoredState
+      } as unknown as NonNullable<CodevisorServerServices["auth"]>
+    }
+
+    await refreshHarnessReadiness(withAuth, config, fanout)
+
+    expect(decorateHarnessesFromStoredState).toHaveBeenCalledTimes(1)
+    expect(decorateHarnesses).not.toHaveBeenCalled()
+  })
+
+  it("coalesces event bursts into one active refresh and one trailing refresh", async () => {
+    const fanout = await run(makeEventFanout)
+    const { services } = await makeServices("server-auth-coalescing")
+    let releaseFirstRefresh: () => void = () => undefined
+    const firstRefreshGate = new Promise<void>((resolve) => {
+      releaseFirstRefresh = resolve
+    })
+    const decorateHarnessesFromStoredState = vi.fn(async (harnesses) => {
+      if (decorateHarnessesFromStoredState.mock.calls.length === 1) await firstRefreshGate
+      return harnesses
+    })
+    const withAuth = {
+      ...services,
+      auth: {
+        decorateHarnesses: vi.fn(async (harnesses) => harnesses),
+        decorateHarnessesFromStoredState
+      } as unknown as NonNullable<CodevisorServerServices["auth"]>
+    }
+    const scheduler = makeAuthSyncRefreshScheduler(withAuth, config, fanout)
+
+    for (let index = 0; index < 64; index += 1) scheduler.request()
+    await vi.waitFor(() => expect(decorateHarnessesFromStoredState).toHaveBeenCalledTimes(1))
+
+    for (let index = 0; index < 64; index += 1) scheduler.request()
+    releaseFirstRefresh()
+    await vi.waitFor(() => expect(decorateHarnessesFromStoredState).toHaveBeenCalledTimes(2))
+
+    scheduler.close()
+    scheduler.request()
+    expect(decorateHarnessesFromStoredState).toHaveBeenCalledTimes(2)
   })
 })
 

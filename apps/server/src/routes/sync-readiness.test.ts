@@ -138,6 +138,8 @@ describe("/v1/sync/harness-readiness", () => {
             readiness: { state: "notInstalled", detail: "CLI not found on PATH" }
           }))
         ]),
+      decorateHarnessesFromStoredState: (list: ReadonlyArray<Harness>) =>
+        auth.decorateHarnesses(list),
       activeAccountContext: () => Promise.resolve(undefined),
       subscribe: () => () => undefined
     } as unknown as HarnessAuthManager

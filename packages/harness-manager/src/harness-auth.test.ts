@@ -215,6 +215,65 @@ describe("harness authentication refresh", () => {
       canLogout: false
     })
   })
+
+  it("persists and emits one error when concurrent refreshes share a failed probe", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "codevisor-auth-single-flight-"))
+    directories.push(directory)
+
+    const db = await run(
+      makeDatabase({ filename: join(directory, "codevisor.sqlite"), serverId: "test" })
+    )
+    databases.push(db)
+    await run(
+      db.saveHarnessAccount({
+        id: "opencode-account",
+        harnessId: "opencode",
+        profileKind: "default",
+        label: "Existing OpenCode profile",
+        authState: "checking",
+        canLogin: true,
+        canLogout: false
+      })
+    )
+
+    let releaseProbe: () => void = () => undefined
+    const probeGate = new Promise<void>((resolve) => {
+      releaseProbe = resolve
+    })
+    const probeHarnessAuth = vi.fn(() =>
+      Effect.promise(async () => {
+        await probeGate
+        throw new Error("ACP initialize timed out after 10000ms")
+      })
+    )
+    const manager = makeHarnessAuthManager({
+      agents: { probeHarnessAuth } as unknown as AgentRuntimeService,
+      dataDir: directory,
+      db,
+      terminal: {} as TerminalManagerService,
+      resolveEnv: () => Promise.resolve({ HOME: directory })
+    })
+    const events: string[] = []
+    manager.subscribe((event) => events.push(event.kind))
+    const listAccounts = vi.spyOn(db, "listHarnessAccounts")
+
+    const waiterCount = 64
+    const refreshes = Array.from({ length: waiterCount }, () => manager.refresh("opencode"))
+    await vi.waitFor(() =>
+      expect(listAccounts.mock.calls.length).toBeGreaterThanOrEqual(waiterCount)
+    )
+    await vi.waitFor(() => expect(probeHarnessAuth).toHaveBeenCalledTimes(1))
+    releaseProbe()
+    await Promise.all(refreshes)
+
+    expect(probeHarnessAuth).toHaveBeenCalledTimes(1)
+    expect(events.filter((kind) => kind === "harness.account.updated")).toHaveLength(1)
+    expect(events.filter((kind) => kind === "harness.auth.updated")).toHaveLength(1)
+    await expect(run(db.getHarnessAccount("opencode-account"))).resolves.toMatchObject({
+      authState: "error",
+      detail: "ACP initialize timed out after 10000ms"
+    })
+  })
 })
 
 describe("OpenCode profile authentication", () => {

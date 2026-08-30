@@ -72,6 +72,55 @@ describe("Codex login methods", () => {
 })
 
 describe("harness authentication decoration", () => {
+  it("decorates from stored state without launching a probe", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "codevisor-auth-stored-"))
+    directories.push(directory)
+    const db = await run(
+      makeDatabase({ filename: join(directory, "codevisor.sqlite"), serverId: "test" })
+    )
+    databases.push(db)
+    await run(
+      db.saveHarnessAccount({
+        id: "gemini-account",
+        harnessId: "gemini",
+        profileKind: "default",
+        label: "Existing Gemini CLI account",
+        authState: "unauthenticated",
+        canLogin: true,
+        canLogout: false
+      })
+    )
+    const probeHarnessAuth = vi.fn(() =>
+      Effect.succeed({ state: "authenticated" as const, methods: [], canLogout: true })
+    )
+    const manager = makeHarnessAuthManager({
+      agents: { probeHarnessAuth } as unknown as AgentRuntimeService,
+      dataDir: directory,
+      db,
+      terminal: {} as TerminalManagerService,
+      resolveEnv: () => Promise.resolve({ HOME: directory })
+    })
+    const definition = harnessCatalog.find((candidate) => candidate.id === "gemini")!
+    const harness: Harness = {
+      id: definition.id,
+      name: definition.name,
+      symbolName: definition.symbolName,
+      source: "registry",
+      launchKind: "npx",
+      enabled: true,
+      readiness: { state: "ready", path: "/usr/local/bin/gemini" }
+    }
+
+    const [decorated] = await manager.decorateHarnessesFromStoredState([harness])
+
+    expect(decorated).toMatchObject({
+      enabled: false,
+      desiredEnabled: true,
+      auth: { state: "unauthenticated" }
+    })
+    expect(probeHarnessAuth).not.toHaveBeenCalled()
+  })
+
   it("does not block catalog decoration on a passive account probe", async () => {
     const directory = mkdtempSync(join(tmpdir(), "codevisor-auth-passive-"))
     directories.push(directory)

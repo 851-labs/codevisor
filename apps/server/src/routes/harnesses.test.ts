@@ -94,6 +94,7 @@ describe("harness routes", () => {
             }
           }
         }),
+      decorateHarnessesFromStoredState: async (values) => auth.decorateHarnesses(values),
       refresh: vi.fn(async () => undefined),
       accounts: vi.fn(async () => accountList),
       createAccount: vi.fn(async () => account),

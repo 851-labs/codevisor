@@ -134,6 +134,10 @@ export interface HarnessAuthManager {
     harnesses: ReadonlyArray<Harness>,
     force?: boolean
   ) => Promise<ReadonlyArray<Harness>>
+  /// Decorates harnesses from durable auth state without launching auth probes.
+  readonly decorateHarnessesFromStoredState: (
+    harnesses: ReadonlyArray<Harness>
+  ) => Promise<ReadonlyArray<Harness>>
   readonly refresh: (harnessId?: string) => Promise<void>
   readonly accounts: (harnessId: string) => Promise<ReadonlyArray<HarnessAccount>>
   readonly createAccount: (harnessId: string, label?: string) => Promise<HarnessAccount>
@@ -189,6 +193,7 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
     config.catalog ?? config.agents.catalog ?? harnessCatalog
   const listeners = new Set<(event: HarnessAuthEvent) => void>()
   const probes = new Map<string, Promise<HarnessAccount>>()
+  const refreshes = new Map<string, Promise<void>>()
   const codexLogins = new Map<string, CodexLoginEntry>()
   const claudeLogins = new Map<string, { accountId: string; client: ClaudeAuthClient }>()
   const spawnClaudeAuth = config.claudeAuth ?? spawnClaudeAuthClient
@@ -584,45 +589,41 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
     }
   }
 
+  const refreshAccount = (account: HarnessAccountRecord, force: boolean): Promise<void> => {
+    const current = refreshes.get(account.id)
+    if (current !== undefined) return current
+    // Keep the failure write inside the single-flight boundary. Otherwise every
+    // waiter on one failed probe persists the same error and emits another pair
+    // of account/auth events.
+    const pending = (async () => {
+      try {
+        await probeAccount(account.id, force)
+      } catch (cause) {
+        await persistProbe(account, {
+          authState: "error",
+          canLogin: account.canLogin,
+          canLogout: false,
+          detail: cause instanceof Error ? cause.message : String(cause)
+        })
+      }
+    })().finally(() => refreshes.delete(account.id))
+    refreshes.set(account.id, pending)
+    return pending
+  }
+
   const refresh = async (harnessId?: string): Promise<void> => {
     const ids = harnessId === undefined ? catalogNow().map((entry) => entry.id) : [harnessId]
     await Promise.all(
       ids.map(async (id) => {
         const accounts = await run(config.db.listHarnessAccounts(id))
-        await Promise.all(
-          accounts.map(async (account) => {
-            try {
-              await probeAccount(account.id, true)
-            } catch (cause) {
-              await persistProbe(account, {
-                authState: "error",
-                canLogin: account.canLogin,
-                canLogout: false,
-                detail: cause instanceof Error ? cause.message : String(cause)
-              })
-            }
-          })
-        )
+        await Promise.all(accounts.map((account) => refreshAccount(account, true)))
       })
     )
   }
 
-  const refreshAccount = async (account: HarnessAccountRecord, force: boolean): Promise<void> => {
-    try {
-      await probeAccount(account.id, force)
-    } catch (cause) {
-      await persistProbe(account, {
-        authState: "error",
-        canLogin: account.canLogin,
-        canLogout: false,
-        detail: cause instanceof Error ? cause.message : String(cause)
-      })
-    }
-  }
-
-  const decorateHarnesses = async (
+  const decorateHarnessesWithMode = async (
     harnesses: ReadonlyArray<Harness>,
-    force = false
+    mode: "passive" | "force" | "stored"
   ): Promise<ReadonlyArray<Harness>> =>
     Promise.all(
       harnesses.map(async (harness) => {
@@ -631,9 +632,9 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
           return { ...harness, desiredEnabled, enabled: false }
         }
         const account = await ensureDefault(harness)
-        if (force) {
+        if (mode === "force") {
           await refreshAccount(account, true)
-        } else {
+        } else if (mode === "passive") {
           // Capability discovery is latency-sensitive. Return the persisted
           // auth snapshot immediately and refresh it in the background; auth
           // events invalidate mounted catalogs when the probe finishes.
@@ -644,6 +645,16 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
         return { ...harness, desiredEnabled, enabled: desiredEnabled && usable, auth }
       })
     )
+
+  const decorateHarnesses = (
+    harnesses: ReadonlyArray<Harness>,
+    force = false
+  ): Promise<ReadonlyArray<Harness>> =>
+    decorateHarnessesWithMode(harnesses, force ? "force" : "passive")
+
+  const decorateHarnessesFromStoredState = (
+    harnesses: ReadonlyArray<Harness>
+  ): Promise<ReadonlyArray<Harness>> => decorateHarnessesWithMode(harnesses, "stored")
 
   const createAccount = async (harnessId: string, label?: string): Promise<HarnessAccount> => {
     if (harnessId !== "codex" && harnessId !== "claude-code" && harnessId !== "opencode") {
@@ -1006,6 +1017,7 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
 
   return {
     decorateHarnesses,
+    decorateHarnessesFromStoredState,
     refresh,
     accounts: async (harnessId) =>
       (await run(config.db.listHarnessAccounts(harnessId))).map(publicAccount),

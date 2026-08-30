@@ -28,7 +28,7 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "../server-context.js"
-import { discoverHarnesses } from "./harnesses.js"
+import { discoverHarnesses, discoverHarnessesFromStoredAuthState } from "./harnesses.js"
 
 /// The reconcile passes shared by two callers: the explicit
 /// /v1/sync/<plane>/reconcile routes clients drive, and the mutation hook —
@@ -246,23 +246,25 @@ export const refreshHarnessReadiness = async (
   fanout: EventFanout
 ): Promise<void> => {
   try {
-    const rows: HarnessReadinessRow[] = (await discoverHarnesses(services)).map((harness) => {
-      const authed =
-        services.auth === undefined ||
-        harness.auth?.state === "authenticated" ||
-        harness.auth?.state === "notRequired"
-      const installed = harness.readiness.state === "ready"
-      const desired = harness.desiredEnabled ?? harness.enabled
-      const state: HarnessReadinessRow["state"] = !desired
-        ? "disabled"
-        : !installed
-          ? "notInstalled"
-          : authed
-            ? "ready"
-            : "signInRequired"
-      const reason = state === "notInstalled" ? harness.readiness.detail : undefined
-      return { id: harness.id, state, ...(reason ? { reason } : {}) }
-    })
+    const rows: HarnessReadinessRow[] = (await discoverHarnessesFromStoredAuthState(services)).map(
+      (harness) => {
+        const authed =
+          services.auth === undefined ||
+          harness.auth?.state === "authenticated" ||
+          harness.auth?.state === "notRequired"
+        const installed = harness.readiness.state === "ready"
+        const desired = harness.desiredEnabled ?? harness.enabled
+        const state: HarnessReadinessRow["state"] = !desired
+          ? "disabled"
+          : !installed
+            ? "notInstalled"
+            : authed
+              ? "ready"
+              : "signInRequired"
+        const reason = state === "notInstalled" ? harness.readiness.detail : undefined
+        return { id: harness.id, state, ...(reason ? { reason } : {}) }
+      }
+    )
     const result = await publishMachineReadiness({
       db: services.db,
       namespace: HARNESS_READINESS_NAMESPACE,
@@ -277,6 +279,56 @@ export const refreshHarnessReadiness = async (
     }
   } catch {
     // Best-effort by design; the next pass republishes.
+  }
+}
+
+export interface AuthSyncRefreshScheduler {
+  readonly request: () => void
+  readonly close: () => void
+}
+
+/// Account updates can arrive in large bursts. Run at most one roster/readiness
+/// refresh at a time and collapse every burst during that run into one trailing
+/// refresh, so event delivery cannot create unbounded background work.
+export const makeAuthSyncRefreshScheduler = (
+  services: CodevisorServerServices,
+  config: CodevisorServerConfig,
+  fanout: EventFanout
+): AuthSyncRefreshScheduler => {
+  let requested = false
+  let closed = false
+  let running: Promise<void> | undefined
+
+  const drain = async (): Promise<void> => {
+    while (!closed && requested) {
+      requested = false
+      await Promise.all([
+        republishAccountsRoster(services, config, fanout),
+        refreshHarnessReadiness(services, config, fanout)
+      ])
+    }
+  }
+
+  const request = (): void => {
+    if (closed) return
+    requested = true
+    if (running !== undefined) return
+    // The microtask boundary collapses a synchronous event burst before the
+    // first refresh starts. Events received during I/O request one trailing run.
+    running = Promise.resolve()
+      .then(drain)
+      .catch(swallowError)
+      .finally(() => {
+        running = undefined
+      })
+  }
+
+  return {
+    request,
+    close: () => {
+      closed = true
+      requested = false
+    }
   }
 }
 

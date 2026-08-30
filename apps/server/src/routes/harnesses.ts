@@ -540,9 +540,9 @@ export const discoverCapabilities = async (
 const conflictFrom = (cause: unknown): HttpFailure =>
   new HttpFailure(409, cause instanceof Error ? cause.message : String(cause))
 
-export const discoverHarnesses = async (
+const discoverHarnessesWithAuthMode = async (
   services: CodevisorServerServices,
-  forceAuth = false,
+  authMode: "passive" | "force" | "stored",
   harnessId?: string,
   /// Lifecycle decoration (update knowledge, install methods) rides only on
   /// requests that render it — Settings, rescans, update checks. The plain
@@ -560,5 +560,27 @@ export const discoverHarnesses = async (
       : filtered
   return services.auth === undefined
     ? harnesses
-    : services.auth.decorateHarnesses(harnesses, forceAuth)
+    : authMode === "stored"
+      ? services.auth.decorateHarnessesFromStoredState(harnesses)
+      : services.auth.decorateHarnesses(harnesses, authMode === "force")
 }
+
+export const discoverHarnesses = (
+  services: CodevisorServerServices,
+  forceAuth = false,
+  harnessId?: string,
+  includeLifecycle = false
+): Promise<ReadonlyArray<Harness>> =>
+  discoverHarnessesWithAuthMode(
+    services,
+    forceAuth ? "force" : "passive",
+    harnessId,
+    includeLifecycle
+  )
+
+/// Readiness is derived in response to auth events, so it must only read the
+/// state that caused the event. Starting another passive probe here turns one
+/// probe failure into a feedback loop.
+export const discoverHarnessesFromStoredAuthState = (
+  services: CodevisorServerServices
+): Promise<ReadonlyArray<Harness>> => discoverHarnessesWithAuthMode(services, "stored")
