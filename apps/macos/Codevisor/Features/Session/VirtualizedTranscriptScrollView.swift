@@ -50,11 +50,13 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private var activeMeasurementCacheKey: SessionMeasurementCacheKey?
     private var layoutFingerprint = 0
 
-    private var mountedHosts: [String: TranscriptRowHost] = [:]
+    private var mountedHosts: [String: TranscriptMountedRowHost] = [:]
     private var recycledHosts: [TranscriptRowHost] = []
     /// Detached hosts remain immediately reusable. Hosts exceeding the warm
     /// pool are released one at a time after the gesture.
     private var retiringHosts: [TranscriptRowHost] = []
+    private let markdownHostCache = TranscriptMarkdownHostCache()
+    private var recycledMarkdownHosts: [TranscriptMarkdownRowHost] = []
     private let virtualWindowPolicy = TranscriptVirtualWindowPolicy()
     /// The desired pixel runway and the last runway known to be fully laid
     /// out. Keeping both makes a window transition two-phase: prepare the new
@@ -66,6 +68,10 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private var remainingMountsThisFrame = 2
     private var remainingRunwayPreparationsThisFrame = 1
     private var rowContent: ((TranscriptVirtualRow) -> AnyView)?
+    private var markdownRowStyle = TranscriptMarkdownRowStyle(
+        markdown: .default,
+        appTheme: .system
+    )
     private var pendingMeasuredHeights: [String: CGFloat] = [:]
     private var measurementCommitTask: Task<Void, Never>?
     private weak var sessionController: SessionController?
@@ -404,6 +410,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         scrollCommand newScrollCommand: TranscriptScrollCommand,
         sendAnimationRequest newSendAnimationRequest: UserSendAnimationRequest?,
         reduceMotion newReduceMotion: Bool,
+        markdownRowStyle newMarkdownRowStyle: TranscriptMarkdownRowStyle,
         claimSendAnimation newClaimSendAnimation: @escaping (UserSendAnimationRequest) -> Bool,
         rowContent newRowContent: @escaping (TranscriptVirtualRow) -> AnyView,
         onViewportChange: @escaping (SessionScrollState) -> Void,
@@ -450,6 +457,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         )
         positionPaginationLoadingIndicator()
         reduceMotion = newReduceMotion
+        markdownRowStyle = newMarkdownRowStyle
         claimSendAnimation = newClaimSendAnimation
 
         if newSendAnimationRequest?.token != receivedSendAnimationToken {
@@ -825,7 +833,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         sendAnimationCompletion = nil
     }
 
-    private func holdSendPresentation(for host: TranscriptRowHost) {
+    private func holdSendPresentation(for host: TranscriptMountedRowHost) {
         guard let layer = host.layer else { return }
         // The model layer is authoritative content state and must never become
         // invisible. This finite presentation animation delays painting only;
@@ -1777,6 +1785,14 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             return false
         }
         guard let row = rowByKey[key] else { return false }
+        if usesNativeMarkdownHost(for: row) {
+            return mountMarkdownRow(
+                row,
+                at: index,
+                identity: identity,
+                requiresImmediatePresentation: requiresImmediatePresentation
+            )
+        }
 
         let profiler = TranscriptPerformanceProfiler.shared
         let host: TranscriptRowHost
@@ -1854,6 +1870,97 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             host.installRootView(rootView, knownHeight: knownHeight)
         }
         if requiresImmediatePresentation {
+            profiler.measure(
+                in: window,
+                identity: identity,
+                phase: .visibleLayout
+            ) {
+                host.prepareForImmediatePresentation()
+            }
+        }
+        return true
+    }
+
+    private func usesNativeMarkdownHost(for row: TranscriptVirtualRow) -> Bool {
+        guard case let .markdownChunk(chunk) = row.content else { return false }
+        return chunk.lifecycle == .settled
+    }
+
+    private func mountMarkdownRow(
+        _ row: TranscriptVirtualRow,
+        at index: Int,
+        identity: TranscriptPerformanceIdentity,
+        requiresImmediatePresentation: Bool
+    ) -> Bool {
+        guard case let .markdownChunk(chunk) = row.content else { return false }
+        let key = row.layoutKey
+        let profiler = TranscriptPerformanceProfiler.shared
+        let host: TranscriptMarkdownRowHost
+        if let prepared = markdownHostCache.take(for: key) {
+            host = profiler.measure(
+                in: window,
+                identity: identity,
+                phase: .hostReuse
+            ) { prepared }
+        } else if let recycled = recycledMarkdownHosts.popLast() {
+            host = profiler.measure(
+                in: window,
+                identity: identity,
+                phase: .hostReuse
+            ) { recycled }
+        } else {
+            host = profiler.measure(
+                in: window,
+                identity: identity,
+                phase: .hostConstruction
+            ) { TranscriptMarkdownRowHost(frame: .zero) }
+        }
+
+        profiler.measure(
+            in: window,
+            identity: identity,
+            phase: .hostPreparation
+        ) {
+            host.prepareForMountedRow()
+            host.performanceIdentity = identity
+            host.onHeightChange = { [weak self] height in
+                self?.recordMeasuredHeight(height, for: key)
+            }
+        }
+        profiler.measure(
+            in: window,
+            identity: identity,
+            phase: .hostInsertion
+        ) {
+            transcriptDocumentView.addSubview(host)
+            mountedHosts[key] = host
+        }
+        profiler.measure(
+            in: window,
+            identity: identity,
+            phase: .hostPosition
+        ) {
+            position(host: host, at: index)
+        }
+        let knownHeight: CGFloat? =
+            if let measuredHeight = measurements[key], !measurements.isStale(key) {
+                measuredHeight
+            } else {
+                nil
+            }
+        profiler.measure(
+            in: window,
+            identity: identity,
+            phase: .rootInstall
+        ) {
+            host.setContent(
+                chunk,
+                streamID: key,
+                style: markdownRowStyle,
+                knownHeight: knownHeight
+            )
+        }
+        if requiresImmediatePresentation, !host.isPresentationReady {
             profiler.measure(
                 in: window,
                 identity: identity,
@@ -2002,10 +2109,29 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             for key in obsoleteKeys {
                 guard let host = mountedHosts.removeValue(forKey: key) else { continue }
                 host.removeFromSuperviewWithoutNeedingDisplay()
-                retiringHosts.append(host)
+                storeDetachedHost(host, for: key)
             }
         }
-        requestDisplayFrame()
+        if !retiringHosts.isEmpty { requestDisplayFrame() }
+    }
+
+    private func storeDetachedHost(_ host: TranscriptMountedRowHost, for key: String) {
+        host.onHeightChange = nil
+        if let markdownHost = host as? TranscriptMarkdownRowHost {
+            let evicted = markdownHostCache.insert(
+                markdownHost,
+                for: key,
+                height: host.frame.height,
+                maximumTotalHeight: max(1, contentView.bounds.height * 12)
+            )
+            for host in evicted {
+                if recycledMarkdownHosts.count < 8 {
+                    recycledMarkdownHosts.append(host)
+                }
+            }
+        } else if let hosted = host as? TranscriptRowHost {
+            retiringHosts.append(hosted)
+        }
     }
 
     private func drainRetiringHosts(limit: Int) {
@@ -2021,22 +2147,86 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     }
 
     private func refreshMountedRootViews() {
-        for (key, host) in mountedHosts {
-            guard let row = rowByKey[key] else { continue }
-            host.rootView = measuredRootView(for: row)
-        }
+        refreshMountedHosts(previousRowsByKey: nil)
     }
 
     private func refreshChangedMountedRootViews(
         previousRowsByKey: [String: TranscriptVirtualRow]
     ) {
+        refreshMountedHosts(previousRowsByKey: previousRowsByKey)
+    }
+
+    private func refreshMountedHosts(
+        previousRowsByKey: [String: TranscriptVirtualRow]?
+    ) {
+        var replacementKeys: [String] = []
         for (key, host) in mountedHosts {
-            guard let row = rowByKey[key], let previous = previousRowsByKey[key],
-                previous.content != row.content
-                    || previous.measurementRevision != row.measurementRevision
-            else { continue }
-            host.rootView = measuredRootView(for: row)
+            guard let row = rowByKey[key] else { continue }
+            if let previousRowsByKey {
+                guard let previous = previousRowsByKey[key],
+                    previous.content != row.content
+                        || previous.measurementRevision != row.measurementRevision
+                else { continue }
+            }
+
+            let wantsNativeMarkdown = usesNativeMarkdownHost(for: row)
+            let isNativeMarkdown = host is TranscriptMarkdownRowHost
+            guard wantsNativeMarkdown == isNativeMarkdown else {
+                invalidateMeasurementForRendererTransition(key)
+                replacementKeys.append(key)
+                continue
+            }
+
+            if let markdownHost = host as? TranscriptMarkdownRowHost,
+                case let .markdownChunk(chunk) = row.content
+            {
+                let knownHeight: CGFloat? =
+                    if let height = measurements[key], !measurements.isStale(key) {
+                        height
+                    } else {
+                        nil
+                    }
+                markdownHost.setContent(
+                    chunk,
+                    streamID: key,
+                    style: markdownRowStyle,
+                    knownHeight: knownHeight
+                )
+            } else if let hosted = host as? TranscriptRowHost {
+                hosted.rootView = measuredRootView(for: row)
+            }
         }
+
+        for key in replacementKeys {
+            replaceMountedHost(for: key)
+        }
+    }
+
+    private func invalidateMeasurementForRendererTransition(_ key: String) {
+        measurements.markStale(key)
+        settledRowHeightSnapshot.removeValue(forKey: key)
+        if let activeMeasurementCacheKey {
+            measurementCaches[activeMeasurementCacheKey]?.removeValue(forKey: key)
+        }
+    }
+
+    private func replaceMountedHost(for key: String) {
+        guard let host = mountedHosts.removeValue(forKey: key),
+            let index = virtualLayout.indexByKey[key]
+        else { return }
+        let visibleDocumentRect = NSRect(
+            x: 0,
+            y: contentView.bounds.minY,
+            width: transcriptDocumentView.bounds.width,
+            height: contentView.bounds.height
+        )
+        let requiresImmediatePresentation = host.frame.intersects(visibleDocumentRect)
+        host.removeFromSuperviewWithoutNeedingDisplay()
+        storeDetachedHost(host, for: key)
+        _ = mountRow(
+            at: index,
+            requiresImmediatePresentation: requiresImmediatePresentation
+        )
     }
 
     private func measuredRootView(for row: TranscriptVirtualRow) -> AnyView {
@@ -2282,7 +2472,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         }
     }
 
-    private func position(host: TranscriptRowHost, at index: Int) {
+    private func position(host: TranscriptMountedRowHost, at index: Int) {
         position(host: host, frame: rowFrame(at: index))
     }
 
@@ -2302,7 +2492,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         )
     }
 
-    private func position(host: TranscriptRowHost, frame: CGRect) {
+    private func position(host: TranscriptMountedRowHost, frame: CGRect) {
         // Height commits move every later row but do not change those rows'
         // content geometry. Assigning the complete frame for a y-only move
         // needlessly invalidates AppKit/SwiftUI layout; update size and origin

@@ -25,6 +25,7 @@ struct ChatScreen: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.openSettings) private var openSettings
     @Environment(\.attachmentImages) private var attachmentImages
+    @Environment(\.codeHighlightTheme) private var codeHighlightTheme
     @Environment(AppEnvironment.self) private var environment
     @Bindable var controller: SessionController
     /// The session screen's focus coordinator (shared with the terminals).
@@ -199,10 +200,11 @@ struct ChatScreen: View {
                         isLoadingInitialHistory: controller.isLoadingInitialHistory,
                         isPreparingInitialProjection: isPreparingTranscript,
                         isActiveProjectionPending: isActiveProjectionPending,
-                        layoutFingerprint: dynamicTypeSize.hashValue,
+                        layoutFingerprint: transcriptLayoutFingerprint,
                         scrollCommand: scrollCommand,
                         sendAnimationRequest: controller.userSendAnimationRequest,
                         reduceMotion: reduceMotion,
+                        markdownRowStyle: transcriptMarkdownRowStyle,
                         claimSendAnimation: { request in
                             controller.claimUserSendAnimation(request)
                         },
@@ -319,6 +321,27 @@ struct ChatScreen: View {
             defer { historyLoadTask = nil }
             await controller.loadOlderHistory()
         }
+    }
+
+    private var transcriptMarkdownTheme: MarkdownTheme {
+        makeMarkdownTheme(
+            theme: theme,
+            highlight: codeHighlightTheme.map { ($0.key, $0.json) }
+        )
+    }
+
+    private var transcriptMarkdownRowStyle: TranscriptMarkdownRowStyle {
+        TranscriptMarkdownRowStyle(
+            markdown: transcriptMarkdownTheme,
+            appTheme: theme
+        )
+    }
+
+    private var transcriptLayoutFingerprint: Int {
+        var hasher = Hasher()
+        hasher.combine(dynamicTypeSize)
+        hasher.combine(transcriptMarkdownTheme.renderFingerprint)
+        return hasher.finalize()
     }
 
     private var transcriptProjectionRequest: TranscriptProjectionRequest {

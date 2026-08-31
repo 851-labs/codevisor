@@ -157,7 +157,26 @@ enum TranscriptMarkdownChunkProjection {
                 requiresStructuralFragmentation(quotedBlocks)
             {
                 flushTextBlocks()
-                chunks.append(contentsOf: quoteFragments(from: quotedBlocks, ordinal: ordinal))
+                chunks.append(
+                    contentsOf: structuralFragments(
+                        from: quotedBlocks,
+                        ordinal: ordinal,
+                        quoteDepth: 1,
+                        path: "q"
+                    )
+                )
+            } else if case let .list(list) = block,
+                requiresStructuralFragmentation(list.items.flatMap(\.blocks))
+            {
+                flushTextBlocks()
+                chunks.append(
+                    contentsOf: structuralFragments(
+                        from: [block],
+                        ordinal: ordinal,
+                        quoteDepth: 0,
+                        path: "l"
+                    )
+                )
             } else {
                 flushTextBlocks()
                 chunks.append(Chunk(firstOrdinal: ordinal, blocks: [block]))
@@ -215,19 +234,21 @@ enum TranscriptMarkdownChunkProjection {
         let listItemPath: [String]
     }
 
-    /// Breaks only fallback quotes (those containing embedded native views)
-    /// into bounded leaf rows. This removes the recursive SwiftUI layout tree
-    /// from the scroll hot path without changing ordinary quote rendering.
-    private static func quoteFragments(
+    /// Breaks structural containers containing code, tables, or rules into
+    /// bounded leaf rows. This removes the recursive SwiftUI layout tree from
+    /// the scroll hot path without changing ordinary prose-only containers.
+    private static func structuralFragments(
         from blocks: [MarkdownBlock],
-        ordinal: Int
+        ordinal: Int,
+        quoteDepth: Int,
+        path: String
     ) -> [Chunk] {
         var drafts: [FragmentDraft] = []
         append(
             blocks,
-            quoteDepth: 1,
+            quoteDepth: quoteDepth,
             listItemPath: [],
-            path: "q",
+            path: path,
             to: &drafts
         )
         let grouped = groupAdjacentTextDrafts(drafts)

@@ -95,6 +95,43 @@ struct TranscriptComplexBlockQuoteProjectionTests {
         #expect(markerTexts.contains("2."))
     }
 
+    @Test func complexTopLevelListProjectsNativeLeafRows() throws {
+        let message = AssistantMessage(
+            turn: AssistantTurn(
+                entries: [
+                    .text(
+                        id: "answer",
+                        markdown: """
+                            1. First item
+                            2. Item with code
+
+                               ```swift
+                               let value = 42
+                               ```
+
+                               | Name | Value |
+                               | --- | ---: |
+                               | answer | 42 |
+                            """
+                    )
+                ]
+            )
+        )
+
+        let chunks = try TranscriptRowProjectionCache.project(
+            makeInput(settled: [.assistant(message)]),
+            options: .init(includesConnectingRow: true)
+        ).compactMap { row -> TranscriptMarkdownChunk? in
+            if case let .markdownChunk(chunk) = row.content { chunk } else { nil }
+        }
+
+        #expect(chunks.count >= 3)
+        #expect(chunks.allSatisfy { $0.fragment?.quoteDepth == 0 })
+        #expect(chunks.contains { $0.blocks.first?.id.hasPrefix("code:") == true })
+        #expect(chunks.contains { $0.blocks.first?.id.hasPrefix("table:") == true })
+        #expect(chunks.flatMap { $0.fragment?.listMarkers ?? [] }.contains { $0.text == "2." })
+    }
+
     private func makeInput(settled: [ConversationItem]) -> TranscriptProjectionInput {
         TranscriptProjectionInput(
             settledConversation: settled,

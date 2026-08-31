@@ -33,6 +33,7 @@ struct NativeTranscriptView: NSViewRepresentable {
     let scrollCommand: TranscriptScrollCommand
     let sendAnimationRequest: UserSendAnimationRequest?
     let reduceMotion: Bool
+    let markdownRowStyle: TranscriptMarkdownRowStyle
     let claimSendAnimation: @MainActor (UserSendAnimationRequest) -> Bool
     let rowContent: @MainActor (TranscriptVirtualRow) -> AnyView
     let onViewportChange: @MainActor (SessionScrollState) -> Void
@@ -135,6 +136,7 @@ struct NativeTranscriptView: NSViewRepresentable {
             scrollCommand: scrollCommand,
             sendAnimationRequest: sendAnimationRequest,
             reduceMotion: reduceMotion,
+            markdownRowStyle: markdownRowStyle,
             claimSendAnimation: claimSendAnimation,
             rowContent: rowContent,
             onViewportChange: onViewportChange,
