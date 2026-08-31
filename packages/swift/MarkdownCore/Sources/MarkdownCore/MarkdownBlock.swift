@@ -66,7 +66,7 @@ public indirect enum MarkdownSpan: Sendable, Equatable, Hashable {
 }
 
 /// An ordered-list item with its rendered number.
-public struct OrderedListItem: Sendable, Equatable {
+public struct OrderedListItem: Sendable, Equatable, Hashable {
     public let number: Int
     public let text: MarkdownText
 
@@ -81,7 +81,7 @@ public struct OrderedListItem: Sendable, Equatable {
 }
 
 /// A list item that can contain arbitrary nested block content.
-public struct MarkdownListItem: Sendable, Equatable {
+public struct MarkdownListItem: Sendable, Equatable, Hashable {
     public let blocks: [MarkdownBlock]
     public let isTask: Bool
     public let isChecked: Bool
@@ -95,7 +95,7 @@ public struct MarkdownListItem: Sendable, Equatable {
 
 /// A CommonMark list. Unlike the compatibility list cases, this form retains
 /// nesting, loose-list blocks, task state, start number, and delimiter.
-public struct MarkdownList: Sendable, Equatable {
+public struct MarkdownList: Sendable, Equatable, Hashable {
     public let isOrdered: Bool
     public let start: Int
     public let delimiter: Character
@@ -118,7 +118,7 @@ public struct MarkdownList: Sendable, Equatable {
 }
 
 /// A semantic Markdown block produced by MD4C.
-public indirect enum MarkdownBlock: Sendable, Equatable, Identifiable {
+public indirect enum MarkdownBlock: Sendable, Equatable, Hashable, Identifiable {
     case heading(level: Int, text: MarkdownText)
     case paragraph(MarkdownText)
     case codeBlock(language: String?, code: String, isComplete: Bool)

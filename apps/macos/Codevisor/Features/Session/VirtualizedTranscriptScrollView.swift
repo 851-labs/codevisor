@@ -2,6 +2,7 @@
 
 import AppKit
 import CodevisorCore
+import MarkdownCore
 import QuartzCore
 import StreamMarkdown
 import SwiftUI
@@ -18,7 +19,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private static let topPadding: CGFloat = 28
     private static let horizontalPadding: CGFloat = 24
     private static let maxRowWidth: CGFloat = 832
-    private static let overscanCount = 2
     private static let initialRunwayViewportCount: CGFloat = 1.5
     private static let atBottomThreshold: CGFloat = 2
     private static let maxMeasurementCacheCount = 3
@@ -52,6 +52,19 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
 
     private var mountedHosts: [String: TranscriptRowHost] = [:]
     private var recycledHosts: [TranscriptRowHost] = []
+    /// Detached hosts remain immediately reusable. Hosts exceeding the warm
+    /// pool are released one at a time after the gesture.
+    private var retiringHosts: [TranscriptRowHost] = []
+    private let virtualWindowPolicy = TranscriptVirtualWindowPolicy()
+    /// The desired pixel runway and the last runway known to be fully laid
+    /// out. Keeping both makes a window transition two-phase: prepare the new
+    /// runway first, then retire the previous one.
+    private var virtualWindowHandoff = TranscriptVirtualWindowHandoff()
+    private var pendingWindowScrollDelta: CGFloat = 0
+    private var lastObservedViewportTop: CGFloat?
+    private var runwayMotion = TranscriptRunwayMotion()
+    private var remainingMountsThisFrame = 2
+    private var remainingRunwayPreparationsThisFrame = 1
     private var rowContent: ((TranscriptVirtualRow) -> AnyView)?
     private var pendingMeasuredHeights: [String: CGFloat] = [:]
     private var measurementCommitTask: Task<Void, Never>?
@@ -60,6 +73,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private var presentationDisplayLink: CADisplayLink?
     private var displayFrameRequested = false
     private var modelPresentationFrameRequested = false
+    private var mountedRowsUpdateRequested = false
     private var initialPresentationGate = TranscriptInitialPresentationGate()
     /// A warm surface keeps displaying its last exact snapshot until both the
     /// newly-created outer and active projection scopes have caught up. This
@@ -68,11 +82,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private var isAwaitingWarmProjection = false
     private var initialBottomPin = TranscriptInitialBottomPin()
     private var bottomJumpGate = TranscriptBottomJumpGate()
-    /// A scrollbar-knob drag can cross dozens of virtual windows in a single
-    /// frame. Mount only the latest one at a display-friendly cadence instead
-    /// of making AppKit wait for every intermediate SwiftUI host tree.
-    private var knobDragMountTask: Task<Void, Never>?
-
     private var disclosureViewportAnchor: TranscriptDisclosureViewportAnchor?
     private var disclosureAnchorReleaseTask: Task<Void, Never>?
 
@@ -129,6 +138,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     /// initial restore, or an explicit bottom command. AppKit sends bounds
     /// notifications for layout and teardown too; those must never replace it.
     private var lastStableScrollState: SessionScrollState?
+    private var viewportSnapshotGeneration: UInt64 = 0
     private var boundsObserver: NSObjectProtocol?
     private var liveScrollObservers: [NSObjectProtocol] = []
     private var applicationObserver: NSObjectProtocol?
@@ -139,6 +149,37 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private var onNearTop: (() -> Void)?
     var onInitialPresentationReady: (() -> Void)?
     var isInitialPresentationReady: Bool { initialPresentationGate.isReady }
+    private var maximumMountsPerFrame: Int {
+        let isHighRefresh = (window?.screen?.maximumFramesPerSecond ?? 60) > 60
+        if isLiveScrolling || isHandlingUserInput {
+            return isHighRefresh ? 2 : 4
+        }
+        return isHighRefresh ? 6 : 8
+    }
+    private var mountWorkBudget: CFTimeInterval {
+        let isHighRefresh = (window?.screen?.maximumFramesPerSecond ?? 60) > 60
+        if isLiveScrolling || isHandlingUserInput {
+            return isHighRefresh ? 0.0025 : 0.005
+        }
+        return isHighRefresh ? 0.004 : 0.008
+    }
+    private var maximumRunwayPreparationsPerFrame: Int {
+        let isHighRefresh = (window?.screen?.maximumFramesPerSecond ?? 60) > 60
+        let viewportHeight = max(1, contentView.bounds.height)
+        let projectedDistance = abs(
+            runwayMotion.projectedDelta(
+                timestamp: CACurrentMediaTime(),
+                maximumDistance: viewportHeight * 3
+            )
+        )
+        if projectedDistance >= viewportHeight {
+            return isHighRefresh ? 3 : 4
+        }
+        if projectedDistance >= viewportHeight * 0.35 {
+            return isHighRefresh ? 2 : 3
+        }
+        return isHighRefresh ? 1 : 2
+    }
     /// The chat history itself can hold keyboard focus: a click anywhere in
     /// it (routed here by TerminalFocusController's mouse monitor) blurs a
     /// focused terminal, the scroll keys in `keyDown(with:)` keep working,
@@ -199,6 +240,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                     self?.isLiveScrolling = true
                     self?.isHandlingUserInput = true
                     self?.markRecentUserInput()
+                    TranscriptPerformanceProfiler.shared.beginScrolling(in: self?.window)
                 }
             },
             NotificationCenter.default.addObserver(
@@ -207,13 +249,16 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                 queue: .main
             ) { [weak self] _ in
                 Self.onMain {
-                    self?.knobDragMountTask?.cancel()
-                    self?.knobDragMountTask = nil
+                    self?.mountedRowsUpdateRequested = false
                     self?.updateMountedRows()
                     self?.emitViewportSnapshot()
                     self?.isHandlingUserInput = false
                     self?.isLiveScrolling = false
                     self?.markRecentUserInput()
+                    TranscriptPerformanceProfiler.shared.endScrolling(in: self?.window)
+                    // The live window is correctness-complete. Use subsequent
+                    // idle frames to finish preparing its directional runway.
+                    self?.requestMountedRowsUpdate()
                 }
             },
         ]
@@ -246,7 +291,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     deinit {
         presentationDisplayLink?.invalidate()
         measurementCommitTask?.cancel()
-        knobDragMountTask?.cancel()
         disclosureAnchorReleaseTask?.cancel()
         sendPresentationWatchdog?.cancel()
         if let boundsObserver {
@@ -313,8 +357,11 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         lockedRestoreDistance = nil
         isHandlingUserInput = true
         markRecentUserInput()
+        let snapshotGeneration = viewportSnapshotGeneration
         super.scrollWheel(with: event)
-        emitViewportSnapshot()
+        if viewportSnapshotGeneration == snapshotGeneration {
+            emitViewportSnapshot()
+        }
         isHandlingUserInput = false
         markRecentUserInput()
     }
@@ -331,8 +378,11 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         lockedRestoreDistance = nil
         isHandlingUserInput = true
         markRecentUserInput()
+        let snapshotGeneration = viewportSnapshotGeneration
         super.keyDown(with: event)
-        emitViewportSnapshot()
+        if viewportSnapshotGeneration == snapshotGeneration {
+            emitViewportSnapshot()
+        }
         isHandlingUserInput = false
         markRecentUserInput()
     }
@@ -763,6 +813,13 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             host.layer?.opacity = 1
             assert(host.layer?.opacity == 1)
         }
+        for host in retiringHosts {
+            host.layer?.removeAnimation(forKey: "codevisor.user-send")
+            host.layer?.removeAnimation(forKey: "codevisor.send-history-shift")
+            host.layer?.removeAnimation(forKey: Self.sendAssistantHoldAnimationKey)
+            host.layer?.opacity = 1
+            assert(host.layer?.opacity == 1)
+        }
         activeSendAnimationRequest = nil
         activeSendSourceLayout = nil
         sendAnimationCompletion = nil
@@ -861,7 +918,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         ) { [weak self] in
             self?.requestModelPresentationFrame()
         }
-        if !pendingMeasuredHeights.isEmpty {
+        if !pendingMeasuredHeights.isEmpty || !retiringHosts.isEmpty {
             requestDisplayFrame()
         }
         NotificationCenter.default.addObserver(
@@ -892,6 +949,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         presentationDisplayLink = nil
         displayFrameRequested = false
         modelPresentationFrameRequested = false
+        mountedRowsUpdateRequested = false
         if let presentationFrameDriverToken {
             sessionController?.unregisterTranscriptFrameDriver(presentationFrameDriverToken)
             self.presentationFrameDriverToken = nil
@@ -909,17 +967,39 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         requestDisplayFrame()
     }
 
+    private func requestMountedRowsUpdate() {
+        guard presentationDisplayLink != nil, !inLiveResize else {
+            updateMountedRows()
+            return
+        }
+        mountedRowsUpdateRequested = true
+        requestDisplayFrame()
+    }
+
     @objc private func presentationDisplayLinkDidFire(_ displayLink: CADisplayLink) {
         let shouldPresentModel = modelPresentationFrameRequested
+        let shouldUpdateMountedRows = mountedRowsUpdateRequested
+        remainingMountsThisFrame = maximumMountsPerFrame
+        remainingRunwayPreparationsThisFrame = maximumRunwayPreparationsPerFrame
         displayFrameRequested = false
         modelPresentationFrameRequested = false
+        mountedRowsUpdateRequested = false
         if shouldPresentModel, let presentationFrameDriverToken {
             sessionController?.transcriptPresentationFrameDidFire(presentationFrameDriverToken)
+        }
+        if shouldUpdateMountedRows {
+            updateMountedRows()
         }
         if !pendingMeasuredHeights.isEmpty {
             commitPendingMeasurements()
         }
         streamingTextFrameClock.tick(at: displayLink.timestamp)
+        if !isLiveScrolling, !isHandlingUserInput {
+            drainRetiringHosts(limit: 1)
+        }
+        if !retiringHosts.isEmpty {
+            requestDisplayFrame()
+        }
         displayLink.isPaused = !displayFrameRequested
     }
 
@@ -1003,13 +1083,10 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             if let activeMeasurementCacheKey {
                 measurementCaches[activeMeasurementCacheKey]?.removeValue(forKey: key)
             }
-            // A mounted host must re-report even an unchanged height so the
-            // stale flag clears and caches relearn the new revision; without
-            // the reset, the unchanged-height dedupe swallows that report.
-            if let host = mountedHosts[key] {
-                host.resetReportedContentHeight()
-                host.requestContentMeasurement()
-            }
+            // Mounted content is replaced immediately after invalidation.
+            // `installRootView` performs the one required fresh measurement;
+            // invalidating here as well used to schedule the same TextKit and
+            // hosting-controller work twice for every settled revision.
         }
     }
 
@@ -1108,6 +1185,17 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     /// work on the main thread for what is usually a one-row height change
     /// several times per second per streaming chat.
     private func rebuildDocumentGeometry(changedHeights: [String: CGFloat]? = nil) {
+        let performanceToken = TranscriptPerformanceProfiler.shared.begin(
+            in: window,
+            identity: TranscriptPerformanceIdentity(
+                rowKey: "transcript",
+                kind: changedHeights == nil
+                    ? "full geometry"
+                    : "geometry · \(changedHeights?.count ?? 0) heights"
+            ),
+            phase: .geometry
+        )
+        defer { TranscriptPerformanceProfiler.shared.end(performanceToken) }
         // Capture the viewport before changing document size. A locked restore
         // target wins until the user deliberately scrolls. Once the reader has
         // moved away from the bottom, preserve the first visible row instead
@@ -1198,7 +1286,10 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                 )
             )
             positionPaginationLoadingIndicator()
-            positionMountedRows()
+            let firstChangedIndex = changedHeights?.keys.compactMap {
+                virtualLayout.indexByKey[$0]
+            }.min()
+            positionMountedRows(startingAt: firstChangedIndex)
 
             if !initialPositionApplied {
                 applyPendingInitialPositionIfPossible()
@@ -1225,7 +1316,9 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             // final canonical distance, not the transient pre-compensation one.
             lastDistanceFromBottom = currentDistanceFromBottom()
         }
-        updateMountedRows(rangeOverride: initialRestoreRange)
+        if initialRestoreRange != nil || changedHeights == nil || mountedCoverageNeedsUpdate() {
+            updateMountedRows(rangeOverride: initialRestoreRange)
+        }
         updateInitialPresentationReadiness()
         resolveBottomJumpIfPossible()
     }
@@ -1253,12 +1346,22 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             !virtualLayout.isEmpty,
             virtualLayout.keys.count == rows.count
         else { return nil }
-        var layout = virtualLayout
-        for (key, height) in changedHeights {
-            guard let updated = layout.updatingHeight(forKey: key, to: height) else { return nil }
-            layout = updated
+        return virtualLayout.updatingHeights(changedHeights)
+    }
+
+    private func mountedCoverageNeedsUpdate() -> Bool {
+        let targetRange = plannedMountedRange()
+        let targetKeys = keys(in: targetRange)
+        if targetKeys != virtualWindowHandoff.targetKeys { return true }
+        let visibleRange = virtualLayout.visibleRange(
+            distanceFromBottom: currentDistanceFromBottom(),
+            viewportHeight: contentView.bounds.height,
+            overscanCount: 0
+        )
+        return visibleRange.contains { index in
+            guard virtualLayout.keys.indices.contains(index) else { return false }
+            return mountedHosts[virtualLayout.keys[index]] == nil
         }
-        return layout
     }
 
     private func applyPendingInitialPositionIfPossible() {
@@ -1374,8 +1477,30 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         let previousDistance = lastDistanceFromBottom
         let distance = currentDistanceFromBottom()
         lastDistanceFromBottom = distance
-        if isDraggingScrollerKnob {
-            scheduleKnobDragMountUpdate()
+        publishVisibleRowsToPerformanceProfiler(distanceFromBottom: distance)
+        let viewportTop = contentView.bounds.minY
+        let isUserMovement = isDraggingScrollerKnob || isHandlingUserInput || isLiveScrolling
+        if let lastObservedViewportTop, isUserMovement {
+            pendingWindowScrollDelta += viewportTop - lastObservedViewportTop
+            runwayMotion.observe(
+                viewportTop: viewportTop,
+                timestamp: CACurrentMediaTime()
+            )
+        } else if !isApplyingPosition {
+            pendingWindowScrollDelta = 0
+            if runwayMotion.pointsPerSecond == 0 {
+                runwayMotion.reset(
+                    viewportTop: viewportTop,
+                    timestamp: CACurrentMediaTime()
+                )
+            }
+        }
+        lastObservedViewportTop = viewportTop
+        if isDraggingScrollerKnob || isHandlingUserInput || isLiveScrolling {
+            // Native scrolling may deliver more bounds changes than the screen
+            // can present. Reconcile the virtual window once on the next real
+            // display frame; the prepared pixel runway covers that handoff.
+            requestMountedRowsUpdate()
         } else {
             updateMountedRows()
         }
@@ -1419,18 +1544,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         verticalScroller?.hitPart == .knob
     }
 
-    private func scheduleKnobDragMountUpdate() {
-        guard knobDragMountTask == nil else { return }
-        knobDragMountTask = Task { @MainActor [weak self] in
-            // The scroller itself remains fully native and tracks every event;
-            // transcript host churn is capped at roughly one update per frame.
-            try? await Task.sleep(for: .milliseconds(16))
-            guard let self, !Task.isCancelled else { return }
-            self.knobDragMountTask = nil
-            self.updateMountedRows()
-        }
-    }
-
     private func markRecentUserInput() {
         userInputDeadline = ProcessInfo.processInfo.systemUptime + 0.35
     }
@@ -1457,7 +1570,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         onNearTop?()
     }
 
-    private func plannedMountedRange() -> Range<Int> {
+    private func plannedMountedRange(scrollDelta: CGFloat = 0) -> Range<Int> {
         let distance = currentDistanceFromBottom()
         if !initialPresentationGate.isReady {
             let runway = contentView.bounds.height * Self.initialRunwayViewportCount
@@ -1468,90 +1581,443 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                 runwayAfter: runway
             )
         }
-        let visibleRange = virtualLayout.visibleRange(
+        return virtualWindowPolicy.targetRange(
+            layout: virtualLayout,
             distanceFromBottom: distance,
             viewportHeight: contentView.bounds.height,
-            overscanCount: 0
-        )
-        let overscannedRange = virtualLayout.visibleRange(
-            distanceFromBottom: distance,
-            viewportHeight: contentView.bounds.height,
-            overscanCount: Self.overscanCount
-        )
-        let planIndices = overscannedRange.filter { index in
-            guard virtualLayout.keys.indices.contains(index),
-                let row = rowByKey[virtualLayout.keys[index]]
-            else { return false }
-            return row.id.isPlanDocument
-        }
-        return VirtualTranscriptLayout.overscanRange(
-            visibleRange: visibleRange,
-            overscannedRange: overscannedRange,
-            stoppingAt: planIndices
+            scrollDelta: scrollDelta,
+            currentRange: windowRange(for: virtualWindowHandoff.targetKeys)
         )
     }
 
     private func updateMountedRows(rangeOverride: Range<Int>? = nil) {
         guard initialPositionApplied || contentView.bounds.height > 0 else { return }
-        let targetRange: Range<Int>
-        if let rangeOverride {
-            targetRange = rangeOverride
-        } else {
-            targetRange = plannedMountedRange()
-        }
-        // Preserve a rendered window that already contains the target. This is
-        // ChatGPT's rendered-range containment rule: height changes inside a
-        // visible turn must not recycle that turn halfway through its update.
-        let mountedIndices = mountedHosts.keys.compactMap { virtualLayout.indexByKey[$0] }
-        let mountedRange: Range<Int>? = mountedIndices.min().flatMap { lower in
-            mountedIndices.max().map { upper in lower..<(upper + 1) }
-        }
-        let range: Range<Int> =
-            if rangeOverride == nil,
-                let mountedRange,
-                mountedRange.lowerBound <= targetRange.lowerBound,
-                mountedRange.upperBound >= targetRange.upperBound
-            {
-                mountedRange
-            } else {
-                targetRange
+        let profiler = TranscriptPerformanceProfiler.shared
+        let windowIdentity = TranscriptPerformanceIdentity(
+            rowKey: "transcript",
+            kind: "virtual window"
+        )
+        let performanceToken = profiler.begin(
+            in: window,
+            identity: windowIdentity,
+            phase: .windowUpdate
+        )
+        defer { profiler.end(performanceToken) }
+        let reconciliation: (mountPlan: TranscriptVirtualWindowMountPlan, targetChanged: Bool) =
+            profiler.measure(
+                in: window,
+                identity: windowIdentity,
+                phase: .windowReconcile
+            ) {
+                virtualWindowHandoff.retainOnlyValidKeys { rowByKey[$0] != nil }
+                let observedScrollDelta = rangeOverride == nil ? pendingWindowScrollDelta : 0
+                pendingWindowScrollDelta = 0
+                let projectedScrollDelta =
+                    rangeOverride == nil
+                    ? runwayMotion.projectedDelta(
+                        timestamp: CACurrentMediaTime(),
+                        maximumDistance: contentView.bounds.height * 3
+                    )
+                    : 0
+                let scrollDelta =
+                    abs(projectedScrollDelta) > abs(observedScrollDelta)
+                    ? projectedScrollDelta
+                    : observedScrollDelta
+                let targetRange =
+                    rangeOverride
+                    ?? plannedMountedRange(scrollDelta: scrollDelta)
+                let visibleRange = virtualLayout.visibleRange(
+                    distanceFromBottom: currentDistanceFromBottom(),
+                    viewportHeight: contentView.bounds.height,
+                    overscanCount: 0
+                )
+                // A restored or rapidly changing target should normally contain the
+                // viewport, but make visible coverage an invariant even if it does not.
+                let retainedIndices = Set(targetRange).union(visibleRange)
+                let targetKeys = Set(
+                    retainedIndices.compactMap { index in
+                        virtualLayout.keys.indices.contains(index)
+                            ? virtualLayout.keys[index]
+                            : nil
+                    })
+                let targetChanged = targetKeys != virtualWindowHandoff.targetKeys
+                if targetChanged {
+                    virtualWindowHandoff.setTarget(targetKeys)
+                }
+                return (
+                    virtualWindowPolicy.mountPlan(
+                        targetRange: targetRange,
+                        visibleRange: visibleRange,
+                        scrollDelta: scrollDelta
+                    ),
+                    targetChanged
+                )
             }
-        let requiredKeys = Set(
+        let mountPlan = reconciliation.mountPlan
+        let usesFrameBudget = presentationDisplayLink != nil && !inLiveResize
+        let mountStarted = CACurrentMediaTime()
+        // Loaded viewport rows are never optional. Mount and flush all of them
+        // before this native scroll frame can be presented; applying the frame
+        // budget here is what exposed transparent document space at speed.
+        for index in mountPlan.visibleIndices {
+            mountRow(at: index, requiresImmediatePresentation: true)
+        }
+        assert(
+            mountPlan.visibleIndices.allSatisfy { index in
+                guard virtualLayout.keys.indices.contains(index) else { return false }
+                return mountedHosts[virtualLayout.keys[index]] != nil
+            },
+            "Loaded transcript viewport must be fully mounted"
+        )
+
+        // Complete the closest directional runway rows one at a time. Mounting
+        // a collection of hosts before laying any of them out consumed the
+        // frame budget on root installation and left the nearest rows unable
+        // to present when momentum carried them into the viewport.
+        prepareRunwayRowsEndToEnd(
+            at: mountPlan.runwayIndices,
+            workStartedAt: mountStarted,
+            usesFrameBudget: usesFrameBudget
+        )
+        // Rows from an abandoned intermediate target are neither the last
+        // complete window nor part of the window currently being prepared.
+        if reconciliation.targetChanged {
+            retireMountedHosts(excluding: virtualWindowHandoff.retainedKeys)
+        }
+        promoteTargetWindowAndRetireIfReady()
+        profiler.measure(
+            in: window,
+            identity: windowIdentity,
+            phase: .windowScheduling
+        ) {
+            let needsRunwayPreparation =
+                canPrepareRunwayRows
+                && virtualWindowHandoff.targetKeys.contains { key in
+                    mountedHosts[key]?.needsRunwayPreparation == true
+                }
+            if usesFrameBudget,
+                virtualWindowHandoff.targetKeys.contains(where: { mountedHosts[$0] == nil })
+                    || needsRunwayPreparation
+            {
+                requestMountedRowsUpdate()
+            }
+            synchronizeSendAssistantVisibility()
+        }
+    }
+
+    private var canPrepareRunwayRows: Bool {
+        initialPresentationGate.isReady && !inLiveResize
+    }
+
+    /// A mounted runway is useful only after its SwiftUI/AppKit subtree has
+    /// completed first layout. Directional rows are prepared on display-link
+    /// frames even during live scrolling, but both the count and elapsed work
+    /// remain bounded. The viewport keeps its synchronous no-blank fallback.
+    private func prepareRunwayRowsEndToEnd(
+        at indices: [Int],
+        workStartedAt: CFTimeInterval,
+        usesFrameBudget: Bool
+    ) {
+        for index in indices {
+            if usesFrameBudget,
+                remainingMountsThisFrame == 0,
+                remainingRunwayPreparationsThisFrame == 0
+            {
+                break
+            }
+            guard virtualLayout.keys.indices.contains(index) else { continue }
+            if usesFrameBudget,
+                CACurrentMediaTime() - workStartedAt >= mountWorkBudget
+            {
+                break
+            }
+            let key = virtualLayout.keys[index]
+            if mountedHosts[key] == nil {
+                guard !usesFrameBudget || remainingMountsThisFrame > 0 else {
+                    continue
+                }
+                if mountRow(at: index, requiresImmediatePresentation: false), usesFrameBudget {
+                    remainingMountsThisFrame -= 1
+                }
+            }
+            guard let host = mountedHosts[key], host.needsRunwayPreparation else { continue }
+            guard canPrepareRunwayRows else { continue }
+            guard !usesFrameBudget || remainingRunwayPreparationsThisFrame > 0 else {
+                continue
+            }
+            TranscriptPerformanceProfiler.shared.measure(
+                in: window,
+                identity: performanceIdentity(for: rowByKey[key], fallbackKey: key),
+                phase: .runwayLayout
+            ) {
+                host.prepareForImmediatePresentation()
+            }
+            if usesFrameBudget { remainingRunwayPreparationsThisFrame -= 1 }
+        }
+    }
+
+    @discardableResult
+    private func mountRow(
+        at index: Int,
+        requiresImmediatePresentation: Bool
+    ) -> Bool {
+        guard virtualLayout.keys.indices.contains(index) else { return false }
+        let key = virtualLayout.keys[index]
+        let identity = performanceIdentity(for: rowByKey[key], fallbackKey: key)
+        if let host = mountedHosts[key] {
+            if requiresImmediatePresentation, !host.isPresentationReady {
+                TranscriptPerformanceProfiler.shared.measure(
+                    in: window,
+                    identity: identity,
+                    phase: .visibleLayout
+                ) {
+                    host.prepareForImmediatePresentation()
+                }
+            }
+            return false
+        }
+        guard let row = rowByKey[key] else { return false }
+
+        let profiler = TranscriptPerformanceProfiler.shared
+        let host: TranscriptRowHost
+        if recycledHosts.isEmpty, retiringHosts.isEmpty {
+            host = profiler.measure(
+                in: window,
+                identity: identity,
+                phase: .hostConstruction
+            ) {
+                TranscriptRowHost(frame: .zero)
+            }
+        } else {
+            host = profiler.measure(
+                in: window,
+                identity: identity,
+                phase: .hostReuse
+            ) {
+                if let retiring = retiringHosts.popLast() {
+                    retiring
+                } else {
+                    recycledHosts.removeLast()
+                }
+            }
+        }
+        profiler.measure(
+            in: window,
+            identity: identity,
+            phase: .hostPreparation
+        ) {
+            host.prepareForMountedRow()
+            host.performanceIdentity = identity
+            host.onHeightChange = { [weak self] height in
+                self?.recordMeasuredHeight(height, for: key)
+            }
+        }
+        profiler.measure(
+            in: window,
+            identity: identity,
+            phase: .hostInsertion
+        ) {
+            transcriptDocumentView.addSubview(host)
+            mountedHosts[key] = host
+        }
+        // Position and push the content width before assigning the root view.
+        // Otherwise its first TextKit measurement can race the 1pt placeholder.
+        profiler.measure(
+            in: window,
+            identity: identity,
+            phase: .hostPosition
+        ) {
+            position(host: host, at: index)
+            host.syncContentWidth()
+        }
+        let rootView = profiler.measure(
+            in: window,
+            identity: identity,
+            phase: .rootConstruction
+        ) {
+            measuredRootView(for: row)
+        }
+        let knownHeight: CGFloat? =
+            if row.id.isCacheableSettledRow,
+                let measuredHeight = measurements[key],
+                !measurements.isStale(key)
+            {
+                measuredHeight
+            } else {
+                nil
+            }
+        profiler.measure(
+            in: window,
+            identity: identity,
+            phase: .rootInstall
+        ) {
+            host.installRootView(rootView, knownHeight: knownHeight)
+        }
+        if requiresImmediatePresentation {
+            profiler.measure(
+                in: window,
+                identity: identity,
+                phase: .visibleLayout
+            ) {
+                host.prepareForImmediatePresentation()
+            }
+        }
+        return true
+    }
+
+    private func publishVisibleRowsToPerformanceProfiler(distanceFromBottom: CGFloat) {
+        let profiler = TranscriptPerformanceProfiler.shared
+        guard profiler.isEnabled(in: window) else { return }
+        let visibleRange = virtualLayout.visibleRange(
+            distanceFromBottom: distanceFromBottom,
+            viewportHeight: contentView.bounds.height,
+            overscanCount: 0
+        )
+        profiler.setVisibleRows(
+            visibleRange.compactMap { index in
+                guard virtualLayout.keys.indices.contains(index) else { return nil }
+                let key = virtualLayout.keys[index]
+                return performanceIdentity(for: rowByKey[key], fallbackKey: key)
+            },
+            in: window
+        )
+    }
+
+    private func performanceIdentity(
+        for row: TranscriptVirtualRow?,
+        fallbackKey: String
+    ) -> TranscriptPerformanceIdentity {
+        guard let row else {
+            return TranscriptPerformanceIdentity(rowKey: fallbackKey, kind: "unknown")
+        }
+        let kind: String =
+            switch row.content {
+            case let .markdownChunk(markdown):
+                if markdown.blocks.count == 1, let block = markdown.blocks.first {
+                    "\(markdownPerformanceKind(block)) · block \(markdown.ordinal)"
+                } else {
+                    "prose chunk · \(markdown.blocks.count) blocks · block \(markdown.ordinal)"
+                }
+            case .message: "message"
+            case .assistantPlanning: "assistant planning"
+            case .planDocument: "plan document"
+            case .planHeader: "plan header"
+            case .assistantResult: "assistant result"
+            case .assistantChrome: "assistant chrome"
+            case .assistantAttachment: "attachment"
+            case .active: "active message"
+            case .setup: "session setup"
+            case .optimistic: "optimistic message"
+            case .backgroundTask: "background task"
+            case .updateGate: "update gate"
+            case .connecting: "connecting"
+            case .serverWait: "server wait"
+            case .error: "error"
+            case .bottomSpacer: "bottom spacer"
+            }
+        return TranscriptPerformanceIdentity(rowKey: row.layoutKey, kind: kind)
+    }
+
+    private func markdownPerformanceKind(_ block: MarkdownBlock) -> String {
+        switch block {
+        case let .heading(level, text): "heading h\(level) · \(text.plainText.count)c"
+        case let .paragraph(text): "paragraph · \(text.plainText.count)c"
+        case let .codeBlock(_, code, _):
+            "code · \(code.reduce(into: 1) { $0 += $1 == "\n" ? 1 : 0 }) lines"
+        case let .bulletList(items): "bullet list · \(items.count) items"
+        case let .orderedList(items): "ordered list · \(items.count) items"
+        case let .list(list): "nested list · \(list.items.count) roots"
+        case let .blockQuote(blocks): "blockquote · \(blocks.count) blocks"
+        case let .table(headers, _, rows):
+            "table · \(rows.count + 1)x\(headers.count)"
+        case .thematicBreak: "thematic break"
+        }
+    }
+
+    private func windowRange(for keys: Set<String>) -> Range<Int>? {
+        guard !keys.isEmpty else { return nil }
+        let indices = keys.compactMap { virtualLayout.indexByKey[$0] }.sorted()
+        guard indices.count == keys.count,
+            let first = indices.first,
+            let last = indices.last,
+            last - first + 1 == indices.count
+        else { return nil }
+        return first..<(last + 1)
+    }
+
+    private func keys(in range: Range<Int>) -> Set<String> {
+        Set(
             range.compactMap { index in
                 virtualLayout.keys.indices.contains(index) ? virtualLayout.keys[index] : nil
-            })
+            }
+        )
+    }
 
-        let obsoleteKeys = mountedHosts.keys.filter { !requiredKeys.contains($0) }
-        for key in obsoleteKeys {
-            guard let host = mountedHosts.removeValue(forKey: key) else { continue }
-            host.removeFromSuperview()
+    private func promoteTargetWindowIfReady() -> Bool {
+        guard virtualWindowHandoff.presentedKeys != virtualWindowHandoff.targetKeys else {
+            return false
+        }
+        return virtualWindowHandoff.promoteIfReady { key in
+            guard let host = mountedHosts[key] else { return false }
+            return measurements[key] != nil
+                && !measurements.isStale(key)
+                && pendingMeasuredHeights[key] == nil
+                && host.isAttachmentGeometryReady
+                && host.isPresentationReady
+        }
+    }
+
+    @discardableResult
+    private func promoteTargetWindowAndRetireIfReady() -> Bool {
+        let profiler = TranscriptPerformanceProfiler.shared
+        let identity = TranscriptPerformanceIdentity(
+            rowKey: "transcript",
+            kind: "virtual window"
+        )
+        let promoted = profiler.measure(
+            in: window,
+            identity: identity,
+            phase: .windowPromotion
+        ) {
+            promoteTargetWindowIfReady()
+        }
+        guard promoted else { return false }
+        retireMountedHosts(excluding: virtualWindowHandoff.retainedKeys)
+        return true
+    }
+
+    private func retireMountedHosts(excluding retainedKeys: Set<String>) {
+        let obsoleteKeys = mountedHosts.keys.filter { !retainedKeys.contains($0) }
+        guard !obsoleteKeys.isEmpty else { return }
+        let profiler = TranscriptPerformanceProfiler.shared
+        let identity = TranscriptPerformanceIdentity(
+            rowKey: "transcript",
+            kind: "virtual window"
+        )
+        profiler.measure(
+            in: window,
+            identity: identity,
+            phase: .hostRetirement
+        ) {
+            for key in obsoleteKeys {
+                guard let host = mountedHosts.removeValue(forKey: key) else { continue }
+                host.removeFromSuperviewWithoutNeedingDisplay()
+                retiringHosts.append(host)
+            }
+        }
+        requestDisplayFrame()
+    }
+
+    private func drainRetiringHosts(limit: Int) {
+        for _ in 0..<max(0, limit) {
+            guard let host = retiringHosts.popLast() else { return }
             if recycledHosts.count < 8 {
                 recycledHosts.append(host)
             }
+            // Once the warm pool is full, dropping this final reference tears
+            // the host down here, outside live scrolling. The per-frame limit
+            // prevents a large abandoned window from becoming one idle hitch.
         }
-
-        for index in range {
-            guard virtualLayout.keys.indices.contains(index) else { continue }
-            let key = virtualLayout.keys[index]
-            if mountedHosts[key] == nil, let row = rowByKey[key] {
-                let host = recycledHosts.popLast() ?? TranscriptRowHost(frame: .zero)
-                host.prepareForMountedRow()
-                host.onHeightChange = { [weak self] height in
-                    self?.recordMeasuredHeight(height, for: key)
-                }
-                transcriptDocumentView.addSubview(host)
-                mountedHosts[key] = host
-                // Position (and push the resulting width into the content
-                // constraint) BEFORE installing the root view: assigning
-                // `rootView` schedules the first measurement, and it must not
-                // run against the 1pt placeholder width. `position` is pure
-                // geometry off the virtual layout, so it needs no content.
-                position(host: host, at: index)
-                host.syncContentWidth()
-                host.rootView = measuredRootView(for: row)
-            }
-        }
-        synchronizeSendAssistantVisibility()
     }
 
     private func refreshMountedRootViews() {
@@ -1605,6 +2071,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         guard let host = mountedHosts[key], host.setAttachmentGeometryReady(ready) else {
             return
         }
+        promoteTargetWindowAndRetireIfReady()
         updateInitialPresentationReadiness()
     }
 
@@ -1655,6 +2122,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         guard needsCommit else {
             // Cached settled rows can report the exact height already in the
             // ledger. Fresh AppKit layout still completes presentation gates.
+            promoteTargetWindowAndRetireIfReady()
             updateInitialPresentationReadiness()
             resolveBottomJumpIfPossible()
             startPendingSendAnimationIfPossible()
@@ -1695,6 +2163,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             // row-set changes always come through `configure`'s full rebuild.
             rebuildDocumentGeometry(changedHeights: committedHeights)
         }
+        promoteTargetWindowAndRetireIfReady()
         updateInitialPresentationReadiness()
         resolveBottomJumpIfPossible()
         startPendingSendAnimationIfPossible()
@@ -1794,19 +2263,35 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         return heightChanged
     }
 
-    private func positionMountedRows() {
+    private func positionMountedRows(startingAt firstChangedIndex: Int? = nil) {
+        let profiler = TranscriptPerformanceProfiler.shared
         for (key, host) in mountedHosts {
             guard let index = virtualLayout.indexByKey[key] else { continue }
-            position(host: host, at: index)
+            if let firstChangedIndex, index < firstChangedIndex { continue }
+            let frame = rowFrame(at: index)
+            guard host.frame.size != frame.size || host.frame.origin != frame.origin else {
+                continue
+            }
+            profiler.measure(
+                in: window,
+                identity: performanceIdentity(for: rowByKey[key], fallbackKey: key),
+                phase: .hostPosition
+            ) {
+                position(host: host, frame: frame)
+            }
         }
     }
 
     private func position(host: TranscriptRowHost, at index: Int) {
+        position(host: host, frame: rowFrame(at: index))
+    }
+
+    private func rowFrame(at index: Int) -> CGRect {
         let viewportWidth = max(1, contentView.bounds.width)
         let availableWidth = max(1, viewportWidth - Self.horizontalPadding * 2)
         let rowWidth = min(Self.maxRowWidth, availableWidth)
         let rowX = max(Self.horizontalPadding, (viewportWidth - rowWidth) / 2)
-        let frame = CGRect(
+        return CGRect(
             x: rowX,
             y: paginationHeaderLayout.rowOrigin(
                 topPadding: Self.topPadding,
@@ -1815,8 +2300,18 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             width: rowWidth,
             height: virtualLayout.heights[index]
         )
-        if host.frame != frame {
-            host.frame = frame
+    }
+
+    private func position(host: TranscriptRowHost, frame: CGRect) {
+        // Height commits move every later row but do not change those rows'
+        // content geometry. Assigning the complete frame for a y-only move
+        // needlessly invalidates AppKit/SwiftUI layout; update size and origin
+        // independently so already-laid-out hosts remain clean.
+        if host.frame.size != frame.size {
+            host.setFrameSize(frame.size)
+        }
+        if host.frame.origin != frame.origin {
+            host.setFrameOrigin(frame.origin)
         }
     }
 
@@ -1862,6 +2357,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             followMode: followsLatest ? .followingLatest : .staticPosition
         )
         lastStableScrollState = state
+        viewportSnapshotGeneration &+= 1
         onViewportChange?(state)
     }
 
@@ -1881,7 +2377,9 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private func currentVirtualRestoreState(
         viewportAnchor: VirtualTranscriptAnchor?
     ) -> SessionVirtualTranscriptRestoreState {
-        let indices = mountedHosts.keys.compactMap { virtualLayout.indexByKey[$0] }.sorted()
+        let targetKeys = virtualWindowHandoff.targetKeys
+        let restoreKeys = targetKeys.isEmpty ? Set(mountedHosts.keys) : targetKeys
+        let indices = restoreKeys.compactMap { virtualLayout.indexByKey[$0] }.sorted()
         let renderedWindow: SessionRenderedTranscriptWindow? = indices.first.flatMap { first in
             guard let last = indices.last,
                 virtualLayout.keys.indices.contains(first)

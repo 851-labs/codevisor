@@ -13,39 +13,6 @@ public enum TranscriptMarkdownContainer: Sendable, Equatable {
     case planDocument
 }
 
-/// One independently virtualized Markdown block. Inline semantics are already
-/// resolved against the complete source snapshot by MD4C.
-public struct TranscriptMarkdownBlock: Sendable, Equatable {
-    public let messageID: UUID
-    public let sourceID: String
-    public let ordinal: Int
-    public let block: MarkdownBlock
-    public let documentSource: String
-    public let lifecycle: TranscriptBlockLifecycle
-    public let container: TranscriptMarkdownContainer
-    public let blockCount: Int
-
-    public init(
-        messageID: UUID,
-        sourceID: String,
-        ordinal: Int,
-        block: MarkdownBlock,
-        documentSource: String,
-        lifecycle: TranscriptBlockLifecycle,
-        container: TranscriptMarkdownContainer,
-        blockCount: Int = 1
-    ) {
-        self.messageID = messageID
-        self.sourceID = sourceID
-        self.ordinal = ordinal
-        self.block = block
-        self.documentSource = documentSource
-        self.lifecycle = lifecycle
-        self.container = container
-        self.blockCount = blockCount
-    }
-}
-
 public struct TranscriptAssistantAttachment: Sendable, Equatable {
     public let messageID: UUID
     public let sourceID: String
@@ -181,31 +148,39 @@ enum TranscriptAssistantRowProjection {
             let sourceID = "\(entryID):\(segmentIndex)"
             switch segment {
             case let .markdown(source):
-                for block in parser.parse(source) {
-                    let projected = TranscriptMarkdownBlock(
+                let blocks = parser.parse(source)
+                let sourceOrdinal = ordinal
+                for chunk in TranscriptMarkdownChunkProjection.chunks(from: blocks) {
+                    let chunkOrdinal = sourceOrdinal + chunk.firstOrdinal
+                    let projected = TranscriptMarkdownChunk(
                         messageID: message.id,
                         sourceID: sourceID,
-                        ordinal: ordinal,
-                        block: block,
+                        ordinal: chunkOrdinal,
+                        blocks: chunk.blocks,
                         documentSource: source,
                         lifecycle: lifecycle,
-                        container: .assistantResponse
+                        container: .assistantResponse,
+                        fragment: chunk.fragment
                     )
                     responseRows.append(
                         .init(
                             id: markdownID(
                                 messageID: message.id,
                                 sourceID: sourceID,
-                                ordinal: ordinal,
+                                ordinal: chunkOrdinal,
+                                fragment: chunk.fragment?.identity,
                                 lifecycle: lifecycle
                             ),
-                            content: .markdownBlock(projected),
-                            estimatedHeight: estimatedHeight(for: block),
+                            content: .markdownChunk(projected),
+                            estimatedHeight: estimatedHeight(
+                                for: chunk.blocks,
+                                fragment: chunk.fragment
+                            ),
                             measurementRevision: markdownMeasurementRevision(projected),
-                            spacingAfter: 10
+                            spacingAfter: chunk.fragment?.isLastInSourceBlock == false ? 0 : 10
                         ))
-                    ordinal += 1
                 }
+                ordinal += blocks.count
             case let .file(file, label):
                 let attachment = TranscriptAssistantAttachment(
                     messageID: message.id,
@@ -323,11 +298,24 @@ enum TranscriptAssistantRowProjection {
         messageID: UUID,
         sourceID: String,
         ordinal: Int,
+        fragment: String?,
         lifecycle: TranscriptBlockLifecycle
     ) -> TranscriptPresentationRow.ID {
         switch lifecycle {
-        case .receiving: .activeMarkdown(messageID, sourceID: sourceID, ordinal: ordinal)
-        case .settled: .assistantMarkdown(messageID, sourceID: sourceID, ordinal: ordinal)
+        case .receiving:
+            .activeMarkdown(
+                messageID,
+                sourceID: sourceID,
+                ordinal: ordinal,
+                fragment: fragment
+            )
+        case .settled:
+            .assistantMarkdown(
+                messageID,
+                sourceID: sourceID,
+                ordinal: ordinal,
+                fragment: fragment
+            )
         }
     }
 
@@ -384,33 +372,6 @@ enum TranscriptAssistantRowProjection {
         }
     }
 
-    private static func estimatedHeight(for block: MarkdownBlock) -> CGFloat {
-        switch block {
-        case let .heading(_, text), let .paragraph(text):
-            max(24, min(360, 24 + CGFloat(text.characterCount / 72) * 20))
-        case let .codeBlock(_, code, _):
-            max(80, min(640, 52 + CGFloat(code.split(separator: "\n").count) * 18))
-        case let .bulletList(items):
-            max(28, CGFloat(items.count) * 26)
-        case let .orderedList(items):
-            max(28, CGFloat(items.count) * 26)
-        case let .list(list):
-            max(32, CGFloat(list.items.count) * 30)
-        case let .blockQuote(blocks):
-            max(36, CGFloat(blocks.count) * 34)
-        case let .table(_, _, body):
-            max(72, CGFloat(body.count + 1) * 34)
-        case .thematicBreak:
-            1
-        }
-    }
-
-    private static func markdownMeasurementRevision(_ block: TranscriptMarkdownBlock) -> Int {
-        var hasher = Hasher()
-        hasher.combine(block.block.id)
-        return hasher.finalize()
-    }
-
     private static func attachmentMeasurementRevision(
         _ attachment: TranscriptAssistantAttachment
     ) -> Int {
@@ -461,6 +422,30 @@ enum TranscriptAssistantRowProjection {
             }
         }
         hasher.combine(waitingOnBackgroundTask)
+        return hasher.finalize()
+    }
+}
+
+private extension TranscriptAssistantRowProjection {
+    static func estimatedHeight(
+        for blocks: [MarkdownBlock],
+        fragment: TranscriptMarkdownFragment? = nil
+    ) -> CGFloat {
+        let content = TranscriptMarkdownChunkProjection.estimatedHeight(for: blocks)
+        guard let fragment else { return content }
+        switch fragment.trailingSpacing {
+        case .none: return content
+        case .block: return content + 10
+        case .listItem: return content + 4
+        }
+    }
+
+    static func markdownMeasurementRevision(_ chunk: TranscriptMarkdownChunk) -> Int {
+        var hasher = Hasher()
+        for block in chunk.blocks {
+            hasher.combine(block.id)
+        }
+        hasher.combine(chunk.fragment)
         return hasher.finalize()
     }
 }

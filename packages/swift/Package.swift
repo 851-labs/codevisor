@@ -238,6 +238,7 @@ let package = Package(
                 "CodevisorTheming",
                 "StreamMarkdown",
                 "CodeHighlighter",
+                "TranscriptKit",
             ],
             path: "CodevisorUI/Sources/CodevisorUI",
             resources: [.copy("Resources/plugin-bridge.js")],

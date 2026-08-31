@@ -87,7 +87,7 @@
 
         public func sizeThatFits(
             _ proposal: ProposedViewSize,
-            nsView _: SelectableTextKitView,
+            nsView: SelectableTextKitView,
             context: Context
         ) -> CGSize? {
             let text = context.coordinator.preparedText(
@@ -97,18 +97,21 @@
             let concreteProposal = proposal.width.flatMap { $0.isFinite ? $0 : nil }
             let width: CGFloat
             if fillsWidth, let concreteProposal {
-                // The common Markdown path gets one layout at its real width.
+                // The common Markdown path lays out the displayed TextKit stack
+                // once at its real width. Rendering reuses those glyphs and
+                // line fragments instead of repeating the work in a scratch
+                // layout manager.
                 width = max(1, concreteProposal)
             } else {
                 let naturalWidth = context.coordinator.measurer.naturalWidth(for: text)
                 width = min(max(1, concreteProposal ?? naturalWidth), naturalWidth)
             }
-            return CGSize(width: width, height: context.coordinator.measurer.height(for: text, width: width))
+            return CGSize(width: width, height: nsView.contentHeight(forWidth: width))
         }
 
         @MainActor
         public final class Coordinator: NSObject {
-            fileprivate let measurer = TextKitTextMeasurer()
+            fileprivate lazy var measurer = TextKitTextMeasurer()
 
             private let animationState = StreamingTextAnimationState()
             private var attributedInput: NSAttributedString?
@@ -165,7 +168,7 @@
                     return text
                 case let .plain(model):
                     if model == plainModel, let plainText { return plainText }
-                    let text = model.attributedText
+                    let text = PlainTextRenderCache.shared.value(for: model)
                     plainModel = model
                     plainText = text
                     return text

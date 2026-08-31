@@ -109,6 +109,15 @@ final class TranscriptRowHost: UIView {
         contentController.invalidateContentSize(forceReport: forceReport)
     }
 
+    /// Ensure a newly installed viewport row has reconciled its hosting view
+    /// before UIKit commits the current scroll frame. Runway rows stay lazy.
+    func prepareForImmediatePresentation() {
+        setNeedsLayout()
+        layoutIfNeeded()
+        contentHost.setNeedsLayout()
+        contentHost.layoutIfNeeded()
+    }
+
     func resetReportedContentHeight() {
         isPresentationReady = false
         contentController.resetReportedHeight()

@@ -6,7 +6,7 @@
     import QuartzCore
     import SwiftUI
 
-    struct PlainTextModel: Equatable {
+    struct PlainTextModel: Hashable {
         let text: String
         let font: NSFont
         let foregroundColor: NSColor
@@ -42,9 +42,32 @@
         }
     }
 
+    /// Quote bars carried by a flattened TextKit paragraph. Keeping the bars
+    /// in the text layout lets nested quotes and list/quote mixtures remain a
+    /// single selectable surface instead of rebuilding a recursive SwiftUI
+    /// stack every time the virtualizer mounts the row.
+    final class TextKitQuoteDecoration: NSObject, NSCopying {
+        let color: NSColor
+        let barOffsets: [CGFloat]
+        let barWidth: CGFloat
+
+        init(color: NSColor, barOffsets: [CGFloat], barWidth: CGFloat = 3) {
+            self.color = color
+            self.barOffsets = barOffsets
+            self.barWidth = barWidth
+        }
+
+        func copy(with _: NSZone? = nil) -> Any {
+            self
+        }
+    }
+
     extension NSAttributedString.Key {
         static let streamMarkdownRoundedBackground = NSAttributedString.Key(
             "com.851labs.codevisor.streamMarkdownRoundedBackground"
+        )
+        static let streamMarkdownQuoteDecoration = NSAttributedString.Key(
+            "com.851labs.codevisor.streamMarkdownQuoteDecoration"
         )
     }
 
@@ -55,6 +78,7 @@
         var animationTime = CACurrentMediaTime()
 
         override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+            drawQuoteBars(forGlyphRange: glyphsToShow, at: origin)
             drawRoundedBackgrounds(forGlyphRange: glyphsToShow, at: origin)
             super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
         }
@@ -139,6 +163,41 @@
                 }
             }
         }
+
+        private func drawQuoteBars(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+            guard let textStorage, glyphsToShow.length > 0 else { return }
+            let characters = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
+            textStorage.enumerateAttribute(
+                .streamMarkdownQuoteDecoration,
+                in: characters,
+                options: []
+            ) { value, characterRange, _ in
+                guard let decoration = value as? TextKitQuoteDecoration else { return }
+                let glyphRange = self.glyphRange(
+                    forCharacterRange: characterRange,
+                    actualCharacterRange: nil
+                )
+                let visibleGlyphs = NSIntersectionRange(glyphRange, glyphsToShow)
+                guard visibleGlyphs.length > 0 else { return }
+
+                self.enumerateLineFragments(forGlyphRange: visibleGlyphs) {
+                    lineRect, _, _, lineGlyphRange, _ in
+                    guard NSIntersectionRange(visibleGlyphs, lineGlyphRange).length > 0 else {
+                        return
+                    }
+                    decoration.color.setFill()
+                    for offset in decoration.barOffsets {
+                        let rect = NSRect(
+                            x: origin.x + offset,
+                            y: origin.y + lineRect.minY,
+                            width: decoration.barWidth,
+                            height: lineRect.height
+                        )
+                        NSBezierPath(rect: rect).fill()
+                    }
+                }
+            }
+        }
     }
 
     /// The displayed selectable view. It owns an explicit TextKit 1 stack so the
@@ -148,6 +207,8 @@
         StreamingTextAnimationFrameClient
     {
         private var representedText: NSAttributedString?
+        private var measuredWidth: CGFloat = -1
+        private var measuredHeight: CGFloat = 1
         private var latestAnimationEnd: TimeInterval?
         private var activeAnimationRanges: [NSRange] = []
         private var animationDisplayLink: CADisplayLink?
@@ -225,6 +286,7 @@
             updateLinkHover(at: nil)
             let previousText = representedText
             representedText = text
+            measuredWidth = -1
             if let previousText,
                 text.length >= previousText.length,
                 text.string.hasPrefix(previousText.string),
@@ -326,14 +388,21 @@
         /// generation or the resulting height.
         func contentHeight(forWidth width: CGFloat) -> CGFloat {
             let width = max(1, width)
-            setFrameSize(NSSize(width: width, height: max(1, frame.height)))
+            if abs(measuredWidth - width) <= 0.25 {
+                return measuredHeight
+            }
+            if abs(frame.width - width) > 0.25 {
+                setFrameSize(NSSize(width: width, height: max(1, frame.height)))
+            }
             guard let layoutManager, let textContainer else { return 1 }
             textContainer.containerSize = NSSize(
                 width: width,
                 height: CGFloat.greatestFiniteMagnitude
             )
             layoutManager.ensureLayout(for: textContainer)
-            return max(1, ceil(layoutManager.usedRect(for: textContainer).height))
+            measuredWidth = width
+            measuredHeight = max(1, ceil(layoutManager.usedRect(for: textContainer).height))
+            return measuredHeight
         }
     }
 

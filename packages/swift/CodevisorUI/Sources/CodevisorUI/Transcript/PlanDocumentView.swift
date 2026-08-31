@@ -64,14 +64,15 @@ public struct PlanDocumentHeaderView: View {
     }
 }
 
-/// One Markdown block inside the independently virtualized proposed-plan card.
+/// One bounded Markdown chunk inside the virtualized proposed-plan card.
 public struct PlanDocumentBlockView: View {
-    private let block: MarkdownBlock
+    private let blocks: [MarkdownBlock]
     private let documentSource: String
     private let streamID: String
     private let isStreaming: Bool
     private let isFirst: Bool
     private let isLast: Bool
+    private let fragmentLayout: MarkdownFragmentLayout?
     @Environment(\.theme) private var theme
     @Environment(\.markdownTheme) private var markdownTheme
 
@@ -81,34 +82,70 @@ public struct PlanDocumentBlockView: View {
         streamID: String,
         isStreaming: Bool,
         isFirst: Bool,
-        isLast: Bool
+        isLast: Bool,
+        fragmentLayout: MarkdownFragmentLayout? = nil
     ) {
-        self.block = block
+        blocks = [block]
         self.documentSource = documentSource
         self.streamID = streamID
         self.isStreaming = isStreaming
         self.isFirst = isFirst
         self.isLast = isLast
+        self.fragmentLayout = fragmentLayout
+    }
+
+    public init(
+        blocks: [MarkdownBlock],
+        documentSource: String,
+        streamID: String,
+        isStreaming: Bool,
+        isFirst: Bool,
+        isLast: Bool,
+        fragmentLayout: MarkdownFragmentLayout? = nil
+    ) {
+        precondition(!blocks.isEmpty, "Plan Markdown rows must contain at least one block")
+        self.blocks = blocks
+        self.documentSource = documentSource
+        self.streamID = streamID
+        self.isStreaming = isStreaming
+        self.isFirst = isFirst
+        self.isLast = isLast
+        self.fragmentLayout = fragmentLayout
     }
 
     public var body: some View {
-        MarkdownBlockRenderView(
-            block: block,
-            documentSource: documentSource,
-            streamID: streamID,
-            isStreaming: isStreaming
-        )
-        .padding(.horizontal, 12)
-        .padding(.top, isFirst ? 0 : markdownTheme.blockSpacing)
-        .padding(.bottom, isLast ? 12 : 0)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            PlanDocumentFragmentBackground(
-                color: theme.cardBackground,
-                includesTop: false,
-                includesBottom: isLast
+        markdownContent
+            .padding(.horizontal, 12)
+            .padding(.top, fragmentLayout != nil || isFirst ? 0 : markdownTheme.blockSpacing)
+            .padding(.bottom, isLast ? 12 : 0)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                PlanDocumentFragmentBackground(
+                    color: theme.cardBackground,
+                    includesTop: false,
+                    includesBottom: isLast
+                )
             )
-        )
+    }
+
+    @ViewBuilder
+    private var markdownContent: some View {
+        if let fragmentLayout {
+            MarkdownFragmentRenderView(
+                blocks: blocks,
+                documentSource: documentSource,
+                streamID: streamID,
+                isStreaming: isStreaming,
+                layout: fragmentLayout
+            )
+        } else {
+            MarkdownBlockRenderView(
+                blocks: blocks,
+                documentSource: documentSource,
+                streamID: streamID,
+                isStreaming: isStreaming
+            )
+        }
     }
 }
 

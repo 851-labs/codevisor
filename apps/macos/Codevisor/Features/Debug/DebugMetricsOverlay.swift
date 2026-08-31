@@ -19,10 +19,14 @@ final class DebugMetricsModel {
     private(set) var frameDurations: [Double] = []
     private(set) var cpuPercent = 0.0
     private(set) var memoryBytes: UInt64 = 0
+    private(set) var transcriptPerformance = TranscriptPerformanceSnapshot.empty
+    private(set) var targetFrameDurationMilliseconds = 1_000.0 / 60.0
 
     private var frameTimestamps: [TimeInterval] = []
     private var resourceTask: Task<Void, Never>?
     private var previousResourceSample: ProcessResourceSample?
+    private var profilerWindowNumber: Int?
+    private var profilerMaximumFramesPerSecond = 60
 
     var memoryFraction: Double {
         let physicalMemory = ProcessInfo.processInfo.physicalMemory
@@ -35,10 +39,12 @@ final class DebugMetricsModel {
         if isVisible {
             resetFrameMetrics()
             startResourceSampling()
+            updateProfilerRegistration()
         } else {
             resourceTask?.cancel()
             resourceTask = nil
             previousResourceSample = nil
+            updateProfilerRegistration()
         }
     }
 
@@ -67,6 +73,51 @@ final class DebugMetricsModel {
             if elapsed > 0 {
                 framesPerSecond = Double(frameTimestamps.count - 1) / elapsed
             }
+        }
+        if let profilerWindowNumber,
+            let snapshot = TranscriptPerformanceProfiler.shared.recordDisplayFrame(
+                windowNumber: profilerWindowNumber,
+                timestamp: timestamp
+            )
+        {
+            transcriptPerformance = snapshot
+        }
+    }
+
+    func attachProfiler(to window: NSWindow) {
+        let windowNumber = window.windowNumber
+        if let profilerWindowNumber, profilerWindowNumber != windowNumber {
+            TranscriptPerformanceProfiler.shared.setEnabled(
+                false,
+                windowNumber: profilerWindowNumber,
+                maximumFramesPerSecond: profilerMaximumFramesPerSecond
+            )
+        }
+        profilerWindowNumber = windowNumber
+        profilerMaximumFramesPerSecond = max(1, window.screen?.maximumFramesPerSecond ?? 60)
+        targetFrameDurationMilliseconds = 1_000 / Double(profilerMaximumFramesPerSecond)
+        updateProfilerRegistration()
+    }
+
+    func detachProfiler(from windowNumber: Int) {
+        guard profilerWindowNumber == windowNumber else { return }
+        TranscriptPerformanceProfiler.shared.setEnabled(
+            false,
+            windowNumber: windowNumber,
+            maximumFramesPerSecond: profilerMaximumFramesPerSecond
+        )
+        profilerWindowNumber = nil
+    }
+
+    private func updateProfilerRegistration() {
+        guard let profilerWindowNumber else { return }
+        TranscriptPerformanceProfiler.shared.setEnabled(
+            isVisible,
+            windowNumber: profilerWindowNumber,
+            maximumFramesPerSecond: profilerMaximumFramesPerSecond
+        )
+        if isVisible {
+            transcriptPerformance = .empty
         }
     }
 
@@ -180,6 +231,13 @@ private struct DebugMetricsOverlay: View {
             FrameDurationMeter(samples: model.frameDurations)
                 .frame(height: 52)
 
+            if model.transcriptPerformance.frameCount > 0 {
+                Divider()
+                    .overlay(.white.opacity(0.12))
+
+                TranscriptPerformanceSummary(snapshot: model.transcriptPerformance)
+            }
+
             Divider()
                 .overlay(.white.opacity(0.12))
 
@@ -197,7 +255,7 @@ private struct DebugMetricsOverlay: View {
             )
         }
         .padding(12)
-        .frame(width: 286)
+        .frame(width: 320)
         .background(.black.opacity(0.84), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -211,10 +269,110 @@ private struct DebugMetricsOverlay: View {
 
     private var frameTint: Color {
         switch model.frameDurationMilliseconds {
-        case ..<18: .green
-        case ..<34: .yellow
+        case ..<(model.targetFrameDurationMilliseconds * 1.25): .green
+        case ..<(model.targetFrameDurationMilliseconds * 2.25): .yellow
         default: .orange
         }
+    }
+}
+
+private struct TranscriptPerformanceSummary: View {
+    let snapshot: TranscriptPerformanceSnapshot
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack {
+                Text("TRANSCRIPT SCROLL")
+                    .font(.system(size: Typography.minimumTextSize, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.6))
+                Spacer()
+                Text("\(snapshot.frameCount) frames")
+                    .font(.system(size: Typography.minimumTextSize, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.52))
+            }
+
+            HStack(spacing: 10) {
+                ProfileMetric(
+                    title: "P99",
+                    value: "\(formatted(snapshot.p99FrameMilliseconds)) ms"
+                )
+                ProfileMetric(
+                    title: "1% LOW",
+                    value: "\(formatted(snapshot.onePercentLowFPS)) fps"
+                )
+                ProfileMetric(
+                    title: "MISSED",
+                    value: "\(formatted(snapshot.missedVSyncPercent))%"
+                )
+                ProfileMetric(
+                    title: "HITCH",
+                    value: "\(formatted(snapshot.hitchTimePercent))%"
+                )
+            }
+
+            HStack(spacing: 10) {
+                ProfileMetric(
+                    title: "P50 WORK",
+                    value: "\(formatted(snapshot.medianProfiledWorkMilliseconds)) ms"
+                )
+                ProfileMetric(
+                    title: "TOTAL WORK",
+                    value: "\(formatted(snapshot.totalProfiledWorkMilliseconds)) ms"
+                )
+            }
+
+            if let topKind = snapshot.kinds.first {
+                Text(
+                    "TOP CUMULATIVE  \(topKind.kind) · "
+                        + "\(formatted(topKind.totalExclusiveMilliseconds)) ms"
+                )
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.52))
+                .lineLimit(1)
+            }
+
+            ForEach(snapshot.hotspots.prefix(4)) { hotspot in
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(hotspot.kind)
+                            .lineLimit(1)
+                            .foregroundStyle(.white.opacity(0.9))
+                        Spacer(minLength: 4)
+                        Text("+\(formatted(hotspot.excessFrameMilliseconds)) ms")
+                            .foregroundStyle(.orange)
+                    }
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+
+                    Text(
+                        "\(hotspot.worstPhase) \(formatted(hotspot.worstOperationMilliseconds)) ms"
+                            + " · frame \(formatted(hotspot.worstFrameMilliseconds)) ms"
+                    )
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.48))
+                    .lineLimit(1)
+                }
+            }
+        }
+    }
+
+    private func formatted(_ value: Double) -> String {
+        value.formatted(.number.precision(.fractionLength(1)))
+    }
+}
+
+private struct ProfileMetric: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .foregroundStyle(.white.opacity(0.48))
+            Text(value)
+                .foregroundStyle(.white.opacity(0.9))
+        }
+        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -320,11 +478,16 @@ private struct DisplayFrameProbe: NSViewRepresentable {
     func updateNSView(_ view: DisplayFrameProbeView, context: Context) {
         view.model = model
     }
+
+    static func dismantleNSView(_ view: DisplayFrameProbeView, coordinator: Void) {
+        view.stop()
+    }
 }
 
 private final class DisplayFrameProbeView: NSView {
     weak var model: DebugMetricsModel?
     private var frameDisplayLink: CADisplayLink?
+    private var attachedWindowNumber: Int?
 
     init(model: DebugMetricsModel) {
         self.model = model
@@ -338,13 +501,29 @@ private final class DisplayFrameProbeView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        frameDisplayLink?.invalidate()
-        frameDisplayLink = nil
+        stop()
 
-        guard window != nil else { return }
+        guard let window else { return }
+        attachedWindowNumber = window.windowNumber
+        model?.attachProfiler(to: window)
         let link = displayLink(target: self, selector: #selector(displayLinkDidFire(_:)))
+        let rate = Float(max(1, window.screen?.maximumFramesPerSecond ?? 60))
+        link.preferredFrameRateRange = CAFrameRateRange(
+            minimum: rate,
+            maximum: rate,
+            preferred: rate
+        )
         link.add(to: .main, forMode: .common)
         frameDisplayLink = link
+    }
+
+    func stop() {
+        frameDisplayLink?.invalidate()
+        frameDisplayLink = nil
+        if let attachedWindowNumber {
+            model?.detachProfiler(from: attachedWindowNumber)
+            self.attachedWindowNumber = nil
+        }
     }
 
     @objc private func displayLinkDidFire(_ displayLink: CADisplayLink) {

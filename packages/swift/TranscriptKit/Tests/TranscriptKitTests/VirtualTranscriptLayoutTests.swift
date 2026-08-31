@@ -288,6 +288,34 @@ struct VirtualTranscriptLayoutTests {
         #expect(nextAnchorY == previousAnchorY)
     }
 
+    @Test func batchedMeasurementsMatchAFullGeometryRebuild() throws {
+        let initial = VirtualTranscriptLayout(items: items, measuredHeights: [:], spacing: 10)
+        let batched = try #require(
+            initial.updatingHeights([
+                "a": 125,
+                "c": 275,
+                "d": 480,
+            ]))
+        let rebuilt = VirtualTranscriptLayout(
+            items: items,
+            measuredHeights: [
+                "a": 125,
+                "c": 275,
+                "d": 480,
+            ],
+            spacing: 10
+        )
+
+        #expect(batched == rebuilt)
+    }
+
+    @Test func batchedMeasurementsRejectUnknownKeysAtomically() {
+        let initial = VirtualTranscriptLayout(items: items, measuredHeights: [:], spacing: 10)
+
+        #expect(initial.updatingHeights(["a": 125, "missing": 50]) == nil)
+        #expect(initial.heights == [100, 200, 300, 400])
+    }
+
     @Test func uncachedOpeningStaysAtBottomAcrossHydrationAndMeasurement() {
         let placeholder = VirtualTranscriptLayout(
             items: [.init(key: "bottom-spacer", estimatedHeight: 120)],

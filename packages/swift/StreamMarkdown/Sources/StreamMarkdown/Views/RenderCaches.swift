@@ -1,5 +1,9 @@
 import SwiftUI
 
+#if canImport(AppKit)
+    import AppKit
+#endif
+
 /// Process-level render caches.
 ///
 /// Transcript rows live in a `LazyVStack`, which destroys a row's `@State`
@@ -124,3 +128,133 @@ public final class CodeHighlightResultCache {
         order.append(key)
     }
 }
+
+#if canImport(AppKit)
+    /// Final attributed inputs for plain native text surfaces. These appear in
+    /// transcript chrome and tool output alongside Markdown runs and otherwise
+    /// rebuild their paragraph style after every virtual-host remount.
+    @MainActor
+    final class PlainTextRenderCache {
+        static let shared = PlainTextRenderCache()
+
+        private final class Entry {
+            let value: NSAttributedString
+            var lastAccess: UInt64
+
+            init(value: NSAttributedString, lastAccess: UInt64) {
+                self.value = value
+                self.lastAccess = lastAccess
+            }
+        }
+
+        private var entries: [PlainTextModel: Entry] = [:]
+        private var accessClock: UInt64 = 0
+        private let limit: Int
+
+        init(limit: Int = 256) {
+            self.limit = max(1, limit)
+        }
+
+        func value(for model: PlainTextModel) -> NSAttributedString {
+            if let entry = entries[model] {
+                entry.lastAccess = tick()
+                return entry.value
+            }
+            let value = model.attributedText
+            entries[model] = Entry(value: value, lastAccess: tick())
+            evictOldestIfNeeded()
+            return value
+        }
+
+        private func tick() -> UInt64 {
+            accessClock &+= 1
+            return accessClock
+        }
+
+        private func evictOldestIfNeeded() {
+            guard entries.count > limit,
+                let oldest = entries.min(by: { $0.value.lastAccess < $1.value.lastAccess })
+            else { return }
+            entries.removeValue(forKey: oldest.key)
+        }
+    }
+
+    /// Final TextKit documents for settled prose blocks. Transcript row hosts
+    /// are recycled as they leave the virtual window, so a view-local memo is
+    /// not enough: without this bounded shared cache, re-entry rebuilds every
+    /// inline attribute and every flattened list marker before TextKit can lay
+    /// the row out.
+    @MainActor
+    final class MarkdownTextRunCache {
+        struct ColorKey: Hashable {
+            let colorSpace: String
+            let red: CGFloat
+            let green: CGFloat
+            let blue: CGFloat
+            let alpha: CGFloat
+
+            init(_ color: Color) {
+                let resolved = NSColor(color)
+                let rgb = resolved.usingColorSpace(.deviceRGB)
+                colorSpace = rgb == nil ? String(describing: resolved) : "deviceRGB"
+                red = rgb?.redComponent ?? 0
+                green = rgb?.greenComponent ?? 0
+                blue = rgb?.blueComponent ?? 0
+                alpha = rgb?.alphaComponent ?? resolved.alphaComponent
+            }
+        }
+
+        struct Key: Hashable {
+            let blocks: [MarkdownBlock]
+            let themeFingerprint: Int
+            let foregroundColor: ColorKey
+        }
+
+        static let shared = MarkdownTextRunCache()
+
+        private final class Entry {
+            let value: NSAttributedString
+            var lastAccess: UInt64
+
+            init(value: NSAttributedString, lastAccess: UInt64) {
+                self.value = value
+                self.lastAccess = lastAccess
+            }
+        }
+
+        private var entries: [Key: Entry] = [:]
+        private var accessClock: UInt64 = 0
+        private let limit: Int
+
+        init(limit: Int = 192) {
+            self.limit = max(1, limit)
+        }
+
+        func value(for key: Key) -> NSAttributedString? {
+            guard let entry = entries[key] else { return nil }
+            entry.lastAccess = tick()
+            return entry.value
+        }
+
+        func store(_ value: NSAttributedString, for key: Key) {
+            if let entry = entries[key] {
+                entry.lastAccess = tick()
+                return
+            }
+            entries[key] = Entry(value: value, lastAccess: tick())
+            evictOldestIfNeeded()
+        }
+
+        private func tick() -> UInt64 {
+            accessClock &+= 1
+            return accessClock
+        }
+
+        private func evictOldestIfNeeded() {
+            guard entries.count > limit,
+                let oldest = entries.min(by: { $0.value.lastAccess < $1.value.lastAccess })
+            else { return }
+            entries.removeValue(forKey: oldest.key)
+        }
+    }
+#endif

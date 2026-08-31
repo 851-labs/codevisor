@@ -109,31 +109,52 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
     /// Returns nil when `key` is absent — the caller must fall back to a full
     /// rebuild (row set changed).
     public func updatingHeight(forKey key: String, to height: CGFloat) -> VirtualTranscriptLayout? {
-        guard let index = indexByKey[key] else { return nil }
-        let clamped = max(1, height)
-        let delta = clamped - heights[index]
-        guard delta != 0 else { return self }
+        updatingHeights([key: height])
+    }
 
-        var heights = self.heights
-        var topOffsets = self.topOffsets
-        var bottomOffsets = self.bottomOffsets
-        heights[index] = clamped
-        if index + 1 < topOffsets.count {
-            for next in (index + 1)..<topOffsets.count {
-                topOffsets[next] += delta
-            }
+    /// Applies a display-frame's complete measurement batch with one numeric
+    /// pass. Calling `updatingHeight` repeatedly copied and walked the layout
+    /// arrays once per changed row; a window that settled several rows in the
+    /// same frame therefore became O(rows × changes). This validates every key
+    /// up front and computes the same top- and bottom-relative geometry in
+    /// O(rows + changes).
+    public func updatingHeights(_ updates: [String: CGFloat]) -> VirtualTranscriptLayout? {
+        guard !updates.isEmpty else { return self }
+        var replacements: [Int: CGFloat] = [:]
+        replacements.reserveCapacity(updates.count)
+        for (key, height) in updates {
+            guard let index = indexByKey[key] else { return nil }
+            replacements[index] = max(1, height)
         }
-        if index > 0 {
-            for previous in 0..<index {
-                bottomOffsets[previous] += delta
-            }
+
+        var nextHeights = heights
+        var nextTopOffsets = topOffsets
+        var cumulativeDelta: CGFloat = 0
+        for index in nextHeights.indices {
+            nextTopOffsets[index] += cumulativeDelta
+            guard let replacement = replacements[index] else { continue }
+            cumulativeDelta += replacement - nextHeights[index]
+            nextHeights[index] = replacement
+        }
+        guard
+            cumulativeDelta != 0
+                || replacements.contains(where: {
+                    heights[$0.key] != $0.value
+                })
+        else { return self }
+
+        let nextTotalHeight = totalHeight + cumulativeDelta
+        var nextBottomOffsets = bottomOffsets
+        for index in nextBottomOffsets.indices {
+            nextBottomOffsets[index] =
+                nextTotalHeight - nextTopOffsets[index] - nextHeights[index]
         }
         return VirtualTranscriptLayout(
             keys: keys,
-            heights: heights,
-            topOffsets: topOffsets,
-            bottomOffsets: bottomOffsets,
-            totalHeight: totalHeight + delta,
+            heights: nextHeights,
+            topOffsets: nextTopOffsets,
+            bottomOffsets: nextBottomOffsets,
+            totalHeight: nextTotalHeight,
             indexByKey: indexByKey
         )
     }

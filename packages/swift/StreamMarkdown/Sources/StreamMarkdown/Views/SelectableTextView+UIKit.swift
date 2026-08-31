@@ -66,7 +66,7 @@
 
         public func sizeThatFits(
             _ proposal: ProposedViewSize,
-            uiView _: SelectableTextKitView,
+            uiView: SelectableTextKitView,
             context: Context
         ) -> CGSize? {
             let text = context.coordinator.preparedText(
@@ -83,13 +83,13 @@
             }
             return CGSize(
                 width: width,
-                height: context.coordinator.measurer.height(for: text, width: width)
+                height: uiView.contentHeight(forWidth: width)
             )
         }
 
         @MainActor
         public final class Coordinator: NSObject, UITextViewDelegate {
-            fileprivate let measurer = UIKitTextKitTextMeasurer()
+            fileprivate lazy var measurer = UIKitTextKitTextMeasurer()
             fileprivate var linkAction: MarkdownLinkAction?
             private let animationState = StreamingTextAnimationState()
             private var attributedInput: NSAttributedString?
@@ -268,6 +268,8 @@
     @MainActor
     public final class SelectableTextKitView: UITextView, StreamingTextAnimationFrameClient {
         private var representedText: NSAttributedString?
+        private var measuredWidth: CGFloat = -1
+        private var measuredHeight: CGFloat = 1
         private var latestAnimationEnd: TimeInterval?
         private var activeAnimationRanges: [NSRange] = []
         private var animationDisplayLink: CADisplayLink?
@@ -331,6 +333,7 @@
             let selection = selectedRange
             let previousText = representedText
             representedText = text
+            measuredWidth = -1
             if let previousText,
                 text.length >= previousText.length,
                 text.string.hasPrefix(previousText.string),
@@ -425,6 +428,24 @@
                 setNeedsDisplay(rect.insetBy(dx: -2, dy: -2))
             }
         }
+
+        func contentHeight(forWidth width: CGFloat) -> CGFloat {
+            let width = max(1, width)
+            if abs(measuredWidth - width) <= 0.25 {
+                return measuredHeight
+            }
+            if abs(bounds.width - width) > 0.25 {
+                bounds.size.width = width
+            }
+            textContainer.size = CGSize(
+                width: width,
+                height: CGFloat.greatestFiniteMagnitude
+            )
+            layoutManager.ensureLayout(for: textContainer)
+            measuredWidth = width
+            measuredHeight = max(1, ceil(layoutManager.usedRect(for: textContainer).height))
+            return measuredHeight
+        }
     }
 
     @MainActor
@@ -435,8 +456,6 @@
             size: CGSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
         )
         private var measuredText: NSAttributedString?
-        private var measuredWidth: CGFloat = -1
-        private var measuredHeight: CGFloat = 1
         private var naturalWidthText: NSAttributedString?
         private var cachedNaturalWidth: CGFloat = 1
 
@@ -446,22 +465,6 @@
             container.widthTracksTextView = false
             container.heightTracksTextView = false
             layoutManager.addTextContainer(container)
-        }
-
-        func height(for text: NSAttributedString, width: CGFloat) -> CGFloat {
-            let width = max(1, width)
-            if measuredText === text, abs(measuredWidth - width) <= 0.25 {
-                return measuredHeight
-            }
-            if measuredText !== text {
-                storage.setAttributedString(text)
-                measuredText = text
-            }
-            container.size = CGSize(width: width, height: CGFloat.greatestFiniteMagnitude)
-            layoutManager.ensureLayout(for: container)
-            measuredWidth = width
-            measuredHeight = max(1, ceil(layoutManager.usedRect(for: container).height))
-            return measuredHeight
         }
 
         func naturalWidth(for text: NSAttributedString) -> CGFloat {
@@ -474,7 +477,6 @@
             layoutManager.ensureLayout(for: container)
             naturalWidthText = text
             cachedNaturalWidth = max(1, ceil(layoutManager.usedRect(for: container).width))
-            measuredWidth = -1
             return cachedNaturalWidth
         }
     }

@@ -13,8 +13,21 @@ final class TranscriptRowHost: NSView {
     private lazy var contentWidthConstraint = contentHost.widthAnchor.constraint(equalToConstant: 1)
     private lazy var contentHeightConstraint = contentHost.heightAnchor.constraint(equalToConstant: 1)
     var onHeightChange: ((CGFloat) -> Void)?
+    var performanceIdentity: TranscriptPerformanceIdentity? {
+        didSet { contentController.performanceIdentity = performanceIdentity }
+    }
     private(set) var isPresentationReady = false
     private(set) var isAttachmentGeometryReady = true
+    private(set) var hasAttemptedPresentation = false
+    private var hasStableContentGeometry = false
+    private var canSkipContentLayout = false
+    private var needsStableConstraintPass = false
+
+    var needsRunwayPreparation: Bool {
+        !isPresentationReady
+            && isAttachmentGeometryReady
+            && (!hasAttemptedPresentation || needsStableConstraintPass)
+    }
 
     override var isFlipped: Bool { true }
 
@@ -40,6 +53,16 @@ final class TranscriptRowHost: NSView {
         contentController.onLaidOutHeightChange = { [weak self] height in
             self?.contentHeightDidChange(height)
         }
+        contentController.onLayoutCompleted = { [weak self] in
+            guard let self, self.hasStableContentGeometry else { return }
+            if self.needsStableConstraintPass {
+                self.needsStableConstraintPass = false
+                self.needsLayout = true
+                return
+            }
+            self.isPresentationReady = true
+            self.canSkipContentLayout = true
+        }
     }
 
     @available(*, unavailable)
@@ -48,9 +71,24 @@ final class TranscriptRowHost: NSView {
     }
 
     override func layout() {
+        let width = max(1, bounds.width)
+        if canSkipContentLayout,
+            abs(contentWidthConstraint.constant - width) <= 0.5
+        {
+            contentHost.needsLayout = false
+            return
+        }
         if syncContentWidth() {
+            canSkipContentLayout = false
+            hasStableContentGeometry = false
+            needsStableConstraintPass = false
             contentController.invalidateContentSize(forceReport: true)
         }
+        // AppKit asks every descendant of the scrolling document to lay out
+        // surprisingly often, even when only the clip view's origin moved.
+        // A transcript row with exact, reported geometry has nothing to do in
+        // that pass: its width, root, and explicit content height are unchanged.
+        // Explicit content invalidations below reopen the layout path.
         super.layout()
     }
 
@@ -72,10 +110,27 @@ final class TranscriptRowHost: NSView {
 
     var rootView: AnyView {
         get { contentController.rootView }
-        set {
-            isPresentationReady = false
-            isAttachmentGeometryReady = true
-            contentController.rootView = newValue
+        set { installRootView(newValue, knownHeight: nil) }
+    }
+
+    func installRootView(_ rootView: AnyView, knownHeight: CGFloat?) {
+        isPresentationReady = false
+        isAttachmentGeometryReady = true
+        hasAttemptedPresentation = false
+        hasStableContentGeometry = knownHeight != nil
+        canSkipContentLayout = false
+        needsStableConstraintPass = false
+        if let knownHeight {
+            contentHeightConstraint.constant = knownHeight
+            contentController.useKnownContentHeight(knownHeight)
+        } else {
+            contentController.resetReportedHeight()
+        }
+        // Install the exact-height contract before replacing the SwiftUI root
+        // so a synchronous hosting-controller layout cannot race through the
+        // expensive intrinsic-size path for an already measured settled row.
+        contentController.rootView = rootView
+        if knownHeight == nil {
             contentController.invalidateContentSize(forceReport: true)
         }
     }
@@ -87,21 +142,33 @@ final class TranscriptRowHost: NSView {
         layer?.opacity = 1
         isPresentationReady = false
         isAttachmentGeometryReady = true
+        hasAttemptedPresentation = false
+        hasStableContentGeometry = false
+        canSkipContentLayout = false
+        needsStableConstraintPass = false
         contentController.resetReportedHeight()
     }
 
     func requestContentMeasurement(forceReport: Bool = true) {
+        hasStableContentGeometry = false
+        canSkipContentLayout = false
+        needsStableConstraintPass = false
+        hasAttemptedPresentation = false
         contentController.invalidateContentSize(forceReport: forceReport)
     }
 
-    /// Forces the next layout pass to re-report the content height even when
-    /// it is unchanged. Used when a row's measurement revision moves under a
-    /// mounted host: the report itself is the signal that lets the virtualizer
-    /// clear the stale flag and rewrite revision-keyed caches, so it must not
-    /// be swallowed by the unchanged-height dedupe.
-    func resetReportedContentHeight() {
-        isPresentationReady = false
-        contentController.resetReportedHeight()
+    /// A viewport row is correctness-critical, unlike an offscreen runway row.
+    /// Flush its pending host layout before AppKit presents the current scroll
+    /// frame so a newly installed SwiftUI root cannot leave a transparent hole.
+    func prepareForImmediatePresentation() {
+        hasAttemptedPresentation = true
+        canSkipContentLayout = false
+        needsLayout = true
+        contentHost.needsLayout = true
+        // `layoutSubtreeIfNeeded()` recursively flushes the hosting view. The
+        // previous second explicit content-host pass dirtied and laid out the
+        // same SwiftUI tree twice on the critical viewport-entry frame.
+        layoutSubtreeIfNeeded()
     }
 
     @discardableResult
@@ -112,7 +179,11 @@ final class TranscriptRowHost: NSView {
         // Require a fresh report after the final ratio (or locked fallback)
         // wins, even when the resulting row height happens to be unchanged.
         isPresentationReady = false
+        hasStableContentGeometry = false
+        canSkipContentLayout = false
+        needsStableConstraintPass = false
         if ready {
+            hasAttemptedPresentation = false
             contentController.invalidateContentSize(forceReport: true)
         }
         return true
@@ -126,7 +197,10 @@ final class TranscriptRowHost: NSView {
         if abs(contentHeightConstraint.constant - height) > 0.5 {
             contentHeightConstraint.constant = height
         }
-        isPresentationReady = true
+        hasStableContentGeometry = true
+        isPresentationReady = false
+        canSkipContentLayout = false
+        needsStableConstraintPass = true
         onHeightChange?(height)
     }
 }

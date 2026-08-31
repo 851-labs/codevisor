@@ -44,24 +44,8 @@ struct TranscriptVirtualRowContent: View {
                 waitingOnBackgroundTask: waitingOnBackgroundTask,
                 presentation: assistantPresentation(for: slice)
             )
-        case let .markdownBlock(block):
-            if block.container == .planDocument {
-                PlanDocumentBlockView(
-                    block: block.block,
-                    documentSource: block.documentSource,
-                    streamID: row.layoutKey,
-                    isStreaming: block.lifecycle == .receiving,
-                    isFirst: block.ordinal == 0,
-                    isLast: block.ordinal == block.blockCount - 1
-                )
-            } else {
-                MarkdownBlockRenderView(
-                    block: block.block,
-                    documentSource: block.documentSource,
-                    streamID: row.layoutKey,
-                    isStreaming: block.lifecycle == .receiving
-                )
-            }
+        case let .markdownChunk(chunk):
+            TranscriptMarkdownChunkView(chunk: chunk, streamID: row.layoutKey)
         case let .assistantAttachment(attachment):
             VStack(alignment: .leading, spacing: 4) {
                 AttachmentThumbnailView(file: attachment.file, inline: true)

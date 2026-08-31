@@ -19,29 +19,32 @@ enum TranscriptPlanRowProjection {
                 estimatedHeight: 42,
                 spacingAfter: 0
             ))
-        for (ordinal, block) in blocks.enumerated() {
-            let projected = TranscriptMarkdownBlock(
+        for chunk in TranscriptMarkdownChunkProjection.chunks(from: blocks) {
+            let projected = TranscriptMarkdownChunk(
                 messageID: messageID,
                 sourceID: "plan",
-                ordinal: ordinal,
-                block: block,
+                ordinal: chunk.firstOrdinal,
+                blocks: chunk.blocks,
                 documentSource: markdown,
                 lifecycle: lifecycle,
                 container: .planDocument,
-                blockCount: blocks.count
+                documentBlockCount: blocks.count,
+                fragment: chunk.fragment
             )
             rows.append(
                 .init(
                     id: markdownID(
                         messageID: messageID,
-                        ordinal: ordinal,
+                        ordinal: chunk.firstOrdinal,
+                        fragment: chunk.fragment?.identity,
                         lifecycle: lifecycle
                     ),
-                    content: .markdownBlock(projected),
+                    content: .markdownChunk(projected),
                     estimatedHeight: estimatedHeight(
-                        for: block,
-                        isFirst: ordinal == 0,
-                        isLast: ordinal == blocks.count - 1
+                        for: chunk.blocks,
+                        isFirst: projected.isFirstInDocument,
+                        isLast: projected.isLastInDocument,
+                        fragment: chunk.fragment
                     ),
                     measurementRevision: measurementRevision(projected),
                     spacingAfter: 0
@@ -62,45 +65,43 @@ enum TranscriptPlanRowProjection {
     private static func markdownID(
         messageID: UUID,
         ordinal: Int,
+        fragment: String?,
         lifecycle: TranscriptBlockLifecycle
     ) -> TranscriptPresentationRow.ID {
         switch lifecycle {
-        case .receiving: .activePlanMarkdown(messageID, ordinal: ordinal)
-        case .settled: .planMarkdown(messageID, ordinal: ordinal)
+        case .receiving:
+            .activePlanMarkdown(messageID, ordinal: ordinal, fragment: fragment)
+        case .settled:
+            .planMarkdown(messageID, ordinal: ordinal, fragment: fragment)
         }
     }
 
     private static func estimatedHeight(
-        for block: MarkdownBlock,
+        for blocks: [MarkdownBlock],
         isFirst: Bool,
-        isLast: Bool
+        isLast: Bool,
+        fragment: TranscriptMarkdownFragment?
     ) -> CGFloat {
-        let contentHeight: CGFloat =
-            switch block {
-            case let .heading(_, text), let .paragraph(text):
-                max(24, min(360, 24 + CGFloat(text.characterCount / 72) * 20))
-            case let .codeBlock(_, code, _):
-                max(80, min(640, 52 + CGFloat(code.split(separator: "\n").count) * 18))
-            case let .bulletList(items):
-                max(28, CGFloat(items.count) * 26)
-            case let .orderedList(items):
-                max(28, CGFloat(items.count) * 26)
-            case let .list(list):
-                max(32, CGFloat(list.items.count) * 30)
-            case let .blockQuote(blocks):
-                max(36, CGFloat(blocks.count) * 34)
-            case let .table(_, _, body):
-                max(72, CGFloat(body.count + 1) * 34)
-            case .thematicBreak:
-                1
-            }
+        let contentHeight = TranscriptMarkdownChunkProjection.estimatedHeight(for: blocks)
+        if let fragment {
+            let trailingSpacing: CGFloat =
+                switch fragment.trailingSpacing {
+                case .none: 0
+                case .block: 10
+                case .listItem: 4
+                }
+            return contentHeight + trailingSpacing + (isLast ? 12 : 0)
+        }
         return contentHeight + (isFirst ? 0 : 10) + (isLast ? 12 : 0)
     }
 
-    private static func measurementRevision(_ block: TranscriptMarkdownBlock) -> Int {
+    private static func measurementRevision(_ chunk: TranscriptMarkdownChunk) -> Int {
         var hasher = Hasher()
-        hasher.combine(block.block.id)
-        hasher.combine(block.blockCount)
+        for block in chunk.blocks {
+            hasher.combine(block.id)
+        }
+        hasher.combine(chunk.documentBlockCount)
+        hasher.combine(chunk.fragment)
         return hasher.finalize()
     }
 }

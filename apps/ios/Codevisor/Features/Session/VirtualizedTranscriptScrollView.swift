@@ -17,7 +17,6 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     private static let topPadding: CGFloat = 12
     private static let horizontalPadding: CGFloat = 16
     private static let maxRowWidth: CGFloat = 832
-    private static let overscanCount = 3
     /// Initial presentation waits for exact geometry across this much content
     /// on both sides of the viewport. The already-mounted runway makes the
     /// first fast swipe consume prepared TextKit/SwiftUI rows rather than
@@ -58,6 +57,11 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     private var mountedHosts: [String: TranscriptRowHost] = [:]
     private var parkedHosts: [String: TranscriptRowHost] = [:]
     private var parkedHostLRU: [String] = []
+    private let virtualWindowPolicy = TranscriptVirtualWindowPolicy()
+    private var virtualWindowHandoff = TranscriptVirtualWindowHandoff()
+    private var pendingWindowScrollDelta: CGFloat = 0
+    private var lastObservedContentOffsetY: CGFloat?
+    private var remainingMountsThisFrame = 2
     private var rowContent: ((TranscriptVirtualRow) -> AnyView)?
     private var pendingMeasurements: [String: TranscriptRowMeasurement] = [:]
     private var measurementCommitTask: Task<Void, Never>?
@@ -66,6 +70,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     private var presentationDisplayLink: CADisplayLink?
     private var displayFrameRequested = false
     private var modelPresentationFrameRequested = false
+    private var mountedRowsUpdateRequested = false
     private var measurementCommitGate = TranscriptMeasurementCommitGate()
     private var initialPresentationGate = TranscriptInitialPresentationGate()
     private var initialBottomPin = TranscriptInitialBottomPin()
@@ -147,6 +152,12 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
 
     private var isNativeScrollInteractionActive: Bool {
         isTracking || isDragging || isDecelerating || isExplicitUserScroll
+    }
+    private var maximumMountsPerFrame: Int {
+        (window?.screen.maximumFramesPerSecond ?? 60) > 60 ? 2 : 4
+    }
+    private var mountWorkBudget: CFTimeInterval {
+        (window?.screen.maximumFramesPerSecond ?? 60) > 60 ? 0.0025 : 0.005
     }
 
     override init(frame: CGRect) {
@@ -513,6 +524,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             host.detachFromParent()
         }
         mountedHosts.removeAll(keepingCapacity: false)
+        virtualWindowHandoff.reset()
         discardParkedHosts()
     }
 
@@ -549,6 +561,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         presentationDisplayLink = nil
         displayFrameRequested = false
         modelPresentationFrameRequested = false
+        mountedRowsUpdateRequested = false
     }
 
     private func updatePresentationFrameDriverRegistration() {
@@ -590,12 +603,27 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         requestDisplayFrame()
     }
 
+    private func requestMountedRowsUpdate() {
+        guard presentationDisplayLink != nil else {
+            updateMountedRows()
+            return
+        }
+        mountedRowsUpdateRequested = true
+        requestDisplayFrame()
+    }
+
     @objc private func presentationDisplayLinkDidFire(_ displayLink: CADisplayLink) {
         let shouldPresentModel = modelPresentationFrameRequested
+        let shouldUpdateMountedRows = mountedRowsUpdateRequested
+        remainingMountsThisFrame = maximumMountsPerFrame
         displayFrameRequested = false
         modelPresentationFrameRequested = false
+        mountedRowsUpdateRequested = false
         if shouldPresentModel, let presentationFrameDriverToken {
             sessionController?.transcriptPresentationFrameDidFire(presentationFrameDriverToken)
+        }
+        if shouldUpdateMountedRows {
+            updateMountedRows()
         }
         if !pendingMeasurements.isEmpty,
             measurementCommitGate.allowsGeometryCommit
@@ -1194,15 +1222,25 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         let previousDistance = lastDistanceFromBottom
         let distance = currentDistanceFromBottom()
         lastDistanceFromBottom = distance
+        let isUserMovement =
+            isTracking || isDragging || isDecelerating
+            || isExplicitUserScroll
+        if let lastObservedContentOffsetY, isUserMovement {
+            pendingWindowScrollDelta += contentOffset.y - lastObservedContentOffsetY
+        } else if !isApplyingPosition {
+            pendingWindowScrollDelta = 0
+        }
+        lastObservedContentOffsetY = contentOffset.y
         if initialPositionApplied {
-            updateMountedRows()
+            if isUserMovement {
+                requestMountedRowsUpdate()
+            } else {
+                updateMountedRows()
+            }
         }
 
         let atBottom = distance <= Self.atBottomThreshold
         publishBottomState(atBottom)
-        let isUserMovement =
-            isTracking || isDragging || isDecelerating
-            || isExplicitUserScroll
         if !isApplyingPosition, isUserMovement,
             distance > previousDistance + 0.5, followsLatest
         {
@@ -1267,7 +1305,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
 
     // MARK: - Virtual row mounting
 
-    private func plannedMountedRange() -> Range<Int> {
+    private func plannedMountedRange(scrollDelta: CGFloat = 0) -> Range<Int> {
         let distance = currentDistanceFromBottom()
         if !initialPresentationGate.isReady {
             let runway = viewportHeight * Self.initialRunwayViewportCount
@@ -1278,24 +1316,12 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
                 runwayAfter: runway,
             )
         }
-        let visibleRange = virtualLayout.visibleRange(
+        return virtualWindowPolicy.targetRange(
+            layout: virtualLayout,
             distanceFromBottom: distance,
             viewportHeight: viewportHeight,
-            overscanCount: 0,
-        )
-        let overscannedRange = virtualLayout.visibleRange(
-            distanceFromBottom: distance,
-            viewportHeight: viewportHeight,
-            overscanCount: Self.overscanCount,
-        )
-        let planIndices = overscannedRange.filter { index in
-            guard rows.indices.contains(index) else { return false }
-            return rows[index].id.isPlanDocument
-        }
-        return VirtualTranscriptLayout.overscanRange(
-            visibleRange: visibleRange,
-            overscannedRange: overscannedRange,
-            stoppingAt: planIndices,
+            scrollDelta: scrollDelta,
+            currentRange: windowRange(for: virtualWindowHandoff.targetKeys),
         )
     }
 
@@ -1303,59 +1329,144 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         guard initialPositionApplied || viewportHeight > 0,
             let hostingParent
         else { return }
+        virtualWindowHandoff.retainOnlyValidKeys { rowByKey[$0] != nil }
+        let scrollDelta = rangeOverride == nil ? pendingWindowScrollDelta : 0
+        pendingWindowScrollDelta = 0
         let targetRange: Range<Int>
         if let rangeOverride {
             targetRange = rangeOverride
         } else {
-            targetRange = plannedMountedRange()
+            targetRange = plannedMountedRange(scrollDelta: scrollDelta)
         }
+        let visibleRange = virtualLayout.visibleRange(
+            distanceFromBottom: currentDistanceFromBottom(),
+            viewportHeight: viewportHeight,
+            overscanCount: 0,
+        )
+        let retainedIndices = Set(targetRange).union(visibleRange)
+        virtualWindowHandoff.setTarget(
+            Set(
+                retainedIndices.compactMap { index in
+                    virtualLayout.keys.indices.contains(index) ? virtualLayout.keys[index] : nil
+                }))
 
-        let mountedIndices = mountedHosts.keys.compactMap { virtualLayout.indexByKey[$0] }
-        let mountedRange: Range<Int>? = mountedIndices.min().flatMap { lower in
-            mountedIndices.max().map { upper in lower..<(upper + 1) }
+        let mountPlan = virtualWindowPolicy.mountPlan(
+            targetRange: targetRange,
+            visibleRange: visibleRange,
+            scrollDelta: scrollDelta,
+        )
+        let mountStarted = CACurrentMediaTime()
+        for index in mountPlan.visibleIndices {
+            mountRow(
+                at: index,
+                parent: hostingParent,
+                requiresImmediatePresentation: true
+            )
         }
-        let range: Range<Int> =
-            if rangeOverride == nil,
-                let mountedRange,
-                mountedRange.lowerBound <= targetRange.lowerBound,
-                mountedRange.upperBound >= targetRange.upperBound
+        assert(
+            mountPlan.visibleIndices.allSatisfy { index in
+                guard virtualLayout.keys.indices.contains(index) else { return false }
+                return mountedHosts[virtualLayout.keys[index]] != nil
+            },
+            "Loaded transcript viewport must be fully mounted"
+        )
+
+        for index in mountPlan.runwayIndices {
+            guard virtualLayout.keys.indices.contains(index) else { continue }
+            let key = virtualLayout.keys[index]
+            guard mountedHosts[key] == nil else { continue }
+            guard presentationDisplayLink == nil || remainingMountsThisFrame > 0 else { break }
+            if presentationDisplayLink != nil,
+                CACurrentMediaTime() - mountStarted >= mountWorkBudget
             {
-                mountedRange
-            } else {
-                targetRange
+                break
             }
-        let requiredKeys = Set(
-            range.compactMap { index in
-                virtualLayout.keys.indices.contains(index) ? virtualLayout.keys[index] : nil
-            })
+            if mountRow(
+                at: index,
+                parent: hostingParent,
+                requiresImmediatePresentation: false
+            ), presentationDisplayLink != nil {
+                remainingMountsThisFrame -= 1
+            }
+        }
+        removeMountedHosts(excluding: virtualWindowHandoff.retainedKeys)
+        promoteTargetWindowIfReady()
+        if presentationDisplayLink != nil,
+            virtualWindowHandoff.targetKeys.contains(where: { mountedHosts[$0] == nil })
+        {
+            requestMountedRowsUpdate()
+        }
+        synchronizeSendAssistantVisibility()
+    }
 
-        let obsoleteKeys = mountedHosts.keys.filter { !requiredKeys.contains($0) }
+    @discardableResult
+    private func mountRow(
+        at index: Int,
+        parent: UIViewController,
+        requiresImmediatePresentation: Bool
+    ) -> Bool {
+        guard virtualLayout.keys.indices.contains(index) else { return false }
+        let key = virtualLayout.keys[index]
+        if let host = mountedHosts[key] {
+            if requiresImmediatePresentation, !host.isPresentationReady {
+                host.prepareForImmediatePresentation()
+            }
+            return false
+        }
+        guard let row = rowByKey[key] else { return false }
+
+        let host = takeParkedHost(for: key) ?? TranscriptRowHost(parent: parent)
+        host.prepareForMountedRow()
+        host.onMeasuredHeight = { [weak self] measurement in
+            self?.recordMeasuredHeight(measurement)
+        }
+        canvasView.addSubview(host)
+        mountedHosts[key] = host
+        position(host: host, at: index)
+        host.syncContentWidth()
+        host.install(
+            row: row,
+            rootView: measuredRootView(for: row),
+            force: host.representedRow == nil,
+        )
+        if requiresImmediatePresentation {
+            host.prepareForImmediatePresentation()
+        }
+        return true
+    }
+
+    private func windowRange(for keys: Set<String>) -> Range<Int>? {
+        guard !keys.isEmpty else { return nil }
+        let indices = keys.compactMap { virtualLayout.indexByKey[$0] }.sorted()
+        guard indices.count == keys.count,
+            let first = indices.first,
+            let last = indices.last,
+            last - first + 1 == indices.count
+        else { return nil }
+        return first..<(last + 1)
+    }
+
+    private func promoteTargetWindowIfReady() {
+        guard
+            virtualWindowHandoff.promoteIfReady({ key in
+                guard let host = mountedHosts[key] else { return false }
+                return measurements[key] != nil
+                    && !measurements.isStale(key)
+                    && pendingMeasurements[key] == nil
+                    && host.isAttachmentGeometryReady
+                    && host.isPresentationReady
+            })
+        else { return }
+        removeMountedHosts(excluding: virtualWindowHandoff.retainedKeys)
+    }
+
+    private func removeMountedHosts(excluding retainedKeys: Set<String>) {
+        let obsoleteKeys = mountedHosts.keys.filter { !retainedKeys.contains($0) }
         for key in obsoleteKeys {
             guard let host = mountedHosts.removeValue(forKey: key) else { continue }
             host.removeFromSuperview()
             park(host, for: key)
         }
-
-        for index in range {
-            guard virtualLayout.keys.indices.contains(index) else { continue }
-            let key = virtualLayout.keys[index]
-            guard mountedHosts[key] == nil, let row = rowByKey[key] else { continue }
-            let host = takeParkedHost(for: key) ?? TranscriptRowHost(parent: hostingParent)
-            host.prepareForMountedRow()
-            host.onMeasuredHeight = { [weak self] measurement in
-                self?.recordMeasuredHeight(measurement)
-            }
-            canvasView.addSubview(host)
-            mountedHosts[key] = host
-            position(host: host, at: index)
-            host.syncContentWidth()
-            host.install(
-                row: row,
-                rootView: measuredRootView(for: row),
-                force: host.representedRow == nil,
-            )
-        }
-        synchronizeSendAssistantVisibility()
     }
 
     private func park(_ host: TranscriptRowHost, for key: String) {
@@ -1440,6 +1551,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         guard let host = mountedHosts[key], host.setAttachmentGeometryReady(ready) else {
             return
         }
+        promoteTargetWindowIfReady()
         updateInitialPresentationReadiness()
     }
 
@@ -1520,6 +1632,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             // Cached settled rows can report the exact height already in the
             // ledger. The host has still completed a fresh SwiftUI layout, so
             // wake presentation gates even though no geometry commit follows.
+            promoteTargetWindowIfReady()
             updateInitialPresentationReadiness()
             resolveBottomJumpIfPossible()
             startPendingSendAnimationIfPossible()
@@ -1560,6 +1673,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         if !committedHeights.isEmpty {
             rebuildDocumentGeometry(changedHeights: committedHeights)
         }
+        promoteTargetWindowIfReady()
         updateInitialPresentationReadiness()
         resolveBottomJumpIfPossible()
         startPendingSendAnimationIfPossible()
@@ -2035,7 +2149,9 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     private func currentVirtualRestoreState(
         viewportAnchor: VirtualTranscriptAnchor?
     ) -> SessionVirtualTranscriptRestoreState {
-        let indices = mountedHosts.keys.compactMap { virtualLayout.indexByKey[$0] }.sorted()
+        let targetKeys = virtualWindowHandoff.targetKeys
+        let restoreKeys = targetKeys.isEmpty ? Set(mountedHosts.keys) : targetKeys
+        let indices = restoreKeys.compactMap { virtualLayout.indexByKey[$0] }.sorted()
         let renderedWindow: SessionRenderedTranscriptWindow? = indices.first.flatMap { first in
             guard let last = indices.last,
                 virtualLayout.keys.indices.contains(first)

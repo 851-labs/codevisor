@@ -100,14 +100,14 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         case plan(UUID)
         case planHeader(UUID)
         case activePlanHeader(UUID)
-        case planMarkdown(UUID, ordinal: Int)
-        case activePlanMarkdown(UUID, ordinal: Int)
+        case planMarkdown(UUID, ordinal: Int, fragment: String?)
+        case activePlanMarkdown(UUID, ordinal: Int, fragment: String?)
         case assistantResult(UUID)
         case activeResult(UUID)
         case assistantChrome(UUID, TranscriptAssistantChromeSlice)
         case activeChrome(UUID, TranscriptAssistantChromeSlice)
-        case assistantMarkdown(UUID, sourceID: String, ordinal: Int)
-        case activeMarkdown(UUID, sourceID: String, ordinal: Int)
+        case assistantMarkdown(UUID, sourceID: String, ordinal: Int, fragment: String?)
+        case activeMarkdown(UUID, sourceID: String, ordinal: Int, fragment: String?)
         case assistantAttachment(UUID, sourceID: String, ordinal: Int)
         case activeAttachment(UUID, sourceID: String, ordinal: Int)
         case active(UUID)
@@ -128,15 +128,16 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
             case let .plan(id): "message:\(id.uuidString):plan"
             case let .planHeader(id), let .activePlanHeader(id):
                 "message:\(id.uuidString):plan:header"
-            case let .planMarkdown(id, ordinal), let .activePlanMarkdown(id, ordinal):
-                "message:\(id.uuidString):plan:markdown:\(ordinal)"
+            case let .planMarkdown(id, ordinal, fragment),
+                let .activePlanMarkdown(id, ordinal, fragment):
+                "message:\(id.uuidString):plan:markdown:\(ordinal)\(fragmentComponent(fragment))"
             case let .assistantResult(id), let .activeResult(id):
                 "message:\(id.uuidString):result"
             case let .assistantChrome(id, slice), let .activeChrome(id, slice):
                 "message:\(id.uuidString):chrome:\(slice.layoutComponent)"
-            case let .assistantMarkdown(id, sourceID, ordinal),
-                let .activeMarkdown(id, sourceID, ordinal):
-                "message:\(id.uuidString):markdown:\(sourceID):\(ordinal)"
+            case let .assistantMarkdown(id, sourceID, ordinal, fragment),
+                let .activeMarkdown(id, sourceID, ordinal, fragment):
+                "message:\(id.uuidString):markdown:\(sourceID):\(ordinal)\(fragmentComponent(fragment))"
             case let .assistantAttachment(id, sourceID, ordinal),
                 let .activeAttachment(id, sourceID, ordinal):
                 "message:\(id.uuidString):attachment:\(sourceID):\(ordinal)"
@@ -152,6 +153,10 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
             case .statusError: "special:status-error"
             case .bottomSpacer: "special:bottom-spacer"
             }
+        }
+
+        private func fragmentComponent(_ fragment: String?) -> String {
+            fragment.map { ":fragment:\($0)" } ?? ""
         }
 
         public var isCacheableSettledRow: Bool {
@@ -184,11 +189,11 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
             switch self {
             case let .message(id), let .assistantPlanning(id), let .activePlanning(id),
                 let .plan(id), let .planHeader(id), let .activePlanHeader(id),
-                let .planMarkdown(id, _), let .activePlanMarkdown(id, _),
+                let .planMarkdown(id, _, _), let .activePlanMarkdown(id, _, _),
                 let .assistantResult(id), let .activeResult(id), let .active(id):
                 id
             case let .assistantChrome(id, _), let .activeChrome(id, _),
-                let .assistantMarkdown(id, _, _), let .activeMarkdown(id, _, _),
+                let .assistantMarkdown(id, _, _, _), let .activeMarkdown(id, _, _, _),
                 let .assistantAttachment(id, _, _), let .activeAttachment(id, _, _):
                 id
             case .setup, .backgroundTask, .updateGate, .connecting, .serverWait, .error,
@@ -209,7 +214,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
             slice: TranscriptAssistantChromeSlice,
             waitingOnBackgroundTask: String?
         )
-        case markdownBlock(TranscriptMarkdownBlock)
+        case markdownChunk(TranscriptMarkdownChunk)
         case assistantAttachment(TranscriptAssistantAttachment)
         case active(ConversationItem)
         case setup([SessionSetupPhase])
@@ -271,7 +276,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
                     message.id
                 case let .assistantChrome(message, slice, waitingOnBackgroundTask: _):
                     slice == .epilogue && !message.turn.isGenerating ? message.id : nil
-                case .planHeader, .markdownBlock, .assistantAttachment:
+                case .planHeader, .markdownChunk, .assistantAttachment:
                     nil
                 case let .active(item):
                     if case let .assistant(message) = item, !message.turn.isGenerating {

@@ -34,7 +34,7 @@ struct TranscriptRowProjectionTests {
         #expect(rows.filter { $0.finishedResponseItemId != nil }.count == 2)
     }
 
-    @Test func settledAssistantMarkdownProjectsOneVirtualRowPerBlock() throws {
+    @Test func settledAssistantMarkdownChunksCompatibleTextBlocks() throws {
         let message = AssistantMessage(
             turn: AssistantTurn(
                 entries: [
@@ -50,15 +50,98 @@ struct TranscriptRowProjectionTests {
             makeInput(settled: [.assistant(message)]),
             options: .init(includesConnectingRow: true)
         )
-        let blocks = rows.compactMap { row -> TranscriptMarkdownBlock? in
-            if case let .markdownBlock(block) = row.content { block } else { nil }
+        let chunks = rows.compactMap { row -> TranscriptMarkdownChunk? in
+            if case let .markdownChunk(chunk) = row.content { chunk } else { nil }
         }
 
-        #expect(blocks.count == 3)
-        #expect(blocks.map(\.ordinal) == [0, 1, 2])
-        #expect(blocks.allSatisfy { $0.lifecycle == .settled })
-        #expect(rows.dropLast().map(\.spacingAfter) == [10, 10, 14])
+        #expect(chunks.count == 1)
+        #expect(chunks.map(\.ordinal) == [0])
+        #expect(chunks.map { $0.blocks.count } == [3])
+        #expect(chunks.allSatisfy { $0.lifecycle == .settled })
+        #expect(rows.dropLast().map(\.spacingAfter) == [14])
         #expect(rows.last?.id == .assistantChrome(message.id, .epilogue))
+    }
+
+    @Test func proseChunksAreHeightBoundedAndKeepStablePrefixIdentities() throws {
+        let id = UUID()
+        let firstNine = (1...9).map { "Paragraph \($0)" }.joined(separator: "\n\n")
+        let firstTen = firstNine + "\n\nParagraph 10"
+
+        func rows(for markdown: String) throws -> [TranscriptPresentationRow] {
+            try TranscriptRowProjectionCache.project(
+                makeInput(
+                    settled: [
+                        .assistant(
+                            AssistantMessage(
+                                id: id,
+                                turn: AssistantTurn(
+                                    entries: [.text(id: "answer", markdown: markdown)]
+                                )
+                            )
+                        )
+                    ]
+                ),
+                options: .init(includesConnectingRow: true)
+            ).filter {
+                if case .markdownChunk = $0.content { true } else { false }
+            }
+        }
+
+        let nineRows = try rows(for: firstNine)
+        let tenRows = try rows(for: firstTen)
+        let tenChunks = tenRows.compactMap { row -> TranscriptMarkdownChunk? in
+            if case let .markdownChunk(chunk) = row.content { chunk } else { nil }
+        }
+
+        #expect(nineRows.count == 1)
+        #expect(tenChunks.map { $0.blocks.count } == [9, 1])
+        #expect(tenChunks.map(\.ordinal) == [0, 9])
+        #expect(nineRows[0].layoutKey == tenRows[0].layoutKey)
+        #expect(nineRows[0].measurementRevision == tenRows[0].measurementRevision)
+    }
+
+    @Test func longProseSplitsBeforeTheHardBlockCountLimit() throws {
+        let paragraph = String(repeating: "wrapped prose ", count: 55)
+        let message = AssistantMessage(
+            turn: AssistantTurn(
+                entries: [.text(id: "answer", markdown: "\(paragraph)\n\n\(paragraph)")]
+            )
+        )
+
+        let chunks = try TranscriptRowProjectionCache.project(
+            makeInput(settled: [.assistant(message)]),
+            options: .init(includesConnectingRow: true)
+        ).compactMap { row -> TranscriptMarkdownChunk? in
+            if case let .markdownChunk(chunk) = row.content { chunk } else { nil }
+        }
+
+        #expect(chunks.map { $0.blocks.count } == [1, 1])
+        #expect(chunks.map(\.ordinal) == [0, 1])
+    }
+
+    @Test func codeBlocksRemainIndependentBetweenProseChunks() throws {
+        let message = AssistantMessage(
+            turn: AssistantTurn(
+                entries: [
+                    .text(
+                        id: "answer",
+                        markdown: "Before one\n\nBefore two\n\n```swift\nlet value = 1\n```\n\nAfter one\n\nAfter two"
+                    )
+                ]
+            )
+        )
+
+        let rows = try TranscriptRowProjectionCache.project(
+            makeInput(settled: [.assistant(message)]),
+            options: .init(includesConnectingRow: true)
+        )
+        let chunks = rows.compactMap { row -> TranscriptMarkdownChunk? in
+            if case let .markdownChunk(chunk) = row.content { chunk } else { nil }
+        }
+
+        #expect(chunks.map(\.ordinal) == [0, 2, 3])
+        #expect(chunks.map { $0.blocks.count } == [2, 1, 2])
+        #expect(chunks[1].blocks.first?.id.hasPrefix("code:") == true)
     }
 
     @Test func activeAndSettledMarkdownShareBlockLayoutKeys() throws {
@@ -89,8 +172,8 @@ struct TranscriptRowProjectionTests {
         #expect(activeRows.map(\.layoutKey) == settledRows.map(\.layoutKey))
         #expect(activeRows.allSatisfy { $0.id.isActiveRow })
         #expect(
-            activeRows.compactMap { row -> TranscriptMarkdownBlock? in
-                if case let .markdownBlock(block) = row.content { block } else { nil }
+            activeRows.compactMap { row -> TranscriptMarkdownChunk? in
+                if case let .markdownChunk(chunk) = row.content { chunk } else { nil }
             }.allSatisfy { $0.lifecycle == .receiving }
         )
     }
@@ -147,7 +230,7 @@ struct TranscriptRowProjectionTests {
             options: .init(includesConnectingRow: true)
         ).filter(\.isPlanSlice)
 
-        #expect(activePlanRows.count == 4)
+        #expect(activePlanRows.count == 2)
         #expect(activePlanRows.map(\.layoutKey) == settledPlanRows.map(\.layoutKey))
         #expect(activePlanRows.allSatisfy { $0.spacingAfter == 0 })
         #expect(activePlanRows.first?.id == .activePlanHeader(id))
@@ -336,8 +419,8 @@ private extension TranscriptPresentationRow {
         switch content {
         case .planHeader:
             true
-        case let .markdownBlock(block):
-            block.container == .planDocument
+        case let .markdownChunk(chunk):
+            chunk.container == .planDocument
         default:
             false
         }

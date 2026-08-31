@@ -108,9 +108,33 @@
                     chipBackground: chipBackground
                 )
 
-            case .codeBlock, .list, .blockQuote, .table, .thematicBreak:
+            case let .list(list):
+                MarkdownFlattenedListRenderer.attributedString(
+                    list,
+                    theme: theme,
+                    foreground: foreground,
+                    chipBackground: chipBackground
+                )
+
+            case let .blockQuote(blocks):
+                MarkdownFlattenedListRenderer.attributedString(
+                    blockQuote: blocks,
+                    theme: theme,
+                    foreground: foreground,
+                    chipBackground: chipBackground
+                )
+
+            case .codeBlock, .table, .thematicBreak:
                 NSAttributedString()
             }
+        }
+
+        static func canRenderFlattenedList(_ list: MarkdownList) -> Bool {
+            MarkdownFlattenedListRenderer.canRender(list)
+        }
+
+        static func canRenderFlattenedText(_ blocks: [MarkdownBlock]) -> Bool {
+            MarkdownFlattenedListRenderer.canRender(blocks)
         }
 
         private static func list(
@@ -153,7 +177,7 @@
             return result
         }
 
-        private static func inlineAttributed(
+        static func inlineAttributed(
             _ markdown: MarkdownText,
             baseFont: NSFont,
             theme: MarkdownTheme,
@@ -206,7 +230,7 @@
             return output
         }
 
-        private static func verticalSeparator(
+        static func verticalSeparator(
             size: CGFloat,
             lineSpacing: CGFloat,
             foreground: NSColor
@@ -221,7 +245,7 @@
             )
         }
 
-        private static func baseAttributes(
+        static func baseAttributes(
             font: NSFont,
             foreground: NSColor,
             lineSpacing: CGFloat
@@ -235,7 +259,7 @@
             ]
         }
 
-        private static var bodyFont: NSFont {
+        static var bodyFont: NSFont {
             .preferredFont(forTextStyle: .body)
         }
 
@@ -284,11 +308,24 @@
             {
                 return cached
             }
+            let cacheKey = MarkdownTextRunCache.Key(
+                blocks: blocks,
+                themeFingerprint: fingerprint,
+                foregroundColor: .init(foregroundColor)
+            )
+            if let rendered = MarkdownTextRunCache.shared.value(for: cacheKey) {
+                self.blocks = blocks
+                themeFingerprint = fingerprint
+                self.foregroundColor = foregroundColor
+                cached = rendered
+                return rendered
+            }
             let rendered = MarkdownTextRunRenderer.attributedString(
                 for: blocks,
                 theme: theme,
                 foregroundColor: foregroundColor
             )
+            MarkdownTextRunCache.shared.store(rendered, for: cacheKey)
             self.blocks = blocks
             themeFingerprint = fingerprint
             self.foregroundColor = foregroundColor

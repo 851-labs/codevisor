@@ -29,13 +29,34 @@ struct SelectableTextViewTests {
             string: String(repeating: "wrapped transcript text ", count: 20),
             attributes: [.font: NSFont.preferredFont(forTextStyle: .body)]
         )
-        let measurer = TextKitTextMeasurer()
+        let view = SelectableTextKitView()
+        view.setContent(text)
 
-        let wide = measurer.height(for: text, width: 500)
-        let narrow = measurer.height(for: text, width: 180)
+        let wide = view.contentHeight(forWidth: 500)
+        let narrow = view.contentHeight(forWidth: 180)
 
         #expect(narrow > wide)
         #expect(text.string.hasPrefix("wrapped transcript"))
+    }
+
+    @Test("Content replacement invalidates the displayed layout measurement")
+    func contentReplacementInvalidatesMeasurement() {
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.preferredFont(forTextStyle: .body)
+        ]
+        let view = SelectableTextKitView()
+        view.setContent(NSAttributedString(string: "Short text", attributes: attributes))
+        let shortHeight = view.contentHeight(forWidth: 180)
+
+        view.setContent(
+            NSAttributedString(
+                string: String(repeating: "A much longer replacement. ", count: 30),
+                attributes: attributes
+            )
+        )
+        let longHeight = view.contentHeight(forWidth: 180)
+
+        #expect(longHeight > shortHeight)
     }
 
     @Test("Markdown prose carries links, emphasis, and rounded code chips into TextKit")
@@ -72,6 +93,150 @@ struct SelectableTextViewTests {
         #expect(sawServerFileLink)
         #expect(sawChip)
         #expect(sawBold)
+    }
+
+    @Test("Nested prose lists flatten into one indented TextKit document")
+    func flattenedNestedList() throws {
+        let blocks = MarkdownParser().parse(
+            """
+            1. Outer item
+               1. Nested item
+               2. Another nested item
+            2. Final item
+            """
+        )
+        let firstBlock = try #require(blocks.first)
+        let list = try #require(firstBlock.listValue)
+        #expect(MarkdownTextRunRenderer.canRenderFlattenedList(list))
+
+        let rendered = MarkdownTextRunRenderer.attributedString(
+            for: blocks,
+            theme: .default,
+            foregroundColor: .primary
+        )
+        let string = rendered.string as NSString
+        let outerRange = string.range(of: "1.\tOuter item")
+        let nestedRange = string.range(of: "1.\tNested item")
+        let finalRange = string.range(of: "2.\tFinal item")
+        try #require(outerRange.location != NSNotFound)
+        try #require(nestedRange.location != NSNotFound)
+        try #require(finalRange.location != NSNotFound)
+        let outerStyle = try #require(
+            rendered.attribute(.paragraphStyle, at: outerRange.location, effectiveRange: nil)
+                as? NSParagraphStyle
+        )
+        let nestedStyle = try #require(
+            rendered.attribute(.paragraphStyle, at: nestedRange.location, effectiveRange: nil)
+                as? NSParagraphStyle
+        )
+
+        #expect(outerStyle.firstLineHeadIndent == 0)
+        #expect(outerStyle.headIndent == 22)
+        #expect(nestedStyle.firstLineHeadIndent == 24)
+        #expect(nestedStyle.headIndent == 46)
+    }
+
+    @Test("Mixed-content lists retain the recursive renderer fallback")
+    func complexListFallback() {
+        let list = MarkdownList(
+            isOrdered: false,
+            delimiter: "-",
+            isTight: false,
+            items: [
+                MarkdownListItem(
+                    blocks: [
+                        .paragraph("Prose"),
+                        .codeBlock(language: "swift", code: "let value = 1", isComplete: true),
+                    ]
+                )
+            ]
+        )
+
+        #expect(!MarkdownTextRunRenderer.canRenderFlattenedList(list))
+    }
+
+    @Test("Nested quotes flatten into one decorated TextKit document")
+    func flattenedNestedQuotes() throws {
+        let block = MarkdownBlock.blockQuote([
+            .paragraph("Level 1"),
+            .blockQuote([.paragraph("Level 2")]),
+        ])
+        #expect(MarkdownTextRunRenderer.canRenderFlattenedText([block]))
+
+        let rendered = MarkdownTextRunRenderer.attributedString(
+            for: [block],
+            theme: .default,
+            foregroundColor: .primary
+        )
+        let string = rendered.string as NSString
+        let level1Range = string.range(of: "Level 1")
+        let level2Range = string.range(of: "Level 2")
+        try #require(level1Range.location != NSNotFound)
+        try #require(level2Range.location != NSNotFound)
+        let level1Decoration = try #require(
+            rendered.attribute(
+                .streamMarkdownQuoteDecoration,
+                at: level1Range.location,
+                effectiveRange: nil
+            ) as? TextKitQuoteDecoration
+        )
+        let level2Decoration = try #require(
+            rendered.attribute(
+                .streamMarkdownQuoteDecoration,
+                at: level2Range.location,
+                effectiveRange: nil
+            ) as? TextKitQuoteDecoration
+        )
+        let level2Style = try #require(
+            rendered.attribute(.paragraphStyle, at: level2Range.location, effectiveRange: nil)
+                as? NSParagraphStyle
+        )
+
+        #expect(level1Decoration.barOffsets == [0])
+        #expect(level2Decoration.barOffsets == [0, 11])
+        #expect(level2Style.headIndent == 22)
+    }
+
+    @Test("Quotes inside lists preserve marker and quote indentation")
+    func flattenedListQuote() throws {
+        let list = MarkdownList(
+            isOrdered: false,
+            delimiter: "-",
+            isTight: false,
+            items: [
+                MarkdownListItem(
+                    blocks: [
+                        .paragraph("Outer"),
+                        .blockQuote([.paragraph("Quoted")]),
+                    ]
+                )
+            ]
+        )
+        #expect(MarkdownTextRunRenderer.canRenderFlattenedList(list))
+
+        let rendered = MarkdownTextRunRenderer.attributedString(
+            for: [.list(list)],
+            theme: .default,
+            foregroundColor: .primary
+        )
+        let string = rendered.string as NSString
+        let quotedRange = string.range(of: "Quoted")
+        try #require(string.range(of: "•\tOuter").location != NSNotFound)
+        try #require(quotedRange.location != NSNotFound)
+        let decoration = try #require(
+            rendered.attribute(
+                .streamMarkdownQuoteDecoration,
+                at: quotedRange.location,
+                effectiveRange: nil
+            ) as? TextKitQuoteDecoration
+        )
+        let style = try #require(
+            rendered.attribute(.paragraphStyle, at: quotedRange.location, effectiveRange: nil)
+                as? NSParagraphStyle
+        )
+
+        #expect(decoration.barOffsets == [22])
+        #expect(style.headIndent == 33)
     }
 
     @Test("Content updates preserve and clamp selection")
@@ -246,4 +411,11 @@ struct SelectableTextViewTests {
         #expect(view.logicalBoundaryOutsideVisualLine(at: point, anchor: 0) == rendered.length)
     }
 
+}
+
+private extension MarkdownBlock {
+    var listValue: MarkdownList? {
+        guard case let .list(list) = self else { return nil }
+        return list
+    }
 }

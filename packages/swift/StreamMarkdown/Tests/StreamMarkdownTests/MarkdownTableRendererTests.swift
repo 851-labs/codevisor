@@ -286,6 +286,18 @@ struct MarkdownTableRendererTests {
         #expect(cache.renderCount == 2)
     }
 
+    @Test("Subpixel-equivalent widths share one rendered table")
+    func normalizesEquivalentWidths() {
+        let cache = MarkdownTableRenderCache()
+        let table = model()
+
+        let first = cache.attributedString(for: table, width: 420.1)
+        let second = cache.attributedString(for: table, width: 420.2)
+
+        #expect(first === second)
+        #expect(cache.renderCount == 1)
+    }
+
     @Test("Equivalent remounted tables reuse render and measurement")
     func remountReuse() {
         let cache = MarkdownTableRenderCache()

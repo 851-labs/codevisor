@@ -303,7 +303,7 @@
         }
 
         private static func normalized(_ width: CGFloat) -> CGFloat {
-            max(1, width)
+            CGFloat((max(1, width) * 2).rounded()) / 2
         }
     }
 
@@ -477,7 +477,7 @@
         }
 
         func renderedTable(for model: TableModel, width: CGFloat) -> RenderedTable {
-            let width = max(1, width)
+            let width = Self.normalized(width)
             let key = RenderKey(content: model.contentKey, width: width)
             if let cached = renderEntries[key] {
                 touch(cached)
@@ -500,6 +500,10 @@
             renderEntries[key] = entry
             evictOldestRenderEntryIfNeeded()
             return entry
+        }
+
+        private static func normalized(_ width: CGFloat) -> CGFloat {
+            CGFloat((max(1, width) * 2).rounded()) / 2
         }
 
         private func preparedTable(for model: TableModel) -> MarkdownTableRenderer.PreparedTable {
