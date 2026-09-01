@@ -107,6 +107,10 @@ struct SessionTranscriptView: View {
 
     var body: some View {
         chat
+            .acknowledgesPresentedTurnAttention(
+                controller: controller,
+                presentationRole: presentationRole
+            )
             .onAppear { [controller] in
                 followsLatest = controller.scrollState?.followMode.followsLatest ?? true
                 isAtBottom = controller.scrollState?.isAtBottom ?? true

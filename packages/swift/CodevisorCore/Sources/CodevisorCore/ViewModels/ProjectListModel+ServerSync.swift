@@ -19,6 +19,62 @@ extension ProjectListModel {
         return serverClient
     }
 
+    /// A visible transcript received and presented a terminal turn event, but
+    /// the independent navigation stream may not have delivered the matching
+    /// attention summary yet. `throughSequence` is captured when that visible
+    /// turn starts, so it names exactly the completion the user saw. The server
+    /// clamps the request to its current tip, meaning a parked finish is not
+    /// read early, while a later autonomous turn can never be consumed by a
+    /// delayed request.
+    public func acknowledgePresentedTurnEnd(
+        _ sessionId: UUID,
+        serverId: String,
+        throughSequence: Int
+    ) {
+        guard
+            let session = sessions.first(where: {
+                $0.serverId == serverId && $0.id == sessionId
+            })
+        else { return }
+        guard session.lastSeenAttentionSequence < throughSequence else { return }
+        if session.latestAttentionSequence >= throughSequence {
+            markSessionRead(
+                sessionId,
+                serverId: serverId,
+                throughSequence: throughSequence
+            )
+            return
+        }
+        sendSessionRead(
+            sessionId,
+            serverId: serverId,
+            throughSequence: throughSequence
+        )
+    }
+
+    private func sendSessionRead(
+        _ sessionId: UUID,
+        serverId: String,
+        throughSequence: Int
+    ) {
+        guard let serverClient = clientForServer(serverId) else { return }
+        Task {
+            do {
+                if let remote = try await serverClient.markSessionRead(
+                    id: sessionId,
+                    throughSequence: throughSequence
+                ) {
+                    applyAttention(remote, serverId: serverId)
+                }
+            } catch {
+                Log.sync.error(
+                    "Failed to acknowledge presented session \(sessionId.uuidString, privacy: .public): \(String(describing: error), privacy: .public)"
+                )
+                _ = await refreshFromServer(serverId: serverId, client: serverClient)
+            }
+        }
+    }
+
     func syncProject(_ project: Project) {
         guard let serverClient = clientForServer(project.serverId) else { return }
         pendingServerProjectIds.insert(

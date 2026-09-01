@@ -221,6 +221,11 @@ final public class SessionController {
     /// observers. Unread state and notifications are server-projected and
     /// handled by `SessionAttentionCoordinator`.
     public var onTurnEnded: (() -> Void)?
+    /// Advances only when the live session stream applies a terminal event.
+    /// Presentation surfaces use this boundary to acknowledge the response
+    /// they just showed even when the navigation stream carrying its unread
+    /// revision arrives a moment later.
+    public internal(set) var liveTurnEndRevision: UInt64 = 0
     /// The agent session id currently connected (resumed or newly created).
     public internal(set) var connectedAgentSessionId: String?
 

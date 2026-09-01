@@ -390,6 +390,7 @@ extension SessionController {
             configOptions: initialConfigOptions
         )
         model.onTurnEnded = { [weak self, weak model] in
+            self?.liveTurnEndRevision &+= 1
             if let model { self?.captureTurnEnded(model) }
             self?.noteTurnEndedForPlanApproval()
             self?.onTurnEnded?()

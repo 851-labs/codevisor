@@ -693,7 +693,7 @@ public final class ProjectListModel {
         }
     }
 
-    private func applyAttention(_ remote: ServerSession, serverId: String) {
+    func applyAttention(_ remote: ServerSession, serverId: String) {
         guard let mapped = try? remote.chatSession(serverId: serverId),
             let id = UUID(uuidString: remote.id),
             let index = sessions.firstIndex(where: {
