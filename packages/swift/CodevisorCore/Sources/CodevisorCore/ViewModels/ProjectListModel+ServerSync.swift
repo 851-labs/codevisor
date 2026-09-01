@@ -53,9 +53,8 @@ extension ProjectListModel {
                     _ = try await serverClient.upsertProject(project)
                 }
                 _ = try await serverClient.upsertSession(session)
-                pendingServerSessionIds.remove(
-                    ScopedSessionID(serverId: session.serverId, id: session.id)
-                )
+                // A successful write can still overtake an older list request.
+                // mergeSessions retires the marker once a snapshot contains it.
             } catch {
                 // Keep the optimistic row pending. A later mutation can retry
                 // the upsert, and authoritative refreshes must not make the

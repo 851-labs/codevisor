@@ -72,7 +72,9 @@ extension ProjectListModel {
             return .applied(workspaceMembershipChanged: false)
         }
 
-        pendingServerSessionIds.remove(scopedId)
+        // A live event can overtake a list request that already captured the
+        // older state. Keep the optimistic row protected until mergeSessions
+        // observes its id in an authoritative snapshot.
         var reconciled = session
         if pendingArchivedSessionIds.contains(scopedId) {
             if session.isArchived {
