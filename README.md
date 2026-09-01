@@ -13,18 +13,18 @@
   <a href="https://discord.gg/WzX6BpfaRH">
     <img src="https://img.shields.io/badge/Discord-5865F2?logo=discord&logoColor=white&style=flat" alt="Join the Codevisor Discord">
   </a>
+  <a href="https://github.com/851-labs/codevisor/releases/latest">
+    <img src="https://img.shields.io/github/v/release/851-labs/codevisor?label=Release&style=flat" alt="Latest release">
+  </a>
+  <a href="https://github.com/851-labs/homebrew-tap">
+    <img src="https://img.shields.io/badge/Homebrew-851--labs%2Ftap-fbb040?logo=homebrew&logoColor=white&style=flat" alt="Homebrew tap">
+  </a>
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/License-AGPL--3.0-blue?style=flat" alt="AGPL-3.0 license">
   </a>
   <br>
   <a href="https://www.codevisor.dev/download/macos">
     <img src="https://img.shields.io/badge/Download-macOS-black?logo=apple&logoColor=white&style=flat" alt="Download Codevisor for macOS">
-  </a>
-  <a href="https://github.com/851-labs/codevisor/releases/latest">
-    <img src="https://img.shields.io/github/v/release/851-labs/codevisor?label=Release&style=flat" alt="Latest release">
-  </a>
-  <a href="https://github.com/851-labs/homebrew-tap">
-    <img src="https://img.shields.io/badge/Homebrew-851--labs%2Ftap-fbb040?logo=homebrew&logoColor=white&style=flat" alt="Homebrew tap">
   </a>
   <a href="https://github.com/851-labs/codevisor/releases">
     <img src="https://img.shields.io/github/downloads/851-labs/codevisor/total?label=Downloads&style=flat" alt="Total GitHub release downloads">
