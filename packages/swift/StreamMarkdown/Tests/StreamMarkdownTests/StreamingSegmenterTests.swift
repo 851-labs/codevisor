@@ -184,18 +184,29 @@ struct StreamingSegmenterTests {
 
     @Test("Async parsing discards an out-of-order stale snapshot")
     func staleAsyncSnapshot() async {
+        let slowStarted = DispatchSemaphore(value: 0)
+        let releaseSlow = DispatchSemaphore(value: 0)
         let coordinator = StreamingMarkdownParseCoordinator(
             text: "initial",
             isComplete: false,
             snapshotParser: { text, _ in
-                if text == "slow" { Thread.sleep(forTimeInterval: 0.05) }
+                if text == "slow" {
+                    slowStarted.signal()
+                    releaseSlow.wait()
+                }
                 return [.textRun([.paragraph(text)])]
             }
         )
 
         async let slow: Void = coordinator.update(text: "slow", isComplete: false)
-        await Task.yield()
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global().async {
+                slowStarted.wait()
+                continuation.resume()
+            }
+        }
         await coordinator.update(text: "fast", isComplete: false)
+        releaseSlow.signal()
         _ = await slow
 
         #expect(coordinator.presentation.text == "fast")
