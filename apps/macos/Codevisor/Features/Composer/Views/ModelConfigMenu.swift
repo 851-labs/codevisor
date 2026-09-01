@@ -59,7 +59,10 @@ private extension ModelConfigMenu {
             modelChipLabel
         }
         .buttonStyle(HoverIconButtonStyle(shape: .chip))
-        .fixedSize()
+        // The model name is provider-owned and can be arbitrarily long. Let
+        // this chip accept the toolbar's width proposal so its label can
+        // truncate before it pushes the composer actions out of bounds.
+        .fixedSize(horizontal: false, vertical: true)
         .disabled(isSwitchingHarness)
         .help("Choose model")
         .accessibilityLabel("Model")

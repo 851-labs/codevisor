@@ -20,9 +20,13 @@ struct ModelPickerChipLabel: View {
 
                 Text(modelName)
                     .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             } else {
                 Text("Select a harness")
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
         }
         .contentShape(Rectangle())

@@ -43,9 +43,13 @@ struct ModelConfigChip: View {
                             Text(model.currentName)
                                 .fontWeight(.medium)
                                 .foregroundStyle(.primary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
                         } else {
                             Text(fallbackLabel)
                                 .foregroundStyle(.primary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
                         }
                         ForEach(controller.thoughtLevelOptions) { thought in
                             Text(thought.currentName)
