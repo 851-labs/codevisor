@@ -260,6 +260,9 @@ public final class UpdateCenter {
     public func update(_ component: UpdateComponent) async {
         switch component.kind {
         case .app:
+            // A modal sheet prevents Sparkle from terminating the app for
+            // relaunch. Close the Update Center before handing off to it.
+            isPresented = false
             await appUpdate.installUpdate()
         case .server:
             await machines.updateServer(machineId: component.machineId)

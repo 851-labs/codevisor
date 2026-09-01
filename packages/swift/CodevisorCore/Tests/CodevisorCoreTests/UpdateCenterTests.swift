@@ -166,6 +166,30 @@ struct UpdateCenterTests {
         controller.stopEventSync()
     }
 
+    @Test("App updates dismiss the update sheet before invoking Sparkle")
+    func appUpdateDismissesSheet() async throws {
+        let controller = try makeController(
+            fakes: ["local": SyncFakeServerClient(projects: [], sessions: [])],
+            remotes: []
+        )
+        let appUpdate = AppUpdateModel(currentVersion: "1.0.0")
+        appUpdate.checkHandler = { _ in }
+        let center = UpdateCenter(machines: controller, appUpdate: appUpdate)
+        var sheetWasPresentedWhenInstallStarted: Bool?
+        appUpdate.installHandler = { _ in
+            sheetWasPresentedWhenInstallStarted = center.isPresented
+        }
+        appUpdate.reportAvailable(version: "2.0.0", releasePageURL: nil)
+        center.isPresented = true
+
+        let component = try #require(center.components.first { $0.kind == .app })
+        await center.update(component)
+
+        #expect(!center.isPresented)
+        #expect(sheetWasPresentedWhenInstallStarted == false)
+        controller.stopEventSync()
+    }
+
     @Test("An app update leaves the session for the relaunched client")
     func appUpdateLeavesSessionForRelaunch() async throws {
         let controller = try makeController(
