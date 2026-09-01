@@ -26,6 +26,9 @@
   <a href="https://github.com/851-labs/codevisor/releases/latest">
     <img src="https://img.shields.io/github/v/release/851-labs/codevisor?label=Release&style=flat" alt="Latest release">
   </a>
+  <a href="https://github.com/851-labs/codevisor/releases">
+    <img src="https://img.shields.io/github/downloads/851-labs/codevisor/total?label=Downloads&style=flat" alt="Total GitHub release downloads">
+  </a>
 </div>
 
 ---
