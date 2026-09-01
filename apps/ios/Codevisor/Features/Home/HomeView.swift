@@ -10,7 +10,8 @@ struct HomeView: View {
     private static let newChatTransitionID = "home-new-chat"
 
     @Environment(AppEnvironment.self) private var environment
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
 
     @ClientPreference("sidebar.organization", default: HomeOrganization.compact.rawValue)
     private var organizationRaw
@@ -59,18 +60,26 @@ struct HomeView: View {
     /// A codevisor://install-plugin deeplink (the web plugin directory's
     /// "Open in Codevisor" button), staged until the install sheet presents.
     @State private var pendingPluginInstall: PendingPluginInstall?
-    @State private var isPointerInsideSidebar = false
-    @GestureState private var isTouchingSidebar = false
+    @State var isPointerInsideSidebar = false
+    @GestureState var isTouchingSidebar = false
     /// Group reordering uses a dedicated flat List. The disclosure
     /// preferences remain untouched so returning restores the prior layout.
     @State private var groupReorderOrganization: HomeOrganization?
     @State private var groupReorderInitialOrder: String?
-    @State private var deferredSessionOrder = InteractionDeferredOrder<UUID>()
+    @State var deferredSessionOrder = InteractionDeferredOrder<UUID>()
     @State private var orderingCache = HomeSessionOrderingCache()
     /// Non-nil while a burst of automatic reorders is settling (the deferred
     /// order is locked without the user touching or hovering the list).
-    @State private var reorderSettleHoldStart: Date?
-    @State private var reorderSettleTask: Task<Void, Never>?
+    @State var reorderSettleHoldStart: Date?
+    @State var reorderSettleTask: Task<Void, Never>?
+    /// The active hold's pacing: reactive holds commit quickly; the
+    /// pre-emptive foreground hold waits out recovery latency and absorbs
+    /// the whole catch-up burst into one reflow.
+    @State var reorderSettleProfile = ReorderSettleProfile.reactive
+    /// True after the scene has been fully backgrounded, so the pre-emptive
+    /// settle hold engages only on a genuine re-open (not a control-center
+    /// or app-switcher peek that merely passes through `.inactive`).
+    @State private var wasBackgrounded = false
     /// The repository is deliberately non-observable. Bump this after a
     /// workspace backfill or local layout mutation so the hierarchy re-reads.
     @State private var workspaceRevision = 0
@@ -83,7 +92,7 @@ struct HomeView: View {
         HomeOrganization(rawValue: organizationRaw) ?? .compact
     }
 
-    private var order: HomeOrder {
+    var order: HomeOrder {
         HomeOrder(rawValue: orderRaw) ?? .updated
     }
 
@@ -132,7 +141,7 @@ struct HomeView: View {
     }
 
     /// Active chats from current machines, in the chosen order.
-    private var visibleSessions: [ChatSession] {
+    var visibleSessions: [ChatSession] {
         let desired = desiredVisibleSessions
         guard order != .none else { return desired }
         return deferredSessionOrder.applying(to: desired, id: \.id)
@@ -308,6 +317,22 @@ struct HomeView: View {
             // as one animated reflow after it settles.
             .onChange(of: desiredVisibleSessions.map(\.id)) { _, _ in
                 scheduleReorderSettleHold()
+            }
+            // Re-opening the app starts a catch-up that replays every
+            // machine's accumulated changes into a visible list. Freeze the
+            // order BEFORE that burst arrives so it lands as one reflow —
+            // a reactive hold always commits the burst's first change.
+            .onChange(of: scenePhase) { _, phase in
+                switch phase {
+                case .background:
+                    wasBackgrounded = true
+                case .active:
+                    guard wasBackgrounded else { break }
+                    wasBackgrounded = false
+                    beginForegroundSettleHold()
+                default:
+                    break
+                }
             }
             .onChange(of: organizationRaw, initial: true) { _, _ in
                 backfillWorkspacesIfNeeded()
@@ -1103,60 +1128,6 @@ struct HomeView: View {
             // returns to the navigation list in one state transition.
             newChatFlow = nil
             path.removeAll()
-        }
-    }
-
-    private func setAutomaticOrderDeferred(_ isDeferred: Bool) {
-        if isDeferred {
-            // The touch/hover hold takes over any in-flight settle hold (the
-            // lock is first-snapshot-wins, so the frozen order is preserved)
-            // and owns it until the interaction ends.
-            cancelReorderSettleHold()
-            deferredSessionOrder.lock(to: visibleSessions.map(\.id))
-        } else {
-            releaseDeferredOrder(animated: true)
-        }
-    }
-
-    /// Coalesces bursts of automatic reorders. The first change of a burst
-    /// commits immediately — it has already rendered by the time this runs —
-    /// then the order freezes until the sort has been quiet for
-    /// `ReorderSettle.quietDelay`, capped at `ReorderSettle.maxHold` under
-    /// sustained churn. While the user is touching or hovering the list the
-    /// interaction hold owns the lock instead, and its end releases
-    /// immediately as before.
-    private func scheduleReorderSettleHold() {
-        guard order != .none, !isPointerInsideSidebar, !isTouchingSidebar else { return }
-        if !deferredSessionOrder.isLocked {
-            deferredSessionOrder.lock(to: visibleSessions.map(\.id))
-            reorderSettleHoldStart = Date()
-        }
-        let holdStart = reorderSettleHoldStart ?? Date()
-        reorderSettleTask?.cancel()
-        reorderSettleTask = Task {
-            try? await Task.sleep(for: .seconds(ReorderSettle.delay(holdStart: holdStart)))
-            guard !Task.isCancelled else { return }
-            reorderSettleTask = nil
-            reorderSettleHoldStart = nil
-            releaseDeferredOrder(animated: true)
-        }
-    }
-
-    private func cancelReorderSettleHold() {
-        reorderSettleTask?.cancel()
-        reorderSettleTask = nil
-        reorderSettleHoldStart = nil
-    }
-
-    private func releaseDeferredOrder(animated: Bool) {
-        cancelReorderSettleHold()
-        guard deferredSessionOrder.isLocked else { return }
-        if animated {
-            withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) {
-                deferredSessionOrder.unlock()
-            }
-        } else {
-            deferredSessionOrder.unlock()
         }
     }
 

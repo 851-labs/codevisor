@@ -100,6 +100,10 @@ public final class CloudAccountController {
     @ObservationIgnored var localRegistrationTask: Task<Void, Never>?
     /// The best-effort sign-out deregistration, kept so tests can await it.
     @ObservationIgnored var localDeregistrationTask: Task<Void, Never>?
+    /// A debounced roster refresh triggered by a hub presence push whose view
+    /// disagrees with `machines`. Coalesces bursts (a welcome delivers the
+    /// whole fleet) into one REST fetch.
+    @ObservationIgnored var presenceRefreshTask: Task<Void, Never>?
 
     public init(
         clientFactory: @escaping ClientFactory = { CloudAccountClient(baseURL: $0) },
@@ -264,6 +268,8 @@ public final class CloudAccountController {
         // not the session); only the visible flags reset with the list.
         machinesWithChangedKeys = []
         state = .signedOut
+        presenceRefreshTask?.cancel()
+        presenceRefreshTask = nil
         stopAllLoopbackBridges()
         directPaths.dropAll()
         if let hub {
@@ -301,6 +307,8 @@ public final class CloudAccountController {
     private func discardHubForCredentialChange() async {
         stopAllLoopbackBridges()
         directPaths.dropAll()
+        presenceRefreshTask?.cancel()
+        presenceRefreshTask = nil
         guard let hub else { return }
         self.hub = nil
         await hub.shutdown()
@@ -435,7 +443,45 @@ public final class CloudAccountController {
         if let hub { return hub }
         let hub = hubConnectionFactory(serverURL, credentialStore)
         self.hub = hub
+        // Presence pushed by the hub keeps the UI roster live: a machine
+        // signed in on another device appears here the moment it connects,
+        // instead of waiting for the next foreground or a settings poll.
+        Task { [weak self] in
+            guard let self else { return }
+            await hub.setMachinesChangedHandler { [weak self] transportMachines in
+                guard let self else { return }
+                Task { @MainActor in
+                    self.reconcilePresence(with: transportMachines)
+                }
+            }
+        }
         return hub
+    }
+
+    /// Compares the hub's live presence view against the UI roster and, on
+    /// disagreement (an unknown machine appeared, or an online flag flipped),
+    /// schedules one authoritative refresh. Deliberately refresh-based: the
+    /// REST fetch stays the single writer of `machines`, so key pinning, twin
+    /// dedup, and direct-path reconciliation keep their one home in
+    /// `refreshMachines()` — the push is only a trigger, never a source.
+    func reconcilePresence(with transportMachines: [CloudMachine]) {
+        guard state.isSignedIn else { return }
+        let known = Dictionary(
+            machines.map { ($0.deviceId, $0.online) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        // `known[...]` is nil for an unknown device, which never equals a
+        // Bool — one comparison covers both "new machine" and "flipped".
+        guard transportMachines.contains(where: { known[$0.deviceId] != $0.online }) else {
+            return
+        }
+        guard presenceRefreshTask == nil else { return }
+        presenceRefreshTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard let self, !Task.isCancelled else { return }
+            self.presenceRefreshTask = nil
+            await self.refreshMachines()
+        }
     }
 
     /// Replaces an existing relay socket after the app returns to the
@@ -444,6 +490,14 @@ public final class CloudAccountController {
     /// step with the new hub welcome.
     public func reconnectHub() async {
         guard state.isSignedIn else { return }
+        // Every transport is suspect at this point (suspension, network
+        // handoff), including the direct LAN pipes: a half-open pipe is
+        // caught by its own heartbeat within ~15s, but recovery requests
+        // race that detection and burn their full timeout against a dead
+        // socket — one such timeout is enough to fail the selected machine.
+        // Drop the pipes now; the reconnected relay carries traffic
+        // immediately, and the machine refresh below re-probes the LAN.
+        directPaths.dropAll()
         if let hub {
             await hub.reconnect()
         }

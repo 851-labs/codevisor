@@ -52,6 +52,13 @@ public final class MachineConnection {
     @ObservationIgnored var navigationSyncTask: Task<Void, Never>?
     /// Coalesces navigation-affecting events for this machine only.
     @ObservationIgnored var pendingRefreshTask: Task<Void, Never>?
+    /// A scheduled automatic re-preparation after a failed remote
+    /// preparation. Streams self-heal through their own backoff loop; this
+    /// is the equivalent for a machine whose preparation never got that far,
+    /// so one transient relay timeout never parks it in a latched failure.
+    @ObservationIgnored var preparationRetryTask: Task<Void, Never>?
+    /// Consecutive failed preparations, for retry backoff. Reset on success.
+    @ObservationIgnored var preparationFailures = 0
 
     init(machineId: String) {
         self.machineId = machineId
@@ -80,6 +87,7 @@ extension MachineController {
         connectionsById[machineId]?.preparationTask?.cancel()
         connectionsById[machineId]?.navigationSyncTask?.cancel()
         connectionsById[machineId]?.pendingRefreshTask?.cancel()
+        connectionsById[machineId]?.preparationRetryTask?.cancel()
         connectionsById[machineId] = nil
     }
 
@@ -95,13 +103,29 @@ extension MachineController {
         // Only THIS machine's stream stops; every other machine keeps
         // streaming through the transition.
         stopEventSync(for: machineId)
+        // A new preparation owns the machine's lifecycle from here; a
+        // previously scheduled automatic retry must not fire on top of it.
+        connection.preparationRetryTask?.cancel()
+        connection.preparationRetryTask = nil
         connection.availability = .waiting(reason)
-        connection.navigationSyncState = .catchingUp
+        // A machine already presenting a current snapshot keeps its rows on
+        // screen while it re-prepares (warm foreground, machine switching,
+        // restart): the event cursor makes the resync gapless, so the cached
+        // rows are honest. Demoting to `.catchingUp` here yanked the whole
+        // row set out of fleet-aggregated lists and reinserted it seconds
+        // later — a bulk disappear/reappear on every warm reconnect.
+        if connection.navigationSyncState != .current {
+            connection.navigationSyncState = .catchingUp
+        }
         requestGate.beginWaiting(for: machineId)
     }
 
     func markReady(for machineId: String) {
-        connection(for: machineId).availability = .ready
+        let connection = connection(for: machineId)
+        connection.availability = .ready
+        connection.preparationRetryTask?.cancel()
+        connection.preparationRetryTask = nil
+        connection.preparationFailures = 0
         requestGate.markReady(for: machineId)
     }
 
@@ -115,6 +139,32 @@ extension MachineController {
     public func retryMachine(_ machineId: String) async {
         guard machine(for: machineId) != nil else { return }
         await prepareMachine(machineId)
+    }
+
+    /// Schedules an automatic re-preparation after a failed remote
+    /// preparation, with the same backoff curve the event streams use.
+    /// Without it, one transient relay timeout latched the request gate
+    /// `.failed` — every later request for the machine failed instantly and
+    /// offline — and nothing retried until the next app foreground or an
+    /// explicit user retry.
+    func schedulePreparationRetry(for machineId: String) {
+        let connection = connection(for: machineId)
+        connection.preparationRetryTask?.cancel()
+        connection.preparationFailures += 1
+        let delay = preparationRetryBaseDelay * min(60, 1 << min(connection.preparationFailures, 6))
+        connection.preparationRetryTask = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard let self, !Task.isCancelled else { return }
+            connection.preparationRetryTask = nil
+            // Only retry a machine that still exists and is still failed;
+            // anything else has an owner (removal, a user retry, a
+            // successful preparation) that superseded this schedule.
+            guard self.machine(for: machineId) != nil,
+                connection.preparationTask == nil,
+                case .some(.failed) = connection.availability
+            else { return }
+            await self.prepareMachine(machineId)
+        }
     }
 
     /// Removes everything stored under a configured machine's own cloud

@@ -68,7 +68,10 @@ struct MachineNavigationSyncTests {
         try await waitUntil {
             fake.listSessionCallCount == callCountBeforeRefresh + 1
         }
-        #expect(controller.navigationSyncStateByMachineId["local"] == .catchingUp)
+        // A machine that already presented a current snapshot keeps it during
+        // a warm catch-up: the cursor makes the resync gapless, and demoting
+        // to `.catchingUp` would evict its rows from fleet-aggregated lists.
+        #expect(controller.navigationSyncStateByMachineId["local"] == .current)
 
         // This event lands after the cursor was captured but while the list
         // request is blocked. It must replay after the snapshot commits.
@@ -154,6 +157,33 @@ struct MachineNavigationSyncTests {
             controller.navigationSyncStateByMachineId["local"] == .current
                 && fake.listSessionCallCount == callCountBeforeEvent + 1
         }
+    }
+
+    @Test("A cold catch-up still presents the blocking catch-up state")
+    func coldCatchUpBlocks() async throws {
+        let fake = NavigationSyncFakeServerClient(projects: [], sessions: [])
+        let controller = MachineController(
+            store: InMemoryStore(),
+            projectList: makeProjectList(),
+            clientFactory: { _ in fake }
+        )
+
+        // Nothing current yet: the machine has never synced this launch.
+        let snapshotGate = Latch()
+        fake.configureListSessionDelay { await snapshotGate.wait() }
+        let refresh = Task {
+            await controller.synchronizeNavigationState(
+                serverId: "local",
+                client: fake,
+                presentation: .catchUp
+            )
+        }
+        try await waitUntil { fake.listSessionCallCount == 1 }
+        #expect(controller.navigationSyncStateByMachineId["local"] == .catchingUp)
+
+        await snapshotGate.open()
+        await refresh.value
+        #expect(controller.navigationSyncStateByMachineId["local"] == .current)
     }
 
     @Test("Failed navigation refresh remains visibly stale and can retry")

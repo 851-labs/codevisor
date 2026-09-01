@@ -24,7 +24,10 @@ public enum CloudRelayTransportError: Error, Equatable, Sendable, LocalizedError
                 "The relay channel closed (\(reason?.rawValue ?? "unknown"))."
             }
         case .timedOut:
-            "The request over the cloud relay timed out."
+            // Deliberately transport-neutral: the same client serves the
+            // cloud relay and the direct LAN pipe, and naming the relay for
+            // a LAN failure sent users debugging the wrong path.
+            "The request to the machine timed out."
         }
     }
 }

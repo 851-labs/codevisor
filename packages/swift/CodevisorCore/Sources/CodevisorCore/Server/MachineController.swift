@@ -135,6 +135,9 @@ public final class MachineController {
     /// restarts into its updated version. Injectable so tests run fast.
     let updatePollInterval: Duration
     let updatePollAttempts: Int
+    /// Backoff base for automatic retries of a failed remote preparation
+    /// (base · 2^n, capped). Injectable so tests run fast.
+    let preparationRetryBaseDelay: Duration
     @ObservationIgnored private var credentialReadFailures: Set<String> = []
     /// Invoked when a `harness.lifecycle.updated` event arrives for a machine
     /// — the AppEnvironment bridges it to its harness-catalog revision so
@@ -175,7 +178,8 @@ public final class MachineController {
         localServer: (any LocalServerControlling)? = nil,
         clientFactory: ClientFactory? = nil,
         updatePollInterval: Duration = .seconds(2),
-        updatePollAttempts: Int = 90
+        updatePollAttempts: Int = 90,
+        preparationRetryBaseDelay: Duration = .seconds(1)
     ) {
         let requestGate = ServerRequestGate()
         self.store = store
@@ -195,6 +199,7 @@ public final class MachineController {
             }
         self.updatePollInterval = updatePollInterval
         self.updatePollAttempts = updatePollAttempts
+        self.preparationRetryBaseDelay = preparationRetryBaseDelay
         if let data = store.loadData(forKey: "machines") {
             do {
                 registry = try JSONDecoder().decode(MachineRegistry.self, from: data).normalized()
@@ -522,98 +527,6 @@ public final class MachineController {
         registry = MachineRegistry()
         persist()
     }
-
-    /// Starts and connects exactly one machine. For the local machine this
-    /// owns the app/LaunchAgent lifecycle; remote machines are only probed and
-    /// synchronized. Concurrent callers for the same id share one task.
-    public func prepareMachine(_ machineId: String) async {
-        guard let machine = machine(for: machineId) else { return }
-        let connection = connection(for: machineId)
-        if let preparationTask = connection.preparationTask {
-            await preparationTask.value
-            return
-        }
-        let task = Task { [weak self] in
-            guard let self else { return }
-            await self.performPreparation(
-                for: machine,
-                client: self.client(for: machineId)
-            )
-        }
-        connection.preparationTask = task
-        await task.value
-        connection.preparationTask = nil
-    }
-
-    /// Bootstraps every known machine independently. A slow or unavailable
-    /// remote can never prevent the local LaunchAgent from being restored,
-    /// and the remembered composer target has no bearing on this work.
-    public func prepareAllMachines() async {
-        let ids = allMachines.map(\.id)
-        await withTaskGroup(of: Void.self) { group in
-            for id in ids {
-                group.addTask { await self.prepareMachine(id) }
-            }
-        }
-    }
-
-    private func performPreparation(
-        for machine: CodevisorMachine,
-        client: any CodevisorServerClienting
-    ) async {
-        let machineId = machine.id
-        beginWaiting(for: machineId, reason: machine.isLocal ? .starting : .connecting)
-        connection(for: machineId).navigationSyncState = .catchingUp
-
-        if machine.isLocal, let localServer {
-            let serverState = await localServer.ensureRunning()
-            if case let .unavailable(message) = serverState {
-                markFailed(for: machineId, message: message)
-                connection(for: machineId).status = MachineStatus(
-                    isReachable: false,
-                    label: message
-                )
-                return
-            }
-            if serverState == .alreadyRunning {
-                // The durable server's PATH is frozen at its launch; a CLI
-                // installed since then (followed by an app relaunch) stays
-                // invisible to it. Fire one rescan so it re-resolves PATH —
-                // off the critical path so machine prep isn't delayed.
-                Task {
-                    do {
-                        _ = try await client.rescanHarnesses()
-                    } catch {
-                        Log.machines.error("Harness rescan failed: \(String(describing: error), privacy: .public)")
-                    }
-                }
-            }
-        } else {
-            do {
-                // Unlike health, info also proves this device's connection
-                // token is accepted before ordinary requests are released.
-                _ = try await client.info()
-            } catch {
-                let message = serverErrorMessage(error)
-                markFailed(for: machineId, message: message)
-                connection(for: machineId).status = MachineStatus(
-                    isReachable: false,
-                    label: message
-                )
-                return
-            }
-        }
-
-        markReady(for: machineId)
-        await refreshStatus(for: machineId)
-        await synchronizeNavigationState(
-            serverId: machineId,
-            client: client,
-            presentation: .catchUp
-        )
-        onMachineConnected?(machineId)
-    }
-
     public static func normalizedRemoteURL(from input: String) throws -> URL {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw MachineControllerError.invalidHost(input) }

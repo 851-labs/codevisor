@@ -86,6 +86,8 @@ extension MachineController {
             connection.navigationSyncTask?.cancel()
             connection.navigationSyncTask = nil
             connection.navigationSyncToken = nil
+            connection.preparationRetryTask?.cancel()
+            connection.preparationRetryTask = nil
         }
     }
 
@@ -235,7 +237,10 @@ extension MachineController {
     ) async {
         let connection = connection(for: serverId)
         if let existing = connection.navigationSyncTask {
-            if presentation == .catchUp {
+            // `.current` machines keep their rows on screen while a warm
+            // resync runs (see beginWaiting): the blocking catch-up state is
+            // only for machines with nothing current to show.
+            if presentation == .catchUp, connection.navigationSyncState != .current {
                 connection.navigationSyncState = .catchingUp
             }
             await existing.value
@@ -298,7 +303,13 @@ extension MachineController {
         presentation: NavigationSyncPresentation
     ) async {
         guard !Task.isCancelled else { return }
-        if presentation == .catchUp {
+        // A warm resync of a `.current` machine stays `.current`: its cached
+        // rows are honest (the cursor below replays every gap), and demoting
+        // them evicted the machine's whole row set from fleet-aggregated
+        // lists just to reinsert it seconds later.
+        if presentation == .catchUp,
+            connection(for: serverId).navigationSyncState != .current
+        {
             connection(for: serverId).navigationSyncState = .catchingUp
         }
         stopEventSync(for: serverId)

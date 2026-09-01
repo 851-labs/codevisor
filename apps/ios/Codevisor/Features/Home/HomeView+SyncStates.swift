@@ -89,6 +89,9 @@ extension HomeView {
         let failed = failedSyncMachines
         Task {
             for machine in failed {
+                // A full re-preparation, not a bare reconnect: a failed
+                // machine's request gate is latched, and only preparation
+                // clears that latch before requests flow again.
                 await machines.prepareMachine(machine.id)
             }
         }
@@ -132,7 +135,14 @@ extension HomeView {
 
     func refreshNavigation() async {
         for machine in machines.allMachines {
-            await machines.refreshNavigationState(for: machine.id)
+            // A failed machine is latched in the request gate; an ordinary
+            // refresh would fail instantly from cache. Pull-to-refresh is an
+            // explicit "try again" — re-prepare, which clears the latch.
+            if case .failed = machines.availabilityByMachineId[machine.id] {
+                await machines.prepareMachine(machine.id)
+            } else {
+                await machines.refreshNavigationState(for: machine.id)
+            }
         }
     }
 }

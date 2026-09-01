@@ -71,6 +71,7 @@ extension CloudHubConnection {
                 failAllChannels()
             }
             machines = welcome.machines
+            machinesChangedHandler?(machines)
             for machine in welcome.machines where machine.online {
                 resumeMachineWaiters(for: machine.deviceId)
             }
@@ -87,6 +88,7 @@ extension CloudHubConnection {
             } else {
                 machines.append(presence.machine)
             }
+            machinesChangedHandler?(machines)
             if presence.machine.online {
                 resumeMachineWaiters(for: presence.machine.deviceId)
             } else {
@@ -131,6 +133,7 @@ extension CloudHubConnection {
     private func markMachineOffline(_ machineId: String) {
         guard let index = machines.firstIndex(where: { $0.deviceId == machineId }) else { return }
         machines[index].online = false
+        machinesChangedHandler?(machines)
     }
 
     private func closeChannels(for machineId: String) {

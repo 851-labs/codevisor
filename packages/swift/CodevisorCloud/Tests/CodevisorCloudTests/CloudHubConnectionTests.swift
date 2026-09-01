@@ -119,6 +119,35 @@ struct CloudHubConnectionTests {
         await hub.shutdown()
     }
 
+    @Test("The welcome roster and presence pushes fire the machines-changed handler")
+    func machinesChangedHandlerFires() async throws {
+        let machine = ScriptedRelayMachine()
+        let scripted = ScriptedCloudHub(machines: [machine.presence])
+        let (hub, _) = makeHub(scripted)
+        let recorder = MachineListRecorder()
+        await hub.setMachinesChangedHandler { recorder.record($0) }
+
+        try await hub.waitUntilReady()
+        // The welcome roster is a change from empty.
+        #expect(
+            await waitUntil {
+                recorder.snapshots.contains { $0.map(\.deviceId) == [machine.deviceId] }
+            }
+        )
+
+        // A machine signed in elsewhere arrives as a presence push — the
+        // handler must see it appended, never waiting for a poll.
+        scripted.presenceToApp(testMachine("just-signed-in"))
+        #expect(
+            await waitUntil {
+                recorder.snapshots.contains { list in
+                    list.contains { $0.deviceId == "just-signed-in" }
+                }
+            }
+        )
+        await hub.shutdown()
+    }
+
     @Test("An offline presence closes that machine's channels")
     func offlinePresenceClosesChannels() async throws {
         let machine = ScriptedRelayMachine()
@@ -416,5 +445,17 @@ struct CloudHubConnectionTests {
                 == "wss://cloud.example.com/connect?token=a%2Bb%2Fc%3D.d%2Be%3D"
         )
         await hub.shutdown()
+    }
+}
+
+/// Thread-safe capture of every machine list the changed handler delivers.
+private final class MachineListRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [[CloudMachine]] = []
+
+    var snapshots: [[CloudMachine]] { lock.withLock { recorded } }
+
+    func record(_ machines: [CloudMachine]) {
+        lock.withLock { recorded.append(machines) }
     }
 }

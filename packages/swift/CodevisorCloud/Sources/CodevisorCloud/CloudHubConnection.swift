@@ -67,6 +67,21 @@ public actor CloudHubConnection {
     var suspensionTask: Task<Void, Never>?
     /// The machine presence list from welcome, kept fresh by presence frames.
     public internal(set) var machines: [CloudMachine] = []
+    /// Fired after the transport's machine list changes from a hub frame —
+    /// the welcome roster or a presence transition — with the full list. The
+    /// account layer compares it against the UI roster and refreshes from
+    /// REST on disagreement: this is what makes a machine signed in on
+    /// another device appear in the UI in realtime, instead of waiting for
+    /// the next foreground or a settings screen's poll.
+    var machinesChangedHandler: (@Sendable ([CloudMachine]) -> Void)?
+
+    /// Installs the presence observer (actor-isolated setter for the field
+    /// above; the handler is invoked from the actor and must hop itself).
+    public func setMachinesChangedHandler(
+        _ handler: (@Sendable ([CloudMachine]) -> Void)?
+    ) {
+        machinesChangedHandler = handler
+    }
 
     final class ChannelState {
         let machineDeviceId: String
