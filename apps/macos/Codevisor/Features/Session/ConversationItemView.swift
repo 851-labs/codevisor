@@ -32,6 +32,7 @@ struct ConversationItemView: View {
 /// thumbnails above it.
 struct UserMessageView: View {
     @Environment(\.theme) private var theme
+    @Environment(\.streamMarkdownTextLayoutWidth) private var rowLayoutWidth
     let message: UserMessage
     @State private var isHovered = false
 
@@ -51,6 +52,10 @@ struct UserMessageView: View {
                         message.text,
                         font: .preferredFont(forTextStyle: .body),
                         foregroundColor: NSColor(theme.textPrimary)
+                    )
+                    .environment(
+                        \.streamMarkdownTextLayoutWidth,
+                        rowLayoutWidth.map { max(1, $0 - 64) }
                     )
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)

@@ -12,6 +12,7 @@
         private let streamingAnimation: StreamingTextAnimationContext?
         @Environment(\.markdownLinkAction) private var linkAction
         @Environment(\.streamingTextAnimationFrameClock) private var animationFrameClock
+        @Environment(\.streamMarkdownTextLayoutWidth) private var rowLayoutWidth
 
         public init(attributedText: NSAttributedString, fillsWidth: Bool = true) {
             self.attributedText = attributedText
@@ -47,6 +48,9 @@
                 latestAnimationEnd: prepared.latestAnimationEnd,
                 activeAnimationRanges: prepared.activeAnimationRanges
             )
+            _ = view.contentHeight(
+                forWidth: resolvedWidth(for: prepared.text, proposalWidth: nil, context: context)
+            )
             return view
         }
 
@@ -62,6 +66,9 @@
                 latestAnimationEnd: prepared.latestAnimationEnd,
                 activeAnimationRanges: prepared.activeAnimationRanges
             )
+            _ = textView.contentHeight(
+                forWidth: resolvedWidth(for: prepared.text, proposalWidth: nil, context: context)
+            )
         }
 
         public func sizeThatFits(
@@ -73,17 +80,27 @@
                 for: attributedText,
                 animation: streamingAnimation
             ).text
-            let concreteProposal = proposal.width.flatMap { $0.isFinite ? $0 : nil }
-            let width: CGFloat
-            if fillsWidth, let concreteProposal {
-                width = max(1, concreteProposal)
-            } else {
-                let naturalWidth = context.coordinator.measurer.naturalWidth(for: text)
-                width = min(max(1, concreteProposal ?? naturalWidth), naturalWidth)
-            }
+            let width = resolvedWidth(
+                for: text,
+                proposalWidth: proposal.width,
+                context: context
+            )
             return CGSize(
                 width: width,
                 height: uiView.contentHeight(forWidth: width)
+            )
+        }
+
+        private func resolvedWidth(
+            for text: NSAttributedString,
+            proposalWidth: CGFloat?,
+            context: Context
+        ) -> CGFloat {
+            StreamMarkdownTextLayout.resolvedWidth(
+                proposalWidth: proposalWidth,
+                rowLayoutWidth: rowLayoutWidth,
+                fillsWidth: fillsWidth,
+                naturalWidth: context.coordinator.measurer.naturalWidth(for: text)
             )
         }
 

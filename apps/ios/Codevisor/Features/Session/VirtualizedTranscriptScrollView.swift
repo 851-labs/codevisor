@@ -270,6 +270,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         if widthChanged {
             discardParkedHosts()
             _ = activateMeasurementCacheIfNeeded()
+            refreshMountedRootViews()
             rebuildDocumentGeometry()
         } else {
             applyPendingInitialPositionIfPossible()
@@ -1558,6 +1559,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         return AnyView(
             rowContent(row)
                 .environment(\.streamingTextAnimationFrameClock, streamingTextFrameClock)
+                .environment(\.streamMarkdownTextLayoutWidth, effectiveRowWidth)
                 .environment(\.transcriptPerformAnchoredDisclosureChange) { [weak self] change in
                     self?.performAnchoredDisclosureChange(in: key, change: change) ?? change()
                 }
@@ -1571,7 +1573,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
                         for: key
                     )
                 }
-                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .frame(width: effectiveRowWidth, alignment: .topLeading)
                 .id(key),
         )
     }

@@ -240,9 +240,14 @@ extension CodevisorServerClient {
         return try await get(path)
     }
 
-    public func transcriptItemDetails(id: UUID, itemId: String) async throws -> ServerTranscriptItemDetails {
+    public func transcriptItemDetails(
+        id: UUID,
+        itemId: String,
+        throughRevision: Int?
+    ) async throws -> ServerTranscriptItemDetails {
         let encoded = itemId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? itemId
-        return try await get("/v1/sessions/\(id.uuidString)/transcript/\(encoded)/details")
+        let suffix = throughRevision.map { "?through=\($0)" } ?? ""
+        return try await get("/v1/sessions/\(id.uuidString)/transcript/\(encoded)/details\(suffix)")
     }
 
     public func sessionEvents(id: UUID) async throws -> [ServerEventEnvelope] {

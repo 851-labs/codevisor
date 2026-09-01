@@ -326,7 +326,11 @@ public protocol CodevisorServerClienting: Sendable {
         transcriptLimit: Int
     ) async throws -> ServerSessionOpenResponse?
     func transcriptPage(id: UUID, before: String?, limit: Int) async throws -> ServerTranscriptPage
-    func transcriptItemDetails(id: UUID, itemId: String) async throws -> ServerTranscriptItemDetails
+    func transcriptItemDetails(
+        id: UUID,
+        itemId: String,
+        throughRevision: Int?
+    ) async throws -> ServerTranscriptItemDetails
     func promptQueue(id: UUID) async throws -> [ServerPromptQueueItem]
     func sessionEvents(id: UUID) async throws -> [ServerEventEnvelope]
     func upsertSession(_ session: ChatSession) async throws -> ServerSession

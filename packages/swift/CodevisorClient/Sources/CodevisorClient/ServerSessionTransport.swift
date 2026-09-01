@@ -67,9 +67,20 @@ extension ServerSessionTransport {
         )
     }
 
-    public func transcriptDetails(itemId: String) async throws -> [ServerSessionStreamEvent] {
-        let details = try await client.transcriptItemDetails(id: sessionId, itemId: itemId)
-        return details.events.flatMap(Self.sessionStreamEvents(from:))
+    public func transcriptDetails(
+        itemId: String,
+        throughRevision: Int? = nil
+    ) async throws -> [ServerSessionStreamEvent] {
+        let details = try await client.transcriptItemDetails(
+            id: sessionId,
+            itemId: itemId,
+            throughRevision: throughRevision
+        )
+        let envelopes = details.events.filter { event in
+            guard let throughRevision else { return true }
+            return (event.subjectRevision ?? event.id) <= throughRevision
+        }
+        return envelopes.flatMap(Self.sessionStreamEvents(from:))
     }
 
     public func updates(since: Int = Self.liveOnlyEventCursor) -> AsyncStream<SessionUpdate> {

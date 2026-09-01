@@ -168,7 +168,8 @@ export interface CodevisorDatabaseService {
   ) => Effect.Effect<TranscriptPage, DatabaseError>
   readonly getTranscriptItemDetails: (
     sessionId: string,
-    itemId: string
+    itemId: string,
+    throughRevision?: number
   ) => Effect.Effect<TranscriptItemDetails | undefined, DatabaseError>
   readonly updateSession: (
     id: string,

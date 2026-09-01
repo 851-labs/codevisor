@@ -369,6 +369,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         if abs(width - lastViewportWidth) > 0.5 {
             lastViewportWidth = width
             _ = activateMeasurementCacheIfNeeded()
+            refreshMountedRootViews()
             rebuildDocumentGeometry()
         } else {
             applyPendingInitialPositionIfPossible()
@@ -2329,6 +2330,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         return AnyView(
             rowContent(row)
                 .environment(\.streamingTextAnimationFrameClock, streamingTextFrameClock)
+                .environment(\.streamMarkdownTextLayoutWidth, effectiveRowWidth)
                 .environment(\.transcriptPerformAnchoredDisclosureChange) { [weak self] change in
                     self?.performAnchoredDisclosureChange(in: key, change: change) ?? change()
                 }
@@ -2346,7 +2348,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                 // row geometry stable. Pin the SwiftUI root to the top so any
                 // sub-point rounding slack stays below the message instead of
                 // recentering it when a disclosure changes the row height.
-                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .frame(width: effectiveRowWidth, alignment: .topLeading)
                 .id(key)
         )
     }

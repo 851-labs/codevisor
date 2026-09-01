@@ -47,6 +47,8 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
     private var _sessionEventSinceValues: [Int] = []
     private var _transcriptPageRequests: [(before: String?, limit: Int)] = []
     private var _transcriptDetailRequestCount = 0
+    private var _transcriptDetailThroughRevisions: [Int?] = []
+    private var _transcriptDetailGate: AsyncStream<Void>?
     private var _transcriptPageFailuresRemaining = 0
     private var _promptQueueResponse: [ServerPromptQueueItem] = []
     private var _promptQueueGate: AsyncStream<Void>?
@@ -158,6 +160,14 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
 
     var transcriptDetailRequestCount: Int {
         lock.withLock { _transcriptDetailRequestCount }
+    }
+
+    var transcriptDetailThroughRevisions: [Int?] {
+        lock.withLock { _transcriptDetailThroughRevisions }
+    }
+
+    func holdTranscriptDetails(until gate: AsyncStream<Void>) {
+        lock.withLock { _transcriptDetailGate = gate }
     }
 
     func failNextTranscriptPages(_ count: Int) {
@@ -278,8 +288,19 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
         throw CodevisorServerClientError.httpStatus(404, "")
     }
 
-    func transcriptItemDetails(id: UUID, itemId: String) async throws -> ServerTranscriptItemDetails {
-        lock.withLock { _transcriptDetailRequestCount += 1 }
+    func transcriptItemDetails(
+        id: UUID,
+        itemId: String,
+        throughRevision: Int?
+    ) async throws -> ServerTranscriptItemDetails {
+        let gate = lock.withLock {
+            _transcriptDetailRequestCount += 1
+            _transcriptDetailThroughRevisions.append(throughRevision)
+            return _transcriptDetailGate
+        }
+        if let gate {
+            for await _ in gate { break }
+        }
         guard let details = transcriptDetailsByItem[itemId] else {
             throw CodevisorServerClientError.httpStatus(404, "")
         }

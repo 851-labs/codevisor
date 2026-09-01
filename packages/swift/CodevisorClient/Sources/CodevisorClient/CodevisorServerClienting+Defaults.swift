@@ -517,10 +517,6 @@ public extension CodevisorServerClienting {
         throw CodevisorServerClientError.httpStatus(404, "")
     }
 
-    func transcriptItemDetails(id: UUID, itemId: String) async throws -> ServerTranscriptItemDetails {
-        throw CodevisorServerClientError.httpStatus(404, "")
-    }
-
     /// Defaults so fakes and older transports keep compiling; the HTTP client
     /// overrides these with the real goal endpoints.
     @discardableResult

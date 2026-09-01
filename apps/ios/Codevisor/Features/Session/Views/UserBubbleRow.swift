@@ -9,6 +9,7 @@ import UIKit
 /// under the same client-generated row identity.
 struct UserBubbleRow: View {
     @Environment(\.theme) private var theme
+    @Environment(\.streamMarkdownTextLayoutWidth) private var rowLayoutWidth
     let text: String
     let attachments: [Attachment]
 
@@ -37,6 +38,10 @@ struct UserBubbleRow: View {
                             ]
                         ),
                         fillsWidth: false
+                    )
+                    .environment(
+                        \.streamMarkdownTextLayoutWidth,
+                        rowLayoutWidth.map { max(1, $0 - 64) }
                     )
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)

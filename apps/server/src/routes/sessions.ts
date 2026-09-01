@@ -309,7 +309,12 @@ const routeSessionActions = async (
   )
   if (transcriptDetails !== undefined && request.method === "GET") {
     const { id, itemId } = transcriptDetails as { readonly id: string; readonly itemId: string }
-    const details = await run(services.db.getTranscriptItemDetails(id, itemId))
+    const rawThrough = url.searchParams.get("through")
+    const through = rawThrough === null ? undefined : Number(rawThrough)
+    if (through !== undefined && (!Number.isSafeInteger(through) || through < 0)) {
+      throw new HttpFailure(400, "Invalid transcript detail cursor")
+    }
+    const details = await run(services.db.getTranscriptItemDetails(id, itemId, through))
     if (details === undefined) {
       throw new HttpFailure(404, `Transcript item not found: ${itemId}`)
     }

@@ -1415,6 +1415,18 @@ describe("sessions routes", () => {
     expect(
       await jsonRequest(server, `/v1/sessions/${session.id}/transcript/missing/details`)
     ).toMatchObject({ status: 404 })
+    expect(
+      await jsonRequest(
+        server,
+        `/v1/sessions/${session.id}/transcript/${assistantTranscriptItem.id}/details?through=wat`
+      )
+    ).toMatchObject({ status: 400 })
+    expect(
+      await jsonRequest(
+        server,
+        `/v1/sessions/${session.id}/transcript/${assistantTranscriptItem.id}/details?through=-1`
+      )
+    ).toMatchObject({ status: 400 })
     const promptCountBeforeReturnedEvents = agents.prompts.length
     const queueEventsBeforeReturnedEvents = (
       await run(services.db.listSubjectEvents(session.id))

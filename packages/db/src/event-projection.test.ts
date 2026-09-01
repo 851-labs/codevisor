@@ -174,6 +174,10 @@ describe("@codevisor/db", () => {
     const details = await run(db.getTranscriptItemDetails(session.id, newest.items[0]!.id))
     expect(details?.itemId).toBe(newest.items[0]!.id)
     expect(details?.events.map((event) => event.id)).toEqual([2, 3, 4, 5, 6])
+    const snapshotDetails = await run(
+      db.getTranscriptItemDetails(session.id, newest.items[0]!.id, 4)
+    )
+    expect(snapshotDetails?.events.map((event) => event.id)).toEqual([2, 3, 4])
     expect(await run(db.getTranscriptItemDetails(session.id, "missing"))).toBeUndefined()
   })
 

@@ -68,8 +68,10 @@ extension SessionModel {
     /// Schedules one buffered flush. Visible transcripts use their native
     /// display clock; hidden transcripts use a coarse timer because they have
     /// no pixels to present.
-    private func scheduleFlush() {
-        guard !isFlushScheduled, !pendingEvents.isEmpty else { return }
+    func scheduleFlush() {
+        guard !isActiveTranscriptHydrationPending, !isFlushScheduled,
+            !pendingEvents.isEmpty
+        else { return }
         isFlushScheduled = true
         if isViewVisible, presentationFrameRequester?() == true {
             return
@@ -123,6 +125,7 @@ extension SessionModel {
     /// Applies every buffered stream event in one synchronous pass — a single
     /// run-loop turn, so SwiftUI renders the whole batch once.
     func flushPendingEvents() {
+        guard !isActiveTranscriptHydrationPending else { return }
         scheduledFlushTask?.cancel()
         scheduledFlushTask = nil
         isFlushScheduled = false
@@ -139,7 +142,7 @@ extension SessionModel {
     /// frame; only fall back to an immediate flush if a registered surface has
     /// stopped producing frames (for example while the app is suspended).
     func flushPendingEventsAtPresentationBoundary() async {
-        guard !pendingEvents.isEmpty else { return }
+        guard !isActiveTranscriptHydrationPending, !pendingEvents.isEmpty else { return }
         if isViewVisible, presentationFrameRequester?() == true {
             if !isFlushScheduled {
                 scheduleFlush()
@@ -189,6 +192,9 @@ extension SessionModel {
     /// stream from its cursor.
     public func shutdown() {
         stopConnectionRecovery()
+        cancelActiveTranscriptHydration()
+        for task in transcriptDetailLoadTasks.values { task.cancel() }
+        transcriptDetailLoadTasks.removeAll(keepingCapacity: false)
         consumerTask?.cancel()
         consumerTask = nil
         scheduledFlushTask?.cancel()

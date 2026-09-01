@@ -41,6 +41,7 @@ extension SessionModel {
         preloaded: TranscriptHistoryPage?,
         defersPromptQueue: Bool
     ) async -> SessionHistoryLoadOutcome {
+        cancelActiveTranscriptHydration()
         promptQueueLoadTask?.cancel()
         promptQueueLoadTask = nil
         do {
@@ -71,12 +72,21 @@ extension SessionModel {
             isSending = lastTurnIsGenerating
             if isSending { noteProviderActivity(.modelStream) }
             serverEventCursor = page.eventCursor
+            let activeDetailItemId = activeDeferredDetailItemId
+            if activeDetailItemId != nil {
+                isActiveTranscriptHydrationPending = true
+            }
+            await startConsumer()
+            if let activeDetailItemId {
+                startActiveTranscriptHydration(
+                    itemId: activeDetailItemId,
+                    throughRevision: page.eventCursor
+                )
+            }
             if defersPromptQueue {
-                await startConsumer()
                 schedulePromptQueueLoad()
             } else {
                 await loadPromptQueue(ifUnchangedSince: promptQueueRevision)
-                await startConsumer()
             }
             return .loaded
         } catch let CodevisorServerClientError.httpStatus(status, _) where status == 404 {
@@ -318,8 +328,18 @@ extension SessionModel {
     }
 
     private func fetchTranscriptDetails(itemId: String) async -> Bool {
+        await fetchTranscriptDetails(itemId: itemId, throughRevision: nil)
+    }
+
+    private func fetchTranscriptDetails(
+        itemId: String,
+        throughRevision: Int?
+    ) async -> Bool {
         do {
-            let events = try await transport.transcriptDetails(itemId: itemId)
+            let events = try await transport.transcriptDetails(
+                itemId: itemId,
+                throughRevision: throughRevision
+            )
             guard let location = transcriptItemLocation(itemId) else { return false }
             let original = location.item
             guard case let .assistant(originalMessage) = original else { return false }
@@ -385,6 +405,38 @@ extension SessionModel {
         }
     }
 
+    /// Hydrates the compact, generating assistant item returned to a client
+    /// that joined mid-turn. Events newer than `throughRevision` are already
+    /// arriving on the socket, but remain in `pendingEvents` until this
+    /// snapshot-scoped baseline is installed.
+    private func startActiveTranscriptHydration(
+        itemId: String,
+        throughRevision: Int
+    ) {
+        activeTranscriptHydrationGeneration &+= 1
+        let generation = activeTranscriptHydrationGeneration
+        activeTranscriptHydrationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            _ = await self.fetchTranscriptDetails(
+                itemId: itemId,
+                throughRevision: throughRevision
+            )
+            guard !Task.isCancelled,
+                self.activeTranscriptHydrationGeneration == generation
+            else { return }
+            self.activeTranscriptHydrationTask = nil
+            self.isActiveTranscriptHydrationPending = false
+            self.scheduleFlush()
+        }
+    }
+
+    func cancelActiveTranscriptHydration() {
+        activeTranscriptHydrationGeneration &+= 1
+        activeTranscriptHydrationTask?.cancel()
+        activeTranscriptHydrationTask = nil
+        isActiveTranscriptHydrationPending = false
+    }
+
     private func restoreTranscriptDetailsIfCached(itemId: String) -> Bool {
         guard let cached = transcriptDetailsCache[itemId] else { return false }
         // A row task can briefly outlive the deferred row it hydrated. The
@@ -435,6 +487,13 @@ extension SessionModel {
             return (.active, activeItem)
         }
         return nil
+    }
+
+    private var activeDeferredDetailItemId: String? {
+        guard case let .assistant(message) = activeItem,
+            message.turn.isGenerating
+        else { return nil }
+        return message.turn.deferredDetailItemId
     }
 
     private var lastTurnIsGenerating: Bool {

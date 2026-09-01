@@ -185,7 +185,7 @@ export const makeTranscriptService = (
           usage: session.usage
         }
       }),
-    getTranscriptItemDetails: (rawSessionId, itemId) =>
+    getTranscriptItemDetails: (rawSessionId, itemId, throughRevision) =>
       attempt("getTranscriptItemDetails", () => {
         const sessionId = canonicalUuid(rawSessionId)
         const item = sqlite
@@ -193,13 +193,21 @@ export const makeTranscriptService = (
           .get(sessionId, itemId) as { revision: number } | undefined
         if (item === undefined) return undefined
         const events = (
-          sqlite
-            .prepare(
-              `select * from session_events
-               where session_id = ? and chat_item_id = ? order by revision asc`
-            )
-            .all(sessionId, itemId) as ReadonlyArray<SessionEventRow>
-        ).map(sessionEventFromRow)
+          throughRevision === undefined
+            ? sqlite
+                .prepare(
+                  `select * from session_events
+                   where session_id = ? and chat_item_id = ? order by revision asc`
+                )
+                .all(sessionId, itemId)
+            : sqlite
+                .prepare(
+                  `select * from session_events
+                   where session_id = ? and chat_item_id = ? and revision <= ?
+                   order by revision asc`
+                )
+                .all(sessionId, itemId, throughRevision)
+        ).map((row) => sessionEventFromRow(row as SessionEventRow))
         return { itemId, revision: item.revision, events }
       }),
     appendConversationItem: (rawSessionId, role, messageId, text, isGenerating, attachments) =>
