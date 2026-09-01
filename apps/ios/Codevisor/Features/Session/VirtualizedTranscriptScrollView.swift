@@ -431,7 +431,8 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
                 return row.layoutKey
             },
             animatesNewStreams: newPresentationRole == .foreground
-                && followsAnimationEdge
+                && followsAnimationEdge,
+            initialProjectionIsPending: newIsActiveProjectionPending
         )
 
         let rebuiltRows: Bool

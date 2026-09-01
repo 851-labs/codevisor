@@ -39,6 +39,32 @@ struct StreamingTextAnimationPresentationTests {
         #expect(!registry.presentation.claimInitialAnimation(for: "offscreen-live"))
     }
 
+    @Test("A delayed initial projection remains the opaque navigation baseline")
+    func delayedInitialProjectionBaseline() {
+        let registry = StreamingTextAnimationRegistry()
+
+        // UIKit configures the new transcript surface before its active-row
+        // projection is ready. That placeholder must not consume the one
+        // baseline boundary for this presentation.
+        registry.observeProjectedStreams(
+            [],
+            animatesNewStreams: true,
+            initialProjectionIsPending: true
+        )
+        registry.observeProjectedStreams(
+            ["existing-work"],
+            animatesNewStreams: true,
+            initialProjectionIsPending: false
+        )
+        #expect(!registry.presentation.claimInitialAnimation(for: "existing-work"))
+
+        registry.observeProjectedStreams(
+            ["existing-work", "later-live-work"],
+            animatesNewStreams: true
+        )
+        #expect(registry.presentation.claimInitialAnimation(for: "later-live-work"))
+    }
+
     @Test("Application suspension preserves unseen arrivals for foreground playback")
     func suspendedProjectionBacklog() {
         let registry = StreamingTextAnimationRegistry()

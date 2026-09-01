@@ -35,10 +35,17 @@ public final class StreamingTextAnimationRegistry {
     /// offscreen arrivals are already presented when scrolling reaches them.
     public func observeProjectedStreams<S: Sequence>(
         _ streamIDs: S,
-        animatesNewStreams: Bool
+        animatesNewStreams: Bool,
+        initialProjectionIsPending: Bool = false
     ) where S.Element == String {
         let current = Set(streamIDs)
         guard hasObservedProjection else {
+            // An asynchronously projected transcript first configures its
+            // native surface with an empty active-row placeholder. Waiting
+            // here makes the first authoritative projection the navigation
+            // baseline instead of mistaking already-present text for live
+            // output when that projection arrives.
+            guard !initialProjectionIsPending else { return }
             hasObservedProjection = true
             knownProjectedStreamIDs.formUnion(current)
             presentation.settleUnpresentedStreams(current)
