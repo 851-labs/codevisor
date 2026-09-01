@@ -29,8 +29,6 @@
   <a href="https://github.com/851-labs/codevisor/releases">
     <img src="https://img.shields.io/github/downloads/851-labs/codevisor/total?label=Downloads&style=flat" alt="Total GitHub release downloads">
   </a>
-  <img src="https://img.shields.io/badge/macOS-26.0%2B-black?logo=apple&logoColor=white&style=flat" alt="Requires macOS 26.0 or later">
-  <img src="https://img.shields.io/badge/iOS-26.0%2B-black?logo=apple&logoColor=white&style=flat" alt="Requires iOS 26.0 or later">
 </div>
 
 ---
