@@ -6,6 +6,49 @@ import ACPKit
 @MainActor
 @Suite("SessionController configuration")
 struct SessionControllerConfigurationTests {
+    @Test("An onboarding capability warm replaces a provisional empty model snapshot")
+    func onboardingWarmSuppliesModelsToMountedDraft() async {
+        let cache = ConfigOptionCache(store: InMemoryStore())
+        var mutableCapability = capability(model: "gpt-5.6")
+        mutableCapability.configOptions[0].options.append(
+            SessionConfigSelectOption(value: "gpt-5.6-terra", name: "GPT-5.6-Terra")
+        )
+        let warmedCapability = mutableCapability
+        let client = SyncFakeServerClient(projects: [], sessions: [])
+        client.resolvedCapabilitiesHandler = { _, _, selections in
+            var resolved = warmedCapability
+            resolved.configOptions[0].currentValue = selections["model"] ?? "gpt-5.6"
+            return ServerCapabilities(harnesses: [resolved])
+        }
+        let project = Project.fromFolder(
+            URL(fileURLWithPath: "/tmp/project"),
+            serverId: "machine-a"
+        )
+        cache.seedHarnesses([warmedCapability.harness], forServer: project.serverId)
+        let controller = SessionController(
+            project: project,
+            configCache: cache,
+            serverClient: client
+        )
+
+        // The draft mounted from onboarding's fast harness-only seed.
+        #expect(controller.configOptionsByHarness[warmedCapability.harness.id]?.isEmpty == true)
+        #expect(controller.modelOption == nil)
+
+        // The speculative warm updates the observable shared cache without
+        // directly applying another snapshot to this controller.
+        cache.store([warmedCapability], forServer: project.serverId)
+
+        #expect(controller.modelOption?.currentValue == "gpt-5.6")
+
+        // This is the model-row click path from the recording. It must stage
+        // and resolve the selected value even though the controller's older
+        // harness snapshot is still empty.
+        await controller.setConfigOption("model", "gpt-5.6-terra")
+
+        #expect(controller.modelOption?.currentValue == "gpt-5.6-terra")
+    }
+
     @Test("An in-flight capability refresh keeps a provisional catalog loading")
     func provisionalCatalogKeepsModelLoading() {
         let cache = ConfigOptionCache(store: InMemoryStore())

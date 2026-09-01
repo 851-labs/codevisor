@@ -136,9 +136,18 @@ extension SessionController {
         }
         guard let harnessId = selectedHarnessId else { return [] }
         let pendingConfig = pendingConfigByHarness[harnessId] ?? [:]
+        // Onboarding first seeds the controller with a harness-only catalog,
+        // then warms the shared cache with model metadata in the background.
+        // Do not let that provisional empty controller snapshot hide the
+        // cache's newer usable options while the project-specific refresh is
+        // still in flight.
+        let cachedOptions = configCache.options(forHarness: harnessId, onServer: project.serverId)
+        let options =
+            configOptionsByHarness[harnessId].flatMap {
+                $0.isEmpty && !cachedOptions.isEmpty ? nil : $0
+            } ?? cachedOptions
         return
-            (configOptionsByHarness[harnessId]
-            ?? configCache.options(forHarness: harnessId, onServer: project.serverId)).map { option in
+            options.map { option in
                 guard let pending = pendingConfig[option.id] else { return option }
                 var updated = option
                 updated.currentValue = pending
