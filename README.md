@@ -19,15 +19,15 @@
   <a href="https://github.com/851-labs/homebrew-tap">
     <img src="https://img.shields.io/badge/Homebrew-851--labs%2Ftap-fbb040?logo=homebrew&logoColor=white&style=flat" alt="Homebrew tap">
   </a>
-  <a href="LICENSE">
-    <img src="https://img.shields.io/badge/License-AGPL--3.0-blue?style=flat" alt="AGPL-3.0 license">
-  </a>
   <br>
   <a href="https://www.codevisor.dev/download/macos">
     <img src="https://img.shields.io/badge/Download-macOS-black?logo=apple&logoColor=white&style=flat" alt="Download Codevisor for macOS">
   </a>
   <a href="https://github.com/851-labs/codevisor/releases">
     <img src="https://img.shields.io/github/downloads/851-labs/codevisor/total?label=Downloads&style=flat" alt="Total GitHub release downloads">
+  </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/License-AGPL--3.0-blue?style=flat" alt="AGPL-3.0 license">
   </a>
 </div>
 
