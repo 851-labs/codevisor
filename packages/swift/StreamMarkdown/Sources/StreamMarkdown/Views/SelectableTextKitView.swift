@@ -229,7 +229,10 @@
                 size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
             )
             textContainer.lineFragmentPadding = 0
-            textContainer.widthTracksTextView = true
+            // SwiftUI owns the view frame. Let sizeThatFits/layout set the
+            // TextKit width explicitly so a measurement probe cannot make
+            // NSTextView resize itself inside an active SwiftUI layout pass.
+            textContainer.widthTracksTextView = false
             textContainer.heightTracksTextView = false
             layoutManager.addTextContainer(textContainer)
 
@@ -240,7 +243,7 @@
             drawsBackground = false
             textContainerInset = .zero
             isHorizontallyResizable = false
-            isVerticallyResizable = true
+            isVerticallyResizable = false
             minSize = .zero
             maxSize = NSSize(
                 width: CGFloat.greatestFiniteMagnitude,
@@ -340,15 +343,19 @@
         }
 
         @objc private func animationFrame(_ displayLink: CADisplayLink) {
-            streamingTextAnimationFrame(at: displayLink.timestamp)
-            if let latestAnimationEnd, displayLink.timestamp >= latestAnimationEnd {
+            let isFinal = latestAnimationEnd.map { displayLink.timestamp >= $0 } ?? true
+            streamingTextAnimationFrame(at: displayLink.timestamp, isFinal: isFinal)
+            if isFinal {
                 stopAnimation()
             }
         }
 
-        public func streamingTextAnimationFrame(at timestamp: TimeInterval) {
+        public func streamingTextAnimationFrame(at timestamp: TimeInterval, isFinal: Bool) {
             streamingLayoutManager?.animationTime = timestamp
-            redrawActiveStreamingText(at: timestamp)
+            redrawActiveStreamingText(
+                at: timestamp,
+                includesCompletedRanges: isFinal
+            )
         }
 
         private func stopAnimation() {
@@ -360,7 +367,10 @@
             layoutManager as? StreamingTextLayoutManager
         }
 
-        private func redrawActiveStreamingText(at time: TimeInterval) {
+        private func redrawActiveStreamingText(
+            at time: TimeInterval,
+            includesCompletedRanges: Bool = false
+        ) {
             guard let textStorage, let layoutManager, let textContainer else { return }
             for range in activeAnimationRanges where NSMaxRange(range) <= textStorage.length {
                 guard
@@ -368,8 +378,11 @@
                         .streamMarkdownFade,
                         at: range.location,
                         effectiveRange: nil
-                    ) as? StreamingTextFadeMetadata,
-                    fade.startTime + StreamingTextAnimationSpec.fadeDuration > time
+                    ) as? StreamingTextFadeMetadata
+                else { continue }
+                guard
+                    includesCompletedRanges
+                        || fade.animationEndTime > time
                 else { continue }
                 layoutManager.invalidateDisplay(forCharacterRange: range)
                 let glyphs = layoutManager.glyphRange(
@@ -391,10 +404,13 @@
             if abs(measuredWidth - width) <= 0.25 {
                 return measuredHeight
             }
-            if abs(frame.width - width) > 0.25 {
-                setFrameSize(NSSize(width: width, height: max(1, frame.height)))
-            }
             guard let layoutManager, let textContainer else { return 1 }
+            // A SwiftUI measurement probe must not resize the displayed view.
+            // NSTextView.setFrameSize can scroll the enclosing clip view to
+            // preserve its selection, synchronously posting a bounds change
+            // while SwiftUI is still evaluating sizeThatFits. Configure only
+            // the TextKit layout container here; SwiftUI assigns the returned
+            // frame after measurement has completed.
             textContainer.containerSize = NSSize(
                 width: width,
                 height: CGFloat.greatestFiniteMagnitude

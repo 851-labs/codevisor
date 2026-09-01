@@ -15,6 +15,88 @@ struct StreamingTextAnimationPresentationTests {
         #expect(!presentation.claimInitialAnimation(for: "new"))
     }
 
+    @Test("Projection arrival decides first-mount animation before virtualization")
+    func projectionArrivalPolicy() {
+        let registry = StreamingTextAnimationRegistry()
+
+        // The first projection predates this presentation and starts opaque.
+        registry.observeProjectedStreams(["existing"], animatesNewStreams: true)
+        #expect(!registry.presentation.claimInitialAnimation(for: "existing"))
+
+        // A followed live-edge arrival reserves exactly one entrance.
+        registry.observeProjectedStreams(
+            ["existing", "visible-live"],
+            animatesNewStreams: true
+        )
+        #expect(registry.presentation.claimInitialAnimation(for: "visible-live"))
+        #expect(!registry.presentation.claimInitialAnimation(for: "visible-live"))
+
+        // An arrival while the reader is away is opaque on first mount.
+        registry.observeProjectedStreams(
+            ["existing", "visible-live", "offscreen-live"],
+            animatesNewStreams: false
+        )
+        #expect(!registry.presentation.claimInitialAnimation(for: "offscreen-live"))
+    }
+
+    @Test("Application suspension preserves unseen arrivals for foreground playback")
+    func suspendedProjectionBacklog() {
+        let registry = StreamingTextAnimationRegistry()
+        registry.observeProjectedStreams([], animatesNewStreams: true)
+        registry.suspendPlayback()
+        registry.observeProjectedStreams(["background-row"], animatesNewStreams: false)
+        registry.resumePlayback()
+
+        #expect(registry.presentation.claimInitialAnimation(for: "background-row"))
+        #expect(!registry.presentation.claimInitialAnimation(for: "background-row"))
+    }
+
+    @Test("The first post-foreground projection preserves a delayed UIKit delta")
+    func postForegroundProjectionBacklog() {
+        let registry = StreamingTextAnimationRegistry()
+        registry.observeProjectedStreams(["before"], animatesNewStreams: true)
+        registry.suspendPlayback()
+        registry.resumePlayback()
+
+        registry.observeProjectedStreams(
+            ["before", "published-after-resume"],
+            animatesNewStreams: false
+        )
+        #expect(
+            registry.presentation.claimInitialAnimation(for: "published-after-resume")
+        )
+    }
+
+    @Test("A remounted native row baselines a semantic stream already claimed by the surface")
+    func remountedRowBaselines() {
+        let presentation = StreamingTextAnimationPresentation()
+        let firstMount = StreamingMarkdownAnimationMount()
+        let remount = StreamingMarkdownAnimationMount()
+
+        #expect(
+            firstMount.resolve(streamID: "answer", presentation: presentation)
+                .animatesInitialContent
+        )
+        let remountResolution = remount.resolve(
+            streamID: "answer",
+            presentation: presentation
+        )
+        #expect(!remountResolution.animatesInitialContent)
+        #expect(remountResolution.needsActivation)
+    }
+
+    @Test("Response rows share one live cadence and release it after settlement")
+    func responseCoordinatorLifetime() {
+        let registry = StreamingTextAnimationRegistry()
+        let first = registry.coordinator(for: "response")
+        let second = registry.coordinator(for: "response")
+        #expect(first === second)
+
+        registry.retireCoordinator(for: "response")
+        let replacement = registry.coordinator(for: "response")
+        #expect(first !== replacement)
+    }
+
     @Test("Presentation establishes its navigation baseline only once")
     func presentationBaseline() {
         let presentation = StreamingTextAnimationPresentation()

@@ -45,6 +45,7 @@ struct ChatScreen: View {
     @State private var showsInitialLoadingSpinner = false
     @State private var projectedRows: [TranscriptVirtualRow] = []
     @State private var projectedRowsVersion: UInt64 = 0
+    @State private var workedRowsVisibilityCache = TranscriptWorkedRowsVisibilityCache()
     @State private var projectedSessionID: UUID?
     /// The native gate may open only for the exact projection request whose
     /// rows have committed. An existing chat first publishes an empty/loading
@@ -186,13 +187,26 @@ struct ChatScreen: View {
                     controller: controller,
                     projectedRows: projectedRows
                 ) { activeRows, activeRowsVersion, isActiveProjectionPending in
+                    let visibleRows = workedRowsVisibilityCache.presentSettled(
+                        projectedRows,
+                        sourceVersion: projectedRowsVersion,
+                        disclosure: controller.disclosure,
+                        runningSubagentToolCallIDs: controller.runningSubagentToolCallIds
+                    )
+                    let visibleActiveRows = TranscriptWorkedRowsVisibility.present(
+                        activeRows,
+                        disclosure: controller.disclosure,
+                        activeItem: controller.activeItem,
+                        runningSubagentToolCallIDs: controller.runningSubagentToolCallIds
+                    )
                     NativeTranscriptView(
                         presentationSurface: presentationSurface,
                         sessionController: controller,
-                        rows: projectedRows,
-                        activeRows: activeRows,
-                        activeRowsVersion: activeRowsVersion,
-                        rowsVersion: projectedRowsVersion,
+                        rows: visibleRows.rows,
+                        activeRows: visibleActiveRows.rows,
+                        activeRowsVersion: activeRowsVersion ^ visibleActiveRows.revisionToken,
+                        rowsVersion: projectedRowsVersion ^ visibleRows.revisionToken,
+                        projectionRevision: projectedRowsVersion,
                         initialState: controller.scrollState,
                         followsLatest: autoFollow,
                         hasOlderHistory: controller.hasOlderHistory,
@@ -211,6 +225,7 @@ struct ChatScreen: View {
                         rowContent: { row in
                             AnyView(
                                 virtualRowContent(row)
+                                    .reportsStreamingTextAnimationActivity()
                                     .environment(\.theme, theme)
                                     .environment(\.attachmentImages, attachmentImages)
                                     .environment(\.hoverTrackingSuspended, controller.isSending)
@@ -219,6 +234,10 @@ struct ChatScreen: View {
                                     .environment(
                                         \.streamingTextAnimationVisibility,
                                         presentationSurface.textAnimationVisibility
+                                    )
+                                    .environment(
+                                        \.streamingTextAnimationRegistry,
+                                        presentationSurface.textAnimationRegistry
                                     )
                                     .environment(
                                         \.runningSubagentToolCallIds,
@@ -665,6 +684,14 @@ struct ChatScreen: View {
                 waitingOnBackgroundTask: waitingOnBackgroundTask,
                 presentation: .result
             )
+        case let .assistantWorkedHeader(header):
+            TranscriptSettledWorkedHeaderRow(header: header)
+        case let .activeWorkedHeader(header):
+            TranscriptActiveWorkedHeaderRow(controller: controller, header: header)
+        case let .assistantWorkedItem(item):
+            TranscriptSettledWorkedItemRow(item: item)
+        case let .activeWorkedItem(reference):
+            TranscriptActiveWorkedItemRow(controller: controller, reference: reference)
         case let .assistantChrome(message, slice, waitingOnBackgroundTask):
             AssistantTurnView(
                 turn: message.turn,
@@ -691,16 +718,21 @@ struct ChatScreen: View {
                 UserMessageView(message: message)
                 if showsStartingAgent {
                     ShimmeringText.startingAgent
+                        .suppressedDuringStreamingTextEntrance()
                 }
             }
         case let .backgroundTask(description):
             ChatActivityRow("Waiting on \(description)...")
+                .suppressedDuringStreamingTextEntrance()
         case let .updateGate(harnessName):
             ChatActivityRow("Waiting for \(harnessName) to finish updating...")
+                .suppressedDuringStreamingTextEntrance()
         case let .connecting(message):
             ChatActivityRow(message)
+                .suppressedDuringStreamingTextEntrance()
         case let .serverWait(message):
             ChatActivityRow(message)
+                .suppressedDuringStreamingTextEntrance()
         case let .error(message):
             errorBanner(message)
         case let .bottomSpacer(height):
@@ -712,8 +744,7 @@ struct ChatScreen: View {
         for slice: TranscriptAssistantChromeSlice
     ) -> AssistantTurnPresentation {
         switch slice {
-        case .completePrelude: .completePrelude
-        case .resultPrelude: .resultPrelude
+        case .activity: .activity
         case .epilogue: .epilogue
         }
     }

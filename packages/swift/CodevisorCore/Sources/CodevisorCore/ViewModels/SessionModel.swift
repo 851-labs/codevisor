@@ -22,6 +22,11 @@ public enum SessionProviderActivityPhase: String, Equatable, Sendable {
     }
 }
 
+struct TranscriptDetailsCacheEntry {
+    let revision: Int
+    let turn: AssistantTurn
+}
+
 /// Drives a single chat session: sends prompts, consumes the streamed
 /// `SessionUpdate`s, and exposes an observable conversation for the UI.
 @MainActor
@@ -173,7 +178,14 @@ public final class SessionModel {
     public internal(set) var isLoadingOlderHistory = false
     @ObservationIgnored var olderHistoryCursor: String?
     @ObservationIgnored var usesPaginatedHistory = false
-    @ObservationIgnored var loadingDetailIds: Set<String> = []
+    /// Fully hydrated worked details live with the in-memory session. A
+    /// canonical summary page can therefore be reapplied without making an
+    /// already-opened disclosure pass through a loading row again.
+    @ObservationIgnored var transcriptDetailsCache: [String: TranscriptDetailsCacheEntry] = [:]
+    /// One fetch per deferred item continues independently of a transient row
+    /// host. Closing or virtualizing the disclosure cannot cancel useful work,
+    /// and remounts simply await the same request.
+    @ObservationIgnored var transcriptDetailLoadTasks: [String: Task<Bool, Never>] = [:]
     /// Constant-time routing for late/nested tool updates. Values are stable
     /// conversation ids, so prepending older pages cannot invalidate them.
     @ObservationIgnored var toolOwnerItemIds: [String: UUID] = [:]

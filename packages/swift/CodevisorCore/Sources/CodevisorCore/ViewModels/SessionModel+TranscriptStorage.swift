@@ -74,7 +74,10 @@ extension SessionModel {
         // A canonical snapshot supersedes any locally inferred echo state.
         // Events after its cursor carry enough identity to reconcile normally.
         pendingOptimisticUserMessageIDs.removeAll()
-        let items = items.filter(\.hasRenderableTranscriptContent)
+        let items =
+            items
+            .map(restoringCachedTranscriptDetails)
+            .filter(\.hasRenderableTranscriptContent)
         if case .assistant = items.last {
             settledConversation = Array(items.dropLast())
             activeItem = items.last
@@ -101,6 +104,17 @@ extension SessionModel {
         } else if index == settledConversation.count, activeItem != nil {
             activeItem = item
         }
+    }
+
+    /// Reuses hydrated details before publishing a replacement history page,
+    /// so the UI never projects a deferred loading row for cached content.
+    func restoringCachedTranscriptDetails(_ item: ConversationItem) -> ConversationItem {
+        guard case let .assistant(message) = item,
+            let itemId = message.turn.deferredDetailItemId,
+            let cached = transcriptDetailsCache[itemId],
+            cached.revision == message.turn.detailRevision
+        else { return item }
+        return .assistant(AssistantMessage(id: message.id, turn: cached.turn))
     }
 
     var itemCount: Int {

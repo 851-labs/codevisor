@@ -100,6 +100,7 @@
             private var preparedIsStreaming = false
             private var preparedAnimatesInitialContent = false
             private var preparedReduceMotion = false
+            private var preparedPlaybackRevision = 0
             private var prepared: PreparedStreamingText?
 
             fileprivate func preparedText(
@@ -124,6 +125,7 @@
                     preparedIsStreaming == (animation?.isStreaming ?? false),
                     preparedAnimatesInitialContent == (animation?.animatesInitialContent ?? false),
                     preparedReduceMotion == (animation?.reduceMotion ?? false),
+                    preparedPlaybackRevision == (animation?.playbackRevision ?? 0),
                     let prepared
                 {
                     return prepared
@@ -136,6 +138,7 @@
                 preparedIsStreaming = animation?.isStreaming ?? false
                 preparedAnimatesInitialContent = animation?.animatesInitialContent ?? false
                 preparedReduceMotion = animation?.reduceMotion ?? false
+                preparedPlaybackRevision = animation?.playbackRevision ?? 0
                 prepared = value
                 return value
             }
@@ -387,15 +390,19 @@
         }
 
         @objc private func animationFrame(_ displayLink: CADisplayLink) {
-            streamingTextAnimationFrame(at: displayLink.timestamp)
-            if let latestAnimationEnd, displayLink.timestamp >= latestAnimationEnd {
+            let isFinal = latestAnimationEnd.map { displayLink.timestamp >= $0 } ?? true
+            streamingTextAnimationFrame(at: displayLink.timestamp, isFinal: isFinal)
+            if isFinal {
                 stopAnimation()
             }
         }
 
-        public func streamingTextAnimationFrame(at timestamp: TimeInterval) {
+        public func streamingTextAnimationFrame(at timestamp: TimeInterval, isFinal: Bool) {
             streamingLayoutManager?.animationTime = timestamp
-            redrawActiveStreamingText(at: timestamp)
+            redrawActiveStreamingText(
+                at: timestamp,
+                includesCompletedRanges: isFinal
+            )
         }
 
         private func stopAnimation() {
@@ -407,15 +414,21 @@
             layoutManager as? UIKitStreamingTextLayoutManager
         }
 
-        private func redrawActiveStreamingText(at time: TimeInterval) {
+        private func redrawActiveStreamingText(
+            at time: TimeInterval,
+            includesCompletedRanges: Bool = false
+        ) {
             for range in activeAnimationRanges where NSMaxRange(range) <= textStorage.length {
                 guard
                     let fade = textStorage.attribute(
                         .streamMarkdownFade,
                         at: range.location,
                         effectiveRange: nil
-                    ) as? StreamingTextFadeMetadata,
-                    fade.startTime + StreamingTextAnimationSpec.fadeDuration > time
+                    ) as? StreamingTextFadeMetadata
+                else { continue }
+                guard
+                    includesCompletedRanges
+                        || fade.animationEndTime > time
                 else { continue }
                 layoutManager.invalidateDisplay(forCharacterRange: range)
                 let glyphs = layoutManager.glyphRange(

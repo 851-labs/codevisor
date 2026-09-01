@@ -11,6 +11,12 @@ import SwiftUI
 /// transparent to opaque on this timeline.
 enum StreamingTextAnimationSpec {
     static let fadeDuration: TimeInterval = 0.150
+    /// Color emoji are assembled from one or more Unicode scalars. Provider
+    /// chunks can append a variation selector, skin tone, or ZWJ component to
+    /// the trailing grapheme after its base scalar has arrived. Keep that
+    /// grapheme pending for a few frames, then reveal the completed glyph in
+    /// one paint instead of alpha-blending several transient glyph shapes.
+    static let emojiStabilizationDelay: TimeInterval = 0.050
     static let minimumTargetQueueLead: TimeInterval = 0.055
     static let defaultTargetQueueLead: TimeInterval = 0.100
     static let maximumTargetQueueLead: TimeInterval = 0.350
@@ -82,204 +88,93 @@ enum StreamingTextAnimationSpec {
     }
 }
 
-/// One visible chat surface's animation lifecycle. A session can appear in
-/// several windows at once, so this scope belongs to the view, not the model.
-/// Each appearance creates a new generation after buffered events have been
-/// flushed; existing text settles in that generation before live animation
-/// resumes.
+/// Animation ownership shared by every virtual Markdown row on one retained
+/// transcript surface. Row hosts are free to remount or change renderer while
+/// semantic stream claims and response-wide pacing remain stable.
 @MainActor
-@Observable
-public final class StreamingTextAnimationVisibility {
-    private let presentationID = UUID()
-    public private(set) var generation = 0
-    public private(set) var isVisible: Bool
+public final class StreamingTextAnimationRegistry {
+    public let presentation = StreamingTextAnimationPresentation()
+    private var coordinators: [String: StreamingContentAnimationCoordinator] = [:]
+    private var knownProjectedStreamIDs: Set<String> = []
+    private var hasObservedProjection = false
+    private var isPlaybackSuspended = false
+    /// UIKit may publish its first post-foreground projection only after the
+    /// scene becomes active. Protect that single delta from offscreen
+    /// baselining just as if it had been observed during suspension.
+    private var preservesNextProjectionDelta = false
 
-    /// Uniquely identifies one appearance of one chat surface. Unlike the
-    /// numeric generation alone, this cannot collide across windows.
-    public var presentationKey: String {
-        "\(presentationID.uuidString):\(generation)"
+    public init() {}
+
+    public func coordinator(for semanticStreamID: String) -> StreamingContentAnimationCoordinator {
+        if let coordinator = coordinators[semanticStreamID] { return coordinator }
+        let coordinator = StreamingContentAnimationCoordinator()
+        if isPlaybackSuspended { coordinator.suspendPlayback() }
+        coordinators[semanticStreamID] = coordinator
+        return coordinator
     }
 
-    public init(initiallyVisible: Bool = true) {
-        isVisible = initiallyVisible
+    public func retireCoordinator(for semanticStreamID: String) {
+        coordinators.removeValue(forKey: semanticStreamID)?.reset()
     }
 
-    public func appear() {
-        guard !isVisible else { return }
-        generation &+= 1
-        isVisible = true
+    /// Observes the complete active Markdown row set before a virtualizer can
+    /// mount any of it. The first snapshot is navigation state and therefore
+    /// starts opaque. Later rows animate only at the followed live edge;
+    /// offscreen arrivals are already presented when scrolling reaches them.
+    public func observeProjectedStreams<S: Sequence>(
+        _ streamIDs: S,
+        animatesNewStreams: Bool
+    ) where S.Element == String {
+        let current = Set(streamIDs)
+        guard hasObservedProjection else {
+            hasObservedProjection = true
+            knownProjectedStreamIDs.formUnion(current)
+            presentation.settleUnpresentedStreams(current)
+            return
+        }
+
+        let newlyProjected = current.subtracting(knownProjectedStreamIDs)
+        knownProjectedStreamIDs.formUnion(current)
+        guard !newlyProjected.isEmpty else {
+            if preservesNextProjectionDelta { preservesNextProjectionDelta = false }
+            return
+        }
+
+        let preservesSuspendedArrival = isPlaybackSuspended || preservesNextProjectionDelta
+        preservesNextProjectionDelta = false
+        if animatesNewStreams || preservesSuspendedArrival {
+            presentation.reserveInitialAnimations(for: newlyProjected)
+        } else {
+            presentation.settleUnpresentedStreams(newlyProjected)
+        }
     }
 
-    public func disappear() {
-        isVisible = false
+    /// Freezes presentation time without disabling or settling the streams.
+    /// Provider/model state may continue advancing while the application is
+    /// backgrounded; every coordinator resumes from the same visual instant.
+    public func suspendPlayback() {
+        guard !isPlaybackSuspended else { return }
+        isPlaybackSuspended = true
+        preservesNextProjectionDelta = false
+        for coordinator in coordinators.values { coordinator.suspendPlayback() }
+    }
+
+    public func resumePlayback() {
+        guard isPlaybackSuspended else { return }
+        isPlaybackSuspended = false
+        preservesNextProjectionDelta = true
+        for coordinator in coordinators.values { coordinator.resumePlayback() }
     }
 }
 
-private struct StreamingTextAnimationVisibilityKey: EnvironmentKey {
-    static let defaultValue: StreamingTextAnimationVisibility? = nil
+private struct StreamingTextAnimationRegistryKey: EnvironmentKey {
+    static let defaultValue: StreamingTextAnimationRegistry? = nil
 }
 
 public extension EnvironmentValues {
-    var streamingTextAnimationVisibility: StreamingTextAnimationVisibility? {
-        get { self[StreamingTextAnimationVisibilityKey.self] }
-        set { self[StreamingTextAnimationVisibilityKey.self] = newValue }
-    }
-}
-
-/// Remembers which semantic text streams have already been presented inside
-/// one mounted transcript turn. The owner seeds streams that existed before
-/// the turn view mounted; a stream first claimed afterward is genuinely new
-/// live output and may animate its initial content.
-///
-/// The presentation deliberately lives above AppKit/UIKit text coordinators.
-/// Native surfaces can be recreated by navigation, disclosure, virtualization,
-/// or Markdown tail reclassification without making old text new again.
-@MainActor
-public final class StreamingTextAnimationPresentation {
-    private var presentedStreamIDs: Set<String>
-    private var hasEstablishedBaseline: Bool
-    private var visibilityGeneration: Int?
-    private var settlementTokens: [String: Int] = [:]
-    private var settledRestorationIDs: Set<Int> = []
-    private var nextSettlementToken = 0
-    public private(set) var animationsEnabled = true
-
-    public init() {
-        presentedStreamIDs = []
-        hasEstablishedBaseline = false
-    }
-
-    public init(settledStreamIDs: [String]) {
-        presentedStreamIDs = Set(settledStreamIDs)
-        hasEstablishedBaseline = true
-    }
-
-    /// Records the streams present at the navigation/mount boundary. The
-    /// builder is deliberately lazy: SwiftUI may reconstruct its value on
-    /// every streamed flush, but collecting a turn's entries should happen
-    /// only once for this presentation object.
-    public func establishBaseline(_ streamIDs: () -> [String]) {
-        guard !hasEstablishedBaseline else { return }
-        presentedStreamIDs.formUnion(streamIDs())
-        hasEstablishedBaseline = true
-    }
-
-    /// Returns true only for a semantic stream first seen during this mounted
-    /// presentation. A later native-view remount of the same stream baselines
-    /// its current contents instead of replaying their entrance animation.
-    public func claimInitialAnimation(for streamID: String) -> Bool {
-        presentedStreamIDs.insert(streamID).inserted
-    }
-
-    /// Applies one view-appearance boundary. Repeated body evaluations in the
-    /// same generation must not settle text that arrived live afterward.
-    public func updateVisibility(
-        generation: Int,
-        isVisible: Bool,
-        settling streamIDs: () -> [String]
-    ) {
-        animationsEnabled = isVisible
-        guard isVisible, visibilityGeneration != generation else { return }
-        visibilityGeneration = generation
-        settle(streamIDs())
-    }
-
-    /// Marks one asynchronous durable-history hydration as already presented.
-    /// The restoration id makes this idempotent while allowing later live
-    /// streams in the same turn to animate normally.
-    public func settleRestoredStreams(
-        _ streamIDs: () -> [String],
-        restorationID: Int
-    ) {
-        guard settledRestorationIDs.insert(restorationID).inserted else { return }
-        settle(streamIDs())
-    }
-
-    /// Changes whenever an already-mounted semantic stream must baseline its
-    /// current contents again, such as after navigation or history hydration.
-    public func settlementToken(for streamID: String) -> Int? {
-        settlementTokens[streamID]
-    }
-
-    private func settle(_ streamIDs: [String]) {
-        guard !streamIDs.isEmpty else { return }
-        nextSettlementToken &+= 1
-        for streamID in streamIDs {
-            presentedStreamIDs.insert(streamID)
-            settlementTokens[streamID] = nextSettlementToken
-        }
-    }
-}
-
-/// A response-wide animation clock shared by multiple Markdown slices and
-/// native elements such as attachment previews. Sharing this object keeps
-/// every surface on one document-order cadence instead of restarting at each
-/// renderer boundary.
-@MainActor
-@Observable
-public final class StreamingContentAnimationCoordinator {
-    public private(set) var hasActiveEntranceAnimation = false
-    let timeline = StreamingTextAnimationTimeline()
-    private var pendingEntranceSourceIDs: Set<String> = []
-
-    public init() {
-        timeline.observeActivity { [weak self] active in
-            self?.hasActiveEntranceAnimation = active
-        }
-    }
-
-    public func waitUntilIdle() async throws {
-        try await timeline.waitUntilIdle()
-    }
-
-    /// Waits until the shared clock is idle and every mounted Markdown slice
-    /// has finished its pending structural entrances. The extra stable pass
-    /// lets SwiftUI deliver a newly-rendered child's preference before a
-    /// provider-completion task decides that the response can be finalized.
-    public func waitUntilFullyIdle() async throws {
-        await Task.yield()
-        while true {
-            try await timeline.waitUntilIdle()
-            try Task.checkCancellation()
-            await Task.yield()
-            guard pendingEntranceSourceIDs.isEmpty else {
-                try await Task.sleep(for: .milliseconds(1))
-                continue
-            }
-
-            await Task.yield()
-            try Task.checkCancellation()
-            guard pendingEntranceSourceIDs.isEmpty else { continue }
-            try await timeline.waitUntilIdle()
-            guard pendingEntranceSourceIDs.isEmpty else { continue }
-            return
-        }
-    }
-
-    public func scheduleElementEntrance() {
-        timeline.scheduleBlockEntrance()
-    }
-
-    public func reset() {
-        timeline.reset()
-    }
-
-    func setPendingEntrance(_ pending: Bool, sourceID: String) {
-        if pending {
-            pendingEntranceSourceIDs.insert(sourceID)
-        } else {
-            pendingEntranceSourceIDs.remove(sourceID)
-        }
-    }
-
-    public static var elementEntranceAnimation: Animation {
-        .timingCurve(
-            StreamingTextAnimationSpec.fadeCurveX1,
-            StreamingTextAnimationSpec.fadeCurveY1,
-            StreamingTextAnimationSpec.fadeCurveX2,
-            StreamingTextAnimationSpec.fadeCurveY2,
-            duration: StreamingTextAnimationSpec.fadeDuration
-        )
+    var streamingTextAnimationRegistry: StreamingTextAnimationRegistry? {
+        get { self[StreamingTextAnimationRegistryKey.self] }
+        set { self[StreamingTextAnimationRegistryKey.self] = newValue }
     }
 }
 
@@ -303,6 +198,43 @@ final class StreamingTextAnimationTimeline {
     private var activityEndTask: Task<Void, Never>?
     private var reportedActive = false
     private var observerGeneration = 0
+    private var suspensionStartTime: TimeInterval?
+
+    var isSuspended: Bool { suspensionStartTime != nil }
+
+    /// Converts the system clock into the presentation clock. While suspended,
+    /// all provider updates share the frozen instant and accumulate behind the
+    /// same reveal playhead.
+    func presentationTime(at time: TimeInterval) -> TimeInterval {
+        suspensionStartTime ?? time
+    }
+
+    @discardableResult
+    func suspend(at now: TimeInterval = CACurrentMediaTime()) -> Bool {
+        guard suspensionStartTime == nil else { return false }
+        discardExpired(at: now)
+        suspensionStartTime = now
+        activityEndTask?.cancel()
+        activityEndTask = nil
+        reportActivity(false)
+        return true
+    }
+
+    @discardableResult
+    func resume(at now: TimeInterval = CACurrentMediaTime()) -> Bool {
+        guard let suspensionStartTime else { return false }
+        let duration = max(0, now - suspensionStartTime)
+        self.suspensionStartTime = nil
+        for fade in scheduledFades { fade.startTime += duration }
+        for sourceID in Array(sourceObservations.keys) {
+            guard let lastArrivalTime = sourceObservations[sourceID]?.lastArrivalTime else {
+                continue
+            }
+            sourceObservations[sourceID]?.lastArrivalTime = lastArrivalTime + duration
+        }
+        refreshActivity(at: now)
+        return true
+    }
 
     /// Enqueues one provider batch and rebalances only words that have not
     /// started fading. The queue behaves like a small media jitter buffer: a
@@ -311,19 +243,43 @@ final class StreamingTextAnimationTimeline {
     /// cannot make opacity jump.
     func scheduleSegments(
         characterCounts: [Int],
+        revealStyles: [StreamingTextRevealStyle]? = nil,
         at now: TimeInterval
     ) -> [StreamingTextFadeMetadata] {
         guard !characterCounts.isEmpty else { return [] }
+        precondition(revealStyles.map { $0.count == characterCounts.count } ?? true)
+        let now = presentationTime(at: now)
         discardExpired(at: now)
-        let additions = characterCounts.map { count in
-            StreamingTextFadeMetadata(
+        let additions = characterCounts.enumerated().map { index, count in
+            let revealStyle = revealStyles?[index] ?? .faded
+            return StreamingTextFadeMetadata(
                 startTime: .infinity,
-                characterCount: max(1, count)
+                characterCount: max(1, count),
+                revealStyle: revealStyle,
+                minimumStartTime: revealStyle == .atomic
+                    ? now + StreamingTextAnimationSpec.emojiStabilizationDelay
+                    : nil
             )
         }
         scheduledFades.append(contentsOf: additions)
         rebalancePending(at: now)
         return additions
+    }
+
+    /// Extends the small composition window for a trailing emoji whose
+    /// grapheme changed before it became visible. Once an emoji is on screen
+    /// it is never hidden again.
+    func restabilizeAtomicSegment(
+        _ metadata: StreamingTextFadeMetadata,
+        at now: TimeInterval
+    ) {
+        let now = presentationTime(at: now)
+        guard metadata.revealStyle == .atomic, metadata.startTime > now else { return }
+        metadata.minimumStartTime = max(
+            metadata.minimumStartTime ?? now,
+            now + StreamingTextAnimationSpec.emojiStabilizationDelay
+        )
+        rebalancePending(at: now)
     }
 
     /// Records one semantic source revision. Calls from multiple native
@@ -335,10 +291,13 @@ final class StreamingTextAnimationTimeline {
         sourceID: String,
         at now: TimeInterval
     ) {
+        let now = presentationTime(at: now)
         var observation = sourceObservations[sourceID] ?? SourceObservation()
         guard observation.text != text else { return }
 
-        let isAppendOnly = text.hasPrefix(observation.text)
+        // Compare source code units rather than grapheme clusters so adding a
+        // modifier to the trailing emoji remains an append-only observation.
+        let isAppendOnly = text.utf8.starts(with: observation.text.utf8)
         let deltaCharacterCount =
             isAppendOnly
             ? max(0, text.utf16.count - observation.text.utf16.count)
@@ -410,7 +369,10 @@ final class StreamingTextAnimationTimeline {
     /// streamed glyphs. Callers wait for the timeline to become idle before
     /// inserting the block, then wait again before mounting later content.
     func scheduleBlockEntrance(at now: TimeInterval = CACurrentMediaTime()) {
-        _ = scheduleSegments(characterCounts: [1], at: now)
+        _ = scheduleSegments(
+            characterCounts: [1],
+            at: presentationTime(at: now)
+        )
     }
 
     /// Removes fades whose rendered words were replaced, finalized, or
@@ -421,6 +383,7 @@ final class StreamingTextAnimationTimeline {
         at now: TimeInterval = CACurrentMediaTime()
     ) {
         guard !metadata.isEmpty else { return }
+        let now = presentationTime(at: now)
         let identities = Set(metadata.map(ObjectIdentifier.init))
         for fade in metadata {
             fade.startTime = now - StreamingTextAnimationSpec.fadeDuration
@@ -436,6 +399,10 @@ final class StreamingTextAnimationTimeline {
         await Task.yield()
         while true {
             try Task.checkCancellation()
+            if isSuspended {
+                try await Task.sleep(for: .milliseconds(16))
+                continue
+            }
             let now = CACurrentMediaTime()
             guard let latestAnimationEndTime, latestAnimationEndTime > now else { return }
             try await Task.sleep(for: .seconds(latestAnimationEndTime - now))
@@ -443,7 +410,7 @@ final class StreamingTextAnimationTimeline {
     }
 
     func reset() {
-        let now = CACurrentMediaTime()
+        let now = presentationTime(at: CACurrentMediaTime())
         for fade in scheduledFades {
             fade.startTime = now - StreamingTextAnimationSpec.fadeDuration
         }
@@ -471,7 +438,12 @@ final class StreamingTextAnimationTimeline {
             return
         }
 
-        let now = CACurrentMediaTime()
+        let now = presentationTime(at: CACurrentMediaTime())
+        guard !isSuspended else {
+            reportedActive = false
+            deliverActivity(false)
+            return
+        }
         let active = isAnimationActive(at: now)
         reportedActive = active
         deliverActivity(active)
@@ -515,6 +487,9 @@ final class StreamingTextAnimationTimeline {
         var start = firstStart
         var backlogCharacterCount = pending.reduce(0) { $0 + $1.characterCount }
         for fade in pending {
+            if let minimumStartTime = fade.minimumStartTime {
+                start = max(start, minimumStartTime)
+            }
             fade.startTime = start
             start += StreamingTextAnimationSpec.segmentDelay(
                 revealedCharacterCount: fade.characterCount,
@@ -528,7 +503,7 @@ final class StreamingTextAnimationTimeline {
 
     private func discardExpired(at now: TimeInterval) {
         scheduledFades.removeAll {
-            $0.startTime + StreamingTextAnimationSpec.fadeDuration <= now
+            $0.animationEndTime <= now
         }
     }
 
@@ -536,9 +511,15 @@ final class StreamingTextAnimationTimeline {
         discardExpired(at: now)
         latestAnimationEndTime =
             scheduledFades
-            .map { $0.startTime + StreamingTextAnimationSpec.fadeDuration }
+            .map(\.animationEndTime)
             .max()
         guard activityObserver != nil else { return }
+        guard !isSuspended else {
+            activityEndTask?.cancel()
+            activityEndTask = nil
+            reportActivity(false)
+            return
+        }
         let active = latestAnimationEndTime.map { $0 > now } ?? false
         reportActivity(active)
         if active, let latestAnimationEndTime {

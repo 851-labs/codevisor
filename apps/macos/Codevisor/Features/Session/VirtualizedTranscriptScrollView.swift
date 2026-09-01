@@ -23,7 +23,16 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private static let atBottomThreshold: CGFloat = 2
     private static let maxMeasurementCacheCount = 3
     private static let sendAnimationDuration: CFTimeInterval = 0.46
+    private static let disclosureExitDuration: CFTimeInterval = 0.2
+    private static let disclosureExitAnimationKey = "codevisor.disclosure-exit"
+    private static let disclosureExitMaskAnimationKey = "codevisor.disclosure-exit-mask"
+    private static let disclosureCollapseAnimationKey = "codevisor.disclosure-collapse"
     private static let sendAssistantHoldAnimationKey = "codevisor.send-assistant-hold"
+
+    private struct DisclosureCollapsePresentation {
+        let container: TranscriptDisclosureCollapseContainer
+        let hosts: [(key: String, host: TranscriptMountedRowHost)]
+    }
 
     private let transcriptDocumentView = FlippedTranscriptDocumentView()
     private let streamingTextFrameClock = StreamingTextAnimationFrameClock()
@@ -32,6 +41,9 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private var rowByKey: [String: TranscriptVirtualRow] = [:]
     private var projectedRows: [TranscriptVirtualRow] = []
     private var projectedRowsVersion: UInt64?
+    /// Kept separate from the combined row version so an XOR collision cannot
+    /// suppress a newly-published settled projection.
+    private var receivedProjectionRevision: UInt64?
     private var activeRows: [TranscriptVirtualRow] = []
     private var activeRowsVersion: UInt64?
     private var activeRowsRange: Range<Int>?
@@ -55,6 +67,16 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     /// Detached hosts remain immediately reusable. Hosts exceeding the warm
     /// pool are released one at a time after the gesture.
     private var retiringHosts: [TranscriptRowHost] = []
+    /// Automatic settlement commits final virtual geometry immediately. One
+    /// clipped container retains only the already-mounted worked pixels for the
+    /// brief collapse, so disclosure motion never depends on cold measurements.
+    private var disclosureCollapsePresentations: [UUID: DisclosureCollapsePresentation] = [:]
+    private var disclosureExitTasks: [UUID: Task<Void, Never>] = [:]
+    /// Surviving mounted rows keep their pre-collapse presentation origin for
+    /// the same brief interval. Their model frames are already final, but this
+    /// interpolation makes the content below travel with the closing body
+    /// instead of snapping upward before the outgoing pixels have disappeared.
+    private var pendingDisclosureCollapseOrigins: [String: CGFloat]?
     private let markdownHostCache = TranscriptMarkdownHostCache()
     private var recycledMarkdownHosts: [TranscriptMarkdownRowHost] = []
     private let virtualWindowPolicy = TranscriptVirtualWindowPolicy()
@@ -80,6 +102,15 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private var displayFrameRequested = false
     private var modelPresentationFrameRequested = false
     private var mountedRowsUpdateRequested = false
+    /// AppKit can synchronously post a clip-view bounds change while a newly
+    /// mounted SwiftUI/TextKit row is being laid out. Re-entering reconciliation
+    /// from that notification mutates AttributeGraph during its active update.
+    /// Keep the visible-row flush synchronous, but coalesce any nested pass onto
+    /// a later display/run-loop frame.
+    private var isUpdatingMountedRows = false
+    private var deferredMountedRowsUpdateScheduled = false
+    private var deferredMountedRowsUpdateRequested = false
+    private var deferredMountedRowsRangeOverride: Range<Int>?
     private var initialPresentationGate = TranscriptInitialPresentationGate()
     /// A warm surface keeps displaying its last exact snapshot until both the
     /// newly-created outer and active projection scopes have caught up. This
@@ -298,6 +329,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         presentationDisplayLink?.invalidate()
         measurementCommitTask?.cancel()
         disclosureAnchorReleaseTask?.cancel()
+        for task in disclosureExitTasks.values { task.cancel() }
         sendPresentationWatchdog?.cancel()
         if let boundsObserver {
             NotificationCenter.default.removeObserver(boundsObserver)
@@ -399,6 +431,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         activeRows newActiveRows: [TranscriptVirtualRow],
         activeRowsVersion newActiveRowsVersion: UInt64,
         rowsVersion newRowsVersion: UInt64,
+        projectionRevision newProjectionRevision: UInt64,
         initialState: SessionScrollState?,
         followsLatest newFollowsLatest: Bool,
         hasOlderHistory newHasOlderHistory: Bool,
@@ -409,6 +442,8 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         layoutFingerprint newLayoutFingerprint: Int,
         scrollCommand newScrollCommand: TranscriptScrollCommand,
         sendAnimationRequest newSendAnimationRequest: UserSendAnimationRequest?,
+        textAnimationRegistry: StreamingTextAnimationRegistry,
+        allowsLiveTextAnimation: Bool,
         reduceMotion newReduceMotion: Bool,
         markdownRowStyle newMarkdownRowStyle: TranscriptMarkdownRowStyle,
         claimSendAnimation newClaimSendAnimation: @escaping (UserSendAnimationRequest) -> Bool,
@@ -449,6 +484,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             return
         }
         let projectedRowsChanged = projectedRowsVersion != newRowsVersion
+        let projectionRevisionChanged = receivedProjectionRevision != newProjectionRevision
         let activeRowsChanged = activeRowsVersion != newActiveRowsVersion
         hasOlderHistory = newHasOlderHistory
         let paginationHeaderReservationChanged = paginationHeaderLayout.reserveIfNeeded(
@@ -500,10 +536,22 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             scrollCommand = newScrollCommand
         }
 
+        let followsAnimationEdge = followsLatest || newScrollCommand != scrollCommand
+        textAnimationRegistry.observeProjectedStreams(
+            newActiveRows.compactMap { row in
+                guard case let .markdownChunk(chunk) = row.content,
+                    chunk.lifecycle == .receiving
+                else { return nil }
+                return row.layoutKey
+            },
+            animatesNewStreams: allowsLiveTextAnimation && followsAnimationEdge
+        )
+
         let rebuiltRows: Bool
-        if projectedRowsChanged || layoutFingerprintChanged {
+        if projectedRowsChanged || projectionRevisionChanged || layoutFingerprintChanged {
             projectedRows = newProjectedRows
             projectedRowsVersion = newRowsVersion
+            receivedProjectionRevision = newProjectionRevision
             activeRows = newActiveRows
             activeRowsVersion = newActiveRowsVersion
             let resolution = resolvedRows(
@@ -564,6 +612,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             )
             rows = newRows
             rowByKey = Dictionary(uniqueKeysWithValues: newRows.map { ($0.layoutKey, $0) })
+            retireRemovedMountedHosts(previousRowsByKey: previousRowsByKey)
             _ = activateMeasurementCacheIfNeeded()
             for row in newRows {
                 if case let .bottomSpacer(height) = row.content {
@@ -885,6 +934,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     func prepareForPresentationAttachment() {
         isAwaitingWarmProjection = initialPresentationGate.isReady
         projectedRowsVersion = nil
+        receivedProjectionRevision = nil
         activeRowsVersion = nil
     }
 
@@ -893,6 +943,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         isDetaching = true
         uninstallPresentationFrameDriver()
         interruptSendPresentation()
+        finishAllDisclosureCollapsePresentations()
         rowContent = nil
         claimSendAnimation = nil
         onViewportChange = nil
@@ -976,12 +1027,49 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     }
 
     private func requestMountedRowsUpdate() {
+        guard !isUpdatingMountedRows else {
+            deferMountedRowsUpdateUntilLayoutCompletes()
+            return
+        }
         guard presentationDisplayLink != nil, !inLiveResize else {
             updateMountedRows()
             return
         }
         mountedRowsUpdateRequested = true
         requestDisplayFrame()
+    }
+
+    private func deferMountedRowsUpdateUntilLayoutCompletes(
+        rangeOverride: Range<Int>? = nil
+    ) {
+        // A display-link callback cannot run inside the current AppKit layout
+        // stack, so it is the cheapest coalescing boundary when available.
+        if rangeOverride == nil, presentationDisplayLink != nil, !inLiveResize {
+            mountedRowsUpdateRequested = true
+            requestDisplayFrame()
+            return
+        }
+
+        deferredMountedRowsUpdateRequested = true
+        if let rangeOverride {
+            deferredMountedRowsRangeOverride = rangeOverride
+        }
+        guard !deferredMountedRowsUpdateScheduled else { return }
+        deferredMountedRowsUpdateScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.deferredMountedRowsUpdateScheduled = false
+            guard self.deferredMountedRowsUpdateRequested else { return }
+            self.deferredMountedRowsUpdateRequested = false
+            let rangeOverride = self.deferredMountedRowsRangeOverride
+            self.deferredMountedRowsRangeOverride = nil
+            guard !self.isDetaching else { return }
+            if let rangeOverride {
+                self.updateMountedRows(rangeOverride: rangeOverride)
+            } else {
+                self.requestMountedRowsUpdate()
+            }
+        }
     }
 
     @objc private func presentationDisplayLinkDidFire(_ displayLink: CADisplayLink) {
@@ -1298,6 +1386,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                 virtualLayout.indexByKey[$0]
             }.min()
             positionMountedRows(startingAt: firstChangedIndex)
+            animatePendingDisclosureCollapse()
 
             if !initialPositionApplied {
                 applyPendingInitialPositionIfPossible()
@@ -1600,6 +1689,12 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
 
     private func updateMountedRows(rangeOverride: Range<Int>? = nil) {
         guard initialPositionApplied || contentView.bounds.height > 0 else { return }
+        guard !isUpdatingMountedRows else {
+            deferMountedRowsUpdateUntilLayoutCompletes(rangeOverride: rangeOverride)
+            return
+        }
+        isUpdatingMountedRows = true
+        defer { isUpdatingMountedRows = false }
         let profiler = TranscriptPerformanceProfiler.shared
         let windowIdentity = TranscriptPerformanceIdentity(
             rowKey: "transcript",
@@ -2010,6 +2105,8 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             case .planDocument: "plan document"
             case .planHeader: "plan header"
             case .assistantResult: "assistant result"
+            case .assistantWorkedHeader, .activeWorkedHeader: "worked header"
+            case .assistantWorkedItem, .activeWorkedItem: "worked item"
             case .assistantChrome: "assistant chrome"
             case .assistantAttachment: "attachment"
             case .active: "active message"
@@ -2095,6 +2192,74 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
 
     private func retireMountedHosts(excluding retainedKeys: Set<String>) {
         let obsoleteKeys = mountedHosts.keys.filter { !retainedKeys.contains($0) }
+        retireMountedHosts(withKeys: obsoleteKeys)
+    }
+
+    /// Row-set removals are authoritative and cannot wait for the virtual
+    /// window handoff. The handoff prunes invalid keys before its ordinary
+    /// retirement pass, so leaving these hosts mounted would keep their pixels
+    /// visible after disclosure geometry closes underneath them.
+    private func retireRemovedMountedHosts(
+        previousRowsByKey: [String: TranscriptVirtualRow]
+    ) {
+        let removedMountedKeys = previousRowsByKey.keys.filter {
+            rowByKey[$0] == nil && mountedHosts[$0] != nil
+        }
+        let automaticSections = automaticallyCollapsedWorkedSections(
+            previousRowsByKey: previousRowsByKey
+        )
+        let automaticGroups = Dictionary(grouping: removedMountedKeys) { key in
+            previousRowsByKey[key]?.workedSection?.identity
+        }.compactMap { identity, keys -> [String]? in
+            guard let identity, automaticSections.contains(identity),
+                keys.contains(where: { key in
+                    previousRowsByKey[key]?.workedSection?.role == .content
+                })
+            else { return nil }
+            return keys.filter {
+                previousRowsByKey[$0]?.workedSection?.role == .content
+            }
+        }.filter(canAnimateDisclosureCollapse)
+        let animatedKeys = Set(automaticGroups.flatMap { $0 })
+
+        if !animatedKeys.isEmpty {
+            beginDisclosureViewportAnchor()
+            pendingDisclosureCollapseOrigins = Dictionary(
+                uniqueKeysWithValues: mountedHosts.compactMap { key, host in
+                    guard !animatedKeys.contains(key) else { return nil }
+                    return (key, presentedOriginY(for: host))
+                }
+            )
+            for keys in automaticGroups {
+                startAutomaticDisclosureCollapse(keys: keys)
+            }
+        }
+        retireMountedHosts(withKeys: removedMountedKeys.filter { !animatedKeys.contains($0) })
+    }
+
+    private func automaticallyCollapsedWorkedSections(
+        previousRowsByKey: [String: TranscriptVirtualRow]
+    ) -> Set<TranscriptWorkedSectionIdentity> {
+        let previouslyFixedOpen = Set(
+            previousRowsByKey.values.compactMap { row -> TranscriptWorkedSectionIdentity? in
+                guard case let .header(_, isFixedExpanded) = row.workedSection?.role,
+                    isFixedExpanded
+                else { return nil }
+                return row.workedSection?.identity
+            }
+        )
+        let nowUserControlled = Set(
+            rowByKey.values.compactMap { row -> TranscriptWorkedSectionIdentity? in
+                guard case let .header(_, isFixedExpanded) = row.workedSection?.role,
+                    !isFixedExpanded
+                else { return nil }
+                return row.workedSection?.identity
+            }
+        )
+        return previouslyFixedOpen.intersection(nowUserControlled)
+    }
+
+    private func retireMountedHosts(withKeys obsoleteKeys: [String]) {
         guard !obsoleteKeys.isEmpty else { return }
         let profiler = TranscriptPerformanceProfiler.shared
         let identity = TranscriptPerformanceIdentity(
@@ -2112,11 +2277,175 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                 storeDetachedHost(host, for: key)
             }
         }
+        assert(mountedHosts.keys.allSatisfy { rowByKey[$0] != nil })
         if !retiringHosts.isEmpty { requestDisplayFrame() }
+    }
+
+    private func canAnimateDisclosureCollapse(_ keys: [String]) -> Bool {
+        guard !reduceMotion,
+            initialPositionApplied,
+            window != nil,
+            transcriptDocumentView.alphaValue > 0
+        else { return false }
+        let visibleDocumentRect = NSRect(
+            x: 0,
+            y: contentView.bounds.minY,
+            width: transcriptDocumentView.bounds.width,
+            height: contentView.bounds.height
+        )
+        return keys.contains { key in
+            guard let host = mountedHosts[key], host.layer != nil else { return false }
+            return host.frame.intersects(visibleDocumentRect)
+        }
+    }
+
+    /// The automatic settlement path retains only pixels that are already in
+    /// the virtual window. One shared mask retracts them under the header while
+    /// the canonical row set is already collapsed, matching the old local
+    /// disclosure without measuring or mounting any additional content.
+    private func startAutomaticDisclosureCollapse(keys: [String]) {
+        let hosts = keys.compactMap { key -> (String, TranscriptMountedRowHost)? in
+            guard let host = mountedHosts.removeValue(forKey: key) else { return nil }
+            return (key, host)
+        }
+        guard !hosts.isEmpty else { return }
+
+        let presentationFrame = hosts.reduce(CGRect.null) { partial, entry in
+            partial.union(entry.1.frame)
+        }
+        let container = TranscriptDisclosureCollapseContainer(frame: presentationFrame)
+        container.wantsLayer = true
+        container.setAccessibilityHidden(true)
+        transcriptDocumentView.addSubview(container, positioned: .above, relativeTo: nil)
+
+        for (_, host) in hosts {
+            host.onHeightChange = nil
+            host.setAccessibilityHidden(true)
+            let frame = host.frame.offsetBy(
+                dx: -presentationFrame.minX,
+                dy: -presentationFrame.minY
+            )
+            host.removeFromSuperviewWithoutNeedingDisplay()
+            host.frame = frame
+            container.addSubview(host)
+        }
+
+        guard let layer = container.layer else {
+            for (key, host) in hosts {
+                host.removeFromSuperviewWithoutNeedingDisplay()
+                storeDetachedHost(host, for: key)
+            }
+            container.removeFromSuperviewWithoutNeedingDisplay()
+            return
+        }
+
+        let token = UUID()
+        disclosureCollapsePresentations[token] = DisclosureCollapsePresentation(
+            container: container,
+            hosts: hosts
+        )
+
+        let mask = CAShapeLayer()
+        mask.frame = container.bounds
+        mask.fillColor = NSColor.black.cgColor
+        mask.isGeometryFlipped = true
+        let fullPath = CGPath(rect: container.bounds, transform: nil)
+        let collapsedPath = CGPath(
+            rect: CGRect(x: 0, y: 0, width: container.bounds.width, height: 0),
+            transform: nil
+        )
+        mask.path = collapsedPath
+        layer.mask = mask
+
+        let clip = CABasicAnimation(keyPath: "path")
+        clip.fromValue = fullPath
+        clip.toValue = collapsedPath
+        clip.duration = Self.disclosureExitDuration
+        clip.timingFunction = disclosureTimingFunction
+        clip.fillMode = .forwards
+        clip.isRemovedOnCompletion = false
+        mask.add(clip, forKey: Self.disclosureExitMaskAnimationKey)
+
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 1
+        fade.toValue = 0
+        fade.duration = Self.disclosureExitDuration
+        fade.timingFunction = disclosureTimingFunction
+        fade.fillMode = .forwards
+        fade.isRemovedOnCompletion = false
+        layer.opacity = 0
+        layer.add(fade, forKey: Self.disclosureExitAnimationKey)
+
+        disclosureExitTasks[token] = Task { @MainActor [weak self] in
+            try? await Task.sleep(
+                for: .seconds(Self.disclosureExitDuration)
+            )
+            guard !Task.isCancelled else { return }
+            self?.finishDisclosureCollapsePresentation(token: token)
+        }
+    }
+
+    private func finishDisclosureCollapsePresentation(token: UUID) {
+        disclosureExitTasks.removeValue(forKey: token)?.cancel()
+        guard let presentation = disclosureCollapsePresentations.removeValue(forKey: token) else {
+            return
+        }
+        presentation.container.layer?.mask?.removeAnimation(
+            forKey: Self.disclosureExitMaskAnimationKey
+        )
+        presentation.container.layer?.removeAnimation(forKey: Self.disclosureExitAnimationKey)
+        presentation.container.removeFromSuperviewWithoutNeedingDisplay()
+        for (key, host) in presentation.hosts {
+            host.removeFromSuperviewWithoutNeedingDisplay()
+            storeDetachedHost(host, for: key)
+        }
+        if !retiringHosts.isEmpty { requestDisplayFrame() }
+    }
+
+    private func finishAllDisclosureCollapsePresentations() {
+        for token in Array(disclosureCollapsePresentations.keys) {
+            finishDisclosureCollapsePresentation(token: token)
+        }
+    }
+
+    private var disclosureTimingFunction: CAMediaTimingFunction {
+        CAMediaTimingFunction(controlPoints: 0.4, 0, 0.2, 1)
+    }
+
+    private func presentedOriginY(for host: TranscriptMountedRowHost) -> CGFloat {
+        host.layer?.presentation()?.frame.minY ?? host.frame.minY
+    }
+
+    /// The virtual layout and hit-testing geometry stay final throughout the
+    /// transition. Core Animation carries only the bounded set of mounted rows
+    /// from their old visual origins to those final frames, matching the
+    /// disclosure body's exit instead of making the following content jump.
+    private func animatePendingDisclosureCollapse() {
+        guard let startingOrigins = pendingDisclosureCollapseOrigins else { return }
+        pendingDisclosureCollapseOrigins = nil
+        guard !reduceMotion else { return }
+
+        for (key, startingOriginY) in startingOrigins {
+            guard let host = mountedHosts[key], let layer = host.layer else { continue }
+            let translation = startingOriginY - host.frame.minY
+            guard abs(translation) > 0.5 else { continue }
+
+            layer.removeAnimation(forKey: Self.disclosureCollapseAnimationKey)
+            let movement = CABasicAnimation(keyPath: "transform.translation.y")
+            movement.fromValue = translation
+            movement.toValue = 0
+            movement.duration = Self.disclosureExitDuration
+            movement.timingFunction = disclosureTimingFunction
+            layer.add(movement, forKey: Self.disclosureCollapseAnimationKey)
+        }
     }
 
     private func storeDetachedHost(_ host: TranscriptMountedRowHost, for key: String) {
         host.onHeightChange = nil
+        host.layer?.removeAnimation(forKey: Self.disclosureExitAnimationKey)
+        host.layer?.removeAnimation(forKey: Self.disclosureCollapseAnimationKey)
+        host.layer?.opacity = 1
+        host.setAccessibilityHidden(false)
         if let markdownHost = host as? TranscriptMarkdownRowHost {
             let evicted = markdownHostCache.insert(
                 markdownHost,
@@ -2171,7 +2500,12 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
 
             let wantsNativeMarkdown = usesNativeMarkdownHost(for: row)
             let isNativeMarkdown = host is TranscriptMarkdownRowHost
-            guard wantsNativeMarkdown == isNativeMarkdown else {
+            let preservesLiveMarkdownHost = preservesLiveMarkdownHost(
+                host: host,
+                previous: previousRowsByKey?[key],
+                current: row
+            )
+            guard wantsNativeMarkdown == isNativeMarkdown || preservesLiveMarkdownHost else {
                 invalidateMeasurementForRendererTransition(key)
                 replacementKeys.append(key)
                 continue
@@ -2200,6 +2534,23 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         for key in replacementKeys {
             replaceMountedHost(for: key)
         }
+    }
+
+    /// A response becoming settled is a data transition, not a new visual
+    /// stream. Keep its already-mounted SwiftUI/TextKit host until it naturally
+    /// leaves the virtual window; a later settled remount can use the cheaper
+    /// native settled host without interrupting the final entrance animation.
+    private func preservesLiveMarkdownHost(
+        host: TranscriptMountedRowHost,
+        previous: TranscriptVirtualRow?,
+        current: TranscriptVirtualRow
+    ) -> Bool {
+        guard host is TranscriptRowHost,
+            case let .markdownChunk(previousChunk) = previous?.content,
+            case let .markdownChunk(currentChunk) = current.content
+        else { return false }
+        return previousChunk.lifecycle == .receiving
+            && currentChunk.lifecycle == .settled
     }
 
     private func invalidateMeasurementForRendererTransition(_ key: String) {
@@ -2276,14 +2627,18 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             return
         }
 
+        beginDisclosureViewportAnchor()
+        change()
+    }
+
+    private func beginDisclosureViewportAnchor() {
+        guard initialPositionApplied else { return }
         disclosureAnchorReleaseTask?.cancel()
         let anchor = TranscriptDisclosureViewportAnchor(
             id: UUID(),
             viewportTop: contentView.bounds.minY
         )
         disclosureViewportAnchor = anchor
-        change()
-
         disclosureAnchorReleaseTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(450))
             guard !Task.isCancelled,
@@ -2593,6 +2948,16 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             viewportAnchor: viewportAnchor
         )
     }
+}
+
+/// Presentation-only shell for the bounded set of worked rows that were
+/// already mounted when an active turn settled. It cannot receive input, and
+/// its flipped coordinates preserve every host's document-space frame while
+/// the shared mask retracts from the bottom edge toward the header.
+private final class TranscriptDisclosureCollapseContainer: NSView {
+    override var isFlipped: Bool { true }
+
+    override func hitTest(_: NSPoint) -> NSView? { nil }
 }
 
 /// Retained for the lifetime of the Core Animation group so the assistant

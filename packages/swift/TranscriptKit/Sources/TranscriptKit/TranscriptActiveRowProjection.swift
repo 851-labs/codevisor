@@ -39,61 +39,52 @@ extension TranscriptAssistantRowProjection {
         var rows: [TranscriptPresentationRow] = []
         let lifecycle: TranscriptBlockLifecycle =
             message.turn.isGenerating ? .receiving : .settled
+        var projectedContent = TranscriptAssistantRowProjection.appendWorkedSection(
+            message,
+            kind: .planning,
+            items: message.turn.workedItemsBeforePlan,
+            showsTimer: message.turn.planBoundary == nil,
+            allowsDeferred: true,
+            lifecycle: lifecycle,
+            to: &rows
+        )
         if let planDocument = message.turn.planDocument, !planDocument.isEmpty {
-            let revision = measurementRevision(
-                for: item,
-                waitingOnBackgroundTask: waitingOnBackgroundTask
-            )
-            if message.turn.hasDeferredWorkedDetails || !message.turn.workedItemsBeforePlan.isEmpty {
-                rows.append(
-                    .init(
-                        id: planningID(messageID: message.id, lifecycle: lifecycle),
-                        content: .assistantPlanning(message),
-                        estimatedHeight: 44,
-                        measurementRevision: revision
-                    ))
-            }
             TranscriptPlanRowProjection.append(
                 messageID: message.id,
                 markdown: planDocument,
                 lifecycle: lifecycle,
                 to: &rows
             )
-            if !appendAssistantResponse(
-                message,
-                prelude: .resultPrelude,
-                waitingOnBackgroundTask: waitingOnBackgroundTask,
-                lifecycle: lifecycle,
-                to: &rows
-            ),
-                !message.turn.workedItemsAfterPlan.isEmpty
-                    || message.turn.finalText != nil
-                    || message.turn.stopDetail != nil
-                    || message.turn.isGenerating
-            {
-                rows.append(
-                    .init(
-                        id: resultID(messageID: message.id, lifecycle: lifecycle),
-                        content: .assistantResult(
-                            message,
-                            waitingOnBackgroundTask: waitingOnBackgroundTask
-                        ),
-                        estimatedHeight: 240,
-                        measurementRevision: revision
-                    ))
-            }
-            return rows.isEmpty ? [activeFallbackRow(for: item)] : rows
+            projectedContent = true
+            projectedContent =
+                appendWorkedSection(
+                    message,
+                    kind: .implementation,
+                    items: message.turn.workedItemsAfterPlan,
+                    showsTimer: true,
+                    allowsDeferred: false,
+                    lifecycle: lifecycle,
+                    to: &rows
+                ) || projectedContent
+            projectedContent =
+                appendAssistantResponse(
+                    message,
+                    waitingOnBackgroundTask: waitingOnBackgroundTask,
+                    lifecycle: lifecycle,
+                    to: &rows
+                ) || projectedContent
+            appendActivityIfNeeded(message, lifecycle: lifecycle, to: &rows)
+            return projectedContent || !rows.isEmpty ? rows : [activeFallbackRow(for: item)]
         }
 
-        guard
+        projectedContent =
             appendAssistantResponse(
                 message,
-                prelude: .completePrelude,
                 waitingOnBackgroundTask: waitingOnBackgroundTask,
                 lifecycle: lifecycle,
                 to: &rows
-            )
-        else { return [activeFallbackRow(for: item)] }
-        return rows
+            ) || projectedContent
+        appendActivityIfNeeded(message, lifecycle: lifecycle, to: &rows)
+        return projectedContent || !rows.isEmpty ? rows : [activeFallbackRow(for: item)]
     }
 }

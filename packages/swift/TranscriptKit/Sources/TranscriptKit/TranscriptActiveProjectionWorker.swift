@@ -40,6 +40,10 @@ public final class TranscriptActiveProjectionWorker {
     }
 
     private let projector: Projector
+    /// Cancellation epoch. New submissions replace only the waiting snapshot;
+    /// an already-running projection is still useful and may publish before
+    /// the newest pending snapshot. This prevents a continuous stream from
+    /// starving presentation until the provider becomes quiet.
     private var generation: UInt64 = 0
     private var pendingWork: PendingWork?
     private var processingTask: Task<Void, Never>?
@@ -61,7 +65,6 @@ public final class TranscriptActiveProjectionWorker {
         _ request: Request,
         completion: @escaping @MainActor (Output) -> Void
     ) {
-        generation &+= 1
         pendingWork = PendingWork(
             generation: generation,
             request: request,

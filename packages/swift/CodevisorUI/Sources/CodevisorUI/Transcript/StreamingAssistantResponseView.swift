@@ -111,7 +111,11 @@ private struct StreamingAssistantResponseContent<AttachmentContent: View>: View 
         let segments = assistantMarkdownSegments(
             markdown,
             attachments: attachments,
-            includeServerPaths: presentationComplete,
+            // A syntactically complete local image is already a stable
+            // document boundary. Resolve it while the answer is live so
+            // provider completion never retroactively splits one rendered
+            // Markdown surface around an image preview.
+            includeServerPaths: true,
             includeUnreferencedAttachments: presentationComplete
         )
         let mount = animationMount.resolve(

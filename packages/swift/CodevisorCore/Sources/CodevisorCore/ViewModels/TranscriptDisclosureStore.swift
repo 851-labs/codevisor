@@ -164,6 +164,10 @@ public final class TranscriptDisclosureStore {
     }
 
     private var values: [Key: Bool] = [:]
+    /// Changes only when a transcript-level disclosure changes. Row-list
+    /// presentation caches use this to avoid rescanning settled history on
+    /// every active token flush.
+    public private(set) var workedSectionRevision: UInt64 = 0
     @ObservationIgnored private var toolGroupDisclosures: [String: ToolGroupDisclosure] = [:]
     public init() {}
 
@@ -182,11 +186,13 @@ public final class TranscriptDisclosureStore {
     public func setExpanded(_ key: Key, _ expanded: Bool) {
         guard values[key] != expanded else { return }
         values[key] = expanded
+        advanceWorkedSectionRevisionIfNeeded(for: key)
     }
 
     /// Toggles from the effective current value (stored ?? default).
     public func toggle(_ key: Key, default defaultValue: Bool) {
         values[key] = !(values[key] ?? defaultValue)
+        advanceWorkedSectionRevisionIfNeeded(for: key)
     }
 
     public func toolGroupDisclosure(
@@ -201,6 +207,15 @@ public final class TranscriptDisclosureStore {
         let disclosure = ToolGroupDisclosure(policy: policy, context: initialContext)
         toolGroupDisclosures[id] = disclosure
         return disclosure
+    }
+
+    private func advanceWorkedSectionRevisionIfNeeded(for key: Key) {
+        switch key {
+        case .turn, .turnImplementation:
+            workedSectionRevision &+= 1
+        case .toolCall, .subagent:
+            break
+        }
     }
 
 }

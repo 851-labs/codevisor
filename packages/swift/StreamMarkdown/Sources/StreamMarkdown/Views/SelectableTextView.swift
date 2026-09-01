@@ -124,6 +124,7 @@
             private var preparedIsStreaming = false
             private var preparedAnimatesInitialContent = false
             private var preparedReduceMotion = false
+            private var preparedPlaybackRevision = 0
             private var prepared: PreparedStreamingText?
 
             fileprivate func preparedText(
@@ -137,6 +138,7 @@
                     preparedIsStreaming == (animation?.isStreaming ?? false),
                     preparedAnimatesInitialContent == (animation?.animatesInitialContent ?? false),
                     preparedReduceMotion == (animation?.reduceMotion ?? false),
+                    preparedPlaybackRevision == (animation?.playbackRevision ?? 0),
                     let prepared
                 {
                     return prepared
@@ -149,6 +151,7 @@
                 preparedIsStreaming = animation?.isStreaming ?? false
                 preparedAnimatesInitialContent = animation?.animatesInitialContent ?? false
                 preparedReduceMotion = animation?.reduceMotion ?? false
+                preparedPlaybackRevision = animation?.playbackRevision ?? 0
                 prepared = value
                 return value
             }

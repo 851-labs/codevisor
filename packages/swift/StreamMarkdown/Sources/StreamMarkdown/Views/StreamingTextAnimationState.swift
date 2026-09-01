@@ -18,6 +18,10 @@ struct StreamingTextAnimationContext {
     /// already-visible words; subsequent appends use normal live animation.
     let animatesInitialContent: Bool
     let reduceMotion: Bool
+    /// Invalidates native prepared-text caches after a suspended presentation
+    /// resumes. The document itself may be unchanged, but every pending fade
+    /// deadline has moved forward by the suspension duration.
+    let playbackRevision: Int
 
     init(
         timeline: StreamingTextAnimationTimeline,
@@ -26,7 +30,8 @@ struct StreamingTextAnimationContext {
         documentSource: String,
         isStreaming: Bool,
         animatesInitialContent: Bool,
-        reduceMotion: Bool
+        reduceMotion: Bool,
+        playbackRevision: Int = 0
     ) {
         self.timeline = timeline
         self.sourceID = sourceID
@@ -35,18 +40,33 @@ struct StreamingTextAnimationContext {
         self.isStreaming = isStreaming
         self.animatesInitialContent = animatesInitialContent
         self.reduceMotion = reduceMotion
+        self.playbackRevision = playbackRevision
     }
 }
 
 /// Stored on attributed ranges and consumed only by the platform layout
 /// managers. NSObject identity keeps attributed-string copying cheap.
+enum StreamingTextRevealStyle: Equatable {
+    case faded
+    case atomic
+}
+
 final class StreamingTextFadeMetadata: NSObject, NSCopying {
     var startTime: TimeInterval
     var characterCount: Int
+    let revealStyle: StreamingTextRevealStyle
+    var minimumStartTime: TimeInterval?
 
-    init(startTime: TimeInterval, characterCount: Int = 1) {
+    init(
+        startTime: TimeInterval,
+        characterCount: Int = 1,
+        revealStyle: StreamingTextRevealStyle = .faded,
+        minimumStartTime: TimeInterval? = nil
+    ) {
         self.startTime = startTime
         self.characterCount = max(1, characterCount)
+        self.revealStyle = revealStyle
+        self.minimumStartTime = minimumStartTime
     }
 
     func copy(with _: NSZone? = nil) -> Any {
@@ -54,10 +74,22 @@ final class StreamingTextFadeMetadata: NSObject, NSCopying {
     }
 
     func opacity(at time: TimeInterval) -> CGFloat {
+        if revealStyle == .atomic {
+            return time < startTime ? 0 : 1
+        }
         let linearProgress = (time - startTime) / StreamingTextAnimationSpec.fadeDuration
         guard linearProgress > 0 else { return 0 }
         guard linearProgress < 1 else { return 1 }
         return CGFloat(StreamingTextFadeCurve.value(at: linearProgress))
+    }
+
+    var animationEndTime: TimeInterval {
+        switch revealStyle {
+        case .faded:
+            startTime + StreamingTextAnimationSpec.fadeDuration
+        case .atomic:
+            startTime
+        }
     }
 }
 
@@ -82,6 +114,8 @@ final class StreamingTextAnimationState {
     private struct Word {
         let text: String
         let fade: StreamingTextFadeMetadata
+
+        var revealStyle: StreamingTextRevealStyle { fade.revealStyle }
     }
 
     private var sourceID: String?
@@ -103,14 +137,19 @@ final class StreamingTextAnimationState {
             )
         }
 
+        let presentationNow = context.timeline.presentationTime(at: now)
+
         if sourceID != context.sourceID {
-            reset(at: now)
+            reset(at: presentationNow)
             sourceID = context.sourceID
         }
         timeline = context.timeline
 
         let ranges = StreamingWordSegmenter.segments(in: base.string)
-        let sourceIsAppendOnly = context.documentSource.hasPrefix(documentSource)
+        // String.hasPrefix compares extended grapheme clusters. A provider
+        // appending a skin tone or ZWJ component changes the trailing cluster,
+        // even though its UTF-8 source bytes are still strictly append-only.
+        let sourceIsAppendOnly = context.documentSource.utf8.starts(with: documentSource.utf8)
         let oldWords = words
         var nextWords: [Word] = []
         nextWords.reserveCapacity(ranges.count)
@@ -120,17 +159,20 @@ final class StreamingTextAnimationState {
             // live path uses, but put every current word safely in the past.
             // When the mount switches to live mode, an unchanged prefix keeps
             // these starts and only later appended words receive fresh ones.
-            context.timeline.discard(oldWords.map(\.fade), at: now)
+            context.timeline.discard(oldWords.map(\.fade), at: presentationNow)
             context.timeline.baselineSource(
                 context.documentSource,
                 sourceID: context.pacingSourceID
             )
-            let settledStart = now - StreamingTextAnimationSpec.fadeDuration
+            let settledStart = presentationNow - StreamingTextAnimationSpec.fadeDuration
             for range in ranges {
                 nextWords.append(
                     Word(
                         text: range.text,
-                        fade: StreamingTextFadeMetadata(startTime: settledStart)
+                        fade: StreamingTextFadeMetadata(
+                            startTime: settledStart,
+                            revealStyle: range.revealStyle
+                        )
                     ))
             }
             documentSource = context.documentSource
@@ -146,17 +188,20 @@ final class StreamingTextAnimationState {
             // Existing and currently visible content becomes settled. If the
             // user turns Reduce Motion back off mid-response, only genuinely
             // new words animate.
-            context.timeline.discard(oldWords.map(\.fade), at: now)
+            context.timeline.discard(oldWords.map(\.fade), at: presentationNow)
             context.timeline.baselineSource(
                 context.documentSource,
                 sourceID: context.pacingSourceID
             )
-            let settledStart = now - StreamingTextAnimationSpec.fadeDuration
+            let settledStart = presentationNow - StreamingTextAnimationSpec.fadeDuration
             for range in ranges {
                 nextWords.append(
                     Word(
                         text: range.text,
-                        fade: StreamingTextFadeMetadata(startTime: settledStart)
+                        fade: StreamingTextFadeMetadata(
+                            startTime: settledStart,
+                            revealStyle: range.revealStyle
+                        )
                     ))
             }
             documentSource = context.documentSource
@@ -168,28 +213,51 @@ final class StreamingTextAnimationState {
             )
         }
 
-        let reusedCount = sourceIsAppendOnly ? min(oldWords.count, ranges.count) : 0
+        // Markdown structure can contract without the provider editing any
+        // text. The common case is a completed image destination splitting one
+        // live Markdown surface into prefix / preview / suffix. Reuse the
+        // unchanged rendered word prefix across that structural boundary so
+        // already-visible prose never receives a second entrance animation.
+        // Append-only updates retain the existing positional rule because the
+        // last rendered word may legitimately grow as more characters arrive.
+        let candidateReuseCount = min(oldWords.count, ranges.count)
+        var reusedCount = 0
+        while reusedCount < candidateReuseCount {
+            let oldWord = oldWords[reusedCount]
+            let range = ranges[reusedCount]
+            guard oldWord.revealStyle == range.revealStyle else { break }
+            guard sourceIsAppendOnly || oldWord.text == range.text else { break }
+            reusedCount += 1
+        }
         for index in 0..<reusedCount {
             oldWords[index].fade.characterCount = max(1, ranges[index].range.length)
         }
         context.timeline.observeSource(
             context.documentSource,
             sourceID: context.pacingSourceID,
-            at: now
+            at: presentationNow
         )
 
-        if !sourceIsAppendOnly {
-            context.timeline.discard(oldWords.map(\.fade), at: now)
-        } else if reusedCount < oldWords.count {
+        if reusedCount < oldWords.count {
             context.timeline.discard(
                 Array(oldWords.dropFirst(reusedCount)).map(\.fade),
-                at: now
+                at: presentationNow
             )
         }
         let scheduled = context.timeline.scheduleSegments(
             characterCounts: ranges.dropFirst(reusedCount).map(\.range.length),
-            at: now
+            revealStyles: ranges.dropFirst(reusedCount).map(\.revealStyle),
+            at: presentationNow
         )
+        for index in 0..<reusedCount
+        where oldWords[index].revealStyle == .atomic
+            && oldWords[index].text != ranges[index].text
+        {
+            context.timeline.restabilizeAtomicSegment(
+                oldWords[index].fade,
+                at: presentationNow
+            )
+        }
         var scheduledIndex = 0
         for (index, range) in ranges.enumerated() {
             let word: Word
@@ -212,8 +280,8 @@ final class StreamingTextAnimationState {
         var latestEnd: TimeInterval?
         var activeAnimationRanges: [NSRange] = []
         for (range, word) in zip(ranges, nextWords) {
-            let end = word.fade.startTime + StreamingTextAnimationSpec.fadeDuration
-            guard end > now else { continue }
+            let end = word.fade.animationEndTime
+            guard end > presentationNow else { continue }
             output.addAttribute(
                 .streamMarkdownFade,
                 value: word.fade,
@@ -244,6 +312,17 @@ final class StreamingTextAnimationState {
 struct StreamingWordSegment: Equatable {
     let range: NSRange
     let text: String
+    let revealStyle: StreamingTextRevealStyle
+
+    init(
+        range: NSRange,
+        text: String,
+        revealStyle: StreamingTextRevealStyle = .faded
+    ) {
+        self.range = range
+        self.text = text
+        self.revealStyle = revealStyle
+    }
 }
 
 /// Matches the desktop app's word-like segmentation contract:
@@ -258,7 +337,7 @@ enum StreamingWordSegmenter {
         if text.unicodeScalars.allSatisfy({ $0.value <= 0x7f }) {
             return asciiSegments(in: text)
         }
-        return unicodeSegments(in: text)
+        return splitEmojiClusters(in: text, segments: unicodeSegments(in: text))
     }
 
     private static func asciiSegments(in text: String) -> [StreamingWordSegment] {
@@ -347,6 +426,91 @@ enum StreamingWordSegmenter {
 
     private static func isASCIIWordUnit(_ unit: UInt16) -> Bool {
         (48...57).contains(unit) || (65...90).contains(unit) || (97...122).contains(unit)
+    }
+
+    /// TextKit draws color emoji as indivisible glyphs, so keep every extended
+    /// grapheme cluster containing emoji scalars in its own atomic segment.
+    /// Punctuation and whitespace following an emoji stay attached to that
+    /// segment, matching the word segmenter's existing attachment contract.
+    private static func splitEmojiClusters(
+        in text: String,
+        segments: [StreamingWordSegment]
+    ) -> [StreamingWordSegment] {
+        var result: [StreamingWordSegment] = []
+
+        for segment in segments {
+            guard let swiftRange = Range(segment.range, in: text) else { continue }
+            var cursor = swiftRange.lowerBound
+            var atomicResultIndex: Int?
+            var characterStart = swiftRange.lowerBound
+
+            while characterStart < swiftRange.upperBound {
+                let characterEnd = text.index(after: characterStart)
+                let characterRange = characterStart..<characterEnd
+                defer { characterStart = characterEnd }
+                guard isEmoji(text[characterStart]) else { continue }
+                if let atomicResultIndex {
+                    let previous = result[atomicResultIndex]
+                    let gap = NSRange(cursor..<characterRange.lowerBound, in: text)
+                    let extended = NSRange(
+                        location: previous.range.location,
+                        length: NSMaxRange(gap)
+                            - previous.range.location
+                    )
+                    result[atomicResultIndex] = StreamingWordSegment(
+                        range: extended,
+                        text: (text as NSString).substring(with: extended),
+                        revealStyle: .atomic
+                    )
+                } else if cursor < characterRange.lowerBound {
+                    let prefix = NSRange(cursor..<characterRange.lowerBound, in: text)
+                    result.append(
+                        StreamingWordSegment(
+                            range: prefix,
+                            text: (text as NSString).substring(with: prefix)
+                        )
+                    )
+                }
+
+                let emojiRange = NSRange(characterRange, in: text)
+                result.append(
+                    StreamingWordSegment(
+                        range: emojiRange,
+                        text: (text as NSString).substring(with: emojiRange),
+                        revealStyle: .atomic
+                    )
+                )
+                atomicResultIndex = result.count - 1
+                cursor = characterRange.upperBound
+            }
+
+            if let atomicResultIndex {
+                let previous = result[atomicResultIndex]
+                let tail = NSRange(cursor..<swiftRange.upperBound, in: text)
+                let extended = NSRange(
+                    location: previous.range.location,
+                    length: NSMaxRange(tail)
+                        - previous.range.location
+                )
+                result[atomicResultIndex] = StreamingWordSegment(
+                    range: extended,
+                    text: (text as NSString).substring(with: extended),
+                    revealStyle: .atomic
+                )
+            } else {
+                result.append(segment)
+            }
+        }
+
+        return result
+    }
+
+    private static func isEmoji(_ character: Character) -> Bool {
+        character.unicodeScalars.contains { scalar in
+            scalar.properties.isEmojiPresentation
+                || scalar.value == 0xFE0F  // emoji variation selector
+                || scalar.value == 0x20E3  // combining enclosing keycap
+        }
     }
 }
 

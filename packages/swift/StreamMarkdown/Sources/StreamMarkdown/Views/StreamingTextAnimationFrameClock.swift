@@ -5,7 +5,11 @@ import SwiftUI
 /// transcript display clock.
 @MainActor
 public protocol StreamingTextAnimationFrameClient: AnyObject {
-    func streamingTextAnimationFrame(at timestamp: TimeInterval)
+    /// `isFinal` guarantees one terminal repaint before the clock retires the
+    /// client. Native scroll views may coalesce every intermediate offscreen
+    /// invalidation, but they must not retain transparent backing pixels after
+    /// the fade deadline has passed.
+    func streamingTextAnimationFrame(at timestamp: TimeInterval, isFinal: Bool)
 }
 
 /// Multiplexes one transcript display link across every mounted TextKit
@@ -34,8 +38,17 @@ public final class StreamingTextAnimationFrameClock {
         until endTime: TimeInterval?
     ) {
         let id = ObjectIdentifier(client)
-        guard let endTime, endTime > CACurrentMediaTime() else {
+        guard let endTime else {
             entries.removeValue(forKey: id)
+            return
+        }
+        let now = CACurrentMediaTime()
+        guard endTime > now else {
+            entries.removeValue(forKey: id)
+            // A runway view can attach after its fade deadline. Give it the
+            // same terminal repaint as an actively-driven client instead of
+            // waiting for a later scroll or content update to invalidate it.
+            client.streamingTextAnimationFrame(at: now, isFinal: true)
             return
         }
         entries[id] = Entry(client: client, endTime: endTime)
@@ -54,8 +67,9 @@ public final class StreamingTextAnimationFrameClock {
                 entries.removeValue(forKey: id)
                 continue
             }
-            client.streamingTextAnimationFrame(at: timestamp)
-            if timestamp >= entry.endTime {
+            let isFinal = timestamp >= entry.endTime
+            client.streamingTextAnimationFrame(at: timestamp, isFinal: isFinal)
+            if isFinal {
                 entries.removeValue(forKey: id)
             }
         }

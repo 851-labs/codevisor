@@ -8,6 +8,7 @@ import StreamMarkdown
 @MainActor
 final class TranscriptPresentationSurface {
     let textAnimationVisibility = StreamingTextAnimationVisibility(initiallyVisible: false)
+    let textAnimationRegistry = StreamingTextAnimationRegistry()
 
     private weak var controller: SessionController?
     private var retainedScrollView: VirtualizedTranscriptScrollView?

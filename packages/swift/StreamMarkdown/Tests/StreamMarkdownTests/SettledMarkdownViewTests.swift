@@ -25,6 +25,31 @@ struct SettledMarkdownViewTests {
         #expect(view.selectedRange() == NSRange(location: 7, length: 60))
     }
 
+    @Test("TextKit 2 repairs its wrapping width after a virtualized remount")
+    func textContainerTracksRemountedViewWidth() {
+        let view = MarkdownTextKit2View()
+        view.setContent(
+            NSAttributedString(
+                string: String(repeating: "Remounted transcript text. ", count: 12)
+            )
+        )
+
+        _ = view.contentHeight(forWidth: 480)
+        #expect(view.textContainer?.widthTracksTextView == true)
+        #expect(view.textContainer?.size.width == 480)
+
+        // Reproduce the AppKit state observed after a host was detached and
+        // recycled: the text view remains wide while its container returns to
+        // the 1pt size supplied at construction.
+        view.textContainer?.size = NSSize(
+            width: 1,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+
+        _ = view.contentHeight(forWidth: 480)
+        #expect(view.textContainer?.size.width == 480)
+    }
+
     @Test("Width changes invalidate native prose layout")
     func widthControlsWrapping() {
         let view = SettledMarkdownView()
@@ -137,6 +162,31 @@ struct SettledMarkdownViewTests {
         )
 
         #expect(delta <= 1)
+    }
+
+    @Test("Native code-block chrome uses top-down transcript coordinates")
+    func codeBlockHeaderStaysAboveCode() {
+        let native = NativeMarkdownCodeBlockView(
+            id: "native-code-order",
+            language: "swift",
+            code: "let answer = 42",
+            theme: .default
+        )
+        native.frame = NSRect(
+            x: 0,
+            y: 0,
+            width: 500,
+            height: native.contentHeight(forWidth: 500)
+        )
+        native.layoutSubtreeIfNeeded()
+
+        let label = native.subviews.compactMap { $0 as? NSTextField }.first
+        let scrollView = native.subviews.compactMap { $0 as? NSScrollView }.first
+
+        #expect(native.isFlipped)
+        #expect(label != nil)
+        #expect(scrollView != nil)
+        #expect((label?.frame.minY ?? .infinity) < (scrollView?.frame.minY ?? 0))
     }
 
     @Test("Native tables preserve the established visible height")

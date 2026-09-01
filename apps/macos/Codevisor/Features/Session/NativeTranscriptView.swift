@@ -1,6 +1,7 @@
 import AppKit
 import CodevisorCore
 import QuartzCore
+import StreamMarkdown
 import SwiftUI
 import CodevisorUI
 
@@ -22,6 +23,7 @@ struct NativeTranscriptView: NSViewRepresentable {
     let activeRows: [TranscriptVirtualRow]
     let activeRowsVersion: UInt64
     let rowsVersion: UInt64
+    let projectionRevision: UInt64
     let initialState: SessionScrollState?
     let followsLatest: Bool
     let hasOlderHistory: Bool
@@ -125,6 +127,7 @@ struct NativeTranscriptView: NSViewRepresentable {
             activeRows: activeRows,
             activeRowsVersion: activeRowsVersion,
             rowsVersion: rowsVersion,
+            projectionRevision: projectionRevision,
             initialState: initialState,
             followsLatest: followsLatest,
             hasOlderHistory: hasOlderHistory,
@@ -135,6 +138,8 @@ struct NativeTranscriptView: NSViewRepresentable {
             layoutFingerprint: layoutFingerprint,
             scrollCommand: scrollCommand,
             sendAnimationRequest: sendAnimationRequest,
+            textAnimationRegistry: presentationSurface.textAnimationRegistry,
+            allowsLiveTextAnimation: presentationSurface.textAnimationVisibility.isVisible,
             reduceMotion: reduceMotion,
             markdownRowStyle: markdownRowStyle,
             claimSendAnimation: claimSendAnimation,

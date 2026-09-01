@@ -39,6 +39,10 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     private var rowByKey: [String: TranscriptVirtualRow] = [:]
     private var projectedRows: [TranscriptVirtualRow] = []
     private var projectedRowsVersion: UInt64?
+    /// Received and applied projection revisions differ while UIKit defers a
+    /// prepend until an active drag/deceleration ends.
+    private var receivedProjectionRevision: UInt64?
+    private var appliedProjectionRevision: UInt64?
     private var activeRows: [TranscriptVirtualRow] = []
     private var activeRowsVersion: UInt64?
     private var activeRowsRange: Range<Int>?
@@ -77,6 +81,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     private var bottomJumpGate = TranscriptBottomJumpGate()
     private var deferredRowsDuringScroll: [TranscriptVirtualRow]?
     private var deferredActiveRowsRange: Range<Int>?
+    private var deferredProjectionRevision: UInt64?
 
     private struct DisclosureViewportAnchor {
         let id: UUID
@@ -303,6 +308,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         activeRows newActiveRows: [TranscriptVirtualRow],
         activeRowsVersion newActiveRowsVersion: UInt64,
         rowsVersion newRowsVersion: UInt64,
+        projectionRevision newProjectionRevision: UInt64,
         initialState: SessionScrollState?,
         followsLatest newFollowsLatest: Bool,
         hasOlderHistory newHasOlderHistory: Bool,
@@ -316,6 +322,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         sendAnimationRequest newSendAnimationRequest: UserSendAnimationRequest?,
         sendAnimationSourceFrame newSendAnimationSourceFrame: CGRect?,
         presentationRole newPresentationRole: TranscriptPresentationRole,
+        textAnimationRegistry: StreamingTextAnimationRegistry,
         reduceMotion newReduceMotion: Bool,
         scrollIndicatorBottomInset newScrollIndicatorBottomInset: CGFloat,
         claimSendAnimation newClaimSendAnimation: @escaping (UserSendAnimationRequest) -> Bool,
@@ -354,6 +361,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             return
         }
         let projectedRowsChanged = projectedRowsVersion != newRowsVersion
+        let projectionRevisionChanged = receivedProjectionRevision != newProjectionRevision
         let activeRowsChanged = activeRowsVersion != newActiveRowsVersion
         hasOlderHistory = newHasOlderHistory
         let paginationHeaderReservationChanged = paginationHeaderLayout.reserveIfNeeded(
@@ -421,10 +429,23 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             scrollCommand = newScrollCommand
         }
 
+        let followsAnimationEdge = followsLatest || newScrollCommand != scrollCommand
+        textAnimationRegistry.observeProjectedStreams(
+            newActiveRows.compactMap { row in
+                guard case let .markdownChunk(chunk) = row.content,
+                    chunk.lifecycle == .receiving
+                else { return nil }
+                return row.layoutKey
+            },
+            animatesNewStreams: newPresentationRole == .foreground
+                && followsAnimationEdge
+        )
+
         let rebuiltRows: Bool
-        if projectedRowsChanged || layoutFingerprintChanged {
+        if projectedRowsChanged || projectionRevisionChanged || layoutFingerprintChanged {
             projectedRows = newProjectedRows
             projectedRowsVersion = newRowsVersion
+            receivedProjectionRevision = newProjectionRevision
             activeRows = newActiveRows
             activeRowsVersion = newActiveRowsVersion
             let resolution = resolvedRows(
@@ -437,15 +458,18 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             {
                 deferredRowsDuringScroll = resolution.rows
                 deferredActiveRowsRange = resolution.activeRange
+                deferredProjectionRevision = newProjectionRevision
                 rebuiltRows = false
             } else {
                 deferredRowsDuringScroll = nil
                 deferredActiveRowsRange = nil
+                deferredProjectionRevision = nil
                 activeRowsRange = resolution.activeRange
                 rebuiltRows = applyRows(
                     resolution.rows,
                     layoutFingerprintChanged: layoutFingerprintChanged
                 )
+                appliedProjectionRevision = newProjectionRevision
             }
         } else if activeRowsChanged, deferredRowsDuringScroll != nil {
             let resolution = resolvedRows(
@@ -460,6 +484,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         } else if activeRowsChanged {
             deferredRowsDuringScroll = nil
             deferredActiveRowsRange = nil
+            deferredProjectionRevision = nil
             activeRowsVersion = newActiveRowsVersion
             rebuiltRows = applyActiveRows(newActiveRows)
         } else {
@@ -516,6 +541,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         bottomJumpGate.cancel()
         deferredRowsDuringScroll = nil
         deferredActiveRowsRange = nil
+        deferredProjectionRevision = nil
         olderHistoryPresentationTarget = nil
         disclosureAnchorReleaseTask?.cancel()
         interruptSendPresentation()
@@ -666,6 +692,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             )
             rows = newRows
             rowByKey = Dictionary(uniqueKeysWithValues: newRows.map { ($0.layoutKey, $0) })
+            removeDeletedMountedHosts(previousRowsByKey: previousRowsByKey)
             if layoutFingerprintChanged {
                 discardParkedHosts()
             } else {
@@ -1281,6 +1308,10 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             applyRows(deferredRowsDuringScroll, layoutFingerprintChanged: false)
             activeRowsRange = deferredActiveRowsRange
             deferredActiveRowsRange = nil
+            if let deferredProjectionRevision {
+                appliedProjectionRevision = deferredProjectionRevision
+                self.deferredProjectionRevision = nil
+            }
         }
         commitPendingMeasurements()
         updateMountedRows()
@@ -1292,12 +1323,13 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
 
     /// The model's response can arrive while UIKit is still dragging or
     /// decelerating. In that case `configure` parks the prepend so native
-    /// momentum is uninterrupted. Acknowledge only after the matching oldest
-    /// row is part of the authoritative document geometry.
+    /// momentum is uninterrupted. Acknowledge only after the projection that
+    /// contains the page is part of the authoritative document geometry.
     private func acknowledgeOlderHistoryPresentationIfPossible() {
         guard deferredRowsDuringScroll == nil,
             let target = olderHistoryPresentationTarget,
-            rows.first?.layoutKey == target.oldestRowKey
+            let appliedProjectionRevision,
+            appliedProjectionRevision >= target.projectionRevision
         else { return }
         olderHistoryPresentationTarget = nil
         onOlderHistoryPresented?(target.token)
@@ -1462,11 +1494,28 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
 
     private func removeMountedHosts(excluding retainedKeys: Set<String>) {
         let obsoleteKeys = mountedHosts.keys.filter { !retainedKeys.contains($0) }
+        removeMountedHosts(withKeys: obsoleteKeys)
+    }
+
+    /// Deleted rows must leave the canvas in the same transaction that removes
+    /// them from geometry. The window handoff drops invalid keys before its
+    /// normal cleanup, so it cannot retire these orphaned views afterward.
+    private func removeDeletedMountedHosts(
+        previousRowsByKey: [String: TranscriptVirtualRow]
+    ) {
+        let deletedMountedKeys = previousRowsByKey.keys.filter {
+            rowByKey[$0] == nil && mountedHosts[$0] != nil
+        }
+        removeMountedHosts(withKeys: deletedMountedKeys)
+    }
+
+    private func removeMountedHosts(withKeys obsoleteKeys: [String]) {
         for key in obsoleteKeys {
             guard let host = mountedHosts.removeValue(forKey: key) else { continue }
             host.removeFromSuperview()
             park(host, for: key)
         }
+        assert(mountedHosts.keys.allSatisfy { rowByKey[$0] != nil })
     }
 
     private func park(_ host: TranscriptRowHost, for key: String) {

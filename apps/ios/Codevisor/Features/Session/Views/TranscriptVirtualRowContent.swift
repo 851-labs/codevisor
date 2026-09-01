@@ -36,6 +36,14 @@ struct TranscriptVirtualRowContent: View {
                 waitingOnBackgroundTask: waitingOnBackgroundTask,
                 presentation: .result
             )
+        case let .assistantWorkedHeader(header):
+            TranscriptSettledWorkedHeaderRow(header: header)
+        case let .activeWorkedHeader(header):
+            TranscriptActiveWorkedHeaderRow(controller: controller, header: header)
+        case let .assistantWorkedItem(item):
+            TranscriptSettledWorkedItemRow(item: item)
+        case let .activeWorkedItem(reference):
+            TranscriptActiveWorkedItemRow(controller: controller, reference: reference)
         case let .assistantChrome(message, slice, waitingOnBackgroundTask):
             AssistantTurnBody(
                 turn: message.turn,
@@ -62,16 +70,21 @@ struct TranscriptVirtualRowContent: View {
                 UserBubbleRow(text: message.text, attachments: message.attachments)
                 if showsStartingAgent {
                     ShimmeringText.startingAgent
+                        .suppressedDuringStreamingTextEntrance()
                 }
             }
         case let .backgroundTask(description):
             ChatActivityRow("Waiting on \(description)...")
+                .suppressedDuringStreamingTextEntrance()
         case let .updateGate(harnessName):
             ChatActivityRow("Waiting for \(harnessName) to finish updating...")
+                .suppressedDuringStreamingTextEntrance()
         case let .connecting(message):
             ChatActivityRow(message)
+                .suppressedDuringStreamingTextEntrance()
         case let .serverWait(message):
             ChatActivityRow(message)
+                .suppressedDuringStreamingTextEntrance()
         case let .error(message):
             if row.id == .statusError {
                 ChatErrorRow(
@@ -91,8 +104,7 @@ struct TranscriptVirtualRowContent: View {
         for slice: TranscriptAssistantChromeSlice
     ) -> AssistantTurnPresentation {
         switch slice {
-        case .completePrelude: .completePrelude
-        case .resultPrelude: .resultPrelude
+        case .activity: .activity
         case .epilogue: .epilogue
         }
     }

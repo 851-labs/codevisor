@@ -69,6 +69,7 @@ public struct PlanDocumentBlockView: View {
     private let blocks: [MarkdownBlock]
     private let documentSource: String
     private let streamID: String
+    private let animationGroupID: String
     private let isStreaming: Bool
     private let isFirst: Bool
     private let isLast: Bool
@@ -80,6 +81,7 @@ public struct PlanDocumentBlockView: View {
         block: MarkdownBlock,
         documentSource: String,
         streamID: String,
+        animationGroupID: String? = nil,
         isStreaming: Bool,
         isFirst: Bool,
         isLast: Bool,
@@ -88,6 +90,7 @@ public struct PlanDocumentBlockView: View {
         blocks = [block]
         self.documentSource = documentSource
         self.streamID = streamID
+        self.animationGroupID = animationGroupID ?? streamID
         self.isStreaming = isStreaming
         self.isFirst = isFirst
         self.isLast = isLast
@@ -98,6 +101,7 @@ public struct PlanDocumentBlockView: View {
         blocks: [MarkdownBlock],
         documentSource: String,
         streamID: String,
+        animationGroupID: String? = nil,
         isStreaming: Bool,
         isFirst: Bool,
         isLast: Bool,
@@ -107,6 +111,7 @@ public struct PlanDocumentBlockView: View {
         self.blocks = blocks
         self.documentSource = documentSource
         self.streamID = streamID
+        self.animationGroupID = animationGroupID ?? streamID
         self.isStreaming = isStreaming
         self.isFirst = isFirst
         self.isLast = isLast
@@ -135,6 +140,7 @@ public struct PlanDocumentBlockView: View {
                 blocks: blocks,
                 documentSource: documentSource,
                 streamID: streamID,
+                animationGroupID: animationGroupID,
                 isStreaming: isStreaming,
                 layout: fragmentLayout
             )
@@ -143,6 +149,7 @@ public struct PlanDocumentBlockView: View {
                 blocks: blocks,
                 documentSource: documentSource,
                 streamID: streamID,
+                animationGroupID: animationGroupID,
                 isStreaming: isStreaming
             )
         }

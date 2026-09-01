@@ -279,9 +279,11 @@ extension SessionModel {
                 limit: Self.olderTranscriptPageSize
             )
             let existing = Set(conversation.map(\.id))
-            let unique = page.conversation.filter {
-                $0.hasRenderableTranscriptContent && !existing.contains($0.id)
-            }
+            let unique = page.conversation
+                .map(restoringCachedTranscriptDetails)
+                .filter {
+                    $0.hasRenderableTranscriptContent && !existing.contains($0.id)
+                }
             settledConversation.insert(contentsOf: unique, at: 0)
             rebuildSettledIndex()
             olderHistoryCursor = page.nextBefore
@@ -300,8 +302,22 @@ extension SessionModel {
     /// rest of the session history.
     @discardableResult
     public func loadTranscriptDetails(itemId: String) async -> Bool {
-        guard loadingDetailIds.insert(itemId).inserted else { return false }
-        defer { loadingDetailIds.remove(itemId) }
+        if restoreTranscriptDetailsIfCached(itemId: itemId) { return true }
+        if let task = transcriptDetailLoadTasks[itemId] {
+            return await task.value
+        }
+
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return false }
+            return await self.fetchTranscriptDetails(itemId: itemId)
+        }
+        transcriptDetailLoadTasks[itemId] = task
+        let loaded = await task.value
+        transcriptDetailLoadTasks.removeValue(forKey: itemId)
+        return loaded
+    }
+
+    private func fetchTranscriptDetails(itemId: String) async -> Bool {
         do {
             let events = try await transport.transcriptDetails(itemId: itemId)
             guard let location = transcriptItemLocation(itemId) else { return false }
@@ -355,19 +371,46 @@ extension SessionModel {
             turn.detailRevision = originalMessage.turn.detailRevision
             turn.hasHydratedWorkedDetails = true
             let hydrated = ConversationItem.assistant(AssistantMessage(id: originalMessage.id, turn: turn))
-            switch location.storage {
-            case let .settled(index): settledConversation[index] = hydrated
-            case .active: activeItem = hydrated
-            }
-            for call in turn.allToolCalls {
-                toolOwnerItemIds[call.toolCallId] = originalMessage.id
-            }
+            transcriptDetailsCache[itemId] = TranscriptDetailsCacheEntry(
+                revision: originalMessage.turn.detailRevision,
+                turn: turn
+            )
+            installTranscriptDetails(hydrated, at: location.storage)
             return true
         } catch {
             if !isTaskCancellation(error) {
                 errorMessage = serverErrorMessage(error)
             }
             return false
+        }
+    }
+
+    private func restoreTranscriptDetailsIfCached(itemId: String) -> Bool {
+        guard let cached = transcriptDetailsCache[itemId] else { return false }
+        // A row task can briefly outlive the deferred row it hydrated. The
+        // cache entry proves that work already completed successfully.
+        guard let location = transcriptItemLocation(itemId) else { return true }
+        guard case let .assistant(originalMessage) = location.item,
+            cached.revision == originalMessage.turn.detailRevision
+        else { return false }
+        let hydrated = ConversationItem.assistant(
+            AssistantMessage(id: originalMessage.id, turn: cached.turn)
+        )
+        installTranscriptDetails(hydrated, at: location.storage)
+        return true
+    }
+
+    private func installTranscriptDetails(
+        _ item: ConversationItem,
+        at location: TranscriptStorageLocation
+    ) {
+        switch location {
+        case let .settled(index): settledConversation[index] = item
+        case .active: activeItem = item
+        }
+        guard case let .assistant(message) = item else { return }
+        for call in message.turn.allToolCalls {
+            toolOwnerItemIds[call.toolCallId] = message.id
         }
     }
 

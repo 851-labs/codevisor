@@ -44,7 +44,10 @@ public enum TranscriptStreamingTextIdentity {
             let segments = assistantMarkdownSegments(
                 markdown,
                 attachments: turn.attachments,
-                includeServerPaths: !turn.isGenerating,
+                // Response rendering resolves completed local-image syntax
+                // during streaming, so navigation baselines must use the same
+                // topology and semantic stream identities.
+                includeServerPaths: true,
                 includeUnreferencedAttachments: !turn.isGenerating
             )
             for (index, segment) in segments.enumerated() {

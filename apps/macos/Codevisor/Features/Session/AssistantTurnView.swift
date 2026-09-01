@@ -14,22 +14,23 @@ enum AssistantTurnPresentation: Equatable {
     case result
     case completePrelude
     case resultPrelude
+    case activity
     case epilogue
 
     var showsPlanning: Bool {
         switch self {
         case .complete, .planning, .completePrelude: true
-        case .result, .resultPrelude, .epilogue: false
+        case .result, .resultPrelude, .activity, .epilogue: false
         }
     }
     var showsPlanDocument: Bool { self == .complete }
     var showsResultWork: Bool {
         switch self {
         case .complete, .result, .completePrelude, .resultPrelude: true
-        case .planning, .epilogue: false
+        case .planning, .activity, .epilogue: false
         }
     }
-    var showsActivity: Bool { showsResultWork }
+    var showsActivity: Bool { showsResultWork || self == .activity }
     var showsResponse: Bool { self == .complete || self == .result }
     var showsEpilogue: Bool { showsResponse || self == .epilogue }
 }
@@ -68,7 +69,6 @@ struct AssistantTurnView: View {
     /// is the mounted active row. A settled remount resets it harmlessly.
     @State private var hasAutoCollapsed = false
     @State private var isHovered = false
-    @State private var hasActiveTextEntranceAnimation = false
 
     init(
         turn: AssistantTurn,
@@ -103,7 +103,7 @@ struct AssistantTurnView: View {
         case .result: [.turnImplementation(turnID)]
         case .completePrelude: [.turn(turnID), .turnImplementation(turnID)]
         case .resultPrelude: [.turnImplementation(turnID)]
-        case .epilogue: []
+        case .activity, .epilogue: []
         }
     }
 
@@ -146,7 +146,12 @@ struct AssistantTurnView: View {
             // Planning/exploration collapses into the first "Worked for…"
             // section, above the proposed plan.
             if presentation.showsPlanning, showsPlanningSection(beforePlan) {
-                workedSection(items: beforePlan, key: .turn(turnID), timerLabel: turn.planBoundary == nil)
+                workedSection(
+                    items: beforePlan,
+                    key: .turn(turnID),
+                    timerLabel: turn.planBoundary == nil,
+                    allowsDeferred: true
+                )
             }
 
             if presentation.showsPlanDocument,
@@ -161,7 +166,12 @@ struct AssistantTurnView: View {
             // "Worked for…" section BELOW the plan, so approved work reads in
             // order (plan → build) instead of piling up above the plan card.
             if presentation.showsResultWork, !afterPlan.isEmpty {
-                workedSection(items: afterPlan, key: .turnImplementation(turnID), timerLabel: true)
+                workedSection(
+                    items: afterPlan,
+                    key: .turnImplementation(turnID),
+                    timerLabel: true,
+                    allowsDeferred: false
+                )
             }
 
             // A transient failure (e.g. 529 overload) is being retried — show it
@@ -170,16 +180,19 @@ struct AssistantTurnView: View {
                 !isWaitingOnUser, turn.isGenerating, let retry = turn.retryStatus
             {
                 ChatActivityRow(retryLabel(retry))
+                    .suppressedDuringStreamingTextEntrance()
             } else if postResponseGoalActivity == nil, presentation.showsActivity,
                 !isWaitingOnUser, turn.showsActivityIndicator,
                 turn.contextCompactionStatus != .started
             {
                 if turn.isThinking {
                     ShimmeringText.thinking
-                } else if !hasActiveTextEntranceAnimation {
+                        .suppressedDuringStreamingTextEntrance()
+                } else {
                     // Commentary is not `finalText`, but its glyph fade is
                     // still visible activity and wins over this idle fallback.
                     ShimmeringText(text: "Waiting on harness...")
+                        .suppressedDuringStreamingTextEntrance()
                 }
             }
 
@@ -218,6 +231,7 @@ struct AssistantTurnView: View {
             {
                 if let waitingOnBackgroundTask {
                     ShimmeringText.waitingOnBackgroundTask(waitingOnBackgroundTask)
+                        .suppressedDuringStreamingTextEntrance()
                 }
                 if !turn.isGenerating {
                     // Copies just the final answer text, not the worked/tool
@@ -229,6 +243,7 @@ struct AssistantTurnView: View {
 
             if presentation.showsEpilogue, !isWaitingOnUser, let postResponseGoalActivity {
                 ShimmeringText(text: goalActivityLabel(postResponseGoalActivity))
+                    .suppressedDuringStreamingTextEntrance()
             }
 
             // A non-clean stop (error / limit / refusal / gave-up retry) surfaces
@@ -243,9 +258,6 @@ struct AssistantTurnView: View {
         }
         .markdownLinkHandler(openMarkdownLink)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .onPreferenceChange(StreamingMarkdownEntranceAnimationPreferenceKey.self) { active in
-            hasActiveTextEntranceAnimation = active
-        }
         // Whole-row hover target, full width and height: AppKit tracking
         // (not .onHover) so the transparent regions count too.
         .hoverTracking($isHovered)
@@ -422,15 +434,25 @@ struct AssistantTurnView: View {
     private func workedSection(
         items: [WorkedItem],
         key: TranscriptDisclosureStore.Key,
-        timerLabel: Bool
+        timerLabel: Bool,
+        allowsDeferred: Bool
     ) -> some View {
         let expanded = isExpanded(key)
+        let deferredDetailItemID =
+            allowsDeferred && turn.hasDeferredWorkedDetails
+            ? turn.deferredDetailItemId
+            : nil
         return VStack(alignment: .leading, spacing: 12) {
             // Early-collapsed sections (asserted final answer streaming) are
             // already settled: give them the chevron so the user can peek at
             // the work while the answer is still writing.
             if turn.isGenerating, !hasAutoCollapsed {
-                workedHeader(label: sectionLabel(timer: timerLabel), showsChevron: false, expanded: expanded)
+                workedHeader(
+                    label: sectionLabel(timer: timerLabel),
+                    showsChevron: false,
+                    expanded: expanded,
+                    deferredDetailItemID: nil
+                )
             } else {
                 Button {
                     let change = {
@@ -443,10 +465,15 @@ struct AssistantTurnView: View {
                     }
                     performAnchoredDisclosureChange?(change) ?? change()
                 } label: {
-                    workedHeader(label: sectionLabel(timer: timerLabel), showsChevron: true, expanded: expanded)
-                        .contentShape(Rectangle())
+                    workedHeader(
+                        label: sectionLabel(timer: timerLabel),
+                        showsChevron: true,
+                        expanded: expanded,
+                        deferredDetailItemID: deferredDetailItemID
+                    )
+                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(TranscriptWorkedSectionButtonStyle())
             }
 
             // The divider belongs to the disclosure header, not its revealed
@@ -455,37 +482,38 @@ struct AssistantTurnView: View {
             Divider()
 
             TranscriptDisclosureContentReveal(
-                isExpanded: expanded && (!items.isEmpty || turn.hasDeferredWorkedDetails)
+                isExpanded: expanded && !items.isEmpty
             ) {
                 VStack(alignment: .leading, spacing: 12) {
                     // Answered questions ride here too: the reducer synthesizes
                     // a tool call for each, so they group and render inline with
                     // the other tool calls that surround them.
-                    if turn.hasDeferredWorkedDetails,
-                        let itemId = turn.deferredDetailItemId,
-                        let transcriptController
-                    {
-                        DeferredTranscriptDetails(controller: transcriptController, itemId: itemId)
-                    } else {
-                        TranscriptItemsView(
-                            items: items,
-                            turn: turn,
-                            turnID: turnID,
-                            isTurnActive: turn.isGenerating,
-                            animationPresentation: textAnimationPresentation,
-                            animationEnabled: textAnimationPresentation.animationsEnabled
-                        )
-                    }
+                    TranscriptItemsView(
+                        items: items,
+                        turn: turn,
+                        turnID: turnID,
+                        isTurnActive: turn.isGenerating,
+                        animationPresentation: textAnimationPresentation,
+                        animationEnabled: textAnimationPresentation.animationsEnabled
+                    )
                 }
             }
         }
     }
 
-    private func workedHeader(label: some View, showsChevron: Bool, expanded: Bool) -> some View {
+    private func workedHeader(
+        label: some View,
+        showsChevron: Bool,
+        expanded: Bool,
+        deferredDetailItemID: String?
+    ) -> some View {
         HStack(spacing: 6) {
             label
             if showsChevron {
-                TranscriptDisclosureChevron(expanded: expanded)
+                TranscriptWorkedDisclosureIndicator(
+                    expanded: expanded,
+                    deferredDetailItemID: deferredDetailItemID
+                )
             }
             Spacer(minLength: 0)
         }
@@ -529,40 +557,6 @@ struct AssistantTurnView: View {
     private var workedTitle: String {
         guard let duration = turn.duration, duration >= 1 else { return "Worked for a moment" }
         return "Worked for \(format(Int(duration.rounded())))"
-    }
-}
-
-private struct DeferredTranscriptDetails: View {
-    let controller: SessionController
-    let itemId: String
-    @State private var state: LoadState = .loading
-
-    private enum LoadState {
-        case loading
-        case failed
-    }
-
-    var body: some View {
-        Group {
-            switch state {
-            case .loading:
-                ShimmeringText(text: "Loading worked details…")
-                    .task { await load() }
-            case .failed:
-                Button("Retry loading worked details") {
-                    state = .loading
-                }
-                .buttonStyle(.link)
-            }
-        }
-        .font(.callout)
-    }
-
-    private func load() async {
-        let loaded = await controller.loadTranscriptDetails(itemId)
-        if !loaded {
-            state = .failed
-        }
     }
 }
 

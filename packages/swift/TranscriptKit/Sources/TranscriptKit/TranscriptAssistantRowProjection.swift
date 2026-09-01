@@ -10,6 +10,7 @@ public enum TranscriptBlockLifecycle: Sendable, Equatable {
 
 public enum TranscriptMarkdownContainer: Sendable, Equatable {
     case assistantResponse
+    case assistantWorked
     case planDocument
 }
 
@@ -23,14 +24,12 @@ public struct TranscriptAssistantAttachment: Sendable, Equatable {
 }
 
 public enum TranscriptAssistantChromeSlice: Sendable, Equatable {
-    case completePrelude
-    case resultPrelude
+    case activity
     case epilogue
 
     var layoutComponent: String {
         switch self {
-        case .completePrelude: "prelude"
-        case .resultPrelude: "result-prelude"
+        case .activity: "activity"
         case .epilogue: "epilogue"
         }
     }
@@ -56,16 +55,42 @@ enum TranscriptAssistantRowProjection {
             return
         }
 
-        guard let planDocument = message.turn.planDocument, !planDocument.isEmpty else {
-            if appendAssistantResponse(
+        var projectedContent = appendWorkedSection(
+            message,
+            kind: .planning,
+            items: message.turn.workedItemsBeforePlan,
+            showsTimer: message.turn.planBoundary == nil,
+            allowsDeferred: true,
+            lifecycle: .settled,
+            to: &rows
+        )
+        if let planDocument = message.turn.planDocument, !planDocument.isEmpty {
+            TranscriptPlanRowProjection.append(
+                messageID: message.id,
+                markdown: planDocument,
+                lifecycle: .settled,
+                to: &rows
+            )
+            projectedContent = true
+            projectedContent =
+                appendWorkedSection(
+                    message,
+                    kind: .implementation,
+                    items: message.turn.workedItemsAfterPlan,
+                    showsTimer: true,
+                    allowsDeferred: false,
+                    lifecycle: .settled,
+                    to: &rows
+                ) || projectedContent
+        }
+        projectedContent =
+            appendAssistantResponse(
                 message,
-                prelude: .completePrelude,
                 waitingOnBackgroundTask: waitingOnBackgroundTask,
                 lifecycle: .settled,
                 to: &rows
-            ) {
-                return
-            }
+            ) || projectedContent
+        if !projectedContent {
             rows.append(
                 .init(
                     id: .message(item.id),
@@ -76,50 +101,14 @@ enum TranscriptAssistantRowProjection {
                         waitingOnBackgroundTask: waitingOnBackgroundTask
                     )
                 ))
-            return
-        }
-
-        let revision = measurementRevision(
-            for: item,
-            waitingOnBackgroundTask: waitingOnBackgroundTask
-        )
-        if message.turn.hasDeferredWorkedDetails || !message.turn.workedItemsBeforePlan.isEmpty {
-            rows.append(
-                .init(
-                    id: .assistantPlanning(message.id),
-                    content: .assistantPlanning(message),
-                    estimatedHeight: 44,
-                    measurementRevision: revision
-                ))
-        }
-        TranscriptPlanRowProjection.append(
-            messageID: message.id,
-            markdown: planDocument,
-            lifecycle: .settled,
-            to: &rows
-        )
-        if !appendAssistantResponse(
-            message,
-            prelude: .resultPrelude,
-            waitingOnBackgroundTask: waitingOnBackgroundTask,
-            lifecycle: .settled,
-            to: &rows
-        ),
-            !message.turn.workedItemsAfterPlan.isEmpty
-                || message.turn.finalText != nil
-                || message.turn.stopDetail != nil
-                || message.turn.isGenerating
-        {
-            rows.append(
-                .init(
-                    id: .assistantResult(message.id),
-                    content: .assistantResult(
-                        message,
-                        waitingOnBackgroundTask: waitingOnBackgroundTask
-                    ),
-                    estimatedHeight: 240,
-                    measurementRevision: revision
-                ))
+        } else if message.turn.finalText == nil, message.turn.stopDetail != nil {
+            appendChrome(
+                message,
+                slice: .epilogue,
+                waitingOnBackgroundTask: waitingOnBackgroundTask,
+                lifecycle: .settled,
+                to: &rows
+            )
         }
     }
 
@@ -128,7 +117,6 @@ enum TranscriptAssistantRowProjection {
     @discardableResult
     static func appendAssistantResponse(
         _ message: AssistantMessage,
-        prelude: TranscriptAssistantChromeSlice,
         waitingOnBackgroundTask: String?,
         lifecycle: TranscriptBlockLifecycle,
         to rows: inout [TranscriptPresentationRow]
@@ -208,23 +196,6 @@ enum TranscriptAssistantRowProjection {
         }
         guard !responseRows.isEmpty else { return false }
 
-        if hasPrelude(message.turn, slice: prelude) {
-            rows.append(
-                .init(
-                    id: chromeID(messageID: message.id, slice: prelude, lifecycle: lifecycle),
-                    content: .assistantChrome(
-                        message,
-                        slice: prelude,
-                        waitingOnBackgroundTask: nil
-                    ),
-                    estimatedHeight: 80,
-                    measurementRevision: measurementRevision(
-                        for: .assistant(message),
-                        waitingOnBackgroundTask: nil
-                    ),
-                    spacingAfter: 14
-                ))
-        }
         let last = responseRows.removeLast()
         responseRows.append(
             .init(
@@ -236,12 +207,46 @@ enum TranscriptAssistantRowProjection {
                 finishedResponseItemId: last.finishedResponseItemId
             ))
         rows.append(contentsOf: responseRows)
+        appendChrome(
+            message,
+            slice: .epilogue,
+            waitingOnBackgroundTask: waitingOnBackgroundTask,
+            lifecycle: lifecycle,
+            to: &rows
+        )
+        return true
+    }
+
+    static func appendActivityIfNeeded(
+        _ message: AssistantMessage,
+        lifecycle: TranscriptBlockLifecycle,
+        to rows: inout [TranscriptPresentationRow]
+    ) {
+        guard message.turn.isGenerating,
+            message.turn.retryStatus != nil || message.turn.showsActivityIndicator
+        else { return }
+        appendChrome(
+            message,
+            slice: .activity,
+            waitingOnBackgroundTask: nil,
+            lifecycle: lifecycle,
+            to: &rows
+        )
+    }
+
+    private static func appendChrome(
+        _ message: AssistantMessage,
+        slice: TranscriptAssistantChromeSlice,
+        waitingOnBackgroundTask: String?,
+        lifecycle: TranscriptBlockLifecycle,
+        to rows: inout [TranscriptPresentationRow]
+    ) {
         rows.append(
             .init(
-                id: chromeID(messageID: message.id, slice: .epilogue, lifecycle: lifecycle),
+                id: chromeID(messageID: message.id, slice: slice, lifecycle: lifecycle),
                 content: .assistantChrome(
                     message,
-                    slice: .epilogue,
+                    slice: slice,
                     waitingOnBackgroundTask: waitingOnBackgroundTask
                 ),
                 estimatedHeight: 32,
@@ -250,7 +255,6 @@ enum TranscriptAssistantRowProjection {
                     waitingOnBackgroundTask: waitingOnBackgroundTask
                 )
             ))
-        return true
     }
 
     static func activeFallbackRow(
@@ -294,7 +298,7 @@ enum TranscriptAssistantRowProjection {
         }
     }
 
-    private static func markdownID(
+    static func markdownID(
         messageID: UUID,
         sourceID: String,
         ordinal: Int,
@@ -357,21 +361,6 @@ enum TranscriptAssistantRowProjection {
         return hasher.finalize()
     }
 
-    private static func hasPrelude(
-        _ turn: AssistantTurn,
-        slice: TranscriptAssistantChromeSlice
-    ) -> Bool {
-        switch slice {
-        case .completePrelude:
-            turn.hasDeferredWorkedDetails || !turn.workedItemsBeforePlan.isEmpty
-                || !turn.workedItemsAfterPlan.isEmpty || turn.showsActivityIndicator
-        case .resultPrelude:
-            !turn.workedItemsAfterPlan.isEmpty || turn.showsActivityIndicator
-        case .epilogue:
-            false
-        }
-    }
-
     private static func attachmentMeasurementRevision(
         _ attachment: TranscriptAssistantAttachment
     ) -> Int {
@@ -426,7 +415,7 @@ enum TranscriptAssistantRowProjection {
     }
 }
 
-private extension TranscriptAssistantRowProjection {
+extension TranscriptAssistantRowProjection {
     static func estimatedHeight(
         for blocks: [MarkdownBlock],
         fragment: TranscriptMarkdownFragment? = nil

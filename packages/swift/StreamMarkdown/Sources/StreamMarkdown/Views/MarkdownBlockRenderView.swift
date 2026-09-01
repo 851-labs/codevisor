@@ -8,22 +8,29 @@ public struct MarkdownBlockRenderView: View {
     private let foregroundColor: Color?
     private let documentSource: String
     private let streamID: String
+    private let animationGroupID: String
     private let isStreaming: Bool
     @Environment(\.markdownTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.streamingTextAnimationRegistry) private var animationRegistry
     @State private var animationTimeline = StreamingTextAnimationTimeline()
+    @State private var hasActiveEntranceAnimation = false
+    @State private var animationMount = StreamingMarkdownAnimationMount()
+    @State private var animationMountRevision = 0
 
     public init(
         block: MarkdownBlock,
         foregroundColor: Color? = nil,
         documentSource: String = "",
         streamID: String,
+        animationGroupID: String? = nil,
         isStreaming: Bool
     ) {
         blocks = [block]
         self.foregroundColor = foregroundColor
         self.documentSource = documentSource
         self.streamID = streamID
+        self.animationGroupID = animationGroupID ?? streamID
         self.isStreaming = isStreaming
     }
 
@@ -32,6 +39,7 @@ public struct MarkdownBlockRenderView: View {
         foregroundColor: Color? = nil,
         documentSource: String = "",
         streamID: String,
+        animationGroupID: String? = nil,
         isStreaming: Bool
     ) {
         precondition(!blocks.isEmpty, "Markdown rows must contain at least one block")
@@ -39,66 +47,131 @@ public struct MarkdownBlockRenderView: View {
         self.foregroundColor = foregroundColor
         self.documentSource = documentSource
         self.streamID = streamID
+        self.animationGroupID = animationGroupID ?? streamID
         self.isStreaming = isStreaming
     }
 
     @ViewBuilder
     public var body: some View {
+        let presentation = isStreaming ? animationRegistry?.presentation : nil
+        let coordinator =
+            isStreaming
+            ? animationRegistry?.coordinator(for: animationGroupID)
+            : nil
+        let mount = animationMount.resolve(
+            streamID: streamID,
+            presentation: presentation
+        )
+        let _ = animationMountRevision
+        let timeline = coordinator?.timeline ?? animationTimeline
+        let resolvedTimeline = isStreaming && !reduceMotion ? timeline : nil
+        let playbackRevision = coordinator?.playbackRevision ?? 0
+
         Group {
-            if blocks.count > 1, blocks.allSatisfy(\.isTextRunCompatible) {
+            if blocks.allSatisfy(\.isTextRunCompatible) {
                 #if canImport(AppKit) || canImport(UIKit)
                     MarkdownTextRunView(
                         blocks: blocks,
                         foregroundColor: foregroundColor ?? theme.textForeground,
-                        animationContext: animationContext
+                        animationContext: animationContext(
+                            timeline: resolvedTimeline,
+                            animatesInitialContent: mount.animatesInitialContent,
+                            playbackRevision: playbackRevision
+                        )
                     )
                 #else
-                    blockStack
+                    blockStack(
+                        timeline: resolvedTimeline,
+                        animatesInitialContent: mount.animatesInitialContent,
+                        playbackRevision: playbackRevision
+                    )
                 #endif
             } else if blocks.count == 1, let block = blocks.first {
                 MarkdownBlockView(
                     block: block,
                     foregroundColor: foregroundColor ?? theme.textForeground,
-                    animationTimeline: resolvedAnimationTimeline,
+                    animationTimeline: resolvedTimeline,
+                    animatesInitialContent: mount.animatesInitialContent,
+                    playbackRevision: playbackRevision,
                     documentSource: documentSource,
                     pacingSourceID: streamID,
                     animationPath: streamID,
                     reduceMotion: reduceMotion
                 )
             } else {
-                blockStack
+                blockStack(
+                    timeline: resolvedTimeline,
+                    animatesInitialContent: mount.animatesInitialContent,
+                    playbackRevision: playbackRevision
+                )
             }
         }
+        .preference(
+            key: StreamingMarkdownEntranceAnimationPreferenceKey.self,
+            value: coordinator?.hasActiveEntranceAnimation
+                ?? hasActiveEntranceAnimation
+        )
+        .onAppear {
+            guard coordinator == nil else { return }
+            timeline.observeActivity { active in
+                hasActiveEntranceAnimation = active
+            }
+        }
+        .onDisappear {
+            guard coordinator == nil else { return }
+            timeline.observeActivity(nil)
+            hasActiveEntranceAnimation = false
+        }
         .onChange(of: isStreaming) { _, streaming in
-            if !streaming { animationTimeline.reset() }
+            if !streaming {
+                if coordinator == nil { timeline.reset() }
+                animationRegistry?.retireCoordinator(for: animationGroupID)
+            }
+        }
+        .onChange(of: reduceMotion) { _, reduced in
+            if reduced, coordinator == nil { timeline.reset() }
+        }
+        .task(id: mount.activationToken) {
+            guard mount.needsActivation else { return }
+            await Task.yield()
+            if animationMount.activate(token: mount.activationToken) {
+                animationMountRevision &+= 1
+            }
         }
     }
 
-    private var resolvedAnimationTimeline: StreamingTextAnimationTimeline? {
-        isStreaming && !reduceMotion ? animationTimeline : nil
-    }
-
-    private var animationContext: StreamingTextAnimationContext? {
-        resolvedAnimationTimeline.map {
+    private func animationContext(
+        timeline: StreamingTextAnimationTimeline?,
+        animatesInitialContent: Bool,
+        playbackRevision: Int
+    ) -> StreamingTextAnimationContext? {
+        timeline.map {
             StreamingTextAnimationContext(
                 timeline: $0,
                 sourceID: streamID,
                 pacingSourceID: streamID,
                 documentSource: documentSource,
                 isStreaming: true,
-                animatesInitialContent: true,
-                reduceMotion: reduceMotion
+                animatesInitialContent: animatesInitialContent,
+                reduceMotion: reduceMotion,
+                playbackRevision: playbackRevision
             )
         }
     }
 
-    private var blockStack: some View {
+    private func blockStack(
+        timeline: StreamingTextAnimationTimeline?,
+        animatesInitialContent: Bool,
+        playbackRevision: Int
+    ) -> some View {
         VStack(alignment: .leading, spacing: theme.blockSpacing) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
                 MarkdownBlockView(
                     block: block,
                     foregroundColor: foregroundColor ?? theme.textForeground,
-                    animationTimeline: resolvedAnimationTimeline,
+                    animationTimeline: timeline,
+                    animatesInitialContent: animatesInitialContent,
+                    playbackRevision: playbackRevision,
                     documentSource: documentSource,
                     pacingSourceID: streamID,
                     animationPath: "\(streamID).\(index)",
@@ -160,6 +233,7 @@ public struct MarkdownFragmentRenderView: View {
     private let blocks: [MarkdownBlock]
     private let documentSource: String
     private let streamID: String
+    private let animationGroupID: String
     private let isStreaming: Bool
     private let layout: MarkdownFragmentLayout
     @Environment(\.markdownTheme) private var theme
@@ -168,6 +242,7 @@ public struct MarkdownFragmentRenderView: View {
         blocks: [MarkdownBlock],
         documentSource: String = "",
         streamID: String,
+        animationGroupID: String? = nil,
         isStreaming: Bool,
         layout: MarkdownFragmentLayout
     ) {
@@ -175,6 +250,7 @@ public struct MarkdownFragmentRenderView: View {
         self.blocks = blocks
         self.documentSource = documentSource
         self.streamID = streamID
+        self.animationGroupID = animationGroupID ?? streamID
         self.isStreaming = isStreaming
         self.layout = layout
     }
@@ -184,6 +260,7 @@ public struct MarkdownFragmentRenderView: View {
             blocks: blocks,
             documentSource: documentSource,
             streamID: streamID,
+            animationGroupID: animationGroupID,
             isStreaming: isStreaming
         )
         .padding(.leading, contentIndent)
@@ -250,6 +327,7 @@ struct MarkdownBlockView: View {
     let foregroundColor: Color
     var animationTimeline: StreamingTextAnimationTimeline?
     var animatesInitialContent = true
+    var playbackRevision = 0
     var documentSource = ""
     var pacingSourceID = "block"
     var animationPath = "block"
@@ -316,7 +394,8 @@ struct MarkdownBlockView: View {
                 documentSource: documentSource,
                 isStreaming: true,
                 animatesInitialContent: animatesInitialContent,
-                reduceMotion: reduceMotion
+                reduceMotion: reduceMotion,
+                playbackRevision: playbackRevision
             )
         }
     }
@@ -328,6 +407,7 @@ struct MarkdownBlockView: View {
             foregroundColor: foregroundColor,
             animationTimeline: animationTimeline,
             animatesInitialContent: animatesInitialContent,
+            playbackRevision: playbackRevision,
             documentSource: documentSource,
             pacingSourceID: pacingSourceID,
             animationPath: animationPath,
@@ -370,6 +450,7 @@ struct MarkdownBlockView: View {
             foregroundColor: foregroundColor,
             animationTimeline: animationTimeline,
             animatesInitialContent: animatesInitialContent,
+            playbackRevision: playbackRevision,
             documentSource: documentSource,
             pacingSourceID: pacingSourceID,
             animationPath: "\(animationPath).quote",
@@ -383,6 +464,7 @@ private struct MarkdownRecursiveListView: View {
     let foregroundColor: Color
     let animationTimeline: StreamingTextAnimationTimeline?
     let animatesInitialContent: Bool
+    let playbackRevision: Int
     let documentSource: String
     let pacingSourceID: String
     let animationPath: String
@@ -401,6 +483,7 @@ private struct MarkdownRecursiveListView: View {
                         foregroundColor: foregroundColor,
                         animationTimeline: animationTimeline,
                         animatesInitialContent: animatesInitialContent,
+                        playbackRevision: playbackRevision,
                         documentSource: documentSource,
                         pacingSourceID: pacingSourceID,
                         animationPath: "\(animationPath).item.\(index)",

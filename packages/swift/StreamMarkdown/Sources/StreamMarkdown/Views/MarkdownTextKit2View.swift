@@ -56,6 +56,12 @@
                 .cursor: NSCursor.pointingHand,
             ]
             textContainer?.lineFragmentPadding = 0
+            // A text container supplied to NSTextView does not automatically
+            // track the view's width. Transcript virtualization repeatedly
+            // detaches and remounts these views; without this contract AppKit
+            // can restore the container's original 1pt width while leaving the
+            // NSTextView itself full-width, wrapping every character.
+            textContainer?.widthTracksTextView = true
             // TextKit 1's transcript renderer advances by ascender/descender
             // plus paragraph line spacing. TextKit 2 includes font leading by
             // default, producing a visible line-height jump when streaming
@@ -96,20 +102,25 @@
             needsDisplay = true
         }
 
+        override func layout() {
+            synchronizeTextContainerWidth(with: bounds.width)
+            super.layout()
+        }
+
         func contentHeight(forWidth proposedWidth: CGFloat) -> CGFloat {
             let width = max(1, proposedWidth)
-            if abs(measuredWidth - width) <= 0.25 { return measuredHeight }
+            let containerWidth = textContainer?.size.width ?? -1
+            if abs(measuredWidth - width) <= 0.25,
+                abs(containerWidth - width) <= 0.25
+            {
+                return measuredHeight
+            }
 
             if abs(frame.width - width) > 0.25 {
                 setFrameSize(NSSize(width: width, height: max(1, frame.height)))
             }
-            guard let textLayoutManager,
-                let textContainer
-            else { return 1 }
-            textContainer.size = NSSize(
-                width: width,
-                height: CGFloat.greatestFiniteMagnitude
-            )
+            guard let textLayoutManager, textContainer != nil else { return 1 }
+            synchronizeTextContainerWidth(with: width)
             textLayoutManager.ensureLayout(for: textLayoutManager.documentRange)
             measuredWidth = width
             measuredHeight = max(
@@ -117,6 +128,17 @@
                 ceil(textLayoutManager.usageBoundsForTextContainer.height)
             )
             return measuredHeight
+        }
+
+        private func synchronizeTextContainerWidth(with proposedWidth: CGFloat) {
+            guard let textContainer else { return }
+            let width = max(1, proposedWidth)
+            guard abs(textContainer.size.width - width) > 0.25 else { return }
+            textContainer.size = NSSize(
+                width: width,
+                height: CGFloat.greatestFiniteMagnitude
+            )
+            measuredWidth = -1
         }
 
         func textView(_: NSTextView, clickedOnLink link: Any, at _: Int) -> Bool {

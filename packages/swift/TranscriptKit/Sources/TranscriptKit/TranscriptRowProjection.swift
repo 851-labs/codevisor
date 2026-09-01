@@ -104,6 +104,10 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         case activePlanMarkdown(UUID, ordinal: Int, fragment: String?)
         case assistantResult(UUID)
         case activeResult(UUID)
+        case assistantWorkedHeader(UUID, TranscriptWorkedSectionKind)
+        case activeWorkedHeader(UUID, TranscriptWorkedSectionKind)
+        case assistantWorkedItem(UUID, TranscriptWorkedSectionKind, itemID: String)
+        case activeWorkedItem(UUID, TranscriptWorkedSectionKind, itemID: String)
         case assistantChrome(UUID, TranscriptAssistantChromeSlice)
         case activeChrome(UUID, TranscriptAssistantChromeSlice)
         case assistantMarkdown(UUID, sourceID: String, ordinal: Int, fragment: String?)
@@ -133,6 +137,12 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
                 "message:\(id.uuidString):plan:markdown:\(ordinal)\(fragmentComponent(fragment))"
             case let .assistantResult(id), let .activeResult(id):
                 "message:\(id.uuidString):result"
+            case let .assistantWorkedHeader(id, section),
+                let .activeWorkedHeader(id, section):
+                "message:\(id.uuidString):worked:\(section.layoutComponent):header"
+            case let .assistantWorkedItem(id, section, itemID),
+                let .activeWorkedItem(id, section, itemID):
+                "message:\(id.uuidString):worked:\(section.layoutComponent):item:\(itemID)"
             case let .assistantChrome(id, slice), let .activeChrome(id, slice):
                 "message:\(id.uuidString):chrome:\(slice.layoutComponent)"
             case let .assistantMarkdown(id, sourceID, ordinal, fragment),
@@ -162,10 +172,12 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         public var isCacheableSettledRow: Bool {
             switch self {
             case .message, .assistantPlanning, .plan, .planHeader, .planMarkdown,
-                .assistantResult, .assistantChrome, .assistantMarkdown, .assistantAttachment:
+                .assistantResult, .assistantWorkedHeader, .assistantWorkedItem,
+                .assistantChrome, .assistantMarkdown, .assistantAttachment:
                 true
             case .active, .activePlanning, .activePlanHeader, .activePlanMarkdown,
-                .activeResult, .activeChrome, .activeMarkdown, .activeAttachment, .setup,
+                .activeResult, .activeWorkedHeader, .activeWorkedItem, .activeChrome,
+                .activeMarkdown, .activeAttachment, .setup,
                 .backgroundTask, .updateGate, .connecting, .serverWait, .error,
                 .statusError, .bottomSpacer:
                 false
@@ -179,7 +191,8 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         public var isActiveRow: Bool {
             switch self {
             case .active, .activePlanning, .activePlanHeader, .activePlanMarkdown,
-                .activeResult, .activeChrome, .activeMarkdown, .activeAttachment:
+                .activeResult, .activeWorkedHeader, .activeWorkedItem, .activeChrome,
+                .activeMarkdown, .activeAttachment:
                 true
             default: false
             }
@@ -191,6 +204,9 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
                 let .plan(id), let .planHeader(id), let .activePlanHeader(id),
                 let .planMarkdown(id, _, _), let .activePlanMarkdown(id, _, _),
                 let .assistantResult(id), let .activeResult(id), let .active(id):
+                id
+            case let .assistantWorkedHeader(id, _), let .activeWorkedHeader(id, _),
+                let .assistantWorkedItem(id, _, _), let .activeWorkedItem(id, _, _):
                 id
             case let .assistantChrome(id, _), let .activeChrome(id, _),
                 let .assistantMarkdown(id, _, _, _), let .activeMarkdown(id, _, _, _),
@@ -209,6 +225,10 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         case planDocument(String)
         case planHeader(lifecycle: TranscriptBlockLifecycle)
         case assistantResult(AssistantMessage, waitingOnBackgroundTask: String?)
+        case assistantWorkedHeader(TranscriptWorkedSectionHeader)
+        case activeWorkedHeader(TranscriptActiveWorkedSectionHeader)
+        case assistantWorkedItem(TranscriptSettledWorkedItem)
+        case activeWorkedItem(TranscriptWorkedItemReference)
         case assistantChrome(
             AssistantMessage,
             slice: TranscriptAssistantChromeSlice,
@@ -234,6 +254,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     public let layoutKey: String
     /// Overrides ordinary message spacing for adjacent blocks in one document.
     public let spacingAfter: CGFloat?
+    public let workedSection: TranscriptWorkedSectionMembership?
     /// The completed assistant item represented by this visible slice. The
     /// active slot can carry this after generation ends without changing its
     /// stable row identity.
@@ -257,6 +278,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         estimatedHeight: CGFloat,
         measurementRevision: Int = 0,
         spacingAfter: CGFloat? = nil,
+        workedSection: TranscriptWorkedSectionMembership? = nil,
         finishedResponseItemId: UUID? = nil
     ) {
         self.id = id
@@ -264,6 +286,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         self.estimatedHeight = estimatedHeight
         self.measurementRevision = measurementRevision
         self.spacingAfter = spacingAfter
+        self.workedSection = workedSection
         layoutKey = id.layoutKey
         if let finishedResponseItemId {
             self.finishedResponseItemId = finishedResponseItemId
@@ -276,7 +299,8 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
                     message.id
                 case let .assistantChrome(message, slice, waitingOnBackgroundTask: _):
                     slice == .epilogue && !message.turn.isGenerating ? message.id : nil
-                case .planHeader, .markdownChunk, .assistantAttachment:
+                case .assistantWorkedHeader, .activeWorkedHeader, .assistantWorkedItem,
+                    .activeWorkedItem, .planHeader, .markdownChunk, .assistantAttachment:
                     nil
                 case let .active(item):
                     if case let .assistant(message) = item, !message.turn.isGenerating {

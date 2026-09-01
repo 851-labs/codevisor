@@ -20,8 +20,10 @@ struct TranscriptActiveProjectionWorkerTests {
             return []
         }
 
-        worker.submit(request(revision: 1, markdown: "first")) { _ in
-            Issue.record("A superseded projection must not publish")
+        let firstPublished = Mutex(false)
+        worker.submit(request(revision: 1, markdown: "first")) { output in
+            #expect(output.request.revision == 1)
+            firstPublished.withLock { $0 = true }
         }
         await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
@@ -40,6 +42,7 @@ struct TranscriptActiveProjectionWorkerTests {
             release.signal()
         }
 
+        #expect(firstPublished.withLock { $0 })
         #expect(publishedRevision == 3)
         #expect(projectedMarkdown.withLock { $0 } == ["first", "third"])
     }

@@ -403,6 +403,20 @@ extension SessionModelTests {
         #expect(hasToolCall)
         #expect(message.turn.deferredDetailItemId == nil)
         #expect(message.turn.hasHydratedWorkedDetails)
+        #expect(client.transcriptDetailRequestCount == 1)
+
+        // A replacement canonical page contains the compact deferred summary
+        // again. The in-memory session restores its hydrated turn before that
+        // page is published, so reopening needs neither a loading row nor a
+        // second details request.
+        await model.loadHistory()
+        guard case let .assistant(restoredMessage) = model.conversation.last else {
+            Issue.record("expected cached hydrated assistant")
+            return
+        }
+        #expect(restoredMessage.turn.deferredDetailItemId == nil)
+        #expect(restoredMessage.turn.hasHydratedWorkedDetails)
+        #expect(client.transcriptDetailRequestCount == 1)
     }
 
     @Test("Replayed user events stamp attachments onto the optimistic echo and append remote ones")

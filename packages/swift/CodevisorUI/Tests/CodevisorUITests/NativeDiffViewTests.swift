@@ -45,6 +45,18 @@
             #expect(narrow.height == natural.height)
         }
 
+        @Test("Row fills expand through the trailing viewport edge")
+        func rowFillsUseFullViewportWidth() {
+            let rows = LineDiff.rows(old: nil, new: "let value = 1")
+            let scrollView = makeScrollView(rows: rows)
+            let viewportWidth = scrollView.contentFittingSize.width + 200
+
+            _ = scrollView.fitContent(toViewportWidth: viewportWidth)
+
+            #expect(scrollView.diffTextView.frame.width == viewportWidth)
+            #expect(scrollView.diffTextView.rowRect(at: 0)?.width == viewportWidth)
+        }
+
         @Test("Thousands of lines do not multiply native text views")
         func largeDiffStillUsesOneTextView() {
             let source = (0..<5_000).map { "let value\($0) = \($0)" }.joined(separator: "\n")

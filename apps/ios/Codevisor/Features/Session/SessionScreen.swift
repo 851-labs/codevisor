@@ -53,6 +53,7 @@ struct SessionTranscriptView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.displayScale) private var displayScale
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.theme) private var theme
     @Environment(AppEnvironment.self) private var environment
     @State private var disclosure = TranscriptDisclosureStore()
@@ -81,6 +82,7 @@ struct SessionTranscriptView: View {
     @State private var showsInitialLoadingSpinner = false
     @State private var projectedRows: [TranscriptVirtualRow] = []
     @State private var projectedRowsVersion: UInt64 = 0
+    @State private var workedRowsVisibilityCache = TranscriptWorkedRowsVisibilityCache()
     @State private var projectedSessionID: UUID?
     /// Readiness belongs to a particular projection request. Existing chats
     /// move from an empty/loading request to a history-backed request, and the
@@ -91,6 +93,7 @@ struct SessionTranscriptView: View {
     @State private var textAnimationVisibility = StreamingTextAnimationVisibility(
         initiallyVisible: false
     )
+    @State private var textAnimationRegistry = StreamingTextAnimationRegistry()
     /// Window-space bounds of the live editor. UIKit uses this as the actual
     /// launch point for the optimistic user row instead of estimating from the
     /// transcript's bottom inset.
@@ -115,6 +118,13 @@ struct SessionTranscriptView: View {
             }
             .onChange(of: presentationRole) { _, role in
                 updateVisibleTranscriptLifecycle(for: role)
+            }
+            .onChange(of: scenePhase, initial: true) { _, phase in
+                if phase == .active {
+                    textAnimationRegistry.resumePlayback()
+                } else {
+                    textAnimationRegistry.suspendPlayback()
+                }
             }
             .onDisappear { [controller] in
                 historyLoadTask?.cancel()
@@ -150,6 +160,10 @@ struct SessionTranscriptView: View {
                     projectedRows = rows
                     projectedRowsVersion &+= 1
                     projectionPublication.publish(request)
+                    olderHistoryPresentation.projectionDidPublish(
+                        key: request.key,
+                        revision: projectedRowsVersion
+                    )
                 } catch is CancellationError {
                     return
                 } catch {
@@ -387,12 +401,25 @@ struct SessionTranscriptView: View {
             controller: controller,
             projectedRows: projectedRows
         ) { activeRows, activeRowsVersion, isActiveProjectionPending in
+            let visibleRows = workedRowsVisibilityCache.presentSettled(
+                projectedRows,
+                sourceVersion: projectedRowsVersion,
+                disclosure: disclosure,
+                runningSubagentToolCallIDs: controller.runningSubagentToolCallIds
+            )
+            let visibleActiveRows = TranscriptWorkedRowsVisibility.present(
+                activeRows,
+                disclosure: disclosure,
+                activeItem: controller.activeItem,
+                runningSubagentToolCallIDs: controller.runningSubagentToolCallIds
+            )
             NativeTranscriptView(
                 sessionController: controller,
-                rows: projectedRows,
-                activeRows: activeRows,
-                activeRowsVersion: activeRowsVersion,
-                rowsVersion: projectedRowsVersion,
+                rows: visibleRows.rows,
+                activeRows: visibleActiveRows.rows,
+                activeRowsVersion: activeRowsVersion ^ visibleActiveRows.revisionToken,
+                rowsVersion: projectedRowsVersion ^ visibleRows.revisionToken,
+                projectionRevision: projectedRowsVersion,
                 initialState: controller.scrollState,
                 followsLatest: followsLatest,
                 hasOlderHistory: controller.hasOlderHistory,
@@ -407,6 +434,7 @@ struct SessionTranscriptView: View {
                 sendAnimationRequest: controller.userSendAnimationRequest,
                 sendAnimationSourceFrame: sendAnimationSourceFrame,
                 presentationRole: presentationRole,
+                textAnimationRegistry: textAnimationRegistry,
                 reduceMotion: reduceMotion,
                 scrollIndicatorBottomInset: composerHeight + 6,
                 claimSendAnimation: { request in
@@ -419,6 +447,7 @@ struct SessionTranscriptView: View {
                 rowContent: { row in
                     AnyView(
                         TranscriptVirtualRowContent(row: row, controller: controller)
+                            .reportsStreamingTextAnimationActivity()
                             .environment(\.theme, theme)
                             .environment(\.attachmentImages, attachmentImages)
                             .environment(\.transcriptDisclosure, disclosure)
@@ -426,6 +455,10 @@ struct SessionTranscriptView: View {
                             .environment(
                                 \.streamingTextAnimationVisibility,
                                 textAnimationVisibility
+                            )
+                            .environment(
+                                \.streamingTextAnimationRegistry,
+                                textAnimationRegistry
                             )
                             .environment(
                                 \.runningSubagentToolCallIds,
@@ -503,10 +536,16 @@ struct SessionTranscriptView: View {
             olderHistoryPresentation.requestDidFinish(
                 token: token,
                 insertedItemCount: insertedItemCount,
-                oldestRowKey: insertedItemCount > 0
-                    ? projectedRows.first?.layoutKey
+                requiredProjectionKey: insertedItemCount > 0
+                    ? controller.transcriptProjectionKey
                     : nil
             )
+            if let publishedRequest = projectionPublication.publishedRequest {
+                olderHistoryPresentation.projectionDidPublish(
+                    key: publishedRequest.key,
+                    revision: projectedRowsVersion
+                )
+            }
         }
     }
 

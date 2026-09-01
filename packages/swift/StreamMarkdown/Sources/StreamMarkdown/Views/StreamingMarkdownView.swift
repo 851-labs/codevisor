@@ -4,7 +4,7 @@ import SwiftUI
 /// for exactly the first rendered pass, long enough for every native Markdown
 /// surface to seed its word reconciler, and then switches to normal live mode.
 @MainActor
-private final class StreamingMarkdownAnimationMount {
+final class StreamingMarkdownAnimationMount {
     struct Resolution {
         let animatesInitialContent: Bool
         let activationToken: Int
@@ -121,6 +121,7 @@ public struct StreamingMarkdownView: View {
         let parsed = parseCoordinator.presentation
         let presentsAnimation = !parsed.isComplete && animationEnabled
         let pacingSourceID = streamID ?? "root"
+        let playbackRevision = animationCoordinator?.playbackRevision ?? 0
         MarkdownSegmentListView(
             segments: parsed.renderSegments,
             foregroundColor: foregroundColor ?? theme.textForeground,
@@ -131,7 +132,8 @@ public struct StreamingMarkdownView: View {
             // A reused SwiftUI/native surface must reset its word reconciler
             // when the semantic transcript entry changes.
             animationPath: streamID.map { "stream.\($0).root" } ?? "root",
-            reduceMotion: reduceMotion
+            reduceMotion: reduceMotion,
+            playbackRevision: playbackRevision
         )
         .preference(
             key: StreamingMarkdownEntranceAnimationPreferenceKey.self,
@@ -216,6 +218,7 @@ struct MarkdownSegmentsView: View {
     let foregroundColor: Color
     var animationTimeline: StreamingTextAnimationTimeline?
     var animatesInitialContent = true
+    var playbackRevision = 0
     var documentSource = ""
     var pacingSourceID = "nested"
     var animationPath = "nested"
@@ -230,7 +233,8 @@ struct MarkdownSegmentsView: View {
             documentSource: documentSource,
             pacingSourceID: pacingSourceID,
             animationPath: animationPath,
-            reduceMotion: reduceMotion
+            reduceMotion: reduceMotion,
+            playbackRevision: playbackRevision
         )
     }
 }
@@ -245,6 +249,7 @@ struct MarkdownSegmentListView: View {
     let pacingSourceID: String
     let animationPath: String
     let reduceMotion: Bool
+    var playbackRevision = 0
     @Environment(\.markdownTheme) private var theme
     @State private var blockEntranceSequence = StreamingMarkdownBlockEntranceSequence()
     @State private var blockEntranceRevision = 0
@@ -270,7 +275,8 @@ struct MarkdownSegmentListView: View {
                         documentSource: documentSource,
                         pacingSourceID: pacingSourceID,
                         animationPath: "\(animationPath).\(renderSegment.id)",
-                        reduceMotion: reduceMotion
+                        reduceMotion: reduceMotion,
+                        playbackRevision: playbackRevision
                     )
                     .equatable()
                     .transition(
@@ -349,6 +355,7 @@ private struct MarkdownSegmentView: View, Equatable {
     let pacingSourceID: String
     let animationPath: String
     let reduceMotion: Bool
+    let playbackRevision: Int
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.segment == rhs.segment
@@ -358,6 +365,7 @@ private struct MarkdownSegmentView: View, Equatable {
             && lhs.pacingSourceID == rhs.pacingSourceID
             && lhs.animationPath == rhs.animationPath
             && lhs.reduceMotion == rhs.reduceMotion
+            && lhs.playbackRevision == rhs.playbackRevision
     }
 
     var body: some View {
@@ -375,7 +383,8 @@ private struct MarkdownSegmentView: View, Equatable {
                             documentSource: documentSource,
                             isStreaming: true,
                             animatesInitialContent: animatesInitialContent,
-                            reduceMotion: reduceMotion
+                            reduceMotion: reduceMotion,
+                            playbackRevision: playbackRevision
                         )
                     }
                 )
@@ -388,6 +397,7 @@ private struct MarkdownSegmentView: View, Equatable {
                 foregroundColor: foregroundColor,
                 animationTimeline: animationTimeline,
                 animatesInitialContent: animatesInitialContent,
+                playbackRevision: playbackRevision,
                 documentSource: documentSource,
                 pacingSourceID: pacingSourceID,
                 animationPath: animationPath,

@@ -55,7 +55,7 @@ struct AssistantTurnBody: View {
         case .result: [.turnImplementation(turnId)]
         case .completePrelude: [.turn(turnId), .turnImplementation(turnId)]
         case .resultPrelude: [.turnImplementation(turnId)]
-        case .epilogue: []
+        case .activity, .epilogue: []
         }
     }
 
@@ -72,7 +72,6 @@ struct AssistantTurnBody: View {
     private var settled: Bool {
         (!isGenerating || turn.finalTextIsAsserted) && !hasRunningSubagent
     }
-    @State private var hasActiveTextEntranceAnimation = false
 
     var body: some View {
         let animationEnabled = prepareTextAnimationPresentation()
@@ -103,10 +102,12 @@ struct AssistantTurnBody: View {
             if presentation.showsActivity {
                 if !isWaitingOnUser, isGenerating, let retry = turn.retryStatus {
                     ChatActivityRow(retryLabel(retry))
+                        .suppressedDuringStreamingTextEntrance()
                 } else if !isWaitingOnUser, isGenerating,
                     let message = transcriptController?.connectionRecoveryMessage
                 {
                     ShimmeringText(text: message)
+                        .suppressedDuringStreamingTextEntrance()
                 } else if postResponseGoalActivity == nil,
                     !isWaitingOnUser,
                     turn.showsActivityIndicator,
@@ -114,10 +115,12 @@ struct AssistantTurnBody: View {
                 {
                     if turn.isThinking {
                         ShimmeringText.thinking
-                    } else if !hasActiveTextEntranceAnimation {
+                            .suppressedDuringStreamingTextEntrance()
+                    } else {
                         // Commentary is not `finalText`, but its glyph fade is
                         // still visible activity and wins over this fallback.
                         ShimmeringText(text: "Waiting on harness...")
+                            .suppressedDuringStreamingTextEntrance()
                     }
                 }
             }
@@ -141,6 +144,7 @@ struct AssistantTurnBody: View {
                 if case let .text(_, markdown) = finalText {
                     if let waitingOnBackgroundTask {
                         ShimmeringText.waitingOnBackgroundTask(waitingOnBackgroundTask)
+                            .suppressedDuringStreamingTextEntrance()
                     }
                     if !isGenerating {
                         MessageCopyButton(text: markdown, help: "Copy response")
@@ -148,6 +152,7 @@ struct AssistantTurnBody: View {
                 }
                 if !isWaitingOnUser, let postResponseGoalActivity {
                     ShimmeringText(text: goalActivityLabel(postResponseGoalActivity))
+                        .suppressedDuringStreamingTextEntrance()
                 }
                 if !isGenerating, let stopDetail = turn.stopDetail {
                     turnErrorRow(stopDetail)
@@ -160,9 +165,6 @@ struct AssistantTurnBody: View {
             QuickLookPreview(url: item.url)
                 .ignoresSafeArea()
                 .presentationDragIndicator(.visible)
-        }
-        .onPreferenceChange(StreamingMarkdownEntranceAnimationPreferenceKey.self) { active in
-            hasActiveTextEntranceAnimation = active
         }
         .onChange(of: isGenerating) { _, generating in
             if generating {
@@ -339,12 +341,17 @@ struct AssistantTurnBody: View {
     ) -> some View {
         if !items.isEmpty || (allowsDeferred && turn.hasDeferredWorkedDetails) {
             let isExpanded = isExpanded(key)
+            let deferredDetailItemID =
+                allowsDeferred && turn.hasDeferredWorkedDetails
+                ? turn.deferredDetailItemId
+                : nil
             VStack(alignment: .leading, spacing: 12) {
                 if isGenerating, !hasAutoCollapsed {
                     workedHeader(
                         label: sectionLabel(showsTimer: showsTimer),
                         showsChevron: false,
-                        expanded: isExpanded
+                        expanded: isExpanded,
+                        deferredDetailItemID: nil
                     )
                 } else {
                     Button {
@@ -361,11 +368,12 @@ struct AssistantTurnBody: View {
                         workedHeader(
                             label: sectionLabel(showsTimer: showsTimer),
                             showsChevron: true,
-                            expanded: isExpanded
+                            expanded: isExpanded,
+                            deferredDetailItemID: deferredDetailItemID
                         )
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(TranscriptWorkedSectionButtonStyle())
                 }
 
                 // As on macOS: the divider belongs to the disclosure header,
@@ -373,38 +381,36 @@ struct AssistantTurnBody: View {
                 // keeps the line collapsed and expanded alike.
                 Divider()
 
-                TranscriptDisclosureContentReveal(isExpanded: isExpanded) {
+                TranscriptDisclosureContentReveal(isExpanded: isExpanded && !items.isEmpty) {
                     VStack(alignment: .leading, spacing: 12) {
-                        if allowsDeferred, turn.hasDeferredWorkedDetails,
-                            let itemId = turn.deferredDetailItemId,
-                            let transcriptController
-                        {
-                            DeferredWorkedDetails(
-                                controller: transcriptController,
-                                itemId: itemId
-                            )
-                        } else {
-                            TurnItemsView(
-                                items: items,
-                                turn: turn,
-                                turnId: turnId,
-                                depth: 0,
-                                isTurnActive: isGenerating,
-                                animationPresentation: textAnimationPresentation,
-                                animationEnabled: textAnimationPresentation.animationsEnabled
-                            )
-                        }
+                        TurnItemsView(
+                            items: items,
+                            turn: turn,
+                            turnId: turnId,
+                            depth: 0,
+                            isTurnActive: isGenerating,
+                            animationPresentation: textAnimationPresentation,
+                            animationEnabled: textAnimationPresentation.animationsEnabled
+                        )
                     }
                 }
             }
         }
     }
 
-    private func workedHeader(label: some View, showsChevron: Bool, expanded: Bool) -> some View {
+    private func workedHeader(
+        label: some View,
+        showsChevron: Bool,
+        expanded: Bool,
+        deferredDetailItemID: String?
+    ) -> some View {
         HStack(spacing: 6) {
             label
             if showsChevron {
-                TranscriptDisclosureChevron(expanded: expanded)
+                TranscriptWorkedDisclosureIndicator(
+                    expanded: expanded,
+                    deferredDetailItemID: deferredDetailItemID
+                )
             }
             Spacer(minLength: 0)
         }

@@ -4,6 +4,11 @@
 
     @MainActor
     final class NativeMarkdownCodeBlockView: NativeMarkdownContentView {
+        /// Settled Markdown is hosted inside a flipped transcript surface.
+        /// Keep this block in the same top-down coordinate system so the
+        /// language/copy chrome stays above the code after native remounts.
+        override var isFlipped: Bool { true }
+
         /// SwiftUI's caption2 header is 15pt tall after control fitting plus
         /// 6pt vertical padding on each side.
         private static let headerHeight: CGFloat = 27

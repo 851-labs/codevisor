@@ -1,4 +1,5 @@
 import CodevisorCore
+import StreamMarkdown
 import SwiftUI
 import UIKit
 
@@ -31,6 +32,7 @@ final class TranscriptViewController: UIViewController {
         activeRows: [TranscriptVirtualRow],
         activeRowsVersion: UInt64,
         rowsVersion: UInt64,
+        projectionRevision: UInt64,
         initialState: SessionScrollState?,
         followsLatest: Bool,
         hasOlderHistory: Bool,
@@ -44,6 +46,7 @@ final class TranscriptViewController: UIViewController {
         sendAnimationRequest: UserSendAnimationRequest?,
         sendAnimationSourceFrame: CGRect?,
         presentationRole: TranscriptPresentationRole,
+        textAnimationRegistry: StreamingTextAnimationRegistry,
         reduceMotion: Bool,
         scrollIndicatorBottomInset: CGFloat,
         claimSendAnimation: @escaping (UserSendAnimationRequest) -> Bool,
@@ -68,6 +71,7 @@ final class TranscriptViewController: UIViewController {
             activeRows: activeRows,
             activeRowsVersion: activeRowsVersion,
             rowsVersion: rowsVersion,
+            projectionRevision: projectionRevision,
             initialState: initialState,
             followsLatest: followsLatest,
             hasOlderHistory: hasOlderHistory,
@@ -81,6 +85,7 @@ final class TranscriptViewController: UIViewController {
             sendAnimationRequest: sendAnimationRequest,
             sendAnimationSourceFrame: sendAnimationSourceFrame,
             presentationRole: presentationRole,
+            textAnimationRegistry: textAnimationRegistry,
             reduceMotion: reduceMotion,
             scrollIndicatorBottomInset: scrollIndicatorBottomInset,
             claimSendAnimation: claimSendAnimation,

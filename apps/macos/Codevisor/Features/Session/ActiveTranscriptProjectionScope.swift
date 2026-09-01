@@ -84,6 +84,17 @@ struct ActiveTranscriptProjectionScope<Content: View>: View {
         let revision: UInt64
         let projectedID: UUID?
         let waitingDescription: String?
+
+        /// A projection prepared for the current assistant remains safe to
+        /// present when a newer token batch lands on the same display frame.
+        /// Requiring exact revision equality starves publication on a steady
+        /// stream: every frame advances the model just before SwiftUI gets to
+        /// publish the rows prepared for the preceding frame.
+        func canPublish(over current: Self) -> Bool {
+            projectedID == current.projectedID
+                && waitingDescription == current.waitingDescription
+                && revision <= current.revision
+        }
     }
 
     private struct ReadyProjection {
@@ -98,7 +109,7 @@ struct ActiveTranscriptProjectionScope<Content: View>: View {
 
     private func publishReadyProjection() {
         guard let readyProjection = projectionStaging.ready,
-            readyProjection.key == taskKey
+            readyProjection.key.canPublish(over: taskKey)
         else { return }
         projectionStaging.ready = nil
         activeRows = readyProjection.rows

@@ -41,13 +41,18 @@ final class TranscriptMarkdownRowHost: TranscriptMountedRowHost {
         style: TranscriptMarkdownRowStyle,
         knownHeight: CGFloat?
     ) {
+        var resolvedStyle = style
+        if chunk.container == .assistantWorked {
+            resolvedStyle.markdown.textForeground = style.markdown.secondaryTextForeground
+            resolvedStyle.markdown.codeForeground = style.markdown.secondaryTextForeground
+        }
         self.chunk = chunk
-        self.style = style
+        self.style = resolvedStyle
         decoration.frame = bounds
-        decoration.setContent(chunk, style: style)
+        decoration.setContent(chunk, style: resolvedStyle)
         markdownView.setContent(
             blocks: chunk.blocks,
-            theme: style.markdown,
+            theme: resolvedStyle.markdown,
             streamID: streamID,
             linkAction: nil
         )
@@ -99,6 +104,7 @@ final class TranscriptMarkdownRowHost: TranscriptMountedRowHost {
         let geometry = contentGeometry(for: chunk, style: style)
         let contentHeight = markdownView.contentHeight(forWidth: geometry.contentFrame.width)
         let height = ceil(geometry.topInset + contentHeight + geometry.bottomInset)
+        let previouslyReportedHeight = reportedHeight
         reportedHeight = height
         presentationReady = true
         markdownView.frame = NSRect(
@@ -107,7 +113,11 @@ final class TranscriptMarkdownRowHost: TranscriptMountedRowHost {
             width: geometry.contentFrame.width,
             height: contentHeight
         )
-        if abs(frame.height - height) > 0.5 {
+        // The outer frame initially contains an estimate. Even when that
+        // estimate happens to equal the measured result (for example, a 1pt
+        // separator), the first native measurement must still enter the
+        // authoritative ledger so the initial-presentation gate can resolve.
+        if previouslyReportedHeight.map({ abs($0 - height) > 0.5 }) ?? true {
             onHeightChange?(height)
         }
     }

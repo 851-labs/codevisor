@@ -276,6 +276,7 @@ public struct DiffView: View {
                 theme: theme,
                 revision: "\(highlightKey)|\(highlights.count)"
             )
+            .frame(maxWidth: .infinity, alignment: .leading)
         #elseif canImport(UIKit)
             IOSNativeDiffView(
                 rows: rows,
@@ -283,6 +284,7 @@ public struct DiffView: View {
                 theme: theme,
                 revision: "\(highlightKey)|\(highlights.count)"
             )
+            .frame(maxWidth: .infinity, alignment: .leading)
         #else
             ScrollView(.horizontal, showsIndicators: true) {
                 diffRows(rows, highlights: highlights)

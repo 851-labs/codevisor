@@ -5,10 +5,15 @@ import Testing
 @MainActor
 struct StreamingTextAnimationFrameClockTests {
     private final class Client: StreamingTextAnimationFrameClient {
-        var timestamps: [TimeInterval] = []
+        struct Frame: Equatable {
+            let timestamp: TimeInterval
+            let isFinal: Bool
+        }
 
-        func streamingTextAnimationFrame(at timestamp: TimeInterval) {
-            timestamps.append(timestamp)
+        var frames: [Frame] = []
+
+        func streamingTextAnimationFrame(at timestamp: TimeInterval, isFinal: Bool) {
+            frames.append(Frame(timestamp: timestamp, isFinal: isFinal))
         }
     }
 
@@ -24,10 +29,29 @@ struct StreamingTextAnimationFrameClockTests {
         clock.update(client, until: end)
         #expect(requestedFrames == 1)
         clock.tick(at: start)
-        #expect(client.timestamps == [start])
+        #expect(client.frames == [Client.Frame(timestamp: start, isFinal: false)])
         #expect(requestedFrames == 2)
         clock.tick(at: end)
-        #expect(client.timestamps == [start, end])
+        #expect(
+            client.frames == [
+                Client.Frame(timestamp: start, isFinal: false),
+                Client.Frame(timestamp: end, isFinal: true),
+            ]
+        )
         #expect(requestedFrames == 2)
+    }
+
+    @Test("A client mounted after its deadline receives an immediate terminal frame")
+    func expiredRegistrationFinishesImmediately() {
+        let clock = StreamingTextAnimationFrameClock()
+        let client = Client()
+        var requestedFrames = 0
+        clock.setFrameRequester { requestedFrames += 1 }
+
+        clock.update(client, until: CACurrentMediaTime() - 1)
+
+        #expect(client.frames.count == 1)
+        #expect(client.frames.first?.isFinal == true)
+        #expect(requestedFrames == 0)
     }
 }

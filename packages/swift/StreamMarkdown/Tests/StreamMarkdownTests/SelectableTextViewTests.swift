@@ -39,6 +39,23 @@ struct SelectableTextViewTests {
         #expect(text.string.hasPrefix("wrapped transcript"))
     }
 
+    @Test("Measuring a proposed width does not resize the displayed text view")
+    func measurementDoesNotResizeView() {
+        let text = NSAttributedString(
+            string: String(repeating: "side-effect-free measurement ", count: 20),
+            attributes: [.font: NSFont.preferredFont(forTextStyle: .body)]
+        )
+        let view = SelectableTextKitView()
+        view.setContent(text)
+        view.setFrameSize(NSSize(width: 420, height: 80))
+        let frameBeforeMeasurement = view.frame
+
+        let measuredHeight = view.contentHeight(forWidth: 180)
+
+        #expect(measuredHeight > 0)
+        #expect(view.frame == frameBeforeMeasurement)
+    }
+
     @Test("Content replacement invalidates the displayed layout measurement")
     func contentReplacementInvalidatesMeasurement() {
         let attributes: [NSAttributedString.Key: Any] = [

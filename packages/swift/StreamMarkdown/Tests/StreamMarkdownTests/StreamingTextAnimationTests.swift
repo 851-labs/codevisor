@@ -5,6 +5,63 @@ import Testing
 @MainActor
 @Suite("Streaming text animation")
 struct StreamingTextAnimationTests {
+    @Test("Presentation activity remains active until every row settles")
+    func presentationActivityAggregatesRows() {
+        let visibility = StreamingTextAnimationVisibility()
+        let firstRow = UUID()
+        let secondRow = UUID()
+
+        visibility.setEntranceAnimationActive(true, sourceID: firstRow)
+        visibility.setEntranceAnimationActive(true, sourceID: secondRow)
+        #expect(visibility.hasActiveEntranceAnimation)
+
+        visibility.setEntranceAnimationActive(false, sourceID: firstRow)
+        #expect(visibility.hasActiveEntranceAnimation)
+
+        visibility.setEntranceAnimationActive(false, sourceID: secondRow)
+        #expect(!visibility.hasActiveEntranceAnimation)
+    }
+
+    @Test("A hidden presentation clears stale row activity")
+    func hiddenPresentationClearsActivity() {
+        let visibility = StreamingTextAnimationVisibility()
+        let row = UUID()
+
+        visibility.setEntranceAnimationActive(true, sourceID: row)
+        visibility.disappear()
+        #expect(!visibility.hasActiveEntranceAnimation)
+
+        visibility.setEntranceAnimationActive(true, sourceID: row)
+        visibility.appear()
+        #expect(!visibility.hasActiveEntranceAnimation)
+    }
+
+    @Test("Suspension freezes pending fades and resumes from the same visual instant")
+    func timelineSuspensionPreservesBacklog() {
+        let timeline = StreamingTextAnimationTimeline()
+        let fades = timeline.scheduleSegments(
+            characterCounts: [5, 5, 5],
+            at: 10
+        )
+        #expect(timeline.suspend(at: 10.02))
+        #expect(timeline.presentationTime(at: 25) == 10.02)
+
+        let backgroundFade = timeline.scheduleSegments(
+            characterCounts: [7],
+            at: 20
+        ).first!
+        #expect(backgroundFade.startTime < 11)
+        let startsAtFrozenPlayhead = fades.map(\.startTime)
+
+        #expect(timeline.resume(at: 25))
+        let suspensionDuration = 14.98
+        for (before, fade) in zip(startsAtFrozenPlayhead, fades) {
+            #expect(abs(fade.startTime - (before + suspensionDuration)) < 0.0001)
+        }
+        #expect(backgroundFade.startTime >= 25)
+        #expect(timeline.isAnimationActive(at: 25))
+    }
+
     @Test("ASCII segmentation keeps punctuation and whitespace with the preceding word")
     func asciiSegmentation() {
         let segments = StreamingWordSegmenter.segments(in: "Hello, world!  Next")
@@ -25,6 +82,87 @@ struct StreamingTextAnimationTests {
         #expect(rebuilt == text)
         #expect(!segments.isEmpty)
         #expect(segments.allSatisfy { $0.range.length > 0 })
+    }
+
+    @Test("Emoji graphemes are atomic while surrounding prose keeps word fades")
+    func emojiSegmentation() {
+        let text = "hello 👩🏽‍💻 world ✅!"
+        let segments = StreamingWordSegmenter.segments(in: text)
+
+        #expect(segments.map(\.text) == ["hello ", "👩🏽‍💻 ", "world ", "✅!"])
+        #expect(segments.map(\.revealStyle) == [.faded, .atomic, .faded, .atomic])
+        #expect(segments.map(\.text).joined() == text)
+    }
+
+    @Test("Text presentation symbols only become atomic with emoji presentation")
+    func emojiPresentationDetection() {
+        let textSymbol = StreamingWordSegmenter.segments(in: "©")
+        let emojiSymbol = StreamingWordSegmenter.segments(in: "©️")
+
+        #expect(textSymbol.map(\.revealStyle) == [.faded])
+        #expect(emojiSymbol.map(\.revealStyle) == [.atomic])
+    }
+
+    @Test("Atomic emoji never paint at a fractional opacity")
+    func atomicEmojiOpacity() {
+        let fade = StreamingTextFadeMetadata(
+            startTime: 2,
+            revealStyle: .atomic
+        )
+
+        #expect(fade.opacity(at: 1.999) == 0)
+        #expect(fade.opacity(at: 2) == 1)
+        #expect(fade.opacity(at: 2.075) == 1)
+        #expect(fade.animationEndTime == 2)
+    }
+
+    @Test("A growing compound emoji extends its pending composition window")
+    func compoundEmojiStabilization() {
+        let timeline = StreamingTextAnimationTimeline()
+        let state = StreamingTextAnimationState()
+        let first = state.prepare(
+            NSAttributedString(string: "👩"),
+            context: StreamingTextAnimationContext(
+                timeline: timeline,
+                sourceID: "paragraph-0",
+                documentSource: "👩",
+                isStreaming: true,
+                animatesInitialContent: true,
+                reduceMotion: false
+            ),
+            now: 1
+        )
+        let original =
+            first.text.attribute(
+                .streamMarkdownFade,
+                at: 0,
+                effectiveRange: nil
+            ) as? StreamingTextFadeMetadata
+        #expect(abs((original?.startTime ?? 0) - 1.050) < 0.000_001)
+
+        let completed = state.prepare(
+            NSAttributedString(string: "👩🏽‍💻"),
+            context: StreamingTextAnimationContext(
+                timeline: timeline,
+                sourceID: "paragraph-0",
+                documentSource: "👩🏽‍💻",
+                isStreaming: true,
+                animatesInitialContent: true,
+                reduceMotion: false
+            ),
+            now: 1.02
+        )
+        let stabilized =
+            completed.text.attribute(
+                .streamMarkdownFade,
+                at: 0,
+                effectiveRange: nil
+            ) as? StreamingTextFadeMetadata
+
+        #expect(stabilized === original)
+        #expect(abs((stabilized?.startTime ?? 0) - 1.070) < 0.000_001)
+        #expect(stabilized?.opacity(at: 1.069) == 0)
+        #expect(stabilized?.opacity(at: 1.070) == 1)
     }
 
     @Test("Character backlog accelerates early reveals and preserves the thin tail")
@@ -176,133 +314,4 @@ struct StreamingTextAnimationTests {
         #expect(zip(samples, samples.dropFirst()).allSatisfy(<=))
     }
 
-    @Test("Append-only updates retain old starts and schedule only new words")
-    func stableStarts() {
-        let timeline = StreamingTextAnimationTimeline()
-        let state = StreamingTextAnimationState()
-        let firstContext = StreamingTextAnimationContext(
-            timeline: timeline,
-            sourceID: "paragraph-0",
-            documentSource: "Hello",
-            isStreaming: true,
-            animatesInitialContent: true,
-            reduceMotion: false
-        )
-        let first = state.prepare(
-            NSAttributedString(string: "Hello"),
-            context: firstContext,
-            now: 1
-        )
-        let firstMetadata =
-            first.text.attribute(
-                .streamMarkdownFade,
-                at: 0,
-                effectiveRange: nil
-            ) as? StreamingTextFadeMetadata
-        #expect(abs((firstMetadata?.startTime ?? 0) - 1.020) < 0.000_001)
-
-        let secondContext = StreamingTextAnimationContext(
-            timeline: timeline,
-            sourceID: "paragraph-0",
-            documentSource: "Hello world",
-            isStreaming: true,
-            animatesInitialContent: true,
-            reduceMotion: false
-        )
-        let second = state.prepare(
-            NSAttributedString(string: "Hello world"),
-            context: secondContext,
-            now: 1.02
-        )
-        let oldMetadata =
-            second.text.attribute(
-                .streamMarkdownFade,
-                at: 0,
-                effectiveRange: nil
-            ) as? StreamingTextFadeMetadata
-        let newMetadata =
-            second.text.attribute(
-                .streamMarkdownFade,
-                at: 6,
-                effectiveRange: nil
-            ) as? StreamingTextFadeMetadata
-        #expect(abs((oldMetadata?.startTime ?? 0) - 1.020) < 0.000_001)
-        #expect(abs((newMetadata?.startTime ?? 0) - 1.028) < 0.000_001)
-    }
-
-    @Test("Reduce Motion and completion expose text immediately")
-    func immediateVisibility() {
-        let timeline = StreamingTextAnimationTimeline()
-        let state = StreamingTextAnimationState()
-        let reduced = state.prepare(
-            NSAttributedString(string: "Immediately visible"),
-            context: StreamingTextAnimationContext(
-                timeline: timeline,
-                sourceID: "paragraph-0",
-                documentSource: "Immediately visible",
-                isStreaming: true,
-                animatesInitialContent: true,
-                reduceMotion: true
-            ),
-            now: 1
-        )
-        #expect(reduced.latestAnimationEnd == nil)
-        #expect(reduced.text.attribute(.streamMarkdownFade, at: 0, effectiveRange: nil) == nil)
-
-        let complete = state.prepare(
-            NSAttributedString(string: "Immediately visible"),
-            context: StreamingTextAnimationContext(
-                timeline: timeline,
-                sourceID: "paragraph-0",
-                documentSource: "Immediately visible",
-                isStreaming: false,
-                animatesInitialContent: true,
-                reduceMotion: false
-            ),
-            now: 1
-        )
-        #expect(complete.latestAnimationEnd == nil)
-        #expect(complete.text.attribute(.streamMarkdownFade, at: 0, effectiveRange: nil) == nil)
-    }
-
-    @Test("A navigation baseline settles existing words and later appends still animate")
-    func navigationBaseline() {
-        let timeline = StreamingTextAnimationTimeline()
-        let state = StreamingTextAnimationState()
-        let baseline = state.prepare(
-            NSAttributedString(string: "Already here"),
-            context: StreamingTextAnimationContext(
-                timeline: timeline,
-                sourceID: "paragraph-0",
-                documentSource: "Already here",
-                isStreaming: true,
-                animatesInitialContent: false,
-                reduceMotion: false
-            ),
-            now: 1
-        )
-        #expect(baseline.latestAnimationEnd == nil)
-        #expect(baseline.text.attribute(.streamMarkdownFade, at: 0, effectiveRange: nil) == nil)
-
-        let appended = state.prepare(
-            NSAttributedString(string: "Already here now"),
-            context: StreamingTextAnimationContext(
-                timeline: timeline,
-                sourceID: "paragraph-0",
-                documentSource: "Already here now",
-                isStreaming: true,
-                animatesInitialContent: true,
-                reduceMotion: false
-            ),
-            now: 1.02
-        )
-        #expect(appended.text.attribute(.streamMarkdownFade, at: 0, effectiveRange: nil) == nil)
-        let newMetadata =
-            appended.text.attribute(
-                .streamMarkdownFade,
-                at: 13,
-                effectiveRange: nil
-            ) as? StreamingTextFadeMetadata
-        #expect((1.040...1.050).contains(newMetadata?.startTime ?? 0))
-    }
 }

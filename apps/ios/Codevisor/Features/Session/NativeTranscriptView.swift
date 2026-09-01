@@ -1,6 +1,7 @@
 import CodevisorCore
 import CodevisorUI
 import QuartzCore
+import StreamMarkdown
 import SwiftUI
 import UIKit
 
@@ -100,6 +101,7 @@ struct NativeTranscriptView: UIViewControllerRepresentable {
     let activeRows: [TranscriptVirtualRow]
     let activeRowsVersion: UInt64
     let rowsVersion: UInt64
+    let projectionRevision: UInt64
     let initialState: SessionScrollState?
     let followsLatest: Bool
     let hasOlderHistory: Bool
@@ -113,6 +115,7 @@ struct NativeTranscriptView: UIViewControllerRepresentable {
     let sendAnimationRequest: UserSendAnimationRequest?
     let sendAnimationSourceFrame: CGRect?
     let presentationRole: TranscriptPresentationRole
+    let textAnimationRegistry: StreamingTextAnimationRegistry
     let reduceMotion: Bool
     let scrollIndicatorBottomInset: CGFloat
     let claimSendAnimation: @MainActor (UserSendAnimationRequest) -> Bool
@@ -158,6 +161,7 @@ struct NativeTranscriptView: UIViewControllerRepresentable {
             activeRows: activeRows,
             activeRowsVersion: activeRowsVersion,
             rowsVersion: rowsVersion,
+            projectionRevision: projectionRevision,
             initialState: initialState,
             followsLatest: followsLatest,
             hasOlderHistory: hasOlderHistory,
@@ -171,6 +175,7 @@ struct NativeTranscriptView: UIViewControllerRepresentable {
             sendAnimationRequest: sendAnimationRequest,
             sendAnimationSourceFrame: sendAnimationSourceFrame,
             presentationRole: presentationRole,
+            textAnimationRegistry: textAnimationRegistry,
             reduceMotion: reduceMotion,
             scrollIndicatorBottomInset: scrollIndicatorBottomInset,
             claimSendAnimation: claimSendAnimation,
@@ -184,4 +189,5 @@ struct NativeTranscriptView: UIViewControllerRepresentable {
             onOlderHistoryPresented: onOlderHistoryPresented,
         )
     }
+
 }

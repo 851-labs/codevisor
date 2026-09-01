@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import TranscriptKit
 
@@ -19,19 +20,34 @@ struct TranscriptPaginationPresentationGateTests {
 
         #expect(token == 1)
         #expect(gate.isPresented)
+        #expect(gate.requiredProjectionKey == nil)
         #expect(gate.presentationTarget == nil)
 
+        let requiredKey = projectionKey(controllerRevision: 2, modelRevision: 4)
         gate.requestDidFinish(
             token: 1,
             insertedItemCount: 8,
-            oldestRowKey: "message:older"
+            requiredProjectionKey: requiredKey
         )
         #expect(gate.isPresented)
+        #expect(gate.requiredProjectionKey == requiredKey)
+        #expect(gate.presentationTarget == nil)
+
+        gate.projectionDidPublish(
+            key: projectionKey(controllerRevision: 2, modelRevision: 3),
+            revision: 9
+        )
+        #expect(gate.presentationTarget == nil)
+
+        gate.projectionDidPublish(
+            key: projectionKey(controllerRevision: 3, modelRevision: 5),
+            revision: 10
+        )
         #expect(
             gate.presentationTarget
                 == .init(
                     token: 1,
-                    oldestRowKey: "message:older"
+                    projectionRevision: 10
                 ))
 
         let staleCommit = gate.didPresent(token: 2)
@@ -40,6 +56,7 @@ struct TranscriptPaginationPresentationGateTests {
         let matchingCommit = gate.didPresent(token: 1)
         #expect(matchingCommit)
         #expect(!gate.isPresented)
+        #expect(gate.requiredProjectionKey == nil)
     }
 
     @Test("An empty page or failure ends feedback without a presentation wait")
@@ -50,7 +67,7 @@ struct TranscriptPaginationPresentationGateTests {
         gate.requestDidFinish(
             token: token,
             insertedItemCount: 0,
-            oldestRowKey: nil
+            requiredProjectionKey: nil
         )
 
         #expect(!gate.isPresented)
@@ -67,10 +84,25 @@ struct TranscriptPaginationPresentationGateTests {
         gate.requestDidFinish(
             token: first,
             insertedItemCount: 4,
-            oldestRowKey: "message:stale"
+            requiredProjectionKey: projectionKey(
+                controllerRevision: 1,
+                modelRevision: 1
+            )
         )
 
         #expect(gate.activeToken == second)
+        #expect(gate.requiredProjectionKey == nil)
         #expect(gate.presentationTarget == nil)
+    }
+
+    private func projectionKey(
+        controllerRevision: UInt64,
+        modelRevision: UInt64
+    ) -> TranscriptProjectionKey {
+        TranscriptProjectionKey(
+            sessionID: UUID(uuidString: "4D178F54-6274-4719-BBD2-447CF7316308")!,
+            controllerRevision: controllerRevision,
+            modelRevision: modelRevision
+        )
     }
 }

@@ -13,7 +13,7 @@ enum TranscriptMarkdownRowLayout {
 }
 
 struct TranscriptMarkdownRowStyle {
-    let markdown: MarkdownTheme
+    var markdown: MarkdownTheme
     let planBackground: NSColor
     let planBorder: NSColor
 
