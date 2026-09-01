@@ -3,6 +3,7 @@ import AppKit
 import CodevisorCore
 import ACPKit
 import CodevisorUI
+import UniformTypeIdentifiers
 
 extension EnvironmentValues {
     /// True while an app self-update or a selected-server update is installing.
@@ -52,6 +53,10 @@ struct ComposerCard: View {
     /// Owned by the shared composer shell so the question state can provide
     /// immediate submission feedback before the controller's async flag flips.
     @State private var didStartResolvingQuestion = false
+    /// Drives the attach-files importer. `.fileImporter` runs the open panel
+    /// as a window sheet (matching the add-project flow) instead of the
+    /// detached app-modal window `NSOpenPanel.runModal()` produces.
+    @State private var isPickingFiles = false
 
     /// Tallest the slash-command menu can grow before it scrolls (~6 rows).
     private static let slashMenuMaxHeight: CGFloat = 220
@@ -137,6 +142,14 @@ struct ComposerCard: View {
             Motion.quick(reduceMotion: reduceMotion),
             value: controller.activeQuestion?.questionId
         )
+        .fileImporter(
+            isPresented: $isPickingFiles,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: true
+        ) { result in
+            guard case let .success(urls) = result else { return }
+            controller.attachFileURLs(urls)
+        }
         .onChange(of: controller.activeQuestion?.questionId) { _, _ in
             didStartResolvingQuestion = false
         }
@@ -289,7 +302,7 @@ private extension ComposerCard {
 
     private var attachButton: some View {
         Button {
-            presentOpenPanel()
+            isPickingFiles = true
         } label: {
             Image(systemName: "paperclip")
                 .font(.system(size: 13, weight: .medium))
@@ -300,15 +313,6 @@ private extension ComposerCard {
         .buttonStyle(HoverIconButtonStyle())
         .help("Attach files")
         .accessibilityLabel("Attach files")
-    }
-
-    private func presentOpenPanel() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = true
-        guard panel.runModal() == .OK else { return }
-        controller.attachFileURLs(panel.urls)
     }
 
     /// Whether the composer holds something sendable (text or attachments).
