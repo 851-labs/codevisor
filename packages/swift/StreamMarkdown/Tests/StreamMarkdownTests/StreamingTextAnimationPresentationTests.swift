@@ -39,6 +39,101 @@ struct StreamingTextAnimationPresentationTests {
         #expect(!registry.presentation.claimInitialAnimation(for: "offscreen-live"))
     }
 
+    @Test("A new presentation settles retained content before later live arrivals")
+    func retainedPresentationBaseline() {
+        let registry = StreamingTextAnimationRegistry()
+
+        registry.prepareForPresentation()
+        registry.observeProjectedStreams(
+            ["existing"],
+            animatesNewStreams: true
+        )
+        let firstSettlement = registry.presentation.settlementToken(for: "existing")
+        #expect(firstSettlement != nil)
+        #expect(!registry.presentation.claimInitialAnimation(for: "existing"))
+
+        registry.observeProjectedStreams(
+            ["existing", "live-before-navigation"],
+            animatesNewStreams: true
+        )
+        #expect(
+            registry.presentation.claimInitialAnimation(for: "live-before-navigation")
+        )
+
+        registry.prepareForPresentation()
+        registry.observeProjectedStreams(
+            ["existing", "live-before-navigation", "arrived-while-away"],
+            animatesNewStreams: true
+        )
+        #expect(
+            registry.presentation.settlementToken(for: "existing") != firstSettlement
+        )
+        #expect(
+            !registry.presentation.claimInitialAnimation(for: "arrived-while-away")
+        )
+
+        registry.observeProjectedStreams(
+            [
+                "existing",
+                "live-before-navigation",
+                "arrived-while-away",
+                "live-after-return",
+            ],
+            animatesNewStreams: true
+        )
+        #expect(registry.presentation.claimInitialAnimation(for: "live-after-return"))
+    }
+
+    @Test("A presentation baseline waits for the authoritative active projection")
+    func pendingPresentationBaseline() {
+        let registry = StreamingTextAnimationRegistry()
+        registry.prepareForPresentation()
+        registry.observeProjectedStreams(
+            ["before"],
+            animatesNewStreams: true
+        )
+
+        registry.prepareForPresentation()
+        registry.observeProjectedStreams(
+            ["before"],
+            animatesNewStreams: true,
+            initialProjectionIsPending: true
+        )
+        let previousSettlement = registry.presentation.settlementToken(for: "before")
+
+        registry.observeProjectedStreams(
+            ["before", "projected-after-return"],
+            animatesNewStreams: true
+        )
+        #expect(
+            registry.presentation.settlementToken(for: "before") != previousSettlement
+        )
+        #expect(
+            !registry.presentation.claimInitialAnimation(for: "projected-after-return")
+        )
+    }
+
+    @Test("A presentation baseline cancels an unmounted live reservation")
+    func presentationCancelsReservation() {
+        let registry = StreamingTextAnimationRegistry()
+        registry.prepareForPresentation()
+        registry.observeProjectedStreams(
+            ["before"],
+            animatesNewStreams: true
+        )
+        registry.observeProjectedStreams(
+            ["before", "reserved"],
+            animatesNewStreams: true
+        )
+
+        registry.prepareForPresentation()
+        registry.observeProjectedStreams(
+            ["before", "reserved"],
+            animatesNewStreams: true
+        )
+        #expect(!registry.presentation.claimInitialAnimation(for: "reserved"))
+    }
+
     @Test("A delayed initial projection remains the opaque navigation baseline")
     func delayedInitialProjectionBaseline() {
         let registry = StreamingTextAnimationRegistry()
@@ -90,6 +185,24 @@ struct StreamingTextAnimationPresentationTests {
         )
         #expect(
             registry.presentation.claimInitialAnimation(for: "published-after-resume")
+        )
+    }
+
+    @Test("A presentation baseline supersedes a suspended projection reservation")
+    func presentationBaselineSupersedesSuspension() {
+        let registry = StreamingTextAnimationRegistry()
+        registry.observeProjectedStreams(["before"], animatesNewStreams: true)
+        registry.suspendPlayback()
+        registry.resumePlayback()
+
+        registry.prepareForPresentation()
+        registry.observeProjectedStreams(["before"], animatesNewStreams: true)
+        registry.observeProjectedStreams(
+            ["before", "offscreen-after-return"],
+            animatesNewStreams: false
+        )
+        #expect(
+            !registry.presentation.claimInitialAnimation(for: "offscreen-after-return")
         )
     }
 

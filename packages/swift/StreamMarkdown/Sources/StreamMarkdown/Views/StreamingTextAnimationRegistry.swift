@@ -9,6 +9,7 @@ public final class StreamingTextAnimationRegistry {
     private var coordinators: [String: StreamingContentAnimationCoordinator] = [:]
     private var knownProjectedStreamIDs: Set<String> = []
     private var hasObservedProjection = false
+    private var awaitsPresentationBaseline = false
     private var isPlaybackSuspended = false
     /// UIKit may publish its first post-foreground projection only after the
     /// scene becomes active. Protect that single delta from offscreen
@@ -29,6 +30,14 @@ public final class StreamingTextAnimationRegistry {
         coordinators.removeValue(forKey: semanticStreamID)?.reset()
     }
 
+    /// Marks the next authoritative projection as navigation state. Provider
+    /// events can continue while a transcript is detached, so the registry
+    /// must baseline the complete snapshot on reattachment before it resumes
+    /// treating later projection deltas as live arrivals.
+    public func prepareForPresentation() {
+        awaitsPresentationBaseline = true
+    }
+
     /// Observes the complete active Markdown row set before a virtualizer can
     /// mount any of it. The first snapshot is navigation state and therefore
     /// starts opaque. Later rows animate only at the followed live edge;
@@ -39,6 +48,22 @@ public final class StreamingTextAnimationRegistry {
         initialProjectionIsPending: Bool = false
     ) where S.Element == String {
         let current = Set(streamIDs)
+
+        // A retained transcript can miss several provider projections while
+        // detached. Its first authoritative snapshot after reappearing is a
+        // navigation baseline, not a live arrival: settle both new rows and
+        // appended content in retained rows before accepting later animation.
+        if awaitsPresentationBaseline {
+            guard !initialProjectionIsPending else { return }
+            awaitsPresentationBaseline = false
+            preservesNextProjectionDelta = false
+            hasObservedProjection = true
+            knownProjectedStreamIDs.formUnion(current)
+            for coordinator in coordinators.values { coordinator.reset() }
+            presentation.settleProjectedStreams(current)
+            return
+        }
+
         guard hasObservedProjection else {
             // An asynchronously projected transcript first configures its
             // native surface with an empty active-row placeholder. Waiting

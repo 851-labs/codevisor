@@ -217,8 +217,9 @@ struct SessionTranscriptView: View {
         guard shouldOwnLifecycle != ownsVisibleTranscriptLifecycle else { return }
         ownsVisibleTranscriptLifecycle = shouldOwnLifecycle
         if shouldOwnLifecycle {
-            controller.transcriptViewDidAppear()
+            textAnimationRegistry.prepareForPresentation()
             textAnimationVisibility.appear()
+            controller.transcriptViewDidAppear()
         } else {
             textAnimationVisibility.disappear()
             controller.transcriptViewDidDisappear()

@@ -143,6 +143,9 @@ public final class AppEnvironment {
         if localServer != nil {
             cloud.localServerClient = machines.client(for: CodevisorMachine.local.id)
         }
+        cloud.onLocalMachineRegistrationResolved = { [weak self] deviceId in
+            self?.machines.adoptLocalCloudIdentity(deviceId: deviceId)
+        }
         cloud.onSignedOut = { [weak self] in
             self?.machines.handleCloudAccountSignedOut()
         }

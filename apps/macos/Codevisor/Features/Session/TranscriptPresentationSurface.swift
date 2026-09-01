@@ -46,6 +46,7 @@ final class TranscriptPresentationSurface {
         let wasHidden = visibilityOwners.isEmpty
         visibilityOwners.insert(owner)
         if wasHidden {
+            textAnimationRegistry.prepareForPresentation()
             textAnimationVisibility.appear()
         }
     }

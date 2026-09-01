@@ -88,16 +88,26 @@ public final class CloudAccountController {
     /// Fired after the machine list refreshes, so consumers deduplicating
     /// against it (MachineController.allMachines) can reconcile selections.
     @ObservationIgnored public var onMachinesRefreshed: (() -> Void)?
+    /// Fired after the embedded server's cloud identity is known, before a
+    /// refreshed roster is published. Consumers use this as an identity
+    /// barrier so the local machine's relay twin can never begin navigation
+    /// sync under a second fleet id.
+    @ObservationIgnored public var onLocalMachineRegistrationResolved: ((String) -> Void)?
     /// The embedded local server's client, when this platform runs one
     /// (macOS). While signed in, the account controller registers that server
     /// on the account via its /v1/cloud routes so this machine appears on the
     /// user's other devices without a separate `codevisor auth login` — and
     /// tears the registration down again on sign-out (app-managed ones only).
     @ObservationIgnored public var localServerClient: (any CodevisorServerClienting)?
+    struct LocalRegistrationResolution: Sendable {
+        let deviceId: String
+        let didConnect: Bool
+    }
+
     /// Reentrancy guard for registration: one probe/connect in flight at a
     /// time; failed attempts retry on the next refresh. Internal so tests can
     /// await completion.
-    @ObservationIgnored var localRegistrationTask: Task<Void, Never>?
+    @ObservationIgnored var localRegistrationTask: Task<LocalRegistrationResolution?, Never>?
     /// The best-effort sign-out deregistration, kept so tests can await it.
     @ObservationIgnored var localDeregistrationTask: Task<Void, Never>?
     /// A debounced roster refresh triggered by a hub presence push whose view
@@ -317,7 +327,30 @@ public final class CloudAccountController {
     public func refreshMachines() async {
         guard state.isSignedIn, let token = storedToken else { return }
         do {
-            machines = try await client.machines(token: token)
+            let accountClient = client
+            var refreshedMachines = try await accountClient.machines(token: token)
+            if let localClient = localServerClient {
+                let registrationTask = beginLocalMachineRegistration(
+                    token: token,
+                    localClient: localClient
+                )
+                if let resolution = await registrationTask.value,
+                    resolution.didConnect
+                {
+                    do {
+                        refreshedMachines = try await accountClient.machines(token: token)
+                    } catch {
+                        // The first roster is still authoritative. Identity
+                        // resolution already prevents the newly registered
+                        // local twin from joining the fleet until a later
+                        // refresh sees it.
+                        Log.cloud.debug(
+                            "Post-registration machine refresh failed: \(String(describing: error), privacy: .public)"
+                        )
+                    }
+                }
+            }
+            machines = refreshedMachines
             reconcileMachineKeyPins()
             #if DEBUG || NAVIGATION_DIAGNOSTICS
                 let machineSummary = machines.map { machine in
@@ -331,7 +364,6 @@ public final class CloudAccountController {
             reconcileDirectPaths()
             lastError = nil
             onMachinesRefreshed?()
-            registerLocalMachineIfNeeded()
         } catch {
             Log.cloud.error("Cloud machine refresh failed: \(String(describing: error), privacy: .public)")
             lastError = error.localizedDescription
@@ -354,26 +386,17 @@ public final class CloudAccountController {
             return
         }
         guard localRegistrationTask == nil else { return }
-        let serverURL = serverURL
-        localRegistrationTask = Task { [weak self] in
-            do {
-                let registration = try await localClient.cloudRegistration()
-                if !registration.connected, !Task.isCancelled {
-                    let deviceId = try await localClient.connectCloud(
-                        serverURL: serverURL,
-                        sessionToken: token
-                    )
-                    Log.cloud.log("Registered this machine on the cloud account as \(deviceId, privacy: .public)")
-                    guard let self, !Task.isCancelled else { return }
-                    self.localRegistrationTask = nil
-                    await self.refreshMachines()
-                    return
-                }
-            } catch {
-                Log.cloud.debug(
-                    "Local machine cloud registration skipped: \(String(describing: error), privacy: .public)")
-            }
-            self?.localRegistrationTask = nil
+        let registrationTask = beginLocalMachineRegistration(
+            token: token,
+            localClient: localClient
+        )
+        Task { [weak self] in
+            guard let resolution = await registrationTask.value,
+                resolution.didConnect,
+                !Task.isCancelled,
+                let self
+            else { return }
+            await self.refreshMachines()
         }
     }
 

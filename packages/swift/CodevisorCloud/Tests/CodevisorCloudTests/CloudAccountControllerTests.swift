@@ -45,7 +45,7 @@ struct CloudAccountControllerTests {
     /// the machine list, which re-probes and finds the registration in place).
     private func awaitLocalRegistration(_ controller: CloudAccountController) async {
         while let task = controller.localRegistrationTask {
-            await task.value
+            _ = await task.value
         }
     }
 

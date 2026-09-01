@@ -536,7 +536,8 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                 else { return nil }
                 return row.layoutKey
             },
-            animatesNewStreams: allowsLiveTextAnimation && followsAnimationEdge
+            animatesNewStreams: allowsLiveTextAnimation && followsAnimationEdge,
+            initialProjectionIsPending: newIsActiveProjectionPending
         )
 
         let rebuiltRows: Bool

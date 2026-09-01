@@ -75,6 +75,15 @@ public final class StreamingTextAnimationPresentation {
         settle(Array(unpresented))
     }
 
+    /// Re-baselines every projected stream at a presentation boundary. Unlike
+    /// ``settleUnpresentedStreams(_:)``, this also invalidates already-mounted
+    /// streams so retained native rows seed their current document snapshot
+    /// instead of revealing text that accumulated while the reader was away.
+    public func settleProjectedStreams<S: Sequence>(_ streamIDs: S)
+    where S.Element == String {
+        settle(Array(streamIDs))
+    }
+
     /// Applies one view-appearance boundary. Repeated body evaluations in the
     /// same generation must not settle text that arrived live afterward.
     public func updateVisibility(
@@ -109,6 +118,7 @@ public final class StreamingTextAnimationPresentation {
         guard !streamIDs.isEmpty else { return }
         nextSettlementToken &+= 1
         for streamID in streamIDs {
+            reservedInitialAnimationStreamIDs.remove(streamID)
             presentedStreamIDs.insert(streamID)
             settlementTokens[streamID] = nextSettlementToken
         }

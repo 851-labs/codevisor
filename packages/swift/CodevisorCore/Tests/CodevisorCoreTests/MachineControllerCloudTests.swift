@@ -199,6 +199,31 @@ struct MachineControllerCloudTests {
         #expect(controller.canonicalComposerMachineId(for: twinId) == remote.id)
     }
 
+    @Test("A resolved local registration removes its cloud twin before fleet sync")
+    func resolvedLocalRegistrationPrunesTwin() {
+        let deviceId = "local-device"
+        let twinId = "cloud:\(deviceId)"
+        let (controller, projectList, provider) = makeController()
+        provider.cloudMachines = [
+            makeCloudMachine(deviceId: deviceId, name: "Local Through Cloud")
+        ]
+        let twinProject = Project.fromFolder(
+            URL(fileURLWithPath: "/srv/local-work"),
+            serverId: twinId
+        )
+        projectList.projects.append(twinProject)
+        projectList.sessions.append(
+            ChatSession(projectId: twinProject.id, serverId: twinId, title: "duplicate")
+        )
+
+        controller.adoptLocalCloudIdentity(deviceId: deviceId)
+
+        #expect(controller.statusByMachineId["local"]?.cloudDeviceId == deviceId)
+        #expect(controller.allMachines.map(\.id) == ["local"])
+        #expect(!projectList.projects.contains { $0.serverId == twinId })
+        #expect(!projectList.sessions.contains { $0.serverId == twinId })
+    }
+
 }
 
 extension MachineControllerCloudTests {

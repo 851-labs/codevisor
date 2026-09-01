@@ -177,6 +177,27 @@ extension MachineController {
         workspaceSync?.removeWorkspaces(serverId: twinId)
     }
 
+    /// Establishes the embedded server's cloud identity before a refreshed
+    /// roster can start background sync. Registration itself proves the local
+    /// server is reachable; an existing status keeps its richer route/version
+    /// metadata while adopting the newly authoritative device id.
+    func adoptLocalCloudIdentity(deviceId: String) {
+        let connection = connection(for: CodevisorMachine.local.id)
+        if var status = connection.status {
+            status.cloudDeviceId = deviceId
+            connection.status = status
+        } else {
+            connection.status = MachineStatus(
+                isReachable: true,
+                label: CodevisorMachine.local.name,
+                cloudDeviceId: deviceId,
+                route: .direct,
+                serverId: CodevisorMachine.local.id
+            )
+        }
+        pruneCloudTwinRecords(deviceId: deviceId)
+    }
+
     /// Removes records stored under cloud identities that no longer exist.
     /// A wiped machine re-registers under a fresh device id, leaving its old
     /// twin's projects and chats to render as duplicates forever. Runs only
