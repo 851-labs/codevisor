@@ -1,13 +1,16 @@
 import CodevisorCore
-import CodevisorUI
 import StreamMarkdown
 import SwiftUI
 import TranscriptKit
 
-struct TranscriptSettledWorkedHeaderRow: View {
-    let header: TranscriptWorkedSectionHeader
+public struct TranscriptSettledWorkedHeaderRow: View {
+    private let header: TranscriptWorkedSectionHeader
 
-    var body: some View {
+    public init(header: TranscriptWorkedSectionHeader) {
+        self.header = header
+    }
+
+    public var body: some View {
         TranscriptWorkedSectionHeaderView(
             turn: header.message.turn,
             messageID: header.message.id,
@@ -17,39 +20,81 @@ struct TranscriptSettledWorkedHeaderRow: View {
     }
 }
 
-struct TranscriptActiveWorkedHeaderRow: View {
-    let controller: SessionController
-    let header: TranscriptActiveWorkedSectionHeader
+public struct TranscriptActiveWorkedHeaderRow: View {
+    private let controller: SessionController
+    private let header: TranscriptActiveWorkedSectionHeader
 
-    var body: some View {
+    public init(
+        controller: SessionController,
+        header: TranscriptActiveWorkedSectionHeader
+    ) {
+        self.controller = controller
+        self.header = header
+    }
+
+    public var body: some View {
         if let model = controller.model {
             TranscriptObservedActiveWorkedHeaderRow(model: model, header: header)
         }
     }
 }
 
-struct TranscriptSettledWorkedItemRow: View {
-    let item: TranscriptSettledWorkedItem
+public struct TranscriptSettledWorkedItemPresentation<Content: View>: View {
+    private let item: TranscriptSettledWorkedItem
+    private let content: TranscriptWorkedItemContent<Content>
 
-    var body: some View {
-        TranscriptWorkedItemBody(
+    public init(
+        item: TranscriptSettledWorkedItem,
+        @ViewBuilder content: @escaping TranscriptWorkedItemContent<Content>
+    ) {
+        self.item = item
+        self.content = content
+    }
+
+    public var body: some View {
+        TranscriptWorkedItemPresentation(
             turn: item.message.turn,
             reference: item.reference,
-            isTurnActive: false
+            isTurnActive: false,
+            content: content
         )
     }
 }
 
-struct TranscriptActiveWorkedItemRow: View {
-    let controller: SessionController
-    let reference: TranscriptWorkedItemReference
+public struct TranscriptActiveWorkedItemPresentation<Content: View>: View {
+    private let controller: SessionController
+    private let reference: TranscriptWorkedItemReference
+    private let content: TranscriptWorkedItemContent<Content>
 
-    var body: some View {
+    public init(
+        controller: SessionController,
+        reference: TranscriptWorkedItemReference,
+        @ViewBuilder content: @escaping TranscriptWorkedItemContent<Content>
+    ) {
+        self.controller = controller
+        self.reference = reference
+        self.content = content
+    }
+
+    public var body: some View {
         if let model = controller.model {
-            TranscriptObservedActiveWorkedItemRow(model: model, reference: reference)
+            TranscriptObservedActiveWorkedItemRow(
+                model: model,
+                reference: reference,
+                content: content
+            )
         }
     }
 }
+
+public typealias TranscriptWorkedItemContent<Content: View> = (
+    WorkedItem,
+    AssistantTurn,
+    UUID,
+    Bool,
+    StreamingTextAnimationPresentation,
+    Bool
+) -> Content
 
 /// Active worked rows live in independent native hosts. Observe the model
 /// itself here: SessionController's forwarding accessors only track its stable
@@ -62,7 +107,7 @@ private struct TranscriptObservedActiveWorkedHeaderRow: View {
 
     var body: some View {
         let revision = model.activeItemRevision
-        if let turn = activeTurn {
+        if let turn = resolvedWorkedTurn(model: model, messageID: header.messageID) {
             TranscriptWorkedSectionHeaderView(
                 turn: turn,
                 messageID: header.messageID,
@@ -74,39 +119,34 @@ private struct TranscriptObservedActiveWorkedHeaderRow: View {
             }
         }
     }
-
-    private var activeTurn: AssistantTurn? {
-        resolvedWorkedTurn(model: model, messageID: header.messageID)
-    }
 }
 
-private struct TranscriptObservedActiveWorkedItemRow: View {
+private struct TranscriptObservedActiveWorkedItemRow<Content: View>: View {
     @Bindable var model: SessionModel
     let reference: TranscriptWorkedItemReference
+    let content: TranscriptWorkedItemContent<Content>
     @Environment(\.transcriptInvalidateRowMeasurement) private var invalidateRowMeasurement
 
     var body: some View {
         let revision = model.activeItemRevision
-        if let turn = activeTurn {
-            TranscriptWorkedItemBody(
+        if let turn = resolvedWorkedTurn(model: model, messageID: reference.messageID) {
+            TranscriptWorkedItemPresentation(
                 turn: turn,
                 reference: reference,
-                isTurnActive: turn.isGenerating
+                isTurnActive: turn.isGenerating,
+                content: content
             )
             .onChange(of: revision, initial: true) { _, _ in
                 invalidateRowMeasurement?()
             }
         }
     }
-
-    private var activeTurn: AssistantTurn? {
-        resolvedWorkedTurn(model: model, messageID: reference.messageID)
-    }
 }
 
 /// Mirrors `TranscriptActiveItemResolver` for identity-only worked rows. A
 /// projection can briefly outlive the active slot as a turn settles, or keep
 /// the locally-created id while the provider adopts a canonical id.
+@MainActor
 private func resolvedWorkedTurn(
     model: SessionModel,
     messageID: UUID
@@ -127,23 +167,23 @@ private func resolvedWorkedTurn(
     return nil
 }
 
-private struct TranscriptWorkedItemBody: View {
+private struct TranscriptWorkedItemPresentation<Content: View>: View {
     let turn: AssistantTurn
     let reference: TranscriptWorkedItemReference
     let isTurnActive: Bool
+    let content: TranscriptWorkedItemContent<Content>
     @State private var animationPresentation = StreamingTextAnimationPresentation()
 
     var body: some View {
         let animationEnabled = prepareAnimationPresentation()
         if let item = workedItem {
-            TurnItemsView(
-                items: [item],
-                turn: turn,
-                turnId: reference.messageID,
-                depth: 0,
-                isTurnActive: isTurnActive,
-                animationPresentation: animationPresentation,
-                animationEnabled: animationEnabled
+            content(
+                item,
+                turn,
+                reference.messageID,
+                isTurnActive,
+                animationPresentation,
+                animationEnabled
             )
         }
     }

@@ -1,4 +1,5 @@
 import CodevisorCore
+import CodevisorUI
 import StreamMarkdown
 import SwiftUI
 import UIKit
@@ -30,8 +31,8 @@ final class TranscriptViewController: UIViewController {
         sessionController: SessionController,
         rows: [TranscriptVirtualRow],
         activeRows: [TranscriptVirtualRow],
-        activeRowsVersion: UInt64,
-        rowsVersion: UInt64,
+        activeRowsVersion: TranscriptRowSetRevision,
+        rowsVersion: TranscriptRowSetRevision,
         projectionRevision: UInt64,
         initialState: SessionScrollState?,
         followsLatest: Bool,
@@ -61,7 +62,7 @@ final class TranscriptViewController: UIViewController {
         onViewportChange: @escaping (SessionScrollState) -> Void,
         onBottomStateChange: @escaping (Bool) -> Void,
         onFollowStateChange: @escaping (Bool) -> Void,
-        onNearTop: @escaping () -> Void,
+        onNearTop: @escaping () -> Bool,
         onOlderHistoryPresented: @escaping (UInt64) -> Void,
     ) {
         loadViewIfNeeded()

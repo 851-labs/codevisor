@@ -182,54 +182,10 @@ public struct MarkdownBlockRenderView: View {
     }
 }
 
-/// Structural context for a leaf extracted from a complex block quote. The
-/// decoration is deliberately an overlay: quote bars and list markers never
-/// enter the Markdown leaf's native layout tree or expand its hit-testing area.
-public struct MarkdownFragmentLayout: Sendable, Equatable {
-    public struct ListMarker: Sendable, Equatable, Identifiable {
-        public let depth: Int
-        public let text: String
-
-        public var id: Int { depth }
-
-        public init(depth: Int, text: String) {
-            self.depth = depth
-            self.text = text
-        }
-    }
-
-    public enum TrailingSpacing: Sendable, Equatable {
-        case none
-        case block
-        case listItem
-    }
-
-    public let quoteDepth: Int
-    public let listDepth: Int
-    public let listMarkers: [ListMarker]
-    public let trailingSpacing: TrailingSpacing
-
-    public init(
-        quoteDepth: Int,
-        listDepth: Int,
-        listMarkers: [ListMarker],
-        trailingSpacing: TrailingSpacing
-    ) {
-        self.quoteDepth = max(0, quoteDepth)
-        self.listDepth = max(0, listDepth)
-        self.listMarkers = listMarkers
-        self.trailingSpacing = trailingSpacing
-    }
-}
-
 /// Renders one already-parsed leaf of a structurally complex quote. Each leaf
 /// still uses `MarkdownBlockRenderView`, so prose remains TextKit-backed and
 /// code/table leaves retain their dedicated native renderers.
 public struct MarkdownFragmentRenderView: View {
-    private static let quoteIndent: CGFloat = 11
-    private static let listIndent: CGFloat = 24
-    private static let listMarkerWidth: CGFloat = 22
-
     private let blocks: [MarkdownBlock]
     private let documentSource: String
     private let streamID: String
@@ -273,8 +229,8 @@ public struct MarkdownFragmentRenderView: View {
     }
 
     private var contentIndent: CGFloat {
-        CGFloat(layout.quoteDepth) * Self.quoteIndent
-            + CGFloat(layout.listDepth) * Self.listIndent
+        CGFloat(layout.quoteDepth) * MarkdownFragmentMetrics.quoteIndent
+            + CGFloat(layout.listDepth) * MarkdownFragmentMetrics.listIndent
     }
 
     private var trailingSpacing: CGFloat {
@@ -290,19 +246,20 @@ public struct MarkdownFragmentRenderView: View {
             ForEach(0..<layout.quoteDepth, id: \.self) { depth in
                 Rectangle()
                     .fill(theme.quoteBarColor)
-                    .frame(width: 3)
+                    .frame(width: MarkdownFragmentMetrics.quoteBarWidth)
                     .frame(maxHeight: .infinity)
-                    .offset(x: CGFloat(depth) * Self.quoteIndent)
+                    .offset(x: CGFloat(depth) * MarkdownFragmentMetrics.quoteIndent)
             }
             ForEach(layout.listMarkers) { marker in
                 Text(marker.text)
                     .font(theme.bodyFont)
                     .foregroundStyle(theme.secondaryTextForeground)
                     .monospacedDigit()
-                    .frame(width: Self.listMarkerWidth, alignment: .leading)
+                    .frame(width: MarkdownFragmentMetrics.listMarkerWidth, alignment: .leading)
                     .offset(
-                        x: CGFloat(layout.quoteDepth) * Self.quoteIndent
-                            + CGFloat(max(0, marker.depth - 1)) * Self.listIndent
+                        x: CGFloat(layout.quoteDepth) * MarkdownFragmentMetrics.quoteIndent
+                            + CGFloat(max(0, marker.depth - 1))
+                            * MarkdownFragmentMetrics.listIndent
                     )
             }
         }
@@ -475,7 +432,7 @@ private struct MarkdownRecursiveListView: View {
         VStack(alignment: .leading, spacing: theme.listItemSpacing) {
             ForEach(Array(list.items.enumerated()), id: \.offset) { index, item in
                 HStack(alignment: .top, spacing: 8) {
-                    Text(marker(for: item, at: index))
+                    Text(list.marker(for: item, at: index))
                         .foregroundStyle(theme.secondaryTextForeground)
                         .monospacedDigit()
                     MarkdownSegmentsView(
@@ -492,10 +449,5 @@ private struct MarkdownRecursiveListView: View {
                 }
             }
         }
-    }
-
-    private func marker(for item: MarkdownListItem, at index: Int) -> String {
-        if item.isTask { return item.isChecked ? "☑" : "☐" }
-        return list.isOrdered ? "\(list.start + index)\(list.delimiter)" : "•"
     }
 }

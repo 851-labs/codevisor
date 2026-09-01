@@ -16,7 +16,7 @@ public struct TranscriptMarkdownChunk: Sendable, Equatable {
     /// Layout retained from a structurally complex block quote that was split
     /// into independently virtualized leaf rows. Simple quotes stay intact and
     /// leave this nil so they continue through the single TextKit fast path.
-    public let fragment: TranscriptMarkdownFragment?
+    public let fragment: MarkdownFragmentLayout?
     /// The complete block count for a plan document, whose fragments need to
     /// know whether they draw the card's first and last edges. Assistant
     /// response chunks use zero so stable prefix rows do not change on append.
@@ -31,7 +31,7 @@ public struct TranscriptMarkdownChunk: Sendable, Equatable {
         lifecycle: TranscriptBlockLifecycle,
         container: TranscriptMarkdownContainer,
         documentBlockCount: Int = 0,
-        fragment: TranscriptMarkdownFragment? = nil
+        fragment: MarkdownFragmentLayout? = nil
     ) {
         precondition(!blocks.isEmpty, "Markdown chunks must contain at least one block")
         self.messageID = messageID
@@ -56,56 +56,22 @@ public struct TranscriptMarkdownChunk: Sendable, Equatable {
         }
         return ordinal + blocks.count == documentBlockCount
     }
-}
 
-/// A marker painted beside one independently virtualized Markdown fragment.
-/// Depth is one-based and lets a fragment retain multiple markers when nested
-/// lists begin on the same leaf.
-public struct TranscriptMarkdownListMarker: Sendable, Equatable, Hashable {
-    public let depth: Int
-    public let text: String
-
-    public init(depth: Int, text: String) {
-        self.depth = depth
-        self.text = text
+    var estimatedHeight: CGFloat {
+        TranscriptMarkdownChunkProjection.estimatedHeight(
+            for: blocks,
+            fragment: fragment
+        )
     }
-}
 
-public enum TranscriptMarkdownFragmentSpacing: Sendable, Equatable, Hashable {
-    case none
-    case block
-    case listItem
-}
-
-/// Structural decoration for one leaf of a complex quote. The Markdown leaf
-/// itself remains unchanged, so code blocks and tables keep their specialized
-/// renderers while prose keeps the native TextKit renderer.
-public struct TranscriptMarkdownFragment: Sendable, Equatable, Hashable {
-    /// Stable AST path appended to the transcript row identity.
-    public let identity: String
-    public let quoteDepth: Int
-    public let listDepth: Int
-    public let listMarkers: [TranscriptMarkdownListMarker]
-    public let trailingSpacing: TranscriptMarkdownFragmentSpacing
-    public let isFirstInSourceBlock: Bool
-    public let isLastInSourceBlock: Bool
-
-    public init(
-        identity: String,
-        quoteDepth: Int,
-        listDepth: Int,
-        listMarkers: [TranscriptMarkdownListMarker],
-        trailingSpacing: TranscriptMarkdownFragmentSpacing,
-        isFirstInSourceBlock: Bool,
-        isLastInSourceBlock: Bool
-    ) {
-        self.identity = identity
-        self.quoteDepth = quoteDepth
-        self.listDepth = listDepth
-        self.listMarkers = listMarkers
-        self.trailingSpacing = trailingSpacing
-        self.isFirstInSourceBlock = isFirstInSourceBlock
-        self.isLastInSourceBlock = isLastInSourceBlock
+    var measurementRevision: Int {
+        var hasher = Hasher()
+        for block in blocks {
+            hasher.combine(block.id)
+        }
+        hasher.combine(documentBlockCount)
+        hasher.combine(fragment)
+        return hasher.finalize()
     }
 }
 
@@ -122,12 +88,12 @@ enum TranscriptMarkdownChunkProjection {
     struct Chunk: Equatable {
         let firstOrdinal: Int
         let blocks: [MarkdownBlock]
-        let fragment: TranscriptMarkdownFragment?
+        let fragment: MarkdownFragmentLayout?
 
         init(
             firstOrdinal: Int,
             blocks: [MarkdownBlock],
-            fragment: TranscriptMarkdownFragment? = nil
+            fragment: MarkdownFragmentLayout? = nil
         ) {
             self.firstOrdinal = firstOrdinal
             self.blocks = blocks
@@ -191,6 +157,19 @@ enum TranscriptMarkdownChunkProjection {
             + CGFloat(max(0, blocks.count - 1)) * estimatedBlockSpacing
     }
 
+    static func estimatedHeight(
+        for blocks: [MarkdownBlock],
+        fragment: MarkdownFragmentLayout?
+    ) -> CGFloat {
+        let content = estimatedHeight(for: blocks)
+        guard let fragment else { return content }
+        switch fragment.trailingSpacing {
+        case .none: return content
+        case .block: return content + 10
+        case .listItem: return content + 4
+        }
+    }
+
     static func estimatedHeight(for block: MarkdownBlock) -> CGFloat {
         switch block {
         case let .heading(_, text), let .paragraph(text):
@@ -230,7 +209,7 @@ enum TranscriptMarkdownChunkProjection {
         var blocks: [MarkdownBlock]
         let quoteDepth: Int
         let listDepth: Int
-        var listMarkers: [TranscriptMarkdownListMarker]
+        var listMarkers: [MarkdownFragmentLayout.ListMarker]
         let listItemPath: [String]
     }
 
@@ -260,7 +239,7 @@ enum TranscriptMarkdownChunkProjection {
             return Chunk(
                 firstOrdinal: ordinal,
                 blocks: draft.blocks,
-                fragment: TranscriptMarkdownFragment(
+                fragment: MarkdownFragmentLayout(
                     identity: draft.path,
                     quoteDepth: draft.quoteDepth,
                     listDepth: draft.listDepth,
@@ -362,22 +341,13 @@ enum TranscriptMarkdownChunkProjection {
                 )
             }
             drafts[firstDraft].listMarkers.append(
-                TranscriptMarkdownListMarker(
+                MarkdownFragmentLayout.ListMarker(
                     depth: nestedItemPath.count,
-                    text: marker(for: list, item: item, at: index)
+                    text: list.marker(for: item, at: index)
                 )
             )
             drafts[firstDraft].listMarkers.sort { $0.depth < $1.depth }
         }
-    }
-
-    private static func marker(
-        for list: MarkdownList,
-        item: MarkdownListItem,
-        at index: Int
-    ) -> String {
-        if item.isTask { return item.isChecked ? "☑" : "☐" }
-        return list.isOrdered ? "\(list.start + index)\(list.delimiter)" : "•"
     }
 
     private static func groupAdjacentTextDrafts(
@@ -408,7 +378,7 @@ enum TranscriptMarkdownChunkProjection {
     private static func trailingSpacing(
         after index: Int,
         in drafts: [FragmentDraft]
-    ) -> TranscriptMarkdownFragmentSpacing {
+    ) -> MarkdownFragmentLayout.TrailingSpacing {
         guard drafts.indices.contains(index + 1) else { return .none }
         let current = drafts[index].listItemPath
         let next = drafts[index + 1].listItemPath

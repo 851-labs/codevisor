@@ -160,11 +160,8 @@ enum TranscriptAssistantRowProjection {
                                 lifecycle: lifecycle
                             ),
                             content: .markdownChunk(projected),
-                            estimatedHeight: estimatedHeight(
-                                for: chunk.blocks,
-                                fragment: chunk.fragment
-                            ),
-                            measurementRevision: markdownMeasurementRevision(projected),
+                            estimatedHeight: projected.estimatedHeight,
+                            measurementRevision: projected.measurementRevision,
                             spacingAfter: chunk.fragment?.isLastInSourceBlock == false ? 0 : 10
                         ))
                 }
@@ -411,30 +408,6 @@ enum TranscriptAssistantRowProjection {
             }
         }
         hasher.combine(waitingOnBackgroundTask)
-        return hasher.finalize()
-    }
-}
-
-extension TranscriptAssistantRowProjection {
-    static func estimatedHeight(
-        for blocks: [MarkdownBlock],
-        fragment: TranscriptMarkdownFragment? = nil
-    ) -> CGFloat {
-        let content = TranscriptMarkdownChunkProjection.estimatedHeight(for: blocks)
-        guard let fragment else { return content }
-        switch fragment.trailingSpacing {
-        case .none: return content
-        case .block: return content + 10
-        case .listItem: return content + 4
-        }
-    }
-
-    static func markdownMeasurementRevision(_ chunk: TranscriptMarkdownChunk) -> Int {
-        var hasher = Hasher()
-        for block in chunk.blocks {
-            hasher.combine(block.id)
-        }
-        hasher.combine(chunk.fragment)
         return hasher.finalize()
     }
 }

@@ -64,10 +64,6 @@ final class TranscriptRowHost: TranscriptMountedRowHost {
         }
     }
 
-    override func performanceIdentityDidChange() {
-        contentController.performanceIdentity = performanceIdentity
-    }
-
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")

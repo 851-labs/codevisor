@@ -173,7 +173,10 @@
         }
 
         private func install(_ text: AttributedString) {
-            let native = Self.nativeText(text, foreground: NSColor(theme.codeForeground))
+            let native = nativeCodeAttributedString(
+                text,
+                foreground: NSColor(theme.codeForeground)
+            )
             codeTextView.textStorage?.setAttributedString(native)
             let bounds = native.boundingRect(
                 with: NSSize(
@@ -188,29 +191,6 @@
             )
             needsLayout = true
             needsDisplay = true
-        }
-
-        private static func nativeText(
-            _ text: AttributedString,
-            foreground: NSColor
-        ) -> NSAttributedString {
-            let result = NSMutableAttributedString()
-            let font = NSFont.monospacedSystemFont(
-                ofSize: NSFont.preferredFont(forTextStyle: .callout).pointSize,
-                weight: .regular
-            )
-            for run in text.runs {
-                result.append(
-                    NSAttributedString(
-                        string: String(text[run.range].characters),
-                        attributes: [
-                            .font: font,
-                            .foregroundColor: run.foregroundColor.map(NSColor.init) ?? foreground,
-                        ]
-                    )
-                )
-            }
-            return result
         }
 
         @objc private func copyCode() {

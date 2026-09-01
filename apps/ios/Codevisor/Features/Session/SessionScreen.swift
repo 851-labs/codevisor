@@ -417,8 +417,14 @@ struct SessionTranscriptView: View {
                 sessionController: controller,
                 rows: visibleRows.rows,
                 activeRows: visibleActiveRows.rows,
-                activeRowsVersion: activeRowsVersion ^ visibleActiveRows.revisionToken,
-                rowsVersion: projectedRowsVersion ^ visibleRows.revisionToken,
+                activeRowsVersion: TranscriptRowSetRevision(
+                    sourceRevision: activeRowsVersion,
+                    visibilityRevision: visibleActiveRows.visibilityRevision
+                ),
+                rowsVersion: TranscriptRowSetRevision(
+                    sourceRevision: projectedRowsVersion,
+                    visibilityRevision: visibleRows.visibilityRevision
+                ),
                 projectionRevision: projectedRowsVersion,
                 initialState: controller.scrollState,
                 followsLatest: followsLatest,
@@ -517,15 +523,16 @@ struct SessionTranscriptView: View {
         projectionPublication.isPending(currentRequest: transcriptProjectionRequest)
     }
 
-    private func requestOlderHistoryLoad() {
+    @discardableResult
+    private func requestOlderHistoryLoad() -> Bool {
         guard historyLoadTask == nil, controller.hasOlderHistory,
             !controller.isLoadingOlderHistory
-        else { return }
+        else { return false }
         guard
             let token = olderHistoryPresentation.begin(
                 hasOlderHistory: controller.hasOlderHistory
             )
-        else { return }
+        else { return false }
         historyLoadTask = Task { @MainActor in
             defer { historyLoadTask = nil }
             let insertedItemCount = await controller.loadOlderHistory()
@@ -547,6 +554,7 @@ struct SessionTranscriptView: View {
                 )
             }
         }
+        return true
     }
 
     private var transcriptLayoutFingerprint: Int {

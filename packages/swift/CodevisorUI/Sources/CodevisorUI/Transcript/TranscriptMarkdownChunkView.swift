@@ -26,16 +26,16 @@ public struct TranscriptMarkdownChunkView: View {
                     isStreaming: chunk.lifecycle == .receiving,
                     isFirst: chunk.isFirstInDocument,
                     isLast: chunk.isLastInDocument,
-                    fragmentLayout: fragmentLayout
+                    fragmentLayout: chunk.fragment
                 )
-            } else if let fragmentLayout {
+            } else if let fragment = chunk.fragment {
                 MarkdownFragmentRenderView(
                     blocks: chunk.blocks,
                     documentSource: chunk.documentSource,
                     streamID: streamID,
                     animationGroupID: animationGroupID,
                     isStreaming: chunk.lifecycle == .receiving,
-                    layout: fragmentLayout
+                    layout: fragment
                 )
             } else {
                 MarkdownBlockRenderView(
@@ -56,24 +56,5 @@ public struct TranscriptMarkdownChunkView: View {
         resolved.textForeground = markdownTheme.secondaryTextForeground
         resolved.codeForeground = markdownTheme.secondaryTextForeground
         return resolved
-    }
-
-    private var fragmentLayout: MarkdownFragmentLayout? {
-        chunk.fragment.map { fragment in
-            let trailingSpacing: MarkdownFragmentLayout.TrailingSpacing
-            switch fragment.trailingSpacing {
-            case .none: trailingSpacing = .none
-            case .block: trailingSpacing = .block
-            case .listItem: trailingSpacing = .listItem
-            }
-            return MarkdownFragmentLayout(
-                quoteDepth: fragment.quoteDepth,
-                listDepth: fragment.listDepth,
-                listMarkers: fragment.listMarkers.map {
-                    MarkdownFragmentLayout.ListMarker(depth: $0.depth, text: $0.text)
-                },
-                trailingSpacing: trailingSpacing
-            )
-        }
     }
 }

@@ -46,7 +46,7 @@ enum TranscriptPlanRowProjection {
                         isLast: projected.isLastInDocument,
                         fragment: chunk.fragment
                     ),
-                    measurementRevision: measurementRevision(projected),
+                    measurementRevision: projected.measurementRevision,
                     spacingAfter: 0
                 ))
         }
@@ -80,28 +80,13 @@ enum TranscriptPlanRowProjection {
         for blocks: [MarkdownBlock],
         isFirst: Bool,
         isLast: Bool,
-        fragment: TranscriptMarkdownFragment?
+        fragment: MarkdownFragmentLayout?
     ) -> CGFloat {
-        let contentHeight = TranscriptMarkdownChunkProjection.estimatedHeight(for: blocks)
-        if let fragment {
-            let trailingSpacing: CGFloat =
-                switch fragment.trailingSpacing {
-                case .none: 0
-                case .block: 10
-                case .listItem: 4
-                }
-            return contentHeight + trailingSpacing + (isLast ? 12 : 0)
-        }
-        return contentHeight + (isFirst ? 0 : 10) + (isLast ? 12 : 0)
-    }
-
-    private static func measurementRevision(_ chunk: TranscriptMarkdownChunk) -> Int {
-        var hasher = Hasher()
-        for block in chunk.blocks {
-            hasher.combine(block.id)
-        }
-        hasher.combine(chunk.documentBlockCount)
-        hasher.combine(chunk.fragment)
-        return hasher.finalize()
+        TranscriptMarkdownChunkProjection.estimatedHeight(
+            for: blocks,
+            fragment: fragment
+        )
+            + (fragment == nil && !isFirst ? 10 : 0)
+            + (isLast ? 12 : 0)
     }
 }

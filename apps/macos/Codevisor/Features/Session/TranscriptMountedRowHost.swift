@@ -9,15 +9,11 @@ import AppKit
 @MainActor
 class TranscriptMountedRowHost: NSView {
     var onHeightChange: ((CGFloat) -> Void)?
-    var performanceIdentity: TranscriptPerformanceIdentity? {
-        didSet { performanceIdentityDidChange() }
-    }
 
     var isPresentationReady: Bool { false }
     var isAttachmentGeometryReady: Bool { true }
     var needsRunwayPreparation: Bool { !isPresentationReady }
 
-    func performanceIdentityDidChange() {}
     func prepareForMountedRow() {}
     func syncContentWidth() -> Bool { false }
     func prepareForImmediatePresentation() {}

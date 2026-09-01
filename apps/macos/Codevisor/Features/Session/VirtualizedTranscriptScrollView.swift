@@ -2,7 +2,6 @@
 
 import AppKit
 import CodevisorCore
-import MarkdownCore
 import QuartzCore
 import StreamMarkdown
 import SwiftUI
@@ -21,7 +20,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private static let maxRowWidth: CGFloat = 832
     private static let initialRunwayViewportCount: CGFloat = 1.5
     private static let atBottomThreshold: CGFloat = 2
-    private static let maxMeasurementCacheCount = 3
     private static let sendAnimationDuration: CFTimeInterval = 0.46
     private static let disclosureExitDuration: CFTimeInterval = 0.2
     private static let disclosureExitAnimationKey = "codevisor.disclosure-exit"
@@ -40,12 +38,13 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private var rows: [TranscriptVirtualRow] = []
     private var rowByKey: [String: TranscriptVirtualRow] = [:]
     private var projectedRows: [TranscriptVirtualRow] = []
-    private var projectedRowsVersion: UInt64?
-    /// Kept separate from the combined row version so an XOR collision cannot
-    /// suppress a newly-published settled projection.
+    private var projectedRowsVersion: TranscriptRowSetRevision?
+    /// Visibility and projection revisions advance independently. Keep the
+    /// raw projection revision so disclosure changes cannot be mistaken for a
+    /// newly-published settled transcript.
     private var receivedProjectionRevision: UInt64?
     private var activeRows: [TranscriptVirtualRow] = []
-    private var activeRowsVersion: UInt64?
+    private var activeRowsVersion: TranscriptRowSetRevision?
     private var activeRowsRange: Range<Int>?
     private var virtualLayout = VirtualTranscriptLayout(items: [], measuredHeights: [:], spacing: rowSpacing)
     /// Measured row heights plus staleness. The ledger's invariant is the fix
@@ -53,13 +52,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     /// streaming into an ended turn): a revision change keeps the old height
     /// as stale layout geometry instead of reverting the row to its estimate.
     private var measurements = TranscriptMeasurementLedger()
-    /// Settled-row height snapshots shared copy-on-write with scroll state.
-    /// Position updates can therefore publish synchronously without walking
-    /// the transcript or copying these dictionaries on every trackpad frame.
-    private var settledRowHeightSnapshot: [String: SessionMeasuredRow] = [:]
-    private var measurementCaches: [SessionMeasurementCacheKey: [String: SessionMeasuredRow]] = [:]
-    private var measurementCacheLRU: [SessionMeasurementCacheKey] = []
-    private var activeMeasurementCacheKey: SessionMeasurementCacheKey?
+    private var measurementCache = SessionMeasurementCacheStore()
     private var layoutFingerprint = 0
 
     private var mountedHosts: [String: TranscriptMountedRowHost] = [:]
@@ -169,7 +162,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private var lastDistanceFromBottom: CGFloat = 0
     private var lastBottomState: Bool?
     private var lastViewportWidth: CGFloat = 0
-    private var lastPrefetchOldestKey: String?
+    private var historyPrefetchPolicy = TranscriptHistoryPrefetchPolicy()
     private var isDetaching = false
     /// Last position that was intentionally established by the user, an
     /// initial restore, or an explicit bottom command. AppKit sends bounds
@@ -183,7 +176,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private var onViewportChange: ((SessionScrollState) -> Void)?
     private var onBottomStateChange: ((Bool) -> Void)?
     private var onFollowStateChange: ((Bool) -> Void)?
-    private var onNearTop: (() -> Void)?
+    private var onNearTop: (() -> Bool)?
     var onInitialPresentationReady: (() -> Void)?
     var isInitialPresentationReady: Bool { initialPresentationGate.isReady }
     private var maximumMountsPerFrame: Int {
@@ -277,7 +270,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                     self?.isLiveScrolling = true
                     self?.isHandlingUserInput = true
                     self?.markRecentUserInput()
-                    TranscriptPerformanceProfiler.shared.beginScrolling(in: self?.window)
                 }
             },
             NotificationCenter.default.addObserver(
@@ -292,7 +284,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                     self?.isHandlingUserInput = false
                     self?.isLiveScrolling = false
                     self?.markRecentUserInput()
-                    TranscriptPerformanceProfiler.shared.endScrolling(in: self?.window)
                     // The live window is correctness-complete. Use subsequent
                     // idle frames to finish preparing its directional runway.
                     self?.requestMountedRowsUpdate()
@@ -429,8 +420,8 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         sessionController newSessionController: SessionController,
         rows newProjectedRows: [TranscriptVirtualRow],
         activeRows newActiveRows: [TranscriptVirtualRow],
-        activeRowsVersion newActiveRowsVersion: UInt64,
-        rowsVersion newRowsVersion: UInt64,
+        activeRowsVersion newActiveRowsVersion: TranscriptRowSetRevision,
+        rowsVersion newRowsVersion: TranscriptRowSetRevision,
         projectionRevision newProjectionRevision: UInt64,
         initialState: SessionScrollState?,
         followsLatest newFollowsLatest: Bool,
@@ -451,11 +442,12 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         onViewportChange: @escaping (SessionScrollState) -> Void,
         onBottomStateChange: @escaping (Bool) -> Void,
         onFollowStateChange: @escaping (Bool) -> Void,
-        onNearTop: @escaping () -> Void
+        onNearTop: @escaping () -> Bool
     ) {
         if sessionController !== newSessionController {
             uninstallPresentationFrameDriver()
             sessionController = newSessionController
+            historyPrefetchPolicy = TranscriptHistoryPrefetchPolicy()
             installPresentationFrameDriver()
         }
         self.rowContent = newRowContent
@@ -527,11 +519,10 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                 lockedRestoreDistance = initialState.distanceFromBottom
             }
             if let initialState {
-                measurementCaches = initialState.measurementCaches
-                measurementCacheLRU = initialState.measurementCacheLRU.filter {
-                    initialState.measurementCaches[$0] != nil
-                }
-                activeMeasurementCacheKey = nil
+                measurementCache.restore(
+                    caches: initialState.measurementCaches,
+                    lru: initialState.measurementCacheLRU
+                )
             }
             scrollCommand = newScrollCommand
         }
@@ -1175,10 +1166,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             // revision on every flush) must never snap back to its flat
             // estimate and let its unclipped content overlap the rows below.
             measurements.markStale(key)
-            settledRowHeightSnapshot.removeValue(forKey: key)
-            if let activeMeasurementCacheKey {
-                measurementCaches[activeMeasurementCacheKey]?.removeValue(forKey: key)
-            }
+            measurementCache.removeMeasurement(for: key)
             // Mounted content is replaced immediately after invalidation.
             // `installRootView` performs the one required fresh measurement;
             // invalidating here as well used to schedule the same TextKit and
@@ -1201,15 +1189,9 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             rowWidthHalfPoints: Int((effectiveRowWidth * 2).rounded()),
             layoutFingerprint: layoutFingerprint
         )
-        guard key != activeMeasurementCacheKey else { return false }
+        guard key != measurementCache.activeKey else { return false }
 
-        activeMeasurementCacheKey = key
-        measurementCacheLRU.removeAll { $0 == key }
-        measurementCacheLRU.append(key)
-        while measurementCacheLRU.count > Self.maxMeasurementCacheCount {
-            let evicted = measurementCacheLRU.removeFirst()
-            measurementCaches.removeValue(forKey: evicted)
-        }
+        let cached = measurementCache.activate(key)
 
         // Keep mounted heights as provisional geometry while their independent
         // inner hosts remeasure at the new width. Provisional values are not
@@ -1221,7 +1203,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                 measurements[key].map { (key, $0) }
             })
         measurements.removeAll(keepingCapacity: true)
-        let cached = measurementCaches[key] ?? [:]
         var valid: [String: SessionMeasuredRow] = [:]
         valid.reserveCapacity(cached.count)
         for row in rows {
@@ -1234,8 +1215,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             valid[rowKey] = measurement
             measurements.setExact(measurement.height, for: rowKey)
         }
-        settledRowHeightSnapshot = valid
-        measurementCaches[key] = valid
+        measurementCache.replaceActiveMeasurements(valid)
         for row in rows {
             if case let .bottomSpacer(height) = row.content {
                 measurements.setExact(height, for: row.layoutKey)
@@ -1281,17 +1261,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     /// work on the main thread for what is usually a one-row height change
     /// several times per second per streaming chat.
     private func rebuildDocumentGeometry(changedHeights: [String: CGFloat]? = nil) {
-        let performanceToken = TranscriptPerformanceProfiler.shared.begin(
-            in: window,
-            identity: TranscriptPerformanceIdentity(
-                rowKey: "transcript",
-                kind: changedHeights == nil
-                    ? "full geometry"
-                    : "geometry · \(changedHeights?.count ?? 0) heights"
-            ),
-            phase: .geometry
-        )
-        defer { TranscriptPerformanceProfiler.shared.end(performanceToken) }
         // Capture the viewport before changing document size. A locked restore
         // target wins until the user deliberately scrolls. Once the reader has
         // moved away from the bottom, preserve the first visible row instead
@@ -1574,7 +1543,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         let previousDistance = lastDistanceFromBottom
         let distance = currentDistanceFromBottom()
         lastDistanceFromBottom = distance
-        publishVisibleRowsToPerformanceProfiler(distanceFromBottom: distance)
         let viewportTop = contentView.bounds.minY
         let isUserMovement = isDraggingScrollerKnob || isHandlingUserInput || isLiveScrolling
         if let lastObservedViewportTop, isUserMovement {
@@ -1652,19 +1620,17 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     }
 
     private func checkForHistoryPrefetch(force: Bool = false) {
-        guard !rows.isEmpty else { return }
+        guard hasOlderHistory, let oldestKey = rows.first?.layoutKey else { return }
         let distanceFromTop = contentView.bounds.minY
         let threshold = max(600, contentView.bounds.height * 1.5)
-        if !force, distanceFromTop > threshold {
-            if distanceFromTop > threshold * 1.25 {
-                lastPrefetchOldestKey = nil
-            }
-            return
+        historyPrefetchPolicy.requestIfNeeded(
+            oldestKey: oldestKey,
+            distanceFromTop: distanceFromTop,
+            threshold: threshold,
+            force: force
+        ) { [weak self] in
+            self?.onNearTop?() == true
         }
-        let oldestKey = rows.first?.layoutKey
-        guard force || oldestKey != lastPrefetchOldestKey else { return }
-        lastPrefetchOldestKey = oldestKey
-        onNearTop?()
     }
 
     private func plannedMountedRange(scrollDelta: CGFloat = 0) -> Range<Int> {
@@ -1695,67 +1661,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         }
         isUpdatingMountedRows = true
         defer { isUpdatingMountedRows = false }
-        let profiler = TranscriptPerformanceProfiler.shared
-        let windowIdentity = TranscriptPerformanceIdentity(
-            rowKey: "transcript",
-            kind: "virtual window"
-        )
-        let performanceToken = profiler.begin(
-            in: window,
-            identity: windowIdentity,
-            phase: .windowUpdate
-        )
-        defer { profiler.end(performanceToken) }
-        let reconciliation: (mountPlan: TranscriptVirtualWindowMountPlan, targetChanged: Bool) =
-            profiler.measure(
-                in: window,
-                identity: windowIdentity,
-                phase: .windowReconcile
-            ) {
-                virtualWindowHandoff.retainOnlyValidKeys { rowByKey[$0] != nil }
-                let observedScrollDelta = rangeOverride == nil ? pendingWindowScrollDelta : 0
-                pendingWindowScrollDelta = 0
-                let projectedScrollDelta =
-                    rangeOverride == nil
-                    ? runwayMotion.projectedDelta(
-                        timestamp: CACurrentMediaTime(),
-                        maximumDistance: contentView.bounds.height * 3
-                    )
-                    : 0
-                let scrollDelta =
-                    abs(projectedScrollDelta) > abs(observedScrollDelta)
-                    ? projectedScrollDelta
-                    : observedScrollDelta
-                let targetRange =
-                    rangeOverride
-                    ?? plannedMountedRange(scrollDelta: scrollDelta)
-                let visibleRange = virtualLayout.visibleRange(
-                    distanceFromBottom: currentDistanceFromBottom(),
-                    viewportHeight: contentView.bounds.height,
-                    overscanCount: 0
-                )
-                // A restored or rapidly changing target should normally contain the
-                // viewport, but make visible coverage an invariant even if it does not.
-                let retainedIndices = Set(targetRange).union(visibleRange)
-                let targetKeys = Set(
-                    retainedIndices.compactMap { index in
-                        virtualLayout.keys.indices.contains(index)
-                            ? virtualLayout.keys[index]
-                            : nil
-                    })
-                let targetChanged = targetKeys != virtualWindowHandoff.targetKeys
-                if targetChanged {
-                    virtualWindowHandoff.setTarget(targetKeys)
-                }
-                return (
-                    virtualWindowPolicy.mountPlan(
-                        targetRange: targetRange,
-                        visibleRange: visibleRange,
-                        scrollDelta: scrollDelta
-                    ),
-                    targetChanged
-                )
-            }
+        let reconciliation = reconcileVirtualWindow(rangeOverride: rangeOverride)
         let mountPlan = reconciliation.mountPlan
         let usesFrameBudget = presentationDisplayLink != nil && !inLiveResize
         let mountStarted = CACurrentMediaTime()
@@ -1788,24 +1694,65 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             retireMountedHosts(excluding: virtualWindowHandoff.retainedKeys)
         }
         promoteTargetWindowAndRetireIfReady()
-        profiler.measure(
-            in: window,
-            identity: windowIdentity,
-            phase: .windowScheduling
-        ) {
-            let needsRunwayPreparation =
-                canPrepareRunwayRows
-                && virtualWindowHandoff.targetKeys.contains { key in
-                    mountedHosts[key]?.needsRunwayPreparation == true
-                }
-            if usesFrameBudget,
-                virtualWindowHandoff.targetKeys.contains(where: { mountedHosts[$0] == nil })
-                    || needsRunwayPreparation
-            {
-                requestMountedRowsUpdate()
+        let needsRunwayPreparation =
+            canPrepareRunwayRows
+            && virtualWindowHandoff.targetKeys.contains { key in
+                mountedHosts[key]?.needsRunwayPreparation == true
             }
-            synchronizeSendAssistantVisibility()
+        if usesFrameBudget,
+            virtualWindowHandoff.targetKeys.contains(where: { mountedHosts[$0] == nil })
+                || needsRunwayPreparation
+        {
+            requestMountedRowsUpdate()
         }
+        synchronizeSendAssistantVisibility()
+    }
+
+    private func reconcileVirtualWindow(
+        rangeOverride: Range<Int>?
+    ) -> (mountPlan: TranscriptVirtualWindowMountPlan, targetChanged: Bool) {
+        virtualWindowHandoff.retainOnlyValidKeys { rowByKey[$0] != nil }
+        let observedScrollDelta = rangeOverride == nil ? pendingWindowScrollDelta : 0
+        pendingWindowScrollDelta = 0
+        let projectedScrollDelta =
+            rangeOverride == nil
+            ? runwayMotion.projectedDelta(
+                timestamp: CACurrentMediaTime(),
+                maximumDistance: contentView.bounds.height * 3
+            )
+            : 0
+        let scrollDelta =
+            abs(projectedScrollDelta) > abs(observedScrollDelta)
+            ? projectedScrollDelta
+            : observedScrollDelta
+        let targetRange = rangeOverride ?? plannedMountedRange(scrollDelta: scrollDelta)
+        let visibleRange = virtualLayout.visibleRange(
+            distanceFromBottom: currentDistanceFromBottom(),
+            viewportHeight: contentView.bounds.height,
+            overscanCount: 0
+        )
+        // A restored or rapidly changing target should normally contain the
+        // viewport, but make visible coverage an invariant even if it does not.
+        let retainedIndices = Set(targetRange).union(visibleRange)
+        let targetKeys = Set(
+            retainedIndices.compactMap { index in
+                virtualLayout.keys.indices.contains(index)
+                    ? virtualLayout.keys[index]
+                    : nil
+            }
+        )
+        let targetChanged = targetKeys != virtualWindowHandoff.targetKeys
+        if targetChanged {
+            virtualWindowHandoff.setTarget(targetKeys)
+        }
+        return (
+            virtualWindowPolicy.mountPlan(
+                targetRange: targetRange,
+                visibleRange: visibleRange,
+                scrollDelta: scrollDelta
+            ),
+            targetChanged
+        )
     }
 
     private var canPrepareRunwayRows: Bool {
@@ -1848,13 +1795,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             guard !usesFrameBudget || remainingRunwayPreparationsThisFrame > 0 else {
                 continue
             }
-            TranscriptPerformanceProfiler.shared.measure(
-                in: window,
-                identity: performanceIdentity(for: rowByKey[key], fallbackKey: key),
-                phase: .runwayLayout
-            ) {
-                host.prepareForImmediatePresentation()
-            }
+            host.prepareForImmediatePresentation()
             if usesFrameBudget { remainingRunwayPreparationsThisFrame -= 1 }
         }
     }
@@ -1866,16 +1807,9 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     ) -> Bool {
         guard virtualLayout.keys.indices.contains(index) else { return false }
         let key = virtualLayout.keys[index]
-        let identity = performanceIdentity(for: rowByKey[key], fallbackKey: key)
         if let host = mountedHosts[key] {
             if requiresImmediatePresentation, !host.isPresentationReady {
-                TranscriptPerformanceProfiler.shared.measure(
-                    in: window,
-                    identity: identity,
-                    phase: .visibleLayout
-                ) {
-                    host.prepareForImmediatePresentation()
-                }
+                host.prepareForImmediatePresentation()
             }
             return false
         }
@@ -1884,70 +1818,32 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             return mountMarkdownRow(
                 row,
                 at: index,
-                identity: identity,
                 requiresImmediatePresentation: requiresImmediatePresentation
             )
         }
 
-        let profiler = TranscriptPerformanceProfiler.shared
         let host: TranscriptRowHost
         if recycledHosts.isEmpty, retiringHosts.isEmpty {
-            host = profiler.measure(
-                in: window,
-                identity: identity,
-                phase: .hostConstruction
-            ) {
-                TranscriptRowHost(frame: .zero)
-            }
+            host = TranscriptRowHost(frame: .zero)
         } else {
-            host = profiler.measure(
-                in: window,
-                identity: identity,
-                phase: .hostReuse
-            ) {
+            host =
                 if let retiring = retiringHosts.popLast() {
                     retiring
                 } else {
                     recycledHosts.removeLast()
                 }
-            }
         }
-        profiler.measure(
-            in: window,
-            identity: identity,
-            phase: .hostPreparation
-        ) {
-            host.prepareForMountedRow()
-            host.performanceIdentity = identity
-            host.onHeightChange = { [weak self] height in
-                self?.recordMeasuredHeight(height, for: key)
-            }
+        host.prepareForMountedRow()
+        host.onHeightChange = { [weak self] height in
+            self?.recordMeasuredHeight(height, for: key)
         }
-        profiler.measure(
-            in: window,
-            identity: identity,
-            phase: .hostInsertion
-        ) {
-            transcriptDocumentView.addSubview(host)
-            mountedHosts[key] = host
-        }
+        transcriptDocumentView.addSubview(host)
+        mountedHosts[key] = host
         // Position and push the content width before assigning the root view.
         // Otherwise its first TextKit measurement can race the 1pt placeholder.
-        profiler.measure(
-            in: window,
-            identity: identity,
-            phase: .hostPosition
-        ) {
-            position(host: host, at: index)
-            host.syncContentWidth()
-        }
-        let rootView = profiler.measure(
-            in: window,
-            identity: identity,
-            phase: .rootConstruction
-        ) {
-            measuredRootView(for: row)
-        }
+        position(host: host, at: index)
+        host.syncContentWidth()
+        let rootView = measuredRootView(for: row)
         let knownHeight: CGFloat? =
             if row.id.isCacheableSettledRow,
                 let measuredHeight = measurements[key],
@@ -1957,21 +1853,9 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             } else {
                 nil
             }
-        profiler.measure(
-            in: window,
-            identity: identity,
-            phase: .rootInstall
-        ) {
-            host.installRootView(rootView, knownHeight: knownHeight)
-        }
+        host.installRootView(rootView, knownHeight: knownHeight)
         if requiresImmediatePresentation {
-            profiler.measure(
-                in: window,
-                identity: identity,
-                phase: .visibleLayout
-            ) {
-                host.prepareForImmediatePresentation()
-            }
+            host.prepareForImmediatePresentation()
         }
         return true
     }
@@ -1984,158 +1868,42 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private func mountMarkdownRow(
         _ row: TranscriptVirtualRow,
         at index: Int,
-        identity: TranscriptPerformanceIdentity,
         requiresImmediatePresentation: Bool
     ) -> Bool {
         guard case let .markdownChunk(chunk) = row.content else { return false }
         let key = row.layoutKey
-        let profiler = TranscriptPerformanceProfiler.shared
         let host: TranscriptMarkdownRowHost
         if let prepared = markdownHostCache.take(for: key) {
-            host = profiler.measure(
-                in: window,
-                identity: identity,
-                phase: .hostReuse
-            ) { prepared }
+            host = prepared
         } else if let recycled = recycledMarkdownHosts.popLast() {
-            host = profiler.measure(
-                in: window,
-                identity: identity,
-                phase: .hostReuse
-            ) { recycled }
+            host = recycled
         } else {
-            host = profiler.measure(
-                in: window,
-                identity: identity,
-                phase: .hostConstruction
-            ) { TranscriptMarkdownRowHost(frame: .zero) }
+            host = TranscriptMarkdownRowHost(frame: .zero)
         }
 
-        profiler.measure(
-            in: window,
-            identity: identity,
-            phase: .hostPreparation
-        ) {
-            host.prepareForMountedRow()
-            host.performanceIdentity = identity
-            host.onHeightChange = { [weak self] height in
-                self?.recordMeasuredHeight(height, for: key)
-            }
+        host.prepareForMountedRow()
+        host.onHeightChange = { [weak self] height in
+            self?.recordMeasuredHeight(height, for: key)
         }
-        profiler.measure(
-            in: window,
-            identity: identity,
-            phase: .hostInsertion
-        ) {
-            transcriptDocumentView.addSubview(host)
-            mountedHosts[key] = host
-        }
-        profiler.measure(
-            in: window,
-            identity: identity,
-            phase: .hostPosition
-        ) {
-            position(host: host, at: index)
-        }
+        transcriptDocumentView.addSubview(host)
+        mountedHosts[key] = host
+        position(host: host, at: index)
         let knownHeight: CGFloat? =
             if let measuredHeight = measurements[key], !measurements.isStale(key) {
                 measuredHeight
             } else {
                 nil
             }
-        profiler.measure(
-            in: window,
-            identity: identity,
-            phase: .rootInstall
-        ) {
-            host.setContent(
-                chunk,
-                streamID: key,
-                style: markdownRowStyle,
-                knownHeight: knownHeight
-            )
-        }
+        host.setContent(
+            chunk,
+            streamID: key,
+            style: markdownRowStyle,
+            knownHeight: knownHeight
+        )
         if requiresImmediatePresentation, !host.isPresentationReady {
-            profiler.measure(
-                in: window,
-                identity: identity,
-                phase: .visibleLayout
-            ) {
-                host.prepareForImmediatePresentation()
-            }
+            host.prepareForImmediatePresentation()
         }
         return true
-    }
-
-    private func publishVisibleRowsToPerformanceProfiler(distanceFromBottom: CGFloat) {
-        let profiler = TranscriptPerformanceProfiler.shared
-        guard profiler.isEnabled(in: window) else { return }
-        let visibleRange = virtualLayout.visibleRange(
-            distanceFromBottom: distanceFromBottom,
-            viewportHeight: contentView.bounds.height,
-            overscanCount: 0
-        )
-        profiler.setVisibleRows(
-            visibleRange.compactMap { index in
-                guard virtualLayout.keys.indices.contains(index) else { return nil }
-                let key = virtualLayout.keys[index]
-                return performanceIdentity(for: rowByKey[key], fallbackKey: key)
-            },
-            in: window
-        )
-    }
-
-    private func performanceIdentity(
-        for row: TranscriptVirtualRow?,
-        fallbackKey: String
-    ) -> TranscriptPerformanceIdentity {
-        guard let row else {
-            return TranscriptPerformanceIdentity(rowKey: fallbackKey, kind: "unknown")
-        }
-        let kind: String =
-            switch row.content {
-            case let .markdownChunk(markdown):
-                if markdown.blocks.count == 1, let block = markdown.blocks.first {
-                    "\(markdownPerformanceKind(block)) · block \(markdown.ordinal)"
-                } else {
-                    "prose chunk · \(markdown.blocks.count) blocks · block \(markdown.ordinal)"
-                }
-            case .message: "message"
-            case .assistantPlanning: "assistant planning"
-            case .planDocument: "plan document"
-            case .planHeader: "plan header"
-            case .assistantResult: "assistant result"
-            case .assistantWorkedHeader, .activeWorkedHeader: "worked header"
-            case .assistantWorkedItem, .activeWorkedItem: "worked item"
-            case .assistantChrome: "assistant chrome"
-            case .assistantAttachment: "attachment"
-            case .active: "active message"
-            case .setup: "session setup"
-            case .optimistic: "optimistic message"
-            case .backgroundTask: "background task"
-            case .updateGate: "update gate"
-            case .connecting: "connecting"
-            case .serverWait: "server wait"
-            case .error: "error"
-            case .bottomSpacer: "bottom spacer"
-            }
-        return TranscriptPerformanceIdentity(rowKey: row.layoutKey, kind: kind)
-    }
-
-    private func markdownPerformanceKind(_ block: MarkdownBlock) -> String {
-        switch block {
-        case let .heading(level, text): "heading h\(level) · \(text.plainText.count)c"
-        case let .paragraph(text): "paragraph · \(text.plainText.count)c"
-        case let .codeBlock(_, code, _):
-            "code · \(code.reduce(into: 1) { $0 += $1 == "\n" ? 1 : 0 }) lines"
-        case let .bulletList(items): "bullet list · \(items.count) items"
-        case let .orderedList(items): "ordered list · \(items.count) items"
-        case let .list(list): "nested list · \(list.items.count) roots"
-        case let .blockQuote(blocks): "blockquote · \(blocks.count) blocks"
-        case let .table(headers, _, rows):
-            "table · \(rows.count + 1)x\(headers.count)"
-        case .thematicBreak: "thematic break"
-        }
     }
 
     private func windowRange(for keys: Set<String>) -> Range<Int>? {
@@ -2173,18 +1941,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
 
     @discardableResult
     private func promoteTargetWindowAndRetireIfReady() -> Bool {
-        let profiler = TranscriptPerformanceProfiler.shared
-        let identity = TranscriptPerformanceIdentity(
-            rowKey: "transcript",
-            kind: "virtual window"
-        )
-        let promoted = profiler.measure(
-            in: window,
-            identity: identity,
-            phase: .windowPromotion
-        ) {
-            promoteTargetWindowIfReady()
-        }
+        let promoted = promoteTargetWindowIfReady()
         guard promoted else { return false }
         retireMountedHosts(excluding: virtualWindowHandoff.retainedKeys)
         return true
@@ -2261,21 +2018,10 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
 
     private func retireMountedHosts(withKeys obsoleteKeys: [String]) {
         guard !obsoleteKeys.isEmpty else { return }
-        let profiler = TranscriptPerformanceProfiler.shared
-        let identity = TranscriptPerformanceIdentity(
-            rowKey: "transcript",
-            kind: "virtual window"
-        )
-        profiler.measure(
-            in: window,
-            identity: identity,
-            phase: .hostRetirement
-        ) {
-            for key in obsoleteKeys {
-                guard let host = mountedHosts.removeValue(forKey: key) else { continue }
-                host.removeFromSuperviewWithoutNeedingDisplay()
-                storeDetachedHost(host, for: key)
-            }
+        for key in obsoleteKeys {
+            guard let host = mountedHosts.removeValue(forKey: key) else { continue }
+            host.removeFromSuperviewWithoutNeedingDisplay()
+            storeDetachedHost(host, for: key)
         }
         assert(mountedHosts.keys.allSatisfy { rowByKey[$0] != nil })
         if !retiringHosts.isEmpty { requestDisplayFrame() }
@@ -2555,10 +2301,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
 
     private func invalidateMeasurementForRendererTransition(_ key: String) {
         measurements.markStale(key)
-        settledRowHeightSnapshot.removeValue(forKey: key)
-        if let activeMeasurementCacheKey {
-            measurementCaches[activeMeasurementCacheKey]?.removeValue(forKey: key)
-        }
+        measurementCache.removeMeasurement(for: key)
     }
 
     private func replaceMountedHost(for key: String) {
@@ -2800,16 +2543,12 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                 height: height,
                 revision: row.measurementRevision
             )
-            settledRowHeightSnapshot[key] = measurement
-            if let activeMeasurementCacheKey {
-                measurementCaches[activeMeasurementCacheKey, default: [:]][key] = measurement
-            }
+            measurementCache.store(measurement, for: key)
         }
         return heightChanged
     }
 
     private func positionMountedRows(startingAt firstChangedIndex: Int? = nil) {
-        let profiler = TranscriptPerformanceProfiler.shared
         for (key, host) in mountedHosts {
             guard let index = virtualLayout.indexByKey[key] else { continue }
             if let firstChangedIndex, index < firstChangedIndex { continue }
@@ -2817,13 +2556,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             guard host.frame.size != frame.size || host.frame.origin != frame.origin else {
                 continue
             }
-            profiler.measure(
-                in: window,
-                identity: performanceIdentity(for: rowByKey[key], fallbackKey: key),
-                phase: .hostPosition
-            ) {
-                position(host: host, frame: frame)
-            }
+            position(host: host, frame: frame)
         }
     }
 
@@ -2894,8 +2627,8 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         publishBottomState(atBottom)
         let state = SessionScrollState(
             distanceFromBottom: distance,
-            measurementCaches: measurementCaches,
-            measurementCacheLRU: measurementCacheLRU,
+            measurementCaches: measurementCache.caches,
+            measurementCacheLRU: measurementCache.lru,
             virtualTranscript: currentVirtualRestoreState(
                 viewportAnchor: currentViewportAnchor()
             ),
@@ -2910,8 +2643,8 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         guard var state = lastStableScrollState else { return }
         // Measurements learned after the last wheel event are still useful on
         // the next mount, but they do not authorize a different position.
-        state.measurementCaches = measurementCaches
-        state.measurementCacheLRU = measurementCacheLRU
+        state.measurementCaches = measurementCache.caches
+        state.measurementCacheLRU = measurementCache.lru
         state.virtualTranscript = currentVirtualRestoreState(
             viewportAnchor: state.virtualTranscript?.viewportAnchor
         )
@@ -2935,7 +2668,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             )
         }
         return SessionVirtualTranscriptRestoreState(
-            measurementCacheKey: activeMeasurementCacheKey,
+            measurementCacheKey: measurementCache.activeKey,
             // Dictionary assignment is copy-on-write. Restore already ignores
             // keys absent from the current transcript, so this keeps viewport
             // snapshots O(mounted rows) instead of walking the full history.
@@ -2943,7 +2676,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             // The revision-carrying snapshot rides along (also copy-on-write)
             // so restore can reject settled-row heights whose content changed
             // while the pane was closed.
-            settledRowsByKey: settledRowHeightSnapshot,
+            settledRowsByKey: measurementCache.settledRows,
             renderedWindow: renderedWindow,
             viewportAnchor: viewportAnchor
         )

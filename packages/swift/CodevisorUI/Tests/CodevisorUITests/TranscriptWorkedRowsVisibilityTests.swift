@@ -40,7 +40,7 @@ struct TranscriptWorkedRowsVisibilityTests {
 
         #expect(collapsed.rows.contains { $0.id == .assistantWorkedHeader(messageID, .planning) })
         #expect(!collapsed.rows.contains(where: isWorkedContent))
-        #expect(collapsed.revisionToken != initiallyExpanded.revisionToken)
+        #expect(collapsed.visibilityRevision != initiallyExpanded.visibilityRevision)
     }
 
     private func isWorkedContent(_ row: TranscriptPresentationRow) -> Bool {

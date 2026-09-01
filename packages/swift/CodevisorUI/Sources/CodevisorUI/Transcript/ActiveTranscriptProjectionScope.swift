@@ -1,31 +1,30 @@
-import ACPKit
 import CodevisorCore
 import SwiftUI
 import TranscriptKit
 
 /// Observes only the token-level active slot, parses it away from MainActor,
 /// and leaves the cached settled projection untouched.
-struct ActiveTranscriptProjectionScope<Content: View>: View {
-    let controller: SessionController
-    let projectedRows: [TranscriptVirtualRow]
-    let content: ([TranscriptVirtualRow], UInt64, Bool) -> Content
-    @State private var activeRows: [TranscriptVirtualRow] = []
+public struct ActiveTranscriptProjectionScope<Content: View>: View {
+    private let controller: SessionController
+    private let projectedRows: [TranscriptPresentationRow]
+    private let content: ([TranscriptPresentationRow], UInt64, Bool) -> Content
+    @State private var activeRows: [TranscriptPresentationRow] = []
     @State private var activeRowsVersion: UInt64 = 0
     @State private var publishedProjectionKey: TaskKey?
     @State private var projectionStaging = ProjectionStaging()
     @State private var projectionWorker = TranscriptActiveProjectionWorker()
 
-    init(
+    public init(
         controller: SessionController,
-        projectedRows: [TranscriptVirtualRow],
-        @ViewBuilder content: @escaping ([TranscriptVirtualRow], UInt64, Bool) -> Content
+        projectedRows: [TranscriptPresentationRow],
+        @ViewBuilder content: @escaping ([TranscriptPresentationRow], UInt64, Bool) -> Content
     ) {
         self.controller = controller
         self.projectedRows = projectedRows
         self.content = content
     }
 
-    var body: some View {
+    public var body: some View {
         let presentationFrame = controller.transcriptPresentationFrameRevision
         let projectionKey = taskKey
         let isActiveProjectionPending =
@@ -99,7 +98,7 @@ struct ActiveTranscriptProjectionScope<Content: View>: View {
 
     private struct ReadyProjection {
         let key: TaskKey
-        let rows: [TranscriptVirtualRow]
+        let rows: [TranscriptPresentationRow]
     }
 
     @MainActor

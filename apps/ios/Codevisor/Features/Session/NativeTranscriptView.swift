@@ -99,8 +99,8 @@ struct NativeTranscriptView: UIViewControllerRepresentable {
     let sessionController: SessionController
     let rows: [TranscriptVirtualRow]
     let activeRows: [TranscriptVirtualRow]
-    let activeRowsVersion: UInt64
-    let rowsVersion: UInt64
+    let activeRowsVersion: TranscriptRowSetRevision
+    let rowsVersion: TranscriptRowSetRevision
     let projectionRevision: UInt64
     let initialState: SessionScrollState?
     let followsLatest: Bool
@@ -131,7 +131,7 @@ struct NativeTranscriptView: UIViewControllerRepresentable {
     let onViewportChange: @MainActor (SessionScrollState) -> Void
     let onBottomStateChange: @MainActor (Bool) -> Void
     let onFollowStateChange: @MainActor (Bool) -> Void
-    let onNearTop: @MainActor () -> Void
+    let onNearTop: @MainActor () -> Bool
     let onOlderHistoryPresented: @MainActor (UInt64) -> Void
 
     func makeUIViewController(context _: Context) -> TranscriptViewController {

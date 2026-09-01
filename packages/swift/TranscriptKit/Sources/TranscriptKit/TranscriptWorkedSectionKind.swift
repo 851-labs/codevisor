@@ -184,11 +184,8 @@ extension TranscriptAssistantRowProjection {
                                 lifecycle: lifecycle
                             ),
                             content: .markdownChunk(projected),
-                            estimatedHeight: estimatedHeight(
-                                for: chunk.blocks,
-                                fragment: chunk.fragment
-                            ),
-                            measurementRevision: markdownMeasurementRevision(projected),
+                            estimatedHeight: projected.estimatedHeight,
+                            measurementRevision: projected.measurementRevision,
                             spacingAfter: chunk.fragment?.isLastInSourceBlock == false ? 0 : 12,
                             workedSection: .init(identity: identity, role: .content)
                         ))

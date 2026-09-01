@@ -285,7 +285,7 @@ struct CodeBlockView: View {
             renderedForeground = foreground
 
             codeTextView.textStorage?.setAttributedString(
-                Self.nativeText(text, foreground: foreground)
+                nativeCodeAttributedString(text, foreground: NSColor(foreground))
             )
             guard let layoutManager = codeTextView.layoutManager,
                 let textContainer = codeTextView.textContainer
@@ -301,32 +301,6 @@ struct CodeBlockView: View {
                 codeTextView.setFrameSize(size)
                 reflectScrolledClipView(contentView)
             }
-        }
-
-        private static func nativeText(
-            _ text: AttributedString, foreground: Color
-        ) -> NSAttributedString {
-            let result = NSMutableAttributedString()
-            let font = NSFont.monospacedSystemFont(
-                ofSize: NSFont.preferredFont(forTextStyle: .callout).pointSize,
-                weight: .regular
-            )
-            for run in text.runs {
-                var attributes: [NSAttributedString.Key: Any] = [
-                    .font: font,
-                    .foregroundColor: NSColor(foreground),
-                ]
-                if let tokenColor = run.foregroundColor {
-                    attributes[.foregroundColor] = NSColor(tokenColor)
-                }
-                result.append(
-                    NSAttributedString(
-                        string: String(text[run.range].characters),
-                        attributes: attributes
-                    )
-                )
-            }
-            return result
         }
 
     }

@@ -4,31 +4,16 @@ import SwiftUI
 final class TranscriptContentHostingController: NSHostingController<AnyView> {
     var onLaidOutHeightChange: ((CGFloat) -> Void)?
     var onLayoutCompleted: (() -> Void)?
-    var performanceIdentity: TranscriptPerformanceIdentity?
     private var lastReportedHeight: CGFloat = 0
     private var pendingMeasurementTask: Task<Void, Never>?
-    private var layoutPerformanceToken: TranscriptPerformanceProfiler.WorkToken?
     private var usesKnownContentHeight = false
     private var needsHeightMeasurement = true
     private var lastMeasuredWidth: CGFloat = 0
-
-    override func viewWillLayout() {
-        layoutPerformanceToken = performanceIdentity.flatMap { identity in
-            TranscriptPerformanceProfiler.shared.begin(
-                in: view.window,
-                identity: identity,
-                phase: .hostLayout
-            )
-        }
-        super.viewWillLayout()
-    }
 
     override func viewDidLayout() {
         super.viewDidLayout()
         measureAndReportHeightIfNeeded()
         onLayoutCompleted?()
-        TranscriptPerformanceProfiler.shared.end(layoutPerformanceToken)
-        layoutPerformanceToken = nil
     }
 
     deinit {
@@ -52,16 +37,7 @@ final class TranscriptContentHostingController: NSHostingController<AnyView> {
             width: width,
             height: .greatestFiniteMagnitude
         )
-        let measuredHeight =
-            performanceIdentity.map { identity in
-                TranscriptPerformanceProfiler.shared.measure(
-                    in: view.window,
-                    identity: identity,
-                    phase: .sizeThatFits
-                ) {
-                    sizeThatFits(in: proposedSize).height
-                }
-            } ?? sizeThatFits(in: proposedSize).height
+        let measuredHeight = sizeThatFits(in: proposedSize).height
         needsHeightMeasurement = false
         lastMeasuredWidth = width
         let height = max(1, measuredHeight.rounded(.up))

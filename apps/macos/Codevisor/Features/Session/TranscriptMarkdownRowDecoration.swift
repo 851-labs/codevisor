@@ -1,6 +1,7 @@
 import AppKit
 import CodevisorTheming
 import CodevisorUI
+import MarkdownCore
 import StreamMarkdown
 import SwiftUI
 import TranscriptKit
@@ -8,8 +9,6 @@ import TranscriptKit
 enum TranscriptMarkdownRowLayout {
     static let planHorizontalInset: CGFloat = 12
     static let planBottomInset: CGFloat = 12
-    static let quoteIndent: CGFloat = 11
-    static let listIndent: CGFloat = 24
 }
 
 struct TranscriptMarkdownRowStyle {
@@ -36,9 +35,6 @@ struct TranscriptMarkdownRowStyle {
 /// Non-interactive structural chrome behind a native Markdown leaf.
 @MainActor
 final class TranscriptMarkdownRowDecoration: NSView {
-    private static let listMarkerWidth: CGFloat = 22
-    private static let quoteBarWidth: CGFloat = 3
-
     private var chunk: TranscriptMarkdownChunk?
     private var style: TranscriptMarkdownRowStyle?
 
@@ -112,7 +108,7 @@ final class TranscriptMarkdownRowDecoration: NSView {
     }
 
     private func drawFragment(
-        _ fragment: TranscriptMarkdownFragment,
+        _ fragment: MarkdownFragmentLayout,
         chunk: TranscriptMarkdownChunk,
         style: TranscriptMarkdownRowStyle
     ) {
@@ -127,9 +123,9 @@ final class TranscriptMarkdownRowDecoration: NSView {
         NSColor(style.markdown.quoteBarColor).setFill()
         for depth in 0..<fragment.quoteDepth {
             NSRect(
-                x: planInset + CGFloat(depth) * TranscriptMarkdownRowLayout.quoteIndent,
+                x: planInset + CGFloat(depth) * MarkdownFragmentMetrics.quoteIndent,
                 y: 0,
-                width: Self.quoteBarWidth,
+                width: MarkdownFragmentMetrics.quoteBarWidth,
                 height: max(1, bounds.height - planBottom)
             ).fill()
         }
@@ -141,10 +137,15 @@ final class TranscriptMarkdownRowDecoration: NSView {
         for marker in fragment.listMarkers {
             let x =
                 planInset
-                + CGFloat(fragment.quoteDepth) * TranscriptMarkdownRowLayout.quoteIndent
-                + CGFloat(max(0, marker.depth - 1)) * TranscriptMarkdownRowLayout.listIndent
+                + CGFloat(fragment.quoteDepth) * MarkdownFragmentMetrics.quoteIndent
+                + CGFloat(max(0, marker.depth - 1)) * MarkdownFragmentMetrics.listIndent
             NSAttributedString(string: marker.text, attributes: markerAttributes).draw(
-                in: NSRect(x: x, y: 0, width: Self.listMarkerWidth, height: bounds.height)
+                in: NSRect(
+                    x: x,
+                    y: 0,
+                    width: MarkdownFragmentMetrics.listMarkerWidth,
+                    height: bounds.height
+                )
             )
         }
     }

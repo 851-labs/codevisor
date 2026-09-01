@@ -112,7 +112,7 @@
                 }
                 append(
                     item,
-                    marker: marker(for: list, item: item, at: itemIndex),
+                    marker: list.marker(for: item, at: itemIndex),
                     context: context,
                     to: result,
                     theme: theme,
@@ -499,13 +499,5 @@
             return marker
         }
 
-        private static func marker(
-            for list: MarkdownList,
-            item: MarkdownListItem,
-            at index: Int
-        ) -> String {
-            if item.isTask { return item.isChecked ? "☑" : "☐" }
-            return list.isOrdered ? "\(list.start + index)\(list.delimiter)" : "•"
-        }
     }
 #endif

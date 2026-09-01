@@ -2,9 +2,26 @@ import CodevisorCore
 import SwiftUI
 import TranscriptKit
 
+public struct TranscriptWorkedRowsVisibilityRevision: Equatable, Sendable {
+    fileprivate let expandedSections: Set<TranscriptWorkedSectionIdentity>
+}
+
+public struct TranscriptRowSetRevision: Equatable, Sendable {
+    public let sourceRevision: UInt64
+    public let visibilityRevision: TranscriptWorkedRowsVisibilityRevision
+
+    public init(
+        sourceRevision: UInt64,
+        visibilityRevision: TranscriptWorkedRowsVisibilityRevision
+    ) {
+        self.sourceRevision = sourceRevision
+        self.visibilityRevision = visibilityRevision
+    }
+}
+
 public struct TranscriptWorkedRowsPresentation: Sendable {
     public let rows: [TranscriptPresentationRow]
-    public let revisionToken: UInt64
+    public let visibilityRevision: TranscriptWorkedRowsVisibilityRevision
 }
 
 /// Settled transcript rows change far less often than the active turn. Keep
@@ -63,7 +80,6 @@ public enum TranscriptWorkedRowsVisibility {
         var result: [TranscriptPresentationRow] = []
         result.reserveCapacity(rows.count)
         var expansion: [TranscriptWorkedSectionIdentity: Bool] = [:]
-        var hasher = Hasher()
 
         for row in rows {
             guard let membership = row.workedSection else {
@@ -85,12 +101,12 @@ public enum TranscriptWorkedRowsVisibility {
                     liveIsFixedExpanded
                     ? true
                     : disclosure.isExpanded(
-                        disclosureKey(for: membership.identity),
+                        membership.identity.kind.disclosureKey(
+                            messageID: membership.identity.messageID
+                        ),
                         default: defaultExpanded || keepsRunningSubagentVisible
                     )
                 expansion[membership.identity] = expanded
-                hasher.combine(membership.identity)
-                hasher.combine(expanded)
                 result.append(row)
             case .content:
                 if expansion[membership.identity] ?? true {
@@ -101,17 +117,14 @@ public enum TranscriptWorkedRowsVisibility {
 
         return TranscriptWorkedRowsPresentation(
             rows: result,
-            revisionToken: UInt64(bitPattern: Int64(hasher.finalize()))
+            visibilityRevision: TranscriptWorkedRowsVisibilityRevision(
+                expandedSections: Set(
+                    expansion.compactMap { identity, isExpanded in
+                        isExpanded ? identity : nil
+                    }
+                )
+            )
         )
-    }
-
-    private static func disclosureKey(
-        for identity: TranscriptWorkedSectionIdentity
-    ) -> TranscriptDisclosureStore.Key {
-        switch identity.kind {
-        case .planning: .turn(identity.messageID)
-        case .implementation: .turnImplementation(identity.messageID)
-        }
     }
 
     private static func turn(
@@ -178,10 +191,7 @@ public struct TranscriptWorkedSectionHeaderView: View {
     private var store: TranscriptDisclosureStore { disclosureStore ?? .previews }
 
     private var disclosureKey: TranscriptDisclosureStore.Key {
-        switch kind {
-        case .planning: .turn(messageID)
-        case .implementation: .turnImplementation(messageID)
-        }
+        kind.disclosureKey(messageID: messageID)
     }
 
     private var hasRunningSubagent: Bool {
@@ -235,7 +245,7 @@ public struct TranscriptWorkedSectionHeaderView: View {
 
     private var workedTitle: String {
         guard let duration = turn.duration, duration >= 1 else { return "Worked for a moment" }
-        return "Worked for \(Self.format(Int(duration.rounded())))"
+        return "Worked for \(formatWorkedDuration(Int(duration.rounded())))"
     }
 
     private func toggle() {
@@ -244,10 +254,6 @@ public struct TranscriptWorkedSectionHeaderView: View {
             invalidateRowMeasurement?()
         }
         performAnchoredDisclosureChange?(change) ?? change()
-    }
-
-    private static func format(_ seconds: Int) -> String {
-        seconds < 60 ? "\(seconds)s" : "\(seconds / 60)m \(seconds % 60)s"
     }
 }
 
@@ -314,7 +320,7 @@ private struct TranscriptWorkingDurationLabel: View {
     @State private var now = Date()
 
     var body: some View {
-        Text("Working for \(format(elapsedSeconds))")
+        Text("Working for \(formatWorkedDuration(elapsedSeconds))")
             .task(id: startedAt) {
                 now = Date()
                 while !Task.isCancelled {
@@ -329,8 +335,17 @@ private struct TranscriptWorkingDurationLabel: View {
         guard let startedAt else { return 0 }
         return max(0, Int(now.timeIntervalSince(startedAt)))
     }
+}
 
-    private func format(_ seconds: Int) -> String {
-        seconds < 60 ? "\(seconds)s" : "\(seconds / 60)m \(seconds % 60)s"
+private extension TranscriptWorkedSectionKind {
+    func disclosureKey(messageID: UUID) -> TranscriptDisclosureStore.Key {
+        switch self {
+        case .planning: .turn(messageID)
+        case .implementation: .turnImplementation(messageID)
+        }
     }
+}
+
+private func formatWorkedDuration(_ seconds: Int) -> String {
+    seconds < 60 ? "\(seconds)s" : "\(seconds / 60)m \(seconds % 60)s"
 }

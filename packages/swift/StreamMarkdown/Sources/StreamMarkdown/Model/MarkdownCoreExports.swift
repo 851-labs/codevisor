@@ -11,3 +11,4 @@ public typealias MarkdownListItem = MarkdownCore.MarkdownListItem
 public typealias MarkdownList = MarkdownCore.MarkdownList
 public typealias MarkdownBlock = MarkdownCore.MarkdownBlock
 public typealias MarkdownParser = MarkdownCore.MarkdownParser
+public typealias MarkdownFragmentLayout = MarkdownCore.MarkdownFragmentLayout

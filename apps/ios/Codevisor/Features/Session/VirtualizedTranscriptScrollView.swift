@@ -23,28 +23,23 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     /// synchronously constructing them under the user's finger.
     private static let initialRunwayViewportCount: CGFloat = 1.5
     private static let atBottomThreshold: CGFloat = 2
-    private static let maxMeasurementCacheCount = 3
     private static let maxParkedHostCount = 16
     private static let sendAssistantHoldAnimationKey = "codevisor.send-assistant-hold"
     private let canvasView = UIView()
     private let streamingTextFrameClock = StreamingTextAnimationFrameClock()
-    private let paginationLoadingIndicator = UIHostingConfiguration {
-        ShimmeringText(text: "Loading older messages...")
-    }
-    .margins(.all, 0)
-    .makeContentView()
+    private let paginationLoadingIndicator = UIActivityIndicatorView(style: .medium)
     weak var hostingParent: UIViewController?
 
     private var rows: [TranscriptVirtualRow] = []
     private var rowByKey: [String: TranscriptVirtualRow] = [:]
     private var projectedRows: [TranscriptVirtualRow] = []
-    private var projectedRowsVersion: UInt64?
+    private var projectedRowsVersion: TranscriptRowSetRevision?
     /// Received and applied projection revisions differ while UIKit defers a
     /// prepend until an active drag/deceleration ends.
     private var receivedProjectionRevision: UInt64?
     private var appliedProjectionRevision: UInt64?
     private var activeRows: [TranscriptVirtualRow] = []
-    private var activeRowsVersion: UInt64?
+    private var activeRowsVersion: TranscriptRowSetRevision?
     private var activeRowsRange: Range<Int>?
     private var virtualLayout = VirtualTranscriptLayout(
         items: [],
@@ -52,10 +47,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         spacing: rowSpacing,
     )
     private var measurements = TranscriptMeasurementLedger()
-    private var settledRowHeightSnapshot: [String: SessionMeasuredRow] = [:]
-    private var measurementCaches: [SessionMeasurementCacheKey: [String: SessionMeasuredRow]] = [:]
-    private var measurementCacheLRU: [SessionMeasurementCacheKey] = []
-    private var activeMeasurementCacheKey: SessionMeasurementCacheKey?
+    private var measurementCache = SessionMeasurementCacheStore()
     private var layoutFingerprint = 0
 
     private var mountedHosts: [String: TranscriptRowHost] = [:]
@@ -142,7 +134,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     private var lastDistanceFromBottom: CGFloat = 0
     private var lastBottomState: Bool?
     private var lastViewportSize: CGSize = .zero
-    private var lastPrefetchOldestKey: String?
+    private var historyPrefetchPolicy = TranscriptHistoryPrefetchPolicy()
     private var isDetaching = false
     private var isExplicitUserScroll = false
     private var lastStableScrollState: SessionScrollState?
@@ -151,7 +143,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     private var onViewportChange: ((SessionScrollState) -> Void)?
     private var onBottomStateChange: ((Bool) -> Void)?
     private var onFollowStateChange: ((Bool) -> Void)?
-    private var onNearTop: (() -> Void)?
+    private var onNearTop: (() -> Bool)?
     private var onOlderHistoryPresented: ((UInt64) -> Void)?
     private var applicationObserver: NSObjectProtocol?
 
@@ -174,8 +166,8 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         backgroundColor = .clear
         canvasView.backgroundColor = .clear
         addSubview(canvasView)
-        paginationLoadingIndicator.backgroundColor = .clear
-        paginationLoadingIndicator.isHidden = true
+        paginationLoadingIndicator.color = .secondaryLabel
+        paginationLoadingIndicator.hidesWhenStopped = true
         paginationLoadingIndicator.isUserInteractionEnabled = false
         paginationLoadingIndicator.isAccessibilityElement = true
         paginationLoadingIndicator.accessibilityLabel = "Loading older messages"
@@ -306,8 +298,8 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         sessionController newSessionController: SessionController,
         rows newProjectedRows: [TranscriptVirtualRow],
         activeRows newActiveRows: [TranscriptVirtualRow],
-        activeRowsVersion newActiveRowsVersion: UInt64,
-        rowsVersion newRowsVersion: UInt64,
+        activeRowsVersion newActiveRowsVersion: TranscriptRowSetRevision,
+        rowsVersion newRowsVersion: TranscriptRowSetRevision,
         projectionRevision newProjectionRevision: UInt64,
         initialState: SessionScrollState?,
         followsLatest newFollowsLatest: Bool,
@@ -340,12 +332,13 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         onViewportChange: @escaping (SessionScrollState) -> Void,
         onBottomStateChange: @escaping (Bool) -> Void,
         onFollowStateChange: @escaping (Bool) -> Void,
-        onNearTop: @escaping () -> Void,
+        onNearTop: @escaping () -> Bool,
         onOlderHistoryPresented: @escaping (UInt64) -> Void,
     ) {
         if sessionController !== newSessionController {
             unregisterPresentationFrameDriver()
             sessionController = newSessionController
+            historyPrefetchPolicy = TranscriptHistoryPrefetchPolicy()
         }
         rowContent = newRowContent
         self.onViewportChange = onViewportChange
@@ -420,11 +413,10 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
                 lockedRestoreDistance = initialState.distanceFromBottom
             }
             if let initialState {
-                measurementCaches = initialState.measurementCaches
-                measurementCacheLRU = initialState.measurementCacheLRU.filter {
-                    initialState.measurementCaches[$0] != nil
-                }
-                activeMeasurementCacheKey = nil
+                measurementCache.restore(
+                    caches: initialState.measurementCaches,
+                    lru: initialState.measurementCacheLRU
+                )
             }
             scrollCommand = newScrollCommand
         }
@@ -833,10 +825,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             let key = row.layoutKey
             measurements.markStale(key)
             pendingMeasurements.removeValue(forKey: key)
-            settledRowHeightSnapshot.removeValue(forKey: key)
-            if let activeMeasurementCacheKey {
-                measurementCaches[activeMeasurementCacheKey]?.removeValue(forKey: key)
-            }
+            measurementCache.removeMeasurement(for: key)
             if let host = mountedHosts[key] {
                 host.resetReportedContentHeight()
                 host.requestContentMeasurement()
@@ -864,18 +853,12 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             rowWidthHalfPoints: Int((effectiveRowWidth * 2).rounded()),
             layoutFingerprint: layoutFingerprint,
         )
-        guard key != activeMeasurementCacheKey else { return false }
+        guard key != measurementCache.activeKey else { return false }
 
         measurementCommitTask?.cancel()
         measurementCommitTask = nil
         pendingMeasurements.removeAll(keepingCapacity: true)
-        activeMeasurementCacheKey = key
-        measurementCacheLRU.removeAll { $0 == key }
-        measurementCacheLRU.append(key)
-        while measurementCacheLRU.count > Self.maxMeasurementCacheCount {
-            let evicted = measurementCacheLRU.removeFirst()
-            measurementCaches.removeValue(forKey: evicted)
-        }
+        let cached = measurementCache.activate(key)
 
         let provisionalMountedHeights = Dictionary(
             uniqueKeysWithValues: mountedHosts.keys.compactMap { mountedKey in
@@ -883,7 +866,6 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             },
         )
         measurements.removeAll(keepingCapacity: true)
-        let cached = measurementCaches[key] ?? [:]
         var valid: [String: SessionMeasuredRow] = [:]
         valid.reserveCapacity(cached.count)
         for row in rows {
@@ -895,8 +877,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             valid[row.layoutKey] = measurement
             measurements.setExact(measurement.height, for: row.layoutKey)
         }
-        settledRowHeightSnapshot = valid
-        measurementCaches[key] = valid
+        measurementCache.replaceActiveMeasurements(valid)
         installExactSpacerMeasurements()
         for (mountedKey, height) in provisionalMountedHeights
         where measurements[mountedKey] == nil {
@@ -917,8 +898,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
                         height: height,
                         revision: settled.revision,
                     )
-                    settledRowHeightSnapshot[rowKey] = measurement
-                    measurementCaches[key, default: [:]][rowKey] = measurement
+                    measurementCache.store(measurement, for: rowKey)
                 } else {
                     measurements.setProvisional(height, for: rowKey)
                 }
@@ -1633,7 +1613,11 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     }
 
     private func updatePaginationLoadingIndicator(isPresented: Bool) {
-        paginationLoadingIndicator.isHidden = !isPresented
+        if isPresented {
+            paginationLoadingIndicator.startAnimating()
+        } else {
+            paginationLoadingIndicator.stopAnimating()
+        }
         positionPaginationLoadingIndicator()
     }
 
@@ -1834,10 +1818,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
                 height: height,
                 revision: row.measurementRevision,
             )
-            settledRowHeightSnapshot[key] = measurement
-            if let activeMeasurementCacheKey {
-                measurementCaches[activeMeasurementCacheKey, default: [:]][key] = measurement
-            }
+            measurementCache.store(measurement, for: key)
         }
         return heightChanged
     }
@@ -2149,19 +2130,17 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
 
     private func checkForHistoryPrefetch(force: Bool = false) {
         guard presentationRole == .foreground else { return }
-        guard !rows.isEmpty else { return }
+        guard hasOlderHistory, let oldestKey = rows.first?.layoutKey else { return }
         let distanceFromTop = viewportGeometry.distanceFromTop(offsetY: contentOffset.y)
         let threshold = max(600, viewportHeight * 1.5)
-        if !force, distanceFromTop > threshold {
-            if distanceFromTop > threshold * 1.25 {
-                lastPrefetchOldestKey = nil
-            }
-            return
+        historyPrefetchPolicy.requestIfNeeded(
+            oldestKey: oldestKey,
+            distanceFromTop: distanceFromTop,
+            threshold: threshold,
+            force: force
+        ) { [weak self] in
+            self?.onNearTop?() == true
         }
-        let oldestKey = rows.first?.layoutKey
-        guard force || oldestKey != lastPrefetchOldestKey else { return }
-        lastPrefetchOldestKey = oldestKey
-        onNearTop?()
     }
 
     private func emitViewportSnapshot() {
@@ -2172,8 +2151,8 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
         publishBottomState(distance <= Self.atBottomThreshold)
         let state = SessionScrollState(
             distanceFromBottom: distance,
-            measurementCaches: measurementCaches,
-            measurementCacheLRU: measurementCacheLRU,
+            measurementCaches: measurementCache.caches,
+            measurementCacheLRU: measurementCache.lru,
             virtualTranscript: currentVirtualRestoreState(
                 viewportAnchor: currentViewportAnchor()
             ),
@@ -2186,8 +2165,8 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     private func republishLastStableScrollState() {
         guard presentationRole == .foreground else { return }
         guard var state = lastStableScrollState else { return }
-        state.measurementCaches = measurementCaches
-        state.measurementCacheLRU = measurementCacheLRU
+        state.measurementCaches = measurementCache.caches
+        state.measurementCacheLRU = measurementCache.lru
         state.virtualTranscript = currentVirtualRestoreState(
             viewportAnchor: state.virtualTranscript?.viewportAnchor
         )
@@ -2211,9 +2190,9 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
             )
         }
         return SessionVirtualTranscriptRestoreState(
-            measurementCacheKey: activeMeasurementCacheKey,
+            measurementCacheKey: measurementCache.activeKey,
             rowHeightsByKey: measurements.heightsByKey,
-            settledRowsByKey: settledRowHeightSnapshot,
+            settledRowsByKey: measurementCache.settledRows,
             renderedWindow: renderedWindow,
             viewportAnchor: viewportAnchor,
         )

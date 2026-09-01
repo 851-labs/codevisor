@@ -21,8 +21,8 @@ struct NativeTranscriptView: NSViewRepresentable {
     let sessionController: SessionController
     let rows: [TranscriptVirtualRow]
     let activeRows: [TranscriptVirtualRow]
-    let activeRowsVersion: UInt64
-    let rowsVersion: UInt64
+    let activeRowsVersion: TranscriptRowSetRevision
+    let rowsVersion: TranscriptRowSetRevision
     let projectionRevision: UInt64
     let initialState: SessionScrollState?
     let followsLatest: Bool
@@ -41,7 +41,7 @@ struct NativeTranscriptView: NSViewRepresentable {
     let onViewportChange: @MainActor (SessionScrollState) -> Void
     let onBottomStateChange: @MainActor (Bool) -> Void
     let onFollowStateChange: @MainActor (Bool) -> Void
-    let onNearTop: @MainActor () -> Void
+    let onNearTop: @MainActor () -> Bool
     var onInitialPresentationReady: (@MainActor () -> Void)? = nil
     /// Called once with the underlying scroll view so the session's focus
     /// controller can park keyboard focus on the chat history when it is
