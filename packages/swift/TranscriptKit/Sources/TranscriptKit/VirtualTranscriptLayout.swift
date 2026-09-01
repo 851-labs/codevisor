@@ -330,19 +330,14 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
 /// producing the visual "make room" motion without animating scroll state or
 /// compromising the virtual layout's authoritative geometry.
 public enum TranscriptSendHistoryTransition {
+    /// FLIP displacement between a retained row's actual viewport positions.
+    /// Using screen geometry makes a clamped short transcript produce zero
+    /// motion while a bottom-pinned, scrollable transcript still makes room.
     public static func translationY(
-        forKey key: String,
-        from previous: VirtualTranscriptLayout,
-        to current: VirtualTranscriptLayout
-    ) -> CGFloat? {
-        guard let previousIndex = previous.indexByKey[key],
-            let currentIndex = current.indexByKey[key]
-        else { return nil }
-        let previousBottomAnchoredY =
-            previous.topOffsets[previousIndex] - previous.totalHeight
-        let currentBottomAnchoredY =
-            current.topOffsets[currentIndex] - current.totalHeight
-        return previousBottomAnchoredY - currentBottomAnchoredY
+        fromScreenY previousScreenY: CGFloat,
+        toScreenY currentScreenY: CGFloat
+    ) -> CGFloat {
+        previousScreenY - currentScreenY
     }
 }
 

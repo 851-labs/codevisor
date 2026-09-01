@@ -260,8 +260,23 @@ enum TranscriptAssistantRowProjection {
         .init(
             id: .active(item.id),
             content: .active(item),
-            estimatedHeight: 320
+            estimatedHeight: activeFallbackEstimatedHeight(for: item)
         )
+    }
+
+    /// The outer projection briefly owns one aggregate active row while the
+    /// block projection runs. A fresh turn has one known 32-point activity row;
+    /// reserving a generic response height here would move the bottom-pinned
+    /// transcript before the precise projection arrives.
+    static func activeFallbackEstimatedHeight(for item: ConversationItem) -> CGFloat {
+        guard case let .assistant(message) = item,
+            message.turn.entries.isEmpty,
+            message.turn.attachments.isEmpty,
+            message.turn.subagents.isEmpty,
+            message.turn.planDocument?.isEmpty != false,
+            message.turn.retryStatus != nil || message.turn.showsActivityIndicator
+        else { return 320 }
+        return 32
     }
 
     static func planningID(

@@ -35,14 +35,17 @@ extension SessionController {
         // re-pins only once the send is certain to proceed.
         userSendSignal &+= 1
 
-        // Publish one client-owned optimistic row together with its animation
-        // request. A connected model will adopt this exact id synchronously;
-        // a model-less send keeps the same row visible while setup catches up.
-        // In either case the transcript never observes a request without its
-        // target, so native host readiness adds no extra send-state round trip.
+        // Establish presentation ownership before publishing the optimistic
+        // row. The native transcript can then hold that destination from its
+        // very first mounted frame while a connected send waits for precise
+        // active-turn geometry. A model-less first send can animate into the
+        // optimistic row immediately while setup catches up.
         if shouldAnimateTranscriptSend {
+            requestUserSendAnimation(
+                for: outgoingMessage.id,
+                destination: model == nil ? .optimistic : .activeTurn
+            )
             pendingUserMessage = outgoingMessage
-            requestUserSendAnimation(for: outgoingMessage.id)
         }
 
         // A brand-new chat renders its pre-chat steps as setup sections; a
@@ -121,8 +124,14 @@ extension SessionController {
         }
     }
 
-    func requestUserSendAnimation(for messageID: UUID) {
-        userSendAnimationRequest = userSendAnimationCoordinator.issue(for: messageID)
+    func requestUserSendAnimation(
+        for messageID: UUID,
+        destination: UserSendAnimationDestination
+    ) {
+        userSendAnimationRequest = userSendAnimationCoordinator.issue(
+            for: messageID,
+            destination: destination
+        )
     }
 
     /// Called by a native transcript only after the target row is mounted and

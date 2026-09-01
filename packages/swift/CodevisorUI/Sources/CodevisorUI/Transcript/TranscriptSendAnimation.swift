@@ -28,6 +28,14 @@ public struct TranscriptSendAnimationPlan: Equatable, Sendable {
     }
 }
 
+/// The native transcript phase that can temporarily suppress a newly-created
+/// assistant row while a user message is handed off from the composer.
+public enum TranscriptSendPresentationPhase: Equatable, Sendable {
+    case idle
+    case pending
+    case active
+}
+
 public enum TranscriptSendAnimationContract {
     public static let duration: TimeInterval = 0.46
     public static let fadeDuration: TimeInterval = 0.12
@@ -38,6 +46,29 @@ public enum TranscriptSendAnimationContract {
     public static let presentationSafetyDuration = duration + interruptionGraceDuration
     public static let controlPoint1 = CGPoint(x: 0.22, y: 1)
     public static let controlPoint2 = CGPoint(x: 0.36, y: 1)
+
+    /// A new assistant belongs visually after the outgoing user-message
+    /// handoff. The pending phase matters as much as the active flight: model
+    /// projection can publish the assistant before exact target geometry is
+    /// ready, and allowing that row to paint would create a one-frame flash.
+    public static func shouldHoldAssistantRow(
+        phase: TranscriptSendPresentationPhase,
+        rowIsActive: Bool,
+        rowExistedBeforeSend: Bool
+    ) -> Bool {
+        phase != .idle && rowIsActive && !rowExistedBeforeSend
+    }
+
+    /// Existing rows stay at their captured viewport coordinates while the
+    /// final post-send layout is prepared. The active flight replaces this
+    /// static hold with the ordinary translation-to-zero animation.
+    public static func shouldHoldHistoryRow(
+        phase: TranscriptSendPresentationPhase,
+        rowExistedBeforeSend: Bool,
+        translationY: CGFloat
+    ) -> Bool {
+        phase == .pending && rowExistedBeforeSend && abs(translationY) > 1
+    }
 
     /// Builds the lift from the composer's editor center to the real
     /// transcript row's top edge. Width and height are intentionally absent:

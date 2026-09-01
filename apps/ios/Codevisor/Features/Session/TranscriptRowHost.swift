@@ -89,6 +89,8 @@ final class TranscriptRowHost: UIView {
         if representsDifferentRow {
             layer.removeAnimation(forKey: "codevisor.user-send")
             layer.removeAnimation(forKey: "codevisor.send-history-shift")
+            layer.removeAnimation(forKey: "codevisor.send-history-hold")
+            layer.removeAnimation(forKey: "codevisor.send-target-hold")
             layer.removeAnimation(forKey: "codevisor.send-assistant-hold")
             layer.opacity = 1
         }
@@ -101,6 +103,8 @@ final class TranscriptRowHost: UIView {
     func prepareForMountedRow() {
         layer.removeAnimation(forKey: "codevisor.user-send")
         layer.removeAnimation(forKey: "codevisor.send-history-shift")
+        layer.removeAnimation(forKey: "codevisor.send-history-hold")
+        layer.removeAnimation(forKey: "codevisor.send-target-hold")
         layer.removeAnimation(forKey: "codevisor.send-assistant-hold")
         layer.opacity = 1
     }

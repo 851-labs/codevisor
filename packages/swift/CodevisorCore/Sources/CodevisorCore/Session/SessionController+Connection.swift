@@ -400,12 +400,17 @@ extension SessionController {
             self?.captureMessageSent(model: model, attachmentCount: attachmentCount, isQueued: isQueued)
         }
         model.onLocalUserMessageAppended = { [weak self] messageID in
-            guard self?.pendingUserMessage?.id == messageID else { return }
-            self?.pendingUserMessage = nil
+            guard let self, pendingUserMessage?.id == messageID else { return }
+            pendingUserMessage = nil
+            // Ordinary sends already own a request before their optimistic row
+            // is published. Keep this as a fallback for any model attachment
+            // race; a first send retains its existing optimistic destination.
+            guard userSendAnimationRequest?.messageID != messageID else { return }
+            requestUserSendAnimation(for: messageID, destination: .activeTurn)
         }
         model.onQueuedPromptPromoted = { [weak self] messageID in
             guard let messageID else { return }
-            self?.requestUserSendAnimation(for: messageID)
+            self?.requestUserSendAnimation(for: messageID, destination: .activeTurn)
         }
         model.onPlanApprovalChanged = { [weak self] required in
             self?.pendingPlanApproval = required

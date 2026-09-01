@@ -60,6 +60,68 @@ struct TranscriptSendAnimationTests {
             ) == nil)
     }
 
+    @Test("A new assistant stays hidden from pending handoff through active flight")
+    func holdsNewAssistantAcrossTheWholeHandoff() {
+        for phase in [
+            TranscriptSendPresentationPhase.pending,
+            TranscriptSendPresentationPhase.active,
+        ] {
+            #expect(
+                TranscriptSendAnimationContract.shouldHoldAssistantRow(
+                    phase: phase,
+                    rowIsActive: true,
+                    rowExistedBeforeSend: false
+                ))
+        }
+
+        #expect(
+            !TranscriptSendAnimationContract.shouldHoldAssistantRow(
+                phase: .idle,
+                rowIsActive: true,
+                rowExistedBeforeSend: false
+            ))
+        #expect(
+            !TranscriptSendAnimationContract.shouldHoldAssistantRow(
+                phase: .pending,
+                rowIsActive: true,
+                rowExistedBeforeSend: true
+            ))
+        #expect(
+            !TranscriptSendAnimationContract.shouldHoldAssistantRow(
+                phase: .pending,
+                rowIsActive: false,
+                rowExistedBeforeSend: false
+            ))
+    }
+
+    @Test("Existing history is locked only while final send geometry is pending")
+    func holdsHistoryBeforeTheFlightBegins() {
+        #expect(
+            TranscriptSendAnimationContract.shouldHoldHistoryRow(
+                phase: .pending,
+                rowExistedBeforeSend: true,
+                translationY: 84
+            ))
+        #expect(
+            !TranscriptSendAnimationContract.shouldHoldHistoryRow(
+                phase: .active,
+                rowExistedBeforeSend: true,
+                translationY: 84
+            ))
+        #expect(
+            !TranscriptSendAnimationContract.shouldHoldHistoryRow(
+                phase: .pending,
+                rowExistedBeforeSend: false,
+                translationY: 84
+            ))
+        #expect(
+            !TranscriptSendAnimationContract.shouldHoldHistoryRow(
+                phase: .pending,
+                rowExistedBeforeSend: true,
+                translationY: 0.5
+            ))
+    }
+
     @Test("Presentation completion is token scoped and idempotent")
     func tokenScopedCompletion() {
         var lifecycle = TranscriptSendPresentationLifecycle()

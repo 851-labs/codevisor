@@ -198,6 +198,27 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
             }
         }
 
+        /// True only after the aggregate active slot has been replaced by the
+        /// block projection that owns its final row geometry. The aggregate
+        /// `.active` row is intentionally excluded: it is a short-lived bridge
+        /// whose identity and measured height can change when the server adopts
+        /// the assistant message id. Send presentation must not use that bridge
+        /// as its destination layout.
+        public var isPreciselyProjectedActiveRow: Bool {
+            switch self {
+            case .activePlanning, .activePlanHeader, .activePlanMarkdown,
+                .activeResult, .activeWorkedHeader, .activeWorkedItem, .activeChrome,
+                .activeMarkdown, .activeAttachment:
+                true
+            case .active, .message, .assistantPlanning, .plan, .planHeader,
+                .planMarkdown, .assistantResult, .assistantWorkedHeader,
+                .assistantWorkedItem, .assistantChrome, .assistantMarkdown,
+                .assistantAttachment, .setup, .backgroundTask, .updateGate,
+                .connecting, .serverWait, .error, .statusError, .bottomSpacer:
+                false
+            }
+        }
+
         public var messageID: UUID? {
             switch self {
             case let .message(id), let .assistantPlanning(id), let .activePlanning(id),
@@ -491,7 +512,9 @@ public actor TranscriptRowProjectionCache {
                 .init(
                     id: .active(activeItem.id),
                     content: .active(activeItem),
-                    estimatedHeight: 320
+                    estimatedHeight: TranscriptAssistantRowProjection.activeFallbackEstimatedHeight(
+                        for: activeItem
+                    )
                 ))
         }
         if !pendingIsOpeningRow, let message = pendingMessage {

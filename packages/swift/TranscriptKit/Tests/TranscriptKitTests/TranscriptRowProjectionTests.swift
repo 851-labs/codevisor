@@ -212,6 +212,39 @@ struct TranscriptRowProjectionTests {
         )
     }
 
+    @Test func freshActiveTurnUsesItsKnownActivityHeightBeforeBlockProjection() throws {
+        let active = ConversationItem.assistant(
+            AssistantMessage(turn: AssistantTurn(isGenerating: true))
+        )
+
+        let baseRows = try TranscriptRowProjectionCache.project(
+            makeInput(active: active),
+            options: .init(includesConnectingRow: true)
+        )
+        let aggregate = try #require(baseRows.first(where: { $0.id.isActiveRow }))
+        let precise = try #require(TranscriptActiveRowProjection.rows(for: active).first)
+
+        #expect(aggregate.estimatedHeight == 32)
+        #expect(precise.estimatedHeight == 32)
+    }
+
+    @Test func onlyBlockProjectedActiveRowsOwnPreciseSendGeometry() throws {
+        let active = ConversationItem.assistant(
+            AssistantMessage(turn: AssistantTurn(isGenerating: true))
+        )
+        let baseRows = try TranscriptRowProjectionCache.project(
+            makeInput(active: active),
+            options: .init(includesConnectingRow: true)
+        )
+        let aggregate = try #require(baseRows.first(where: { $0.id.isActiveRow }))
+        let precise = try #require(TranscriptActiveRowProjection.rows(for: active).first)
+
+        #expect(aggregate.id.isActiveRow)
+        #expect(!aggregate.id.isPreciselyProjectedActiveRow)
+        #expect(precise.id.isActiveRow)
+        #expect(precise.id.isPreciselyProjectedActiveRow)
+    }
+
     @Test func planMarkdownUsesTheSameBlockRowsWhileActiveAndSettled() throws {
         let id = UUID()
         let markdown = "# Plan\n\n1. First\n2. Second\n\nVerify the result."

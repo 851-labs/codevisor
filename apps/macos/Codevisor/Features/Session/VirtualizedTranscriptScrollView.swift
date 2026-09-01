@@ -25,7 +25,9 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private static let disclosureExitAnimationKey = "codevisor.disclosure-exit"
     private static let disclosureExitMaskAnimationKey = "codevisor.disclosure-exit-mask"
     private static let disclosureCollapseAnimationKey = "codevisor.disclosure-collapse"
+    private static let sendTargetHoldAnimationKey = "codevisor.send-target-hold"
     private static let sendAssistantHoldAnimationKey = "codevisor.send-assistant-hold"
+    private static let sendHistoryHoldAnimationKey = "codevisor.send-history-hold"
 
     private struct DisclosureCollapsePresentation {
         let container: TranscriptDisclosureCollapseContainer
@@ -46,6 +48,21 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     private var activeRows: [TranscriptVirtualRow] = []
     private var activeRowsVersion: TranscriptRowSetRevision?
     private var activeRowsRange: Range<Int>?
+
+    private struct DeferredSendProjection {
+        let projectedRows: [TranscriptVirtualRow]
+        let projectedRowsVersion: TranscriptRowSetRevision
+        let projectionRevision: UInt64
+        let activeRows: [TranscriptVirtualRow]
+        let activeRowsVersion: TranscriptRowSetRevision
+    }
+
+    private struct SendHistoryHoldMount {
+        let hostID: ObjectIdentifier
+        let translationY: CGFloat
+    }
+
+    private var deferredSendProjection: DeferredSendProjection?
     private var virtualLayout = VirtualTranscriptLayout(items: [], measuredHeights: [:], spacing: rowSpacing)
     /// Measured row heights plus staleness. The ledger's invariant is the fix
     /// for settled rows whose content keeps changing (background subagents
@@ -141,8 +158,16 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     /// presentation layers; the scroll position and virtual layout are already
     /// committed at the bottom.
     private var pendingSendSourceLayout: VirtualTranscriptLayout?
+    private var pendingSendSourceViewportYByRowKey: [String: CGFloat]?
+    /// Tracks the host that received each pending history lock. If a bounded
+    /// lock expires, later layout passes must not rewind that visible host.
+    private var sendHistoryHoldMounts: [String: SendHistoryHoldMount] = [:]
     private var activeSendAnimationRequest: UserSendAnimationRequest?
     private var activeSendSourceLayout: VirtualTranscriptLayout?
+    /// One bounded assistant hold is allowed per mounted host and send. This
+    /// prevents a slow pending projection from re-hiding a row after its
+    /// safety hold has deliberately expired.
+    private var sendAssistantHoldMounts: [String: ObjectIdentifier] = [:]
     private var sendPresentationLifecycle = TranscriptSendPresentationLifecycle()
     private var sendPresentationWatchdog: Task<Void, Never>?
     private var sendAnimationCompletion: TranscriptSendAnimationCompletion?
@@ -495,11 +520,16 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             pendingSendAnimationRequest = newSendAnimationRequest
             pendingSendAnimationRowKey = nil
             pendingSendSourceLayout = newSendAnimationRequest == nil ? nil : virtualLayout
+            pendingSendSourceViewportYByRowKey =
+                newSendAnimationRequest == nil ? nil : sendHistoryViewportYByRowKey()
+            synchronizePendingSendTargetVisibility()
+            synchronizeSendAssistantVisibility()
         }
         if let request = pendingSendAnimationRequest {
             let requestedKey = TranscriptVirtualRow.ID.message(request.messageID).layoutKey
-            if newProjectedRows.contains(where: {
-                $0.layoutKey == requestedKey && $0.isUserMessage
+            if newProjectedRows.contains(where: { row in
+                row.layoutKey == requestedKey
+                    && isEligibleSendTarget(row, for: request.destination)
             }) {
                 pendingSendAnimationRowKey = requestedKey
             }
@@ -540,8 +570,26 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             initialProjectionIsPending: newIsActiveProjectionPending
         )
 
+        if layoutFingerprintChanged, activeSendAnimationRequest != nil {
+            finishSendPresentation()
+        }
+
+        let rowProjectionChanged =
+            projectedRowsChanged || projectionRevisionChanged || activeRowsChanged
         let rebuiltRows: Bool
-        if projectedRowsChanged || projectionRevisionChanged || layoutFingerprintChanged {
+        if activeSendAnimationRequest != nil,
+            rowProjectionChanged,
+            !layoutFingerprintChanged
+        {
+            deferredSendProjection = DeferredSendProjection(
+                projectedRows: newProjectedRows,
+                projectedRowsVersion: newRowsVersion,
+                projectionRevision: newProjectionRevision,
+                activeRows: newActiveRows,
+                activeRowsVersion: newActiveRowsVersion
+            )
+            rebuiltRows = false
+        } else if projectedRowsChanged || projectionRevisionChanged || layoutFingerprintChanged {
             projectedRows = newProjectedRows
             projectedRowsVersion = newRowsVersion
             receivedProjectionRevision = newProjectionRevision
@@ -696,6 +744,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             pendingSendAnimationRequest = nil
             pendingSendAnimationRowKey = nil
             pendingSendSourceLayout = nil
+            pendingSendSourceViewportYByRowKey = nil
             return claimed
         }
 
@@ -712,18 +761,21 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         // placeholder geometry, so host existence alone is not readiness.
         // Keep the token pending until first-position restoration and a real
         // viewport have completed; layout() calls us again at that boundary.
-        guard initialPositionApplied,
+        guard request.destination != .activeTurn || !isActiveProjectionPending,
+            initialPositionApplied,
             contentView.bounds.width > 0,
             contentView.bounds.height > 0,
             let host = mountedHosts[rowKey],
             host.isPresentationReady,
             sendHistoryDestinationIsReady(
+                request: request,
                 sourceLayout: pendingSendSourceLayout,
                 rowKey: rowKey
             )
         else { return }
 
         let sourceLayout = pendingSendSourceLayout
+        let sourceViewportYByRowKey = pendingSendSourceViewportYByRowKey
         let bottomSpacerHeight =
             rows.last { $0.id == .bottomSpacer }.flatMap { row -> CGFloat? in
                 guard case let .bottomSpacer(height) = row.content else { return nil }
@@ -745,17 +797,29 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         }
 
         guard let layer = host.layer else { return }
-
-        // Claim only when the real target host is ready. The controller keeps
-        // this claim across representable rebuilds, preventing the same
-        // request from replaying on a replacement NSView.
-        guard claimAndClear() else {
+        // The destination is held from its first mounted frame. If that
+        // bounded presentation hold expired before geometry became ready,
+        // leave the already-visible row alone instead of hiding it late and
+        // producing a second flash.
+        guard layer.animation(forKey: Self.sendTargetHoldAnimationKey) != nil else {
+            _ = claimAndClear()
             finishSendPresentation()
             return
         }
-
-        layer.removeAnimation(forKey: "codevisor.user-send")
-        beginSendPresentation(request: request, sourceLayout: sourceLayout)
+        guard pendingSendAssistantPresentationIsIntact() else {
+            // A bounded assistant hold that has expired is already visible.
+            // Never hide it again late merely to run the outgoing flight.
+            _ = claimAndClear()
+            finishSendPresentation()
+            return
+        }
+        guard pendingSendHistoryPresentationIsIntact() else {
+            // Existing history has already fallen through to final model
+            // geometry. Do not rewind it just to begin a late flight.
+            _ = claimAndClear()
+            finishSendPresentation()
+            return
+        }
 
         let movement = CABasicAnimation(keyPath: "transform.translation.y")
         movement.fromValue = travel
@@ -777,14 +841,36 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         let completion = TranscriptSendAnimationCompletion { [weak self] _ in
             self?.finishSendPresentation(token: request.token)
         }
+
+        // Claim only when the real target host is ready. The controller keeps
+        // this claim across representable rebuilds, preventing the same
+        // request from replaying on a replacement NSView.
+        guard claimAndClear() else {
+            finishSendPresentation()
+            return
+        }
+
+        // Removing the pending hold and adding the flight are one Core
+        // Animation commit. The display server can therefore observe either
+        // the hold or the flight, never the visible model layer between them.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.removeAnimation(forKey: "codevisor.user-send")
+        beginSendPresentation(
+            request: request,
+            sourceLayout: sourceLayout,
+            sourceViewportYByRowKey: sourceViewportYByRowKey
+        )
         sendAnimationCompletion = completion
         group.delegate = completion
         layer.add(group, forKey: "codevisor.user-send")
+        CATransaction.commit()
     }
 
     private func beginSendPresentation(
         request: UserSendAnimationRequest,
-        sourceLayout: VirtualTranscriptLayout?
+        sourceLayout: VirtualTranscriptLayout?,
+        sourceViewportYByRowKey: [String: CGFloat]?
     ) {
         finishSendPresentation()
         activeSendAnimationRequest = request
@@ -793,17 +879,17 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         let deadline = sendPresentationLifecycle.begin(token: request.token, at: now)
         scheduleSendPresentationWatchdog(token: request.token, deadline: deadline, now: now)
 
-        if let sourceLayout {
+        if let sourceViewportYByRowKey {
             for (key, host) in mountedHosts {
-                guard
-                    let translation = TranscriptSendHistoryTransition.translationY(
-                        forKey: key,
-                        from: sourceLayout,
-                        to: virtualLayout
-                    ),
-                    translation > 1,
+                guard let previousViewportY = sourceViewportYByRowKey[key],
                     let layer = host.layer
                 else { continue }
+                let currentViewportY = host.frame.minY - contentView.bounds.minY
+                let translation = TranscriptSendHistoryTransition.translationY(
+                    fromScreenY: previousViewportY,
+                    toScreenY: currentViewportY
+                )
+                guard abs(translation) > 1 else { continue }
                 layer.removeAnimation(forKey: "codevisor.send-history-shift")
                 let movement = CABasicAnimation(keyPath: "transform.translation.y")
                 movement.fromValue = translation
@@ -823,15 +909,137 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         synchronizeSendAssistantVisibility()
     }
 
-    private func synchronizeSendAssistantVisibility() {
-        guard activeSendAnimationRequest != nil else { return }
-        let sourceLayout = activeSendSourceLayout
+    private func synchronizePendingSendTargetVisibility() {
+        guard !reduceMotion, let request = pendingSendAnimationRequest else { return }
+        let key = TranscriptVirtualRow.ID.message(request.messageID).layoutKey
+        guard let host = mountedHosts[key], let layer = host.layer,
+            layer.animation(forKey: Self.sendTargetHoldAnimationKey) == nil
+        else { return }
+
+        // Keep the model layer authoritative and use only a bounded
+        // presentation hold. Readiness normally resolves in the following
+        // layout passes; if it does not, startPendingSendAnimationIfPossible()
+        // consumes the request without a late hide-and-flight transition.
+        let hold = CABasicAnimation(keyPath: "opacity")
+        hold.fromValue = 0
+        hold.toValue = 0
+        hold.duration = TranscriptSendAnimationContract.presentationSafetyDuration
+        hold.isRemovedOnCompletion = true
+        layer.add(hold, forKey: Self.sendTargetHoldAnimationKey)
+    }
+
+    private func synchronizePendingSendHistoryPositions() {
+        guard !reduceMotion,
+            pendingSendAnimationRequest != nil,
+            let sourceViewportYByRowKey = pendingSendSourceViewportYByRowKey
+        else { return }
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+
         for (key, host) in mountedHosts {
-            guard rowByKey[key]?.id.isActiveRow == true,
-                sourceLayout?.indexByKey[key] == nil,
-                host.layer != nil
+            guard let sourceViewportY = sourceViewportYByRowKey[key],
+                let layer = host.layer
             else { continue }
+            let currentViewportY = host.frame.minY - contentView.bounds.minY
+            let translation = TranscriptSendHistoryTransition.translationY(
+                fromScreenY: sourceViewportY,
+                toScreenY: currentViewportY
+            )
+            let shouldHold = TranscriptSendAnimationContract.shouldHoldHistoryRow(
+                phase: .pending,
+                rowExistedBeforeSend: true,
+                translationY: translation
+            )
+            guard shouldHold else {
+                layer.removeAnimation(forKey: Self.sendHistoryHoldAnimationKey)
+                sendHistoryHoldMounts.removeValue(forKey: key)
+                continue
+            }
+
+            let mountID = ObjectIdentifier(host)
+            if let existing = sendHistoryHoldMounts[key], existing.hostID == mountID {
+                if layer.animation(forKey: Self.sendHistoryHoldAnimationKey) == nil {
+                    // This mount's bounded hold expired. Its model position is
+                    // visible now, so reapplying would create the same rewind
+                    // the pending hold exists to prevent.
+                    continue
+                }
+                if abs(existing.translationY - translation) <= 0.5 { continue }
+            }
+            sendHistoryHoldMounts[key] = SendHistoryHoldMount(
+                hostID: mountID,
+                translationY: translation
+            )
+
+            let hold = CABasicAnimation(keyPath: "transform.translation.y")
+            hold.fromValue = translation
+            hold.toValue = translation
+            hold.duration = TranscriptSendAnimationContract.presentationSafetyDuration
+            hold.isRemovedOnCompletion = true
+            layer.add(hold, forKey: Self.sendHistoryHoldAnimationKey)
+        }
+    }
+
+    private func synchronizeSendAssistantVisibility() {
+        guard !reduceMotion else { return }
+        let context: (phase: TranscriptSendPresentationPhase, sourceLayout: VirtualTranscriptLayout?)
+        if activeSendAnimationRequest != nil {
+            context = (.active, activeSendSourceLayout)
+        } else if pendingSendAnimationRequest != nil {
+            context = (.pending, pendingSendSourceLayout)
+        } else {
+            return
+        }
+        for (key, host) in mountedHosts {
+            guard
+                TranscriptSendAnimationContract.shouldHoldAssistantRow(
+                    phase: context.phase,
+                    rowIsActive: rowByKey[key]?.id.isActiveRow == true,
+                    rowExistedBeforeSend: context.sourceLayout?.indexByKey[key] != nil
+                ), host.layer != nil
+            else { continue }
+            let mountID = ObjectIdentifier(host)
+            guard sendAssistantHoldMounts[key] != mountID else { continue }
+            sendAssistantHoldMounts[key] = mountID
             holdSendPresentation(for: host)
+        }
+    }
+
+    private func pendingSendAssistantPresentationIsIntact() -> Bool {
+        guard pendingSendAnimationRequest != nil else { return true }
+        return mountedHosts.allSatisfy { key, host in
+            guard
+                TranscriptSendAnimationContract.shouldHoldAssistantRow(
+                    phase: .pending,
+                    rowIsActive: rowByKey[key]?.id.isActiveRow == true,
+                    rowExistedBeforeSend: pendingSendSourceLayout?.indexByKey[key] != nil
+                )
+            else { return true }
+            return host.layer?.animation(forKey: Self.sendAssistantHoldAnimationKey) != nil
+        }
+    }
+
+    private func pendingSendHistoryPresentationIsIntact() -> Bool {
+        guard let sourceViewportYByRowKey = pendingSendSourceViewportYByRowKey else {
+            return true
+        }
+        return mountedHosts.allSatisfy { key, host in
+            guard let sourceViewportY = sourceViewportYByRowKey[key] else { return true }
+            let currentViewportY = host.frame.minY - contentView.bounds.minY
+            let translation = TranscriptSendHistoryTransition.translationY(
+                fromScreenY: sourceViewportY,
+                toScreenY: currentViewportY
+            )
+            guard
+                TranscriptSendAnimationContract.shouldHoldHistoryRow(
+                    phase: .pending,
+                    rowExistedBeforeSend: true,
+                    translationY: translation
+                )
+            else { return true }
+            return host.layer?.animation(forKey: Self.sendHistoryHoldAnimationKey) != nil
         }
     }
 
@@ -852,6 +1060,8 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             guard let layer = host.layer else { continue }
             layer.removeAnimation(forKey: "codevisor.user-send")
             layer.removeAnimation(forKey: "codevisor.send-history-shift")
+            layer.removeAnimation(forKey: Self.sendHistoryHoldAnimationKey)
+            layer.removeAnimation(forKey: Self.sendTargetHoldAnimationKey)
             layer.removeAnimation(forKey: Self.sendAssistantHoldAnimationKey)
             layer.opacity = 1
             assert(layer.opacity == 1)
@@ -859,6 +1069,8 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         for host in recycledHosts {
             host.layer?.removeAnimation(forKey: "codevisor.user-send")
             host.layer?.removeAnimation(forKey: "codevisor.send-history-shift")
+            host.layer?.removeAnimation(forKey: Self.sendHistoryHoldAnimationKey)
+            host.layer?.removeAnimation(forKey: Self.sendTargetHoldAnimationKey)
             host.layer?.removeAnimation(forKey: Self.sendAssistantHoldAnimationKey)
             host.layer?.opacity = 1
             assert(host.layer?.opacity == 1)
@@ -866,13 +1078,37 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         for host in retiringHosts {
             host.layer?.removeAnimation(forKey: "codevisor.user-send")
             host.layer?.removeAnimation(forKey: "codevisor.send-history-shift")
+            host.layer?.removeAnimation(forKey: Self.sendHistoryHoldAnimationKey)
+            host.layer?.removeAnimation(forKey: Self.sendTargetHoldAnimationKey)
             host.layer?.removeAnimation(forKey: Self.sendAssistantHoldAnimationKey)
             host.layer?.opacity = 1
             assert(host.layer?.opacity == 1)
         }
         activeSendAnimationRequest = nil
         activeSendSourceLayout = nil
+        sendHistoryHoldMounts.removeAll(keepingCapacity: true)
+        sendAssistantHoldMounts.removeAll(keepingCapacity: true)
         sendAnimationCompletion = nil
+        applyDeferredSendProjectionIfNeeded()
+    }
+
+    private func applyDeferredSendProjectionIfNeeded() {
+        guard let deferredSendProjection else { return }
+        self.deferredSendProjection = nil
+        guard !isDetaching else { return }
+
+        projectedRows = deferredSendProjection.projectedRows
+        projectedRowsVersion = deferredSendProjection.projectedRowsVersion
+        receivedProjectionRevision = deferredSendProjection.projectionRevision
+        activeRows = deferredSendProjection.activeRows
+        activeRowsVersion = deferredSendProjection.activeRowsVersion
+        let resolution = resolvedRows(
+            projectedRows: deferredSendProjection.projectedRows,
+            activeRows: deferredSendProjection.activeRows
+        )
+        activeRowsRange = resolution.activeRange
+        _ = applyRows(resolution.rows, layoutFingerprintChanged: false)
+        needsLayout = true
     }
 
     private func holdSendPresentation(for host: TranscriptMountedRowHost) {
@@ -917,6 +1153,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         pendingSendAnimationRequest = nil
         pendingSendAnimationRowKey = nil
         pendingSendSourceLayout = nil
+        pendingSendSourceViewportYByRowKey = nil
         finishSendPresentation()
     }
 
@@ -1093,13 +1330,28 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     }
 
     private func sendHistoryDestinationIsReady(
+        request: UserSendAnimationRequest,
         sourceLayout: VirtualTranscriptLayout?,
         rowKey: String
     ) -> Bool {
+        guard let targetRow = rowByKey[rowKey],
+            isEligibleSendTarget(targetRow, for: request.destination),
+            let targetIndex = rows.firstIndex(where: { $0.layoutKey == rowKey })
+        else { return false }
+        if request.destination == .activeTurn,
+            !rows[targetIndex...].contains(where: { $0.id.isPreciselyProjectedActiveRow })
+        {
+            // The aggregate `.active` bridge can already be mounted and
+            // measured while its server-adopted identity is still racing the
+            // block projection. Starting from it would defer the real activity
+            // row until flight completion, producing estimate -> measurement
+            // bottom-pin jitter exactly when "Waiting on harness" appears.
+            return false
+        }
         guard let sourceLayout,
             sourceLayout.indexByKey[rowKey] == nil,
-            sourceLayout.keys.contains(where: { $0.hasPrefix("message:") }),
-            let targetIndex = rows.firstIndex(where: { $0.layoutKey == rowKey })
+            request.destination == .activeTurn
+                || sourceLayout.keys.contains(where: { $0.hasPrefix("message:") })
         else { return true }
         return rows[targetIndex...].allSatisfy { row in
             let key = row.layoutKey
@@ -1110,6 +1362,29 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                 && host.isAttachmentGeometryReady
                 && host.isPresentationReady
         }
+    }
+
+    private func isEligibleSendTarget(
+        _ row: TranscriptVirtualRow,
+        for destination: UserSendAnimationDestination
+    ) -> Bool {
+        switch destination {
+        case .optimistic:
+            return row.isUserMessage
+        case .activeTurn:
+            guard case let .message(item, waitingOnBackgroundTask: _) = row.content,
+                case .user = item
+            else { return false }
+            return true
+        }
+    }
+
+    private func sendHistoryViewportYByRowKey() -> [String: CGFloat] {
+        Dictionary(
+            uniqueKeysWithValues: mountedHosts.map { key, host in
+                (key, host.frame.minY - contentView.bounds.minY)
+            }
+        )
     }
 
     func persistViewport() {
@@ -1384,6 +1659,11 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
             // final canonical distance, not the transient pre-compensation one.
             lastDistanceFromBottom = currentDistanceFromBottom()
         }
+        // Final geometry and its bottom compensation are now authoritative,
+        // but the display server has not committed this run-loop transaction.
+        // Lock surviving rows to their captured viewport coordinates here so
+        // the intermediate model position can never paint.
+        synchronizePendingSendHistoryPositions()
         if initialRestoreRange != nil || changedHeights == nil || mountedCoverageNeedsUpdate() {
             updateMountedRows(rangeOverride: initialRestoreRange)
         }
@@ -1707,6 +1987,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         {
             requestMountedRowsUpdate()
         }
+        synchronizePendingSendHistoryPositions()
         synchronizeSendAssistantVisibility()
     }
 
@@ -1836,6 +2117,8 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
                 }
         }
         host.prepareForMountedRow()
+        sendHistoryHoldMounts.removeValue(forKey: key)
+        sendAssistantHoldMounts.removeValue(forKey: key)
         host.onHeightChange = { [weak self] height in
             self?.recordMeasuredHeight(height, for: key)
         }
@@ -1859,6 +2142,9 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         if requiresImmediatePresentation {
             host.prepareForImmediatePresentation()
         }
+        synchronizePendingSendTargetVisibility()
+        synchronizePendingSendHistoryPositions()
+        synchronizeSendAssistantVisibility()
         return true
     }
 
@@ -1884,6 +2170,8 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         }
 
         host.prepareForMountedRow()
+        sendHistoryHoldMounts.removeValue(forKey: key)
+        sendAssistantHoldMounts.removeValue(forKey: key)
         host.onHeightChange = { [weak self] height in
             self?.recordMeasuredHeight(height, for: key)
         }
@@ -1905,6 +2193,8 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         if requiresImmediatePresentation, !host.isPresentationReady {
             host.prepareForImmediatePresentation()
         }
+        synchronizePendingSendHistoryPositions()
+        synchronizeSendAssistantVisibility()
         return true
     }
 
