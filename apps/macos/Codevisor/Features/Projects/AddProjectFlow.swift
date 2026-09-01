@@ -15,9 +15,8 @@ final class AddProjectFlow {
     var showingLocalImporter = false
     var showingRemoteBrowser = false
     var showingGitClone = false
-    /// The machine the project lands on. nil follows the selected machine
-    /// (sidebar, onboarding); pickers that name a machine pass it so an
-    /// empty fleet machine can get its first project.
+    /// The machine the project lands on. nil seeds from the standalone
+    /// composer's remembered target; machine-scoped callers pass it.
     var serverId: String?
 
     func begin(serverId: String? = nil) {
@@ -95,7 +94,7 @@ private struct AddProjectFlowModifier: ViewModifier {
     }
 
     private var targetServerId: String {
-        flow.serverId ?? environment.machines.selectedMachineId
+        flow.serverId ?? environment.defaultComposerServerId
     }
 
     private var targetMachine: CodevisorMachine? {
@@ -103,11 +102,11 @@ private struct AddProjectFlowModifier: ViewModifier {
     }
 
     private var isLocalTarget: Bool {
-        targetMachine?.isLocal ?? environment.machines.selectedMachine.isLocal
+        targetMachine?.isLocal ?? false
     }
 
     private var machineName: String {
-        targetMachine?.name ?? environment.machines.selectedMachine.name
+        targetMachine?.name ?? "Machine"
     }
 
     private var client: any CodevisorServerClienting {

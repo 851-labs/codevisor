@@ -439,7 +439,7 @@ struct HomeView: View {
                         didHandleDiagnosticSessionLaunch = true
                         for _ in 0..<50 {
                             if let session = projectList.sessions.first(where: {
-                                $0.serverId == machines.selectedMachineId && $0.id == id
+                                $0.serverId == environment.defaultComposerServerId && $0.id == id
                             }) {
                                 IOSNavigationDiagnostics.record(
                                     "home.diagnosticLaunchSession",
@@ -458,7 +458,7 @@ struct HomeView: View {
                                         path.removeAll()
                                         try? await Task.sleep(for: .milliseconds(750))
                                         if let followup = projectList.sessions.first(where: {
-                                            $0.serverId == machines.selectedMachineId
+                                            $0.serverId == environment.defaultComposerServerId
                                                 && $0.id == followupID
                                         }) {
                                             IOSNavigationDiagnostics.record(
@@ -950,7 +950,7 @@ struct HomeView: View {
         private func openDiagnosticSession(_ id: UUID) {
             guard
                 let session = projectList.sessions.first(where: {
-                    $0.serverId == machines.selectedMachineId && $0.id == id
+                    $0.serverId == environment.defaultComposerServerId && $0.id == id
                 })
             else { return }
             IOSNavigationDiagnostics.record(

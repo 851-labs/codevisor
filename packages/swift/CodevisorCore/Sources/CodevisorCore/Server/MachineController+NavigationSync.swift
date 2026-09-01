@@ -19,13 +19,12 @@ extension MachineController {
         "sync.changed",
     ]
 
-    /// Follows the selected server's event stream so projects and sessions
-    /// stay in sync across every client connected to that server. Replaces any
-    /// previous subscription (e.g. after switching machines).
-    public func startEventSync(since initialCursor: Int = 0) {
+    /// Follows one explicit server's event stream so projects and sessions
+    /// stay in sync without consulting composer or navigation defaults.
+    public func startEventSync(for serverId: String, since initialCursor: Int = 0) {
         startEventSync(
-            serverId: selectedMachine.id,
-            client: selectedClient,
+            serverId: serverId,
+            client: client(for: serverId),
             since: initialCursor
         )
     }
@@ -61,25 +60,18 @@ extension MachineController {
                 )
                 guard let self, !Task.isCancelled else { return }
                 connection.eventSyncTask = nil
-                if serverId == self.selectedMachine.id {
-                    // Re-enter the same serialized snapshot + replay path used
-                    // by foreground recovery and manual refresh. Returning is
-                    // important: reconciliation installs the replacement
-                    // stream and this failed task must not compete with it.
-                    await self.synchronizeNavigationState(
-                        serverId: serverId,
-                        client: client,
-                        presentation: .catchUp
-                    )
-                } else {
-                    // A background machine reconnects on its own with backoff;
-                    // its full snapshot happens when it is next selected.
-                    connection.reconnectFailures += 1
-                    let delay = min(60, 1 << min(connection.reconnectFailures, 6))
-                    try? await Task.sleep(for: .seconds(delay))
-                    guard !Task.isCancelled else { return }
-                    await self.connectMachine(serverId)
-                }
+                // Every machine owns the same serialized recovery path. One
+                // machine's stream failure never promotes it to a global
+                // selection or blocks another machine's snapshot.
+                connection.reconnectFailures += 1
+                let delay = min(60, 1 << min(connection.reconnectFailures, 6))
+                try? await Task.sleep(for: .seconds(delay))
+                guard !Task.isCancelled else { return }
+                await self.synchronizeNavigationState(
+                    serverId: serverId,
+                    client: client,
+                    presentation: .catchUp
+                )
             }
         }
     }
@@ -89,9 +81,12 @@ extension MachineController {
         for connection in connectionsById.values {
             connection.eventSyncTask?.cancel()
             connection.eventSyncTask = nil
+            connection.pendingRefreshTask?.cancel()
+            connection.pendingRefreshTask = nil
+            connection.navigationSyncTask?.cancel()
+            connection.navigationSyncTask = nil
+            connection.navigationSyncToken = nil
         }
-        pendingRefreshTask?.cancel()
-        pendingRefreshTask = nil
     }
 
     /// Stops one machine's event stream, leaving every other machine's alive.
@@ -100,14 +95,9 @@ extension MachineController {
         connectionsById[machineId]?.eventSyncTask = nil
     }
 
-    /// Re-homes one machine's live shell stream after its route flips: the
-    /// old socket rides a dead transport, so tear it down and catch up
-    /// gaplessly through a client resolved over the NEW route. Background
-    /// machines just drop the dead stream — their full snapshot happens
-    /// when they are next selected, as always.
+    /// Re-homes one machine's live shell stream after its route flips.
     func rerouteStreams(for machineId: String) {
         stopEventSync(for: machineId)
-        guard machineId == selectedMachine.id else { return }
         let client = client(for: machineId)
         // The sync path owns the blocking state; writing it here too raced
         // an in-flight sync's terminal write and could strand the spinner.
@@ -125,12 +115,8 @@ extension MachineController {
         serverId: String,
         client: any CodevisorServerClienting
     ) async {
-        // Events from EVERY machine apply: the row stores are serverId-keyed,
-        // so a background machine's sessions stay current while another
-        // machine is on screen. Only the full-snapshot refresh below stays
-        // selected-scoped — a background machine's snapshot happens when it
-        // is next selected.
-        let isSelected = serverId == selectedMachine.id
+        // Events from every machine apply: all row stores and refreshes are
+        // explicitly serverId-keyed.
         DiagnosticsClient.shared.noteSyncEvent(
             machineIsLocal: serverId == CodevisorMachine.local.id,
             kind: event.kind
@@ -170,12 +156,12 @@ extension MachineController {
             case .requiresFullRefresh:
                 // Older servers may emit only an event marker. Retain a
                 // compatibility path, but keep it off the ordinary hot path.
-                if isSelected { scheduleNavigationRefresh() }
+                scheduleNavigationRefresh(serverId: serverId, client: client)
             }
         case "workspace.updated", "workspace.pane.updated", "workspace.pane.deleted":
             await workspaceSync?.refreshFromServer(serverId: serverId, client: client)
         case "project.created", "project.updated", "worktree.created":
-            if isSelected { scheduleNavigationRefresh() }
+            scheduleNavigationRefresh(serverId: serverId, client: client)
         case "harness.lifecycle.updated":
             // Update detection / install progress changed a harness — bump
             // the catalog revision so mounted pickers and settings refetch.
@@ -215,14 +201,16 @@ extension MachineController {
 
     /// Coalesces bursts of events (including the initial replay) into a single
     /// refresh from the server.
-    private func scheduleNavigationRefresh() {
-        guard pendingRefreshTask == nil else { return }
-        pendingRefreshTask = Task { [weak self] in
+    private func scheduleNavigationRefresh(
+        serverId: String,
+        client: any CodevisorServerClienting
+    ) {
+        let connection = connection(for: serverId)
+        guard connection.pendingRefreshTask == nil else { return }
+        connection.pendingRefreshTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(300))
             guard let self, !Task.isCancelled else { return }
-            self.pendingRefreshTask = nil
-            let serverId = self.selectedMachine.id
-            let client = self.selectedClient
+            connection.pendingRefreshTask = nil
             await self.synchronizeNavigationState(
                 serverId: serverId,
                 client: client,
@@ -231,15 +219,11 @@ extension MachineController {
         }
     }
 
-    /// One shared authoritative navigation reconciliation. Every caller —
-    /// launch, foreground recovery, machine switching, event-stream recovery,
-    /// and pull-to-refresh — joins this task instead of starting an overlapping
-    /// snapshot.
-    public func refreshSelectedNavigationState() async {
-        let serverId = selectedMachine.id
+    /// Refreshes one explicit machine's authoritative navigation snapshot.
+    public func refreshNavigationState(for serverId: String) async {
         await synchronizeNavigationState(
             serverId: serverId,
-            client: selectedClient,
+            client: client(for: serverId),
             presentation: .background
         )
     }
@@ -249,18 +233,18 @@ extension MachineController {
         client: any CodevisorServerClienting,
         presentation: NavigationSyncPresentation
     ) async {
-        guard serverId == selectedMachine.id else { return }
-        if navigationSyncMachineId == serverId, let existing = navigationSyncTask {
+        let connection = connection(for: serverId)
+        if let existing = connection.navigationSyncTask {
             if presentation == .catchUp {
-                connection(for: serverId).navigationSyncState = .catchingUp
+                connection.navigationSyncState = .catchingUp
             }
             await existing.value
             // The joined task's terminal write can race the blocking write
             // above (it may already be past its state-set when we joined).
             // A blocking state must never be left displayed with no task
             // running to clear it — re-enter once with the field clear.
-            if navigationSyncTask == nil,
-                connection(for: serverId).navigationSyncState == .catchingUp
+            if connection.navigationSyncTask == nil,
+                connection.navigationSyncState == .catchingUp
             {
                 await synchronizeNavigationState(
                     serverId: serverId,
@@ -271,7 +255,7 @@ extension MachineController {
             return
         }
 
-        navigationSyncTask?.cancel()
+        connection.navigationSyncTask?.cancel()
         let token = UUID()
         let task = Task { [weak self] in
             guard let self else { return }
@@ -281,26 +265,25 @@ extension MachineController {
                 presentation: presentation
             )
         }
-        navigationSyncMachineId = serverId
-        navigationSyncToken = token
-        navigationSyncTask = task
+        connection.navigationSyncToken = token
+        connection.navigationSyncTask = task
         // The spinner must never outlive the wait: a catch-up wedged on a
         // half-open transport hangs rather than fails, so a deadline cancels
         // it and demotes to stale — cached rows plus retry, not a spinner.
-        let watchdog = Task { [weak self] in
+        let watchdog = Task {
             try? await Task.sleep(for: .seconds(30))
-            guard let self, !Task.isCancelled, self.navigationSyncToken == token else { return }
+            guard !Task.isCancelled, connection.navigationSyncToken == token
+            else { return }
             task.cancel()
-            self.connection(for: serverId).navigationSyncState = .stale(
+            connection.navigationSyncState = .stale(
                 "Timed out syncing with this machine."
             )
         }
         await task.value
         watchdog.cancel()
-        if navigationSyncToken == token {
-            navigationSyncMachineId = nil
-            navigationSyncToken = nil
-            navigationSyncTask = nil
+        if connection.navigationSyncToken == token {
+            connection.navigationSyncToken = nil
+            connection.navigationSyncTask = nil
         }
     }
 
@@ -314,7 +297,7 @@ extension MachineController {
         client: any CodevisorServerClienting,
         presentation: NavigationSyncPresentation
     ) async {
-        guard serverId == selectedMachine.id, !Task.isCancelled else { return }
+        guard !Task.isCancelled else { return }
         if presentation == .catchUp {
             connection(for: serverId).navigationSyncState = .catchingUp
         }
@@ -333,14 +316,14 @@ extension MachineController {
             )
         }
 
-        guard serverId == selectedMachine.id, !Task.isCancelled else { return }
-        let result = await projectList.refreshFromServer()
-        guard serverId == selectedMachine.id, !Task.isCancelled else { return }
+        guard !Task.isCancelled else { return }
+        let result = await projectList.refreshFromServer(serverId: serverId, client: client)
+        guard !Task.isCancelled else { return }
 
         switch result {
         case .committed:
             await workspaceSync?.refreshFromServer(serverId: serverId, client: client)
-            guard serverId == selectedMachine.id, !Task.isCancelled else { return }
+            guard !Task.isCancelled else { return }
             startEventSync(serverId: serverId, client: client, since: cursor)
             connection(for: serverId).navigationSyncState = .current
         case .superseded:

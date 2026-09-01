@@ -177,7 +177,7 @@ struct CodevisorApp: App {
                 // Settings can be the only restored scene at launch, so waiting
                 // until RootView mounts leaves every normal server request gated.
                 Task { @MainActor in
-                    await runtime.environment.prepareSelectedMachine()
+                    await runtime.environment.prepareAllMachines()
                     // Initialize the terminal runtime up front, in a clean context,
                     // so opening the terminal later can't re-enter its dispatch_once.
                     TerminalRuntime.prewarm()

@@ -84,7 +84,7 @@ struct CodevisorApp: App {
         guard environment.cloud.isRestoringPersistedSession else { return false }
         let machines = environment.machines
         let hasConfiguredRemote = machines.machines.contains { !$0.isLocal }
-        return machines.selectedMachineId.hasPrefix(CodevisorMachine.cloudIdPrefix)
+        return environment.defaultComposerServerId.hasPrefix(CodevisorMachine.cloudIdPrefix)
             || !hasConfiguredRemote
     }
 
@@ -144,21 +144,24 @@ struct CodevisorApp: App {
             ChatControllerCache.shared.rerouteControllers(on: machineId, environment: environment)
         }
         let machines = environment.machines
-        let selectedIsConfiguredRemote = machines.machines.contains {
-            $0.id == machines.selectedMachineId && !$0.isLocal
+        let hasConfiguredRemote = machines.machines.contains {
+            !$0.isLocal && !$0.isCloud
         }
-        if selectedIsConfiguredRemote {
+        if hasConfiguredRemote {
             // Locally persisted remotes resolve synchronously. Preserve their
             // fast path and collect status first so the later cloud snapshot
             // can deduplicate the same machine by its advertised device id.
-            await environment.prepareSelectedMachine()
+            await environment.prepareAllMachines()
             await environment.cloud.bootstrap()
+            // Cloud discovery may have added fleet members while configured
+            // machines were connecting.
+            await environment.prepareAllMachines()
         } else {
             // Cloud entries are synthesized rather than stored in the local
             // registry, so restore them before resolving and preparing a
             // persisted cloud selection (or auto-selecting on a fresh setup).
             await environment.cloud.bootstrap()
-            await environment.prepareSelectedMachine()
+            await environment.prepareAllMachines()
         }
         hasCompletedBootstrap = true
         // Fleet update sweep off the critical path: the Settings badge and
@@ -173,13 +176,13 @@ struct CodevisorApp: App {
 
     /// iOS can preserve a half-open URLSession WebSocket across suspension or
     /// a network handoff. Replace it on foreground, then re-prepare the
-    /// selected machine so metadata and event streams reconcile immediately.
+    /// every machine so metadata and event streams reconcile immediately.
     private func recoverAfterForeground(environment: AppEnvironment) async {
         guard !recoveryInProgress else { return }
         recoveryInProgress = true
         defer { recoveryInProgress = false }
         await environment.cloud.reconnectHub()
-        await environment.prepareSelectedMachine()
+        await environment.prepareAllMachines()
         // Re-sweep fleet update state with transport restored.
         Task { await environment.updateCenter.refresh() }
         // With transport restored, re-verify every in-flight chat against

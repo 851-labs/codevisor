@@ -133,8 +133,8 @@ struct AddMachineSheet: View {
                     token: token.isEmpty ? nil : token,
                     syncConfig: syncConfig
                 )
-                environment.machines.selectMachine(machine.id)
-                await environment.prepareSelectedMachine()
+                environment.composerDefaults.rememberNewWorkspaceServer(serverId: machine.id)
+                await environment.prepareMachine(machine.id)
                 dismiss()
             } catch {
                 errorMessage = ErrorReporter.userFacingMessage(for: error)

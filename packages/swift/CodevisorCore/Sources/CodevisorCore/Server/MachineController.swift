@@ -91,7 +91,7 @@ public enum MachineRoute: Sendable, Equatable {
     case relay
 }
 
-/// Progress of a client-triggered update of the selected machine's server.
+/// Progress of a client-triggered update of one explicit machine's server.
 public enum ServerUpdatePhase: Equatable, Sendable {
     case idle
     case updating
@@ -124,6 +124,10 @@ public final class MachineController {
     // fleet's composition on it: platforms without a local server have no
     // "Local" machine at all.
     let localServer: (any LocalServerControlling)?
+    /// Injected transports model a local machine in previews and unit tests;
+    /// production client-only platforms omit both an embedded server and a
+    /// factory, so they still have no phantom local target.
+    let includesLocalMachine: Bool
     let clientFactory: ClientFactory
     let requestGate: ServerRequestGate
     private let key = "machines"
@@ -132,13 +136,6 @@ public final class MachineController {
     let updatePollInterval: Duration
     let updatePollAttempts: Int
     @ObservationIgnored private var credentialReadFailures: Set<String> = []
-    @ObservationIgnored var pendingRefreshTask: Task<Void, Never>?
-    @ObservationIgnored private var preparationMachineId: String?
-    @ObservationIgnored private var preparationToken: UUID?
-    @ObservationIgnored private var preparationTask: Task<Void, Never>?
-    @ObservationIgnored var navigationSyncMachineId: String?
-    @ObservationIgnored var navigationSyncToken: UUID?
-    @ObservationIgnored var navigationSyncTask: Task<Void, Never>?
     /// Invoked when a `harness.lifecycle.updated` event arrives for a machine
     /// — the AppEnvironment bridges it to its harness-catalog revision so
     /// mounted pickers and settings panes refetch.
@@ -156,8 +153,7 @@ public final class MachineController {
     /// replica changed; ConfigSync adopts and re-gossips it. Arguments:
     /// (serverId, changed document).
     @ObservationIgnored public var onSyncChanged: ((String, ServerSyncDocument) -> Void)?
-    /// Invoked when a machine's live connection comes up (selected machine
-    /// prepared, or a background stream opened) — ConfigSync converges it
+    /// Invoked when a machine's live connection comes up — ConfigSync converges it
     /// immediately instead of waiting for the next periodic sweep.
     @ObservationIgnored public var onMachineConnected: ((String) -> Void)?
     /// Invoked after a remote machine is added or re-tokened (sheet,
@@ -187,6 +183,7 @@ public final class MachineController {
         self.projectList = projectList
         self.workspaceSync = workspaceSync
         self.localServer = localServer
+        self.includesLocalMachine = localServer != nil || clientFactory != nil
         self.requestGate = requestGate
         self.clientFactory =
             clientFactory ?? {
@@ -261,17 +258,18 @@ public final class MachineController {
                 }
             }
         }
-        if clientFactory == nil {
-            beginWaiting(
-                for: selectedMachine.id,
-                reason: selectedMachine.isLocal ? .starting : .connecting
-            )
-        } else {
-            // Injected clients are previews/test transports with no external
-            // process lifecycle for this controller to await.
-            markReady(for: selectedMachine.id)
+        for machine in machines {
+            if clientFactory == nil {
+                beginWaiting(
+                    for: machine.id,
+                    reason: machine.isLocal ? .starting : .connecting
+                )
+            } else {
+                // Injected clients are previews/test transports with no
+                // external process lifecycle for this controller to await.
+                markReady(for: machine.id)
+            }
         }
-        projectList.selectServer(serverId: selectedMachine.id, serverClient: selectedClient, refresh: false)
         projectList.configureServerClientProvider { [weak self] in self?.clientIfKnown(for: $0) }
     }
 
@@ -335,23 +333,14 @@ public final class MachineController {
         applySelection(id)
     }
 
-    /// Points the registry, request gate, and project list at `id` without
-    /// touching `hasExplicitMachineSelection`. Auto-selection uses this so an
-    /// auto-pick can be superseded (or replaced) later; `selectMachine` layers
-    /// the explicit-choice flag on top.
+    /// Persists the legacy composer fallback without changing any machine's
+    /// connection, request gate, update state, or navigation state. New
+    /// composer state lives in ComposerDefaultsStore; this value remains only
+    /// for migration compatibility with older installs.
     private func applySelection(_ id: String) {
         guard let machine = machine(for: id) else { return }
         registry.selectedMachineId = machine.id
-        beginWaiting(for: machine.id, reason: machine.isLocal ? .starting : .connecting)
         persist()
-        // Machine preparation owns the one authoritative refresh. Starting a
-        // second fire-and-forget refresh here lets two snapshots invalidate
-        // each other as soon as the request gate opens.
-        projectList.selectServer(
-            serverId: machine.id,
-            serverClient: client(for: machine.id),
-            refresh: false
-        )
     }
 
     /// When only the local placeholder is selected on a client-only platform,
@@ -370,7 +359,6 @@ public final class MachineController {
         // Deliberately not selectMachine: the auto-pick must stay non-explicit
         // so it can be re-picked if this machine later disappears.
         applySelection(candidate.id)
-        Task { await prepareSelectedMachine() }
     }
 
     /// The machine auto-selection should adopt: any non-local machine, with an
@@ -390,29 +378,21 @@ public final class MachineController {
         return statusByMachineId[machine.id]?.isReachable ?? false
     }
 
-    /// A cloud selection persisted across launches resolves to the local
-    /// machine until the account's machine list arrives. Once it does, rewire
-    /// project list and gate to the now-available cloud machine.
+    /// Reconciles the legacy composer fallback after cloud discovery and
+    /// starts explicit per-machine connections. It never changes routing for
+    /// an open chat or any other machine-scoped operation.
     public func reconcileCloudSelection() {
         let selectedId = selectedMachineId
         if selectedId.hasPrefix(CodevisorMachine.cloudIdPrefix),
-            machine(for: selectedId) != nil,
-            projectList.selectedServerId != selectedId
+            machine(for: selectedId) != nil
         {
-            selectMachine(selectedId)
-            // The shell's selection-change task is keyed on the machine id,
-            // which never changed here (the persisted selection was this cloud
-            // machine all along) — it will not refire, and without preparation
-            // the request gate would stay waiting forever. Kick it explicitly,
-            // like addRemote does for a freshly added machine.
-            Task { await prepareSelectedMachine() }
-            return
+            applySelection(selectedId)
         }
         // A fresh sign-in with machines but no explicit choice: adopt one so
         // the user isn't left on the local placeholder.
         autoSelectPreferredMachineIfNeeded()
-        // Newly arrived cloud machines get their background streams even
-        // when the selection did not move.
+        // Newly arrived cloud machines get their own streams regardless of
+        // which target the composer remembers.
         ensureBackgroundConnections()
     }
 
@@ -422,14 +402,7 @@ public final class MachineController {
     public func handleCloudAccountSignedOut() {
         guard selectedMachineId.hasPrefix(CodevisorMachine.cloudIdPrefix) else { return }
         registry.selectedMachineId = CodevisorMachine.local.id
-        beginWaiting(for: CodevisorMachine.local.id, reason: .starting)
         persist()
-        projectList.selectServer(
-            serverId: CodevisorMachine.local.id,
-            serverClient: client(for: CodevisorMachine.local.id),
-            refresh: false
-        )
-        Task { await prepareSelectedMachine() }
     }
 
     @discardableResult
@@ -454,15 +427,7 @@ public final class MachineController {
             let existing = registry.remoteMachines[index]
             if select { registry.selectedMachineId = existing.id }
             persist()
-            if select {
-                beginWaiting(for: existing.id, reason: .connecting)
-                projectList.selectServer(
-                    serverId: existing.id,
-                    serverClient: client(for: existing.id),
-                    refresh: false
-                )
-                Task { await prepareSelectedMachine() }
-            }
+            Task { await prepareMachine(existing.id) }
             onMachineAdded?(existing)
             return existing
         }
@@ -478,17 +443,9 @@ public final class MachineController {
         registry.remoteMachines.append(machine)
         if select { registry.selectedMachineId = machine.id }
         persist()
-        if select {
-            beginWaiting(for: machine.id, reason: .connecting)
-            projectList.selectServer(
-                serverId: machine.id,
-                serverClient: client(for: machine.id),
-                refresh: false
-            )
-            // Probe right away so a freshly added machine shows its real
-            // status instead of waiting for the next periodic refresh.
-            Task { await prepareSelectedMachine() }
-        }
+        // Probe right away so a freshly added machine shows its real status
+        // without making it a global routing target.
+        Task { await prepareMachine(machine.id) }
         onMachineAdded?(machine)
         return machine
     }
@@ -543,13 +500,6 @@ public final class MachineController {
         removeConnection(for: id)
         if registry.selectedMachineId == id {
             registry.selectedMachineId = CodevisorMachine.local.id
-            beginWaiting(for: CodevisorMachine.local.id, reason: .starting)
-            projectList.selectServer(
-                serverId: CodevisorMachine.local.id,
-                serverClient: selectedClient,
-                refresh: false
-            )
-            Task { await prepareSelectedMachine() }
         }
         persist()
     }
@@ -570,42 +520,40 @@ public final class MachineController {
         }
         credentialReadFailures.removeAll()
         registry = MachineRegistry()
-        beginWaiting(for: CodevisorMachine.local.id, reason: .starting)
         persist()
-        projectList.selectServer(
-            serverId: CodevisorMachine.local.id,
-            serverClient: selectedClient,
-            refresh: false
-        )
-        Task { await prepareSelectedMachine() }
     }
 
-    public func prepareSelectedMachine() async {
-        let machine = selectedMachine
-        let machineId = machine.id
-        let client = client(for: machineId)
-
-        if preparationMachineId == machineId, let preparationTask {
+    /// Starts and connects exactly one machine. For the local machine this
+    /// owns the app/LaunchAgent lifecycle; remote machines are only probed and
+    /// synchronized. Concurrent callers for the same id share one task.
+    public func prepareMachine(_ machineId: String) async {
+        guard let machine = machine(for: machineId) else { return }
+        let connection = connection(for: machineId)
+        if let preparationTask = connection.preparationTask {
             await preparationTask.value
             return
         }
-
-        let token = UUID()
         let task = Task { [weak self] in
             guard let self else { return }
             await self.performPreparation(
                 for: machine,
-                client: client
+                client: self.client(for: machineId)
             )
         }
-        preparationMachineId = machineId
-        preparationToken = token
-        preparationTask = task
+        connection.preparationTask = task
         await task.value
-        if preparationToken == token {
-            preparationMachineId = nil
-            preparationToken = nil
-            preparationTask = nil
+        connection.preparationTask = nil
+    }
+
+    /// Bootstraps every known machine independently. A slow or unavailable
+    /// remote can never prevent the local LaunchAgent from being restored,
+    /// and the remembered composer target has no bearing on this work.
+    public func prepareAllMachines() async {
+        let ids = allMachines.map(\.id)
+        await withTaskGroup(of: Void.self) { group in
+            for id in ids {
+                group.addTask { await self.prepareMachine(id) }
+            }
         }
     }
 
@@ -614,17 +562,11 @@ public final class MachineController {
         client: any CodevisorServerClienting
     ) async {
         let machineId = machine.id
-        // Background machines connect IMMEDIATELY, in parallel with the
-        // selected machine's own preparation. Sequencing them after it meant
-        // a hanging selected machine (dead LAN address, wedged relay) held
-        // every healthy machine's snapshot hostage — and with it, the whole
-        // fleet-aggregated home screen.
-        ensureBackgroundConnections()
+        beginWaiting(for: machineId, reason: machine.isLocal ? .starting : .connecting)
         connection(for: machineId).navigationSyncState = .catchingUp
 
         if machine.isLocal, let localServer {
             let serverState = await localServer.ensureRunning()
-            guard machineId == selectedMachineId else { return }
             if case let .unavailable(message) = serverState {
                 markFailed(for: machineId, message: message)
                 connection(for: machineId).status = MachineStatus(
@@ -652,7 +594,6 @@ public final class MachineController {
                 // token is accepted before ordinary requests are released.
                 _ = try await client.info()
             } catch {
-                guard machineId == selectedMachineId else { return }
                 let message = serverErrorMessage(error)
                 markFailed(for: machineId, message: message)
                 connection(for: machineId).status = MachineStatus(
@@ -663,10 +604,8 @@ public final class MachineController {
             }
         }
 
-        guard machineId == selectedMachineId else { return }
         markReady(for: machineId)
         await refreshStatus(for: machineId)
-        guard machineId == selectedMachineId else { return }
         await synchronizeNavigationState(
             serverId: machineId,
             client: client,

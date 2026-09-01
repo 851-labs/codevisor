@@ -15,7 +15,7 @@ struct HarnessDetailSheet: View {
     /// Settings page that presented it, else the app's selected machine
     /// (onboarding, previews).
     private var scopedServerId: String {
-        settingsMachineId ?? environment.machines.selectedMachineId
+        settingsMachineId ?? environment.defaultComposerServerId
     }
 
     @Environment(\.dismiss) private var dismiss

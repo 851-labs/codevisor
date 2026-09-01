@@ -5,29 +5,25 @@ import Foundation
 /// file (like the navigation-sync extension) to keep the core controller
 /// file within size limits.
 extension MachineController {
-    /// The SELECTED machine's update progress — a projection kept for the
-    /// existing banner and busy-state consumers. The authoritative state is
-    /// per machine on its connection, so an update keeps being tracked when
-    /// the user switches away and never shows on another machine.
-    public var serverUpdatePhase: ServerUpdatePhase {
-        connectionsById[selectedMachineId]?.updatePhase ?? .idle
+    public func serverUpdatePhase(for machineId: String) -> ServerUpdatePhase {
+        connectionsById[machineId]?.updatePhase ?? .idle
     }
 
-    /// Refreshes only the selected remote machine's release state. The app
-    /// calls this while that machine is open so a release cut after the
-    /// initial connection still raises the update banner.
-    public func refreshSelectedServerUpdate() async {
-        let machineId = selectedMachineId
-        guard !selectedMachine.isLocal, connection(for: machineId).updatePhase != .updating
+    public var isAnyServerUpdating: Bool {
+        connectionsById.values.contains { $0.updatePhase == .updating }
+    }
+
+    /// Refreshes one explicit remote machine's release state.
+    public func refreshServerUpdate(for machineId: String) async {
+        guard let machine = machine(for: machineId), !machine.isLocal,
+            connection(for: machineId).updatePhase != .updating
         else { return }
-        let client = selectedClient
+        let client = client(for: machineId)
         do {
             let update = try await client.updateInfo(
                 refresh: true,
                 channel: serverUpdateChannel
             )
-            // A machine switch can happen while the request is in flight.
-            guard machineId == selectedMachineId else { return }
             connection(for: machineId).updateInfo = update
         } catch {
             // A transient background failure should not erase a banner we
@@ -38,8 +34,7 @@ extension MachineController {
         }
     }
 
-    /// Sweeps release state for every reachable machine — the fleet
-    /// counterpart to `refreshSelectedServerUpdate`. Machines mid-update are
+    /// Sweeps release state for every reachable machine. Machines mid-update are
     /// skipped; `updateServer`'s own polling drives their state. `force`
     /// bypasses each server's check cache and belongs to the user's explicit
     /// "Check Again" — the periodic sweep must NOT force, or every client
@@ -61,25 +56,14 @@ extension MachineController {
         }
     }
 
-    /// The selected machine's server update state, when known.
-    public var selectedServerUpdate: ServerUpdateInfo? {
-        updateInfoByMachineId[selectedMachineId]
+    public func serverUpdateInfo(for machineId: String) -> ServerUpdateInfo? {
+        connectionsById[machineId]?.updateInfo
     }
 
-    /// Asks the selected machine's server to update itself.
-    public func updateSelectedServer() async {
-        await updateServer(machineId: selectedMachineId)
-    }
-
-    /// Restores a machine's event stream after an update attempt: the
-    /// selected machine re-enters the shared selected-stream path, any other
-    /// machine reconnects in the background.
+    /// Restores the updated machine's event stream without changing any
+    /// composer or navigation preference.
     private func resumeEventStream(for machineId: String) {
-        if machineId == selectedMachineId {
-            startEventSync()
-        } else {
-            Task { await self.connectMachine(machineId) }
-        }
+        Task { await self.connectMachine(machineId) }
     }
 
     /// Asks a machine's server to update itself, then waits for it to
@@ -183,9 +167,7 @@ extension MachineController {
                     connection.updatePhase = .idle
                     markReady(for: machineId)
                     await refreshStatus(for: machineId)
-                    if machineId == selectedMachineId {
-                        await projectList.refreshFromServer()
-                    }
+                    _ = await projectList.refreshFromServer(serverId: machineId, client: client)
                     resumeEventStream(for: machineId)
                     return
                 }

@@ -116,7 +116,7 @@ struct OnboardingView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.smooth(duration: 0.3), value: step)
         .task { await detectHarnesses() }
-        .onChange(of: environment.harnessCatalogRevision(for: environment.machines.selectedMachineId)) { _, _ in
+        .onChange(of: environment.harnessCatalogRevision(for: CodevisorMachine.local.id)) { _, _ in
             // Install progress events invalidate the catalog — refetch so the
             // row flips from Installing… to installed without "Detect again".
             Task { await refreshHarnessList() }
@@ -148,8 +148,8 @@ struct OnboardingView: View {
         }
         .sheet(isPresented: $showingGitClone) {
             GitCloneSheet(
-                client: environment.machines.client(for: environment.machines.selectedMachineId),
-                machineName: environment.machines.selectedMachine.name
+                client: environment.machines.client(for: CodevisorMachine.local.id),
+                machineName: CodevisorMachine.local.name
             ) { project in
                 projectSetup.cloneCompleted(project)
             }
@@ -637,7 +637,8 @@ struct OnboardingView: View {
     private func setHarness(_ harness: ServerHarness, enabled: Bool) async {
         updateHarnessDesiredEnabled(harness.id, enabled: enabled)
         do {
-            let updated = try await environment.serverClient.setHarnessDesiredEnabled(id: harness.id, enabled: enabled)
+            let updated = try await environment.machines.client(for: CodevisorMachine.local.id)
+                .setHarnessDesiredEnabled(id: harness.id, enabled: enabled)
             environment.settings.setHarness(harness.id, enabled: updated.isDesiredEnabled)
             replaceHarness(updated)
         } catch {
@@ -672,7 +673,7 @@ struct OnboardingView: View {
     /// the catalog — flips rows through Installing… → installed live.
     private func refreshHarnessList() async {
         guard detection == .loaded else { return }
-        if let loaded = try? await environment.harnessService.allHarnesses() {
+        if let loaded = try? await environment.harnessService(for: CodevisorMachine.local.id).allHarnesses() {
             harnesses = loaded
         }
     }
@@ -683,17 +684,21 @@ struct OnboardingView: View {
         if !AppPreview.isRunning {
             // Joins the root view's in-flight server start (ensureRunning
             // dedups concurrent callers) instead of racing ahead of it.
-            await environment.prepareSelectedMachine()
+            await environment.prepareMachine(CodevisorMachine.local.id)
         }
         // Safety net past the health wait: a handful of quick retries, not
         // one instantly-failing shot.
         for attempt in 0..<8 {
-            if let loaded = try? await environment.harnessService.rescanHarnesses() {
+            if let loaded = try? await environment.harnessService(for: CodevisorMachine.local.id)
+                .rescanHarnesses()
+            {
                 harnesses = loaded
                 detection = .loaded
                 // Suggest project folders from the user's most recent harness
                 // sessions so the project step offers one-click choices.
-                projectSetup.recommendations = await environment.recommendedProjects()
+                projectSetup.recommendations = await environment.recommendedProjectsWithFallback(
+                    serverId: CodevisorMachine.local.id
+                )
                 projectSetup.isLoadingRecommendations = false
                 return
             }
@@ -711,7 +716,8 @@ struct OnboardingView: View {
         isRescanning = true
         defer { isRescanning = false }
         do {
-            harnesses = try await environment.harnessService.rescanHarnesses()
+            harnesses = try await environment.harnessService(for: CodevisorMachine.local.id)
+                .rescanHarnesses()
             rescanError = nil
         } catch {
             Log.onboarding.error("Harness rescan failed: \(String(describing: error), privacy: .public)")
@@ -741,8 +747,8 @@ struct OnboardingView: View {
             // both surfaces look and behave identically.
             ProjectSetupSelectionView(
                 model: projectSetup,
-                isLocalMachine: environment.machines.selectedMachine.isLocal,
-                machineName: environment.machines.selectedMachine.name,
+                isLocalMachine: true,
+                machineName: CodevisorMachine.local.name,
                 onPickFolder: { showingFolderPicker = true },
                 onCloneRepository: { showingGitClone = true }
             )
@@ -899,12 +905,12 @@ struct OnboardingView: View {
             // provisional seed with model/mode metadata when it finishes.
             environment.configCache.seedHarnesses(
                 harnesses,
-                forServer: environment.machines.selectedMachineId
+                forServer: CodevisorMachine.local.id
             )
             // Capability inspection starts agents to discover models/modes and
             // can take a few seconds. Hide that latency behind the permissions
             // and project steps; onboarding never waits on this warm.
-            Task { await environment.warmHarnessCapabilities() }
+            Task { await environment.warmHarnessCapabilities(for: CodevisorMachine.local.id) }
         case .permissions:
             // Both permissions are granted (Continue is disabled otherwise);
             // record it so an update never re-shows the standalone gate for
@@ -943,7 +949,10 @@ struct OnboardingView: View {
             // exist (a kept clone) are reused, not duplicated. Existing agent
             // chats are not imported here (importing stays an explicit action,
             // not an onboarding default). The first selection opens a new chat.
-            let project = await environment.finishOnboarding(projectFolders: projectSetup.selectedFolders)
+            let project = await environment.finishOnboarding(
+                projectFolders: projectSetup.selectedFolders,
+                serverId: CodevisorMachine.local.id
+            )
             onComplete(project)
         }
     }

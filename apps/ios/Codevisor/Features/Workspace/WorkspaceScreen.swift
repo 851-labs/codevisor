@@ -132,7 +132,7 @@ struct WorkspaceScreen: View {
     private var isDraft: Bool { activeSessionId == nil }
 
     private var resolvedServerId: String {
-        serverId ?? draftController?.project.serverId ?? environment.machines.selectedMachineId
+        serverId ?? draftController?.project.serverId ?? environment.defaultComposerServerId
     }
 
     var resolvedWorkspace: Workspace? {
@@ -186,7 +186,7 @@ struct WorkspaceScreen: View {
     /// targeting a project on another machine.
     private var draftProjectCandidate: Project? {
         environment.projectList.firstNonScratchProject(
-            on: environment.machines.selectedMachineId,
+            on: resolvedServerId,
             byWorkspaceRecency: environment.workspaces.loadAll()
         )
     }
@@ -267,7 +267,10 @@ struct WorkspaceScreen: View {
         Group {
             if blocksServerContent {
                 let machines = environment.machines
-                let machine = machines.machine(for: resolvedServerId) ?? machines.selectedMachine
+                let machine =
+                    machines.machine(for: resolvedServerId)
+                    ?? machines.allMachines.first
+                    ?? CodevisorMachine.local
                 ServerAvailabilityView(
                     machineId: machine.id,
                     availability: screenAvailability,
@@ -275,11 +278,7 @@ struct WorkspaceScreen: View {
                     isLocal: false
                 ) {
                     Task {
-                        if machine.id == machines.selectedMachineId {
-                            await machines.retrySelectedMachine()
-                        } else {
-                            await machines.connectMachine(machine.id)
-                        }
+                        await machines.retryMachine(machine.id)
                     }
                 }
             } else if missing {
@@ -1320,7 +1319,7 @@ struct WorkspaceScreen: View {
     /// Picking a real project swaps it for the durable draft while preserving the chosen harness.
     private func setUpPlaceholderDraftIfNeeded() {
         guard draftController == nil else { return }
-        let serverId = environment.machines.selectedMachineId
+        let serverId = environment.defaultComposerServerId
         let controller = SessionController.runTargetPlaceholder(
             serverId: serverId,
             environment: environment

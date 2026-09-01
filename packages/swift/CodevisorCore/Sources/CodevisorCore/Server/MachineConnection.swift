@@ -43,6 +43,15 @@ public final class MachineConnection {
     /// Consecutive background stream failures, for reconnect backoff. Reset
     /// on the first event a fresh subscription delivers.
     @ObservationIgnored var reconnectFailures = 0
+    /// One startup/connection preparation per machine. This replaces the
+    /// controller-wide task that made an unrelated composer default decide
+    /// which machine was allowed to start.
+    @ObservationIgnored var preparationTask: Task<Void, Never>?
+    /// Per-machine authoritative snapshot reconciliation.
+    @ObservationIgnored var navigationSyncToken: UUID?
+    @ObservationIgnored var navigationSyncTask: Task<Void, Never>?
+    /// Coalesces navigation-affecting events for this machine only.
+    @ObservationIgnored var pendingRefreshTask: Task<Void, Never>?
 
     init(machineId: String) {
         self.machineId = machineId
@@ -68,26 +77,24 @@ extension MachineController {
     /// machine's cloud twin.
     func removeConnection(for machineId: String) {
         connectionsById[machineId]?.eventSyncTask?.cancel()
+        connectionsById[machineId]?.preparationTask?.cancel()
+        connectionsById[machineId]?.navigationSyncTask?.cancel()
+        connectionsById[machineId]?.pendingRefreshTask?.cancel()
         connectionsById[machineId] = nil
     }
 
     // MARK: - Per-machine lifecycle
 
     func beginWaiting(for machineId: String, reason: ServerWaitingReason) {
-        if let navigationSyncMachineId, navigationSyncMachineId != machineId {
-            navigationSyncTask?.cancel()
-            self.navigationSyncMachineId = nil
-            navigationSyncToken = nil
-            navigationSyncTask = nil
-        }
+        let connection = connection(for: machineId)
+        connection.navigationSyncTask?.cancel()
+        connection.navigationSyncToken = nil
+        connection.navigationSyncTask = nil
+        connection.pendingRefreshTask?.cancel()
+        connection.pendingRefreshTask = nil
         // Only THIS machine's stream stops; every other machine keeps
         // streaming through the transition.
         stopEventSync(for: machineId)
-        if machineId == selectedMachineId {
-            pendingRefreshTask?.cancel()
-            pendingRefreshTask = nil
-        }
-        let connection = connection(for: machineId)
         connection.availability = .waiting(reason)
         connection.navigationSyncState = .catchingUp
         requestGate.beginWaiting(for: machineId)
@@ -105,10 +112,9 @@ extension MachineController {
         requestGate.markFailed(for: machineId, message: message)
     }
 
-    public func retrySelectedMachine() async {
-        let machine = selectedMachine
-        beginWaiting(for: machine.id, reason: machine.isLocal ? .starting : .connecting)
-        await prepareSelectedMachine()
+    public func retryMachine(_ machineId: String) async {
+        guard machine(for: machineId) != nil else { return }
+        await prepareMachine(machineId)
     }
 
     /// Removes everything stored under a configured machine's own cloud
@@ -169,11 +175,8 @@ extension MachineController {
             && !isCloudTwinOfConfiguredMachine(machineId)
     }
 
-    /// Opens a machine's live event stream in the background — status probe,
-    /// cursor capture, then subscribe — without touching selection, the
-    /// request gate, or navigation sync. The selected machine's lifecycle
-    /// stays with `prepareSelectedMachine`; this exists so every OTHER
-    /// machine's sessions keep flowing while it is off screen.
+    /// Opens one machine's live event stream — status probe, snapshot, then
+    /// subscribe — without reading or changing any global selection.
     public func connectMachine(_ machineId: String) async {
         guard machine(for: machineId) != nil else { return }
         guard !isCloudTwinOfConfiguredMachine(machineId) else { return }
@@ -191,8 +194,10 @@ extension MachineController {
             // must be able to count this machine as failed instead of
             // waiting on it forever.
             connection.navigationSyncState = .stale(connection.status?.label ?? "Unreachable")
+            markFailed(for: machineId, message: connection.status?.label ?? "Unreachable")
             return
         }
+        markReady(for: machineId)
         let cursor = (try? await client.latestShellEventCursor()) ?? 0
         guard isCurrentBackgroundConnection(connection, for: machineId) else { return }
         // Full snapshot BEFORE the stream starts (the cursor above replays
@@ -204,8 +209,6 @@ extension MachineController {
         if case .superseded = snapshot { return }
         await workspaceSync?.refreshFromServer(serverId: machineId, client: client)
         guard isCurrentBackgroundConnection(connection, for: machineId) else { return }
-        // Selection may have taken this machine over while we probed; its
-        // navigation sync owns the stream then.
         guard connection.eventSyncTask == nil else { return }
         startEventSync(serverId: machineId, client: client, since: cursor)
         // Every machine lands its own terminal sync state — this is what
@@ -227,23 +230,20 @@ extension MachineController {
     /// call often: machines already streaming (or mid-connect) are skipped,
     /// and failed probes simply retry on the next pass.
     public func ensureBackgroundConnections() {
-        for machine in allMachines where machine.id != selectedMachineId {
+        for machine in allMachines {
             let connection = connection(for: machine.id)
-            guard connection.eventSyncTask == nil, !connection.backgroundConnectInFlight else {
+            guard connection.eventSyncTask == nil,
+                connection.preparationTask == nil,
+                !connection.backgroundConnectInFlight
+            else {
                 continue
             }
-            Task { await self.connectMachine(machine.id) }
+            Task { await self.prepareMachine(machine.id) }
         }
     }
 
-    public var selectedServerAvailability: ServerAvailability {
-        availabilityByMachineId[selectedMachineId] ?? .ready
-    }
-
-    public var selectedNavigationSyncState: NavigationSyncState {
-        navigationSyncStateByMachineId[selectedMachineId] ?? .cached
-    }
-
+    /// Legacy composer fallback retained for persistence migration. It is not
+    /// consulted by lifecycle, routing, synchronization, or update code.
     public var selectedMachineId: String {
         registry.selectedMachineId
     }
@@ -257,15 +257,11 @@ extension MachineController {
         machine(for: registry.selectedMachineId) ?? allMachines.first ?? CodevisorMachine.local
     }
 
-    public var selectedClient: any CodevisorServerClienting {
-        client(for: selectedMachine.id)
-    }
-
     public var machines: [CodevisorMachine] {
         // Client-only platforms (no local server) have no "Local" machine at
         // all — their fleet is exactly the configured remotes. Only platforms
         // that actually run a server alongside the app list it.
-        (localServer == nil ? [] : [CodevisorMachine.local]) + registry.remoteMachines
+        (includesLocalMachine ? [CodevisorMachine.local] : []) + registry.remoteMachines
     }
 
     public func machine(for id: String) -> CodevisorMachine? {

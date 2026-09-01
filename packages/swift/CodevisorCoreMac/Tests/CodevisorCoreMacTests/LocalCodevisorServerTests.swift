@@ -94,6 +94,46 @@ struct LocalCodevisorServerTests {
         #expect(directLaunches == 0)
     }
 
+    @Test("Falls back when an enabled managed server never becomes healthy")
+    func fallsBackFromDeadManagedServer() async throws {
+        let entrypoint = try makeRuntimeEntrypoint(version: "0.2.0")
+        let client = FakeLocalServerClient(healthResults: [
+            .failure(TestError()),
+            // A process answering with the wrong bundled identity is just as
+            // unusable as an agent script that exited before binding.
+            .success(.ready),
+        ])
+        var starts = 0
+        var stops = 0
+        var directLaunches = 0
+        var terminatedPorts: [Int] = []
+        let server = LocalCodevisorServer(
+            client: client,
+            entrypoint: entrypoint,
+            launcher: { request in
+                directLaunches += 1
+                client.acceptBoot(request.bootId)
+                return Process()
+            },
+            healthPollInterval: .milliseconds(1),
+            healthPollAttempts: 2,
+            managedStartupPollAttempts: 1,
+            staleListenerTerminator: { terminatedPorts.append($0) }
+        )
+        server.configureManagedService(
+            LocalCodevisorManagedService(
+                start: { starts += 1 },
+                stop: { stops += 1 }
+            )
+        )
+
+        #expect(await server.ensureRunning() == .started)
+        #expect(starts == 1)
+        #expect(stops == 1)
+        #expect(directLaunches == 1)
+        #expect(terminatedPorts == [CodevisorServerConfig.localPort])
+    }
+
     @Test("Publishes blocking data-upgrade progress while waiting for health")
     func publishesDataUpgradeProgress() async throws {
         let directory = try makeTemporaryDirectory()

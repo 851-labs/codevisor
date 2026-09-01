@@ -60,9 +60,9 @@ struct MachineDeeplinkHandling: ViewModifier {
         )
     }
 
-    /// Adds (or, for an existing address, re-tokens and selects) the machine
-    /// from a confirmed deeplink, then lands the user on the Machines settings
-    /// tab so the new connection's status is visible.
+    /// Adds (or, for an existing address, re-tokens) the machine from a
+    /// confirmed deeplink, makes it the new-composer default, then lands the
+    /// user on Machines settings so the connection's status is visible.
     private func confirm(_ deeplink: MachineDeeplink, syncConfig: Bool) {
         defer { pendingDeeplink = nil }
         do {
@@ -71,6 +71,7 @@ struct MachineDeeplinkHandling: ViewModifier {
                 name: deeplink.name,
                 token: deeplink.token
             )
+            environment.composerDefaults.rememberNewWorkspaceServer(serverId: machine.id)
             environment.machines.applySyncParticipation(machine.id, enabled: syncConfig)
             SettingsRouter.shared.showMachines()
             openSettings()

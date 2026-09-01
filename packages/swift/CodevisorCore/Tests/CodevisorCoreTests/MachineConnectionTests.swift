@@ -262,7 +262,7 @@ struct MachineConnectionTests {
         } else {
             Issue.record("Expected the remote machine's phase to be failed")
         }
-        #expect(controller.serverUpdatePhase == .idle)
+        #expect(controller.serverUpdatePhase(for: "local") == .idle)
         controller.stopEventSync()
     }
 

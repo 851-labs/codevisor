@@ -66,7 +66,7 @@ struct RunTargetPickerSheet: View {
                     projectStep(
                         serverId: machines.first?.id
                             ?? initialServerId
-                            ?? environment.machines.selectedMachineId
+                            ?? environment.defaultComposerServerId
                     )
                     .navigationTitle("Select Project")
                 }

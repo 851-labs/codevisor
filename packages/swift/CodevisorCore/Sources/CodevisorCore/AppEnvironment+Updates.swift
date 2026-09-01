@@ -3,16 +3,26 @@ import Foundation
 /// Environment surface split from the class body to keep
 /// AppEnvironment.swift within size limits.
 extension AppEnvironment {
-    public var serverClient: any CodevisorServerClienting { machines.selectedClient }
-
-    public var harnessService: any HarnessServicing {
-        harnessService(for: machines.selectedMachineId)
+    /// The machine used to seed a standalone composer. This is the only
+    /// app-level machine default: request routing and lifecycle APIs always
+    /// require an explicit server id.
+    public var defaultComposerServerId: String {
+        if let remembered = composerDefaults.lastNewWorkspaceServerId,
+            let canonical = machines.canonicalComposerMachineId(for: remembered)
+        {
+            return canonical
+        }
+        return machines.allMachines.first?.id ?? CodevisorMachine.local.id
     }
 
-    /// Starts the selected machine if it is local, then refreshes cached server
-    /// state. Remote machines are never auto-started.
-    public func prepareSelectedMachine() async {
-        await machines.prepareSelectedMachine()
+    public func prepareMachine(_ serverId: String) async {
+        await machines.prepareMachine(serverId)
+    }
+
+    /// App bootstrap is fleet-scoped. In particular, the embedded local
+    /// server is restored even when the composer last targeted a remote.
+    public func prepareAllMachines() async {
+        await machines.prepareAllMachines()
     }
 
     /// A machine's connection just came up: converge it with the config
@@ -71,10 +81,9 @@ extension AppEnvironment {
 
     /// Forces the server to re-probe harness authentication, then invalidates
     /// every mounted consumer of that machine's catalog.
-    public func refreshHarnessAuthentication() async throws -> [ServerHarness] {
-        // Snapshot before awaiting so a machine switch cannot attribute the
-        // completed request to whichever machine happens to be selected later.
-        let serverId = machines.selectedMachineId
+    public func refreshHarnessAuthentication(
+        onServer serverId: String
+    ) async throws -> [ServerHarness] {
         let refreshed = try await machines.client(for: serverId).refreshHarnessAuth()
         harnessCatalogDidChange(onServer: serverId)
         return refreshed
@@ -82,13 +91,11 @@ extension AppEnvironment {
 
     /// Re-probes only the harness whose authentication changed, then
     /// invalidates mounted consumers of that machine's catalog. Pass
-    /// `onServer` when the caller is pinned to a machine (machine-scoped
-    /// Settings pages); it defaults to the selected machine.
+    /// `onServer` identifies the machine whose authentication changed.
     public func refreshHarnessAuthentication(
         harnessId: String,
-        onServer serverId: String? = nil
+        onServer serverId: String
     ) async throws -> ServerHarness {
-        let serverId = serverId ?? machines.selectedMachineId
         let refreshed = try await machines.client(for: serverId).refreshHarnessAuth(harnessId: harnessId)
         harnessCatalogDidChange(onServer: serverId)
         return refreshed
@@ -119,14 +126,14 @@ extension AppEnvironment {
         Task { await fleetRoster.applyRoster() }
     }
 
-    public var sessionImporter: SessionImporter {
-        SessionImporter(harnessService: harnessService)
+    public func sessionImporter(for serverId: String) -> SessionImporter {
+        SessionImporter(harnessService: harnessService(for: serverId))
     }
 
-    /// True while an app self-update or a selected-server update is installing.
+    /// True while an app self-update or any server update is installing.
     /// Drives the composer lock so no new turn starts during the restart.
     public var isUpdateInProgress: Bool {
-        appUpdate.isUpdating || machines.serverUpdatePhase == .updating
+        appUpdate.isUpdating || machines.isAnyServerUpdating
     }
 
     /// A machine's harness lifecycle changed (install/update progress): the
@@ -151,7 +158,10 @@ extension AppEnvironment {
             value: .string(enabled ? "alpha" : "stable")
         )
         Task { [machines] in
-            await machines.refreshStatus(for: machines.selectedMachineId)
+            for machine in machines.allMachines {
+                await machines.refreshStatus(for: machine.id)
+            }
+            await machines.refreshServerUpdates(force: true)
         }
     }
 
@@ -192,15 +202,16 @@ extension AppEnvironment {
         }
     }
 
-    /// Backward-compatible selected-machine entry point used by onboarding.
-    /// Older servers lack the recommendation endpoint, so the local desktop
-    /// path retains the existing client-side fallback.
-    public func recommendedProjects(limit: Int = 12) async -> [ProjectRecommendation] {
-        let serverId = machines.selectedMachineId
+    /// Older servers lack the recommendation endpoint, so retain the existing
+    /// client-side fallback on the explicitly requested machine.
+    public func recommendedProjectsWithFallback(
+        serverId: String,
+        limit: Int = 12
+    ) async -> [ProjectRecommendation] {
         if let remote = try? await recommendedProjects(serverId: serverId, limit: limit) {
             return remote
         }
-        let imported = await sessionImporter.fetchAll()
+        let imported = await sessionImporter(for: serverId).fetchAll()
         // Recommendation probes the filesystem per session (worktree `.git`
         // metadata, directory checks); keep those syscalls off the main actor.
         return await Task.detached {
@@ -216,13 +227,15 @@ extension AppEnvironment {
 
     /// Harness sessions whose working directory is the given folder and that
     /// aren't already tracked by Codevisor.
-    public func findImportableSessions(for folderURL: URL) async -> [ImportedSession] {
+    public func findImportableSessions(
+        for folderURL: URL,
+        serverId: String
+    ) async -> [ImportedSession] {
         let folderPath = folderURL.standardizedFileURL.path
-        let imported = await sessionImporter.fetchAll()
+        let imported = await sessionImporter(for: serverId).fetchAll()
         // Snapshot the main-actor state the filter reads, then run the
         // O(imported × known) scan and per-item URL standardization off the
         // main actor. All values involved are Sendable value types.
-        let serverId = machines.selectedMachineId
         let knownSessions = projectList.sessions
         return await Task.detached {
             imported.filter { item in

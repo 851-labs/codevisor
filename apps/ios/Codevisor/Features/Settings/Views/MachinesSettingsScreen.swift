@@ -235,8 +235,8 @@ struct MachinesSettingsScreen: View {
                 name: remote.name,
                 token: remote.token
             )
-            machines.selectMachine(added.id)
-            await environment.prepareSelectedMachine()
+            environment.composerDefaults.rememberNewWorkspaceServer(serverId: added.id)
+            await environment.prepareMachine(added.id)
         } catch {
             developmentError = ErrorReporter.userFacingMessage(for: error)
         }

@@ -387,13 +387,20 @@ public final class ProjectListModel {
     /// is already present (un-archiving it if needed).
     @discardableResult
     public func addProject(folderURL: URL) -> Project {
-        if let index = projects.firstIndex(where: { $0.serverId == selectedServerId && $0.folderURL == folderURL }) {
+        addProject(folderURL: folderURL, serverId: selectedServerId)
+    }
+
+    /// Adds a project for an explicit machine. App flows use this entry point
+    /// so a composer default cannot redirect persistence or server writes.
+    @discardableResult
+    public func addProject(folderURL: URL, serverId: String) -> Project {
+        if let index = projects.firstIndex(where: { $0.serverId == serverId && $0.folderURL == folderURL }) {
             projects[index].isArchived = false
             persistProjects()
             syncProject(projects[index])
             return projects[index]
         }
-        let project = Project.fromFolder(folderURL, serverId: selectedServerId)
+        let project = Project.fromFolder(folderURL, serverId: serverId)
         projects.append(project)
         persistProjects()
         syncProject(project)

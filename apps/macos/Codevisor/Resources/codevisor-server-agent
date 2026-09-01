@@ -17,11 +17,14 @@ database_path="$data_dir/codevisor-server.sqlite"
 upgrade_status_path="$data_dir/data-upgrade.json"
 update_request_path="$data_dir/app-update-request.json"
 
+mkdir -p "$data_dir" "$logs_dir"
+exec >>"$logs_dir/server.log" 2>&1
+
 if [[ ! -x "$node_bin" || ! -f "$entrypoint" ]]; then
+  printf '[%s] Bundled Codevisor server runtime is incomplete: %s\n' "$(/bin/date -u +%FT%TZ)" "$runtime_dir"
   exit 78
 fi
 
-mkdir -p "$data_dir" "$logs_dir"
 # The LaunchAgent can be resolved from a Sparkle installation bundle that is
 # moved or deleted after startup. Keep the daemon and every child process
 # anchored in durable application data instead of that transient bundle.
@@ -34,6 +37,7 @@ export CODEVISOR_APP_HOSTED=1
 export CODEVISOR_APP_UPDATE_REQUEST_PATH="$update_request_path"
 
 computer_name="$(/usr/sbin/scutil --get ComputerName 2>/dev/null || /bin/hostname)"
+printf '[%s] Starting bundled Codevisor server\n' "$(/bin/date -u +%FT%TZ)"
 exec -a codevisor-server "$node_bin" "$entrypoint" serve \
   --host 0.0.0.0 \
   --port 49361 \

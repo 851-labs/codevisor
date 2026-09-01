@@ -287,8 +287,9 @@ struct MachinesSettingsView: View {
         syncConfig: Bool = true
     ) async -> String? {
         do {
-            try await machines.addRemoteValidating(
+            let machine = try await machines.addRemoteValidating(
                 host: host, name: name, token: token, syncConfig: syncConfig)
+            environment.composerDefaults.rememberNewWorkspaceServer(serverId: machine.id)
             await discovery.refresh(registeredHosts: registeredHosts)
             return nil
         } catch {

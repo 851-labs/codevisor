@@ -7,7 +7,7 @@ struct AddProjectSheet: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.dismiss) private var dismiss
 
-    /// The machine to browse and add on. Nil means the selected machine —
+    /// The machine to browse and add on. Nil means the composer default —
     /// the fleet-wide picker passes the machine the user picked.
     var serverId: String? = nil
     /// Called with the added project so the caller can select it.
@@ -17,7 +17,7 @@ struct AddProjectSheet: View {
     @State private var isAddingProject = false
 
     private var targetServerId: String {
-        serverId ?? environment.machines.selectedMachineId
+        serverId ?? environment.defaultComposerServerId
     }
 
     var body: some View {
@@ -80,8 +80,8 @@ struct RemoteDirectory: Hashable {
 /// menu, and a fixed call to action for the current folder.
 struct RemoteDirectoryScreen: View {
     @Environment(AppEnvironment.self) private var environment
-    /// The machine whose filesystem is browsed. Nil means the selected one.
-    var serverId: String? = nil
+    /// The machine whose filesystem is browsed.
+    let serverId: String
     let directory: RemoteDirectory
     let onOpen: (RemoteDirectory) -> Void
     let onPick: (String) -> Void
@@ -180,13 +180,12 @@ struct RemoteDirectoryScreen: View {
     }
 
     private var client: any CodevisorServerClienting {
-        environment.machines.client(for: serverId ?? environment.machines.selectedMachineId)
+        environment.machines.client(for: serverId)
     }
 
     private var machineName: String {
-        let targetServerId = serverId ?? environment.machines.selectedMachineId
-        return environment.machines.machine(for: targetServerId)?.name
-            ?? environment.machines.selectedMachine.name
+        return environment.machines.machine(for: serverId)?.name
+            ?? "Machine"
     }
 
     private func newFolderSheet(for listing: ServerFsListing) -> some View {

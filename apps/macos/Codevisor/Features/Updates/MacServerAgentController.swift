@@ -4,11 +4,25 @@ import Foundation
 import os
 import ServiceManagement
 
+private enum MacServerAgentError: LocalizedError, Sendable {
+    case requiresApproval
+    case registrationDidNotEnable
+
+    var errorDescription: String? {
+        switch self {
+        case .requiresApproval:
+            "Codevisor's background server is disabled in System Settings."
+        case .registrationDidNotEnable:
+            "macOS did not enable Codevisor's background server."
+        }
+    }
+}
+
 /// Registers the bundled server with launchd. The service is per-user,
 /// relocatable with the signed app bundle, and survives app/UI restarts.
 @MainActor
 final class MacServerAgentController {
-    static let plistName = "com.851labs.Codevisor.ServerAgent.plist"
+    nonisolated static let plistName = "com.851labs.Codevisor.ServerAgent.plist"
     private let legacyJobs = LegacyServerJobRetirer()
 
     // Constructed on demand (it is cheap) so each detached closure below can
@@ -41,6 +55,21 @@ final class MacServerAgentController {
                 try await current.unregister()
             }
             try current.register()
+            // `register()` can return successfully while macOS leaves the
+            // item awaiting approval. Treat anything short of enabled as a
+            // failed managed launch so LocalCodevisorServer immediately uses
+            // its app-owned fallback instead of waiting for a daemon that can
+            // never start.
+            switch current.status {
+            case .enabled:
+                return
+            case .requiresApproval:
+                throw MacServerAgentError.requiresApproval
+            case .notRegistered, .notFound:
+                throw MacServerAgentError.registrationDidNotEnable
+            @unknown default:
+                throw MacServerAgentError.registrationDidNotEnable
+            }
         }.value
     }
 

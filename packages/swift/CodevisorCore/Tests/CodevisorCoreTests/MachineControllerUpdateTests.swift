@@ -27,22 +27,22 @@ struct MachineControllerUpdateTests {
         )
 
         await controller.refreshStatus(for: "local")
-        #expect(controller.selectedServerUpdate?.updateAvailable == true)
-        #expect(controller.selectedServerUpdate?.latestVersion == "0.2.0")
+        #expect(controller.serverUpdateInfo(for: "local")?.updateAvailable == true)
+        #expect(controller.serverUpdateInfo(for: "local")?.latestVersion == "0.2.0")
 
-        await controller.updateSelectedServer()
+        await controller.updateServer(machineId: "local")
 
         #expect(fake.appliedUpdates == 1)
-        #expect(controller.serverUpdatePhase == .idle)
+        #expect(controller.serverUpdatePhase(for: "local") == .idle)
         // After the restart the banner state clears and the status shows the
         // new version.
-        #expect(controller.selectedServerUpdate?.updateAvailable == false)
+        #expect(controller.serverUpdateInfo(for: "local")?.updateAvailable == false)
         #expect(controller.statusByMachineId["local"]?.label.contains("0.2.0") == true)
         controller.stopEventSync()
 
         // Triggering again is a no-op that just refreshes state.
-        await controller.updateSelectedServer()
-        #expect(controller.serverUpdatePhase == .idle)
+        await controller.updateServer(machineId: "local")
+        #expect(controller.serverUpdatePhase(for: "local") == .idle)
         #expect(fake.appliedUpdates == 2)
     }
 
@@ -70,7 +70,7 @@ struct MachineControllerUpdateTests {
         controller.serverUpdateChannel = .alpha
         await controller.refreshStatus(for: "local")
         #expect(fake.updateInfoChannels.last == .alpha)
-        await controller.updateSelectedServer()
+        await controller.updateServer(machineId: "local")
         #expect(fake.appliedChannels == [.alpha])
         controller.stopEventSync()
     }
@@ -101,10 +101,10 @@ struct MachineControllerUpdateTests {
             clientFactory: { _ in fake }
         )
 
-        await controller.refreshSelectedServerUpdate()
+        await controller.refreshServerUpdate(for: remote.id)
 
         #expect(fake.updateInfoRefreshes == [true])
-        #expect(controller.selectedServerUpdate?.updateAvailable == true)
+        #expect(controller.serverUpdateInfo(for: remote.id)?.updateAvailable == true)
     }
 
     @Test("Remote update accepts a channel-current runtime whose version string differs")
@@ -129,10 +129,10 @@ struct MachineControllerUpdateTests {
         controller.serverUpdateChannel = .alpha
 
         await controller.refreshStatus(for: "local")
-        await controller.updateSelectedServer()
+        await controller.updateServer(machineId: "local")
 
-        #expect(controller.serverUpdatePhase == .idle)
-        #expect(controller.selectedServerUpdate?.updateAvailable == false)
+        #expect(controller.serverUpdatePhase(for: "local") == .idle)
+        #expect(controller.serverUpdateInfo(for: "local")?.updateAvailable == false)
         #expect(controller.statusByMachineId["local"]?.label.contains("0.1.97") == true)
         controller.stopEventSync()
     }
@@ -161,12 +161,12 @@ struct MachineControllerUpdateTests {
         controller.serverUpdateChannel = .alpha
 
         await controller.refreshStatus(for: "local")
-        #expect(controller.selectedServerUpdate?.latestBuildNumber == 200)
-        await controller.updateSelectedServer()
+        #expect(controller.serverUpdateInfo(for: "local")?.latestBuildNumber == 200)
+        await controller.updateServer(machineId: "local")
 
         #expect(fake.appliedUpdates == 1)
-        #expect(controller.serverUpdatePhase == .idle)
-        #expect(controller.selectedServerUpdate?.updateAvailable == false)
+        #expect(controller.serverUpdatePhase(for: "local") == .idle)
+        #expect(controller.serverUpdateInfo(for: "local")?.updateAvailable == false)
         controller.stopEventSync()
     }
 
@@ -188,13 +188,13 @@ struct MachineControllerUpdateTests {
         )
 
         await controller.refreshStatus(for: "local")
-        await controller.updateSelectedServer()
+        await controller.updateServer(machineId: "local")
 
         #expect(fake.appliedUpdates == 1)
-        if case let .failed(message) = controller.serverUpdatePhase {
+        if case let .failed(message) = controller.serverUpdatePhase(for: "local") {
             #expect(message.contains("signature"))
         } else {
-            Issue.record("Expected a failed phase, got \(controller.serverUpdatePhase)")
+            Issue.record("Expected a failed phase, got \(controller.serverUpdatePhase(for: "local"))")
         }
         controller.stopEventSync()
     }
@@ -216,14 +216,14 @@ struct MachineControllerUpdateTests {
             updatePollAttempts: 50
         )
 
-        await controller.updateSelectedServer()
+        await controller.updateServer(machineId: "local")
 
         // The server declined (chats running), so the phase reports a failure
         // and the update was not applied/restarted.
-        if case let .failed(message) = controller.serverUpdatePhase {
+        if case let .failed(message) = controller.serverUpdatePhase(for: "local") {
             #expect(message.contains("chats running"))
         } else {
-            Issue.record("Expected a failed phase, got \(controller.serverUpdatePhase)")
+            Issue.record("Expected a failed phase, got \(controller.serverUpdatePhase(for: "local"))")
         }
         controller.stopEventSync()
     }

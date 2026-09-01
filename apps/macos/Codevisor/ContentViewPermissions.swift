@@ -16,7 +16,8 @@ func reconcileSkippedPermissions(environment: AppEnvironment) async {
         return
     }
     for attempt in 0..<30 {
-        if let servers = try? await environment.serverClient.listMcpServers(),
+        if let servers = try? await environment.machines
+            .client(for: CodevisorMachine.local.id).listMcpServers(),
             let computer = servers.first(where: { $0.kind == "computerUse" })
         {
             if computer.enabled {

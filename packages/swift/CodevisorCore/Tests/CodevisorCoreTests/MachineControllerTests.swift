@@ -24,7 +24,8 @@ struct MachineControllerTests {
         #expect(remote.id == "remote-mac-mini-tailnet-ts-net-49361")
         #expect(remote.name == "mac-mini.tailnet.ts.net")
         #expect(first.controller.selectedMachine == remote)
-        #expect(first.projectList.selectedServerId == remote.id)
+        // Composer defaults never re-route the project model.
+        #expect(first.projectList.selectedServerId == "local")
 
         first.controller.selectMachine("local")
         #expect(first.projectList.selectedServerId == "local")
@@ -251,7 +252,7 @@ struct MachineControllerTests {
         )
 
         // Another client creates a session on the same server.
-        controller.startEventSync()
+        controller.startEventSync(for: "local")
         fake.setSessions([
             ServerSession(
                 id: sessionId.uuidString,
@@ -328,7 +329,7 @@ struct MachineControllerTests {
         controller.onPluginStateChanged = { stateChanges.append($0) }
         controller.onPluginUpdated = { updates.append([$0, $1]) }
 
-        controller.startEventSync()
+        controller.startEventSync(for: "local")
         // Runtime transitions invalidate the machine's plugin list…
         fake.emit(kind: "plugin.state.updated", subjectId: "owner.example")
         // …while only plugin.updated (code/install changed) triggers pane
@@ -422,8 +423,8 @@ struct MachineControllerTests {
 
         // Production establishes one authoritative snapshot before opening
         // the live-only event stream.
-        await controller.refreshSelectedNavigationState()
-        controller.startEventSync()
+        await controller.refreshNavigationState(for: "local")
+        controller.startEventSync(for: "local")
         fake.emit(kind: "workspace.updated", subjectId: workspaceId.uuidString)
         try await waitForSync {
             workspaceRepository.workspace(id: workspaceId)?.isServerSynced == true
@@ -652,7 +653,7 @@ struct MachineControllerTests {
             clientFactory: { _ in fake }
         )
 
-        await controller.refreshSelectedNavigationState()
+        await controller.refreshNavigationState(for: "local")
         let materialized = try #require(repository.workspace(id: workspaceId))
         #expect(materialized.tabId(containingPane: remoteTabId) != nil)
         #expect(materialized.pane(containingChat: sessionId)?.id == chatPaneId)
@@ -664,7 +665,7 @@ struct MachineControllerTests {
         // not upload a local-only fallback pane.
         #expect(fake.workspacePanes?.contains(where: { $0.id == legacyPane.id.uuidString }) == false)
 
-        controller.startEventSync()
+        controller.startEventSync(for: "local")
         fake.setPanes([chatPane])
         fake.emit(kind: "workspace.pane.deleted", subjectId: remoteTabId.uuidString)
         try await waitForSync {
@@ -743,7 +744,7 @@ struct MachineControllerTests {
             clientFactory: { _ in fake }
         )
 
-        await controller.refreshSelectedNavigationState()
+        await controller.refreshNavigationState(for: "local")
 
         #expect(fake.workspaces.contains { UUID(uuidString: $0.id) == workspaceId })
         #expect(
@@ -858,7 +859,7 @@ struct MachineControllerTests {
             workspaceSync: workspaceSync,
             clientFactory: { _ in fake }
         )
-        await controller.refreshSelectedNavigationState()
+        await controller.refreshNavigationState(for: "local")
         let localSession = try #require(projectList.sessions.first { $0.id == sessionId })
         let promoted = PaneDescriptorState(
             id: paneId,

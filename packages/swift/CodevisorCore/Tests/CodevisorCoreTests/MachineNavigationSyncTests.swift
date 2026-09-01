@@ -45,8 +45,8 @@ struct MachineNavigationSyncTests {
             clientFactory: { _ in fake }
         )
 
-        await controller.refreshSelectedNavigationState()
-        #expect(controller.selectedNavigationSyncState == .current)
+        await controller.refreshNavigationState(for: "local")
+        #expect(controller.navigationSyncStateByMachineId["local"] == .current)
         #expect(projectList.sessions.first?.isArchived == false)
 
         let snapshotGate = Latch()
@@ -68,7 +68,7 @@ struct MachineNavigationSyncTests {
         try await waitUntil {
             fake.listSessionCallCount == callCountBeforeRefresh + 1
         }
-        #expect(controller.selectedNavigationSyncState == .catchingUp)
+        #expect(controller.navigationSyncStateByMachineId["local"] == .catchingUp)
 
         // This event lands after the cursor was captured but while the list
         // request is blocked. It must replay after the snapshot commits.
@@ -81,7 +81,7 @@ struct MachineNavigationSyncTests {
             payload: navigationSessionPayload(replayed)
         )
 
-        let joinedRefresh = Task { await controller.refreshSelectedNavigationState() }
+        let joinedRefresh = Task { await controller.refreshNavigationState(for: "local") }
         try await Task.sleep(for: .milliseconds(20))
         #expect(fake.listSessionCallCount == callCountBeforeRefresh + 1)
 
@@ -95,7 +95,7 @@ struct MachineNavigationSyncTests {
 
         let reconciled = try #require(projectList.sessions.first { $0.id == sessionId })
         #expect(reconciled.isArchived)
-        #expect(controller.selectedNavigationSyncState == .current)
+        #expect(controller.navigationSyncStateByMachineId["local"] == .current)
         #expect(fake.listSessionCallCount == callCountBeforeRefresh + 1)
     }
 
@@ -108,21 +108,21 @@ struct MachineNavigationSyncTests {
             clientFactory: { _ in fake }
         )
 
-        await controller.refreshSelectedNavigationState()
-        #expect(controller.selectedNavigationSyncState == .current)
+        await controller.refreshNavigationState(for: "local")
+        #expect(controller.navigationSyncStateByMachineId["local"] == .current)
 
         let snapshotGate = Latch()
         fake.configureListSessionDelay { await snapshotGate.wait() }
         let callCountBeforeRefresh = fake.listSessionCallCount
-        let refresh = Task { await controller.refreshSelectedNavigationState() }
+        let refresh = Task { await controller.refreshNavigationState(for: "local") }
         try await waitUntil {
             fake.listSessionCallCount == callCountBeforeRefresh + 1
         }
 
-        #expect(controller.selectedNavigationSyncState == .current)
+        #expect(controller.navigationSyncStateByMachineId["local"] == .current)
         await snapshotGate.open()
         await refresh.value
-        #expect(controller.selectedNavigationSyncState == .current)
+        #expect(controller.navigationSyncStateByMachineId["local"] == .current)
     }
 
     @Test("Live navigation events reconcile without entering catch-up")
@@ -134,7 +134,7 @@ struct MachineNavigationSyncTests {
             clientFactory: { _ in fake }
         )
 
-        await controller.refreshSelectedNavigationState()
+        await controller.refreshNavigationState(for: "local")
 
         let snapshotGate = Latch()
         fake.configureListSessionDelay { await snapshotGate.wait() }
@@ -148,10 +148,10 @@ struct MachineNavigationSyncTests {
             fake.listSessionCallCount == callCountBeforeEvent + 1
         }
 
-        #expect(controller.selectedNavigationSyncState == .current)
+        #expect(controller.navigationSyncStateByMachineId["local"] == .current)
         await snapshotGate.open()
         try await waitUntil {
-            controller.selectedNavigationSyncState == .current
+            controller.navigationSyncStateByMachineId["local"] == .current
                 && fake.listSessionCallCount == callCountBeforeEvent + 1
         }
     }
@@ -166,15 +166,15 @@ struct MachineNavigationSyncTests {
             clientFactory: { _ in fake }
         )
 
-        await controller.refreshSelectedNavigationState()
-        guard case .stale = controller.selectedNavigationSyncState else {
+        await controller.refreshNavigationState(for: "local")
+        guard case .stale = controller.navigationSyncStateByMachineId["local"] else {
             Issue.record("A failed snapshot was incorrectly presented as current")
             return
         }
 
         fake.configureListSessionsFailure(false)
-        await controller.refreshSelectedNavigationState()
-        #expect(controller.selectedNavigationSyncState == .current)
+        await controller.refreshNavigationState(for: "local")
+        #expect(controller.navigationSyncStateByMachineId["local"] == .current)
     }
 
     private func makeProjectList() -> ProjectListModel {

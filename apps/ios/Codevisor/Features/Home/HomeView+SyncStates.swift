@@ -89,9 +89,8 @@ extension HomeView {
         let failed = failedSyncMachines
         Task {
             for machine in failed {
-                await machines.connectMachine(machine.id)
+                await machines.prepareMachine(machine.id)
             }
-            await machines.refreshSelectedNavigationState()
         }
     }
 
@@ -132,6 +131,8 @@ extension HomeView {
     }
 
     func refreshNavigation() async {
-        await machines.refreshSelectedNavigationState()
+        for machine in machines.allMachines {
+            await machines.refreshNavigationState(for: machine.id)
+        }
     }
 }

@@ -64,7 +64,7 @@ struct HomeExternalRouting: ViewModifier {
             }
             .sheet(item: $pendingPluginInstall) { pending in
                 let client = environment.machines.client(
-                    for: environment.machines.selectedMachineId)
+                    for: environment.defaultComposerServerId)
                 PluginInstallSheet(
                     initialSource: pending.repo,
                     discover: { source in

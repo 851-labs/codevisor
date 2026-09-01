@@ -191,7 +191,7 @@ struct CustomHarnessEditorSheet: View {
     // MARK: - Server calls
 
     private var client: any CodevisorServerClienting {
-        environment.machines.client(for: settingsMachineId ?? environment.machines.selectedMachineId)
+        environment.machines.client(for: settingsMachineId ?? environment.defaultComposerServerId)
     }
 
     private func loadIfEditing() async {

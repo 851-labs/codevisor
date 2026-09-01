@@ -4,8 +4,8 @@ import CodevisorUI
 
 extension NewChatView {
     /// New Chat owns its target machine. An explicit project wins, followed
-    /// by the last composer target; the legacy selected machine is only a
-    /// bootstrap fallback for installs that have not recorded a preference.
+    /// by the last composer target. No application lifecycle or request
+    /// routing reads this preference.
     var composerServerId: String {
         if let controller { return controller.project.serverId }
         if let initialProjectTarget { return initialProjectTarget.serverId }
@@ -14,7 +14,7 @@ extension NewChatView {
         {
             return remembered
         }
-        return environment.machines.selectedMachineId
+        return environment.defaultComposerServerId
     }
 
     var projects: [Project] {
@@ -75,11 +75,7 @@ extension NewChatView {
                 appUpdateInProgress: environment.appUpdate.isUpdating
             ) {
                 Task {
-                    if composerMachine.id == environment.machines.selectedMachineId {
-                        await environment.machines.retrySelectedMachine()
-                    } else {
-                        await environment.machines.connectMachine(composerMachine.id)
-                    }
+                    await environment.machines.retryMachine(composerMachine.id)
                 }
             }
         } else if paneDraftId == nil {
@@ -92,7 +88,8 @@ extension NewChatView {
 
     private var composerMachine: CodevisorMachine {
         environment.machines.machine(for: composerServerId)
-            ?? environment.machines.selectedMachine
+            ?? environment.machines.allMachines.first
+            ?? CodevisorMachine.local
     }
 
     private var composerServerAvailability: ServerAvailability {

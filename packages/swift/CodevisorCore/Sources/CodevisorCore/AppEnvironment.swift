@@ -188,6 +188,14 @@ public final class AppEnvironment {
             )
         )
         backfillComposerDefaultsFromPersistedState()
+        // One-time compatibility bridge from the old app-wide machine
+        // selection. From this point on the value lives only in the composer
+        // defaults store and never drives server lifecycle or routing.
+        if self.composerDefaults.lastNewWorkspaceServerId == nil,
+            machines.machine(for: machines.selectedMachineId) != nil
+        {
+            self.composerDefaults.rememberNewWorkspaceServer(serverId: machines.selectedMachineId)
+        }
     }
 
     /// V4 introduced an explicit standalone-page project and restored
@@ -245,12 +253,8 @@ public final class AppEnvironment {
     }
 
     /// Refetches sessions from all harnesses and merges them in.
-    public func importSessions() async {
-        // Snapshot which machine the discovery runs against BEFORE awaiting:
-        // if the user switches machines mid-fetch, the results must still be
-        // filed under the machine they came from, not the new selection.
-        let serverId = machines.selectedMachineId
-        let imported = await sessionImporter.fetchAll()
+    public func importSessions(from serverId: String) async {
+        let imported = await sessionImporter(for: serverId).fetchAll()
         projectList.importSessions(imported, serverId: serverId)
         projectList.showsImportedSessions = settings.importExternalSessions
     }
@@ -268,8 +272,7 @@ public final class AppEnvironment {
     /// mode metadata come from the more expensive capabilities request. Run
     /// that inspection while the user chooses projects, without delaying the
     /// onboarding flow. The composer still refreshes against its real cwd.
-    public func warmHarnessCapabilities() async {
-        let serverId = machines.selectedMachineId
+    public func warmHarnessCapabilities(for serverId: String) async {
         guard configCache.needsCapabilityWarm(forServer: serverId) else { return }
         let (client, cacheRevision) = (
             machines.client(for: serverId), configCache.capabilityRevision(forServer: serverId)
@@ -335,11 +338,14 @@ public final class AppEnvironment {
     }
 
     /// Applies the user's onboarding choice and imports if requested.
-    public func finishOnboarding(importExternalSessions: Bool) async {
+    public func finishOnboarding(
+        importExternalSessions: Bool,
+        serverId: String = CodevisorMachine.local.id
+    ) async {
         settings.setImportExternalSessions(importExternalSessions)
         projectList.showsImportedSessions = importExternalSessions
         if importExternalSessions {
-            await importSessions()
+            await importSessions(from: serverId)
         }
         // This flag replaces onboarding with the main UI. Publish it only
         // after every value that first render consumes is ready.
@@ -350,9 +356,13 @@ public final class AppEnvironment {
     /// folder as a project. Returns the new project so the caller can open a
     /// new chat in it.
     @discardableResult
-    public func finishOnboarding(importExternalSessions: Bool, projectFolder: URL?) async -> Project? {
-        let project = projectFolder.map { projectList.addProject(folderURL: $0) }
-        await finishOnboarding(importExternalSessions: importExternalSessions)
+    public func finishOnboarding(
+        importExternalSessions: Bool,
+        projectFolder: URL?,
+        serverId: String = CodevisorMachine.local.id
+    ) async -> Project? {
+        let project = projectFolder.map { projectList.addProject(folderURL: $0, serverId: serverId) }
+        await finishOnboarding(importExternalSessions: importExternalSessions, serverId: serverId)
         return project
     }
 
@@ -362,21 +372,27 @@ public final class AppEnvironment {
     /// project pre-filled with old CLI sessions the user never asked for
     /// reads as clutter; importing stays an explicit action.
     @discardableResult
-    public func finishOnboarding(projectFolders: [URL]) async -> Project? {
+    public func finishOnboarding(
+        projectFolders: [URL],
+        serverId: String = CodevisorMachine.local.id
+    ) async -> Project? {
         var first: Project?
         for folder in projectFolders {
-            let project = projectList.addProject(folderURL: folder)
+            let project = projectList.addProject(folderURL: folder, serverId: serverId)
             if first == nil { first = project }
         }
-        await finishOnboarding(importExternalSessions: false)
+        await finishOnboarding(importExternalSessions: false, serverId: serverId)
         return first
     }
 
     /// Single-folder convenience over `finishOnboarding(projectFolders:)`.
     @discardableResult
-    public func finishOnboarding(projectFolder: URL) async -> Project {
+    public func finishOnboarding(
+        projectFolder: URL,
+        serverId: String = CodevisorMachine.local.id
+    ) async -> Project {
         // The array overload always returns a project for a non-empty list.
-        await finishOnboarding(projectFolders: [projectFolder])!
+        await finishOnboarding(projectFolders: [projectFolder], serverId: serverId)!
     }
 
     /// An in-memory environment seeded with sample data for previews and tests.

@@ -30,8 +30,8 @@ struct MachineDeeplinkAlerts: ViewModifier {
                     token: link.token,
                     syncConfig: syncConfig
                 )
-                environment.machines.selectMachine(machine.id)
-                await environment.prepareSelectedMachine()
+                environment.composerDefaults.rememberNewWorkspaceServer(serverId: machine.id)
+                await environment.prepareMachine(machine.id)
             } catch let failure {
                 error = ErrorReporter.userFacingMessage(for: failure)
             }

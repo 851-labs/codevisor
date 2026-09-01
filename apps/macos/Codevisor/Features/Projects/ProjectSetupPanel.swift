@@ -326,12 +326,14 @@ struct ProjectSetupPanel: View {
             .animation(.snappy(duration: 0.2), value: model.selectedFolders.count)
         }
         .frame(maxWidth: 560)
-        .task(id: environment.machines.selectedMachineId) {
+        .task(id: targetServerId) {
             // A machine switch mid-setup drops the staged folders — they
             // belong to the previous machine. (No-op on first appearance.)
             model.clearStagedWork()
             model.isLoadingRecommendations = true
-            model.recommendations = await environment.recommendedProjects()
+            model.recommendations = await environment.recommendedProjectsWithFallback(
+                serverId: targetServerId
+            )
             model.isLoadingRecommendations = false
         }
         .fileImporter(
@@ -364,22 +366,33 @@ struct ProjectSetupPanel: View {
         }
         var first: Project?
         for url in model.selectedFolders {
-            let project = environment.projectList.addProject(folderURL: url)
+            let project = environment.projectList.addProject(
+                folderURL: url,
+                serverId: targetServerId
+            )
             if first == nil { first = project }
         }
         if let first { onComplete(first) }
     }
 
     private var isLocalMachine: Bool {
-        environment.machines.selectedMachine.isLocal
+        targetMachine?.isLocal ?? false
     }
 
     private var machineName: String {
-        environment.machines.selectedMachine.name
+        targetMachine?.name ?? "Machine"
     }
 
     private var client: any CodevisorServerClienting {
-        environment.machines.client(for: environment.machines.selectedMachineId)
+        environment.machines.client(for: targetServerId)
+    }
+
+    private var targetServerId: String {
+        environment.defaultComposerServerId
+    }
+
+    private var targetMachine: CodevisorMachine? {
+        environment.machines.machine(for: targetServerId)
     }
 }
 

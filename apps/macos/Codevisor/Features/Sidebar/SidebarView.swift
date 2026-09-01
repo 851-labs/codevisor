@@ -8,8 +8,8 @@ import CodevisorUI
 /// How many archived chats one page reveals.
 private let archivedPageSize = 10
 
-/// The sidebar: a New Chat action, an organization control, and the selected
-/// machine's workspaces or agent sessions.
+/// The sidebar: a New Chat action, an organization control, and fleet-wide
+/// workspaces or agent sessions.
 ///
 /// Built on `ScrollView` + `LazyVStack` (not `List`), because the sidebar-styled
 /// `List` outline coordinator crashes on the current macOS SDK.
@@ -494,8 +494,11 @@ struct SidebarView: View {
                     showingRemoteMachine: $showingRemoteMachine,
                     onAddRemoteMachine: { host, name, token, syncConfig in
                         do {
-                            try await environment.machines.addRemoteValidating(
+                            let machine = try await environment.machines.addRemoteValidating(
                                 host: host, name: name, token: token, syncConfig: syncConfig)
+                            environment.composerDefaults.rememberNewWorkspaceServer(
+                                serverId: machine.id
+                            )
                             selection = .newChat(nil)
                             return nil
                         } catch {
@@ -553,7 +556,10 @@ struct SidebarView: View {
     /// folder and — only when some are found — offer to import them.
     private func offerSessionImport(for project: Project) {
         Task {
-            let importable = await environment.findImportableSessions(for: project.folderURL)
+            let importable = await environment.findImportableSessions(
+                for: project.folderURL,
+                serverId: project.serverId
+            )
             guard !importable.isEmpty else { return }
             pendingImport = PendingSessionImport(project: project, sessions: importable)
         }

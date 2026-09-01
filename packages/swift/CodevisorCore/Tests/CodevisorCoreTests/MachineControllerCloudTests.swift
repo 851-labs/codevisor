@@ -305,13 +305,13 @@ extension MachineControllerCloudTests {
         controller.selectMachine("cloud:dev-1")
         #expect(controller.selectedMachineId == "cloud:dev-1")
         #expect(controller.selectedMachine.isCloud)
-        #expect(projectList.selectedServerId == "cloud:dev-1")
-        #expect(provider.configRequests.contains("dev-1"))
+        #expect(projectList.selectedServerId == "local")
 
         // The client is a real CodevisorServerClient tunneling through the
         // provider's relay transports.
         let info = try await controller.client(for: "cloud:dev-1").info()
         #expect(info.name == "Cloud Mac")
+        #expect(provider.configRequests.contains("dev-1"))
         #expect(provider.requestTransport.paths.contains("/v1/info"))
 
         // refreshStatus flows through the same relay client.
@@ -432,11 +432,11 @@ extension MachineControllerCloudTests {
 
         #expect(controller.selectedMachine.isCloud)
         #expect(controller.selectedMachineId == "cloud:dev-1")
-        #expect(projectList.selectedServerId == "cloud:dev-1")
+        #expect(projectList.selectedServerId == "local")
         // Auto-selection must NOT masquerade as an explicit choice.
         #expect(controller.registry.hasExplicitMachineSelection == false)
-        // The prepareSelectedMachine path connects through the relay client.
-        await controller.prepareSelectedMachine()
+        // Explicit preparation connects through the relay client.
+        await controller.prepareMachine(controller.selectedMachineId)
         #expect(provider.configRequests.contains("dev-1"))
         #expect(provider.requestTransport.paths.contains("/v1/info"))
 
@@ -474,7 +474,7 @@ extension MachineControllerCloudTests {
         controller.reconcileCloudSelection()
 
         #expect(controller.selectedMachineId == "cloud:dev-1")
-        #expect(projectList.selectedServerId == "cloud:dev-1")
+        #expect(projectList.selectedServerId == "local")
     }
 
     @Test("A working local server remains the default when cloud machines arrive")
@@ -563,7 +563,7 @@ extension MachineControllerCloudTests {
         second.cloudProvider = provider
         second.reconcileCloudSelection()
         #expect(second.selectedMachine.isCloud)
-        #expect(projectList.selectedServerId == "cloud:dev-1")
+        #expect(projectList.selectedServerId == "local")
     }
 
     @Test("effectiveHTTPBaseURL answers a direct machine's configured baseURL")

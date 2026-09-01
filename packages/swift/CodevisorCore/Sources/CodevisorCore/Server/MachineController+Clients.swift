@@ -43,7 +43,9 @@ extension MachineController {
                 machineId: machineId
             )
         }
-        let machine = machine(for: machineId) ?? CodevisorMachine.local
+        guard let machine = machine(for: machineId) else {
+            return CodevisorServerClient(config: .unreachable(machineId: machineId))
+        }
         return clientFactory(machine)
     }
 
@@ -70,7 +72,7 @@ extension MachineController {
         if let config = relayServerConfig(forMachineId: machineId) {
             return config
         }
-        return (machine(for: machineId) ?? selectedMachine).serverConfig
+        return machine(for: machineId)?.serverConfig ?? .unreachable(machineId: machineId)
     }
 
     private func relayServerConfig(forMachineId machineId: String) -> CodevisorServerConfig? {

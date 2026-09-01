@@ -157,7 +157,8 @@ struct AppEnvironmentTests {
         let environment = AppEnvironment.preview(seedProjects: [])
 
         let found = await environment.findImportableSessions(
-            for: URL(fileURLWithPath: "/Users/me/src/website")
+            for: URL(fileURLWithPath: "/Users/me/src/website"),
+            serverId: "local"
         )
         #expect(found.map(\.info.sessionId) == ["ext-1", "ext-1"])
         #expect(found.allSatisfy { $0.info.cwd == "/Users/me/src/website" })
@@ -169,7 +170,8 @@ struct AppEnvironmentTests {
         environment.importSessions(found, into: project)
         #expect(environment.settings.importExternalSessions)
         let remaining = await environment.findImportableSessions(
-            for: URL(fileURLWithPath: "/Users/me/src/website")
+            for: URL(fileURLWithPath: "/Users/me/src/website"),
+            serverId: "local"
         )
         #expect(remaining.isEmpty)
     }
@@ -180,7 +182,9 @@ struct AppEnvironmentTests {
 
         // PreviewHarnessService's sessions live in folders that don't exist on
         // the test machine, so the default directory filter drops them.
-        let recommendations = await environment.recommendedProjects()
+        let recommendations = await environment.recommendedProjectsWithFallback(
+            serverId: "local"
+        )
 
         #expect(recommendations.isEmpty)
     }

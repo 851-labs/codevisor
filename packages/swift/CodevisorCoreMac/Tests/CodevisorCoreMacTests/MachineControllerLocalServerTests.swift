@@ -23,7 +23,7 @@ struct MachineControllerLocalServerTests {
         )
         let (controller, _, _) = makeController(client: client, localServer: localServer)
 
-        await controller.prepareSelectedMachine()
+        await controller.prepareMachine("local")
         try await waitForSync { client.rescans == 1 }
         controller.stopEventSync()
 
@@ -46,7 +46,7 @@ struct MachineControllerLocalServerTests {
         )
         let (controller, _, _) = makeController(client: client, localServer: localServer)
 
-        await controller.prepareSelectedMachine()
+        await controller.prepareMachine("local")
         try await Task.sleep(nanoseconds: 30_000_000)
         controller.stopEventSync()
 
@@ -64,8 +64,8 @@ struct MachineControllerLocalServerTests {
         )
         let (controller, _, _) = makeController(client: client, localServer: localServer)
 
-        let first = Task { await controller.prepareSelectedMachine() }
-        let second = Task { await controller.prepareSelectedMachine() }
+        let first = Task { await controller.prepareMachine("local") }
+        let second = Task { await controller.prepareMachine("local") }
         await first.value
         await second.value
         try await waitForSync { client.rescans == 1 }

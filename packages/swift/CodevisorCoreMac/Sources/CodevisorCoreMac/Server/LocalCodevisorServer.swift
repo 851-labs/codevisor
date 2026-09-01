@@ -39,6 +39,9 @@ public final class LocalCodevisorServer: LocalServerControlling {
     private let launcher: Launcher
     private let serverEnvironmentProvider: ServerEnvironmentProvider
     private let staleListenerTerminator: ListenerTerminator
+    private let healthPollInterval: Duration
+    private let healthPollAttempts: Int
+    private let managedStartupPollAttempts: Int
     /// App-hosted servers are owned by exactly one app boot. The server also
     /// watches this app's PID and exits if the app crashes, preventing an
     /// updater backup or stale process from becoming the next launch's server.
@@ -82,6 +85,9 @@ public final class LocalCodevisorServer: LocalServerControlling {
         computerUseBridge: ComputerUseBridge? = nil,
         serverEnvironmentProvider: @escaping ServerEnvironmentProvider = LocalCodevisorServer.defaultServerEnvironment,
         launcher: @escaping Launcher = LocalCodevisorServer.launchProcess,
+        healthPollInterval: Duration = .milliseconds(250),
+        healthPollAttempts: Int = 2400,
+        managedStartupPollAttempts: Int = 40,
         staleListenerTerminator: @escaping ListenerTerminator = {
             await LocalCodevisorServer.terminateListeners(onPort: $0)
         }
@@ -96,6 +102,9 @@ public final class LocalCodevisorServer: LocalServerControlling {
         self.computerUseBridge = computerUseBridge
         self.serverEnvironmentProvider = serverEnvironmentProvider
         self.launcher = launcher
+        self.healthPollInterval = healthPollInterval
+        self.healthPollAttempts = healthPollAttempts
+        self.managedStartupPollAttempts = managedStartupPollAttempts
         self.staleListenerTerminator = staleListenerTerminator
     }
 
@@ -196,11 +205,27 @@ public final class LocalCodevisorServer: LocalServerControlling {
             do {
                 try await managedService.start()
                 startUpdateRequestMonitor()
-                return await waitUntilHealthy(
+                let managedState = await waitUntilHealthy(
                     process: nil,
                     expectedBootId: nil,
-                    requiresBundledIdentity: true
+                    requiresBundledIdentity: true,
+                    initialAttemptLimit: managedStartupPollAttempts,
+                    extendsForDataUpgrade: true
                 )
+                if case .unavailable = managedState {
+                    // Registration is not proof that the agent's executable
+                    // stayed alive. Tear down a job whose script exited or
+                    // never bound the port, then continue into the app-owned
+                    // child process path below.
+                    try? await managedService.stop()
+                    await staleListenerTerminator(port)
+                    state = .idle
+                    Log.server.error(
+                        "Managed server did not become healthy; using app-owned fallback"
+                    )
+                } else {
+                    return managedState
+                }
             } catch {
                 // A user may disable the background item in System Settings.
                 // Keep the app functional with the old child-process lifecycle
@@ -499,13 +524,21 @@ public final class LocalCodevisorServer: LocalServerControlling {
     private func waitUntilHealthy(
         process: Process?,
         expectedBootId: String?,
-        requiresBundledIdentity: Bool = false
+        requiresBundledIdentity: Bool = false,
+        initialAttemptLimit: Int? = nil,
+        extendsForDataUpgrade: Bool = false
     ) async -> LocalCodevisorServerState {
         // Breaking data upgrades are allowed to take minutes. Progress comes
         // from the sidecar, so this wait is bounded generously without making
         // the UI appear frozen.
-        for _ in 0..<2400 {
+        var attempt = 0
+        var attemptLimit = initialAttemptLimit ?? healthPollAttempts
+        while attempt < attemptLimit {
+            attempt += 1
             refreshDataUpgradeProgress(expectedBootId: expectedBootId)
+            if extendsForDataUpgrade, dataUpgradeProgress?.state == "running" {
+                attemptLimit = max(attemptLimit, healthPollAttempts)
+            }
             if let health = await currentHealth() {
                 guard expectedBootId == nil || health.bootId == expectedBootId else {
                     state = .unavailable(
@@ -528,7 +561,7 @@ public final class LocalCodevisorServer: LocalServerControlling {
                 state = .unavailable("Codevisor server exited before becoming ready. See \(logURL.path)")
                 return state
             }
-            try? await Task.sleep(for: .milliseconds(250))
+            try? await Task.sleep(for: healthPollInterval)
         }
         state = .unavailable("Timed out waiting for Codevisor server. See \(logURL.path)")
         return state
