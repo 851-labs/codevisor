@@ -31,7 +31,7 @@ struct WorkspaceSplitView: View {
         SplitNodeView(
             node: node,
             activeLeafId: activeLeafId,
-            dimsInactiveLeaves: node.allGroups.count > 1,
+            hasMultipleLeaves: node.allGroups.count > 1,
             groupModel: groupModel,
             paneTitle: paneTitle,
             sessionStore: sessionStore,
@@ -66,7 +66,9 @@ struct WorkspaceSplitView: View {
 private struct SplitNodeView: View {
     let node: SplitNode
     let activeLeafId: UUID?
-    let dimsInactiveLeaves: Bool
+    /// True when the tree has more than one leaf. Single-leaf tabs skip the
+    /// per-pane header (no split to identify against) and never dim.
+    let hasMultipleLeaves: Bool
     let groupModel: (UUID) -> PaneGroupModel
     let paneTitle: (PaneDescriptorState) -> String
     let sessionStore: SessionStore?
@@ -84,7 +86,8 @@ private struct SplitNodeView: View {
         case let .group(id, _):
             SplitLeafView(
                 leafId: id,
-                isInactive: dimsInactiveLeaves && activeLeafId != nil && id != activeLeafId,
+                isInactive: hasMultipleLeaves && activeLeafId != nil && id != activeLeafId,
+                showsHeader: hasMultipleLeaves,
                 groupModel: groupModel,
                 paneTitle: paneTitle,
                 sessionStore: sessionStore,
@@ -98,7 +101,7 @@ private struct SplitNodeView: View {
                 orientation: orientation,
                 children: children,
                 activeLeafId: activeLeafId,
-                dimsInactiveLeaves: dimsInactiveLeaves,
+                hasMultipleLeaves: hasMultipleLeaves,
                 groupModel: groupModel,
                 paneTitle: paneTitle,
                 sessionStore: sessionStore,
@@ -118,6 +121,9 @@ private struct SplitNodeView: View {
 private struct SplitLeafView: View {
     let leafId: UUID
     let isInactive: Bool
+    /// Hidden when the leaf is alone in its tab: the split actions live in
+    /// the Tabs & Splits menu, so the header would only spend a row on chrome.
+    let showsHeader: Bool
     let groupModel: (UUID) -> PaneGroupModel
     let paneTitle: (PaneDescriptorState) -> String
     let sessionStore: SessionStore?
@@ -131,19 +137,21 @@ private struct SplitLeafView: View {
     var body: some View {
         let model = groupModel(leafId)
         VStack(spacing: 0) {
-            SplitLeafHeader(
-                pane: model.state.selectedPane,
-                title: paneTitle,
-                sessionStore: sessionStore,
-                pluginIconClient: model.pluginIconClient,
-                pluginIconCacheNamespace: model.pluginIconCacheNamespace,
-                leafId: leafId,
-                dragCoordinator: dragCoordinator,
-                onActivate: { model.onActivated?() },
-                onSplit: onSplit,
-                onRename: onRename,
-                onClose: onClose
-            )
+            if showsHeader {
+                SplitLeafHeader(
+                    pane: model.state.selectedPane,
+                    title: paneTitle,
+                    sessionStore: sessionStore,
+                    pluginIconClient: model.pluginIconClient,
+                    pluginIconCacheNamespace: model.pluginIconCacheNamespace,
+                    leafId: leafId,
+                    dragCoordinator: dragCoordinator,
+                    onActivate: { model.onActivated?() },
+                    onSplit: onSplit,
+                    onRename: onRename,
+                    onClose: onClose
+                )
+            }
             ZStack {
                 Color.clear
                 PaneGroupContent(group: model)
@@ -459,7 +467,7 @@ private struct SplitBranchView: View {
     let orientation: SplitOrientation
     let children: [SplitChild]
     let activeLeafId: UUID?
-    let dimsInactiveLeaves: Bool
+    let hasMultipleLeaves: Bool
     let groupModel: (UUID) -> PaneGroupModel
     let paneTitle: (PaneDescriptorState) -> String
     let sessionStore: SessionStore?
@@ -507,7 +515,7 @@ private struct SplitBranchView: View {
                     SplitNodeView(
                         node: children[index].node,
                         activeLeafId: activeLeafId,
-                        dimsInactiveLeaves: dimsInactiveLeaves,
+                        hasMultipleLeaves: hasMultipleLeaves,
                         groupModel: groupModel,
                         paneTitle: paneTitle,
                         sessionStore: sessionStore,
