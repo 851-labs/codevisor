@@ -3,6 +3,29 @@ import CodevisorUI
 import SwiftUI
 
 extension NewChatView {
+    enum RunPicker {
+        case machine, project, location
+    }
+
+    /// Hairline between two chips. It hides (instantly, like the hover fill
+    /// itself) while either neighbour is hovered: the chip's hover capsule
+    /// bleeds past its layout and would otherwise touch the line.
+    func runPickerDivider(between leading: RunPicker, and trailing: RunPicker) -> some View {
+        Divider()
+            .frame(height: 14)
+            .opacity(hoveredRunPicker == leading || hoveredRunPicker == trailing ? 0 : 1)
+            .animation(nil, value: hoveredRunPicker)
+            .accessibilityHidden(true)
+    }
+
+    private func trackHover(_ picker: RunPicker, _ hovering: Bool) {
+        if hovering {
+            hoveredRunPicker = picker
+        } else if hoveredRunPicker == picker {
+            hoveredRunPicker = nil
+        }
+    }
+
     /// The pickers only exist on the standalone page: they decide the
     /// workspace's one working directory, which is fixed the moment the
     /// first message creates it. Drafts inside an existing workspace always
@@ -80,6 +103,7 @@ extension NewChatView {
         .buttonStyle(HoverIconButtonStyle(shape: .chip))
         .menuIndicator(.hidden)
         .fixedSize()
+        .onHover { trackHover(.machine, $0) }
         .help("Choose which machine this chat runs on")
         .accessibilityLabel("Machine")
         .accessibilityValue(selectedMachine?.name ?? "Machine")
@@ -103,6 +127,7 @@ extension NewChatView {
             }
             .buttonStyle(HoverIconButtonStyle(shape: .chip))
             .fixedSize()
+            .onHover { trackHover(.project, $0) }
             .help("Add a project")
             .accessibilityLabel("Select a project")
         } else {
@@ -154,6 +179,7 @@ extension NewChatView {
             .buttonStyle(HoverIconButtonStyle(shape: .chip))
             .menuIndicator(.hidden)
             .fixedSize()
+            .onHover { trackHover(.project, $0) }
             .help("Choose where this chat works")
             .accessibilityLabel("Project")
             .accessibilityValue(
@@ -218,6 +244,7 @@ extension NewChatView {
         .buttonStyle(HoverIconButtonStyle(shape: .chip))
         .menuIndicator(.hidden)
         .fixedSize()
+        .onHover { trackHover(.location, $0) }
         .help("Where this chat's commands run")
         .accessibilityLabel("Run location")
         .accessibilityValue(newWorktree ? "New worktree" : "Project directory")

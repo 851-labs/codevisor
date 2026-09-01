@@ -92,6 +92,9 @@ struct NewChatView: View {
     @State private var focus = TerminalFocusController()
     @State var newProjectTarget: NewProjectTarget?
     @State var managedProject: Project?
+    /// Which run picker chip the pointer is over; its neighbouring dividers
+    /// hide so the hover capsule never butts against a hairline.
+    @State var hoveredRunPicker: RunPicker?
     @Namespace private var composerGlassNamespace
     @Environment(\.openSettings) var openSettings
 
@@ -143,20 +146,21 @@ struct NewChatView: View {
                                         HStack(spacing: 4) {
                                             if showsMachinePicker {
                                                 machinePicker(controller)
-                                                Divider()
-                                                    .frame(height: 14)
-                                                    .accessibilityHidden(true)
+                                                runPickerDivider(between: .machine, and: .project)
                                             }
                                             projectPicker(controller)
                                             if liveProject(for: controller).isGitRepository {
-                                                Divider()
-                                                    .frame(height: 14)
-                                                    .accessibilityHidden(true)
+                                                runPickerDivider(between: .project, and: .location)
                                                 runLocationPicker(controller)
                                             }
                                         }
                                         .font(.callout)
-                                        .padding(.horizontal, 8)
+                                        // The chips' hover capsules bleed 5pt
+                                        // sideways and 3pt vertically past their
+                                        // layout (HoverIconButtonStyle .chip), so
+                                        // 6/4 leaves an even 1pt ring between the
+                                        // highlight and the glass pill's edge.
+                                        .padding(.horizontal, 6)
                                         .padding(.vertical, 4)
                                         .contentShape(Capsule())
                                         .glassEffect(.regular.interactive(), in: Capsule())
