@@ -481,7 +481,7 @@ public final class LocalCodevisorServer: LocalServerControlling {
     /// client's machine list shows "George's MacBook Pro 0.2.0" rather than a
     /// generic label.
     nonisolated static func serverDisplayName() -> String {
-        Host.current().localizedName ?? "Local Codevisor"
+        CodevisorMachine.local.name
     }
 
     private var port: Int {

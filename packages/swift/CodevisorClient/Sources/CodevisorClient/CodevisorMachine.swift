@@ -43,10 +43,18 @@ public struct CodevisorMachine: Identifiable, Sendable, Codable, Equatable {
 
     public static let local = CodevisorMachine(
         id: "local",
-        name: ProcessInfo.processInfo.hostName,
+        name: localDisplayName,
         baseURL: URL(string: "http://127.0.0.1:\(CodevisorServerConfig.localPort)")!,
         kind: "local"
     )
+
+    private static var localDisplayName: String {
+        #if os(macOS)
+            Host.current().localizedName ?? "Local Codevisor"
+        #else
+            ProcessInfo.processInfo.hostName
+        #endif
+    }
 
     public static let cloudIdPrefix = "cloud:"
     /// Cloud machines have no direct address; requests tunnel through the
