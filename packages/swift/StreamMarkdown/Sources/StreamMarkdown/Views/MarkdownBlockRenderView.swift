@@ -449,10 +449,16 @@ private struct MarkdownRecursiveListView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: theme.listItemSpacing) {
             ForEach(Array(list.items.enumerated()), id: \.offset) { index, item in
+                // The marker is sized first at its natural width and the
+                // content takes the remainder. Without this, the stack's
+                // initial equal-share proposal reaches the native text view,
+                // which fills whatever width it is offered — wrapping every
+                // item at half the row.
                 HStack(alignment: .top, spacing: 8) {
                     Text(list.marker(for: item, at: index))
                         .foregroundStyle(theme.secondaryTextForeground)
                         .monospacedDigit()
+                        .fixedSize()
                     MarkdownSegmentsView(
                         blocks: item.blocks,
                         foregroundColor: foregroundColor,
@@ -464,6 +470,7 @@ private struct MarkdownRecursiveListView: View {
                         animationPath: "\(animationPath).item.\(index)",
                         reduceMotion: reduceMotion
                     )
+                    .layoutPriority(1)
                 }
             }
         }
