@@ -191,6 +191,34 @@ extension SplitNode {
         )
     }
 
+    /// Replaces one split branch's fractions while preserving its child
+    /// nodes and every leaf identity. `branchPath` contains child indices
+    /// from the root to the split; an empty path updates the root split.
+    public func replacingSplitFractions(
+        at branchPath: [Int],
+        with fractions: [Double]
+    ) -> SplitNode {
+        guard case let .split(orientation, children) = self else { return self }
+        if branchPath.isEmpty {
+            guard children.count == fractions.count else { return self }
+            return .split(
+                orientation: orientation,
+                children: zip(children, fractions).map {
+                    SplitChild(fraction: $1, node: $0.node)
+                }
+            )
+        }
+
+        let childIndex = branchPath[0]
+        guard children.indices.contains(childIndex) else { return self }
+        var updated = children
+        updated[childIndex].node = updated[childIndex].node.replacingSplitFractions(
+            at: Array(branchPath.dropFirst()),
+            with: fractions
+        )
+        return .split(orientation: orientation, children: updated)
+    }
+
     /// The tree with every EMPTY group removed (siblings absorb shares,
     /// single-child splits collapse); nil when no group holds a pane.
     /// Load-time healing: a group is only ever legitimately empty for the

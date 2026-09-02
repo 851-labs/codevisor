@@ -71,7 +71,7 @@ struct ChatScreen: View {
         _composerHeight = State(initialValue: presentationSurface.composerHeight)
         _isQueueExpanded = State(initialValue: presentationSurface.isQueueExpanded)
         _composerMaskSize = State(initialValue: presentationSurface.composerMaskSize)
-        _isTranscriptMounted = State(initialValue: false)
+        _isTranscriptMounted = State(initialValue: isWarm)
         _isInitialTranscriptReady = State(initialValue: isWarm)
     }
 
@@ -103,14 +103,19 @@ struct ChatScreen: View {
                 historyLoadTask = nil
                 controller.transcriptViewDidDisappear()
             }
-            // Give the new pane shell, split chrome, and composer one committed
-            // frame before constructing the AppKit virtualizer. Until then the
-            // transcript region is an opaque, correctly-sized blank surface.
+            // A warm retained AppKit surface reattaches immediately. Cold
+            // surfaces wait for one committed shell frame before constructing
+            // the virtualizer; until then the transcript region is an opaque,
+            // correctly-sized blank surface.
             .task(id: ObjectIdentifier(controller)) {
                 let hasWarmPresentation = presentationSurface.isWarm
-                isTranscriptMounted = false
                 isInitialTranscriptReady = hasWarmPresentation
                 showsInitialLoadingSpinner = false
+                if hasWarmPresentation {
+                    isTranscriptMounted = true
+                    return
+                }
+                isTranscriptMounted = false
                 await Task.yield()
                 try? await Task.sleep(for: .milliseconds(16))
                 guard !Task.isCancelled else { return }

@@ -72,6 +72,7 @@ extension SessionContainerView {
     /// Splits the explicitly targeted leaf. Header buttons call this with
     /// their owning leaf; keyboard/menu commands pass the active leaf.
     func splitLeaf(_ leafId: UUID, edge: SplitEdge) {
+        guard openingSplit == nil else { return }
         var workspace = store.workspace(for: session, project: project)
         rememberWorkspaceDefaults(fromLeaf: leafId, in: workspace)
         guard
@@ -82,6 +83,7 @@ extension SessionContainerView {
         var state = PaneGroupState()
         let pane = state.addNewTabPane()
         let newLeafId = UUID()
+        let opening = WorkspaceSplitOpening(leafId: newLeafId, edge: edge)
         workspace.centerTabs[tabIndex].root = workspace.centerTabs[tabIndex].root.splitting(
             groupId: leafId,
             edge: edge,
@@ -90,10 +92,25 @@ extension SessionContainerView {
         )
         workspace.centerTabs[tabIndex].activeLeafId = newLeafId
         environment.workspaces.save(workspace)
-        workspaceRevision += 1
-        liveCenterTree = workspace.centerTabs[tabIndex].root
-        activateLeaf(newLeafId)
+        withAnimation(Motion.split(reduceMotion: reduceMotion)) {
+            openingSplit = opening
+            workspaceRevision += 1
+            liveCenterTree = workspace.centerTabs[tabIndex].root
+        }
         publishPane(pane, workspaceId: workspace.id)
+    }
+
+    /// Mounts and focuses the destination only after its shell has reached
+    /// its final geometry. Existing panes stay live throughout the resize.
+    func finishSplitOpening(_ opening: WorkspaceSplitOpening) {
+        guard openingSplit == opening else { return }
+        withAnimation(Motion.quick(reduceMotion: reduceMotion)) {
+            openingSplit = nil
+        }
+        activateLeaf(opening.leafId)
+        DispatchQueue.main.async {
+            configuredCenterModel(leafId: opening.leafId).focusSelectedPane()
+        }
     }
 
     /// Atomically relocates one whole leaf inside the selected top tab. The

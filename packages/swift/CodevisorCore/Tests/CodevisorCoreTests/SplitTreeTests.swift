@@ -137,6 +137,36 @@ struct SplitTreeTests {
         #expect(SplitNode.leaf(groupState(), id: a).removingGroup(id: a) == nil)
     }
 
+    @Test("Replacing nested split fractions preserves leaf identity")
+    func replaceNestedSplitFractions() {
+        let a = UUID(), b = UUID(), c = UUID()
+        let tree = SplitNode.split(
+            orientation: .horizontal,
+            children: [
+                SplitChild(fraction: 0.6, node: .leaf(groupState(), id: a)),
+                SplitChild(
+                    fraction: 0.4,
+                    node: .split(
+                        orientation: .vertical,
+                        children: [
+                            SplitChild(fraction: 0.5, node: .leaf(groupState(), id: b)),
+                            SplitChild(fraction: 0.5, node: .leaf(groupState(), id: c)),
+                        ])),
+            ])
+
+        let result = tree.replacingSplitFractions(at: [1], with: [0.25, 0.75])
+
+        #expect(result.allGroups.map(\.id) == [a, b, c])
+        guard case let .split(_, rootChildren) = result,
+            case let .split(_, nestedChildren) = rootChildren[1].node
+        else {
+            Issue.record("expected nested split")
+            return
+        }
+        #expect(rootChildren.map(\.fraction) == [0.6, 0.4])
+        #expect(nestedChildren.map(\.fraction) == [0.25, 0.75])
+    }
+
     @Test("Moving a group reorders siblings and preserves identity and state")
     func moveGroupAmongSiblings() {
         let a = UUID(), b = UUID(), c = UUID()

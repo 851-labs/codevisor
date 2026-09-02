@@ -17,6 +17,7 @@ struct SessionContainerView: View {
     /// Non-chat focus (terminals) fires nothing: the last chat stays.
     var onFocusedChatChanged: ((UUID) -> Void)? = nil
     @Environment(AppEnvironment.self) var environment
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
     @Environment(\.theme) var theme
     /// Global geometry + pointer state for rearranging split leaves inside
     /// the selected top tab by dragging their headers.
@@ -40,6 +41,9 @@ struct SessionContainerView: View {
     @State var workspaceRevision = 0
     /// Suppresses per-leaf dissolve while a whole top tab is closing.
     @State var closingCenterTabId: UUID?
+    /// Presentation-only state for a locally inserted split. Its destination
+    /// stays blank and inert until the opening geometry reaches its final size.
+    @State var openingSplit: WorkspaceSplitOpening?
     /// The chat this container last published as focused, so `onDisappear`
     /// releases only its own focus (see the modifier in `body`).
     @State var publishedFocusCandidate: UUID?
@@ -254,6 +258,8 @@ struct SessionContainerView: View {
                 onSplitLeaf: splitLeaf,
                 onRenameLeaf: renameLeaf,
                 onCloseLeaf: closeLeaf,
+                openingSplit: openingSplit,
+                onSplitOpeningFinished: finishSplitOpening,
                 onCenterTreeChanged: { tree in
                     liveCenterTree = tree
                     saveSelectedTree(tree, workspaceId: workspace.id)

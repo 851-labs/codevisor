@@ -1,8 +1,7 @@
-//  Renders one workspace tab's split tree. Every leaf contains exactly one
-//  pane beneath a compact identity/action header. Branches are
-//  resizable splits with the same owned divider grips as the inspector; a
-//  drag rewrites the subtree's fractions
-//  and persists the whole tree on release.
+//  Renders one workspace tab's split tree as a flat set of UUID-keyed leaves.
+//  The tree computes geometry and divider ownership, but never owns pane
+//  content: wrapping or collapsing a branch therefore cannot remount a
+//  surviving terminal or chat transcript.
 
 import SwiftUI
 import AppKit
@@ -21,28 +20,164 @@ struct WorkspaceSplitView: View {
     let onSplitLeaf: (UUID, SplitEdge) -> Void
     let onRenameLeaf: (UUID, String) -> Void
     let onCloseLeaf: (UUID) -> Void
+    /// A local insertion whose blank shell is expanding from its requested
+    /// edge. The destination content mounts only after this clears.
+    var openingSplit: WorkspaceSplitOpening? = nil
+    var onOpeningFinished: ((WorkspaceSplitOpening) -> Void)? = nil
     /// Called with the updated WHOLE tree after a divider drag ends.
     let onTreeChanged: (SplitNode) -> Void
     /// Called with the WHOLE tree on every frame of a divider drag (render
     /// only, nothing persisted).
     var onLiveTreeChanged: ((SplitNode) -> Void)? = nil
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.theme) private var theme
+    @State private var activeDividerDrag: ActiveDividerDrag?
+
     var body: some View {
-        SplitNodeView(
-            node: node,
-            activeLeafId: activeLeafId,
-            hasMultipleLeaves: node.allGroups.count > 1,
-            groupModel: groupModel,
-            paneTitle: paneTitle,
-            sessionStore: sessionStore,
-            dragCoordinator: dragCoordinator,
-            onSplitLeaf: onSplitLeaf,
-            onRenameLeaf: onRenameLeaf,
-            onCloseLeaf: onCloseLeaf,
-            replaceNode: onTreeChanged,
-            replaceLiveNode: { onLiveTreeChanged?($0) }
-        )
+        GeometryReader { geometry in
+            let snapshot = WorkspaceSplitLayoutSnapshot.make(
+                node: node,
+                size: geometry.size
+            )
+            let hasMultipleLeaves = snapshot.leaves.count > 1
+
+            ZStack(alignment: .topLeading) {
+                ForEach(snapshot.leaves) { leaf in
+                    let opening = openingSplit?.leafId == leaf.id ? openingSplit : nil
+                    SplitLeafView(
+                        leafId: leaf.id,
+                        isInactive: opening == nil && hasMultipleLeaves && activeLeafId != nil
+                            && leaf.id != activeLeafId,
+                        showsHeader: hasMultipleLeaves,
+                        openingEdge: opening?.edge,
+                        groupModel: groupModel,
+                        paneTitle: paneTitle,
+                        sessionStore: sessionStore,
+                        dragCoordinator: dragCoordinator,
+                        onSplit: { edge in onSplitLeaf(leaf.id, edge) },
+                        onRename: { name in onRenameLeaf(leaf.id, name) },
+                        onClose: { onCloseLeaf(leaf.id) }
+                    )
+                    .frame(
+                        width: max(0, leaf.frame.width),
+                        height: max(0, leaf.frame.height)
+                    )
+                    .position(x: leaf.frame.midX, y: leaf.frame.midY)
+                    .clipped()
+                    .transition(openingTransition(for: opening))
+                }
+
+                ForEach(snapshot.dividers) { divider in
+                    if !isOpeningDivider(divider) {
+                        theme.separator
+                            .frame(
+                                width: divider.lineFrame.width,
+                                height: divider.lineFrame.height
+                            )
+                            .position(
+                                x: divider.lineFrame.midX,
+                                y: divider.lineFrame.midY
+                            )
+
+                        dividerGrip(divider)
+                            .frame(
+                                width: divider.gripFrame.width,
+                                height: divider.gripFrame.height
+                            )
+                            .position(
+                                x: divider.gripFrame.midX,
+                                y: divider.gripFrame.midY
+                            )
+                    }
+                }
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .clipped()
+        }
         .overlay { dragGhostOverlay }
+        .task(id: openingSplit?.id) {
+            guard let openingSplit else { return }
+            if !reduceMotion {
+                try? await Task.sleep(for: .seconds(Motion.splitDuration))
+            }
+            guard !Task.isCancelled, self.openingSplit == openingSplit else { return }
+            onOpeningFinished?(openingSplit)
+        }
+    }
+
+    private func openingTransition(for opening: WorkspaceSplitOpening?) -> AnyTransition {
+        guard let opening, !reduceMotion else { return .identity }
+        return .scale(scale: 0.001, anchor: opening.edge.revealAnchor)
+    }
+
+    private func isOpeningDivider(_ divider: WorkspaceSplitLayoutSnapshot.Divider) -> Bool {
+        guard let openingSplit else { return false }
+        switch openingSplit.edge {
+        case .leading, .top:
+            return divider.beforeLeafID == openingSplit.leafId
+        case .trailing, .bottom:
+            return divider.afterLeafID == openingSplit.leafId
+        }
+    }
+
+    private func dividerGrip(
+        _ divider: WorkspaceSplitLayoutSnapshot.Divider
+    ) -> some View {
+        SplitDividerGrip(
+            isHorizontal: divider.isHorizontal,
+            onChanged: { translation in
+                resize(divider, translation: translation)
+            },
+            onEnded: finishDividerResize
+        )
+    }
+
+    private func resize(
+        _ divider: WorkspaceSplitLayoutSnapshot.Divider,
+        translation: CGFloat
+    ) {
+        guard divider.contentLength > 0 else { return }
+        let drag: ActiveDividerDrag
+        if let activeDividerDrag, activeDividerDrag.id == divider.id {
+            drag = activeDividerDrag
+        } else {
+            drag = ActiveDividerDrag(
+                id: divider.id,
+                startFractions: divider.sourceFractions,
+                latestTree: node
+            )
+        }
+        let index = divider.childIndex
+        guard drag.startFractions.indices.contains(index + 1) else { return }
+
+        let minChildLength =
+            divider.isHorizontal
+            ? WorkspaceSplitDragCoordinator.minChildWidth
+            : WorkspaceSplitDragCoordinator.minChildHeight
+        let minFraction = Double(minChildLength / divider.contentLength)
+        var delta = Double(translation / divider.contentLength)
+        delta = max(delta, minFraction - drag.startFractions[index])
+        delta = min(delta, drag.startFractions[index + 1] - minFraction)
+        var updatedFractions = drag.startFractions
+        updatedFractions[index] = drag.startFractions[index] + delta
+        updatedFractions[index + 1] = drag.startFractions[index + 1] - delta
+        let updatedTree = node.replacingSplitFractions(
+            at: divider.branchPath,
+            with: updatedFractions
+        )
+        activeDividerDrag = ActiveDividerDrag(
+            id: divider.id,
+            startFractions: drag.startFractions,
+            latestTree: updatedTree
+        )
+        onLiveTreeChanged?(updatedTree)
+    }
+
+    private func finishDividerResize() {
+        guard let activeDividerDrag else { return }
+        self.activeDividerDrag = nil
+        onTreeChanged(activeDividerDrag.latestTree)
     }
 
     private var dragGhostOverlay: some View {
@@ -63,55 +198,19 @@ struct WorkspaceSplitView: View {
     }
 }
 
-private struct SplitNodeView: View {
-    let node: SplitNode
-    let activeLeafId: UUID?
-    /// True when the tree has more than one leaf. Single-leaf tabs skip the
-    /// per-pane header (no split to identify against) and never dim.
-    let hasMultipleLeaves: Bool
-    let groupModel: (UUID) -> PaneGroupModel
-    let paneTitle: (PaneDescriptorState) -> String
-    let sessionStore: SessionStore?
-    let dragCoordinator: WorkspaceSplitDragCoordinator?
-    let onSplitLeaf: (UUID, SplitEdge) -> Void
-    let onRenameLeaf: (UUID, String) -> Void
-    let onCloseLeaf: (UUID) -> Void
-    /// Replaces THIS node in its parent (recursion rebuilds the tree upward).
-    let replaceNode: (SplitNode) -> Void
-    /// Render-only twin of `replaceNode`, streamed during divider drags.
-    let replaceLiveNode: (SplitNode) -> Void
+private struct ActiveDividerDrag {
+    let id: WorkspaceSplitLayoutSnapshot.DividerID
+    let startFractions: [Double]
+    let latestTree: SplitNode
+}
 
-    var body: some View {
-        switch node {
-        case let .group(id, _):
-            SplitLeafView(
-                leafId: id,
-                isInactive: hasMultipleLeaves && activeLeafId != nil && id != activeLeafId,
-                showsHeader: hasMultipleLeaves,
-                groupModel: groupModel,
-                paneTitle: paneTitle,
-                sessionStore: sessionStore,
-                dragCoordinator: dragCoordinator,
-                onSplit: { edge in onSplitLeaf(id, edge) },
-                onRename: { name in onRenameLeaf(id, name) },
-                onClose: { onCloseLeaf(id) }
-            )
-        case let .split(orientation, children):
-            SplitBranchView(
-                orientation: orientation,
-                children: children,
-                activeLeafId: activeLeafId,
-                hasMultipleLeaves: hasMultipleLeaves,
-                groupModel: groupModel,
-                paneTitle: paneTitle,
-                sessionStore: sessionStore,
-                dragCoordinator: dragCoordinator,
-                onSplitLeaf: onSplitLeaf,
-                onRenameLeaf: onRenameLeaf,
-                onCloseLeaf: onCloseLeaf,
-                replaceNode: replaceNode,
-                replaceLiveNode: replaceLiveNode
-            )
+private extension SplitEdge {
+    var revealAnchor: UnitPoint {
+        switch self {
+        case .leading: .leading
+        case .trailing: .trailing
+        case .top: .top
+        case .bottom: .bottom
         }
     }
 }
@@ -124,6 +223,8 @@ private struct SplitLeafView: View {
     /// Hidden when the leaf is alone in its tab: the split actions live in
     /// the Tabs & Splits menu, so the header would only spend a row on chrome.
     let showsHeader: Bool
+    /// A new leaf stays as an inert blank shell until its size transition ends.
+    let openingEdge: SplitEdge?
     let groupModel: (UUID) -> PaneGroupModel
     let paneTitle: (PaneDescriptorState) -> String
     let sessionStore: SessionStore?
@@ -132,11 +233,28 @@ private struct SplitLeafView: View {
     let onRename: (String) -> Void
     let onClose: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.theme) private var theme
 
     var body: some View {
+        ZStack {
+            theme.windowBackground
+            if openingEdge == nil {
+                leafContent
+                    .transition(.opacity)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay { inactiveSplitTint }
+        .overlay { openingDivider }
+        .workspaceSplitDropZone(dragCoordinator, leafId: leafId)
+        .allowsHitTesting(openingEdge == nil)
+        .animation(Motion.quick(reduceMotion: reduceMotion), value: openingEdge == nil)
+    }
+
+    private var leafContent: some View {
         let model = groupModel(leafId)
-        VStack(spacing: 0) {
+        return VStack(spacing: 0) {
             if showsHeader {
                 SplitLeafHeader(
                     pane: model.state.selectedPane,
@@ -160,9 +278,29 @@ private struct SplitLeafView: View {
             .contentShape(Rectangle())
             .simultaneousGesture(TapGesture().onEnded { model.onActivated?() })
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .overlay { inactiveSplitTint }
-        .workspaceSplitDropZone(dragCoordinator, leafId: leafId)
+    }
+
+    @ViewBuilder
+    private var openingDivider: some View {
+        if let openingEdge {
+            theme.separator
+                .frame(
+                    maxWidth: openingEdge == .top || openingEdge == .bottom
+                        ? .infinity : nil,
+                    maxHeight: openingEdge == .leading || openingEdge == .trailing
+                        ? .infinity : nil
+                )
+                .frame(
+                    width: openingEdge == .leading || openingEdge == .trailing ? 1 : nil,
+                    height: openingEdge == .top || openingEdge == .bottom ? 1 : nil
+                )
+                .frame(
+                    maxWidth: .infinity,
+                    maxHeight: .infinity,
+                    alignment: openingEdge.dividerAlignment
+                )
+                .allowsHitTesting(false)
+        }
     }
 
     private var inactiveSplitTint: some View {
@@ -172,6 +310,17 @@ private struct SplitLeafView: View {
             .allowsHitTesting(false)
             // Active-group changes should read as focus changes, not motion.
             .transaction { $0.animation = nil }
+    }
+}
+
+private extension SplitEdge {
+    var dividerAlignment: Alignment {
+        switch self {
+        case .leading: .trailing
+        case .trailing: .leading
+        case .top: .bottom
+        case .bottom: .top
+        }
     }
 }
 
@@ -379,187 +528,5 @@ private struct SplitLeafHeader: View {
         }
         // Leading and top have no key equivalent; `shortcut(_:)` no-ops there.
         .shortcut(.split(towards: edge))
-    }
-}
-
-/// A resizable H/V split: children sized by their fractions, separated by
-/// hairline dividers whose grips drag-resize the two adjacent children.
-private struct SplitBranchView: View {
-    let orientation: SplitOrientation
-    let children: [SplitChild]
-    let activeLeafId: UUID?
-    let hasMultipleLeaves: Bool
-    let groupModel: (UUID) -> PaneGroupModel
-    let paneTitle: (PaneDescriptorState) -> String
-    let sessionStore: SessionStore?
-    let dragCoordinator: WorkspaceSplitDragCoordinator?
-    let onSplitLeaf: (UUID, SplitEdge) -> Void
-    let onRenameLeaf: (UUID, String) -> Void
-    let onCloseLeaf: (UUID) -> Void
-    let replaceNode: (SplitNode) -> Void
-    let replaceLiveNode: (SplitNode) -> Void
-
-    @Environment(\.theme) private var theme
-    /// Fractions mid-drag (nil when idle); layout renders these live and the
-    /// tree persists once on release.
-    @State private var liveFractions: [Double]?
-    @State private var dragStartFractions: [Double]?
-
-    /// The smallest a child may shrink along this branch's axis, in points.
-    /// Shared with the drop coordinator (which hides split previews whose
-    /// halves would fall below it).
-    private var minChildLength: CGFloat {
-        orientation == .horizontal
-            ? WorkspaceSplitDragCoordinator.minChildWidth
-            : WorkspaceSplitDragCoordinator.minChildHeight
-    }
-
-    private var fractions: [Double] { liveFractions ?? children.map(\.fraction) }
-
-    var body: some View {
-        GeometryReader { geometry in
-            let isHorizontal = orientation == .horizontal
-            let axisLength = isHorizontal ? geometry.size.width : geometry.size.height
-            let contentLength = max(axisLength - CGFloat(children.count - 1), 0)
-            // Floor every child at the minimum usable length: divider drags
-            // clamp already, but WINDOW resizes rescale all children at
-            // once and could crush one below usability.
-            let current = SplitNode.flooredFractions(
-                fractions,
-                minFraction: contentLength > 0
-                    ? Double(minChildLength / contentLength) : 0
-            )
-
-            layout(isHorizontal: isHorizontal) {
-                ForEach(children.indices, id: \.self) { index in
-                    let length = contentLength * CGFloat(current[index])
-                    SplitNodeView(
-                        node: children[index].node,
-                        activeLeafId: activeLeafId,
-                        hasMultipleLeaves: hasMultipleLeaves,
-                        groupModel: groupModel,
-                        paneTitle: paneTitle,
-                        sessionStore: sessionStore,
-                        dragCoordinator: dragCoordinator,
-                        onSplitLeaf: onSplitLeaf,
-                        onRenameLeaf: onRenameLeaf,
-                        onCloseLeaf: onCloseLeaf,
-                        replaceNode: { newChild in
-                            var updated = children
-                            updated[index] = SplitChild(
-                                fraction: updated[index].fraction,
-                                node: newChild
-                            )
-                            replaceNode(.split(orientation: orientation, children: updated))
-                        },
-                        replaceLiveNode: { newChild in
-                            var updated = children
-                            updated[index] = SplitChild(
-                                fraction: updated[index].fraction,
-                                node: newChild
-                            )
-                            replaceLiveNode(.split(orientation: orientation, children: updated))
-                        }
-                    )
-                    .frame(
-                        width: isHorizontal ? length : nil,
-                        height: isHorizontal ? nil : length
-                    )
-                    // Content must never bleed across the divider into a
-                    // neighbor (the chat's composer overlay can outgrow a
-                    // squeezed region during drags).
-                    .clipped()
-
-                    if index < children.count - 1 {
-                        // Visual hairline only — the GRIP lives in the
-                        // branch-level overlay below, where its 13pt strip
-                        // is REAL layout. As a subview overhanging this 1pt
-                        // separator it would show the resize cursor
-                        // (tracking rects are window-level) while clicks in
-                        // the overhang hit-tested into the neighboring pane.
-                        theme.separator
-                            .frame(
-                                width: isHorizontal ? 1 : nil,
-                                height: isHorizontal ? nil : 1
-                            )
-                    }
-                }
-            }
-            .overlay(alignment: .topLeading) {
-                ForEach(0..<max(children.count - 1, 0), id: \.self) { index in
-                    let cumulative = current[0...index].reduce(0, +)
-                    let gripCenter = contentLength * CGFloat(cumulative) + CGFloat(index) + 0.5
-                    grip(
-                        afterIndex: index,
-                        isHorizontal: isHorizontal,
-                        contentLength: contentLength
-                    )
-                    .frame(
-                        width: isHorizontal ? 13 : geometry.size.width,
-                        height: isHorizontal ? geometry.size.height : 13
-                    )
-                    .offset(
-                        x: isHorizontal ? gripCenter - 6.5 : 0,
-                        y: isHorizontal ? 0 : gripCenter - 6.5
-                    )
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func layout(
-        isHorizontal: Bool,
-        @ViewBuilder content: () -> some View
-    ) -> some View {
-        if isHorizontal {
-            HStack(spacing: 0, content: content)
-        } else {
-            VStack(spacing: 0, content: content)
-        }
-    }
-
-    /// The invisible 13pt grip straddling a divider, hosted at branch level
-    /// (its strip is real layout there, so hit-testing matches the cursor's
-    /// tracking rect: wherever the resize cursor shows, the grab works).
-    private func grip(
-        afterIndex index: Int,
-        isHorizontal: Bool,
-        contentLength: CGFloat
-    ) -> some View {
-        SplitDividerGrip(
-            isHorizontal: isHorizontal,
-            onChanged: { translation in
-                let start = dragStartFractions ?? children.map(\.fraction)
-                dragStartFractions = start
-                guard contentLength > 0 else { return }
-                let minFraction = Double(minChildLength / contentLength)
-                var delta = Double(translation / contentLength)
-                // Clamp so neither neighbor collapses below the minimum.
-                delta = max(delta, minFraction - start[index])
-                delta = min(delta, start[index + 1] - minFraction)
-                var updated = start
-                updated[index] = start[index] + delta
-                updated[index + 1] = start[index + 1] - delta
-                liveFractions = updated
-                replaceLiveNode(
-                    .split(
-                        orientation: orientation,
-                        children: zip(children, updated).map {
-                            SplitChild(fraction: $1, node: $0.node)
-                        }
-                    ))
-            },
-            onEnded: {
-                if let liveFractions {
-                    let updated = zip(children, liveFractions).map {
-                        SplitChild(fraction: $1, node: $0.node)
-                    }
-                    replaceNode(.split(orientation: orientation, children: updated))
-                }
-                liveFractions = nil
-                dragStartFractions = nil
-            }
-        )
     }
 }

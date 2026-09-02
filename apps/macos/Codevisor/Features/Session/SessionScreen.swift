@@ -32,6 +32,8 @@ struct SessionScreen: View {
     var onSplitLeaf: ((UUID, SplitEdge) -> Void)? = nil
     var onRenameLeaf: ((UUID, String) -> Void)? = nil
     var onCloseLeaf: ((UUID) -> Void)? = nil
+    var openingSplit: WorkspaceSplitOpening? = nil
+    var onSplitOpeningFinished: ((WorkspaceSplitOpening) -> Void)? = nil
     var onCenterTreeChanged: ((SplitNode) -> Void)? = nil
     /// Streamed on every frame of a divider drag (render only) so the
     /// container's top-bar segments track the moving content divider.
@@ -146,6 +148,8 @@ struct SessionScreen: View {
                     onSplitLeaf: { leafId, edge in onSplitLeaf?(leafId, edge) },
                     onRenameLeaf: { leafId, name in onRenameLeaf?(leafId, name) },
                     onCloseLeaf: { leafId in onCloseLeaf?(leafId) },
+                    openingSplit: openingSplit,
+                    onOpeningFinished: { onSplitOpeningFinished?($0) },
                     onTreeChanged: { onCenterTreeChanged?($0) },
                     onLiveTreeChanged: { onCenterTreeLiveChanged?($0) }
                 )

@@ -13,6 +13,9 @@ import SwiftUI
 ///
 /// Views read `@Environment(\.accessibilityReduceMotion)` and pass it in.
 public enum Motion {
+    /// Geometry duration for inserting a workspace split.
+    public static let splitDuration = 0.22
+
     // MARK: - Animations
 
     /// Entrance of freshly revealed disclosure content (fade + slight drift).
@@ -44,6 +47,12 @@ public enum Motion {
     /// Panel-scale show/hide (e.g. the terminal pane group).
     public static func panel(reduceMotion: Bool = false) -> Animation? {
         reduceMotion ? nil : .snappy(duration: 0.25)
+    }
+
+    /// Workspace split geometry. A zero-bounce curve lets transcript text
+    /// reflow continuously without the divider overshooting its destination.
+    public static func split(reduceMotion: Bool = false) -> Animation? {
+        reduceMotion ? nil : .smooth(duration: splitDuration)
     }
 
     // MARK: - Transitions
