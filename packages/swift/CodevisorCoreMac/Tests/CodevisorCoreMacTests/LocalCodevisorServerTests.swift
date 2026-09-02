@@ -272,58 +272,6 @@ struct LocalCodevisorServerTests {
         #expect(message.contains("different Codevisor server"))
     }
 
-    @Test("Launch command names the server process")
-    func launchCommandNamesServerProcess() {
-        let request = LocalCodevisorServerLaunchRequest(
-            nodeExecutable: URL(fileURLWithPath: "/opt/homebrew/bin/node"),
-            entrypoint: URL(fileURLWithPath: "/tmp/codevisor-server/main.js"),
-            databasePath: "/tmp/codevisor.sqlite",
-            logURL: URL(fileURLWithPath: "/tmp/codevisor-server.log"),
-            host: "0.0.0.0",
-            port: 49362,
-            name: "Test Mac",
-            environment: [:]
-        )
-
-        let configuration = LocalCodevisorServer.processConfiguration(for: request)
-
-        #expect(configuration.executableURL.path == "/bin/bash")
-        #expect(
-            Array(configuration.arguments.prefix(3)) == [
-                "-c",
-                "exec -a codevisor-server \"$0\" \"$@\"",
-                "/opt/homebrew/bin/node",
-            ])
-        #expect(
-            Array(configuration.arguments.dropFirst(3).prefix(2)) == [
-                "/tmp/codevisor-server/main.js",
-                "serve",
-            ])
-        #expect(configuration.arguments.contains("--boot-id"))
-        #expect(configuration.arguments.contains("test-boot"))
-        #expect(configuration.arguments.contains("--app-owned"))
-        #expect(configuration.arguments.contains("--owner-pid"))
-    }
-
-    @Test("Launch command preserves PATH lookup when Node falls back to env")
-    func launchCommandUsesPathLookupForEnvFallback() {
-        let request = LocalCodevisorServerLaunchRequest(
-            nodeExecutable: URL(fileURLWithPath: "/usr/bin/env"),
-            entrypoint: URL(fileURLWithPath: "/tmp/codevisor-server/main.js"),
-            databasePath: "/tmp/codevisor.sqlite",
-            logURL: URL(fileURLWithPath: "/tmp/codevisor-server.log"),
-            host: "0.0.0.0",
-            port: 49362,
-            name: "Test Mac",
-            environment: ["PATH": "/opt/homebrew/bin:/usr/bin"]
-        )
-
-        let configuration = LocalCodevisorServer.processConfiguration(for: request)
-
-        #expect(configuration.executableURL.path == "/bin/bash")
-        #expect(configuration.arguments.dropFirst(2).first == "node")
-    }
-
     @Test("Concurrent ensureRunning calls share one launch")
     func concurrentEnsureRunningLaunchesOnce() async {
         let client = FakeLocalServerClient(healthResults: [.failure(TestError()), .success(.ready)])
@@ -367,237 +315,7 @@ struct LocalCodevisorServerTests {
         #expect(message.contains("entrypoint"))
     }
 
-    @Test("Resolves the bundled runtime directory by path, not Bundle resource lookup")
-    func bundledRuntimeDirectoryByPath() throws {
-        let resources = try makeTemporaryDirectory()
-        #if arch(x86_64)
-            let target = "darwin-x64"
-        #else
-            let target = "darwin-arm64"
-        #endif
-        let runtime = resources.appendingPathComponent("server/\(target)", isDirectory: true)
-        try FileManager.default.createDirectory(
-            at: runtime.appendingPathComponent("bin"),
-            withIntermediateDirectories: true
-        )
-        FileManager.default.createFile(atPath: runtime.appendingPathComponent("main.js").path, contents: Data())
-        FileManager.default.createFile(
-            atPath: runtime.appendingPathComponent("bin/node").path,
-            contents: Data(),
-            attributes: [.posixPermissions: 0o755]
-        )
-
-        let resolved = LocalCodevisorServer.bundledServerRuntimeDirectory(resourcesURL: resources)
-
-        #expect(resolved?.standardizedFileURL.path == runtime.standardizedFileURL.path)
-    }
-
-    @Test("Replaces a durable server that is older than the bundled runtime")
-    func replacesStaleServer() async throws {
-        let entrypoint = try makeRuntimeEntrypoint(version: "0.2.0")
-        let client = FakeLocalServerClient(healthResults: [
-            .success(.running(version: "0.1.9")),  // initial probe: stale server alive
-            .failure(TestError()),  // shutdown grace period: it exited
-            .success(.running(version: "0.2.0")),  // launched runtime becomes healthy
-        ])
-        var launches: [LocalCodevisorServerLaunchRequest] = []
-        var terminatedPorts: [Int] = []
-        let server = LocalCodevisorServer(
-            client: client,
-            entrypoint: entrypoint,
-            launcher: { request in
-                launches.append(request)
-                client.acceptBoot(request.bootId)
-                return Process()
-            },
-            staleListenerTerminator: { terminatedPorts.append($0) }
-        )
-
-        let state = await server.ensureRunning()
-
-        #expect(state == .started)
-        #expect(launches.count == 1)
-        #expect(client.shutdownRequests == 1)
-        #expect(terminatedPorts.isEmpty)
-    }
-
-    @Test("Signals a stale server that ignores the shutdown request")
-    func signalsStaleServerWithoutShutdownEndpoint() async throws {
-        let entrypoint = try makeRuntimeEntrypoint(version: "0.2.0")
-        let client = FakeLocalServerClient(healthResults: [
-            .success(.running(version: "0.1.9")),  // initial probe: stale server alive
-            .success(.running(version: "0.1.9")),  // shutdown grace period: still up
-            .success(.running(version: "0.1.9")),  // SIGTERM check: still up
-            .failure(TestError()),  // post-signal poll: now gone
-            .success(.running(version: "0.2.0")),  // launched runtime becomes healthy
-        ])
-        var launches: [LocalCodevisorServerLaunchRequest] = []
-        var terminatedPorts: [Int] = []
-        let server = LocalCodevisorServer(
-            client: client,
-            entrypoint: entrypoint,
-            launcher: { request in
-                launches.append(request)
-                client.acceptBoot(request.bootId)
-                return Process()
-            },
-            staleListenerTerminator: { terminatedPorts.append($0) }
-        )
-
-        let state = await server.ensureRunning()
-
-        #expect(state == .started)
-        #expect(launches.count == 1)
-        #expect(terminatedPorts == [CodevisorServerConfig.localPort])
-    }
-
-    @Test("Replaces another app boot even when its runtime version matches")
-    func replacesMatchingServerFromAnotherAppBoot() async throws {
-        let entrypoint = try makeRuntimeEntrypoint(version: "0.2.0")
-        let client = FakeLocalServerClient(healthResults: [
-            .success(.running(version: "0.2.0")),
-            .failure(TestError()),
-            .success(.running(version: "0.2.0")),
-        ])
-        var launches: [LocalCodevisorServerLaunchRequest] = []
-        var terminatedPorts: [Int] = []
-        let server = LocalCodevisorServer(
-            client: client,
-            entrypoint: entrypoint,
-            launcher: { request in
-                launches.append(request)
-                client.acceptBoot(request.bootId)
-                return Process()
-            },
-            staleListenerTerminator: { terminatedPorts.append($0) }
-        )
-
-        let state = await server.ensureRunning()
-
-        #expect(state == .started)
-        #expect(launches.count == 1)
-        #expect(client.shutdownRequests == 1)
-        #expect(terminatedPorts.isEmpty)
-    }
-
-    @Test("Keeps a healthy server when the runtime has no VERSION file (dev builds)")
-    func keepsServerWithoutBundledVersion() async throws {
-        let entrypoint = try makeTemporaryDirectory().appendingPathComponent("main.js")
-        let client = FakeLocalServerClient(healthResults: [.success(.running(version: "0.0.1"))])
-        var launches: [LocalCodevisorServerLaunchRequest] = []
-        let server = LocalCodevisorServer(
-            client: client,
-            entrypoint: entrypoint,
-            launcher: { request in
-                launches.append(request)
-                return Process()
-            },
-            staleListenerTerminator: { _ in }
-        )
-
-        let state = await server.ensureRunning()
-
-        #expect(state == .alreadyRunning)
-        #expect(launches.isEmpty)
-    }
-
-    @Test("Migrates legacy Application Support server data into ~/.codevisor")
-    func migratesLegacyServerData() throws {
-        let root = try makeTemporaryDirectory()
-        let legacy = root.appendingPathComponent("Application Support/Codevisor", isDirectory: true)
-        let data = root.appendingPathComponent(".codevisor/data", isDirectory: true)
-        let logs = root.appendingPathComponent(".codevisor/logs", isDirectory: true)
-        let fm = FileManager.default
-        try fm.createDirectory(
-            at: legacy.appendingPathComponent("harness-secrets/claude-code", isDirectory: true),
-            withIntermediateDirectories: true
-        )
-        try fm.createDirectory(
-            at: legacy.appendingPathComponent("attachments/objects/sha256/ab", isDirectory: true),
-            withIntermediateDirectories: true
-        )
-        try "database".write(
-            to: legacy.appendingPathComponent("codevisor-server.sqlite"),
-            atomically: true, encoding: .utf8
-        )
-        try "wal".write(
-            to: legacy.appendingPathComponent("codevisor-server.sqlite-wal"),
-            atomically: true, encoding: .utf8
-        )
-        try "log".write(
-            to: legacy.appendingPathComponent("server.log"), atomically: true, encoding: .utf8
-        )
-        try "sk".write(
-            to: legacy.appendingPathComponent("harness-secrets/claude-code/api-key"),
-            atomically: true, encoding: .utf8
-        )
-        try "attachment".write(
-            to: legacy.appendingPathComponent("attachments/objects/sha256/ab/abcdef"),
-            atomically: true, encoding: .utf8
-        )
-        try "keep".write(
-            to: legacy.appendingPathComponent("themes.json"), atomically: true, encoding: .utf8
-        )
-
-        LocalCodevisorServer.migrateLegacyServerData(from: legacy, toData: data, logs: logs)
-
-        #expect(
-            try String(contentsOf: data.appendingPathComponent("codevisor-server.sqlite"), encoding: .utf8)
-                == "database"
-        )
-        #expect(
-            try String(contentsOf: data.appendingPathComponent("codevisor-server.sqlite-wal"), encoding: .utf8)
-                == "wal"
-        )
-        #expect(
-            try String(contentsOf: data.appendingPathComponent("harness-secrets/claude-code/api-key"), encoding: .utf8)
-                == "sk"
-        )
-        #expect(
-            try String(
-                contentsOf: data.appendingPathComponent("attachments/objects/sha256/ab/abcdef"),
-                encoding: .utf8
-            ) == "attachment"
-        )
-        #expect(
-            try String(contentsOf: logs.appendingPathComponent("server.log"), encoding: .utf8) == "log"
-        )
-        // Client-side files stay behind; only server state moves.
-        #expect(fm.fileExists(atPath: legacy.appendingPathComponent("themes.json").path))
-        #expect(!fm.fileExists(atPath: legacy.appendingPathComponent("codevisor-server.sqlite").path))
-    }
-
-    @Test("Skips migration when the canonical database already exists")
-    func skipsMigrationWhenDestinationExists() throws {
-        let root = try makeTemporaryDirectory()
-        let legacy = root.appendingPathComponent("Application Support/Codevisor", isDirectory: true)
-        let data = root.appendingPathComponent(".codevisor/data", isDirectory: true)
-        let logs = root.appendingPathComponent(".codevisor/logs", isDirectory: true)
-        let fm = FileManager.default
-        try fm.createDirectory(at: legacy, withIntermediateDirectories: true)
-        try fm.createDirectory(at: data, withIntermediateDirectories: true)
-        try "stale".write(
-            to: legacy.appendingPathComponent("codevisor-server.sqlite"),
-            atomically: true, encoding: .utf8
-        )
-        try "current".write(
-            to: data.appendingPathComponent("codevisor-server.sqlite"),
-            atomically: true, encoding: .utf8
-        )
-
-        LocalCodevisorServer.migrateLegacyServerData(from: legacy, toData: data, logs: logs)
-
-        #expect(
-            try String(contentsOf: data.appendingPathComponent("codevisor-server.sqlite"), encoding: .utf8)
-                == "current"
-        )
-        #expect(
-            try String(contentsOf: legacy.appendingPathComponent("codevisor-server.sqlite"), encoding: .utf8)
-                == "stale"
-        )
-    }
-
-    private func makeTemporaryDirectory() throws -> URL {
+    func makeTemporaryDirectory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("codevisor-server-tests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -606,7 +324,7 @@ struct LocalCodevisorServerTests {
 
     /// A runtime directory shaped like a release bundle's: main.js beside a
     /// VERSION file. Returns the entrypoint URL.
-    private func makeRuntimeEntrypoint(version: String) throws -> URL {
+    func makeRuntimeEntrypoint(version: String) throws -> URL {
         let directory = try makeTemporaryDirectory()
         try version.write(
             to: directory.appendingPathComponent("VERSION"),
@@ -617,9 +335,9 @@ struct LocalCodevisorServerTests {
     }
 }
 
-private struct TestError: Error {}
+struct TestError: Error {}
 
-private extension ServerHealth {
+extension ServerHealth {
     static let ready = ServerHealth(ok: true, version: "0.1.0", database: "ready")
 
     static func running(version: String) -> ServerHealth {
@@ -627,7 +345,7 @@ private extension ServerHealth {
     }
 }
 
-private final class FakeLocalServerClient: CodevisorServerClienting, @unchecked Sendable {
+final class FakeLocalServerClient: CodevisorServerClienting, @unchecked Sendable {
     private let lock = NSLock()
     private var healthResults: [Result<ServerHealth, Error>]
     private(set) var shutdownRequests = 0

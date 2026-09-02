@@ -4,7 +4,7 @@ import UserNotifications
 import os
 
 // ChatAttentionKind, ChatAttentionEvent, and ChatNotificationDelivering live
-// in CodevisorCore (Notifications/ChatAttention.swift); this file is the iOS
+// in CodevisorCore (Notifications/ChatAttentionEvent.swift); this file is the iOS
 // delivery. With every machine's event stream connected in the background,
 // an agent finishing ANYWHERE surfaces here — as a banner while the user is
 // elsewhere in the app, and as a system notification for the brief window

@@ -4,7 +4,7 @@ import os
 import UserNotifications
 
 // ChatAttentionKind, ChatAttentionEvent, and ChatNotificationDelivering live
-// in CodevisorCore (Notifications/ChatAttention.swift) so shared session code
+// in CodevisorCore (Notifications/ChatAttentionEvent.swift) so shared session code
 // can request notification behavior; this file is the macOS delivery.
 
 extension Notification.Name {

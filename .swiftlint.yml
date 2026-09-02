@@ -1,6 +1,5 @@
 # Structural lint only — formatting is swift-format's job (.swift-format).
-# Existing violations are grandfathered in .swiftlint-baseline.json (Phase 7
-# ratchet burns them down); run with --strict so new warnings fail.
+# Runs with --strict (scripts/swift-lint.sh), so any warning fails the check.
 
 only_rules:
   - file_length

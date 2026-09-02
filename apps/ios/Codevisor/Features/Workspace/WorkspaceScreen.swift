@@ -11,10 +11,10 @@ import UIKit
 /// (back to the workspace list) and the tab-grid button; chat panes hide
 /// their title so the transcript scrolls clear off the top.
 struct WorkspaceScreen: View {
-    @Environment(AppEnvironment.self) private var environment
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
-    @Environment(\.displayScale) private var displayScale
+    @Environment(AppEnvironment.self) var environment
+    @Environment(\.dismiss) var dismiss
+    @Environment(\.accessibilityReduceMotion) var accessibilityReduceMotion
+    @Environment(\.displayScale) var displayScale
     /// The workspace's chat, or nil while the native New Chat sheet owns the
     /// draft composer. Its first send adopts a real session in place; Home then
     /// mounts an ordinary workspace route backed by the same cached controller
@@ -82,56 +82,56 @@ struct WorkspaceScreen: View {
 
     /// One controller per chat session shown in this workspace (macOS allows
     /// several chats per workspace; so do we).
-    @State private var controllers: [UUID: SessionController] = [:]
-    @State private var missing = false
-    @State private var serverConfig: CodevisorServerConfig?
-    @State private var project: Project?
-    @State private var paneState: PaneGroupState?
+    @State var controllers: [UUID: SessionController] = [:]
+    @State var missing = false
+    @State var serverConfig: CodevisorServerConfig?
+    @State var project: Project?
+    @State var paneState: PaneGroupState?
     /// Set when a draft's first send creates its session. From then on this
     /// screen is that workspace — same view, same pane, same transcript.
-    @State private var startedSessionId: UUID?
+    @State var startedSessionId: UUID?
     /// The retained draft controller while `sessionId` is nil.
-    @State private var draftController: SessionController?
+    @State var draftController: SessionController?
     /// The draft's first send landed: the run pickers collapse away.
-    @State private var hasStarted = false
+    @State var hasStarted = false
     /// Stands in for the session id a draft doesn't have yet, so its pane
     /// group can exist (and keep a STABLE pane id) from the first frame.
-    @State private var draftPlaceholderId = UUID()
+    @State var draftPlaceholderId = UUID()
     /// True while `draftController` is the project-less sentinel this screen
     /// minted itself (never the cache's). The moment it points at a real
     /// project, it is swapped for the durable cache-built draft.
-    @State private var draftIsPlaceholderBorn = false
+    @State var draftIsPlaceholderBorn = false
     /// The tab grid is workspace-local state, not another navigation
     /// destination. Keeping the active pane in Home's NavigationStack means
     /// the system back button and edge swipe always pop straight to Home.
-    @State private var showsGrid = false
+    @State var showsGrid = false
     /// Measured card endpoints for the snapshot-only tab zoom. These are
     /// visual coordinates, never navigation or pane state.
-    @State private var paneCardFrames: [UUID: CGRect] = [:]
+    @State var paneCardFrames: [UUID: CGRect] = [:]
     /// Non-nil only while UIKit owns a native drag session for this card.
     /// Pane order itself always changes through `paneBinding`, so every live
     /// displacement is immediately durable and survives an interrupted drag.
-    @State private var gridDrag: WorkspaceTabGridDragState?
-    @State private var suppressedPaneTapId: UUID?
+    @State var gridDrag: WorkspaceTabGridDragState?
+    @State var suppressedPaneTapId: UUID?
     /// GestureState resets on both normal completion and system cancellation,
     /// giving the lifted card one authoritative release/cleanup signal.
-    @GestureState private var gridDragGestureIsActive = false
-    @State private var gridLiftFeedback = 0
-    @State private var pendingGridZoomPaneId: UUID?
+    @GestureState var gridDragGestureIsActive = false
+    @State var gridLiftFeedback = 0
+    @State var pendingGridZoomPaneId: UUID?
     /// Safari inserts the new tab into the grid first, then expands that
     /// card. Keeping this separate from `pendingGridZoomPaneId` makes the
     /// source of each transition explicit: an existing pane collapses into
     /// the grid, while a newly-created placeholder expands out of it.
-    @State private var pendingNewTabZoomPaneId: UUID?
-    @State private var tabZoomSurface: WorkspaceTabZoomSurface?
+    @State var pendingNewTabZoomPaneId: UUID?
+    @State var tabZoomSurface: WorkspaceTabZoomSurface?
 
     /// This workspace's chat: the routed one, or the one a draft's first send
     /// created. Nil only while an unsent draft.
     var activeSessionId: UUID? { sessionId ?? startedSessionId }
 
-    private var isDraft: Bool { activeSessionId == nil }
+    var isDraft: Bool { activeSessionId == nil }
 
-    private var resolvedServerId: String {
+    var resolvedServerId: String {
         serverId ?? draftController?.project.serverId ?? environment.defaultComposerServerId
     }
 
@@ -166,17 +166,17 @@ struct WorkspaceScreen: View {
         return PaneGroupState.centerInitial(sessionId: draftPlaceholderId)
     }
 
-    private var activePane: PaneDescriptorState? {
+    var activePane: PaneDescriptorState? {
         panes.selectedPane ?? panes.panes.first
     }
 
-    private func session(for id: UUID) -> ChatSession? {
+    func session(for id: UUID) -> ChatSession? {
         environment.projectList.sessions.first {
             $0.serverId == resolvedServerId && $0.id == id
         }
     }
 
-    private var rootSession: ChatSession? { activeSessionId.flatMap(session(for:)) }
+    var rootSession: ChatSession? { activeSessionId.flatMap(session(for:)) }
 
     /// The persisted project snapshot is good enough to construct New Chat's
     /// draft immediately. The server refresh that follows may update this
@@ -184,7 +184,7 @@ struct WorkspaceScreen: View {
     /// Keep the initial choice on the selected machine: a newly added, empty
     /// machine should show the project placeholder instead of silently
     /// targeting a project on another machine.
-    private var draftProjectCandidate: Project? {
+    var draftProjectCandidate: Project? {
         environment.projectList.firstNonScratchProject(
             on: resolvedServerId,
             byWorkspaceRecency: environment.workspaces.loadAll()
@@ -195,7 +195,7 @@ struct WorkspaceScreen: View {
     /// resolves synchronously from the already-loaded project list, so the
     /// first frame renders the pane instead of a spinner — arriving from a new
     /// chat's first send must show the chat, not a placeholder.
-    private var resolvedProject: Project? {
+    var resolvedProject: Project? {
         project
             ?? draftController?.project
             ?? rootSession.flatMap { session in
@@ -218,7 +218,7 @@ struct WorkspaceScreen: View {
     /// The controller a chat pane shows. A draft's pane is served by the
     /// retained draft controller — the SAME controller the session adopts, so
     /// nothing about the view changes when the send lands.
-    private func chatController(for pane: PaneDescriptorState) -> SessionController? {
+    func chatController(for pane: PaneDescriptorState) -> SessionController? {
         guard let chatId = pane.chatSessionId ?? activeSessionId else { return draftController }
         if chatId == draftPlaceholderId { return draftController }
         if let controller = controllers[chatId] { return controller }
@@ -226,7 +226,7 @@ struct WorkspaceScreen: View {
         return cachedController(for: chatId)
     }
 
-    private func title(for pane: PaneDescriptorState) -> String {
+    func title(for pane: PaneDescriptorState) -> String {
         switch pane.kind {
         case .chat:
             let title =
@@ -240,7 +240,7 @@ struct WorkspaceScreen: View {
         }
     }
 
-    private var workspaceCwd: String {
+    var workspaceCwd: String {
         rootSession?.cwd
             ?? resolvedProject?.folderURL.path
             ?? ""
@@ -444,1074 +444,4 @@ struct WorkspaceScreen: View {
         // Chat panes hide the title so the transcript scrolls off the top.
         return pane.kind == .chat ? "" : title(for: pane)
     }
-
-    // MARK: - Tab grid (the workspace's base)
-
-    /// The Safari-style tab switcher: a two-column grid of pane previews with
-    /// close buttons.
-    private var grid: some View {
-        WorkspaceTabGridView(
-            panes: panes.panes,
-            paneStorageId: paneStorageId,
-            gridDrag: gridDrag,
-            gridDragGestureIsActive: gridDragGestureIsActive,
-            gridLiftFeedback: gridLiftFeedback,
-            pendingNewTabZoomPaneId: pendingNewTabZoomPaneId,
-            showsGrid: showsGrid,
-            pluginIconClient: environment.machines.client(for: resolvedServerId),
-            pluginIconCacheNamespace: resolvedServerId,
-            title: { title(for: $0) },
-            onSelect: { pane in
-                guard gridDrag == nil,
-                    suppressedPaneTapId != pane.id
-                else { return }
-                select(pane)
-            },
-            onClose: { close($0) },
-            moveAction: { moveAction(for: $0, offset: $1) },
-            reorderGesture: { paneReorderGesture(for: $0) },
-            onPaneCardFrames: { frames in
-                paneCardFrames = frames
-                startPendingGridZoomIfPossible()
-                startPendingNewTabZoomIfPossible()
-            },
-            onDragGestureEnded: { finishGridDrag() },
-            onGridHidden: {
-                gridDrag = nil
-                suppressedPaneTapId = nil
-            }
-        )
-    }
-
-    private func paneReorderGesture(
-        for pane: PaneDescriptorState
-    ) -> some Gesture {
-        LongPressGesture(minimumDuration: 0.18, maximumDistance: 12)
-            .sequenced(
-                before: DragGesture(
-                    minimumDistance: 0,
-                    coordinateSpace: .global
-                )
-            )
-            .updating($gridDragGestureIsActive) { phase, isActive, _ in
-                if case .second(true, _) = phase {
-                    isActive = true
-                }
-            }
-            .onChanged { phase in
-                guard case let .second(true, value) = phase,
-                    let value
-                else { return }
-                updateGridDrag(for: pane, value: value)
-            }
-    }
-
-    private func updateGridDrag(
-        for pane: PaneDescriptorState,
-        value: DragGesture.Value
-    ) {
-        if gridDrag == nil {
-            guard
-                let frame = paneCardFrames[pane.id],
-                let currentSlotIndex = panes.panes.firstIndex(where: {
-                    $0.id == pane.id
-                })
-            else { return }
-            let slots = panes.panes.enumerated().compactMap { index, pane in
-                paneCardFrames[pane.id].map {
-                    WorkspaceTabGridSlot(index: index, frame: $0)
-                }
-            }
-            let snapshot = paneStorageId.flatMap {
-                PaneSnapshotCache.shared.image(for: pane.id, in: $0)
-            }
-            gridDrag = WorkspaceTabGridDragState(
-                pane: pane,
-                title: title(for: pane),
-                snapshot: snapshot,
-                size: frame.size,
-                grabOffset: CGSize(
-                    width: min(max(value.startLocation.x - frame.minX, 0), frame.width),
-                    height: min(max(value.startLocation.y - frame.minY, 0), frame.height)
-                ),
-                slots: slots,
-                currentSlotIndex: currentSlotIndex,
-                fingerLocation: value.location,
-                liftProgress: 0
-            )
-            suppressedPaneTapId = pane.id
-            gridLiftFeedback += 1
-
-            Task { @MainActor in
-                await Task.yield()
-                guard var drag = gridDrag, drag.pane.id == pane.id else { return }
-                drag.liftProgress = 1
-                withAnimation(WorkspaceTabGridMotion.lift) {
-                    gridDrag = drag
-                }
-            }
-        }
-
-        guard var drag = gridDrag, drag.pane.id == pane.id else { return }
-        drag.fingerLocation = value.location
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            gridDrag = drag
-        }
-
-        let liftedCenter = CGPoint(
-            x: value.location.x - drag.grabOffset.width + drag.size.width / 2,
-            y: value.location.y - drag.grabOffset.height + drag.size.height / 2
-        )
-        reorderDraggedPane(pane.id, nearestTo: liftedCenter)
-    }
-
-    private func reorderDraggedPane(_ paneId: UUID, nearestTo point: CGPoint) {
-        guard var drag = gridDrag, drag.pane.id == paneId,
-            let targetIndex = WorkspaceTabGridReorderContract.targetIndex(
-                currentIndex: drag.currentSlotIndex,
-                point: point,
-                slots: drag.slots
-            ),
-            panes.panes.indices.contains(targetIndex),
-            panes.panes[targetIndex].id != paneId
-        else { return }
-
-        let targetPaneId = panes.panes[targetIndex].id
-        drag.currentSlotIndex = targetIndex
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            gridDrag = drag
-        }
-        reorderPane(paneId, onto: targetPaneId)
-    }
-
-    /// Springs the still-opaque lifted tile onto the current empty slot. Only
-    /// once both occupy identical geometry do we remove the overlay and
-    /// reveal the real card beneath it.
-    private func finishGridDrag() {
-        guard let paneId = gridDrag?.pane.id else { return }
-        Task { @MainActor in
-            await Task.yield()
-            guard var drag = gridDrag, drag.pane.id == paneId else { return }
-            guard
-                let target = drag.slots.first(where: {
-                    $0.index == drag.currentSlotIndex
-                })?.frame
-            else {
-                clearGridDrag(paneId: paneId)
-                return
-            }
-
-            drag.fingerLocation = CGPoint(
-                x: target.minX + drag.grabOffset.width,
-                y: target.minY + drag.grabOffset.height
-            )
-            drag.liftProgress = 0
-            withAnimation(WorkspaceTabGridMotion.release) {
-                gridDrag = drag
-            }
-            try? await Task.sleep(for: .milliseconds(340))
-            clearGridDrag(paneId: paneId)
-        }
-    }
-
-    private func clearGridDrag(paneId: UUID) {
-        guard gridDrag?.pane.id == paneId else { return }
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            gridDrag = nil
-        }
-        Task { @MainActor in
-            await Task.yield()
-            if suppressedPaneTapId == paneId {
-                suppressedPaneTapId = nil
-            }
-        }
-    }
-
-    private var paneBinding: Binding<PaneGroupState> {
-        Binding(
-            get: { panes },
-            set: { newValue in
-                paneState = newValue
-                persistCompactPaneState(newValue)
-            }
-        )
-    }
-
-    private func paneContent(_ pane: PaneDescriptorState) -> some View {
-        WorkspacePaneContentView(
-            pane: pane,
-            chatController: { chatController(for: $0) },
-            activeSessionId: activeSessionId,
-            session: { session(for: $0) },
-            projectList: environment.projectList,
-            showsRunPickers: isDraft && !hasStarted,
-            initialComposerFocusRequest: initialComposerFocusRequest,
-            onInitialComposerFocusRequestFulfilled:
-                onInitialComposerFocusRequestFulfilled,
-            transcriptPresentationRole: transcriptPresentationRole,
-            onSendAnimationCompleted: onSendAnimationCompleted,
-            onSendAnimationStarted: onSendAnimationStarted,
-            onComposerWillSend: onComposerWillSend,
-            preservesComposerFocusOnSend: isNewChatPresentation
-                && !isFirstSendPromotionSurface,
-            composerTextEditorHandoffRole: composerTextEditorHandoffRole,
-            composerTextEditorHandoffID: composerTextEditorHandoffID,
-            isNewChatPresentation: isNewChatPresentation,
-            hasStarted: hasStarted,
-            onWorkspaceReady: onWorkspaceReady,
-            connectChat: { await connectChat(sessionId: $0) },
-            onConvertToChat: { convertToChat(pane) },
-            onConvertToTerminal: { convertToTerminal(pane) },
-            onConvertToPlugin: { convertToPlugin(pane, option: $0) },
-            serverConfig: serverConfig,
-            workspaceCwd: workspaceCwd,
-            machineClient: environment.machines.client(for: resolvedServerId),
-            machineId: resolvedServerId,
-            pluginPaneModel: { pluginPaneModel(for: $0) },
-            onRenamePane: { renamePane($0, to: $1) }
-        )
-    }
-
-    /// The pane's cached plugin model — the webview and its load state
-    /// survive tab switches; the cache tears down webviews for panes that
-    /// leave the active canvas.
-    private func pluginPaneModel(for pane: PaneDescriptorState) -> PluginPaneModel {
-        let serverId = resolvedServerId
-        let machines = environment.machines
-        return PluginPaneCache.shared.model(for: pane.id) {
-            PluginPaneModel(
-                paneId: pane.id,
-                serverId: serverId,
-                pluginId: pane.pluginId ?? "",
-                paneType: pane.pluginPaneType ?? "",
-                workspaceId: resolvedWorkspace?.id,
-                cwd: workspaceCwd,
-                client: machines.client(for: serverId),
-                resolveBaseURL: { [weak machines] in
-                    await machines?.effectiveHTTPBaseURL(forMachineId: serverId)
-                }
-            )
-        }
-    }
-
-    /// `codevisor.setTitle` from a plugin pane: rename the tab like a manual
-    /// rename would (persisted + published), matching macOS.
-    private func renamePane(_ pane: PaneDescriptorState, to name: String) {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        var state = panes
-        guard !trimmed.isEmpty,
-            let index = state.panes.firstIndex(where: { $0.id == pane.id }),
-            state.panes[index].name != trimmed
-        else { return }
-        state.panes[index].name = trimmed
-        paneBinding.wrappedValue = state
-        publishPane(state.panes[index])
-    }
-
-    // MARK: - Tab actions
-
-    private func select(_ pane: PaneDescriptorState) {
-        openPaneFromGrid(pane)
-    }
-
-    private func openPaneFromGrid(_ pane: PaneDescriptorState) {
-        let bottomChrome =
-            pane.kind == .chat
-            ? PaneSnapshotCache.shared.activeBottomChrome
-            : 0
-        guard showsGrid,
-            tabZoomSurface == nil,
-            let paneStorageId,
-            let cardFrame = paneCardFrames[pane.id],
-            let storedSnapshot = PaneSnapshotCache.shared.transitionSnapshot(
-                for: pane.id,
-                in: paneStorageId,
-                bottomChrome: bottomChrome
-            )
-        else {
-            selectPaneWithoutZoom(pane)
-            return
-        }
-
-        let paneSnapshot: PaneTransitionSnapshot
-        let isUncached: Bool
-        if storedSnapshot.image != nil {
-            paneSnapshot = storedSnapshot
-            isUncached = false
-        } else if let fallback = Self.renderPaneCanvas(
-            for: pane,
-            size: storedSnapshot.contentFrame.size,
-            sourceCardFrame: cardFrame,
-            displayScale: displayScale
-        ) {
-            // This image exists only to carry an unvisited card through the
-            // exact same zoom. The live pane replaces it at the late handoff;
-            // it is never written as if it were a real pane capture.
-            paneSnapshot = PaneTransitionSnapshot(
-                image: fallback,
-                contentFrame: storedSnapshot.contentFrame,
-                transitionView: nil,
-                backdropView: nil
-            )
-            isUncached = true
-        } else {
-            selectPaneWithoutZoom(pane)
-            return
-        }
-
-        guard
-            let surface = WorkspaceTabZoomSurface.make(
-                direction: .gridToPane,
-                paneSnapshot: paneSnapshot,
-                cardFrame: cardFrame,
-                reduceMotion: accessibilityReduceMotion,
-                handoffDelayFactor: isUncached
-                    ? WorkspaceTabZoomTransitionContract.uncachedHandoffDelayFactor
-                    : WorkspaceTabZoomTransitionContract.handoffDelayFactor
-            )
-        else {
-            selectPaneWithoutZoom(pane)
-            return
-        }
-
-        surface.install()
-        tabZoomSurface = surface
-        selectPaneWithoutZoom(pane)
-        Task { @MainActor in
-            // Commit the canonical pane before revealing it beneath the
-            // expanding card. No second workspace or presentation is made.
-            await Task.yield()
-            surface.animate {
-                if tabZoomSurface === surface { tabZoomSurface = nil }
-            }
-        }
-    }
-
-    private func selectPaneWithoutZoom(_ pane: PaneDescriptorState) {
-        var state = panes
-        state.selectedPaneId = pane.id
-        paneBinding.wrappedValue = state
-        setShowsGridWithoutAnimation(false)
-    }
-
-    /// Any tab can close — chats included, as on macOS. A final-pane close is
-    /// optimistic conversion of that same identity; the server atomically
-    /// confirms the conversion so two clients cannot manufacture replacements.
-    private func close(_ pane: PaneDescriptorState) {
-        let owningWorkspaceId = resolvedWorkspace?.id
-        var state = panes
-        let replacement: PaneDescriptorState?
-        if state.panes.count == 1 {
-            replacement = state.replacePaneWithNewTab(id: pane.id)
-            guard replacement != nil else { return }
-        } else {
-            replacement = nil
-            guard state.closePane(id: pane.id) != nil else { return }
-        }
-        withAnimation(WorkspaceTabGridMotion.removal) {
-            paneBinding.wrappedValue = state
-        }
-        if let paneStorageId {
-            PaneSnapshotCache.shared.remove(
-                paneId: pane.id,
-                from: paneStorageId
-            )
-        }
-        if pane.kind == .plugin {
-            // Closing the tab drops this client's webview and web-content
-            // process. The machine-side plugin remains available to other
-            // clients, panes, and tools until the Codevisor server stops.
-            PluginPaneCache.shared.remove(paneId: pane.id)
-        }
-        if pane.kind == .chat, let sessionId = pane.chatSessionId,
-            let closed = environment.projectList.sessions.first(where: {
-                $0.serverId == resolvedServerId && $0.id == sessionId
-            })
-        {
-            environment.archiveSession(closed)
-        }
-        if let workspaceId = owningWorkspaceId {
-            environment.workspaceSync.deletePane(
-                id: pane.id,
-                workspaceId: workspaceId,
-                optimisticReplacement: replacement,
-                client: environment.machines.client(for: resolvedServerId)
-            )
-        }
-    }
-
-    /// The canonical pane array is also the persisted order. Updating it at
-    /// each crossed card gives the drag live Safari-style displacement and
-    /// makes the latest order crash-safe without a second transient model.
-    private func reorderPane(_ paneId: UUID, onto targetPaneId: UUID) {
-        var state = panes
-        let previousOrder = state.panes.map(\.id)
-        state.movePane(id: paneId, onto: targetPaneId)
-        guard state.panes.map(\.id) != previousOrder else { return }
-        withAnimation(WorkspaceTabGridMotion.reorder) {
-            paneBinding.wrappedValue = state
-        }
-    }
-
-    /// VoiceOver exposes the same persistent reorder without requiring the
-    /// spatial drag gesture.
-    private func moveAction(
-        for pane: PaneDescriptorState,
-        offset: Int
-    ) -> (() -> Void)? {
-        guard let index = panes.panes.firstIndex(where: { $0.id == pane.id }) else {
-            return nil
-        }
-        let targetIndex = index + offset
-        guard panes.panes.indices.contains(targetIndex) else { return nil }
-        let targetId = panes.panes[targetIndex].id
-        return { reorderPane(pane.id, onto: targetId) }
-    }
-
-    /// Add the placeholder to the real grid first, then expand that exact
-    /// card into its page like Safari. This remains the same pane and the same
-    /// WorkspaceScreen throughout; only temporary pixels bridge the two
-    /// canonical layout states.
-    private func addTab() {
-        if let sourcePane = activePane ?? panes.panes.first {
-            chatController(for: sourcePane)?.rememberCurrentComposerConfiguration()
-        }
-        var state = panes
-        let newPane = state.addNewTabPane()
-        paneBinding.wrappedValue = state
-        publishPane(newPane)
-
-        guard showsGrid, !accessibilityReduceMotion else {
-            setShowsGridWithoutAnimation(false)
-            return
-        }
-
-        pendingNewTabZoomPaneId = newPane.id
-        Task { @MainActor in
-            // Preference delivery normally starts the transition on the next
-            // layout pass. Never leave input disabled if a lazy-grid card
-            // cannot be measured for an exceptional layout.
-            try? await Task.sleep(for: .milliseconds(350))
-            guard pendingNewTabZoomPaneId == newPane.id else { return }
-            pendingNewTabZoomPaneId = nil
-            setShowsGridWithoutAnimation(false)
-        }
-    }
-
-    /// The grid's back button returns to the workspace's last-open tab.
-    private func reopenSelectedPane() {
-        guard let activePane else { return }
-        openPaneFromGrid(activePane)
-    }
-
-    /// Snapshot the pane for its card, then reveal the workspace-local grid.
-    private func showGrid(from pane: PaneDescriptorState) {
-        guard let paneStorageId else {
-            showsGrid = true
-            return
-        }
-        let paneSnapshot = PaneSnapshotCache.shared.captureKeyWindow(
-            for: pane.id,
-            in: paneStorageId,
-            bottomChrome: pane.kind == .chat ? PaneSnapshotCache.shared.activeBottomChrome : 0
-        )
-        if pane.kind == .plugin {
-            // The window capture can't see web content reliably
-            // (drawHierarchy renders WKWebView blank on some OS versions);
-            // WKWebView's own snapshotter can. It answers async — the stored
-            // image upgrades the grid card as soon as it lands.
-            PluginPaneCache.shared.capturePreview(paneId: pane.id) { image in
-                PaneSnapshotCache.shared.store(image, for: pane.id, in: paneStorageId)
-            }
-        }
-        guard tabZoomSurface == nil,
-            !accessibilityReduceMotion,
-            let paneSnapshot,
-            let surface = WorkspaceTabZoomSurface.make(
-                direction: .paneToGrid,
-                paneSnapshot: paneSnapshot,
-                // The grid has not mounted yet. A non-empty provisional
-                // card is replaced by its measured frame before animation.
-                cardFrame: CGRect(
-                    x: 16,
-                    y: paneSnapshot.contentFrame.minY,
-                    width: 1,
-                    height: 1
-                ),
-                reduceMotion: false
-            )
-        else {
-            showsGrid = true
-            return
-        }
-
-        surface.install()
-        tabZoomSurface = surface
-        pendingGridZoomPaneId = pane.id
-        setShowsGridWithoutAnimation(true)
-
-        Task { @MainActor in
-            await Task.yield()
-            startPendingGridZoomIfPossible()
-            try? await Task.sleep(for: .milliseconds(250))
-            guard pendingGridZoomPaneId == pane.id,
-                tabZoomSurface === surface
-            else { return }
-            // A card can be absent when a large lazy grid has it offscreen.
-            // Never strand a frozen overlay waiting for impossible geometry.
-            pendingGridZoomPaneId = nil
-            surface.cancel()
-            if tabZoomSurface === surface { tabZoomSurface = nil }
-        }
-    }
-
-    private func startPendingGridZoomIfPossible() {
-        guard let paneId = pendingGridZoomPaneId,
-            let frame = paneCardFrames[paneId],
-            let surface = tabZoomSurface
-        else { return }
-
-        // The full-screen source snapshot was captured before the grid
-        // existed. Retarget that SAME snapshot once the real destination card
-        // has a frame; recapturing here would incorrectly photograph the grid.
-        guard
-            surface.retarget(
-                cardFrame: frame,
-                reduceMotion: accessibilityReduceMotion
-            )
-        else {
-            pendingGridZoomPaneId = nil
-            surface.cancel()
-            tabZoomSurface = nil
-            return
-        }
-        pendingGridZoomPaneId = nil
-        surface.animate {
-            if tabZoomSurface === surface { tabZoomSurface = nil }
-        }
-    }
-
-    /// A brand-new pane has no historical screenshot yet. Render the actual
-    /// NewTabPaneView at the pane's fixed canvas size, then feed those pixels
-    /// into the same grid-to-pane surface used by every existing tab. The
-    /// live grid supplies the backdrop and the live new pane is committed
-    /// underneath it before the expansion begins.
-    private func startPendingNewTabZoomIfPossible() {
-        guard let paneId = pendingNewTabZoomPaneId,
-            tabZoomSurface == nil,
-            showsGrid,
-            let paneStorageId,
-            let pane = panes.panes.first(where: {
-                $0.id == paneId && $0.kind == .newTab
-            }),
-            let cardFrame = paneCardFrames[paneId],
-            let geometry = PaneSnapshotCache.shared.transitionSnapshot(
-                for: paneId,
-                in: paneStorageId
-            ),
-            let paneImage = Self.renderPaneCanvas(
-                for: pane,
-                size: geometry.contentFrame.size,
-                sourceCardFrame: cardFrame,
-                displayScale: displayScale
-            )
-        else { return }
-
-        PaneSnapshotCache.shared.store(
-            paneImage,
-            for: paneId,
-            in: paneStorageId
-        )
-        let paneSnapshot = PaneTransitionSnapshot(
-            image: paneImage,
-            contentFrame: geometry.contentFrame,
-            transitionView: nil,
-            // `make` snapshots the still-live grid before canonical pane
-            // selection changes, preserving the inserted card underneath.
-            backdropView: nil
-        )
-        guard
-            let surface = WorkspaceTabZoomSurface.make(
-                direction: .gridToPane,
-                paneSnapshot: paneSnapshot,
-                cardFrame: cardFrame,
-                reduceMotion: accessibilityReduceMotion
-            )
-        else {
-            pendingNewTabZoomPaneId = nil
-            setShowsGridWithoutAnimation(false)
-            return
-        }
-
-        surface.install()
-        tabZoomSurface = surface
-        pendingNewTabZoomPaneId = nil
-        selectPaneWithoutZoom(pane)
-        Task { @MainActor in
-            await Task.yield()
-            surface.animate {
-                if tabZoomSurface === surface { tabZoomSurface = nil }
-            }
-        }
-    }
-
-    private func setShowsGridWithoutAnimation(_ value: Bool) {
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) { showsGrid = value }
-    }
-
-    /// The macOS new-tab conversion: the placeholder becomes a real pane in
-    /// place. Chats are created eagerly as deferred sessions (the agent
-    /// spawns on first send), exactly like the New Workspace flow. New chats
-    /// inherit the workspace's one working directory: the root session's
-    /// worktree (or project folder) stamps every sub-chat at creation.
-    private func convertToChat(_ pane: PaneDescriptorState) {
-        // Reachable only from the tab grid, which a draft doesn't have.
-        guard let project = resolvedProject, let workspaceSessionId = activeSessionId else { return }
-        let chat = environment.projectList.newSession(
-            in: project,
-            title: "New Chat",
-            worktreeName: rootSession?.worktreeName,
-            cwd: rootSession?.cwd
-        )
-        var state = panes
-        let converted = state.convertNewTabPane(
-            id: pane.id, to: .chat, sessionId: workspaceSessionId, chatSessionId: chat.id
-        )
-        paneBinding.wrappedValue = state
-        if let converted {
-            promotePaneToChat(converted, session: chat)
-        }
-    }
-
-    private func convertToTerminal(_ pane: PaneDescriptorState) {
-        guard let workspaceSessionId = activeSessionId else { return }
-        var state = panes
-        let converted = state.convertNewTabPane(
-            id: pane.id, to: .terminal, sessionId: workspaceSessionId
-        )
-        paneBinding.wrappedValue = state
-        if let converted {
-            publishPane(converted)
-        }
-    }
-
-    /// The New Tab placeholder becomes a plugin pane in place, mirroring
-    /// macOS's New Tab plugin cards.
-    private func convertToPlugin(_ pane: PaneDescriptorState, option: PluginNewTabOption) {
-        guard let workspaceSessionId = activeSessionId else { return }
-        var state = panes
-        let converted = state.convertNewTabPane(
-            id: pane.id,
-            to: .plugin,
-            sessionId: workspaceSessionId,
-            name: option.title,
-            pluginId: option.pluginId,
-            pluginPaneType: option.paneType
-        )
-        paneBinding.wrappedValue = state
-        if let converted {
-            publishPane(converted)
-        }
-    }
-
-    /// iOS's flat tab order is the device-local layout projection of the
-    /// shared pane registry. The Workspace repository is its persistence
-    /// root; `paneState` is only the mounted view's writable cache.
-    private func persistCompactPaneState(_ state: PaneGroupState) {
-        guard var workspace = resolvedWorkspace else { return }
-        Self.applyCompactPaneState(state, to: &workspace)
-        environment.workspaces.save(workspace)
-        environment.workspaceSync.noteLocalMutation()
-    }
-
-    private func publishPane(_ pane: PaneDescriptorState) {
-        guard let workspaceId = resolvedWorkspace?.id else { return }
-        environment.workspaceSync.publishPane(
-            pane,
-            workspaceId: workspaceId,
-            client: environment.machines.client(for: resolvedServerId)
-        )
-    }
-
-    private func promotePaneToChat(_ pane: PaneDescriptorState, session: ChatSession) {
-        guard let workspaceId = resolvedWorkspace?.id else { return }
-        environment.workspaceSync.promotePaneToChat(
-            pane,
-            session: session,
-            workspaceId: workspaceId,
-            client: environment.machines.client(for: resolvedServerId)
-        )
-    }
-
-    /// Projects the shared pane registry into iOS's compact, single-group
-    /// layout without importing macOS tab order or split placement.
-    private func synchronizePaneStateFromWorkspace() {
-        guard let workspace = resolvedWorkspace else { return }
-        let shared =
-            workspace.centerTabs.flatMap { tab in
-                tab.root.allGroups.flatMap(\.state.panes)
-            } + workspace.bottomGroup.panes
-        guard !shared.isEmpty else {
-            guard !panes.panes.isEmpty else { return }
-            let empty = PaneGroupState()
-            paneState = empty
-            persistCompactPaneState(empty)
-            return
-        }
-
-        var state = panes
-        var remaining = shared
-        var reconciled: [PaneDescriptorState] = []
-        for local in state.panes {
-            let index = remaining.firstIndex(where: { candidate in
-                candidate.id == local.id || Self.sameResource(candidate, local)
-            })
-            guard let index else { continue }
-            reconciled.append(remaining.remove(at: index))
-        }
-        reconciled.append(contentsOf: remaining)
-        guard reconciled != state.panes else { return }
-        state.panes = reconciled
-        if !reconciled.contains(where: { $0.id == state.selectedPaneId }) {
-            state.selectedPaneId = reconciled.first?.id
-        }
-        state.isVisible = true
-        paneState = state
-        persistCompactPaneState(state)
-    }
-
-    private static func sameResource(
-        _ lhs: PaneDescriptorState,
-        _ rhs: PaneDescriptorState
-    ) -> Bool {
-        guard lhs.kind == rhs.kind else { return false }
-        switch lhs.kind {
-        case .chat:
-            return lhs.chatSessionId != nil && lhs.chatSessionId == rhs.chatSessionId
-        case .terminal:
-            return lhs.terminalKey.caseInsensitiveCompare(rhs.terminalKey) == .orderedSame
-        case .newTab, .plugin:
-            return false
-        }
-    }
-
-    // MARK: - Connection
-
-    private func prepare() async {
-        IOSNavigationDiagnostics.record(
-            "workspace.prepare.begin",
-            "session=\(activeSessionId.map(Self.diagnosticID) ?? "nil") controllers=\(controllers.count)"
-        )
-        guard let sessionId = activeSessionId else {
-            // Stale while revalidate, matching macOS New Chat: construct from
-            // the persisted project snapshot before the first suspension, then
-            // refresh metadata without holding the sheet behind a spinner.
-            setUpDraftIfNeeded()
-            await environment.projectList.refreshFromServer()
-            setUpDraftIfNeeded()
-            IOSNavigationDiagnostics.record("workspace.prepare.end", "draft=true")
-            return
-        }
-        if paneState == nil, let paneStorageId {
-            var explicitlyOpenedPane: PaneDescriptorState?
-            var state =
-                resolvedWorkspace.map(Self.compactPaneState(from:))
-                ?? WorkspacePaneStore.shared.state(
-                    for: paneStorageId,
-                    legacySessionIds: legacyPaneSessionIds
-                )
-            if let preferredChatSessionId {
-                if let pane = state.panes.first(where: {
-                    $0.kind == .chat && $0.chatSessionId == preferredChatSessionId
-                }) {
-                    state.selectPane(id: pane.id)
-                } else {
-                    explicitlyOpenedPane = state.addChatPane(sessionId: preferredChatSessionId)
-                }
-            }
-            paneState = state
-            persistCompactPaneState(state)
-            if let explicitlyOpenedPane {
-                publishPane(explicitlyOpenedPane)
-            }
-            synchronizePaneStateFromWorkspace()
-        }
-        if controllers[sessionId] == nil {
-            guard let session = rootSession,
-                let project = environment.projectList.projects.first(where: {
-                    $0.serverId == session.serverId && $0.id == session.projectId
-                })
-            else {
-                missing = true
-                IOSNavigationDiagnostics.record(
-                    "workspace.prepare.abort",
-                    "session=\(Self.diagnosticID(sessionId)) reason=session-or-project-missing"
-                )
-                return
-            }
-            self.project = project
-            serverConfig = environment.machines.serverConfig(for: session.serverId)
-        }
-        await connectChat(sessionId: sessionId)
-        IOSNavigationDiagnostics.record(
-            "workspace.prepare.end",
-            "session=\(Self.diagnosticID(sessionId)) controllers=\(controllers.count)"
-        )
-    }
-
-    // MARK: - The draft (a new chat, before its first send)
-
-    /// Binds the app-wide retained draft controller and wires what its first
-    /// send should do. Idempotent: re-runs harmlessly as the project list
-    /// arrives.
-    private func setUpDraftIfNeeded(preferredProject: Project? = nil) {
-        guard isDraft else { return }
-        guard let project = preferredProject ?? draftProjectCandidate
-        else {
-            setUpPlaceholderDraftIfNeeded()
-            return
-        }
-        // A project arrived (or was picked) while the project-less sentinel
-        // held the composer: carry the typed text into the real draft.
-        var carriedText = ""
-        if let sentinel = draftController, draftIsPlaceholderBorn {
-            carriedText = sentinel.composerText
-            draftController = nil
-            draftIsPlaceholderBorn = false
-        }
-        guard draftController?.keepOrRetargetDraft(to: project) != true else { return }
-        // The retained draft: leaving and coming back — or relaunching —
-        // restores the unsent message, attachments, and picked run location.
-        let controller = ChatControllerCache.shared.draftController(
-            preferredProject: project,
-            environment: environment
-        )
-        serverConfig = environment.machines.serverConfig(for: controller.project.serverId)
-        // Pin the draft's pane group NOW: `centerInitial` mints a fresh pane id
-        // each call, so leaving it computed would hand the chat view a new
-        // identity every render — remounting it constantly.
-        if paneState == nil {
-            paneState = PaneGroupState.centerInitial(sessionId: draftPlaceholderId)
-        }
-        controller.onFirstSend = { [weak controller] in
-            guard let controller else { return }
-            adoptSession(for: controller)
-        }
-        if !carriedText.isEmpty, controller.composerText.isEmpty {
-            controller.composerText = carriedText
-        }
-        draftController = controller
-        Task { await controller.prepare() }
-    }
-
-    /// No project exists on the selected machine yet: the composer still
-    /// renders, bound to a sentinel project. Send stays disabled and the
-    /// run-target chip reads "Select a Project…". The sentinel can load the
-    /// selected machine's harness catalog but is never cached or persisted.
-    /// Picking a real project swaps it for the durable draft while preserving the chosen harness.
-    private func setUpPlaceholderDraftIfNeeded() {
-        guard draftController == nil else { return }
-        let serverId = environment.defaultComposerServerId
-        let controller = SessionController.runTargetPlaceholder(
-            serverId: serverId,
-            environment: environment
-        )
-        serverConfig = environment.machines.serverConfig(
-            for: serverId
-        )
-        if paneState == nil {
-            paneState = PaneGroupState.centerInitial(sessionId: draftPlaceholderId)
-        }
-        draftIsPlaceholderBorn = true
-        draftController = controller
-        Task { await controller.prepare() }
-    }
-
-    /// The draft's first send: create the session and become its workspace,
-    /// in place. The pane keeps its id and the transcript keeps its controller,
-    /// so the chat view is never rebuilt — the run pickers simply collapse and
-    /// the sent message rides its lift up into the history.
-    private func adoptSession(for controller: SessionController) {
-        guard let project = resolvedProject else { return }
-        let session = environment.projectList.newSession(
-            in: project,
-            // `send()` clears the durable draft before this callback so every
-            // destination composer mounts empty. The optimistic row is the
-            // authoritative snapshot of the outgoing prompt at this point.
-            title: Self.chatTitle(
-                from: controller.pendingUserMessage?.text ?? controller.composerText
-            ),
-            harnessId: controller.selectedHarnessId,
-            worktreeName: controller.worktreeName,
-            cwd: controller.sessionCwdOverride,
-            syncToServer: false
-        )
-        controller.serverSession = session
-        controller.onWorktreeCreated = { [weak projectList = environment.projectList] worktree in
-            projectList?.setWorktree(
-                name: worktree.name,
-                cwd: worktree.path,
-                for: session.id,
-                serverId: session.serverId
-            )
-        }
-        ChatControllerCache.shared.register(
-            controller,
-            for: session,
-            environment: environment
-        )
-        let workspace = environment.workspaces.ensureWorkspace(
-            for: WorkspaceSessionSeed(
-                sessionId: session.id,
-                initialName: session.worktreeName ?? project.name,
-                serverId: session.serverId,
-                projectId: project.id,
-                rootDirectory: session.cwd ?? project.folderURL.path,
-                worktreeName: session.worktreeName
-            ),
-            legacyGroups: environment.paneGroups
-        )
-        environment.composerDefaults.performPersistenceBatch(flushImmediately: true) {
-            environment.composerDefaults.rememberNewWorkspaceProject(
-                serverId: project.serverId,
-                projectId: project.id
-            )
-            environment.composerDefaults.rememberNewWorkspaceWorktreePreference(
-                serverId: project.serverId,
-                createsWorktree: controller.wantsNewWorktree
-            )
-            controller.rememberCurrentComposerConfiguration()
-            controller.moveComposerDefaults(
-                to: .workspace(id: workspace.id, serverId: session.serverId)
-            )
-        }
-        // Save the draft pane under the real session before Home mounts the
-        // normal workspace route. Both containers resolve the same cached
-        // controller and pane identity during the covered handoff.
-        var state = panes
-        if let index = state.panes.firstIndex(where: { $0.kind == .chat }) {
-            state.panes[index].chatSessionId = session.id
-        }
-        var paneWorkspace = workspace
-        Self.applyCompactPaneState(state, to: &paneWorkspace)
-        environment.workspaces.save(paneWorkspace)
-        environment.workspaceSync.noteLocalMutation()
-        if isNewChatPresentation {
-            // Keep the source draft hierarchy mounted until Home has moved
-            // first-responder ownership into the independent promotion
-            // window. Adopting the session in this sheet remounted its
-            // composer immediately, which dismissed the keyboard hundreds of
-            // milliseconds before the overlay editor existed.
-            onDraftStarted?(session.id)
-            return
-        }
-        controllers[session.id] = controller
-        self.project = project
-        startedSessionId = session.id
-        paneState = state
-        withAnimation(
-            .timingCurve(
-                0.22,
-                1,
-                0.36,
-                1,
-                duration: TranscriptSendAnimationMetrics.duration
-            )
-        ) {
-            hasStarted = true
-        }
-        // Mount the genuine workspace route in the same send turn. The
-        // covering surface and the optimistic row now start together instead
-        // of waiting for the request to leave the composer.
-        onDraftStarted?(session.id)
-    }
-
-    private func dismissNewChatPresentation() {
-        if let onDismissNewChat {
-            onDismissNewChat()
-        } else {
-            dismiss()
-        }
-    }
-
-    private static func chatTitle(from prompt: String) -> String {
-        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        let firstLine = trimmed.split(separator: "\n").first.map(String.init) ?? "New session"
-        return firstLine.count > 48
-            ? String(firstLine.prefix(48)) + "…"
-            : (firstLine.isEmpty ? "New session" : firstLine)
-    }
-
-    private func connectChat(sessionId chatId: UUID) async {
-        IOSNavigationDiagnostics.record(
-            "workspace.connectChat.begin",
-            "session=\(Self.diagnosticID(chatId)) localController=\(controllers[chatId] != nil)"
-        )
-        guard controllers[chatId] == nil else {
-            IOSNavigationDiagnostics.record(
-                "workspace.connectChat.skip",
-                "session=\(Self.diagnosticID(chatId)) reason=local-controller-present"
-            )
-            return
-        }
-        guard let session = session(for: chatId) else {
-            IOSNavigationDiagnostics.record(
-                "workspace.connectChat.skip",
-                "session=\(Self.diagnosticID(chatId)) reason=session-missing"
-            )
-            return
-        }
-        guard
-            let project = environment.projectList.projects.first(where: {
-                $0.serverId == session.serverId && $0.id == session.projectId
-            })
-        else {
-            IOSNavigationDiagnostics.record(
-                "workspace.connectChat.skip",
-                "session=\(Self.diagnosticID(chatId)) reason=project-missing"
-            )
-            return
-        }
-        // App-wide cache: revisiting a chat rebinds the SAME controller, so a
-        // stream that kept flowing while we were away renders immediately.
-        let controller = ChatControllerCache.shared.controller(
-            for: session,
-            project: project,
-            workspaceId: resolvedWorkspace?.id ?? activeSessionId ?? chatId,
-            environment: environment
-        )
-        controllers[chatId] = controller
-        IOSNavigationDiagnostics.record(
-            "workspace.connectChat.controller",
-            "session=\(Self.diagnosticID(chatId)) model=\(controller.model != nil) connecting=\(controller.isConnecting) historyLoading=\(controller.isLoadingInitialHistory)"
-        )
-        guard controller.model == nil, !controller.isConnecting else {
-            IOSNavigationDiagnostics.record(
-                "workspace.connectChat.skip",
-                "session=\(Self.diagnosticID(chatId)) reason=\(controller.model != nil ? "model-present" : "already-connecting")"
-            )
-            return
-        }
-        if session.agentSessionId?.isEmpty != false {
-            // A fresh chat: no agent exists yet. Load harness capabilities so
-            // the composer validates; the agent spawns on the first send.
-            await controller.prepare()
-            controller.applyComposerDefaults()
-        }
-        IOSNavigationDiagnostics.record("workspace.connectChat.connect.begin", "session=\(Self.diagnosticID(chatId))")
-        await controller.connectIfNeeded()
-        IOSNavigationDiagnostics.record(
-            "workspace.connectChat.connect.end",
-            "session=\(Self.diagnosticID(chatId)) model=\(controller.model != nil) connecting=\(controller.isConnecting) historyLoading=\(controller.isLoadingInitialHistory)"
-        )
-    }
-
 }

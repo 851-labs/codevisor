@@ -45,7 +45,7 @@ public final class ClientDatabase: @unchecked Sendable {
 
     public let url: URL
 
-    private let lock = NSRecursiveLock()
+    let lock = NSRecursiveLock()
     private var handle: OpaquePointer?
 
     public init(url: URL, fileManager: FileManager = .default) throws {
@@ -169,287 +169,6 @@ public final class ClientDatabase: @unchecked Sendable {
         }
     }
 
-    public func value(forKey key: String) throws -> Data? {
-        try lock.withLock {
-            try queryData(
-                "SELECT value FROM client_values WHERE key = ?",
-                bindings: [.text(key)]
-            )
-        }
-    }
-
-    public func setValue(_ value: Data, forKey key: String) throws {
-        try lock.withLock {
-            try executePrepared(
-                """
-                INSERT INTO client_values (key, value, updated_at)
-                VALUES (?, ?, ?)
-                ON CONFLICT(key) DO UPDATE SET
-                    value = excluded.value,
-                    updated_at = excluded.updated_at
-                """,
-                bindings: [.text(key), .blob(value), .text(Self.timestamp())]
-            )
-        }
-    }
-
-    public func removeValue(forKey key: String) throws {
-        try lock.withLock {
-            try executePrepared(
-                "DELETE FROM client_values WHERE key = ?",
-                bindings: [.text(key)]
-            )
-        }
-    }
-
-    public func preference(forKey key: String) throws -> Data? {
-        try lock.withLock {
-            try queryData(
-                "SELECT value FROM client_preferences WHERE key = ?",
-                bindings: [.text(key)]
-            )
-        }
-    }
-
-    public func setPreference(_ value: Data, forKey key: String) throws {
-        try lock.withLock {
-            try executePrepared(
-                """
-                INSERT INTO client_preferences (key, value, updated_at)
-                VALUES (?, ?, ?)
-                ON CONFLICT(key) DO UPDATE SET
-                    value = excluded.value,
-                    updated_at = excluded.updated_at
-                """,
-                bindings: [.text(key), .blob(value), .text(Self.timestamp())]
-            )
-        }
-    }
-
-    public func removePreference(forKey key: String) throws {
-        try lock.withLock {
-            try executePrepared(
-                "DELETE FROM client_preferences WHERE key = ?",
-                bindings: [.text(key)]
-            )
-        }
-    }
-
-    public func removeAllPreferences() throws {
-        try lock.withLock {
-            try execute("DELETE FROM client_preferences;")
-        }
-    }
-
-    public func resetClientData() throws {
-        try lock.withLock {
-            try withTransaction {
-                try execute("DELETE FROM client_values;")
-                try execute("DELETE FROM client_preferences;")
-                try execute("DELETE FROM client_quarantine;")
-                try execute("DELETE FROM client_blob_assets;")
-                try execute("DELETE FROM client_metadata;")
-            }
-        }
-    }
-
-    public func recordBlobAsset(key: String, data: Data, relativePath: String) throws {
-        let digest = SHA256.hash(data: data)
-            .map { String(format: "%02x", $0) }
-            .joined()
-        try lock.withLock {
-            try executePrepared(
-                """
-                INSERT INTO client_blob_assets
-                    (key, relative_path, digest, byte_count, updated_at)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(key) DO UPDATE SET
-                    relative_path = excluded.relative_path,
-                    digest = excluded.digest,
-                    byte_count = excluded.byte_count,
-                    updated_at = excluded.updated_at
-                """,
-                bindings: [
-                    .text(key),
-                    .text(relativePath),
-                    .text(digest),
-                    .integer(Int64(data.count)),
-                    .text(Self.timestamp()),
-                ]
-            )
-        }
-    }
-
-    public func removeBlobAsset(key: String) throws {
-        try lock.withLock {
-            try executePrepared(
-                "DELETE FROM client_blob_assets WHERE key = ?",
-                bindings: [.text(key)]
-            )
-        }
-    }
-
-    public func quarantineValue(forKey key: String) throws {
-        try lock.withLock {
-            try withTransaction {
-                guard let value = try value(forKey: key) else { return }
-                try executePrepared(
-                    """
-                    INSERT INTO client_quarantine
-                        (id, original_key, value, quarantined_at)
-                    VALUES (?, ?, ?, ?)
-                    """,
-                    bindings: [
-                        .text(UUID().uuidString),
-                        .text(key),
-                        .blob(value),
-                        .text(Self.timestamp()),
-                    ]
-                )
-                try removeValue(forKey: key)
-            }
-        }
-    }
-
-    public func dataMigrationState(id: Int) throws -> String? {
-        try lock.withLock {
-            try queryText(
-                "SELECT state FROM client_data_migrations WHERE id = ?",
-                bindings: [.integer(Int64(id))]
-            )
-        }
-    }
-
-    public func beginDataMigration(id: Int, name: String) throws {
-        try lock.withLock {
-            try executePrepared(
-                """
-                INSERT INTO client_data_migrations
-                    (id, name, state, cursor, started_at, completed_at, last_error)
-                VALUES (?, ?, 'running', NULL, ?, NULL, NULL)
-                ON CONFLICT(id) DO UPDATE SET
-                    name = excluded.name,
-                    state = 'running',
-                    started_at = excluded.started_at,
-                    completed_at = NULL,
-                    last_error = NULL
-                """,
-                bindings: [.integer(Int64(id)), .text(name), .text(Self.timestamp())]
-            )
-        }
-    }
-
-    public func completeDataMigration(id: Int) throws {
-        try lock.withLock {
-            try executePrepared(
-                """
-                UPDATE client_data_migrations
-                SET state = 'completed', completed_at = ?, last_error = NULL
-                WHERE id = ?
-                """,
-                bindings: [.text(Self.timestamp()), .integer(Int64(id))]
-            )
-        }
-    }
-
-    public func failDataMigration(id: Int, error: String) throws {
-        try lock.withLock {
-            try executePrepared(
-                """
-                UPDATE client_data_migrations
-                SET state = 'failed', last_error = ?
-                WHERE id = ?
-                """,
-                bindings: [.text(error), .integer(Int64(id))]
-            )
-        }
-    }
-
-    public func cleanupMigrationState(id: Int) throws -> String? {
-        try lock.withLock {
-            try queryText(
-                "SELECT state FROM client_cleanup_migrations WHERE id = ?",
-                bindings: [.integer(Int64(id))]
-            )
-        }
-    }
-
-    public func beginCleanupMigration(id: Int, name: String) throws {
-        try lock.withLock {
-            try executePrepared(
-                """
-                INSERT INTO client_cleanup_migrations
-                    (id, name, state, cursor, started_at, completed_at, last_error)
-                VALUES (?, ?, 'running', NULL, ?, NULL, NULL)
-                ON CONFLICT(id) DO UPDATE SET
-                    name = excluded.name,
-                    state = 'running',
-                    started_at = excluded.started_at,
-                    completed_at = NULL,
-                    last_error = NULL
-                """,
-                bindings: [.integer(Int64(id)), .text(name), .text(Self.timestamp())]
-            )
-        }
-    }
-
-    public func completeCleanupMigration(id: Int) throws {
-        try lock.withLock {
-            try executePrepared(
-                """
-                UPDATE client_cleanup_migrations
-                SET state = 'completed', completed_at = ?, last_error = NULL
-                WHERE id = ?
-                """,
-                bindings: [.text(Self.timestamp()), .integer(Int64(id))]
-            )
-        }
-    }
-
-    public func failCleanupMigration(id: Int, error: String) throws {
-        try lock.withLock {
-            try executePrepared(
-                """
-                UPDATE client_cleanup_migrations
-                SET state = 'failed', last_error = ?
-                WHERE id = ?
-                """,
-                bindings: [.text(error), .integer(Int64(id))]
-            )
-        }
-    }
-
-    public func recordMigrationArtifact(
-        migrationID: Int,
-        source: String,
-        digest: String,
-        imported: Bool,
-        cleaned: Bool
-    ) throws {
-        try lock.withLock {
-            try executePrepared(
-                """
-                INSERT INTO client_migration_artifacts
-                    (migration_id, source, digest, imported, cleaned, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT(migration_id, source) DO UPDATE SET
-                    digest = excluded.digest,
-                    imported = excluded.imported,
-                    cleaned = excluded.cleaned,
-                    updated_at = excluded.updated_at
-                """,
-                bindings: [
-                    .integer(Int64(migrationID)),
-                    .text(source),
-                    .text(digest),
-                    .integer(imported ? 1 : 0),
-                    .integer(cleaned ? 1 : 0),
-                    .text(Self.timestamp()),
-                ]
-            )
-        }
-    }
-
     public func withTransaction<T>(_ body: () throws -> T) throws -> T {
         try lock.withLock {
             try execute("BEGIN IMMEDIATE;")
@@ -508,7 +227,7 @@ public final class ClientDatabase: @unchecked Sendable {
         }
     }
 
-    fileprivate func execute(_ sql: String) throws {
+    func execute(_ sql: String) throws {
         guard let handle else {
             throw ClientDatabaseError(operation: "execute", detail: "Database is closed")
         }
@@ -523,14 +242,14 @@ public final class ClientDatabase: @unchecked Sendable {
         }
     }
 
-    private enum Binding {
+    enum Binding {
         case blob(Data)
         case integer(Int64)
         case null
         case text(String)
     }
 
-    private func executePrepared(_ sql: String, bindings: [Binding]) throws {
+    func executePrepared(_ sql: String, bindings: [Binding]) throws {
         let statement = try prepare(sql)
         defer { sqlite3_finalize(statement) }
         try bind(bindings, to: statement)
@@ -539,7 +258,7 @@ public final class ClientDatabase: @unchecked Sendable {
         }
     }
 
-    private func queryData(_ sql: String, bindings: [Binding]) throws -> Data? {
+    func queryData(_ sql: String, bindings: [Binding]) throws -> Data? {
         let statement = try prepare(sql)
         defer { sqlite3_finalize(statement) }
         try bind(bindings, to: statement)
@@ -552,7 +271,7 @@ public final class ClientDatabase: @unchecked Sendable {
         return Data(bytes: bytes, count: count)
     }
 
-    private func queryText(_ sql: String, bindings: [Binding]) throws -> String? {
+    func queryText(_ sql: String, bindings: [Binding]) throws -> String? {
         let statement = try prepare(sql)
         defer { sqlite3_finalize(statement) }
         try bind(bindings, to: statement)
@@ -651,7 +370,7 @@ public final class ClientDatabase: @unchecked Sendable {
         return ClientDatabaseError(operation: operation, detail: detail)
     }
 
-    private static func timestamp() -> String {
+    static func timestamp() -> String {
         Date().ISO8601Format(.iso8601(timeZone: .gmt))
     }
 }
@@ -727,146 +446,4 @@ public enum ClientDatabaseMigrations {
                 """
         )
     ]
-}
-
-/// `PersistenceStore` adapter used by all existing client repositories.
-public final class SQLitePersistenceStore:
-    PersistenceStore,
-    ClientDataResetting,
-    @unchecked Sendable
-{
-    public let database: ClientDatabase
-
-    public init(database: ClientDatabase) {
-        self.database = database
-    }
-
-    public func loadData(forKey key: String) -> Data? {
-        do {
-            return try database.value(forKey: key)
-        } catch {
-            Log.persistence.error(
-                "Failed to read \(key, privacy: .public) from client SQLite: \(String(describing: error), privacy: .public)"
-            )
-            return nil
-        }
-    }
-
-    public func saveData(_ data: Data, forKey key: String) throws {
-        try database.setValue(data, forKey: key)
-    }
-
-    public func removeData(forKey key: String) throws {
-        try database.removeValue(forKey: key)
-    }
-
-    public func quarantineCorruptData(forKey key: String) {
-        do {
-            try database.quarantineValue(forKey: key)
-        } catch {
-            Log.persistence.error(
-                "Failed to quarantine \(key, privacy: .public) in client SQLite: \(String(describing: error), privacy: .public)"
-            )
-        }
-    }
-
-    public func resetClientData() throws {
-        try database.resetClientData()
-    }
-}
-
-/// Live native persistence: structured payloads are SQLite rows, while large
-/// draft attachment bytes stay as managed assets under one subdirectory.
-/// SQLite still owns the asset manifest, migration history, and every other
-/// client value.
-public final class ClientPersistenceStore:
-    PersistenceStore,
-    ClientDataResetting,
-    @unchecked Sendable
-{
-    public static let assetDirectoryName = "ClientAssets"
-
-    private static let blobKeyPrefix = "composer-draft-attachment-"
-
-    public let database: ClientDatabase
-
-    private let values: SQLitePersistenceStore
-    private let blobDirectory: URL
-    private let blobs: FileSystemStore
-    private let fileManager: FileManager
-
-    public init(
-        database: ClientDatabase,
-        directory: URL,
-        fileManager: FileManager = .default
-    ) {
-        self.database = database
-        self.values = SQLitePersistenceStore(database: database)
-        self.fileManager = fileManager
-        self.blobDirectory =
-            directory
-            .appendingPathComponent(Self.assetDirectoryName, isDirectory: true)
-            .appendingPathComponent("DraftAttachments", isDirectory: true)
-        self.blobs = FileSystemStore(
-            directory: blobDirectory,
-            fileManager: fileManager
-        )
-    }
-
-    public func loadData(forKey key: String) -> Data? {
-        if Self.isBlobKey(key) {
-            return blobs.loadData(forKey: key)
-        }
-        return values.loadData(forKey: key)
-    }
-
-    public func saveData(_ data: Data, forKey key: String) throws {
-        guard Self.isBlobKey(key) else {
-            try values.saveData(data, forKey: key)
-            return
-        }
-        try blobs.saveData(data, forKey: key)
-        try database.recordBlobAsset(
-            key: key,
-            data: data,
-            relativePath: "DraftAttachments/\(key).json"
-        )
-    }
-
-    public func removeData(forKey key: String) throws {
-        guard Self.isBlobKey(key) else {
-            try values.removeData(forKey: key)
-            return
-        }
-        try blobs.removeData(forKey: key)
-        try database.removeBlobAsset(key: key)
-    }
-
-    public func quarantineCorruptData(forKey key: String) {
-        if Self.isBlobKey(key) {
-            blobs.quarantineCorruptData(forKey: key)
-        } else {
-            values.quarantineCorruptData(forKey: key)
-        }
-    }
-
-    public func flushBlobWrites() {
-        blobs.flushPendingWrites()
-    }
-
-    public func resetClientData() throws {
-        blobs.flushPendingWrites()
-        if fileManager.fileExists(atPath: blobDirectory.path) {
-            try fileManager.removeItem(at: blobDirectory)
-        }
-        try fileManager.createDirectory(
-            at: blobDirectory,
-            withIntermediateDirectories: true
-        )
-        try database.resetClientData()
-    }
-
-    private static func isBlobKey(_ key: String) -> Bool {
-        key.hasPrefix(blobKeyPrefix)
-    }
 }

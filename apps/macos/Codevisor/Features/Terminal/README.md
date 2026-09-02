@@ -80,7 +80,7 @@ Codevisor-owned pieces in this directory:
   `Ghostty.App`): owns `ghostty_app_t` + themed `Ghostty.Config`, implements the
   clipboard/wakeup callbacks and a per-surface `action_cb` subset; window/tab/
   split actions are unhandled by design.
-- `GhosttyTerminalSurfaceAdapter.swift` — implements `TerminalSurface` by
+- `GhosttyTerminalSurface.swift` — implements `TerminalSurface` by
   wrapping the vendored `Ghostty.SurfaceView`; maps `TerminalLaunchDescriptor`
   (cwd + codevisor-terminal-proxy command) to `Ghostty.SurfaceConfiguration`.
 

@@ -95,7 +95,7 @@ public struct Theme: Equatable, Sendable {
         palette.map { Color(rgba: $0.popoverBackground) } ?? Color.themeWindowBackground
     }
 
-    // MARK: - Glass (see ThemedSurface.swift)
+    // MARK: - Glass (see ThemedSurfaceModifier.swift)
 
     /// Tint of themed chrome glass over material: strong enough that the theme
     /// clearly reads, thin enough that the backdrop (vibrancy, desktop

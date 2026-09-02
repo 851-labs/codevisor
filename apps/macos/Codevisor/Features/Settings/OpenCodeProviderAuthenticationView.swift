@@ -4,22 +4,22 @@ import SwiftUI
 import CodevisorUI
 
 struct OpenCodeProviderAuthenticationView: View {
-    @Environment(AppEnvironment.self) private var environment
+    @Environment(AppEnvironment.self) var environment
     @Environment(\.settingsMachineId) private var settingsMachineId
 
     /// The machine this view operates on — pinned by the machine-scoped
     /// Settings page that presented it, else the app's selected machine
     /// (onboarding, previews).
-    private var scopedServerId: String {
+    var scopedServerId: String {
         settingsMachineId ?? environment.defaultComposerServerId
     }
 
-    private var client: any CodevisorServerClienting {
+    var client: any CodevisorServerClienting {
         environment.machines.client(for: scopedServerId)
     }
 
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.theme) private var theme
+    @Environment(\.theme) var theme
 
     let harness: ServerHarness
     var onChange: (ServerHarness) -> Void
@@ -27,30 +27,30 @@ struct OpenCodeProviderAuthenticationView: View {
     /// carries its own title bar.
     var showsHeader = true
 
-    @State private var accounts: [ServerHarnessAccount] = []
-    @State private var providers: [ServerOpenCodeAuthProvider] = []
-    @State private var providerAccountId: String?
-    @State private var selectedAccountId: String?
-    @State private var selectedProviderId: String?
-    @State private var selectedMethodId = ""
-    @State private var providerSearch = ""
-    @State private var inputs: [String: String] = [:]
-    @State private var apiKey = ""
-    @State private var authorizationCode = ""
-    @State private var flow: ServerOpenCodeAuthFlow?
-    @State private var pollingFlowId: String?
-    @State private var openedURL: String?
-    @State private var isWorking = false
-    @State private var isLoadingProviders = false
-    @State private var errorMessage: String?
-    @State private var showingProviderSignIn = false
+    @State var accounts: [ServerHarnessAccount] = []
+    @State var providers: [ServerOpenCodeAuthProvider] = []
+    @State var providerAccountId: String?
+    @State var selectedAccountId: String?
+    @State var selectedProviderId: String?
+    @State var selectedMethodId = ""
+    @State var providerSearch = ""
+    @State var inputs: [String: String] = [:]
+    @State var apiKey = ""
+    @State var authorizationCode = ""
+    @State var flow: ServerOpenCodeAuthFlow?
+    @State var pollingFlowId: String?
+    @State var openedURL: String?
+    @State var isWorking = false
+    @State var isLoadingProviders = false
+    @State var errorMessage: String?
+    @State var showingProviderSignIn = false
     @State private var showingNewProfile = false
-    @State private var newProfileName = ""
-    @State private var profilePendingRename: ServerHarnessAccount?
-    @State private var profileNameDraft = ""
-    @State private var showingRenameProfile = false
-    @State private var profilePendingRemoval: ServerHarnessAccount?
-    @State private var showingRemoveProfileAlert = false
+    @State var newProfileName = ""
+    @State var profilePendingRename: ServerHarnessAccount?
+    @State var profileNameDraft = ""
+    @State var showingRenameProfile = false
+    @State var profilePendingRemoval: ServerHarnessAccount?
+    @State var showingRemoveProfileAlert = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -297,7 +297,7 @@ struct OpenCodeProviderAuthenticationView: View {
         .padding(.vertical, 3)
     }
 
-    private var selectedAccount: ServerHarnessAccount? {
+    var selectedAccount: ServerHarnessAccount? {
         accounts.first { $0.id == selectedAccountId }
     }
 
@@ -305,7 +305,7 @@ struct OpenCodeProviderAuthenticationView: View {
         providers.filter { $0.credentialType != nil }
     }
 
-    private var selectedProvider: ServerOpenCodeAuthProvider? {
+    var selectedProvider: ServerOpenCodeAuthProvider? {
         guard providerAccountId == selectedAccountId else { return nil }
         return providers.first { $0.id == selectedProviderId }
     }
@@ -320,11 +320,11 @@ struct OpenCodeProviderAuthenticationView: View {
         return provider
     }
 
-    private var selectedMethod: ServerOpenCodeAuthMethod? {
+    var selectedMethod: ServerOpenCodeAuthMethod? {
         selectedProvider?.methods.first { $0.id == selectedMethodId }
     }
 
-    private var filteredProviders: [ServerOpenCodeAuthProvider] {
+    var filteredProviders: [ServerOpenCodeAuthProvider] {
         let query = providerSearch.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return providers }
         return providers.filter { $0.name.localizedStandardContains(query) }
@@ -337,7 +337,7 @@ struct OpenCodeProviderAuthenticationView: View {
         )
     }
 
-    private func visiblePrompts(_ method: ServerOpenCodeAuthMethod) -> [ServerOpenCodeAuthPrompt] {
+    func visiblePrompts(_ method: ServerOpenCodeAuthMethod) -> [ServerOpenCodeAuthPrompt] {
         method.prompts.filter { prompt in
             guard let condition = prompt.when else { return true }
             guard let actual = inputs[condition.key] else { return false }
@@ -345,14 +345,14 @@ struct OpenCodeProviderAuthenticationView: View {
         }
     }
 
-    private func inputBinding(_ key: String) -> Binding<String> {
+    func inputBinding(_ key: String) -> Binding<String> {
         Binding(
             get: { inputs[key] ?? "" },
             set: { inputs[key] = $0 }
         )
     }
 
-    private func canSubmit(_ method: ServerOpenCodeAuthMethod) -> Bool {
+    func canSubmit(_ method: ServerOpenCodeAuthMethod) -> Bool {
         if method.type == "api" && apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return false
         }
@@ -361,12 +361,12 @@ struct OpenCodeProviderAuthenticationView: View {
         }
     }
 
-    private func selectDefaultMethod() {
+    func selectDefaultMethod() {
         selectedMethodId = selectedProvider?.methods.first?.id ?? ""
         resetInput()
     }
 
-    private func resetInput() {
+    func resetInput() {
         inputs = [:]
         apiKey = ""
         if let method = selectedMethod {
@@ -374,378 +374,5 @@ struct OpenCodeProviderAuthenticationView: View {
                 inputs[prompt.key] = prompt.options.first?.value ?? ""
             }
         }
-    }
-}
-
-// MARK: - Provider sign-in sheet
-
-extension OpenCodeProviderAuthenticationView {
-    private var providerSignInSheet: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text(flow == nil ? "Add Provider" : (selectedProvider?.name ?? "Sign In"))
-                    .font(.title3)
-                    .fontWeight(.semibold)
-                Spacer()
-                Button("Cancel") { showingProviderSignIn = false }
-                    .settingsActionTint(theme)
-            }
-            .padding(20)
-
-            Divider()
-
-            if let flow {
-                Form {
-                    Section(selectedProvider?.name ?? "Authentication") {
-                        flowContent(flow)
-                    }
-                }
-                .formStyle(.grouped)
-            } else {
-                VStack(spacing: 12) {
-                    TextField("Search Providers", text: $providerSearch)
-                        .textFieldStyle(.roundedBorder)
-
-                    List(filteredProviders, selection: $selectedProviderId) { provider in
-                        HStack {
-                            Text(provider.name)
-                            Spacer()
-                            if provider.credentialType != nil {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(.secondary)
-                                    .accessibilityLabel("Configured")
-                            }
-                        }
-                        .tag(provider.id)
-                    }
-                    .onChange(of: selectedProviderId) { _, _ in selectDefaultMethod() }
-                    .frame(minHeight: 170)
-
-                    Divider()
-
-                    if let provider = selectedProvider {
-                        authenticationControls(provider)
-                    }
-                }
-                .padding(20)
-            }
-        }
-        .frame(minWidth: 480, idealWidth: 500, minHeight: 430, idealHeight: 480)
-    }
-
-    @ViewBuilder
-    private func authenticationControls(_ provider: ServerOpenCodeAuthProvider) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if provider.methods.count > 1 {
-                Picker("Authentication", selection: $selectedMethodId) {
-                    ForEach(provider.methods) { method in
-                        Text(method.label).tag(method.id)
-                    }
-                }
-                .pickerStyle(.menu)
-                .onChange(of: selectedMethodId) { _, _ in resetInput() }
-            } else if let method = selectedMethod {
-                LabeledContent("Authentication", value: method.label)
-            }
-
-            if let method = selectedMethod {
-                ForEach(visiblePrompts(method)) { prompt in
-                    promptControl(prompt)
-                }
-                if method.type == "api" {
-                    SecureField("API Key", text: $apiKey)
-                        .textContentType(.password)
-                        .onSubmit { submitSelectedMethod() }
-                }
-                HStack {
-                    Spacer()
-                    Button(method.type == "api" ? "Save API Key" : "Sign In") {
-                        Task { await beginLogin() }
-                    }
-                    .settingsActionTint(theme)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!canSubmit(method) || isWorking)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func promptControl(_ prompt: ServerOpenCodeAuthPrompt) -> some View {
-        if prompt.type == "select" {
-            Picker(prompt.message, selection: inputBinding(prompt.key)) {
-                ForEach(prompt.options) { option in
-                    Text(option.hint.map { "\(option.label) — \($0)" } ?? option.label)
-                        .tag(option.value)
-                }
-            }
-            .pickerStyle(.menu)
-        } else {
-            TextField(prompt.placeholder ?? prompt.message, text: inputBinding(prompt.key))
-        }
-    }
-
-    @ViewBuilder
-    private func flowContent(_ flow: ServerOpenCodeAuthFlow) -> some View {
-        if let authorization = flow.authorization {
-            if !authorization.instructions.isEmpty {
-                Text(authorization.instructions)
-                    .foregroundStyle(.secondary)
-            }
-            Button("Open Sign-In Page") { open(authorization.url) }
-                .settingsActionTint(theme)
-        }
-
-        if flow.state == "waiting" {
-            TextField("Authorization Code", text: $authorizationCode)
-                .onSubmit { submitCode(flow) }
-            HStack {
-                Spacer()
-                Button("Continue") { submitCode(flow) }
-                    .settingsActionTint(theme)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(authorizationCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isWorking)
-            }
-        } else if flow.state == "running" {
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("Waiting for sign-in…")
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-}
-
-// MARK: - Actions
-
-extension OpenCodeProviderAuthenticationView {
-    private func loadAccounts() async {
-        await perform {
-            let loaded = try await client.listHarnessAccounts(harnessId: "opencode")
-            accounts = loaded
-            if !loaded.contains(where: { $0.id == selectedAccountId }) {
-                selectedAccountId = loaded.first(where: \.isActive)?.id ?? loaded.first?.id
-            }
-        }
-    }
-
-    private func loadProviders(accountId: String) async {
-        isLoadingProviders = true
-        do {
-            let loaded = try await client.listOpenCodeAuthProviders(accountId: accountId)
-            guard selectedAccountId == accountId else { return }
-            providers = loaded
-            providerAccountId = accountId
-            if !loaded.contains(where: { $0.id == selectedProviderId }) {
-                selectedProviderId = loaded.first(where: { $0.credentialType != nil })?.id
-            }
-            selectDefaultMethod()
-        } catch {
-            guard selectedAccountId == accountId else { return }
-            providers = []
-            providerAccountId = accountId
-            selectedProviderId = nil
-            errorMessage = serverErrorMessage(error)
-        }
-        if selectedAccountId == accountId { isLoadingProviders = false }
-    }
-
-    private func addProfile() async {
-        let label = newProfileName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !label.isEmpty else { return }
-        await perform {
-            let account = try await client.createHarnessAccount(harnessId: "opencode", label: label)
-            accounts.append(account)
-            selectedAccountId = account.id
-        }
-    }
-
-    private func activate(_ account: ServerHarnessAccount) async {
-        await perform {
-            accounts = try await client.activateHarnessAccount(harnessId: "opencode", accountId: account.id)
-        }
-        await refreshHarness()
-    }
-
-    private func requestProfileRemoval(_ account: ServerHarnessAccount) {
-        guard account.profileKind == "managed" else { return }
-        profilePendingRemoval = account
-        showingRemoveProfileAlert = true
-    }
-
-    private func requestProfileRename(_ account: ServerHarnessAccount) {
-        guard account.profileKind == "managed" else { return }
-        profilePendingRename = account
-        profileNameDraft = profileName(account)
-        showingRenameProfile = true
-    }
-
-    private func renameProfile(_ account: ServerHarnessAccount) async {
-        let label = profileNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !label.isEmpty else { return }
-        await perform {
-            let renamed = try await client.renameHarnessAccount(
-                harnessId: "opencode",
-                accountId: account.id,
-                label: label
-            )
-            if let index = accounts.firstIndex(where: { $0.id == renamed.id }) {
-                accounts[index] = renamed
-            }
-        }
-        await refreshHarness()
-    }
-
-    private func removeProfile(_ account: ServerHarnessAccount) async {
-        await perform {
-            try await client.removeHarnessAccount(harnessId: "opencode", accountId: account.id)
-            accounts = try await client.listHarnessAccounts(harnessId: "opencode")
-            selectedAccountId = accounts.first(where: \.isActive)?.id ?? accounts.first?.id
-        }
-        await refreshHarness()
-    }
-
-    private func prepareProviderSignIn(_ provider: ServerOpenCodeAuthProvider? = nil) {
-        let choice = provider ?? providers.first(where: { $0.credentialType == nil }) ?? providers.first
-        selectedProviderId = choice?.id
-        providerSearch = provider?.name ?? ""
-        openedURL = nil
-        selectDefaultMethod()
-        showingProviderSignIn = choice != nil
-    }
-
-    private func submitSelectedMethod() {
-        guard let method = selectedMethod, canSubmit(method) else { return }
-        Task { await beginLogin() }
-    }
-
-    private func beginLogin() async {
-        guard let account = selectedAccount, let provider = selectedProvider, let method = selectedMethod else {
-            return
-        }
-        await perform {
-            let next = try await client.startOpenCodeAuth(
-                accountId: account.id,
-                providerId: provider.id,
-                methodId: method.id,
-                inputs: inputs.isEmpty ? nil : inputs,
-                apiKey: method.type == "api" ? apiKey : nil
-            )
-            await apply(next)
-        }
-    }
-
-    private func submitCode(_ flow: ServerOpenCodeAuthFlow) {
-        let code = authorizationCode.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !code.isEmpty else { return }
-        Task {
-            await perform {
-                let next = try await client.answerOpenCodeAuthFlow(id: flow.id, code: code)
-                authorizationCode = ""
-                await apply(next)
-            }
-        }
-    }
-
-    private func apply(_ next: ServerOpenCodeAuthFlow) async {
-        flow = next
-        if let url = next.authorization?.url, openedURL != url {
-            openedURL = url
-            open(url)
-        }
-        if next.state == "complete" {
-            flow = nil
-            pollingFlowId = nil
-            resetInput()
-            if let accountId = selectedAccountId { await loadProviders(accountId: accountId) }
-            await refreshHarness()
-            showingProviderSignIn = false
-        } else if next.state == "error" {
-            errorMessage = next.error ?? "OpenCode authentication failed."
-            flow = nil
-            pollingFlowId = nil
-        } else if next.state == "running" {
-            beginPolling(next.id)
-        }
-    }
-
-    private func beginPolling(_ id: String) {
-        guard pollingFlowId != id else { return }
-        pollingFlowId = id
-        Task {
-            while !Task.isCancelled, pollingFlowId == id {
-                try? await Task.sleep(for: .seconds(1))
-                guard let next = try? await client.openCodeAuthFlow(id: id) else { continue }
-                let pending = next.state == "running" || next.state == "waiting"
-                if !pending { pollingFlowId = nil }
-                await apply(next)
-                if !pending { return }
-            }
-        }
-    }
-
-    private func providerSheetDismissed() {
-        cancelPendingFlow()
-        providerSearch = ""
-        authorizationCode = ""
-    }
-
-    private func cancelPendingFlow() {
-        guard let flow, flow.state == "running" || flow.state == "waiting" else { return }
-        self.flow = nil
-        pollingFlowId = nil
-        Task { try? await client.cancelOpenCodeAuthFlow(id: flow.id) }
-    }
-
-    private func remove(_ provider: ServerOpenCodeAuthProvider) async {
-        guard let account = selectedAccount else { return }
-        await perform {
-            try await client.removeOpenCodeAuthProvider(accountId: account.id, providerId: provider.id)
-            await loadProviders(accountId: account.id)
-            await refreshHarness()
-        }
-    }
-
-    private func refreshHarness() async {
-        if let updated = try? await environment.refreshHarnessAuthentication(
-            harnessId: "opencode", onServer: scopedServerId)
-        {
-            accounts = updated.auth?.accounts ?? accounts
-            onChange(updated)
-        }
-    }
-
-    private func perform(_ operation: () async throws -> Void) async {
-        isWorking = true
-        errorMessage = nil
-        defer { isWorking = false }
-        do {
-            try await operation()
-        } catch {
-            errorMessage = serverErrorMessage(error)
-        }
-    }
-
-    private func credentialDescription(_ type: String?) -> String {
-        switch type {
-        case "oauth": return "Provider Account"
-        case "wellknown": return "External Credential"
-        default: return "API Key"
-        }
-    }
-
-    private func profileName(_ account: ServerHarnessAccount) -> String {
-        if account.profileKind == "default" { return "Local OpenCode" }
-        if account.label.hasPrefix("OpenCode profile "),
-            let index = accounts.filter({ $0.profileKind == "managed" }).firstIndex(where: { $0.id == account.id })
-        {
-            return "Profile \(index + 1)"
-        }
-        return account.label
-    }
-
-    private func open(_ value: String) {
-        guard let url = URL(string: value) else { return }
-        NSWorkspace.shared.open(url)
     }
 }
