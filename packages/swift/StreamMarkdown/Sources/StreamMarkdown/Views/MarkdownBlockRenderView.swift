@@ -268,11 +268,29 @@ public struct MarkdownFragmentRenderView: View {
 }
 
 private extension MarkdownBlock {
+    /// Mirrors the settled renderer's `canRenderAsTextRun` rule. A streaming
+    /// list flips between `.bulletList` and `.list` as each item is typed (an
+    /// empty trailing item or a loose gap makes it a full list for a flush);
+    /// treating only the simple form as text-run compatible swapped the view
+    /// type on every flip, which recreated the native text view and replayed
+    /// the entrance fade for every word already on screen.
     var isTextRunCompatible: Bool {
         switch self {
         case .heading, .paragraph, .bulletList, .orderedList:
             true
-        case .codeBlock, .list, .blockQuote, .table, .thematicBreak:
+        case let .list(list):
+            #if canImport(AppKit)
+                MarkdownTextRunRenderer.canRenderFlattenedList(list)
+            #else
+                false
+            #endif
+        case let .blockQuote(blocks):
+            #if canImport(AppKit)
+                MarkdownTextRunRenderer.canRenderFlattenedText(blocks)
+            #else
+                false
+            #endif
+        case .codeBlock, .table, .thematicBreak:
             false
         }
     }
