@@ -23,6 +23,7 @@ struct ChatScreen: View {
     @Environment(\.accessibilityReduceMotion) var reduceMotion
     @Environment(\.openSettings) var openSettings
     @Environment(\.attachmentImages) var attachmentImages
+    @Environment(\.quickLook) var quickLook
     @Environment(\.codeHighlightTheme) var codeHighlightTheme
     @Environment(AppEnvironment.self) var environment
     @Bindable var controller: SessionController

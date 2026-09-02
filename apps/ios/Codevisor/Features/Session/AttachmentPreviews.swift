@@ -1,3 +1,4 @@
+import TranscriptKit
 import CodevisorCore
 import CodevisorUI
 import QuickLook
@@ -226,6 +227,13 @@ private struct AttachmentThumbnailLoadID: Hashable {
 /// Fetches a transcript file and writes it under its real filename because
 /// QLPreviewController presents file URLs rather than in-memory bytes.
 @MainActor
+/// The workspace file a Markdown link points at, or nil for web links and
+/// fragments, which the platform opens instead.
+func markdownLinkPreviewFile(_ url: URL) -> PreviewFile? {
+    guard let path = markdownLocalFilePath(url.relativeString) else { return nil }
+    return PreviewFile(serverPath: path)
+}
+
 func materializeQuickLookURL(
     for file: PreviewFile,
     store: AttachmentImageStore

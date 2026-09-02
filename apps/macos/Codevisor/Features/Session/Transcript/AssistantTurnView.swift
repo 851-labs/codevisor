@@ -321,13 +321,7 @@ struct AssistantTurnView: View {
     }
 
     private func openMarkdownLink(_ url: URL) -> Bool {
-        guard let path = markdownLocalFilePath(url.relativeString) else { return false }
-        let file = PreviewFile(serverPath: path)
-        quickLook?.present(
-            .remote(source: file.source, name: file.name, mimeType: file.mimeType),
-            attachmentStore: attachmentImages
-        )
-        return true
+        TranscriptMarkdownLinkOpener.open(url, quickLook: quickLook, attachmentImages: attachmentImages)
     }
 
     @ViewBuilder

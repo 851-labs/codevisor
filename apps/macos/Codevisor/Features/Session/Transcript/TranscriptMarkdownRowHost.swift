@@ -40,6 +40,7 @@ final class TranscriptMarkdownRowHost: TranscriptMountedRowHost {
         _ chunk: TranscriptMarkdownChunk,
         streamID: String,
         style: TranscriptMarkdownRowStyle,
+        linkAction: MarkdownLinkAction?,
         knownHeight: CGFloat?
     ) {
         var resolvedStyle = style
@@ -55,7 +56,7 @@ final class TranscriptMarkdownRowHost: TranscriptMountedRowHost {
             blocks: chunk.blocks,
             theme: resolvedStyle.markdown,
             streamID: streamID,
-            linkAction: nil
+            linkAction: linkAction
         )
         measuredWidth = knownHeight == nil ? -1 : max(1, bounds.width)
         reportedHeight = knownHeight

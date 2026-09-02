@@ -66,6 +66,10 @@ extension ChatScreen {
                                 AnyView(
                                     TranscriptRowContentView(row: row, controller: controller, leaves: rowLeaves)
                                         .reportsStreamingTextAnimationActivity()
+                                        .markdownLinkHandler { url in
+                                            TranscriptMarkdownLinkOpener.open(
+                                                url, quickLook: quickLook, attachmentImages: attachmentImages)
+                                        }
                                         .environment(\.theme, theme)
                                         .environment(\.attachmentImages, attachmentImages)
                                         .environment(\.hoverTrackingSuspended, controller.isSending)
@@ -103,6 +107,10 @@ extension ChatScreen {
                             },
                             onNearTop: {
                                 requestOlderHistoryLoad()
+                            },
+                            openMarkdownLink: { url in
+                                TranscriptMarkdownLinkOpener.open(
+                                    url, quickLook: quickLook, attachmentImages: attachmentImages)
                             }
                         ),
                         markdownRowStyle: transcriptMarkdownRowStyle,

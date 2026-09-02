@@ -145,6 +145,9 @@ public struct TranscriptSurfaceCallbacks {
     public var onNearTop: @MainActor () -> Bool
     public var onOlderHistoryPresented: @MainActor (UInt64) -> Void
     public var onSendAnimationCompleted: @MainActor (UserSendAnimationRequest) -> Void
+    /// Opens a Markdown link. Returns true when the link was handled (a
+    /// workspace file shown in Quick Look); false lets the platform open it.
+    public var openMarkdownLink: (@MainActor (URL) -> Bool)?
     #if canImport(UIKit)
         public var onSendAnimationStarted:
             (@MainActor (UserSendAnimationRequest, TranscriptSendAnimationTarget) -> Bool)?
@@ -160,6 +163,7 @@ public struct TranscriptSurfaceCallbacks {
             onNearTop: @escaping @MainActor () -> Bool,
             onOlderHistoryPresented: @escaping @MainActor (UInt64) -> Void = { _ in },
             onSendAnimationCompleted: @escaping @MainActor (UserSendAnimationRequest) -> Void = { _ in },
+            openMarkdownLink: (@MainActor (URL) -> Bool)? = nil,
             onSendAnimationStarted: (
                 @MainActor (UserSendAnimationRequest, TranscriptSendAnimationTarget) -> Bool
             )? = nil
@@ -172,6 +176,7 @@ public struct TranscriptSurfaceCallbacks {
             self.onNearTop = onNearTop
             self.onOlderHistoryPresented = onOlderHistoryPresented
             self.onSendAnimationCompleted = onSendAnimationCompleted
+            self.openMarkdownLink = openMarkdownLink
             self.onSendAnimationStarted = onSendAnimationStarted
         }
     #else
@@ -183,7 +188,8 @@ public struct TranscriptSurfaceCallbacks {
             onFollowStateChange: @escaping @MainActor (Bool) -> Void,
             onNearTop: @escaping @MainActor () -> Bool,
             onOlderHistoryPresented: @escaping @MainActor (UInt64) -> Void = { _ in },
-            onSendAnimationCompleted: @escaping @MainActor (UserSendAnimationRequest) -> Void = { _ in }
+            onSendAnimationCompleted: @escaping @MainActor (UserSendAnimationRequest) -> Void = { _ in },
+            openMarkdownLink: (@MainActor (URL) -> Bool)? = nil
         ) {
             self.claimSendAnimation = claimSendAnimation
             self.rowContent = rowContent
@@ -193,6 +199,7 @@ public struct TranscriptSurfaceCallbacks {
             self.onNearTop = onNearTop
             self.onOlderHistoryPresented = onOlderHistoryPresented
             self.onSendAnimationCompleted = onSendAnimationCompleted
+            self.openMarkdownLink = openMarkdownLink
         }
     #endif
 }

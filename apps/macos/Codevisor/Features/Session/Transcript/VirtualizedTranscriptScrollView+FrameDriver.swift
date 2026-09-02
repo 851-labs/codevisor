@@ -27,6 +27,7 @@ extension VirtualizedTranscriptScrollView {
         interruptSendPresentation()
         finishAllDisclosureCollapsePresentations()
         rowContent = nil
+        openMarkdownLink = nil
         claimSendAnimation = nil
         onViewportChange = nil
         onBottomStateChange = nil

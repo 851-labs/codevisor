@@ -289,9 +289,8 @@ struct AssistantTurnBody: View {
     }
 
     private func openMarkdownLink(_ url: URL) -> Bool {
-        guard let path = markdownLocalFilePath(url.relativeString) else { return false }
+        guard let file = markdownLinkPreviewFile(url) else { return false }
         guard let attachmentImages else { return true }
-        let file = PreviewFile(serverPath: path)
         Task {
             guard let url = await materializeQuickLookURL(for: file, store: attachmentImages) else {
                 return

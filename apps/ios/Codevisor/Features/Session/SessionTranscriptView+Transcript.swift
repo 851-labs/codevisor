@@ -8,6 +8,20 @@ import UIKit
 // MARK: - Transcript
 
 extension SessionTranscriptView {
+    /// Shows a linked workspace file in Quick Look; web links fall through
+    /// to the platform.
+    func openMarkdownLink(_ url: URL) -> Bool {
+        guard let file = markdownLinkPreviewFile(url) else { return false }
+        guard let attachmentImages else { return true }
+        Task {
+            guard let url = await materializeQuickLookURL(for: file, store: attachmentImages) else {
+                return
+            }
+            linkedQuickLookURL = QuickLookURL(url: url)
+        }
+        return true
+    }
+
     var transcript: some View {
         return ActiveTranscriptProjectionScope(
             controller: controller,
@@ -68,6 +82,7 @@ extension SessionTranscriptView {
                                 row: row, controller: controller, leaves: .iOS(controller: controller)
                             )
                             .reportsStreamingTextAnimationActivity()
+                            .markdownLinkHandler(openMarkdownLink)
                             .environment(\.theme, theme)
                             .environment(\.attachmentImages, attachmentImages)
                             .environment(\.transcriptDisclosure, disclosure)

@@ -294,6 +294,7 @@ extension VirtualizedTranscriptScrollView {
             chunk,
             streamID: key,
             style: markdownRowStyle,
+            linkAction: markdownLinkAction,
             knownHeight: knownHeight
         )
         if requiresImmediatePresentation, !host.isPresentationReady {
@@ -473,6 +474,7 @@ extension VirtualizedTranscriptScrollView {
                     chunk,
                     streamID: key,
                     style: markdownRowStyle,
+                    linkAction: markdownLinkAction,
                     knownHeight: knownHeight
                 )
             } else if let hosted = host as? TranscriptRowHost {
