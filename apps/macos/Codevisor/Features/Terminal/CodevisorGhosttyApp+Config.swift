@@ -104,7 +104,9 @@ extension CodevisorGhosttyApp {
 
     /// Writes a tiny config file with our font + color overrides, and returns
     /// its path. With no theme, the terminal follows the system light/dark
-    /// appearance; with a theme, it takes the theme's full palette.
+    /// appearance and the cursor inverts the cell under it (so it stays
+    /// visible on backgrounds apps paint themselves); with a theme, it takes
+    /// the theme's full palette, including its cursor color.
     private static func writeOverrideConfig(
         theme: TerminalPalette?,
         systemIsDark: Bool?
@@ -153,7 +155,14 @@ extension CodevisorGhosttyApp {
             contents += "background = \(background)\n"
             contents += "background-opacity = 0.01\n"
             contents += "foreground = \(foreground)\n"
-            contents += "cursor-color = \(foreground)\n"
+            // Cursor: apps like nvim paint their own (often dark) background via
+            // termguicolors, but the cursor color is terminal-owned, so a fixed
+            // light-mode black cursor vanishes on those rows. `cell-foreground`
+            // (libghostty >= 1.2) makes the cursor take the color of the text under
+            // it, so it contrasts on whatever background the app painted; the
+            // themed branch keeps the theme's explicit cursorColor instead.
+            contents += "cursor-color = cell-foreground\n"
+            contents += "cursor-text = cell-background\n"
         }
         do {
             try contents.write(to: url, atomically: true, encoding: .utf8)
