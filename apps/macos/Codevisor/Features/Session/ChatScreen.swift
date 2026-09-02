@@ -201,75 +201,81 @@ struct ChatScreen: View {
                     )
                     NativeTranscriptView(
                         presentationSurface: presentationSurface,
-                        sessionController: controller,
-                        rows: visibleRows.rows,
-                        activeRows: visibleActiveRows.rows,
-                        activeRowsVersion: TranscriptRowSetRevision(
-                            sourceRevision: activeRowsVersion,
-                            visibilityRevision: visibleActiveRows.visibilityRevision
+                        input: TranscriptSurfaceInput(
+                            sessionController: controller,
+                            rows: visibleRows.rows,
+                            activeRows: visibleActiveRows.rows,
+                            activeRowsVersion: TranscriptRowSetRevision(
+                                sourceRevision: activeRowsVersion,
+                                visibilityRevision: visibleActiveRows.visibilityRevision
+                            ),
+                            rowsVersion: TranscriptRowSetRevision(
+                                sourceRevision: projectedRowsVersion,
+                                visibilityRevision: visibleRows.visibilityRevision
+                            ),
+                            projectionRevision: projectedRowsVersion,
+                            initialState: controller.scrollState,
+                            followsLatest: autoFollow,
+                            hasOlderHistory: controller.hasOlderHistory,
+                            showsOlderHistoryLoadingIndicator: controller.isLoadingOlderHistory,
+                            isLoadingInitialHistory: controller.isLoadingInitialHistory,
+                            isPreparingInitialProjection: isPreparingTranscript,
+                            isActiveProjectionPending: isActiveProjectionPending,
+                            layoutFingerprint: transcriptLayoutFingerprint,
+                            scrollCommand: scrollCommand,
+                            sendAnimationRequest: controller.userSendAnimationRequest,
+                            textAnimationRegistry: presentationSurface.textAnimationRegistry,
+                            allowsLiveTextAnimation: presentationSurface.textAnimationVisibility.isVisible,
+                            reduceMotion: reduceMotion
                         ),
-                        rowsVersion: TranscriptRowSetRevision(
-                            sourceRevision: projectedRowsVersion,
-                            visibilityRevision: visibleRows.visibilityRevision
+                        callbacks: TranscriptSurfaceCallbacks(
+                            claimSendAnimation: { request in
+                                controller.claimUserSendAnimation(request)
+                            },
+                            rowContent: { row in
+                                AnyView(
+                                    virtualRowContent(row)
+                                        .reportsStreamingTextAnimationActivity()
+                                        .environment(\.theme, theme)
+                                        .environment(\.attachmentImages, attachmentImages)
+                                        .environment(\.hoverTrackingSuspended, controller.isSending)
+                                        .environment(\.transcriptDisclosure, controller.disclosure)
+                                        .environment(\.transcriptController, controller)
+                                        .environment(
+                                            \.streamingTextAnimationVisibility,
+                                            presentationSurface.textAnimationVisibility
+                                        )
+                                        .environment(
+                                            \.streamingTextAnimationRegistry,
+                                            presentationSurface.textAnimationRegistry
+                                        )
+                                        .environment(
+                                            \.runningSubagentToolCallIds,
+                                            controller.runningSubagentToolCallIds
+                                        )
+                                )
+                            },
+                            onViewportChange: { state in
+                                controller.scrollState = state
+                            },
+                            onBottomStateChange: { atBottom in
+                                // AppKit can publish a transient edge and its corrected final
+                                // edge during one layout pass. Defer the SwiftUI mutation, but
+                                // preserve every callback in order so the final geometry wins.
+                                DispatchQueue.main.async {
+                                    if isAtBottom != atBottom { isAtBottom = atBottom }
+                                }
+                            },
+                            onFollowStateChange: { follows in
+                                DispatchQueue.main.async {
+                                    if autoFollow != follows { autoFollow = follows }
+                                }
+                            },
+                            onNearTop: {
+                                requestOlderHistoryLoad()
+                            }
                         ),
-                        projectionRevision: projectedRowsVersion,
-                        initialState: controller.scrollState,
-                        followsLatest: autoFollow,
-                        hasOlderHistory: controller.hasOlderHistory,
-                        showsOlderHistoryLoadingIndicator: controller.isLoadingOlderHistory,
-                        isLoadingInitialHistory: controller.isLoadingInitialHistory,
-                        isPreparingInitialProjection: isPreparingTranscript,
-                        isActiveProjectionPending: isActiveProjectionPending,
-                        layoutFingerprint: transcriptLayoutFingerprint,
-                        scrollCommand: scrollCommand,
-                        sendAnimationRequest: controller.userSendAnimationRequest,
-                        reduceMotion: reduceMotion,
                         markdownRowStyle: transcriptMarkdownRowStyle,
-                        claimSendAnimation: { request in
-                            controller.claimUserSendAnimation(request)
-                        },
-                        rowContent: { row in
-                            AnyView(
-                                virtualRowContent(row)
-                                    .reportsStreamingTextAnimationActivity()
-                                    .environment(\.theme, theme)
-                                    .environment(\.attachmentImages, attachmentImages)
-                                    .environment(\.hoverTrackingSuspended, controller.isSending)
-                                    .environment(\.transcriptDisclosure, controller.disclosure)
-                                    .environment(\.transcriptController, controller)
-                                    .environment(
-                                        \.streamingTextAnimationVisibility,
-                                        presentationSurface.textAnimationVisibility
-                                    )
-                                    .environment(
-                                        \.streamingTextAnimationRegistry,
-                                        presentationSurface.textAnimationRegistry
-                                    )
-                                    .environment(
-                                        \.runningSubagentToolCallIds,
-                                        controller.runningSubagentToolCallIds
-                                    )
-                            )
-                        },
-                        onViewportChange: { state in
-                            controller.scrollState = state
-                        },
-                        onBottomStateChange: { atBottom in
-                            // AppKit can publish a transient edge and its corrected final
-                            // edge during one layout pass. Defer the SwiftUI mutation, but
-                            // preserve every callback in order so the final geometry wins.
-                            DispatchQueue.main.async {
-                                if isAtBottom != atBottom { isAtBottom = atBottom }
-                            }
-                        },
-                        onFollowStateChange: { follows in
-                            DispatchQueue.main.async {
-                                if autoFollow != follows { autoFollow = follows }
-                            }
-                        },
-                        onNearTop: {
-                            requestOlderHistoryLoad()
-                        },
                         onInitialPresentationReady: {
                             isInitialTranscriptReady = true
                         },

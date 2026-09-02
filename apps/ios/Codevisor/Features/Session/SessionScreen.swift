@@ -419,89 +419,93 @@ struct SessionTranscriptView: View {
                 runningSubagentToolCallIDs: controller.runningSubagentToolCallIds
             )
             NativeTranscriptView(
-                sessionController: controller,
-                rows: visibleRows.rows,
-                activeRows: visibleActiveRows.rows,
-                activeRowsVersion: TranscriptRowSetRevision(
-                    sourceRevision: activeRowsVersion,
-                    visibilityRevision: visibleActiveRows.visibilityRevision
+                input: TranscriptSurfaceInput(
+                    sessionController: controller,
+                    rows: visibleRows.rows,
+                    activeRows: visibleActiveRows.rows,
+                    activeRowsVersion: TranscriptRowSetRevision(
+                        sourceRevision: activeRowsVersion,
+                        visibilityRevision: visibleActiveRows.visibilityRevision
+                    ),
+                    rowsVersion: TranscriptRowSetRevision(
+                        sourceRevision: projectedRowsVersion,
+                        visibilityRevision: visibleRows.visibilityRevision
+                    ),
+                    projectionRevision: projectedRowsVersion,
+                    initialState: controller.scrollState,
+                    followsLatest: followsLatest,
+                    hasOlderHistory: controller.hasOlderHistory,
+                    showsOlderHistoryLoadingIndicator: presentationRole == .foreground
+                        && olderHistoryPresentation.isPresented,
+                    olderHistoryPresentationTarget: olderHistoryPresentation.presentationTarget,
+                    isLoadingInitialHistory: controller.isLoadingInitialHistory,
+                    isPreparingInitialProjection: isPreparingTranscript,
+                    isActiveProjectionPending: isActiveProjectionPending,
+                    layoutFingerprint: transcriptLayoutFingerprint,
+                    scrollCommand: scrollCommand,
+                    sendAnimationRequest: controller.userSendAnimationRequest,
+                    sendAnimationSourceFrame: sendAnimationSourceFrame,
+                    presentationRole: presentationRole,
+                    textAnimationRegistry: textAnimationRegistry,
+                    reduceMotion: reduceMotion,
+                    scrollIndicatorBottomInset: composerHeight + 6
                 ),
-                rowsVersion: TranscriptRowSetRevision(
-                    sourceRevision: projectedRowsVersion,
-                    visibilityRevision: visibleRows.visibilityRevision
-                ),
-                projectionRevision: projectedRowsVersion,
-                initialState: controller.scrollState,
-                followsLatest: followsLatest,
-                hasOlderHistory: controller.hasOlderHistory,
-                showsOlderHistoryLoadingIndicator: presentationRole == .foreground
-                    && olderHistoryPresentation.isPresented,
-                olderHistoryPresentationTarget: olderHistoryPresentation.presentationTarget,
-                isLoadingInitialHistory: controller.isLoadingInitialHistory,
-                isPreparingInitialProjection: isPreparingTranscript,
-                isActiveProjectionPending: isActiveProjectionPending,
-                layoutFingerprint: transcriptLayoutFingerprint,
-                scrollCommand: scrollCommand,
-                sendAnimationRequest: controller.userSendAnimationRequest,
-                sendAnimationSourceFrame: sendAnimationSourceFrame,
-                presentationRole: presentationRole,
-                textAnimationRegistry: textAnimationRegistry,
-                reduceMotion: reduceMotion,
-                scrollIndicatorBottomInset: composerHeight + 6,
-                claimSendAnimation: { request in
-                    controller.claimUserSendAnimation(request)
-                },
-                onSendAnimationStarted: onSendAnimationStarted,
-                onSendAnimationCompleted: { request in
-                    onSendAnimationCompleted?(request)
-                },
-                rowContent: { row in
-                    AnyView(
-                        TranscriptVirtualRowContent(row: row, controller: controller)
-                            .reportsStreamingTextAnimationActivity()
-                            .environment(\.theme, theme)
-                            .environment(\.attachmentImages, attachmentImages)
-                            .environment(\.transcriptDisclosure, disclosure)
-                            .environment(\.transcriptController, controller)
-                            .environment(
-                                \.streamingTextAnimationVisibility,
-                                textAnimationVisibility
-                            )
-                            .environment(
-                                \.streamingTextAnimationRegistry,
-                                textAnimationRegistry
-                            )
-                            .environment(
-                                \.runningSubagentToolCallIds,
-                                controller.runningSubagentToolCallIds
-                            )
-                            .environment(\.markdownTableBleed, 16)
-                    )
-                },
-                onViewportChange: { state in
-                    controller.scrollState = state
-                },
-                onBottomStateChange: { atBottom in
-                    DispatchQueue.main.async {
-                        if isAtBottom != atBottom { isAtBottom = atBottom }
-                    }
-                },
-                onFollowStateChange: { follows in
-                    DispatchQueue.main.async {
-                        if followsLatest != follows { followsLatest = follows }
-                    }
-                },
-                onNearTop: {
-                    requestOlderHistoryLoad()
-                },
-                onOlderHistoryPresented: { token in
-                    // UIViewRepresentable updates are part of SwiftUI's render
-                    // transaction. Publish the acknowledgement on the next turn
-                    // instead of mutating view state from inside that update.
-                    DispatchQueue.main.async {
-                        olderHistoryPresentation.didPresent(token: token)
-                    }
-                }
+                callbacks: TranscriptSurfaceCallbacks(
+                    claimSendAnimation: { request in
+                        controller.claimUserSendAnimation(request)
+                    },
+                    rowContent: { row in
+                        AnyView(
+                            TranscriptVirtualRowContent(row: row, controller: controller)
+                                .reportsStreamingTextAnimationActivity()
+                                .environment(\.theme, theme)
+                                .environment(\.attachmentImages, attachmentImages)
+                                .environment(\.transcriptDisclosure, disclosure)
+                                .environment(\.transcriptController, controller)
+                                .environment(
+                                    \.streamingTextAnimationVisibility,
+                                    textAnimationVisibility
+                                )
+                                .environment(
+                                    \.streamingTextAnimationRegistry,
+                                    textAnimationRegistry
+                                )
+                                .environment(
+                                    \.runningSubagentToolCallIds,
+                                    controller.runningSubagentToolCallIds
+                                )
+                                .environment(\.markdownTableBleed, 16)
+                        )
+                    },
+                    onViewportChange: { state in
+                        controller.scrollState = state
+                    },
+                    onBottomStateChange: { atBottom in
+                        DispatchQueue.main.async {
+                            if isAtBottom != atBottom { isAtBottom = atBottom }
+                        }
+                    },
+                    onFollowStateChange: { follows in
+                        DispatchQueue.main.async {
+                            if followsLatest != follows { followsLatest = follows }
+                        }
+                    },
+                    onNearTop: {
+                        requestOlderHistoryLoad()
+                    },
+                    onOlderHistoryPresented: { token in
+                        // UIViewRepresentable updates are part of SwiftUI's render
+                        // transaction. Publish the acknowledgement on the next turn
+                        // instead of mutating view state from inside that update.
+                        DispatchQueue.main.async {
+                            olderHistoryPresentation.didPresent(token: token)
+                        }
+                    },
+                    onSendAnimationCompleted: { request in
+                        onSendAnimationCompleted?(request)
+                    },
+                    onSendAnimationStarted: onSendAnimationStarted
+                )
             )
         }
         // Match SwiftUI.ScrollView's navigation behavior: the scroll surface

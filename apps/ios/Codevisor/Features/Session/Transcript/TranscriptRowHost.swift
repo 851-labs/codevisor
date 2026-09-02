@@ -1,3 +1,4 @@
+import CodevisorUI
 import SwiftUI
 import TranscriptKit
 import UIKit
