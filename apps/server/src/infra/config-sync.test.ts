@@ -33,13 +33,16 @@ describe("config sync", () => {
         url: "https://api.example.com/mcp"
       })
       // A stdio definition and an OAuth-scoped one ride along, covering the
-      // command and scope fields end to end.
+      // command and scope fields end to end. Enabled definitions connect
+      // eagerly on create/update, on both machines: the command must fail at
+      // spawn (ENOENT) rather than be a real `npx -y …`, which installs from
+      // the registry on a cold CI runner and pushes this test past its budget.
       await mcpA.create({
         args: ["-y", "some-mcp"],
         enabled: true,
         env: { KEEP: "k", TOKEN: "t1" },
         name: "Local Tool",
-        command: "npx",
+        command: "codevisor-test-missing-mcp",
         transport: "stdio"
       })
       await mcpA.create({
@@ -71,7 +74,7 @@ describe("config sync", () => {
       const githubB = listB.find((server) => server.name === "GitHub")
       expect(githubB).toMatchObject({ url: "https://api.example.com/mcp", authType: "bearer" })
       expect(listB.find((server) => server.name === "Local Tool")).toMatchObject({
-        command: "npx",
+        command: "codevisor-test-missing-mcp",
         transport: "stdio"
       })
       expect(listB.find((server) => server.name === "Scoped")).toMatchObject({
