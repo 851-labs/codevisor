@@ -1,5 +1,6 @@
 #if canImport(AppKit)
     import AppKit
+    import QuickLookUI
 
     /// A settled Markdown text surface backed exclusively by TextKit 2.
     ///
@@ -139,6 +140,14 @@
                 height: CGFloat.greatestFiniteMagnitude
             )
             measuredWidth = -1
+        }
+
+        /// A link click makes this text view first responder, and `NSTextView`
+        /// would then claim the shared Quick Look panel to preview the link's
+        /// raw value — the workspace path shown as an Internet Location card.
+        /// The host's preview controller presents the fetched file instead.
+        override func acceptsPreviewPanelControl(_: QLPreviewPanel!) -> Bool {
+            false
         }
 
         func textView(_: NSTextView, clickedOnLink link: Any, at _: Int) -> Bool {
