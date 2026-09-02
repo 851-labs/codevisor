@@ -51,7 +51,7 @@ export const routeNetDirect = (
     deviceId,
     port: config.port,
     hosts:
-      deviceId === null
+      deviceId === null || !config.directPathEnabled
         ? []
         : directHosts(
             config.host,

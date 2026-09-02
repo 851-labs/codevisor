@@ -412,18 +412,9 @@ describe("hub relay", () => {
     // The same device reconnects while its previous socket lingers half-open.
     const reborn = await connectMachine(token, "reconnect-vps", machine.deviceId)
 
-    // The zombie is closed with the non-fatal supersede code so it cannot
-    // black-hole routed frames or suppress a later offline broadcast.
-    expect(await superseded).toBe(4003)
-    // Apps are told to drop dead channels before the machine turns online, so
-    // re-opens park briefly and then dispatch to the fresh socket.
-    const reset = (await app.reader.next()) as Extract<HubToApp, { t: "machine-reset" }>
-    expect(reset).toMatchObject({ t: "machine-reset", machineId: machine.deviceId })
-    const presence = (await app.reader.next()) as Extract<HubToApp, { t: "presence" }>
-    expect(presence.machine).toMatchObject({ deviceId: machine.deviceId, online: true })
-
-    // The superseded socket's close is not an outage: relaying through the
-    // fresh socket works immediately, with no offline error in between.
+    // Welcome is the handoff boundary: a relay sent immediately afterward
+    // must reach the new generation even if the old socket's close callback
+    // has not arrived yet.
     sendRelay(
       app.socket,
       { machineId: machine.deviceId, frame: { t: "data", channelId: "ch-fresh", seq: 0 } },
@@ -433,6 +424,16 @@ describe("hub relay", () => {
     expect((relayed.header as HubToMachineRelayHeader).frame).toMatchObject({
       channelId: "ch-fresh"
     })
+
+    // The zombie is closed with the non-fatal supersede code so it cannot
+    // black-hole routed frames or suppress a later offline broadcast.
+    expect(await superseded).toBe(4003)
+    // Apps are told to drop dead channels before the machine turns online, so
+    // re-opens park briefly and then dispatch to the fresh socket.
+    const reset = (await app.reader.next()) as Extract<HubToApp, { t: "machine-reset" }>
+    expect(reset).toMatchObject({ t: "machine-reset", machineId: machine.deviceId })
+    const presence = (await app.reader.next()) as Extract<HubToApp, { t: "presence" }>
+    expect(presence.machine).toMatchObject({ deviceId: machine.deviceId, online: true })
   })
 
   it("notifies machines when an app peer disconnects for good", async () => {

@@ -12,6 +12,7 @@ Options:
   --serverId <id>          Server identifier (default: local)
   --auth <none|token>      Auth mode (default: none on 127.0.0.1, token otherwise)
   --kind <kind>            Server kind
+  --direct-path <mode>     Direct LAN path: enabled or disabled (default: enabled)
   --db <path>              Database path (default: canonical data directory)
   --upgrade-status <path>  Data-upgrade status file path
   --boot-id <id>           Unique identity for this server startup

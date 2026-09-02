@@ -414,10 +414,10 @@ struct NewChatView: View {
         selectTargetProject(explicit, controller: controller)
       }
     }
-    controller.onFirstSend = { [weak controller] in
+    controller.onFirstSend = { [weak controller] submittedText in
       guard let controller else { return }
       let project = controller.project
-      let title = Self.title(from: controller.composerText)
+      let title = Self.title(from: submittedText)
       let session: ChatSession
       if let preCreatedSession,
         let updated = environment.projectList.updateSessionForFirstSend(
@@ -481,10 +481,11 @@ struct NewChatView: View {
         guard let controller else { return }
         controller.serverSession = nil
         controller.onAgentSessionCreated = nil
-        if let paneDraftId {
+        let owningPaneId = store.paneDraftLocation(for: session)?.paneId
+        if let failedPaneId = owningPaneId ?? paneDraftId {
           store.restorePaneDraftPersistence(
             controller,
-            paneId: paneDraftId
+            paneId: failedPaneId
           )
         } else {
           store.restoreDraftPersistence(controller)
@@ -519,17 +520,10 @@ struct NewChatView: View {
             to: .workspace(id: workspace.id, serverId: session.serverId)
           )
         }
-        Task { @MainActor [weak controller] in
-          // Give SwiftUI one commit with the new sidebar identity
-          // before mounting the substantially heavier workspace
-          // destination. This is one run-loop turn, not a guessed
-          // animation delay.
-          await Task.yield()
-          guard controller?.serverSession?.id == session.id else { return }
-          // The destination route already carries the machine id;
-          // navigation is identical for local and remote chats.
-          selection = .session(serverId: session.serverId, id: session.id)
-        }
+        // Select the locally complete workspace in this send turn.
+        // Remote setup continues after this callback and must not
+        // delay workspace presentation.
+        selection = .session(serverId: session.serverId, id: session.id)
       }
     }
     self.controller = controller

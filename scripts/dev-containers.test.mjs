@@ -4,7 +4,18 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
 
-import { alignDevCloudCredentialUrl, syncLinuxWorkspace } from "./dev-containers.mjs"
+import {
+  alignDevCloudCredentialUrl,
+  devRemoteHomeMounts,
+  syncLinuxWorkspace
+} from "./dev-containers.mjs"
+
+test("dev remotes persist root state and user workspaces independently", () => {
+  assert.deepEqual(devRemoteHomeMounts("/tmp/remote-cloud"), [
+    { host: "/tmp/remote-cloud/.container-home", container: "/root" },
+    { host: "/tmp/remote-cloud/.container-users", container: "/home" }
+  ])
+})
 
 const makeFakeRepo = async (root) => {
   await mkdir(join(root, "apps/server/dist"), { recursive: true })

@@ -52,6 +52,10 @@ struct ComposerCard: View {
   /// Owned by the shared composer shell so the question state can provide
   /// immediate submission feedback before the controller's async flag flips.
   @State private var didStartResolvingQuestion = false
+  /// Set synchronously in the Return/button action. `SessionController.send`
+  /// starts in a child task, so relying on its `isSubmitting` publication
+  /// leaves the composer looking inert until that task reaches the main actor.
+  @State private var didAcceptSubmission = false
   /// Drives the attach-files importer. `.fileImporter` runs the open panel
   /// as a window sheet (matching the add-project flow) instead of the
   /// detached app-modal window `NSOpenPanel.runModal()` produces.
@@ -197,7 +201,7 @@ private extension ComposerCard {
           // and while an update is installing (the app/server is
           // about to restart).
           .disabled(
-            controller.isSubmitting
+            isAcceptingSubmission
               || controller.isResolvingQuestion
               || isAppUpdateInProgress
           )
@@ -361,7 +365,7 @@ private extension ComposerCard {
 
   @ViewBuilder
   private var sendButton: some View {
-    if controller.isSubmitting || controller.isResolvingQuestion {
+    if isAcceptingSubmission || controller.isResolvingQuestion {
       // A send or question response is still being accepted; spin in
       // place and keep further input out until its transaction settles.
       ProgressView()
@@ -501,15 +505,36 @@ private extension ComposerCard {
     isLoadingSlashCommands || !visibleSlashMatches.isEmpty
   }
 
+  private var isAcceptingSubmission: Bool {
+    didAcceptSubmission || controller.isSubmitting
+  }
+
   private func submitOrAcceptSlash() {
-    guard !controller.isResolvingQuestion else { return }
+    guard !isAcceptingSubmission, !controller.isResolvingQuestion else { return }
     if isLoadingSlashCommands { return }
     if let command = selectedSlashCommand {
       acceptSlashCommand(command)
     } else if controller.isGoalComposerArmed {
-      Task { await controller.submitGoalFromComposer() }
+      let hasGoal = !controller.composerText
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .isEmpty
+      guard hasGoal,
+        !controller.isConnecting,
+        !controller.isConnectingToHarness,
+        !isAppUpdateInProgress
+      else { return }
+      didAcceptSubmission = true
+      Task {
+        await controller.submitGoalFromComposer()
+        didAcceptSubmission = false
+      }
     } else {
-      Task { await controller.send() }
+      guard controller.canSend, !isAppUpdateInProgress else { return }
+      didAcceptSubmission = true
+      Task {
+        await controller.send()
+        didAcceptSubmission = false
+      }
     }
   }
 

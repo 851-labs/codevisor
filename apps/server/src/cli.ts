@@ -142,6 +142,10 @@ const serve = Command.make(
     serverId: optionalString("serverId", "Stable server identifier (default local)"),
     auth: optionalString("auth", "Auth mode: none or token (default none on loopback)"),
     kind: optionalString("kind", "Server kind: local or remote"),
+    directPath: optionalString(
+      "direct-path",
+      "Direct LAN path: enabled or disabled (default enabled)"
+    ),
     name: optionalString("name", "Display name shown in clients"),
     db: optionalString("db", "SQLite database path (default ~/.codevisor/data)"),
     upgradeStatus: optionalString("upgrade-status", "Data-upgrade progress sidecar path"),
@@ -158,6 +162,7 @@ const serve = Command.make(
         ["serverId", config.serverId],
         ["auth", config.auth],
         ["kind", config.kind],
+        ["direct-path", config.directPath],
         ["name", config.name],
         ["db", config.db],
         ["upgrade-status", config.upgradeStatus],

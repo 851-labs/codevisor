@@ -18,7 +18,7 @@ const interfaces = () => ({
 })
 
 const makeConfig = (overrides: Partial<CodevisorServerConfig>): CodevisorServerConfig =>
-  ({ host: "0.0.0.0", port: 4931, ...overrides }) as CodevisorServerConfig
+  ({ directPathEnabled: true, host: "0.0.0.0", port: 4931, ...overrides }) as CodevisorServerConfig
 
 const captureJson = (): { response: ServerResponse; body: () => unknown } => {
   let payload: unknown
@@ -75,6 +75,20 @@ describe("routeNetDirect", () => {
         new URL("http://x/v1/net/direct")
       )
     ).toBe(false)
+  })
+
+  it("returns no hosts when direct paths are disabled", () => {
+    const { response, body } = captureJson()
+    routeNetDirect(
+      makeConfig({
+        cloud: { deviceId: () => "cloud-relay-only" } as CodevisorServerConfig["cloud"],
+        directPathEnabled: false
+      }),
+      { method: "GET" } as never,
+      response,
+      new URL("http://x/v1/net/direct")
+    )
+    expect(body()).toEqual({ deviceId: "cloud-relay-only", hosts: [], port: 4931 })
   })
 })
 
@@ -137,6 +151,42 @@ describe("direct pipe on a running server", () => {
       socket.on("error", reject)
     })
     expect(closeCode).toBe(1013)
+  })
+
+  it("rejects /v1/direct when direct paths are disabled", async () => {
+    const { services } = await makeServices("server-relay-only")
+    let accepted = false
+    const cloud = {
+      deviceId: () => "device-relay-only",
+      state: () => "connected" as const,
+      managedBy: () => "external" as const,
+      connect: () => Promise.resolve("device-relay-only"),
+      disconnect: () => Promise.resolve(),
+      acceptDirect: () => {
+        accepted = true
+        return true
+      }
+    }
+    const server = await run(
+      startCodevisorServer(
+        services,
+        defaultServerConfig({
+          cloud,
+          directPathEnabled: false,
+          id: "server-relay-only",
+          port: 0
+        })
+      )
+    )
+    runningServers.push(server)
+
+    const outcome = await new Promise<"error" | "open">((resolve) => {
+      const socket = new WebSocket(`${server.url.replace("http:", "ws:")}/v1/direct`)
+      socket.on("open", () => resolve("open"))
+      socket.on("error", () => resolve("error"))
+    })
+    expect(outcome).toBe("error")
+    expect(accepted).toBe(false)
   })
 })
 

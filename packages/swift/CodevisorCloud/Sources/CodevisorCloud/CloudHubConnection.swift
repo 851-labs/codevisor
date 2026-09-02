@@ -348,6 +348,14 @@ public actor CloudHubConnection {
     }
   }
 
+  func failMachineWaiters(for machineId: String, with error: any Error) {
+    let failed = machineOnlineWaiters.filter { $0.value.machineId == machineId }
+    for (id, waiter) in failed {
+      machineOnlineWaiters.removeValue(forKey: id)
+      waiter.continuation.resume(throwing: error)
+    }
+  }
+
   private func sessionToken() throws -> String {
     if let cachedSessionToken { return try cachedSessionToken.get() }
     let result: Result<String, CloudHubConnectionError>

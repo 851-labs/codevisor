@@ -21,6 +21,33 @@ export const SERVER_PROCESS_TITLE = "codevisor-server"
 /// here made remote machines deny fresh releases for most of a day.
 export const SERVER_UPDATE_CHECK_TTL_MS = 15 * 60 * 1_000
 
+export const resolveServeModes = (
+  args: Readonly<Record<string, string>>,
+  host: string
+): {
+  readonly authMode: "none" | "token"
+  readonly directPathMode: "enabled" | "disabled"
+  readonly resolvedKind: "local" | "remote"
+} => {
+  const authMode = args.auth ?? (host === "127.0.0.1" ? "none" : "token")
+  if (authMode !== "none" && authMode !== "token") {
+    throw new Error("--auth must be either none or token")
+  }
+  const directPathMode = args["direct-path"] ?? "enabled"
+  if (directPathMode !== "enabled" && directPathMode !== "disabled") {
+    throw new Error("--direct-path must be either enabled or disabled")
+  }
+  const kind = args.kind
+  if (kind !== undefined && kind !== "local" && kind !== "remote") {
+    throw new Error("--kind must be either local or remote")
+  }
+  return {
+    authMode,
+    directPathMode,
+    resolvedKind: kind ?? (host === "127.0.0.1" ? "local" : "remote")
+  }
+}
+
 interface ServerWorkingDirectoryOps {
   readonly mkdir: (path: string) => void
   readonly chdir: (path: string) => void

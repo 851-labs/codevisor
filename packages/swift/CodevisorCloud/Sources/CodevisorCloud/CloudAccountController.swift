@@ -351,6 +351,12 @@ public final class CloudAccountController {
         }
       }
       machines = refreshedMachines
+      if let hub {
+        // Feed the authoritative REST snapshot back into the relay's
+        // channel gate. This heals a missed/reordered presence frame
+        // without replacing an otherwise healthy hub connection.
+        await hub.reconcileAuthoritativeMachines(refreshedMachines)
+      }
       reconcileMachineKeyPins()
       #if DEBUG || NAVIGATION_DIAGNOSTICS
         let machineSummary = machines.map { machine in

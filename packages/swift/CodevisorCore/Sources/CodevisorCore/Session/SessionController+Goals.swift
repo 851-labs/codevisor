@@ -84,7 +84,7 @@ extension SessionController {
       if onFirstSend != nil {
         pendingNewChatAnalytics = true
       }
-      onFirstSend?()
+      onFirstSend?(objective)
       onFirstSend = nil
     }
     isSubmitting = false

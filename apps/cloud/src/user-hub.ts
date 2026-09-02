@@ -12,8 +12,14 @@ import {
   type WireRelayEnvelope
 } from "@codevisor/api"
 import type { CloudEnv } from "./env.js"
+import {
+  deliverToMachine,
+  deliverToPeer,
+  hasRoutableMachineSocket,
+  type HubDeliveryPort
+} from "./hub-delivery.js"
 import { HubMetrics } from "./hub-metrics.js"
-import { announceExpired, bufferOrAbandon, type HubNoticesPort } from "./hub-notices.js"
+import { announceExpired, type HubNoticesPort } from "./hub-notices.js"
 import {
   HUB_MIGRATIONS,
   machinePresence,
@@ -55,9 +61,11 @@ export const CLOSE_HELLO_TIMEOUT = 4002
 /// would black-hole relay traffic. Non-fatal: a legitimately superseded
 /// process may reconnect and take over again.
 export const CLOSE_SUPERSEDED = 4003
+/// A socket failed an actual relay write before its close callback arrived.
+/// Retiring it immediately starts resume grace and makes the next hello a
+/// normal transient reconnect.
+export const CLOSE_DELIVERY_FAILED = 4004
 
-/// Refuse JSON control frames larger than this many UTF-16 code units. Relay
-/// traffic is binary and capped separately (MAX_RELAY_MESSAGE_BYTES).
 const MAX_FRAME_LENGTH = 64 * 1024
 
 export class UserHub extends DurableObject<CloudEnv> {
@@ -100,13 +108,13 @@ export class UserHub extends DurableObject<CloudEnv> {
     // Machines in their resume grace window count as online: their
     // disconnect was never announced, and a resume makes it moot.
     const online = this.#resume.machineDeviceIdsInGrace(Date.now())
-    for (const socket of this.#net.byTag("machine")) {
-      const deviceId = this.#net.attachment(socket)?.deviceId
-      if (deviceId !== undefined) online.add(deviceId)
+    const rows = machineRows(this.ctx.storage.sql)
+    for (const row of rows) {
+      if (hasRoutableMachineSocket(this.#net, row.device_id, row.active_generation)) {
+        online.add(row.device_id)
+      }
     }
-    return machineRows(this.ctx.storage.sql).map((row) =>
-      machinePresence(row, online.has(row.device_id))
-    )
+    return rows.map((row) => machinePresence(row, online.has(row.device_id)))
   }
 
   /// Disconnects and forgets a machine. The Worker revokes the api key first;
@@ -137,7 +145,11 @@ export class UserHub extends DurableObject<CloudEnv> {
     if (row !== undefined) {
       this.#net.broadcastToApps({
         t: "presence",
-        machine: machinePresence(row, this.#net.machine(deviceId).length > 0)
+        machine: machinePresence(
+          row,
+          hasRoutableMachineSocket(this.#net, deviceId, row.active_generation) ||
+            this.#resume.machineGraceSession(deviceId, Date.now()) !== undefined
+        )
       })
     }
     return true
@@ -236,21 +248,28 @@ export class UserHub extends DurableObject<CloudEnv> {
         socket.close(CLOSE_UNSUPPORTED_PROTOCOL, "unsupported protocol")
         return
       }
-      const { token, resumed } = await this.#adoptSession(socket, attachment, "app", frame)
+      const { token, resumed } = await this.#adoptSession(attachment, "app", frame)
       attachment.deviceId = frame.device.deviceId
       attachment.publicKey = frame.device.publicKey
+      this.#supersedeConnection(attachment.connectionId, socket)
       attachment.helloDone = true
       socket.serializeAttachment(attachment)
-      socket.send(
-        encodeCloudFrame({
-          t: "welcome",
-          protocol: CLOUD_PROTOCOL_VERSION,
-          connectionId: attachment.connectionId,
-          machines: this.listMachines(),
-          resume: token,
-          ...(resumed ? { resumed: true } : {})
-        })
-      )
+      if (
+        !this.#net.send(
+          socket,
+          encodeCloudFrame({
+            t: "welcome",
+            protocol: CLOUD_PROTOCOL_VERSION,
+            connectionId: attachment.connectionId,
+            machines: this.listMachines(),
+            resume: token,
+            ...(resumed ? { resumed: true } : {})
+          })
+        )
+      ) {
+        this.#retireUndeliverable(socket)
+        return
+      }
       // A resumed app never looked gone; replay what arrived meanwhile.
       if (resumed) this.#replayBuffers(socket, attachment.connectionId)
     }
@@ -277,43 +296,51 @@ export class UserHub extends DurableObject<CloudEnv> {
         return
       }
       const deviceId = attachment.deviceId!
-      const { token, resumed } = await this.#adoptSession(socket, attachment, "machine", frame)
+      const { token, resumed } = await this.#adoptSession(attachment, "machine", frame)
       const now = isoTimestamp()
+      const generation = (machineRow(this.ctx.storage.sql, deviceId)?.active_generation ?? 0) + 1
       this.ctx.storage.sql.exec(
-        `INSERT INTO machines (device_id, name, os, app_version, public_key, last_seen_at)
-         VALUES (?, ?, ?, ?, ?, ?)
+        `INSERT INTO machines
+           (device_id, name, os, app_version, public_key, last_seen_at, active_generation)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(device_id) DO UPDATE SET
            name = excluded.name,
            os = excluded.os,
            app_version = excluded.app_version,
            public_key = excluded.public_key,
-           last_seen_at = excluded.last_seen_at`,
+           last_seen_at = excluded.last_seen_at,
+           active_generation = excluded.active_generation`,
         deviceId,
         frame.device.name,
         frame.device.os ?? null,
         frame.device.appVersion ?? null,
         frame.device.publicKey,
-        now
+        now,
+        generation
       )
+      attachment.machineGeneration = generation
+      // Install the durable generation before demoting the predecessor. From
+      // this point routing can select only this socket, even if close delivery
+      // for an older half-open connection is delayed.
+      for (const stale of this.#net.machine(deviceId)) {
+        if (stale !== socket) this.#supersede(stale, "superseded by a newer connection")
+      }
       attachment.helloDone = true
       socket.serializeAttachment(attachment)
-      socket.send(
-        encodeCloudFrame({
-          t: "welcome",
-          protocol: CLOUD_PROTOCOL_VERSION,
-          connectionId: attachment.connectionId,
-          resume: token,
-          ...(resumed ? { resumed: true } : {})
-        })
-      )
-      // One live socket per machine device. Older sockets are zombies
-      // (half-open TCP, or a superseded process): app→machine routing picks
-      // an arbitrary socket, so a lingering zombie would black-hole traffic —
-      // and its continued presence would suppress the offline broadcast when
-      // the socket that actually carries traffic dies. Closing them here also
-      // keeps their #onGone from flapping presence (this socket is live).
-      for (const stale of this.#net.machine(deviceId)) {
-        if (stale !== socket) stale.close(CLOSE_SUPERSEDED, "superseded by a newer connection")
+      if (
+        !this.#net.send(
+          socket,
+          encodeCloudFrame({
+            t: "welcome",
+            protocol: CLOUD_PROTOCOL_VERSION,
+            connectionId: attachment.connectionId,
+            resume: token,
+            ...(resumed ? { resumed: true } : {})
+          })
+        )
+      ) {
+        this.#retireUndeliverable(socket)
+        return
       }
       if (resumed) {
         // Nobody was told the machine left: skip the reset/presence noise
@@ -338,7 +365,6 @@ export class UserHub extends DurableObject<CloudEnv> {
   /// Session resume at hello time: adopt or register, superseding any
   /// half-open zombie socket that still holds the restored identity.
   async #adoptSession(
-    socket: WebSocket,
     attachment: SocketAttachment,
     kind: "app" | "machine",
     frame: { device: { deviceId: string; publicKey: string }; resume?: string | undefined }
@@ -347,14 +373,7 @@ export class UserHub extends DurableObject<CloudEnv> {
       attachment.connectionId,
       kind,
       frame.device,
-      frame.resume,
-      (adoptedConnectionId) => {
-        for (const stale of this.#net.byConnectionId(adoptedConnectionId)) {
-          if (stale !== socket) {
-            stale.close(CLOSE_SUPERSEDED, "superseded by a resumed connection")
-          }
-        }
-      }
+      frame.resume
     )
     attachment.connectionId = adopted.connectionId
     this.#metrics.hello(kind, adopted.resumed, frame.resume !== undefined)
@@ -380,40 +399,58 @@ export class UserHub extends DurableObject<CloudEnv> {
   /// hub's sockets and registry.
   #relayPort(): RelayHubPort {
     return {
-      findMachineSocket: (machineId) =>
-        this.#net
-          .machine(machineId)
-          .find((candidate) => this.#net.attachment(candidate)?.helloDone === true),
       isKnownMachine: (machineId) => machineRow(this.ctx.storage.sql, machineId) !== undefined,
-      // Attachment scan, not the conn: tag — a resumed socket adopts its
-      // predecessor's connectionId, and accept-time tags cannot change.
-      findAppSocket: (peerId) =>
-        this.#net.byTag("app").find((candidate) => {
-          const attachment = this.#net.attachment(candidate)
-          return attachment?.connectionId === peerId && attachment.helloDone
-        }),
+      deliverToMachine: (machineId, message) =>
+        deliverToMachine(this.#deliveryPort(), machineId, message),
+      deliverToPeer: (peerId, message) => deliverToPeer(this.#deliveryPort(), peerId, message),
       send: (socket, message) => this.#net.send(socket, message),
-      bufferForMachine: (machineId, message) => {
-        const session = this.#resume.machineGraceSession(machineId, Date.now())
-        return session === undefined ? false : bufferOrAbandon(this.#notices(), session, message)
-      },
-      bufferForPeer: (peerId, message) => {
-        const session = this.#resume.appGraceSession(peerId, Date.now())
-        return session === undefined ? false : bufferOrAbandon(this.#notices(), session, message)
-      },
-      appGraceExists: (peerId) => this.#resume.appGraceSession(peerId, Date.now()) !== undefined,
       error: (socket, code, message, context) => this.#net.error(socket, code, message, context)
+    }
+  }
+
+  #deliveryPort(): HubDeliveryPort {
+    return {
+      ...this.#notices(),
+      retire: (socket) => this.#retireUndeliverable(socket)
+    }
+  }
+
+  #supersedeConnection(connectionId: string, replacement: WebSocket): void {
+    for (const stale of this.#net.byConnectionId(connectionId)) {
+      if (stale !== replacement) this.#supersede(stale, "superseded by a resumed connection")
+    }
+  }
+
+  #supersede(socket: WebSocket, reason: string): void {
+    this.#net.deactivate(socket)
+    if (socket.readyState !== WebSocket.CLOSED) socket.close(CLOSE_SUPERSEDED, reason)
+  }
+
+  #retireUndeliverable(socket: WebSocket): void {
+    this.#onGone(socket)
+    if (socket.readyState !== WebSocket.CLOSED) {
+      socket.close(CLOSE_DELIVERY_FAILED, "relay delivery failed")
     }
   }
 
   #onGone(socket: WebSocket): void {
     const attachment = this.#net.attachment(socket)
     if (attachment === undefined || !attachment.helloDone) return
+    // Make close/error callbacks idempotent and exclude this socket from all
+    // routing before changing session state.
+    this.#net.deactivate(socket)
+    if (attachment.kind === "machine") {
+      const activeGeneration = machineRow(
+        this.ctx.storage.sql,
+        attachment.deviceId!
+      )?.active_generation
+      if ((attachment.machineGeneration ?? 0) !== activeGeneration) return
+    }
     // A newer socket already adopted this identity (resume supersede, or the
     // one-live-socket-per-machine rule): this close is not a departure.
     const survivors = this.#net
       .byConnectionId(attachment.connectionId)
-      .filter((candidate) => candidate !== socket)
+      .filter((candidate) => candidate !== socket && this.#net.isRoutable(candidate))
     if (survivors.length > 0) return
     if (attachment.kind === "machine") {
       this.ctx.storage.sql.exec(

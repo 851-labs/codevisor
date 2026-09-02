@@ -210,7 +210,7 @@ struct SessionControllerConfigurationTests {
     )
     controller.composerText = "keep this draft while I choose a project"
     var didMaterialize = false
-    controller.onFirstSend = { didMaterialize = true }
+    controller.onFirstSend = { _ in didMaterialize = true }
 
     #expect(!controller.canSend)
     await controller.send()
@@ -218,6 +218,23 @@ struct SessionControllerConfigurationTests {
     #expect(!didMaterialize)
     #expect(controller.composerText == "keep this draft while I choose a project")
     #expect(!controller.hasSentFirst)
+  }
+
+  @Test("First send materializes with the submitted text after clearing the composer")
+  func firstSendMaterializationReceivesSubmittedText() async {
+    let controller = SessionController(
+      project: Project.fromFolder(URL(fileURLWithPath: "/tmp/project")),
+      configCache: ConfigOptionCache(store: InMemoryStore())
+    )
+    controller.composerText = "  Preserve this title\nwith more detail  "
+    var submittedText: String?
+    controller.onFirstSend = { submittedText = $0 }
+
+    await controller.send()
+
+    #expect(submittedText == "Preserve this title\nwith more detail")
+    // With no configured harness, setup fails and restores the draft.
+    #expect(controller.composerText == "Preserve this title\nwith more detail")
   }
 
   @Test("A deferred durable chat cannot connect before first send")

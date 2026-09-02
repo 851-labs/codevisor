@@ -53,6 +53,7 @@ export const defaultServerConfig = (
   kind: overrides.kind ?? "local",
   host: overrides.host ?? "127.0.0.1",
   port: overrides.port ?? 49361,
+  directPathEnabled: overrides.directPathEnabled ?? true,
   worktreeNameStyle: overrides.worktreeNameStyle ?? "production",
   auth: overrides.auth ?? {
     allowLocalhostWithoutAuth: true,

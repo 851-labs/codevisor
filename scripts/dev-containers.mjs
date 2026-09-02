@@ -19,6 +19,13 @@ import { pathExists } from "./dev-shared.mjs"
 import { syncLinuxWorkspace } from "./dev-container-workspace.mjs"
 export { syncLinuxWorkspace }
 
+export function devRemoteHomeMounts(remoteRootHost) {
+  return [
+    { host: join(remoteRootHost, ".container-home"), container: "/root" },
+    { host: join(remoteRootHost, ".container-users"), container: "/home" }
+  ]
+}
+
 const execEngine = (binary, args, options = {}) =>
   new Promise((resolve, reject) => {
     execFile(binary, args, { maxBuffer: 16 * 1024 * 1024, ...options }, (error, stdout, stderr) => {
@@ -295,6 +302,7 @@ export async function launchDevRemoteServer({
   serverRoots,
   port,
   serverName,
+  directPath,
   environment
 }) {
   // A stable identity per dev remote: the default "local" server id
@@ -333,6 +341,7 @@ export async function launchDevRemoteServer({
         "token",
         "--kind",
         "remote",
+        ...(directPath === undefined ? [] : ["--direct-path", directPath]),
         "--name",
         serverName,
         "--upgrade-status",
@@ -352,11 +361,11 @@ export async function launchDevRemoteServer({
     env[key] = key === "CODEVISOR_DEV_CLOUD_URL" ? rewriteHost(value) : toContainerPath(value)
   }
   await tryEngine(binary, ["rm", "--force", containerName])
-  // Harness credentials and installs are machine state, not shared cache:
-  // Dev Direct and Dev Cloud need separate homes to remain honest separate
-  // machines. Each home persists beside that remote's server data.
-  const rootHome = join(remoteRootHost, ".container-home")
-  await mkdir(rootHome, { recursive: true })
+  // Harness credentials, installs, and user workspaces are machine state, not
+  // shared cache. Keep both /root and /home per remote so container replacement
+  // cannot silently delete a project's working directory.
+  const homeMounts = devRemoteHomeMounts(remoteRootHost)
+  await Promise.all(homeMounts.map(({ host }) => mkdir(host, { recursive: true })))
   const args = [
     "run",
     "--detach",
@@ -374,8 +383,7 @@ export async function launchDevRemoteServer({
     `${appRoot}:/codevisor`,
     "--volume",
     `${stateRoot}:/codevisor-state`,
-    "--volume",
-    `${rootHome}:/root`,
+    ...homeMounts.flatMap(({ host, container }) => ["--volume", `${host}:${container}`]),
     "--volume",
     `${remoteRootHost}:/codevisor-data`,
     "--volume",
@@ -407,6 +415,7 @@ export async function launchDevRemoteServer({
     "token",
     "--kind",
     "remote",
+    ...(directPath === undefined ? [] : ["--direct-path", directPath]),
     "--name",
     serverName,
     "--upgrade-status",

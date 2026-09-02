@@ -304,6 +304,7 @@ const cloudRemoteServer = await launchDevRemoteServer({
   serverRoots: layout.remoteCloud,
   port: cloudRemotePort,
   serverName: cloudRemoteName,
+  directPath: "disabled",
   environment: {
     ...remoteDevelopmentEnvironment(layout, process.env, layout.remoteCloud),
     CODEVISOR_DEV_INSTANCE_ID: `${instanceName}-cloud`,

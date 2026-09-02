@@ -17,11 +17,16 @@ export interface HubNoticesPort {
 export const announceExpired = (port: HubNoticesPort, session: ResumeSessionRow): void => {
   if (session.kind === "machine") {
     const deviceId = session.device_id
-    const stillConnected = port.net
-      .machine(deviceId)
-      .some((candidate) => port.net.attachment(candidate)?.helloDone === true)
-    if (stillConnected) return
     const row = machineRow(port.sql, deviceId)
+    const stillConnected = port.net.machine(deviceId).some((candidate) => {
+      const attachment = port.net.attachment(candidate)
+      return (
+        row !== undefined &&
+        port.net.isRoutable(candidate) &&
+        (attachment?.machineGeneration ?? 0) === row.active_generation
+      )
+    })
+    if (stillConnected) return
     if (row !== undefined) {
       port.net.broadcastToApps({ t: "presence", machine: machinePresence(row, false) })
     }
@@ -38,11 +43,12 @@ export const announceExpired = (port: HubNoticesPort, session: ResumeSessionRow)
     return
   }
   // App gone (for good): let machines tear down that peer's channels.
-  if (port.net.byConnectionId(session.connection_id).length > 0) return
+  if (port.net.byConnectionId(session.connection_id).some((socket) => port.net.isRoutable(socket)))
+    return
   const gone: HubToMachine = { t: "peer-gone", peerId: session.connection_id }
   for (const machineSocket of port.net.byTag("machine")) {
-    if (port.net.attachment(machineSocket)?.helloDone === true) {
-      machineSocket.send(encodeCloudFrame(gone))
+    if (port.net.isRoutable(machineSocket)) {
+      port.net.send(machineSocket, encodeCloudFrame(gone))
     }
   }
 }

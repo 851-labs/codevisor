@@ -23,11 +23,20 @@ extension SessionController {
     }
     isSubmitting = true
 
-    // Settle eager uploads first; a failed attachment blocks the send with
-    // an inline status instead of silently dropping the file.
-    guard let attachments = await collectAttachmentsForSend() else {
-      isSubmitting = false
-      return
+    // Plain-text sends have no asynchronous preparation. Keeping that
+    // common path synchronous through first-send materialization lets the
+    // workspace appear in the same main-actor turn. Attachment sends still
+    // settle eager uploads first; a failed upload blocks the send with an
+    // inline status instead of silently dropping the file.
+    let attachments: [Attachment]
+    if composerAttachments.isEmpty {
+      attachments = []
+    } else {
+      guard let collected = await collectAttachmentsForSend() else {
+        isSubmitting = false
+        return
+      }
+      attachments = collected
     }
     let outgoingMessage = UserMessage(text: text, attachments: attachments)
     let shouldAnimateTranscriptSend = !isSending
@@ -69,7 +78,7 @@ extension SessionController {
       if onFirstSend != nil {
         pendingNewChatAnalytics = true
       }
-      onFirstSend?()
+      onFirstSend?(text)
       onFirstSend = nil
     }
     isSubmitting = false

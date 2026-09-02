@@ -102,9 +102,9 @@ extension WorkspaceScreen {
     if paneState == nil {
       paneState = PaneGroupState.centerInitial(sessionId: draftPlaceholderId)
     }
-    controller.onFirstSend = { [weak controller] in
+    controller.onFirstSend = { [weak controller] submittedText in
       guard let controller else { return }
-      adoptSession(for: controller)
+      adoptSession(for: controller, submittedText: submittedText)
     }
     if !carriedText.isEmpty, controller.composerText.isEmpty {
       controller.composerText = carriedText
@@ -140,16 +140,14 @@ extension WorkspaceScreen {
   /// in place. The pane keeps its id and the transcript keeps its controller,
   /// so the chat view is never rebuilt — the run pickers simply collapse and
   /// the sent message rides its lift up into the history.
-  private func adoptSession(for controller: SessionController) {
+  private func adoptSession(
+    for controller: SessionController,
+    submittedText: String
+  ) {
     guard let project = resolvedProject else { return }
     let session = environment.projectList.newSession(
       in: project,
-      // `send()` clears the durable draft before this callback so every
-      // destination composer mounts empty. The optimistic row is the
-      // authoritative snapshot of the outgoing prompt at this point.
-      title: Self.chatTitle(
-        from: controller.pendingUserMessage?.text ?? controller.composerText
-      ),
+      title: Self.chatTitle(from: submittedText),
       harnessId: controller.selectedHarnessId,
       worktreeName: controller.worktreeName,
       cwd: controller.sessionCwdOverride,

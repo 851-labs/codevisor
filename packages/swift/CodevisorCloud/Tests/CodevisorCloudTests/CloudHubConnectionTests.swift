@@ -214,8 +214,8 @@ struct CloudHubConnectionTests {
     await hub.shutdown()
   }
 
-  @Test("A machine-offline hub error updates presence and parks later channel opens")
-  func machineOfflineErrorParksChannelOpen() async throws {
+  @Test("A channel-scoped machine-offline error does not poison machine presence")
+  func channelScopedOfflineErrorOnlyClosesItsChannel() async throws {
     let machine = ScriptedRelayMachine()
     let scripted = ScriptedCloudHub(machines: [machine.presence])
     let (hub, _) = makeHub(scripted)
@@ -238,23 +238,16 @@ struct CloudHubConnectionTests {
       channelId: first.id
     )
     #expect(await waitUntil { recorder.closes == [nil] })
-    #expect(await hub.machines.first?.online == false)
+    #expect(await hub.machines.first?.online == true)
 
-    let secondOpen = Task {
-      try await hub.openChannel(
-        machineDeviceId: machine.deviceId,
-        machinePublicKey: machine.publicKey,
-        channelType: "test",
-        params: nil,
-        onMessage: { _ in },
-        onClosed: { _ in }
-      )
-    }
-    try await Task.sleep(for: .milliseconds(50))
-    #expect(scripted.relayEnvelopes.count == 1)
-
-    scripted.presenceToApp(machine.presence)
-    _ = try await secondOpen.value
+    _ = try await hub.openChannel(
+      machineDeviceId: machine.deviceId,
+      machinePublicKey: machine.publicKey,
+      channelType: "test",
+      params: nil,
+      onMessage: { _ in },
+      onClosed: { _ in }
+    )
     #expect(await waitUntil { scripted.relayEnvelopes.count == 2 })
     await hub.shutdown()
   }

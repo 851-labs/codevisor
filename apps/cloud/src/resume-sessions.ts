@@ -85,13 +85,11 @@ export class ResumeSessions {
     connectionId: string,
     kind: "app" | "machine",
     device: { deviceId: string; publicKey: string },
-    resumeToken: string | undefined,
-    supersede: (adoptedConnectionId: string) => void
+    resumeToken: string | undefined
   ): Promise<{ connectionId: string; token: string; resumed: boolean }> {
     if (resumeToken !== undefined) {
       const session = await this.tryResume(kind, resumeToken, Date.now())
       if (session !== undefined && session.device_id === device.deviceId) {
-        supersede(session.connection_id)
         const token = await this.register(
           session.connection_id,
           kind,
@@ -122,8 +120,9 @@ export class ResumeSessions {
     return row
   }
 
-  /// Starts the grace window for a disconnected connection; returns the
-  /// deadline (undefined when the connection has no session).
+  /// Starts the grace window for a disconnected connection. Repeated
+  /// close/error callbacks return the existing deadline, keeping teardown
+  /// idempotent; undefined means the connection has no resumable session.
   markDisconnected(connectionId: string, now: number): number | undefined {
     const deadline = now + this.graceMs
     const updated = this.sql.exec(
@@ -131,7 +130,11 @@ export class ResumeSessions {
       deadline,
       connectionId
     ).rowsWritten
-    return updated > 0 ? deadline : undefined
+    if (updated > 0) return deadline
+    const existing = this.sql
+      .exec<ResumeSessionRow>("SELECT * FROM sessions WHERE connection_id = ?", connectionId)
+      .toArray()[0]
+    return existing?.expires_at ?? undefined
   }
 
   delete(connectionId: string): void {

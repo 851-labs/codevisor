@@ -115,8 +115,18 @@ extension CloudHubConnection {
         """
       )
       if failure.code == "machine-offline", let machineId = failure.machineId {
-        markMachineOffline(machineId)
-        closeChannels(for: machineId)
+        if let channelId = failure.channelId {
+          // A routed write failed for this channel. It is not an
+          // authoritative machine-presence transition: another
+          // socket generation or the resume path may already be
+          // healthy, so keep unrelated channels and presence live.
+          channels.removeValue(forKey: channelId)?.onClosed(nil)
+        } else {
+          // Only the grace-expiry broadcast has no channel id and
+          // therefore carries machine-wide offline authority.
+          markMachineOffline(machineId)
+          closeChannels(for: machineId)
+        }
       } else if let channelId = failure.channelId {
         channels.removeValue(forKey: channelId)?.onClosed(nil)
       } else if let machineId = failure.machineId {
@@ -134,6 +144,26 @@ extension CloudHubConnection {
     guard let index = machines.firstIndex(where: { $0.deviceId == machineId }) else { return }
     machines[index].online = false
     machinesChangedHandler?(machines)
+  }
+
+  /// Applies the REST roster back to transport gating. REST and WebSocket
+  /// presence come from the same Durable Object, but either notification
+  /// path can be lost during a reconnect; this prevents a stale local false
+  /// value from parking every later channel open indefinitely.
+  public func reconcileAuthoritativeMachines(_ authoritative: [CloudMachine]) {
+    let previouslyKnown = Set(machines.map(\.deviceId))
+    let known = Set(authoritative.map(\.deviceId))
+    let online = Set(authoritative.lazy.filter(\.online).map(\.deviceId))
+    machines = authoritative
+    for machineId in online {
+      resumeMachineWaiters(for: machineId)
+    }
+    for machineId in Set(channels.values.map(\.machineDeviceId)).subtracting(online) {
+      closeChannels(for: machineId)
+    }
+    for machineId in previouslyKnown.subtracting(known) {
+      failMachineWaiters(for: machineId, with: CloudHubConnectionError.machineUnavailable)
+    }
   }
 
   private func closeChannels(for machineId: String) {

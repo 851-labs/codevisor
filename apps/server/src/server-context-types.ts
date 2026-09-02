@@ -55,6 +55,9 @@ export interface CodevisorServerConfig {
   readonly kind: ServerKind
   readonly host: string
   readonly port: number
+  /// Whether cloud clients may discover and open the direct LAN channel.
+  /// Disable this for relay-only fixtures; ordinary servers keep it enabled.
+  readonly directPathEnabled: boolean
   readonly worktreeNameStyle: "production" | "development"
   readonly auth: CodevisorServerAuthConfig
   /// Invoked after `POST /v1/shutdown` is acknowledged so the host process can

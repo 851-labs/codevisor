@@ -223,6 +223,7 @@ describe("@codevisor/server", () => {
       migrationState: "idle"
     })
     expect(defaultServerConfig()).toMatchObject({
+      directPathEnabled: true,
       host: "127.0.0.1",
       id: "local",
       kind: "local",

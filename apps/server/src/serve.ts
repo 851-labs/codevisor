@@ -58,7 +58,8 @@ import {
   monitorAppOwner,
   bundledVersion,
   bundledBuildMetadata,
-  backgroundTerminalIntegration
+  backgroundTerminalIntegration,
+  resolveServeModes
 } from "./serve-boot.js"
 import { makeSelfUpdater } from "./serve-self-updater.js"
 export {
@@ -88,17 +89,8 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
       process.env.HERDMAN_DEV_INSTANCE_ID !== undefined
         ? "development"
         : "production"
-    const authMode = args.auth ?? (host === "127.0.0.1" ? "none" : "token")
+    const { authMode, directPathMode, resolvedKind } = resolveServeModes(args, host)
     const version = args.version ?? bundledVersion()
-    if (authMode !== "none" && authMode !== "token") {
-      throw new Error("--auth must be either none or token")
-    }
-    const kind = args.kind
-    if (kind !== undefined && kind !== "local" && kind !== "remote") {
-      throw new Error("--kind must be either local or remote")
-    }
-    // An explicit --kind wins, otherwise a network bind means remote.
-    const resolvedKind = kind ?? (host === "127.0.0.1" ? "local" : "remote")
     // Resolve caller-provided paths before changing cwd below. This preserves
     // the CLI's relative-path semantics while ensuring every later consumer
     // sees an absolute path.
@@ -204,6 +196,8 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
               serverId,
               "--auth",
               authMode,
+              "--direct-path",
+              directPathMode,
               ...(args.name === undefined ? [] : ["--name", args.name]),
               ...(args.kind === undefined ? [] : ["--kind", args.kind])
             ]
@@ -443,6 +437,7 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
         // not the default "local" server id.
         name: args.name ?? (host === "127.0.0.1" ? "Local Codevisor" : hostname()),
         port,
+        directPathEnabled: directPathMode === "enabled",
         worktreeNameStyle,
         // Lets clients match this machine to its cloud presence entry, and
         // drive its registration live via /v1/cloud as the app's account

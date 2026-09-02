@@ -29,7 +29,11 @@ export const HUB_MIGRATIONS: readonly string[] = [
      seq INTEGER NOT NULL,
      message BLOB NOT NULL,
      PRIMARY KEY (connection_id, seq)
-   )`
+   )`,
+  // Socket attachments survive Durable Object hibernation and deploys. A
+  // generation makes one machine socket authoritative when a replacement
+  // overlaps the half-open predecessor it supersedes.
+  `ALTER TABLE machines ADD COLUMN active_generation INTEGER NOT NULL DEFAULT 0`
 ]
 
 export interface MachineRow extends Record<string, SqlStorageValue> {
@@ -39,6 +43,7 @@ export interface MachineRow extends Record<string, SqlStorageValue> {
   app_version: string | null
   public_key: string
   last_seen_at: string
+  active_generation: number
 }
 
 export interface SocketAttachment {
@@ -50,6 +55,10 @@ export interface SocketAttachment {
   /// App sockets: static public key from hello, attached to `open` relays so
   /// machines can authenticate the channel opener.
   publicKey?: string
+  /// Machine sockets: the generation installed in the durable registry when
+  /// this hello won ownership. Missing means generation 0 for sockets that
+  /// survived deployment of the generation migration.
+  machineGeneration?: number
   helloDone: boolean
 }
 

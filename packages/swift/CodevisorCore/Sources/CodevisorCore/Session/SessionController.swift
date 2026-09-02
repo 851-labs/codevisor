@@ -150,8 +150,9 @@ final public class SessionController {
   /// new-chat page can change projects before the first send.
   public var project: Project { didSet { draftDidChange() } }
   /// Called once, on the first send — used by the new-chat page to create and
-  /// register the real session and navigate to it.
-  public var onFirstSend: (() -> Void)?
+  /// register the real session and navigate to it. The argument is the
+  /// submitted prompt or goal, captured before the composer is cleared.
+  public var onFirstSend: ((String) -> Void)?
   /// Called when first-send setup fails after the draft was promoted. The
   /// owner reattaches the original draft persistence without deleting the
   /// durable chat session or its workspace.
