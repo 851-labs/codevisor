@@ -271,14 +271,15 @@ extension SessionModel {
 
     private func runConnectionRecovery(firstFailureMessage: String) async {
         defer { connectionRecoveryTask = nil }
-        let clock = ContinuousClock()
-        let startedAt = clock.now
+        let startedAt = connectionRecoveryScheduler.now()
         var failures = 1
         var latestMessage = firstFailureMessage
-        var nextAttemptAt = clock.now.advanced(by: connectionRecoveryRetryDelay(failures: failures))
+        var nextAttemptAt = startedAt.advanced(
+            by: connectionRecoveryRetryDelay(failures: failures)
+        )
 
         while !Task.isCancelled {
-            let now = clock.now
+            let now = connectionRecoveryScheduler.now()
             let elapsed = now - startedAt
             updateConnectionRecoveryPresentation(elapsed: elapsed, message: latestMessage)
 
@@ -296,7 +297,7 @@ extension SessionModel {
                     wait = min(wait, connectionRecoveryFailureDelay - elapsed)
                 }
                 do {
-                    try await Task.sleep(for: wait)
+                    try await connectionRecoveryScheduler.sleep(wait)
                 } catch {
                     return
                 }
@@ -318,7 +319,7 @@ extension SessionModel {
                     return
                 }
                 failures += 1
-                nextAttemptAt = clock.now.advanced(
+                nextAttemptAt = connectionRecoveryScheduler.now().advanced(
                     by: connectionRecoveryRetryDelay(failures: failures)
                 )
             }

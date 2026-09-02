@@ -9,6 +9,7 @@ extension SessionModelTests {
     func transientReconciliationRetriesSilently() async {
         let sessionId = UUID()
         let client = FakeSessionServerClient(sessionId: sessionId)
+        let scheduler = ManualSessionConnectionRecoveryScheduler()
         client.echoOnPrompt = false
         client.initialTranscriptPage = cancellationTranscriptPage(
             sessionId: sessionId,
@@ -20,6 +21,7 @@ extension SessionModelTests {
         let model = SessionModel(
             serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
             sessionId: sessionId.uuidString,
+            connectionRecoveryScheduler: scheduler.scheduler,
             connectionRecoveryStatusDelay: .seconds(1),
             connectionRecoveryFailureDelay: .seconds(2),
             connectionRecoveryRetryBaseDelay: .milliseconds(10),
@@ -48,6 +50,9 @@ extension SessionModelTests {
                 > subscriptionsBeforeRecovery
         )
 
+        await settleUntil { scheduler.pendingCount == 1 }
+        #expect(scheduler.requestedIntervals == [.milliseconds(10)])
+        scheduler.advance()
         await settleUntil { model.connectionRecoveryTask == nil }
         #expect(client.transcriptPageRequests.count == 2)
         #expect(model.errorMessage == nil)
@@ -59,6 +64,7 @@ extension SessionModelTests {
     func connectionRecoveryPresentationThresholds() async {
         let sessionId = UUID()
         let client = FakeSessionServerClient(sessionId: sessionId)
+        let scheduler = ManualSessionConnectionRecoveryScheduler()
         client.echoOnPrompt = false
         client.initialTranscriptPage = cancellationTranscriptPage(
             sessionId: sessionId,
@@ -69,6 +75,7 @@ extension SessionModelTests {
         let model = SessionModel(
             serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
             sessionId: sessionId.uuidString,
+            connectionRecoveryScheduler: scheduler.scheduler,
             connectionRecoveryStatusDelay: .milliseconds(20),
             connectionRecoveryFailureDelay: .milliseconds(60),
             connectionRecoveryRetryBaseDelay: .milliseconds(200),
@@ -81,8 +88,14 @@ extension SessionModelTests {
 
         #expect(model.connectionRecoveryMessage == nil)
         #expect(model.errorMessage == nil)
+        await settleUntil { scheduler.pendingCount == 1 }
+        #expect(scheduler.requestedIntervals == [.milliseconds(20)])
+        scheduler.advance()
         await settleUntil { model.connectionRecoveryMessage == "Reconnecting…" }
         #expect(model.errorMessage == nil)
+        await settleUntil { scheduler.pendingCount == 1 }
+        #expect(scheduler.requestedIntervals == [.milliseconds(20), .milliseconds(40)])
+        scheduler.advance()
         await settleUntil { model.errorMessage != nil }
         #expect(model.connectionRecoveryMessage == nil)
 

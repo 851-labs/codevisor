@@ -306,6 +306,7 @@ public final class SessionModel {
 
     /// Recovery timing is injected per model so tests can exercise the full
     /// state ladder without mutating process-global clocks.
+    let connectionRecoveryScheduler: SessionConnectionRecoveryScheduler
     let connectionRecoveryStatusDelay: Duration
     let connectionRecoveryFailureDelay: Duration
     let connectionRecoveryRetryBaseDelay: Duration
@@ -355,6 +356,7 @@ public final class SessionModel {
         now: @escaping @Sendable () -> Date = { Date() },
         stalledTurnQuietInterval: Duration = .seconds(300),
         quietTurnScheduler: SessionQuietTurnScheduler = .continuous,
+        connectionRecoveryScheduler: SessionConnectionRecoveryScheduler = .continuous,
         connectionRecoveryStatusDelay: Duration = .seconds(5),
         connectionRecoveryFailureDelay: Duration = .seconds(30),
         connectionRecoveryRetryBaseDelay: Duration = .milliseconds(500),
@@ -367,6 +369,7 @@ public final class SessionModel {
         self.now = now
         self.stalledTurnQuietInterval = stalledTurnQuietInterval
         self.quietTurnScheduler = quietTurnScheduler
+        self.connectionRecoveryScheduler = connectionRecoveryScheduler
         self.connectionRecoveryStatusDelay = connectionRecoveryStatusDelay
         self.connectionRecoveryFailureDelay = connectionRecoveryFailureDelay
         self.connectionRecoveryRetryBaseDelay = connectionRecoveryRetryBaseDelay
