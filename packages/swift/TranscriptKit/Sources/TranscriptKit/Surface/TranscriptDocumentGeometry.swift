@@ -60,9 +60,13 @@ public enum TranscriptDocumentGeometry {
 
 /// Decides, before a document rebuild, how the viewport is re-anchored
 /// afterwards. A locked restore target wins until the user deliberately
-/// scrolls. Once the reader has moved away from the bottom, the first visible
-/// row is preserved instead of a raw bottom distance, so streaming growth
-/// below that row cannot pull the viewport down with it.
+/// scrolls. A reader who is following the latest content stays pinned to the
+/// bottom through every geometry change — rows appended by a turn that
+/// started or finished while the chat was not on screen, and their heights
+/// settling from estimates to measurements — not only while a row is
+/// streaming. Once the reader has scrolled away from the bottom, the first
+/// visible row is preserved instead of a raw bottom distance, so growth below
+/// that row cannot pull the viewport down with it.
 public struct TranscriptGeometryRebuildPlan: Equatable, Sendable {
     /// The viewport stays at distance zero regardless of row changes.
     public let pinsBottom: Bool
@@ -76,7 +80,7 @@ public struct TranscriptGeometryRebuildPlan: Equatable, Sendable {
         previousLayout: VirtualTranscriptLayout,
         previousDistanceFromBottom: CGFloat?,
         viewportHeight: CGFloat,
-        followsStreamingLatest: Bool,
+        followsLatest: Bool,
         lockedRestoreDistance: CGFloat?,
         initialPositionApplied: Bool,
         gatePinsBottom: Bool,
@@ -91,11 +95,12 @@ public struct TranscriptGeometryRebuildPlan: Equatable, Sendable {
         let pinsBottomSpacerChange =
             previousDistanceFromBottom.map { $0 <= atBottomThreshold } == true
             && bottomSpacerWillChange
-        let pinsBottom = gatePinsBottom || pinsBottomSpacerChange
+        // Following is the reader's intent, set only by their own scrolling
+        // (or a restored follow mode) and cleared the moment they scroll up.
+        let pinsBottom = gatePinsBottom || pinsBottomSpacerChange || followsLatest
         self.pinsBottom = pinsBottom
 
         if !pinsBottom,
-            !followsStreamingLatest,
             let previousDistanceFromBottom,
             !previousLayout.isEmpty
         {
@@ -126,7 +131,7 @@ public struct TranscriptGeometryRebuildPlan: Equatable, Sendable {
             } else if pinsBottom {
                 0
             } else if initialPositionApplied {
-                followsStreamingLatest ? 0 : previousDistanceFromBottom
+                previousDistanceFromBottom
             } else {
                 nil
             }

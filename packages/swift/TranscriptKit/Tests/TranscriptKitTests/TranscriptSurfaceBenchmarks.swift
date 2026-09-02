@@ -106,7 +106,7 @@ struct TranscriptSurfaceBenchmarks {
                 previousLayout: layout,
                 previousDistanceFromBottom: 4_000,
                 viewportHeight: 900,
-                followsStreamingLatest: false,
+                followsLatest: false,
                 lockedRestoreDistance: nil,
                 initialPositionApplied: true,
                 gatePinsBottom: false,

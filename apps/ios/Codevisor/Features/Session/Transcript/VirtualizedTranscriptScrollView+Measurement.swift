@@ -109,7 +109,7 @@ extension VirtualizedTranscriptScrollView {
             previousLayout: previousLayout,
             previousDistanceFromBottom: previousDistance,
             viewportHeight: viewportHeight,
-            followsStreamingLatest: followsLatest && rows.contains { $0.id.isActiveRow },
+            followsLatest: followsLatest,
             lockedRestoreDistance: lockedRestoreDistance,
             initialPositionApplied: initialPositionApplied,
             gatePinsBottom: bottomJumpGate.isActive || initialBottomPin.isActive,

@@ -92,7 +92,7 @@ struct TranscriptDocumentGeometryTests {
             previousLayout: previous,
             previousDistanceFromBottom: distance,
             viewportHeight: 300,
-            followsStreamingLatest: follows,
+            followsLatest: follows,
             lockedRestoreDistance: locked,
             initialPositionApplied: applied,
             gatePinsBottom: gate,
@@ -119,10 +119,30 @@ struct TranscriptDocumentGeometryTests {
         #expect(pinned.visibleAnchorKey == nil)
     }
 
-    @Test func planFollowingLatestPreservesZeroWithoutAnchor() {
+    @Test func planFollowingLatestPinsBottomWithoutAnchor() {
         let p = plan(previous: layout([row(height: 100)]), distance: 400, follows: true)
+        #expect(p.pinsBottom)
         #expect(p.distanceToPreserve == 0)
         #expect(p.visibleAnchorKey == nil)
+    }
+
+    /// A turn that starts and finishes while the chat is off screen appends
+    /// settled rows with no active row. A reader who left at the bottom must
+    /// come back to the bottom and stay there while those rows measure.
+    @Test func followingReaderStaysAtBottomWhenSettledRowsAppendBelow() {
+        let first = row(height: 100)
+        let second = row(height: 100)
+        let previous = layout([first, second], measured: [first.layoutKey: 100])
+        let grown = layout([first, second, row(height: 40)])
+
+        let following = plan(previous: previous, distance: 0, follows: true, measured: [first.layoutKey: 100])
+        #expect(following.pinsBottom)
+        #expect(following.resolvedDistanceFromBottom(newLayout: grown, previousLayout: previous) == 0)
+
+        // The same change for a reader who scrolled up keeps their row stationary.
+        let reading = plan(previous: previous, distance: 120, follows: false, measured: [first.layoutKey: 100])
+        #expect(!reading.pinsBottom)
+        #expect(reading.visibleAnchorKey == first.layoutKey)
     }
 
     @Test func lockedRestoreDistanceWinsOverEverything() {
