@@ -1,9 +1,13 @@
 #if canImport(AppKit)
     import AppKit
 
+    /// Settled-transcript table: the same TextKit table as `MarkdownTableView`,
+    /// hosted directly (no SwiftUI) inside a `TableScrollView` so a table wider
+    /// than its min-content width scrolls sideways instead of wrapping mid-word.
     @MainActor
     final class NativeMarkdownTableBlockView: NativeMarkdownContentView {
         private let tableView: TableTextView
+        private let scrollView: TableScrollView
         private let model: TableModel
         private let renderMemo = MarkdownTableRenderMemo()
         private var measuredWidth: CGFloat = -1
@@ -33,6 +37,7 @@
             container.lineFragmentPadding = 0
             layoutManager.addTextContainer(container)
             tableView = TableTextView(frame: .zero, textContainer: container)
+            scrollView = TableScrollView(tableTextView: tableView)
 
             super.init(frame: .zero)
             self.linkAction = linkAction
@@ -54,7 +59,7 @@
                 .cursor: NSCursor.pointingHand,
             ]
             tableView.update(model: model, renderMemo: renderMemo)
-            addSubview(tableView)
+            addSubview(scrollView)
 
             wantsLayer = true
             layer?.cornerRadius = MarkdownTableMetrics.cornerRadius
@@ -76,15 +81,18 @@
             let width = max(1, proposedWidth)
             if abs(measuredWidth - width) <= 0.25 { return measuredHeight }
             measuredWidth = width
-            measuredHeight = max(1, renderMemo.size(for: model, width: width).height)
+            // Lay out at the min-content width when the granted width is
+            // narrower; the extra width scrolls inside `scrollView`.
+            let layoutWidth = max(width, renderMemo.minimumWidth(for: model))
+            measuredHeight = max(1, renderMemo.size(for: model, width: layoutWidth).height)
             return measuredHeight
         }
 
         override func layout() {
             super.layout()
-            tableView.frame = bounds
-            tableView.needsLayout = true
-            tableView.layoutSubtreeIfNeeded()
+            scrollView.frame = bounds
+            scrollView.needsLayout = true
+            scrollView.layoutSubtreeIfNeeded()
         }
     }
 #endif
