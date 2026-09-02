@@ -14,10 +14,17 @@ export default defineConfig({
         // scaffolding, not product code: its defensive timeout/failure paths
         // only execute when a test fails.
         "src/test-support.ts",
+        "src/test-support-agents.ts",
+        "src/test-support-stubs.ts",
+        "src/cli/support-test-support.ts",
+        "src/routes/harness-auth-test-support.ts",
+        "src/routes/session-test-support.ts",
         // Process entry points and daemon bootstrap wiring: exercised by the
         // release smoke tests, not unit tests.
         "src/main.ts",
         "src/serve.ts",
+        "src/serve-boot.ts",
+        "src/serve-self-updater.ts",
         "src/cli.ts",
         "src/cli/wiring.ts",
         "src/bg-wrap.ts",

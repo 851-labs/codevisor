@@ -4,19 +4,23 @@ import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import {
   appendTomlTable,
-  defaultNativeConfigFileSystem,
-  detectIndent,
-  extractServerIdentity,
-  getNestedValue,
-  NativeConfigUnsupportedError,
-  normalizeNativeServer,
-  normalizeUrlIdentity,
-  parseNativeConfig,
   removeJsonConfigKey,
   removeTomlTable,
-  resolveNativeConfigPath,
   setJsonConfigValue
+} from "./native-config-edits.js"
+import {
+  defaultNativeConfigFileSystem,
+  detectIndent,
+  getNestedValue,
+  NativeConfigUnsupportedError,
+  parseNativeConfig,
+  resolveNativeConfigPath
 } from "./native-config-files.js"
+import {
+  extractServerIdentity,
+  normalizeNativeServer,
+  normalizeUrlIdentity
+} from "./native-config-normalize.js"
 
 const cleanups: Array<() => Promise<void>> = []
 

@@ -17,7 +17,7 @@ import { realpathSync, statSync } from "node:fs"
 import { isAbsolute, relative, resolve } from "node:path"
 import { z } from "zod"
 import { executeToolDescription, makeGatewayCatalog } from "./mcp-gateway-catalog.js"
-import type { McpManagerConfig } from "./mcp-manager.js"
+import type { McpManagerConfig } from "./mcp-manager-types.js"
 import { invokeGatewayPluginTool } from "./mcp-plugin-tools.js"
 import {
   sandboxOutputContent,

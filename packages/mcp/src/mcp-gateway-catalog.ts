@@ -1,6 +1,6 @@
 import type { AutomationToolProvider } from "@codevisor/automation"
 import type { Tool } from "@modelcontextprotocol/sdk/types.js"
-import type { McpManagerConfig } from "./mcp-manager.js"
+import type { McpManagerConfig } from "./mcp-manager-types.js"
 import { PLUGIN_CATALOG_SERVER, pluginToolDefinitions } from "./mcp-plugin-tools.js"
 import { run, type UpstreamConnection } from "./mcp-support.js"
 

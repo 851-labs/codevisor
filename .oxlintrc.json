@@ -43,52 +43,5 @@
     "unicorn/prefer-add-event-listener": "warn",
     "unicorn/require-module-specifiers": "warn"
   },
-  "overrides": [
-    {
-      "files": [
-        "apps/cloud/test/cloud.test.ts",
-        "apps/server/src/cli/support.test.ts",
-        "apps/server/src/routes/harnesses.test.ts",
-        "apps/server/src/routes/harnesses.ts",
-        "apps/server/src/routes/mcps.test.ts",
-        "apps/server/src/routes/projects.test.ts",
-        "apps/server/src/routes/sessions.test.ts",
-        "apps/server/src/routes/sessions.ts",
-        "apps/server/src/serve.ts",
-        "apps/server/src/server-context.ts",
-        "apps/server/src/server.ts",
-        "apps/server/src/test-support.ts",
-        "packages/agent-runtime/src/index.ts",
-        "packages/api/src/openapi.ts",
-        "packages/automation/src/browser-locators.ts",
-        "packages/automation/src/browser-use-invoke.ts",
-        "packages/automation/src/browser-use-provider.test.ts",
-        "packages/automation/src/browser-use-tools.ts",
-        "packages/automation/src/code-executor.ts",
-        "packages/automation/src/codevisor-api-tools.ts",
-        "packages/automation/src/computer-use-provider.ts",
-        "packages/cloud-client/src/machine-connection.test.ts",
-        "packages/db/src/migrations.test.ts",
-        "packages/db/src/migrations.ts",
-        "packages/harness-manager/src/harness-auth.ts",
-        "packages/harness-manager/src/harness-lifecycle.test.ts",
-        "packages/harness-manager/src/harness-lifecycle.ts",
-        "packages/harness-manager/src/opencode-auth.ts",
-        "packages/mcp/src/mcp-manager.test.ts",
-        "packages/mcp/src/mcp-manager.ts",
-        "packages/mcp/src/native-config-files.ts",
-        "packages/mcp/src/native-mcp-manager.test.ts",
-        "packages/mcp/src/native-mcp-manager.ts",
-        "packages/skills/src/skills-install.ts",
-        "packages/skills/src/skills-manager.test.ts",
-        "packages/terminal/src/index.test.ts",
-        "packages/terminal/src/index.ts",
-        "packages/worktrees/src/worktree-names.ts",
-        "scripts/dev.mjs"
-      ],
-      "rules": {
-        "max-lines": "off"
-      }
-    }
-  ]
+  "overrides": []
 }

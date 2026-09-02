@@ -1,37 +1,11 @@
-import type {
-  EventEnvelope,
-  Harness,
-  HarnessUsageLimits,
-  SessionConfigOption,
-  SessionGoal
-} from "@codevisor/api"
+import type { EventEnvelope, Harness } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
-import type { AgentSessionSummary } from "./agent-sessions.js"
-import { accessSync, constants } from "node:fs"
 import { Context, Effect, Layer } from "effect"
-import type { BackgroundTerminalIntegration } from "./background-terminals.js"
-import { makeVersionProber } from "./version-probe.js"
-import {
-  AgentRuntimeError,
-  adapterPromise,
-  runtimeError,
-  runtimeEffect,
-  type AgentProvider,
-  type AgentSessionHandle,
-  type AgentSessionMetadata,
-  type CancelResult,
-  type HarnessDefinition,
-  type HarnessAccountContext,
-  type HarnessAuthInspection,
-  type PromptInput,
-  type PromptResult,
-  type ProviderEnvironment,
-  type ProviderId,
-  type QuestionAnswer,
-  type RuntimeEvent,
-  type RuntimeEventSink,
-  type SetGoalUpdate
-} from "./types.js"
+import { makeAgentRuntimeCore, withoutBuiltinCollisions } from "./agent-runtime-core.js"
+import { makeAgentSessionOperations } from "./agent-runtime-sessions.js"
+import type { AgentRuntimeConfig, AgentRuntimeService } from "./agent-runtime-types.js"
+import { harnessCatalog } from "./harness-catalog.js"
+import { adapterPromise, runtimeError, type RuntimeEvent } from "./types.js"
 
 export * from "./types.js"
 export * from "./attachments.js"
@@ -41,6 +15,9 @@ export * from "./shell-env.js"
 export * from "./agent-sessions.js"
 export * from "./stdio-transport.js"
 export * from "./model-selection.js"
+export * from "./agent-runtime-types.js"
+export { harnessCatalog } from "./harness-catalog.js"
+export { locateExecutableOnPath } from "./executable-locator.js"
 export { makeVersionProber, parseVersionOutput } from "./version-probe.js"
 export type { VersionProber, VersionProberOptions } from "./version-probe.js"
 export {
@@ -49,145 +26,6 @@ export {
   summarizeProcessFailure
 } from "./process-failure.js"
 
-/// Shared context the runtime hands to every provider factory: the pieces of
-/// runtime-owned state a harness adapter may integrate with.
-export interface ProviderFactoryContext {
-  readonly backgroundTerminals?: BackgroundTerminalIntegration
-}
-
-/// Constructs a provider against the runtime's live environment. Adapter
-/// packages export `make*Provider` functions that plug in here; the app
-/// composes the set it wants.
-export type ProviderFactory = (
-  environment: ProviderEnvironment,
-  context: ProviderFactoryContext
-) => AgentProvider
-
-export interface AgentRuntimeConfig {
-  readonly env?: NodeJS.ProcessEnv
-  readonly executableExists?: (name: string, env: NodeJS.ProcessEnv) => boolean
-  readonly locateExecutable?: (name: string, env: NodeJS.ProcessEnv) => string | undefined
-  readonly harnessInspectionTimeoutMs?: number
-  /// Server-owned terminals for agent background processes; providers surface
-  /// long-running agent commands through it as attachable terminal tabs.
-  /// Absent (tests, embedded runtimes), providers keep the plain behavior.
-  readonly backgroundTerminals?: BackgroundTerminalIntegration
-  /// Harness adapters to register, constructed against the runtime's
-  /// environment. The runtime registers no providers on its own — the app
-  /// composes the adapter set (mix and match per deployment).
-  readonly providerFactories?: ReadonlyArray<ProviderFactory>
-  /// Pre-built providers keyed by id, merged after `providerFactories`
-  /// (same-id wins). Exposed for tests and incremental provider rollout.
-  readonly providers?: Partial<Record<ProviderId, AgentProvider>>
-  /// Re-resolves the runtime's environment (see `refreshEnvironment`).
-  /// Typically `() => resolveShellEnv()` so PATH-based harness detection can
-  /// pick up CLIs installed after the server started. Absent, refresh is a
-  /// no-op and the environment stays fixed at `env ?? process.env`.
-  readonly resolveEnv?: () => Promise<NodeJS.ProcessEnv>
-  /// Reads a detected binary's --version output for readiness enrichment;
-  /// defaults to spawning the binary with the resolved environment. Exposed
-  /// for tests.
-  readonly readVersionOutput?: (path: string, env: NodeJS.ProcessEnv) => Promise<string>
-  /// Additional harness definitions merged after the builtin catalog —
-  /// user-defined custom ACP harnesses. Entries whose id collides with a
-  /// builtin are dropped (the builtin wins); callers validate ids upstream.
-  readonly extraHarnesses?: ReadonlyArray<HarnessDefinition>
-}
-
-export interface AgentRuntimeService {
-  /// The effective harness catalog: builtins plus the current user-defined
-  /// custom entries. A live view — read it lazily, don't capture it, so
-  /// `setExtraHarnesses` swaps are observed. Consumers (harness auth,
-  /// lifecycle) read definitions from here instead of the static
-  /// `harnessCatalog` export so custom entries behave uniformly.
-  readonly catalog: ReadonlyArray<HarnessDefinition>
-  /// Replaces the injected custom entries (the custom-harness PUT route).
-  /// Colliding ids are dropped exactly like the constructor path. Existing
-  /// sessions on removed harnesses keep running; new lookups fail.
-  readonly setExtraHarnesses: (definitions: ReadonlyArray<HarnessDefinition>) => void
-  readonly discoverHarnesses: Effect.Effect<ReadonlyArray<Harness>, AgentRuntimeError>
-  /// Re-resolves the environment via the configured `resolveEnv` (no-op
-  /// without one). Subsequent readiness checks and session launches see the
-  /// refreshed PATH — this is how "Detect again" finds a CLI installed after
-  /// server start. Concurrent refreshes share one in-flight resolution.
-  readonly refreshEnvironment: Effect.Effect<void, AgentRuntimeError>
-  /// Sessions from the harness's own on-disk store (run before/outside
-  /// Codevisor). Empty for harnesses without a native store or a provider
-  /// listing hook. Fails only for unknown harness ids.
-  readonly listAgentSessions: (
-    harnessId: string,
-    account?: HarnessAccountContext
-  ) => Effect.Effect<ReadonlyArray<AgentSessionSummary>, AgentRuntimeError>
-  readonly readHarnessUsageLimits: (
-    harnessId: string,
-    cwd: string,
-    account?: HarnessAccountContext
-  ) => Effect.Effect<HarnessUsageLimits, AgentRuntimeError>
-  readonly createAgentSession: (
-    harnessId: string,
-    cwd: string,
-    sink: RuntimeEventSink,
-    account?: HarnessAccountContext,
-    toolGateway?: import("./types.js").ToolGatewayConfig
-  ) => Effect.Effect<string, AgentRuntimeError>
-  readonly inspectHarness: (
-    harnessId: string,
-    cwd: string,
-    account?: HarnessAccountContext,
-    configSelections?: Readonly<Record<string, string>>
-  ) => Effect.Effect<AgentSessionMetadata, AgentRuntimeError>
-  readonly loadAgentSession: (
-    harnessId: string,
-    agentSessionId: string,
-    cwd: string,
-    sink: RuntimeEventSink,
-    account?: HarnessAccountContext,
-    toolGateway?: import("./types.js").ToolGatewayConfig
-  ) => Effect.Effect<AgentSessionMetadata, AgentRuntimeError>
-  readonly prompt: (
-    sessionId: string,
-    input: string | PromptInput
-  ) => Effect.Effect<PromptResult, AgentRuntimeError>
-  readonly cancel: (sessionId: string) => Effect.Effect<CancelResult, AgentRuntimeError>
-  /// Closes a loaded agent session and its process (background shells
-  /// included). No-op when the session is not loaded — archiving a session
-  /// that was never opened this server-lifetime has nothing to tear down.
-  readonly closeAgentSession: (sessionId: string) => Effect.Effect<void, AgentRuntimeError>
-  readonly setMode: (sessionId: string, modeId: string) => Effect.Effect<void, AgentRuntimeError>
-  readonly setConfigOption: (
-    sessionId: string,
-    configId: string,
-    value: string
-  ) => Effect.Effect<ReadonlyArray<SessionConfigOption>, AgentRuntimeError>
-  /// Fails with AgentRuntimeError when the session's harness has no goal
-  /// support (see AgentSessionMetadata.supportsGoals).
-  readonly setGoal: (
-    sessionId: string,
-    update: SetGoalUpdate
-  ) => Effect.Effect<SessionGoal, AgentRuntimeError>
-  readonly clearGoal: (sessionId: string) => Effect.Effect<void, AgentRuntimeError>
-  /// Fails when the harness cannot ask questions or the question is no longer
-  /// pending (already resolved, cancelled with the turn, or stale replay).
-  readonly answerQuestion: (
-    sessionId: string,
-    questionId: string,
-    answer: QuestionAnswer
-  ) => Effect.Effect<void, AgentRuntimeError>
-  readonly probeHarnessAuth: (
-    harnessId: string,
-    account?: HarnessAccountContext
-  ) => Effect.Effect<HarnessAuthInspection, AgentRuntimeError>
-  readonly authenticateHarness: (
-    harnessId: string,
-    methodId: string,
-    account?: HarnessAccountContext
-  ) => Effect.Effect<void, AgentRuntimeError>
-  readonly logoutHarness: (
-    harnessId: string,
-    account?: HarnessAccountContext
-  ) => Effect.Effect<void, AgentRuntimeError>
-}
-
 export class AgentRuntime extends Context.Service<AgentRuntime, AgentRuntimeService>()(
   "@codevisor/agent-runtime/AgentRuntime"
 ) {
@@ -195,600 +33,34 @@ export class AgentRuntime extends Context.Service<AgentRuntime, AgentRuntimeServ
     Layer.succeed(AgentRuntime, AgentRuntime.of(makeAgentRuntime(config)))
 }
 
-export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
-  // Claude Code is driven directly through the Agent SDK against the user's
-  // own `claude` binary — no npx adapter, no Node requirement.
-  {
-    detectBinaries: ["claude"],
-    id: "claude-code",
-    installHint: "curl -fsSL https://claude.ai/install.sh | bash",
-    installMethods: [
-      { cask: true, formula: "claude-code@latest", kind: "brew" },
-      { command: "curl -fsSL https://claude.ai/install.sh | bash", kind: "curl" },
-      { kind: "npm", packageName: "@anthropic-ai/claude-code" }
-    ],
-    name: "Claude Code",
-    // Global registrations live inside ~/.claude.json (a large state file the
-    // CLI rewrites constantly — edits must stay surgical); project-level ones
-    // in a committed .mcp.json. No per-server enable flag exists.
-    nativeMcp: {
-      format: "json",
-      key: "mcpServers",
-      path: "~/.claude.json",
-      projectFile: ".mcp.json",
-      writable: true
-    },
-    provider: "claude",
-    skills: { globalDir: "~/.claude/skills" },
-    symbolName: "sparkle",
-    update: {
-      sources: [
-        {
-          // Homebrew-owned binaries deliberately refuse `claude update` and
-          // exit successfully after printing the manual brew command. Infer
-          // the exact owning cask so stable and @latest stay on their channel.
-          apply: { kind: "reinstall" },
-          check: { kind: "brew" },
-          when: "brew"
-        },
-        {
-          // npm owns this binary, so update it directly through npm rather
-          // than depending on Claude's package-manager diagnostics.
-          apply: { kind: "reinstall" },
-          check: { kind: "npm", packageName: "@anthropic-ai/claude-code" },
-          when: "npm"
-        },
-        {
-          // Native/curl installs are owned by Claude's native updater. This
-          // also remains the safe fallback for standalone/unknown layouts.
-          apply: { args: ["update"], kind: "selfUpdate" },
-          check: { kind: "npm", packageName: "@anthropic-ai/claude-code" },
-          when: "any"
-        }
-      ]
-    }
-  },
-  // Codex is driven directly through `codex app-server` (JSONL JSON-RPC) —
-  // no npx adapter, no Node requirement.
-  {
-    detectBinaries: ["codex"],
-    // The ChatGPT/Codex desktop apps bundle the full CLI (same binary,
-    // app-managed updates) and share ~/.codex auth with it — app-only users
-    // get a working harness without installing the CLI. When both exist, the
-    // Codex provider compares binary versions and uses the newer app-server.
-    fallbackPaths: [
-      "/Applications/ChatGPT.app/Contents/Resources/codex",
-      "~/Applications/ChatGPT.app/Contents/Resources/codex",
-      "/Applications/Codex.app/Contents/Resources/codex",
-      "~/Applications/Codex.app/Contents/Resources/codex"
-    ],
-    id: "codex",
-    installHint: "npm install -g @openai/codex",
-    installMethods: [
-      { cask: true, formula: "codex", kind: "brew" },
-      { kind: "npm", packageName: "@openai/codex" }
-    ],
-    name: "Codex",
-    // TOML config: readable everywhere, but edits go through the verified
-    // text-excision path (never a whole-file TOML re-stringify). The scanner
-    // honors CODEX_HOME over the literal path.
-    nativeMcp: {
-      format: "toml",
-      key: "mcp_servers",
-      path: "~/.codex/config.toml",
-      writable: true
-    },
-    provider: "codex",
-    skills: { globalDir: "~/.codex/skills" },
-    symbolName: "chevron.left.forwardslash.chevron.right",
-    update: {
-      sources: [
-        {
-          // App-bundled codex: `codex update` refuses (InstallMethod::Other),
-          // so Codevisor updates the whole app bundle from its Sparkle feed.
-          // The app ships its own (often pre-release) channel — never compare
-          // it against the npm/brew stable line.
-          apply: { kind: "appBundleSwap" },
-          check: {
-            appcastUrl: "https://persistent.oaistatic.com/codex-app-prod/appcast.xml",
-            appcastUrlX64: "https://persistent.oaistatic.com/codex-app-prod/appcast-x64.xml",
-            kind: "sparkle"
-          },
-          when: "appBundle"
-        },
-        {
-          apply: { args: ["update"], kind: "selfUpdate" },
-          check: { formula: "codex", kind: "brew" },
-          when: "brew"
-        },
-        {
-          // `codex update` detects npm/pnpm/bun/standalone itself.
-          apply: { args: ["update"], kind: "selfUpdate" },
-          check: { kind: "npm", packageName: "@openai/codex" },
-          when: "any"
-        }
-      ]
-    }
-  },
-  // Pi exposes an RPC mode but not ACP directly. The pinned adapter bridges
-  // Codevisor's existing ACP provider to the user's installed `pi` binary, so
-  // Pi keeps ownership of its models, settings, extensions, and session store.
-  {
-    detectBinaries: ["pi"],
-    id: "pi",
-    installHint: "npm install -g @earendil-works/pi-coding-agent",
-    installMethods: [{ kind: "npm", packageName: "@earendil-works/pi-coding-agent" }],
-    launch: { args: [], kind: "npx", packageName: "pi-acp@0.0.31" },
-    name: "Pi",
-    provider: "acp",
-    symbolName: "function",
-    update: {
-      sources: [
-        {
-          apply: { kind: "reinstall" },
-          check: { kind: "npm", packageName: "@earendil-works/pi-coding-agent" },
-          when: "any"
-        }
-      ]
-    }
-  },
-  executableHarness("gemini", "Gemini CLI", "diamond", ["gemini"], "gemini", ["--acp"], {
-    installMethods: [
-      { kind: "npm", packageName: "@google/gemini-cli" },
-      { formula: "gemini-cli", kind: "brew" }
-    ],
-    nativeMcp: {
-      format: "json",
-      key: "mcpServers",
-      path: "~/.gemini/settings.json",
-      writable: true
-    },
-    skills: { globalDir: "~/.gemini/skills" },
-    update: {
-      // Gemini CLI has no self-update command (explicitly "not planned"
-      // upstream) — reinstall via the detected origin.
-      sources: [
-        {
-          apply: { kind: "reinstall" },
-          check: { formula: "gemini-cli", kind: "brew" },
-          when: "brew"
-        },
-        {
-          apply: { kind: "reinstall" },
-          check: { kind: "npm", packageName: "@google/gemini-cli" },
-          when: "any"
-        }
-      ]
-    }
-  }),
-  executableHarness("opencode", "OpenCode", "curlybraces", ["opencode"], "opencode", ["acp"], {
-    installMethods: [
-      { command: "curl -fsSL https://opencode.ai/install | bash", kind: "curl" },
-      { kind: "npm", packageName: "opencode-ai" }
-    ],
-    // OpenCode has a real per-server `enabled` flag — the one JSON harness
-    // where a native disable toggle is honest. XDG_CONFIG_HOME is honored by
-    // the scanner.
-    nativeMcp: {
-      disableField: { enabledWhen: true, name: "enabled" },
-      format: "json",
-      key: "mcp",
-      path: "~/.config/opencode/opencode.json",
-      writable: true
-    },
-    // OpenCode scans ~/.agents/skills (and ~/.claude/skills) in addition to
-    // its own directory — every global skill is ambiently available.
-    skills: { alsoReadsCanonical: true, globalDir: "~/.config/opencode/skills" },
-    update: {
-      // `opencode upgrade` detects curl/npm/pnpm/bun/brew itself.
-      sources: [
-        {
-          apply: { args: ["upgrade"], kind: "selfUpdate" },
-          check: { kind: "npm", packageName: "opencode-ai" },
-          when: "any"
-        }
-      ]
-    }
-  }),
-  executableHarness("goose", "goose", "bird", ["goose"], "goose", ["acp"], {
-    installMethods: [{ formula: "block-goose-cli", kind: "brew" }],
-    // Read-only in v1: comment-preserving YAML edits aren't wired up yet, and
-    // goose configs commonly carry hand-written comments.
-    nativeMcp: {
-      format: "yaml",
-      key: "extensions",
-      path: "~/.config/goose/config.yaml",
-      writable: false
-    },
-    update: {
-      sources: [
-        {
-          // `goose update` blindly replaces the binary in place — on a brew
-          // install that clobbers the Cellar copy, so delegate to brew.
-          apply: { kind: "reinstall" },
-          check: { formula: "block-goose-cli", kind: "brew" },
-          when: "brew"
-        },
-        {
-          apply: { args: ["update"], kind: "selfUpdate" },
-          check: { kind: "github", repo: "block/goose" },
-          when: "any"
-        }
-      ]
-    }
-  }),
-  {
-    detectBinaries: ["cursor-agent"],
-    id: "cursor",
-    installHint: "curl https://cursor.com/install -fsS | bash",
-    installMethods: [{ command: "curl https://cursor.com/install -fsS | bash", kind: "curl" }],
-    launch: {
-      args: ["--force", "--sandbox", "disabled", "acp"],
-      command: "cursor-agent",
-      kind: "executable"
-    },
-    name: "Cursor",
-    provider: "cursor",
-    symbolName: "cursorarrow.rays"
-  },
-  // Amp's harness runs through the separate `amp-acp` adapter binary, not the
-  // `amp` CLI itself — no verified install/update channel for the adapter yet.
-  // amp/auggie: nativeMcp omitted — their MCP config formats are unverified;
-  // adding them later is a pure catalog-data change.
-  executableHarness("amp", "Amp", "bolt", ["amp-acp"], "amp-acp", [], {
-    skills: { globalDir: "~/.config/agents/skills" }
-  }),
-  executableHarness("auggie", "Auggie CLI", "a.square", ["auggie"], "auggie", ["--acp"], {
-    installMethods: [{ kind: "npm", packageName: "@augmentcode/auggie" }],
-    skills: { globalDir: "~/.augment/skills" },
-    update: {
-      // No self-update command; auggie's own background auto-updater covers
-      // most installs, reinstall covers the rest.
-      sources: [
-        {
-          apply: { kind: "reinstall" },
-          check: { kind: "npm", packageName: "@augmentcode/auggie" },
-          when: "any"
-        }
-      ]
-    }
-  }),
-  executableHarness("cline", "Cline", "terminal", ["cline"], "cline", ["--acp"], {
-    installMethods: [{ kind: "npm", packageName: "cline" }],
-    // Cline CLI stores MCPs in its data dir and has a real `disabled` flag.
-    // Its skills dir IS the canonical ~/.agents/skills store — never symlink.
-    nativeMcp: {
-      disableField: { enabledWhen: false, name: "disabled" },
-      format: "json",
-      key: "mcpServers",
-      path: "~/.cline/data/settings/cline_mcp_settings.json",
-      writable: true
-    },
-    skills: { globalDir: "~/.agents/skills", readsCanonical: true },
-    update: {
-      // `cline update` detects npm/pnpm/yarn/bun itself (npm-only distro).
-      sources: [
-        {
-          apply: { args: ["update"], kind: "selfUpdate" },
-          check: { kind: "npm", packageName: "cline" },
-          when: "any"
-        }
-      ]
-    }
-  }),
-  executableHarness(
-    "github-copilot-cli",
-    "GitHub Copilot",
-    "ellipsis.curlybraces",
-    ["copilot"],
-    "copilot",
-    ["--acp"],
-    {
-      installMethods: [{ kind: "npm", packageName: "@github/copilot" }],
-      nativeMcp: {
-        format: "json",
-        key: "mcpServers",
-        path: "~/.copilot/mcp-config.json",
-        writable: true
-      },
-      skills: { globalDir: "~/.copilot/skills" },
-      update: {
-        // `copilot update` exists but is closed source; failures surface
-        // gracefully as a failed lifecycle state.
-        sources: [
-          {
-            apply: { args: ["update"], kind: "selfUpdate" },
-            check: { kind: "npm", packageName: "@github/copilot" },
-            when: "any"
-          }
-        ]
-      }
-    }
-  ),
-  executableHarness(
-    "qwen-code",
-    "Qwen Code",
-    "q.square",
-    ["qwen"],
-    "qwen",
-    ["--acp", "--experimental-skills"],
-    {
-      installMethods: [{ kind: "npm", packageName: "@qwen-code/qwen-code" }],
-      skills: { globalDir: "~/.qwen/skills" },
-      update: {
-        // No self-update command — reinstall via npm.
-        sources: [
-          {
-            apply: { kind: "reinstall" },
-            check: { kind: "npm", packageName: "@qwen-code/qwen-code" },
-            when: "any"
-          }
-        ]
-      }
-    }
-  ),
-  executableHarness("kimi", "Kimi CLI", "k.square", ["kimi"], "kimi", ["acp"], {
-    installMethods: [
-      { command: "curl -LsSf https://code.kimi.com/install.sh | bash", kind: "curl" }
-    ]
-  }),
-  executableHarness(
-    "factory-droid",
-    "Factory Droid",
-    "wrench.and.screwdriver",
-    ["droid"],
-    "droid",
-    ["exec", "--output-format", "acp-daemon"],
-    {
-      installMethods: [{ command: "curl -fsSL https://app.factory.ai/cli | sh", kind: "curl" }],
-      update: {
-        sources: [
-          // Droid's npm builds have auto-update disabled at build time
-          // (deliberately pinned) — reinstall is the vendor-blessed path.
-          {
-            apply: { kind: "reinstall" },
-            check: { kind: "npm", packageName: "droid" },
-            when: "npm"
-          },
-          {
-            // Standalone/curl installs self-update via `droid update`.
-            apply: { args: ["update"], kind: "selfUpdate" },
-            check: { kind: "npm", packageName: "droid" },
-            when: "any"
-          }
-        ]
-      }
-    }
-  ),
-  executableHarness("devin", "Devin", "brain", ["devin"], "devin", ["acp"], {
-    installMethods: [{ command: "curl -fsSL https://cli.devin.ai/install.sh | bash", kind: "curl" }]
-  }),
-  executableHarness("grok-build", "Grok Build", "x.square", ["grok"], "grok", ["agent", "stdio"], {
-    installMethods: [{ command: "curl -fsSL https://x.ai/cli/install.sh | bash", kind: "curl" }],
-    provider: "grok-build"
-  }),
-  executableHarness("kilo", "Kilo", "shippingbox", ["kilo"], "kilo", ["acp"], {
-    installMethods: [{ kind: "npm", packageName: "@kilocode/cli" }],
-    update: {
-      // `kilo upgrade` detects curl/npm/yarn/pnpm/bun/brew itself.
-      sources: [
-        {
-          apply: { args: ["upgrade"], kind: "selfUpdate" },
-          check: { kind: "npm", packageName: "@kilocode/cli" },
-          when: "any"
-        }
-      ]
-    }
-  })
-]
-
-interface ManagedSession {
-  readonly harnessId: string
-  readonly harnessAccountId?: string
-  readonly cwd: string
-  readonly handle: AgentSessionHandle
-  metadata: AgentSessionMetadata
-  sink: RuntimeEventSink
-  chain: Promise<void>
-}
-
 export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeService => {
-  // Effective catalog: builtins first, then injected user-defined entries.
-  // A colliding extra id is dropped so a custom entry can never shadow (or
-  // break) a builtin harness. Both are `let`s: setExtraHarnesses swaps them
-  // live (the custom-harness PUT route), so every internal consumer reads
-  // them lazily rather than capturing.
-  const withoutBuiltinCollisions = (
-    definitions: ReadonlyArray<HarnessDefinition>
-  ): ReadonlyArray<HarnessDefinition> =>
-    definitions.filter((extra) => !harnessCatalog.some((builtin) => builtin.id === extra.id))
-  let extraHarnesses = withoutBuiltinCollisions(config.extraHarnesses ?? [])
-  let catalog: ReadonlyArray<HarnessDefinition> =
-    extraHarnesses.length === 0 ? harnessCatalog : [...harnessCatalog, ...extraHarnesses]
-  let currentEnv = config.env ?? process.env
-  const locateExecutable = config.locateExecutable ?? locateExecutableOnPath
-  const executableExists =
-    config.executableExists ??
-    ((name, environment) => locateExecutable(name, environment) !== undefined)
-  // A getter so every provider sees environment refreshes without re-wiring:
-  // providers read `environment.env` lazily at readiness/launch time.
-  const environment: ProviderEnvironment = {
-    get env() {
-      return currentEnv
-    },
-    executableExists,
-    locateExecutable
-  }
-  let envRefresh: Promise<void> | undefined
-  const versions = makeVersionProber(
-    config.readVersionOutput === undefined ? {} : { readVersionOutput: config.readVersionOutput }
-  )
-  /// First detect binary (or absolute fallback path) present in the current
-  /// environment — the same candidates providers scan for readiness.
-  const locateHarnessBinary = (definition: HarnessDefinition): string | undefined => {
-    for (const name of [...definition.detectBinaries, ...(definition.fallbackPaths ?? [])]) {
-      const path = locateExecutable(name, currentEnv)
-      if (path !== undefined) return path
-    }
-    return undefined
-  }
-  const locateReadyBinaries = (): ReadonlyArray<string> =>
-    catalog.flatMap((definition) => {
-      const path = locateHarnessBinary(definition)
-      return path === undefined ? [] : [path]
-    })
-  const providers = new Map<ProviderId, AgentProvider>()
-  const factoryContext: ProviderFactoryContext =
-    config.backgroundTerminals === undefined
-      ? {}
-      : { backgroundTerminals: config.backgroundTerminals }
-  for (const factory of config.providerFactories ?? []) {
-    const provider = factory(environment, factoryContext)
-    providers.set(provider.id, provider)
-  }
-  for (const provider of Object.values(config.providers ?? {})) {
-    providers.set(provider.id, provider)
-  }
-  const sessions = new Map<string, ManagedSession>()
-  const lifecycleTails = new Map<string, Promise<void>>()
-
-  /// Serializes load/cancel/close for one durable provider session. In
-  /// particular, a new load cannot observe a handle while an earlier forced
-  /// cancellation is still flushing and retiring it.
-  const withSessionLifecycle = async <A>(
-    sessionId: string,
-    operation: () => Promise<A>
-  ): Promise<A> => {
-    const previous = lifecycleTails.get(sessionId) ?? Promise.resolve()
-    let release: (() => void) | undefined
-    const gate = new Promise<void>((resolvePromise) => {
-      release = resolvePromise
-    })
-    // Every stored tail resolves through the gate released in `finally`, so
-    // later operations can await it directly without unreachable catch paths.
-    const tail = previous.then(() => gate)
-    lifecycleTails.set(sessionId, tail)
-    await previous
-    try {
-      return await operation()
-    } finally {
-      release?.()
-      if (lifecycleTails.get(sessionId) === tail) {
-        lifecycleTails.delete(sessionId)
-      }
-    }
-  }
-
-  /// All session output funnels through here. Events append to the owning
-  /// session's serial promise chain so the sink observes them in arrival
-  /// order — including events with no prompt in flight, which is how
-  /// agent-initiated turns reach the server.
-  const dispatch = (event: RuntimeEvent): Promise<void> => {
-    const session = sessions.get(event.subjectId)
-    if (session === undefined) {
-      return Promise.resolve()
-    }
-    if (typeof event.payload === "object" && event.payload !== null) {
-      const payload = event.payload as Record<string, unknown>
-      if (event.kind === "session.updated" && Array.isArray(payload.configOptions)) {
-        session.metadata = {
-          ...session.metadata,
-          configOptions: payload.configOptions as AgentSessionMetadata["configOptions"]
-        }
-      }
-      const modeId =
-        event.kind === "session.updated" && typeof payload.modeId === "string"
-          ? payload.modeId
-          : event.kind === "session.output" &&
-              payload.sessionUpdate === "current_mode_update" &&
-              typeof payload.currentModeId === "string"
-            ? payload.currentModeId
-            : undefined
-      if (modeId !== undefined && session.metadata.modes !== undefined) {
-        session.metadata = {
-          ...session.metadata,
-          modes: { ...session.metadata.modes, currentModeId: modeId }
-        }
-      }
-    }
-    const next = session.chain
-      .then(() => session.sink(event))
-      .then(
-        () => undefined,
-        /* v8 ignore next -- defensive: a sink failure must not wedge the chain. */
-        () => undefined
-      )
-    session.chain = next
-    return next
-  }
-
-  const definitionFor = (
-    harnessId: string
-  ): Effect.Effect<
-    { readonly definition: HarnessDefinition; readonly provider: AgentProvider },
-    AgentRuntimeError
-  > =>
-    runtimeEffect("resolveHarness", () => {
-      const definition = catalog.find((candidate) => candidate.id === harnessId)
-      if (definition === undefined) {
-        throw new Error(`Unknown harness: ${harnessId}`)
-      }
-      if (definition.disabledReason !== undefined) {
-        throw new Error(`${definition.name} is unavailable: ${definition.disabledReason}`)
-      }
-      const provider = providers.get(definition.provider)
-      /* v8 ignore next 3 -- every catalog provider id is registered above; guards future ids. */
-      if (provider === undefined) {
-        throw new Error(`No provider registered for harness: ${harnessId}`)
-      }
-      return { definition, provider }
-    })
-
-  const manageSession = (
-    harnessId: string,
-    metadata: AgentSessionMetadata,
-    cwd: string,
-    handle: AgentSessionHandle,
-    sink: RuntimeEventSink,
-    account?: HarnessAccountContext
-  ): AgentSessionMetadata => {
-    const sessionId = metadata.sessionId
-    const previous = sessions.get(sessionId)
-    if (previous !== undefined && previous.handle !== handle) {
-      void Effect.runPromise(previous.handle.close).catch(() => undefined)
-    }
-    sessions.set(sessionId, {
-      chain: Promise.resolve(),
-      cwd,
-      handle,
-      harnessId,
-      ...(account === undefined ? {} : { harnessAccountId: account.id }),
-      metadata,
-      sink
-    })
-    return metadata
-  }
-
-  const sessionFor = (sessionId: string): Effect.Effect<ManagedSession, AgentRuntimeError> =>
-    runtimeEffect("sessionFor", () => {
-      const session = sessions.get(sessionId)
-      if (session === undefined) {
-        throw new Error(`Agent session is not loaded: ${sessionId}`)
-      }
-      return session
-    })
+  const core = makeAgentRuntimeCore(config)
+  const {
+    definitionFor,
+    dispatch,
+    locateHarnessBinary,
+    locateReadyBinaries,
+    manageSession,
+    providers,
+    sessions,
+    state,
+    versions,
+    withSessionLifecycle
+  } = core
 
   return {
     get catalog() {
-      return catalog
+      return state.catalog
     },
     setExtraHarnesses: (definitions) => {
-      extraHarnesses = withoutBuiltinCollisions(definitions)
-      catalog =
-        extraHarnesses.length === 0 ? harnessCatalog : [...harnessCatalog, ...extraHarnesses]
+      state.extraHarnesses = withoutBuiltinCollisions(definitions)
+      state.catalog =
+        state.extraHarnesses.length === 0
+          ? harnessCatalog
+          : [...harnessCatalog, ...state.extraHarnesses]
     },
     discoverHarnesses: Effect.sync(() =>
-      catalog.map((definition) => {
+      state.catalog.map((definition) => {
         const provider = providers.get(definition.provider)
         let readiness: Harness["readiness"]
         if (definition.disabledReason !== undefined) {
@@ -818,7 +90,7 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
           id: definition.id,
           name: definition.name,
           symbolName: definition.symbolName,
-          source: extraHarnesses.includes(definition) ? "custom" : "registry",
+          source: state.extraHarnesses.includes(definition) ? "custom" : "registry",
           launchKind:
             definition.launch?.kind === "npx" ? ("npx" as const) : ("executable" as const),
           enabled: true,
@@ -829,7 +101,7 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
     ),
     listAgentSessions: (harnessId, account) =>
       adapterPromise("listAgentSessions", async () => {
-        const definition = catalog.find((candidate) => candidate.id === harnessId)
+        const definition = state.catalog.find((candidate) => candidate.id === harnessId)
         if (definition === undefined) {
           throw new Error(`Unknown harness: ${harnessId}`)
         }
@@ -862,21 +134,21 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
       if (resolveEnv === undefined) {
         // Still settle version probes so a rescan without an env resolver
         // (embedded runtimes, tests) reports complete readiness.
-        return versions.probe(locateReadyBinaries(), currentEnv)
+        return versions.probe(locateReadyBinaries(), state.currentEnv)
       }
       // Concurrent refreshes (Settings + onboarding both rescanning) share
       // one shell probe instead of stacking login-shell invocations.
-      envRefresh ??= resolveEnv()
+      state.envRefresh ??= resolveEnv()
         .then((resolved) => {
-          currentEnv = resolved
+          state.currentEnv = resolved
         })
         // Awaited (not fire-and-forget) so the rescan response that follows
         // a refresh carries binary versions, not a cache miss.
-        .then(() => versions.probe(locateReadyBinaries(), currentEnv))
+        .then(() => versions.probe(locateReadyBinaries(), state.currentEnv))
         .finally(() => {
-          envRefresh = undefined
+          state.envRefresh = undefined
         })
-      return envRefresh
+      return state.envRefresh
     }),
     createAgentSession: (harnessId, cwd, sink, account, toolGateway) =>
       Effect.gen(function* () {
@@ -961,145 +233,7 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
           return manageSession(harnessId, metadata, cwd, loaded.handle, sink, account)
         })
       ),
-    prompt: (sessionId, input) =>
-      Effect.gen(function* () {
-        const session = yield* sessionFor(sessionId)
-        return yield* session.handle.prompt(input)
-      }),
-    cancel: (sessionId) =>
-      adapterPromise("cancel", () =>
-        withSessionLifecycle(sessionId, async () => {
-          const session = sessions.get(sessionId)
-          if (session === undefined) {
-            throw new Error(`Agent session is not loaded: ${sessionId}`)
-          }
-          const result = await Effect.runPromise(session.handle.cancel)
-          await session.chain
-          if (result.runtimeState !== "retire" || sessions.get(sessionId) !== session) {
-            return result
-          }
-          let closeFailure: unknown
-          try {
-            await Effect.runPromise(session.handle.close)
-          } catch (cause) {
-            closeFailure = cause
-          } finally {
-            await session.chain
-            // Matching-handle check prevents stale cancellation cleanup from
-            // deleting a replacement installed by another lifecycle path.
-            if (sessions.get(sessionId) === session) {
-              sessions.delete(sessionId)
-            }
-          }
-          if (closeFailure !== undefined) throw closeFailure
-          return result
-        })
-      ),
-    closeAgentSession: (sessionId) =>
-      adapterPromise("closeAgentSession", () =>
-        withSessionLifecycle(sessionId, async () => {
-          const session = sessions.get(sessionId)
-          if (session === undefined) return
-          let closeFailure: unknown
-          try {
-            await Effect.runPromise(session.handle.close)
-          } catch (cause) {
-            closeFailure = cause
-          } finally {
-            await session.chain
-            if (sessions.get(sessionId) === session) {
-              sessions.delete(sessionId)
-            }
-          }
-          if (closeFailure !== undefined) throw closeFailure
-        })
-      ),
-    setMode: (sessionId, modeId) =>
-      Effect.gen(function* () {
-        const session = yield* sessionFor(sessionId)
-        return yield* session.handle.setMode(modeId)
-      }),
-    setConfigOption: (sessionId, configId, value) =>
-      Effect.gen(function* () {
-        const session = yield* sessionFor(sessionId)
-        return yield* session.handle.setConfigOption(configId, value)
-      }),
-    setGoal: (sessionId, update) =>
-      Effect.gen(function* () {
-        const session = yield* sessionFor(sessionId)
-        const setGoal = session.handle.setGoal
-        if (setGoal === undefined) {
-          return yield* Effect.fail(
-            new AgentRuntimeError({
-              operation: "setGoal",
-              message: "Goals are not supported by this harness"
-            })
-          )
-        }
-        return yield* setGoal(update)
-      }),
-    clearGoal: (sessionId) =>
-      Effect.gen(function* () {
-        const session = yield* sessionFor(sessionId)
-        const clearGoal = session.handle.clearGoal
-        if (clearGoal === undefined) {
-          return yield* Effect.fail(
-            new AgentRuntimeError({
-              operation: "clearGoal",
-              message: "Goals are not supported by this harness"
-            })
-          )
-        }
-        return yield* clearGoal
-      }),
-    answerQuestion: (sessionId, questionId, answer) =>
-      Effect.gen(function* () {
-        const session = yield* sessionFor(sessionId)
-        const answerQuestion = session.handle.answerQuestion
-        if (answerQuestion === undefined) {
-          return yield* Effect.fail(
-            new AgentRuntimeError({
-              operation: "answerQuestion",
-              message: "Questions are not supported by this harness"
-            })
-          )
-        }
-        return yield* answerQuestion(questionId, answer)
-      }),
-    probeHarnessAuth: (harnessId, account) =>
-      Effect.gen(function* () {
-        const { definition, provider } = yield* definitionFor(harnessId)
-        if (provider.probeAuth === undefined) {
-          return { state: "notRequired" as const, methods: [], canLogout: false }
-        }
-        return yield* provider.probeAuth(definition, account)
-      }),
-    authenticateHarness: (harnessId, methodId, account) =>
-      Effect.gen(function* () {
-        const { definition, provider } = yield* definitionFor(harnessId)
-        if (provider.authenticate === undefined) {
-          return yield* Effect.fail(
-            new AgentRuntimeError({
-              operation: "authenticate",
-              message: "Authentication is not supported by this harness"
-            })
-          )
-        }
-        return yield* provider.authenticate(definition, methodId, account)
-      }),
-    logoutHarness: (harnessId, account) =>
-      Effect.gen(function* () {
-        const { definition, provider } = yield* definitionFor(harnessId)
-        if (provider.logout === undefined) {
-          return yield* Effect.fail(
-            new AgentRuntimeError({
-              operation: "logout",
-              message: "Logout is not supported by this harness"
-            })
-          )
-        }
-        return yield* provider.logout(definition, account)
-      })
+    ...makeAgentSessionOperations(core)
   }
 }
 
@@ -1115,69 +249,3 @@ export const toEventEnvelope = (
   createdAt: isoTimestamp(),
   payload: event.payload
 })
-
-function executableHarness(
-  id: string,
-  name: string,
-  symbolName: string,
-  detectBinaries: ReadonlyArray<string>,
-  command: string,
-  args: ReadonlyArray<string> = [],
-  /// Lifecycle metadata (installMethods/update) and other optional
-  /// definition fields that don't fit the positional shorthand.
-  extra: Partial<
-    Pick<
-      HarnessDefinition,
-      | "installMethods"
-      | "update"
-      | "installHint"
-      | "fallbackPaths"
-      | "nativeMcp"
-      | "skills"
-      | "provider"
-    >
-  > = {}
-): HarnessDefinition {
-  return {
-    detectBinaries,
-    id,
-    launch: { args, command, kind: "executable" },
-    name,
-    provider: "acp",
-    symbolName,
-    ...extra
-  }
-}
-
-/// Default executable locator. Plain names are searched on PATH; candidates
-/// with a leading `/` or `~/` (harness `fallbackPaths`, e.g. a CLI bundled
-/// inside a desktop app) are probed directly, `~` expanding via env.HOME.
-/// Exported for tests only.
-export const locateExecutableOnPath = (
-  name: string,
-  env: NodeJS.ProcessEnv
-): string | undefined => {
-  if (name.startsWith("/") || name.startsWith("~/")) {
-    if (name.startsWith("~/") && env.HOME === undefined) {
-      return undefined
-    }
-    const candidate = name.startsWith("~/") ? `${env.HOME}${name.slice(1)}` : name
-    try {
-      accessSync(candidate, constants.X_OK)
-      return candidate
-    } catch {
-      return undefined
-    }
-  }
-  const path = env.PATH ?? ""
-  for (const directory of path.split(":")) {
-    const candidate = `${directory}/${name}`
-    try {
-      accessSync(candidate, constants.X_OK)
-      return candidate
-    } catch {
-      continue
-    }
-  }
-  return undefined
-}
