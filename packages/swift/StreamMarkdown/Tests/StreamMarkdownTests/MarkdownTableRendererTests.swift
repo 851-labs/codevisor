@@ -128,6 +128,44 @@ struct MarkdownTableRendererTests {
         #expect(abs(widths[0] - widths[1]) < 0.001)
     }
 
+    @Test("A table narrower than its widest words lays out at min-content width and overflows")
+    @MainActor
+    func overconstrainedTableKeepsMinContentColumns() {
+        let theme = MarkdownTheme.default
+        let long = String(repeating: "a", count: 80)
+        let parser = MarkdownParser()
+        let prepared = MarkdownTableRenderer.prepare(
+            headers: ["Head", "Other"].map(parser.parseInline),
+            rows: [[long, "x"].map(parser.parseInline)],
+            theme: theme
+        )
+        let minimum = MarkdownTableMetrics.minimumTableWidth(
+            columnMinimumWidths: prepared.columnMinimumWidths
+        )
+        #expect(minimum > 300)
+        let cache = MarkdownTableRenderCache()
+        let model = TableModel(
+            headers: ["Head", "Other"], alignments: [.leading, .leading], rows: [[long, "x"]], theme: theme)
+        #expect(cache.minimumWidth(for: model) == minimum)
+
+        // Rendered at a width far narrower than the unbreakable word, every
+        // column still keeps its min-content width instead of shredding.
+        let attributed = MarkdownTableRenderer.make(
+            prepared: prepared, alignments: [.leading, .leading], theme: theme, width: 200
+        )
+        var blockWidths: [Int: CGFloat] = [:]
+        attributed.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: attributed.length)) {
+            value, _, _ in
+            guard let style = value as? NSParagraphStyle,
+                let block = style.textBlocks.first as? NSTextTableBlock
+            else { return }
+            blockWidths[block.startingColumn] = block.value(for: .width)
+        }
+        #expect(blockWidths[0] ?? 0 >= prepared.columnMinimumWidths[0] - 0.5)
+        #expect(blockWidths[1] ?? 0 >= prepared.columnMinimumWidths[1] - 0.5)
+        #expect(cache.size(for: model, width: minimum).width >= minimum - 1)
+    }
+
     @Test("distribute without compression keeps min-content and overflows")
     func distributeOverflowsInsteadOfCompressing() {
         // The iOS renderer's mode: a wide table on a narrow phone keeps every

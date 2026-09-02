@@ -18,7 +18,10 @@
     ///
     /// The table fills the width it is actually given (see `TableTextView.layout`),
     /// so while a message streams in it only grows *downward* and never jitters
-    /// sideways. The rounded outer border comes from SwiftUI (TextKit block borders
+    /// sideways. When even its min-content column widths do not fit, it keeps
+    /// them and scrolls horizontally inside `TableScrollView` — the same
+    /// behaviour as the iOS renderer — instead of wrapping cells mid-word.
+    /// The rounded outer border comes from SwiftUI (TextKit block borders
     /// are rectangular); TextKit draws the shaded header, the row hairlines, and
     /// the cell text.
     struct MarkdownTableView: View {
@@ -118,7 +121,7 @@
 
         func makeCoordinator() -> MarkdownTextViewLinkCoordinator { .init() }
 
-        func makeNSView(context: Context) -> TableTextView {
+        func makeNSView(context: Context) -> TableScrollView {
             // Build an explicit TextKit 1 stack: `NSTextTable` is a TextKit 1
             // construct and does not lay out under an NSTextView's default
             // TextKit 2 stack.
@@ -150,26 +153,39 @@
             ]
             context.coordinator.install(on: textView, action: linkAction)
             textView.update(model: model, renderMemo: renderMemo)
-            return textView
+            return TableScrollView(tableTextView: textView)
+        }
+
+        /// The width the table is laid out at: the granted width, or the
+        /// min-content width when that is wider (the host then scrolls).
+        private func layoutWidth(for proposed: CGFloat) -> CGFloat {
+            max(proposed, renderMemo.minimumWidth(for: model))
         }
 
         func sizeThatFits(
-            _ proposal: ProposedViewSize, nsView textView: TableTextView, context _: Context
+            _ proposal: ProposedViewSize, nsView scrollView: TableScrollView, context _: Context
         ) -> CGSize? {
             guard let proposed = proposal.width, proposed.isFinite else {
                 // Unspecified / infinite proposal: the ideal size at the current
                 // width (or a modest default before the view has one).
-                let ideal = textView.bounds.width > 1 ? textView.bounds.width : 400
-                return renderMemo.size(for: model, width: ideal)
+                let ideal = scrollView.bounds.width > 1 ? scrollView.bounds.width : 400
+                return CGSize(
+                    width: ideal, height: renderMemo.size(for: model, width: layoutWidth(for: ideal)).height
+                )
             }
             if proposed <= 1 {
-                // Minimum-size probe. Reporting the current/full width here is what
-                // previously pinned the window's minimum size and blocked resizing;
-                // report the table's true minimum instead.
-                return renderMemo.size(for: model, width: Self.minimumWidth)
+                // Minimum-size probe. Reporting the content width here is what
+                // previously pinned the window's minimum size and blocked
+                // resizing; a wide table scrolls instead, so report a floor.
+                return CGSize(
+                    width: Self.minimumWidth,
+                    height: renderMemo.size(for: model, width: layoutWidth(for: Self.minimumWidth)).height
+                )
             }
-            // A concrete width — fill it.
-            return CGSize(width: proposed, height: renderMemo.size(for: model, width: proposed).height)
+            // A concrete width — fill it, laying out wider only when the
+            // min-content width demands it (that overflow scrolls).
+            return CGSize(
+                width: proposed, height: renderMemo.size(for: model, width: layoutWidth(for: proposed)).height)
         }
     }
 
@@ -190,6 +206,12 @@
         private var model: TableModel?
         private var renderMemo: MarkdownTableRenderMemo?
         private var builtWidth: CGFloat = -1
+
+        /// The narrowest width at which no column wraps mid-word.
+        var minimumTableWidth: CGFloat {
+            guard let model, let renderMemo else { return 0 }
+            return renderMemo.minimumWidth(for: model)
+        }
 
         func update(model: TableModel, renderMemo: MarkdownTableRenderMemo) {
             guard self.model != model || self.renderMemo !== renderMemo else { return }
@@ -280,6 +302,10 @@
             let width = Self.normalized(width)
             let entry = entry(for: model, width: width)
             return cache.size(of: entry)
+        }
+
+        func minimumWidth(for model: TableModel) -> CGFloat {
+            cache.minimumWidth(for: model)
         }
 
         private func entry(
@@ -458,6 +484,14 @@
 
         func size(for model: TableModel, width: CGFloat) -> CGSize {
             size(of: renderedTable(for: model, width: width))
+        }
+
+        /// The table's min-content width: every column at its widest word plus
+        /// cell padding. Below this the host must scroll rather than wrap.
+        func minimumWidth(for model: TableModel) -> CGFloat {
+            MarkdownTableMetrics.minimumTableWidth(
+                columnMinimumWidths: preparedTable(for: model).columnMinimumWidths
+            )
         }
 
         func size(of entry: RenderedTable) -> CGSize {

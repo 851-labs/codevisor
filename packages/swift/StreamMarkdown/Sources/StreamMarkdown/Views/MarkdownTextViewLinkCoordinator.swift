@@ -29,9 +29,9 @@
     }
 
     extension SelectableTextTableView {
-        func updateNSView(_ textView: TableTextView, context: Context) {
-            textView.linkAction = linkAction
-            textView.update(model: model, renderMemo: renderMemo)
+        func updateNSView(_ scrollView: TableScrollView, context: Context) {
+            scrollView.tableTextView.linkAction = linkAction
+            scrollView.tableTextView.update(model: model, renderMemo: renderMemo)
         }
     }
 

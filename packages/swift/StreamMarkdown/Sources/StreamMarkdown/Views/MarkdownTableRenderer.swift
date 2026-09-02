@@ -169,10 +169,15 @@
             width: CGFloat? = nil
         ) -> NSAttributedString {
             guard prepared.columnCount > 0 else { return NSAttributedString() }
+            // Like iOS: when even min-content widths do not fit, keep every
+            // column at its widest word and let the table overflow its host
+            // (`TableScrollView` scrolls it sideways) instead of wrapping
+            // mid-word into one-character-wide columns.
             let columnWidths = MarkdownTableMetrics.distribute(
                 contentWidths: prepared.columnContentWidths,
                 minimumWidths: prepared.columnMinimumWidths,
-                toFit: width
+                toFit: width,
+                compressesBelowMinimums: false
             )
 
             let table = NSTextTable()

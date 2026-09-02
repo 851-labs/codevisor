@@ -14,6 +14,14 @@ enum MarkdownTableMetrics {
     /// label color so it works in light and dark mode.
     static let headerBackgroundOpacity: CGFloat = 0.05
 
+    /// The narrowest width at which every column still keeps its min-content
+    /// width (padding included). Below this the table must overflow — into a
+    /// horizontal scroll view on both platforms — rather than wrap mid-word.
+    static func minimumTableWidth(columnMinimumWidths: [CGFloat]) -> CGFloat {
+        columnMinimumWidths.reduce(0) { $0 + max(1, $1) }
+            + horizontalPadding * 2 * CGFloat(columnMinimumWidths.count)
+    }
+
     /// Sizes the columns to fill `width`, mirroring CSS auto table layout:
     ///
     /// - Room to spare → columns grow proportionally to their natural widths.
