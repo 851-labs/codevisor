@@ -167,7 +167,11 @@ extension VirtualizedTranscriptScrollView {
         guard virtualLayout.keys.indices.contains(index) else { return false }
         let key = virtualLayout.keys[index]
         if let host = mountedHosts[key] {
-            if requiresImmediatePresentation, !host.isPresentationReady {
+            // A deferred placeholder keeps its clear root until its rows
+            // publish; forcing a layout would only measure that empty root.
+            if requiresImmediatePresentation, !host.isPresentationReady,
+                key != deferredActivePlaceholderKey
+            {
                 host.prepareForImmediatePresentation()
             }
             return false
@@ -431,6 +435,11 @@ extension VirtualizedTranscriptScrollView {
         var replacementKeys: [String] = []
         for (key, host) in mountedHosts {
             guard let row = rowByKey[key] else { continue }
+            // The deferred placeholder is refreshed by
+            // `presentDeferredActivePlaceholderIfNeeded` once its rows publish.
+            // Re-installing the aggregate root here would hand the late
+            // presentation path the full item to lay out before the reveal.
+            if key == deferredActivePlaceholderKey { continue }
             if let previousRowsByKey {
                 guard let previous = previousRowsByKey[key],
                     previous.content != row.content
