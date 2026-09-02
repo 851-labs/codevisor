@@ -1,5 +1,3 @@
-// swiftlint:disable type_body_length
-
 import ACPKit
 import CodevisorCore
 import CodevisorUI
@@ -19,7 +17,7 @@ struct SessionTranscriptView: View {
     /// Increment whenever the iOS row-measurement environment changes. Scroll
     /// state can outlive a mounted transcript, so heights produced under an
     /// older hosting contract must not be restored as exact geometry.
-    private static let transcriptMeasurementSchemaVersion = 3
+    static let transcriptMeasurementSchemaVersion = 3
 
     @Bindable var controller: SessionController
     /// The new-chat page shows project/run-location chips above the composer;
@@ -50,58 +48,58 @@ struct SessionTranscriptView: View {
     var preservesComposerFocusOnSend = false
     var composerTextEditorHandoffRole: ComposerTextEditorHandoffRole = .none
     var composerTextEditorHandoffID: UUID? = nil
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.displayScale) private var displayScale
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.theme) private var theme
-    @Environment(AppEnvironment.self) private var environment
-    @State private var disclosure = TranscriptDisclosureStore()
-    @Namespace private var composerGlassNamespace
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
+    @Environment(\.displayScale) var displayScale
+    @Environment(\.dynamicTypeSize) var dynamicTypeSize
+    @Environment(\.scenePhase) var scenePhase
+    @Environment(\.theme) var theme
+    @Environment(AppEnvironment.self) var environment
+    @State var disclosure = TranscriptDisclosureStore()
+    @Namespace var composerGlassNamespace
     /// Resting measurements stay split so a live resize drag never republishes
     /// transcript geometry. `ComposerBar` owns the card measurement; the
     /// accessory stack changes only when semantic surfaces appear or resize.
-    @State private var composerCardHeight: CGFloat = 96
-    @State private var composerAccessoryHeight: CGFloat = 0
+    @State var composerCardHeight: CGFloat = 96
+    @State var composerAccessoryHeight: CGFloat = 0
     /// True while the transcript is parked at the newest content; drives both
     /// auto-scroll and the scroll-to-bottom button, mirroring the macOS
     /// transcript's follow mode.
-    @State private var followsLatest = true
-    @State private var isAtBottom = true
+    @State var followsLatest = true
+    @State var isAtBottom = true
     /// Height available to the chat area, used to cap composer expansion.
-    @State private var availableHeight: CGFloat = 600
+    @State var availableHeight: CGFloat = 600
     /// True while the composer is dragged to full height; informational
     /// accessories hide until it collapses, while actionable failures remain.
-    @State private var composerExpanded = false
+    @State var composerExpanded = false
     /// Fetches and caches transcript attachment previews via the controller's
     /// authenticated client.
-    @State private var attachmentImages: AttachmentImageStore?
-    @State private var scrollCommand = TranscriptScrollCommand()
-    @State private var historyLoadTask: Task<Void, Never>?
-    @State private var olderHistoryPresentation = TranscriptPaginationPresentationGate()
-    @State private var showsInitialLoadingSpinner = false
-    @State private var projectedRows: [TranscriptVirtualRow] = []
-    @State private var projectedRowsVersion: UInt64 = 0
-    @State private var workedRowsVisibilityCache = TranscriptWorkedRowsVisibilityCache()
-    @State private var projectedSessionID: UUID?
+    @State var attachmentImages: AttachmentImageStore?
+    @State var scrollCommand = TranscriptScrollCommand()
+    @State var historyLoadTask: Task<Void, Never>?
+    @State var olderHistoryPresentation = TranscriptPaginationPresentationGate()
+    @State var showsInitialLoadingSpinner = false
+    @State var projectedRows: [TranscriptVirtualRow] = []
+    @State var projectedRowsVersion: UInt64 = 0
+    @State var workedRowsVisibilityCache = TranscriptWorkedRowsVisibilityCache()
+    @State var projectedSessionID: UUID?
     /// Readiness belongs to a particular projection request. Existing chats
     /// move from an empty/loading request to a history-backed request, and the
     /// native gate must not treat the old rows as current between those two.
-    @State private var projectionPublication =
+    @State var projectionPublication =
         TranscriptProjectionPublicationState<TranscriptProjectionRequest>()
-    @State private var ownsVisibleTranscriptLifecycle = false
-    @State private var textAnimationVisibility = StreamingTextAnimationVisibility(
+    @State var ownsVisibleTranscriptLifecycle = false
+    @State var textAnimationVisibility = StreamingTextAnimationVisibility(
         initiallyVisible: false
     )
-    @State private var textAnimationRegistry = StreamingTextAnimationRegistry()
+    @State var textAnimationRegistry = StreamingTextAnimationRegistry()
     /// Window-space bounds of the live editor. UIKit uses this as the actual
     /// launch point for the optimistic user row instead of estimating from the
     /// transcript's bottom inset.
-    @State private var sendAnimationSourceFrame: CGRect?
+    @State var sendAnimationSourceFrame: CGRect?
 
     /// The complete resting bottom chrome above the safe-area margin. Every
     /// transcript inset and snapshot crop reads this single value.
-    private var composerHeight: CGFloat {
+    var composerHeight: CGFloat {
         composerCardHeight + composerAccessoryHeight
     }
 
@@ -184,14 +182,14 @@ struct SessionTranscriptView: View {
             }
     }
 
-    private var isLoadingTranscriptContent: Bool {
+    var isLoadingTranscriptContent: Bool {
         (isPreparingTranscript && projectedRows.isEmpty)
             || (controller.isLoadingInitialHistory
                 && controller.settledConversation.isEmpty
                 && !controller.hasActiveItem)
     }
 
-    private func installAttachmentImageStoreIfNeeded() {
+    func installAttachmentImageStoreIfNeeded() {
         let namespace = controller.previewCacheNamespace
         guard attachmentImages?.namespace != namespace else { return }
         attachmentImages = AttachmentImageStore(
@@ -211,7 +209,7 @@ struct SessionTranscriptView: View {
         )
     }
 
-    private func updateVisibleTranscriptLifecycle(for role: TranscriptPresentationRole) {
+    func updateVisibleTranscriptLifecycle(for role: TranscriptPresentationRole) {
         let shouldOwnLifecycle = role == .foreground
         publishAttentionFocus(isForeground: shouldOwnLifecycle)
         guard shouldOwnLifecycle != ownsVisibleTranscriptLifecycle else { return }
@@ -229,7 +227,7 @@ struct SessionTranscriptView: View {
     /// Read = focus: the foregrounded chat screen is the focused chat. The
     /// coordinator marks it read on open and continuously while open (gated
     /// by scene activity), and never pings for it.
-    private func publishAttentionFocus(isForeground: Bool) {
+    func publishAttentionFocus(isForeground: Bool) {
         guard let session = controller.serverSession else { return }
         environment.attentionCoordinator.updateFocus(
             owner: ObjectIdentifier(controller),
@@ -244,7 +242,7 @@ struct SessionTranscriptView: View {
     /// first send) or an empty conversation. Equivalent to `rows.isEmpty`, but
     /// O(1): the body re-evaluates on every streaming token, so this must not
     /// build the row list.
-    private var showsWatermark: Bool {
+    var showsWatermark: Bool {
         guard controller.pendingUserMessage == nil, controller.setupPhases.isEmpty else { return false }
         guard controller.sessionErrorMessage == nil else { return false }
         guard !controller.isLoadingInitialHistory, controller.serverWaitMessage == nil else { return false }
@@ -257,11 +255,11 @@ struct SessionTranscriptView: View {
 
     /// The scroll-to-bottom button only means something once there's a
     /// conversation to scroll through.
-    private var hasScrollableContent: Bool {
+    var hasScrollableContent: Bool {
         !controller.settledConversation.isEmpty || controller.hasActiveItem
     }
 
-    private var showsScrollToBottom: Bool {
+    var showsScrollToBottom: Bool {
         !composerExpanded && !isAtBottom && hasScrollableContent
     }
 
@@ -270,7 +268,7 @@ struct SessionTranscriptView: View {
     /// swap only the content behind it, so drafts keep their text, focus,
     /// and attachments, just like the macOS composer. Connecting reads as an
     /// inline status line, never a screen takeover.
-    private var chat: some View {
+    var chat: some View {
         // Deliberately not wrapped in a GeometryReader: that opts the subtree
         // out of SwiftUI's keyboard avoidance, which left the composer sitting
         // underneath the keyboard.
@@ -341,7 +339,7 @@ struct SessionTranscriptView: View {
         .background(Color(.systemGroupedBackground))
     }
 
-    private var composerCluster: some View {
+    var composerCluster: some View {
         VStack(spacing: 0) {
             IOSComposerAccessoryStack(
                 controller: controller,
@@ -383,7 +381,7 @@ struct SessionTranscriptView: View {
         .animation(Motion.quick(reduceMotion: reduceMotion), value: composerExpanded)
     }
 
-    private var scrollToBottomButton: some View {
+    var scrollToBottomButton: some View {
         Button {
             followsLatest = true
             scrollCommand.token &+= 1
@@ -401,180 +399,6 @@ struct SessionTranscriptView: View {
 
     // MARK: - Native transcript
 
-    private var transcript: some View {
-        return ActiveTranscriptProjectionScope(
-            controller: controller,
-            projectedRows: projectedRows
-        ) { activeRows, activeRowsVersion, isActiveProjectionPending in
-            let visibleRows = workedRowsVisibilityCache.presentSettled(
-                projectedRows,
-                sourceVersion: projectedRowsVersion,
-                disclosure: disclosure,
-                runningSubagentToolCallIDs: controller.runningSubagentToolCallIds
-            )
-            let visibleActiveRows = TranscriptWorkedRowsVisibility.present(
-                activeRows,
-                disclosure: disclosure,
-                activeItem: controller.activeItem,
-                runningSubagentToolCallIDs: controller.runningSubagentToolCallIds
-            )
-            NativeTranscriptView(
-                input: TranscriptSurfaceInput(
-                    sessionController: controller,
-                    rows: visibleRows.rows,
-                    activeRows: visibleActiveRows.rows,
-                    activeRowsVersion: TranscriptRowSetRevision(
-                        sourceRevision: activeRowsVersion,
-                        visibilityRevision: visibleActiveRows.visibilityRevision
-                    ),
-                    rowsVersion: TranscriptRowSetRevision(
-                        sourceRevision: projectedRowsVersion,
-                        visibilityRevision: visibleRows.visibilityRevision
-                    ),
-                    projectionRevision: projectedRowsVersion,
-                    initialState: controller.scrollState,
-                    followsLatest: followsLatest,
-                    hasOlderHistory: controller.hasOlderHistory,
-                    showsOlderHistoryLoadingIndicator: presentationRole == .foreground
-                        && olderHistoryPresentation.isPresented,
-                    olderHistoryPresentationTarget: olderHistoryPresentation.presentationTarget,
-                    isLoadingInitialHistory: controller.isLoadingInitialHistory,
-                    isPreparingInitialProjection: isPreparingTranscript,
-                    isActiveProjectionPending: isActiveProjectionPending,
-                    layoutFingerprint: transcriptLayoutFingerprint,
-                    scrollCommand: scrollCommand,
-                    sendAnimationRequest: controller.userSendAnimationRequest,
-                    sendAnimationSourceFrame: sendAnimationSourceFrame,
-                    presentationRole: presentationRole,
-                    textAnimationRegistry: textAnimationRegistry,
-                    reduceMotion: reduceMotion,
-                    scrollIndicatorBottomInset: composerHeight + 6
-                ),
-                callbacks: TranscriptSurfaceCallbacks(
-                    claimSendAnimation: { request in
-                        controller.claimUserSendAnimation(request)
-                    },
-                    rowContent: { row in
-                        AnyView(
-                            TranscriptRowContentView(
-                                row: row, controller: controller, leaves: .iOS(controller: controller)
-                            )
-                            .reportsStreamingTextAnimationActivity()
-                            .environment(\.theme, theme)
-                            .environment(\.attachmentImages, attachmentImages)
-                            .environment(\.transcriptDisclosure, disclosure)
-                            .environment(\.transcriptController, controller)
-                            .environment(
-                                \.streamingTextAnimationVisibility,
-                                textAnimationVisibility
-                            )
-                            .environment(
-                                \.streamingTextAnimationRegistry,
-                                textAnimationRegistry
-                            )
-                            .environment(
-                                \.runningSubagentToolCallIds,
-                                controller.runningSubagentToolCallIds
-                            )
-                            .environment(\.markdownTableBleed, 16)
-                        )
-                    },
-                    onViewportChange: { state in
-                        controller.scrollState = state
-                    },
-                    onBottomStateChange: { atBottom in
-                        DispatchQueue.main.async {
-                            if isAtBottom != atBottom { isAtBottom = atBottom }
-                        }
-                    },
-                    onFollowStateChange: { follows in
-                        DispatchQueue.main.async {
-                            if followsLatest != follows { followsLatest = follows }
-                        }
-                    },
-                    onNearTop: {
-                        requestOlderHistoryLoad()
-                    },
-                    onOlderHistoryPresented: { token in
-                        // UIViewRepresentable updates are part of SwiftUI's render
-                        // transaction. Publish the acknowledgement on the next turn
-                        // instead of mutating view state from inside that update.
-                        DispatchQueue.main.async {
-                            olderHistoryPresentation.didPresent(token: token)
-                        }
-                    },
-                    onSendAnimationCompleted: { request in
-                        onSendAnimationCompleted?(request)
-                    },
-                    onSendAnimationStarted: onSendAnimationStarted
-                )
-            )
-        }
-        // Match SwiftUI.ScrollView's navigation behavior: the scroll surface
-        // reaches beneath the translucent top bar, while its UIKit content
-        // inset keeps the first resting row below that chrome.
-        .ignoresSafeArea(.container, edges: .top)
-        .onChange(of: controller.userSendSignal) { _, _ in
-            followsLatest = true
-            scrollCommand.token &+= 1
-        }
-    }
-
-    private var transcriptProjectionRequest: TranscriptProjectionRequest {
-        TranscriptProjectionRequest(
-            key: controller.transcriptProjectionKey,
-            options: .init(
-                includesConnectingRow: true,
-                bottomSpacerHeight: composerHeight + 24
-            )
-        )
-    }
-
-    private var isPreparingTranscript: Bool {
-        projectionPublication.isPending(currentRequest: transcriptProjectionRequest)
-    }
-
-    @discardableResult
-    private func requestOlderHistoryLoad() -> Bool {
-        guard historyLoadTask == nil, controller.hasOlderHistory,
-            !controller.isLoadingOlderHistory
-        else { return false }
-        guard
-            let token = olderHistoryPresentation.begin(
-                hasOlderHistory: controller.hasOlderHistory
-            )
-        else { return false }
-        historyLoadTask = Task { @MainActor in
-            defer { historyLoadTask = nil }
-            let insertedItemCount = await controller.loadOlderHistory()
-            guard !Task.isCancelled else {
-                olderHistoryPresentation.cancel(token: token)
-                return
-            }
-            olderHistoryPresentation.requestDidFinish(
-                token: token,
-                insertedItemCount: insertedItemCount,
-                requiredProjectionKey: insertedItemCount > 0
-                    ? controller.transcriptProjectionKey
-                    : nil
-            )
-            if let publishedRequest = projectionPublication.publishedRequest {
-                olderHistoryPresentation.projectionDidPublish(
-                    key: publishedRequest.key,
-                    revision: projectedRowsVersion
-                )
-            }
-        }
-        return true
-    }
-
-    private var transcriptLayoutFingerprint: Int {
-        var hasher = Hasher()
-        hasher.combine(dynamicTypeSize)
-        hasher.combine(displayScale)
-        hasher.combine(Self.transcriptMeasurementSchemaVersion)
-        return hasher.finalize()
-    }
 }
 
 private extension SessionTranscriptView {
