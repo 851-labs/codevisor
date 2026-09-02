@@ -151,18 +151,21 @@ struct SidebarView: View {
                             .foregroundStyle(.tertiary)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
+                            .transition(.identity)
                     } else if organization == .byWorkspace && workspaceItems.isEmpty {
                         Text("No workspaces yet")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
+                            .transition(.identity)
                     } else if organization == .compact && chronologicalSessions.isEmpty {
                         Text("No agents yet")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
+                            .transition(.identity)
                     }
 
                     if showArchived {
