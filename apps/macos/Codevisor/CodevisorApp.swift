@@ -7,6 +7,7 @@ import CodevisorUI
 
 @main
 struct CodevisorApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var environment: AppEnvironment?
     @State private var serverAgent: MacServerAgentController
     @State private var sparkleUpdater: SparkleUpdateController?
@@ -171,6 +172,10 @@ struct CodevisorApp: App {
             let runtime = Self.makeRuntime(serverAgent: serverAgent, storage: storage)
             environment = runtime.environment
             sparkleUpdater = runtime.updater
+            // The quit confirmation reads the user's preference and skips
+            // itself while Sparkle is installing an update.
+            appDelegate.settings = runtime.environment.settings
+            appDelegate.appUpdate = runtime.environment.appUpdate
             startupError = nil
             if !AppPreview.isRunning {
                 // Machine readiness belongs to the app runtime, not a window.

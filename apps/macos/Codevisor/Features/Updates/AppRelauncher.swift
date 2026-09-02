@@ -7,6 +7,7 @@ import os
 /// app restarts the managed local server too (`ensureRunning` on startup),
 /// so this is the recovery action offered when the server is unreachable.
 enum AppRelauncher {
+    @MainActor
     static func relaunch() {
         let bundleURL = Bundle.main.bundleURL
         let helper = Process()
@@ -51,6 +52,13 @@ enum AppRelauncher {
             }
             return
         }
-        NSApp.terminate(nil)
+        // The user just pressed Restart; asking "Are you sure you want to
+        // quit?" now would be noise, and a Cancel would leave the helper
+        // waiting to reopen an app that never exits.
+        if let delegate = AppDelegate.current {
+            delegate.terminateWithoutConfirmation()
+        } else {
+            NSApp.terminate(nil)
+        }
     }
 }

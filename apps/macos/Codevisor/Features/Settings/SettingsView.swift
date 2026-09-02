@@ -373,6 +373,15 @@ struct GeneralSettingsView: View {
     var body: some View {
         Form {
             Section {
+                Toggle("Ask before quitting", isOn: confirmBeforeQuitting)
+                    .toggleStyle(.switch)
+            } header: {
+                Text("General")
+            } footer: {
+                Text("Shows a confirmation when you press ⌘Q, so a stray keystroke can't close every session at once.")
+            }
+
+            Section {
                 Toggle("Share usage analytics", isOn: shareAnalytics)
                     .toggleStyle(.switch)
                 Toggle("Send crash and error reports", isOn: shareCrashReports)
@@ -418,6 +427,13 @@ struct GeneralSettingsView: View {
         } message: {
             Text("This can't be undone. You'll be taken back through setup.")
         }
+    }
+
+    private var confirmBeforeQuitting: Binding<Bool> {
+        Binding(
+            get: { environment.settings.confirmBeforeQuitting },
+            set: { environment.settings.setConfirmBeforeQuitting($0) }
+        )
     }
 
     private var shareAnalytics: Binding<Bool> {

@@ -37,6 +37,10 @@ public struct AppSettings: Sendable, Codable, Equatable {
     public var shareCrashReports: Bool
     /// Opts this installation into signed Alpha builds in addition to Stable.
     public var alphaUpdatesEnabled: Bool
+    /// Whether ⌘Q asks "Are you sure you want to quit?" first. A stray ⌘Q
+    /// (next to ⌘W) tears down every open terminal and agent view at once, so
+    /// this defaults on; the alert's "Do not ask me again" turns it off.
+    public var confirmBeforeQuitting: Bool
     /// Harness ids the user has explicitly turned off. A harness is "enabled"
     /// (shown in the composer picker) when its id is not in this set, so the
     /// default — an empty set — enables every installed harness.
@@ -67,6 +71,7 @@ public struct AppSettings: Sendable, Codable, Equatable {
         shareAnalytics: Bool = false,
         shareCrashReports: Bool = false,
         alphaUpdatesEnabled: Bool = false,
+        confirmBeforeQuitting: Bool = true,
         disabledHarnessIds: Set<String> = [],
         themeMode: ThemeMode = .system,
         lightThemeId: String = ThemeCatalog.systemLightID,
@@ -86,6 +91,7 @@ public struct AppSettings: Sendable, Codable, Equatable {
         self.shareAnalytics = shareAnalytics
         self.shareCrashReports = shareCrashReports
         self.alphaUpdatesEnabled = alphaUpdatesEnabled
+        self.confirmBeforeQuitting = confirmBeforeQuitting
         self.disabledHarnessIds = disabledHarnessIds
         self.themeMode = themeMode
         self.lightThemeId = lightThemeId
@@ -104,6 +110,7 @@ public struct AppSettings: Sendable, Codable, Equatable {
         case shareCrashReports, alphaUpdatesEnabled
         /// Read-only migration key written by the former custom updater.
         case betaUpdatesEnabled
+        case confirmBeforeQuitting
         case disabledHarnessIds
         case themeMode, lightThemeId, darkThemeId
         case notificationsEnabled, systemNotificationsEnabled, notificationSoundsEnabled
@@ -135,6 +142,7 @@ public struct AppSettings: Sendable, Codable, Equatable {
             try container.decodeIfPresent(Bool.self, forKey: .alphaUpdatesEnabled)
             ?? container.decodeIfPresent(Bool.self, forKey: .betaUpdatesEnabled)
             ?? false
+        confirmBeforeQuitting = try container.decodeIfPresent(Bool.self, forKey: .confirmBeforeQuitting) ?? true
         disabledHarnessIds = try container.decodeIfPresent(Set<String>.self, forKey: .disabledHarnessIds) ?? []
         themeMode = try container.decodeIfPresent(ThemeMode.self, forKey: .themeMode) ?? .system
         lightThemeId = try container.decodeIfPresent(String.self, forKey: .lightThemeId) ?? ThemeCatalog.systemLightID
@@ -166,6 +174,7 @@ public struct AppSettings: Sendable, Codable, Equatable {
         try container.encode(shareAnalytics, forKey: .shareAnalytics)
         try container.encode(shareCrashReports, forKey: .shareCrashReports)
         try container.encode(alphaUpdatesEnabled, forKey: .alphaUpdatesEnabled)
+        try container.encode(confirmBeforeQuitting, forKey: .confirmBeforeQuitting)
         try container.encode(disabledHarnessIds, forKey: .disabledHarnessIds)
         try container.encode(themeMode, forKey: .themeMode)
         try container.encode(lightThemeId, forKey: .lightThemeId)
@@ -216,6 +225,7 @@ public final class AppSettingsModel {
     public var shareAnalytics: Bool { settings.shareAnalytics }
     public var shareCrashReports: Bool { settings.shareCrashReports }
     public var alphaUpdatesEnabled: Bool { settings.alphaUpdatesEnabled }
+    public var confirmBeforeQuitting: Bool { settings.confirmBeforeQuitting }
 
     /// Whether a harness is enabled (not turned off by the user).
     public func isHarnessEnabled(_ id: String) -> Bool {
@@ -289,6 +299,13 @@ public final class AppSettingsModel {
 
     public func setAlphaUpdatesEnabled(_ value: Bool) {
         settings.alphaUpdatesEnabled = value
+        persist()
+    }
+
+    /// Turns the ⌘Q confirmation alert on or off. Off is what the alert's
+    /// "Do not ask me again" checkbox records; Settings can turn it back on.
+    public func setConfirmBeforeQuitting(_ value: Bool) {
+        settings.confirmBeforeQuitting = value
         persist()
     }
 
