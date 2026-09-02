@@ -221,11 +221,9 @@ extension VirtualizedTranscriptScrollView {
         }
         let resolvedKeys = TranscriptMountedWindowReadiness.resolvedKeys(
             required: requiredKeys,
-            measurements: measurements
-        ) { key in
-            guard let host = mountedHosts[key] else { return false }
-            return host.isAttachmentGeometryReady && host.isPresentationReady
-        }
+            measurements: measurements,
+            hosts: mountedHosts
+        )
         _ = bottomJumpGate.resolve(
             requiredKeys: requiredKeys,
             resolvedKeys: resolvedKeys,
@@ -251,11 +249,9 @@ extension VirtualizedTranscriptScrollView {
         }
         let resolvedKeys = TranscriptMountedWindowReadiness.resolvedKeys(
             required: requiredKeys,
-            measurements: measurements
-        ) { key in
-            guard let host = mountedHosts[key] else { return false }
-            return host.isAttachmentGeometryReady && host.isPresentationReady
-        }
+            measurements: measurements,
+            hosts: mountedHosts
+        )
         guard
             initialPresentationGate.resolve(
                 isHydrating: isLoadingInitialHistory || isPreparingInitialProjection,

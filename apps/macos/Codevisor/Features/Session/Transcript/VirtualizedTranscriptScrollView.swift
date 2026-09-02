@@ -18,14 +18,10 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     static let maxRowWidth: CGFloat = 832
     static let initialRunwayViewportCount: CGFloat = 1.5
     static let atBottomThreshold: CGFloat = 2
-    static let sendAnimationDuration: CFTimeInterval = 0.46
     static let disclosureExitDuration: CFTimeInterval = 0.2
     static let disclosureExitAnimationKey = "codevisor.disclosure-exit"
     static let disclosureExitMaskAnimationKey = "codevisor.disclosure-exit-mask"
     static let disclosureCollapseAnimationKey = "codevisor.disclosure-collapse"
-    static let sendTargetHoldAnimationKey = "codevisor.send-target-hold"
-    static let sendAssistantHoldAnimationKey = "codevisor.send-assistant-hold"
-    static let sendHistoryHoldAnimationKey = "codevisor.send-history-hold"
 
     struct DisclosureCollapsePresentation {
         let container: TranscriptDisclosureCollapseContainer
@@ -219,36 +215,24 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     var onNearTop: (() -> Bool)?
     var onInitialPresentationReady: (() -> Void)?
     var isInitialPresentationReady: Bool { initialPresentationGate.isReady }
-    var maximumMountsPerFrame: Int {
-        let isHighRefresh = (window?.screen?.maximumFramesPerSecond ?? 60) > 60
-        if isLiveScrolling || isHandlingUserInput {
-            return isHighRefresh ? 2 : 4
-        }
-        return isHighRefresh ? 6 : 8
+    var frameBudget: TranscriptFrameBudget {
+        TranscriptFrameBudget(
+            maximumFramesPerSecond: window?.screen?.maximumFramesPerSecond ?? 60,
+            isInteracting: isLiveScrolling || isHandlingUserInput
+        )
     }
-    var mountWorkBudget: CFTimeInterval {
-        let isHighRefresh = (window?.screen?.maximumFramesPerSecond ?? 60) > 60
-        if isLiveScrolling || isHandlingUserInput {
-            return isHighRefresh ? 0.0025 : 0.005
-        }
-        return isHighRefresh ? 0.004 : 0.008
-    }
+    var maximumMountsPerFrame: Int { frameBudget.mountsPerFrame }
+    var mountWorkBudget: CFTimeInterval { frameBudget.workBudget }
     var maximumRunwayPreparationsPerFrame: Int {
-        let isHighRefresh = (window?.screen?.maximumFramesPerSecond ?? 60) > 60
         let viewportHeight = max(1, contentView.bounds.height)
-        let projectedDistance = abs(
-            runwayMotion.projectedDelta(
+        return TranscriptFrameBudget.runwayPreparationsPerFrame(
+            maximumFramesPerSecond: window?.screen?.maximumFramesPerSecond ?? 60,
+            projectedDistance: runwayMotion.projectedDelta(
                 timestamp: CACurrentMediaTime(),
                 maximumDistance: viewportHeight * 3
-            )
+            ),
+            viewportHeight: viewportHeight
         )
-        if projectedDistance >= viewportHeight {
-            return isHighRefresh ? 3 : 4
-        }
-        if projectedDistance >= viewportHeight * 0.35 {
-            return isHighRefresh ? 2 : 3
-        }
-        return isHighRefresh ? 1 : 2
     }
     /// The chat history itself can hold keyboard focus: a click anywhere in
     /// it (routed here by TerminalFocusController's mouse monitor) blurs a

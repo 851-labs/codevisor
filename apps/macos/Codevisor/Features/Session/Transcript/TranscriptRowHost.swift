@@ -1,6 +1,8 @@
 import AppKit
+import CodevisorUI
 import QuartzCore
 import SwiftUI
+import TranscriptKit
 
 /// A mounted row's SwiftUI content owns its natural height. The virtualizer
 /// supplies only the row's top position and width, then observes the hosting
@@ -135,12 +137,7 @@ final class TranscriptRowHost: TranscriptMountedRowHost {
     }
 
     override func prepareForMountedRow() {
-        layer?.removeAnimation(forKey: "codevisor.user-send")
-        layer?.removeAnimation(forKey: "codevisor.send-history-shift")
-        layer?.removeAnimation(forKey: "codevisor.send-history-hold")
-        layer?.removeAnimation(forKey: "codevisor.send-target-hold")
-        layer?.removeAnimation(forKey: "codevisor.send-assistant-hold")
-        layer?.opacity = 1
+        if let layer { TranscriptSendAnimationLayerAnimations.removeAll(from: layer) }
         presentationReady = false
         attachmentGeometryReady = true
         hasAttemptedPresentation = false

@@ -104,7 +104,7 @@ extension VirtualizedTranscriptScrollView {
             let requestedKey = TranscriptVirtualRow.ID.message(request.messageID).layoutKey
             if newProjectedRows.contains(where: { row in
                 row.layoutKey == requestedKey
-                    && isEligibleSendTarget(row, for: request.destination)
+                    && TranscriptSendAnimationContract.isEligibleTarget(row, for: request.destination)
             }) {
                 pendingSendAnimationRowKey = requestedKey
             }

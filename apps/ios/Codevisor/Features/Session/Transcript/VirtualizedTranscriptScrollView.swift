@@ -22,9 +22,6 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     static let initialRunwayViewportCount: CGFloat = 1.5
     static let atBottomThreshold: CGFloat = 2
     static let maxParkedHostCount = 16
-    static let sendTargetHoldAnimationKey = "codevisor.send-target-hold"
-    static let sendAssistantHoldAnimationKey = "codevisor.send-assistant-hold"
-    static let sendHistoryHoldAnimationKey = "codevisor.send-history-hold"
     let canvasView = UIView()
     let streamingTextFrameClock = StreamingTextAnimationFrameClock()
     let paginationLoadingIndicator = UIActivityIndicatorView(style: .medium)
@@ -193,12 +190,16 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     var isNativeScrollInteractionActive: Bool {
         isTracking || isDragging || isDecelerating || isExplicitUserScroll
     }
-    var maximumMountsPerFrame: Int {
-        (window?.screen.maximumFramesPerSecond ?? 60) > 60 ? 2 : 4
+    /// UIKit momentum can begin at any moment, so the interactive budget
+    /// always applies.
+    var frameBudget: TranscriptFrameBudget {
+        TranscriptFrameBudget(
+            maximumFramesPerSecond: window?.screen.maximumFramesPerSecond ?? 60,
+            isInteracting: true
+        )
     }
-    var mountWorkBudget: CFTimeInterval {
-        (window?.screen.maximumFramesPerSecond ?? 60) > 60 ? 0.0025 : 0.005
-    }
+    var maximumMountsPerFrame: Int { frameBudget.mountsPerFrame }
+    var mountWorkBudget: CFTimeInterval { frameBudget.workBudget }
 
     override init(frame: CGRect) {
         super.init(frame: frame)

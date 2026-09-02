@@ -83,7 +83,7 @@ extension VirtualizedTranscriptScrollView {
         // bounded presentation hold expired before geometry became ready,
         // leave the already-visible row alone instead of hiding it late and
         // producing a second flash.
-        guard layer.animation(forKey: Self.sendTargetHoldAnimationKey) != nil else {
+        guard layer.animation(forKey: TranscriptSendAnimationKeys.targetHold) != nil else {
             _ = claimAndClear()
             finishSendPresentation()
             return
@@ -103,23 +103,12 @@ extension VirtualizedTranscriptScrollView {
             return
         }
 
-        let movement = CABasicAnimation(keyPath: "transform.translation.y")
-        movement.fromValue = travel
-        movement.toValue = 0
-        movement.duration = Self.sendAnimationDuration
-        movement.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 1, 0.36, 1)
-
-        let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = 0
-        fade.toValue = 1
-        fade.duration = 0.12
-        fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
-
-        let group = CAAnimationGroup()
-        group.animations = [movement, fade]
-        group.duration = Self.sendAnimationDuration
-        group.fillMode = .backwards
-        group.isRemovedOnCompletion = true
+        guard let plan = TranscriptSendAnimationContract.plan(sourceY: sourceY, targetY: host.frame.minY) else {
+            _ = claimAndClear()
+            finishSendPresentation()
+            return
+        }
+        let group = TranscriptSendAnimationLayerAnimations.flight(plan: plan, fadesIn: true)
         let completion = TranscriptSendAnimationCompletion { [weak self] _ in
             self?.finishSendPresentation(token: request.token)
         }
@@ -137,7 +126,7 @@ extension VirtualizedTranscriptScrollView {
         // the hold or the flight, never the visible model layer between them.
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        layer.removeAnimation(forKey: "codevisor.user-send")
+        layer.removeAnimation(forKey: TranscriptSendAnimationKeys.flight)
         beginSendPresentation(
             request: request,
             sourceLayout: sourceLayout,
@@ -145,7 +134,7 @@ extension VirtualizedTranscriptScrollView {
         )
         sendAnimationCompletion = completion
         group.delegate = completion
-        layer.add(group, forKey: "codevisor.user-send")
+        layer.add(group, forKey: TranscriptSendAnimationKeys.flight)
         CATransaction.commit()
     }
 
@@ -172,20 +161,11 @@ extension VirtualizedTranscriptScrollView {
                     toScreenY: currentViewportY
                 )
                 guard abs(translation) > 1 else { continue }
-                layer.removeAnimation(forKey: "codevisor.send-history-shift")
-                let movement = CABasicAnimation(keyPath: "transform.translation.y")
-                movement.fromValue = translation
-                movement.toValue = 0
-                movement.duration = TranscriptSendAnimationContract.duration
-                movement.timingFunction = CAMediaTimingFunction(
-                    controlPoints: Float(TranscriptSendAnimationContract.controlPoint1.x),
-                    Float(TranscriptSendAnimationContract.controlPoint1.y),
-                    Float(TranscriptSendAnimationContract.controlPoint2.x),
-                    Float(TranscriptSendAnimationContract.controlPoint2.y)
+                layer.removeAnimation(forKey: TranscriptSendAnimationKeys.historyShift)
+                layer.add(
+                    TranscriptSendAnimationLayerAnimations.historyShift(translationY: translation),
+                    forKey: TranscriptSendAnimationKeys.historyShift
                 )
-                movement.fillMode = .backwards
-                movement.isRemovedOnCompletion = true
-                layer.add(movement, forKey: "codevisor.send-history-shift")
             }
         }
         synchronizeSendAssistantVisibility()
@@ -195,19 +175,14 @@ extension VirtualizedTranscriptScrollView {
         guard !reduceMotion, let request = pendingSendAnimationRequest else { return }
         let key = TranscriptVirtualRow.ID.message(request.messageID).layoutKey
         guard let host = mountedHosts[key], let layer = host.layer,
-            layer.animation(forKey: Self.sendTargetHoldAnimationKey) == nil
+            layer.animation(forKey: TranscriptSendAnimationKeys.targetHold) == nil
         else { return }
 
         // Keep the model layer authoritative and use only a bounded
         // presentation hold. Readiness normally resolves in the following
         // layout passes; if it does not, startPendingSendAnimationIfPossible()
         // consumes the request without a late hide-and-flight transition.
-        let hold = CABasicAnimation(keyPath: "opacity")
-        hold.fromValue = 0
-        hold.toValue = 0
-        hold.duration = TranscriptSendAnimationContract.presentationSafetyDuration
-        hold.isRemovedOnCompletion = true
-        layer.add(hold, forKey: Self.sendTargetHoldAnimationKey)
+        layer.add(TranscriptSendAnimationLayerAnimations.opacityHold(), forKey: TranscriptSendAnimationKeys.targetHold)
     }
 
     func synchronizePendingSendHistoryPositions() {
@@ -235,14 +210,14 @@ extension VirtualizedTranscriptScrollView {
                 translationY: translation
             )
             guard shouldHold else {
-                layer.removeAnimation(forKey: Self.sendHistoryHoldAnimationKey)
+                layer.removeAnimation(forKey: TranscriptSendAnimationKeys.historyHold)
                 sendHistoryHoldMounts.removeValue(forKey: key)
                 continue
             }
 
             let mountID = ObjectIdentifier(host)
             if let existing = sendHistoryHoldMounts[key], existing.hostID == mountID {
-                if layer.animation(forKey: Self.sendHistoryHoldAnimationKey) == nil {
+                if layer.animation(forKey: TranscriptSendAnimationKeys.historyHold) == nil {
                     // This mount's bounded hold expired. Its model position is
                     // visible now, so reapplying would create the same rewind
                     // the pending hold exists to prevent.
@@ -255,12 +230,9 @@ extension VirtualizedTranscriptScrollView {
                 translationY: translation
             )
 
-            let hold = CABasicAnimation(keyPath: "transform.translation.y")
-            hold.fromValue = translation
-            hold.toValue = translation
-            hold.duration = TranscriptSendAnimationContract.presentationSafetyDuration
-            hold.isRemovedOnCompletion = true
-            layer.add(hold, forKey: Self.sendHistoryHoldAnimationKey)
+            layer.add(
+                TranscriptSendAnimationLayerAnimations.translationHold(translation),
+                forKey: TranscriptSendAnimationKeys.historyHold)
         }
     }
 
@@ -299,7 +271,7 @@ extension VirtualizedTranscriptScrollView {
                     rowExistedBeforeSend: pendingSendSourceLayout?.indexByKey[key] != nil
                 )
             else { return true }
-            return host.layer?.animation(forKey: Self.sendAssistantHoldAnimationKey) != nil
+            return host.layer?.animation(forKey: TranscriptSendAnimationKeys.assistantHold) != nil
         }
     }
 
@@ -321,7 +293,7 @@ extension VirtualizedTranscriptScrollView {
                     translationY: translation
                 )
             else { return true }
-            return host.layer?.animation(forKey: Self.sendHistoryHoldAnimationKey) != nil
+            return host.layer?.animation(forKey: TranscriptSendAnimationKeys.historyHold) != nil
         }
     }
 
@@ -340,31 +312,13 @@ extension VirtualizedTranscriptScrollView {
         sendPresentationWatchdog = nil
         for host in mountedHosts.values {
             guard let layer = host.layer else { continue }
-            layer.removeAnimation(forKey: "codevisor.user-send")
-            layer.removeAnimation(forKey: "codevisor.send-history-shift")
-            layer.removeAnimation(forKey: Self.sendHistoryHoldAnimationKey)
-            layer.removeAnimation(forKey: Self.sendTargetHoldAnimationKey)
-            layer.removeAnimation(forKey: Self.sendAssistantHoldAnimationKey)
-            layer.opacity = 1
-            assert(layer.opacity == 1)
+            TranscriptSendAnimationLayerAnimations.removeAll(from: layer)
         }
         for host in recycledHosts {
-            host.layer?.removeAnimation(forKey: "codevisor.user-send")
-            host.layer?.removeAnimation(forKey: "codevisor.send-history-shift")
-            host.layer?.removeAnimation(forKey: Self.sendHistoryHoldAnimationKey)
-            host.layer?.removeAnimation(forKey: Self.sendTargetHoldAnimationKey)
-            host.layer?.removeAnimation(forKey: Self.sendAssistantHoldAnimationKey)
-            host.layer?.opacity = 1
-            assert(host.layer?.opacity == 1)
+            if let layer = host.layer { TranscriptSendAnimationLayerAnimations.removeAll(from: layer) }
         }
         for host in retiringHosts {
-            host.layer?.removeAnimation(forKey: "codevisor.user-send")
-            host.layer?.removeAnimation(forKey: "codevisor.send-history-shift")
-            host.layer?.removeAnimation(forKey: Self.sendHistoryHoldAnimationKey)
-            host.layer?.removeAnimation(forKey: Self.sendTargetHoldAnimationKey)
-            host.layer?.removeAnimation(forKey: Self.sendAssistantHoldAnimationKey)
-            host.layer?.opacity = 1
-            assert(host.layer?.opacity == 1)
+            if let layer = host.layer { TranscriptSendAnimationLayerAnimations.removeAll(from: layer) }
         }
         activeSendAnimationRequest = nil
         activeSendSourceLayout = nil
@@ -400,13 +354,9 @@ extension VirtualizedTranscriptScrollView {
         // interruption or expiry reveals the model value automatically.
         layer.opacity = 1
         assert(layer.opacity == 1)
-        if layer.animation(forKey: Self.sendAssistantHoldAnimationKey) == nil {
-            let hold = CABasicAnimation(keyPath: "opacity")
-            hold.fromValue = 0
-            hold.toValue = 0
-            hold.duration = TranscriptSendAnimationContract.presentationSafetyDuration
-            hold.isRemovedOnCompletion = true
-            layer.add(hold, forKey: Self.sendAssistantHoldAnimationKey)
+        if layer.animation(forKey: TranscriptSendAnimationKeys.assistantHold) == nil {
+            layer.add(
+                TranscriptSendAnimationLayerAnimations.opacityHold(), forKey: TranscriptSendAnimationKeys.assistantHold)
         }
     }
 
@@ -445,7 +395,7 @@ extension VirtualizedTranscriptScrollView {
         rowKey: String
     ) -> Bool {
         guard let targetRow = rowByKey[rowKey],
-            isEligibleSendTarget(targetRow, for: request.destination),
+            TranscriptSendAnimationContract.isEligibleTarget(targetRow, for: request.destination),
             let targetIndex = rows.firstIndex(where: { $0.layoutKey == rowKey })
         else { return false }
         if request.destination == .activeTurn,
@@ -466,26 +416,12 @@ extension VirtualizedTranscriptScrollView {
         return rows[targetIndex...].allSatisfy { row in
             let key = row.layoutKey
             guard row.id != .bottomSpacer else { return true }
-            guard let host = mountedHosts[key] else { return false }
-            return measurements[key] != nil
-                && !measurements.isStale(key)
-                && host.isAttachmentGeometryReady
-                && host.isPresentationReady
-        }
-    }
-
-    func isEligibleSendTarget(
-        _ row: TranscriptVirtualRow,
-        for destination: UserSendAnimationDestination
-    ) -> Bool {
-        switch destination {
-        case .optimistic:
-            return row.isUserMessage
-        case .activeTurn:
-            guard case let .message(item, waitingOnBackgroundTask: _) = row.content,
-                case .user = item
-            else { return false }
-            return true
+            return TranscriptMountedWindowReadiness.isPromotable(
+                key: key,
+                measurements: measurements,
+                hasPendingMeasurement: false,
+                host: mountedHosts[key]
+            )
         }
     }
 

@@ -1,4 +1,5 @@
 import AppKit
+import TranscriptKit
 
 /// Common lifecycle understood by the transcript virtualizer.
 ///
@@ -22,3 +23,5 @@ class TranscriptMountedRowHost: NSView {
     @discardableResult
     func setAttachmentGeometryReady(_: Bool) -> Bool { false }
 }
+
+extension TranscriptMountedRowHost: TranscriptPresentableRowHost {}

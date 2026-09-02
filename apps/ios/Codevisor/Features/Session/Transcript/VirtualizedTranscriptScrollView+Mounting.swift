@@ -148,12 +148,12 @@ extension VirtualizedTranscriptScrollView {
     func promoteTargetWindowIfReady() {
         guard
             virtualWindowHandoff.promoteIfReady({ key in
-                guard let host = mountedHosts[key] else { return false }
-                return measurements[key] != nil
-                    && !measurements.isStale(key)
-                    && pendingMeasurements[key] == nil
-                    && host.isAttachmentGeometryReady
-                    && host.isPresentationReady
+                TranscriptMountedWindowReadiness.isPromotable(
+                    key: key,
+                    measurements: measurements,
+                    hasPendingMeasurement: pendingMeasurements[key] != nil,
+                    host: mountedHosts[key]
+                )
             })
         else { return }
         removeMountedHosts(excluding: virtualWindowHandoff.retainedKeys)

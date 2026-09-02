@@ -88,12 +88,7 @@ final class TranscriptRowHost: UIView {
         // flight. Preserve the wrapper animation when the stable row identity
         // is unchanged; only reused hosts may discard another row's animation.
         if representsDifferentRow {
-            layer.removeAnimation(forKey: "codevisor.user-send")
-            layer.removeAnimation(forKey: "codevisor.send-history-shift")
-            layer.removeAnimation(forKey: "codevisor.send-history-hold")
-            layer.removeAnimation(forKey: "codevisor.send-target-hold")
-            layer.removeAnimation(forKey: "codevisor.send-assistant-hold")
-            layer.opacity = 1
+            TranscriptSendAnimationLayerAnimations.removeAll(from: layer)
         }
         contentController.installRootView(rootView)
     }
@@ -102,12 +97,7 @@ final class TranscriptRowHost: UIView {
     /// its previous mount. Re-mounting always starts from visible model state;
     /// the virtualizer can reapply a current hold after installation if needed.
     func prepareForMountedRow() {
-        layer.removeAnimation(forKey: "codevisor.user-send")
-        layer.removeAnimation(forKey: "codevisor.send-history-shift")
-        layer.removeAnimation(forKey: "codevisor.send-history-hold")
-        layer.removeAnimation(forKey: "codevisor.send-target-hold")
-        layer.removeAnimation(forKey: "codevisor.send-assistant-hold")
-        layer.opacity = 1
+        TranscriptSendAnimationLayerAnimations.removeAll(from: layer)
     }
 
     func requestContentMeasurement(forceReport: Bool = true) {
@@ -167,3 +157,5 @@ final class TranscriptRowHost: UIView {
             ))
     }
 }
+
+extension TranscriptRowHost: TranscriptPresentableRowHost {}

@@ -27,35 +27,7 @@ enum TranscriptSendAnimationMetrics {
         plan: TranscriptSendAnimationPlan,
         fadesIn: Bool
     ) -> CAAnimationGroup {
-        let movement = CABasicAnimation(keyPath: "transform.translation.y")
-        movement.fromValue = plan.translationY
-        movement.toValue = 0
-        movement.duration = plan.duration
-        movement.timingFunction = CAMediaTimingFunction(
-            controlPoints: Float(plan.controlPoint1.x),
-            Float(plan.controlPoint1.y),
-            Float(plan.controlPoint2.x),
-            Float(plan.controlPoint2.y)
-        )
-
-        let animations: [CAAnimation]
-        if fadesIn {
-            let fade = CABasicAnimation(keyPath: "opacity")
-            fade.fromValue = 0
-            fade.toValue = 1
-            fade.duration = plan.fadeDuration
-            fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            animations = [movement, fade]
-        } else {
-            animations = [movement]
-        }
-
-        let group = CAAnimationGroup()
-        group.animations = animations
-        group.duration = plan.duration
-        group.fillMode = .backwards
-        group.isRemovedOnCompletion = true
-        return group
+        TranscriptSendAnimationLayerAnimations.flight(plan: plan, fadesIn: fadesIn)
     }
 
     static var propertyTimingParameters: UICubicTimingParameters {
