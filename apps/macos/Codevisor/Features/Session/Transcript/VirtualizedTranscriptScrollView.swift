@@ -160,6 +160,12 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     /// that provisional topology; otherwise an uncached chat visibly jumps from
     /// the aggregate estimate to the final block layout.
     var isActiveProjectionPending = false
+    /// The aggregate `.active` placeholder mounted with a clear root while
+    /// the surface is still hidden and its precise rows have not published.
+    /// Laying out the whole streamed item once as SwiftUI only to discard it a
+    /// frame later dominated cold open; the reveal gate already waits for the
+    /// first publication, so nothing is ever visible in that window.
+    var deferredActivePlaceholderKey: String?
     var isAwaitingFirstActiveProjection = false
     var scrollCommand = TranscriptScrollCommand()
     var receivedSendAnimationToken: UInt64?

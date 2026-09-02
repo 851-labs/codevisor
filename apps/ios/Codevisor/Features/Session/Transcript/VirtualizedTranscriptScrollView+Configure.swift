@@ -46,6 +46,7 @@ extension VirtualizedTranscriptScrollView {
             unregisterPresentationFrameDriver()
             sessionController = newSessionController
             historyPrefetchPolicy = TranscriptHistoryPrefetchPolicy()
+            deferredActivePlaceholderKey = nil
         }
         rowContent = newRowContent
         self.onViewportChange = onViewportChange
@@ -226,6 +227,7 @@ extension VirtualizedTranscriptScrollView {
         }
 
         applyPendingInitialPositionIfPossible()
+        presentDeferredActivePlaceholderIfNeeded()
         startPendingSendAnimationIfPossible()
         if becameForeground {
             // The foreground transcript is now the sole viewport publisher.

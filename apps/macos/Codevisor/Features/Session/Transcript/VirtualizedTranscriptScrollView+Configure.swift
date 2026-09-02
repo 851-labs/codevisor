@@ -40,6 +40,7 @@ extension VirtualizedTranscriptScrollView {
             uninstallPresentationFrameDriver()
             sessionController = newSessionController
             historyPrefetchPolicy = TranscriptHistoryPrefetchPolicy()
+            deferredActivePlaceholderKey = nil
             installPresentationFrameDriver()
         }
         self.rowContent = newRowContent
@@ -188,6 +189,7 @@ extension VirtualizedTranscriptScrollView {
         }
 
         applyPendingInitialPositionIfPossible()
+        presentDeferredActivePlaceholderIfNeeded()
         startPendingSendAnimationIfPossible()
         updateInitialPresentationReadiness()
         resolveBottomJumpIfPossible()

@@ -136,6 +136,12 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     /// the aggregate estimate to the final block layout.
     var isActiveProjectionPending = false
     var isAwaitingFirstActiveProjection = false
+    /// The aggregate `.active` placeholder mounted with a clear root while
+    /// the surface is still hidden and its precise rows have not published.
+    /// Laying out the whole streamed item once as SwiftUI only to discard it a
+    /// frame later dominated cold open; the reveal gate already waits for the
+    /// first publication, so nothing is ever visible in that window.
+    var deferredActivePlaceholderKey: String?
     var scrollCommand = TranscriptScrollCommand()
     var receivedSendAnimationToken: UInt64?
     var pendingSendAnimationRequest: UserSendAnimationRequest?

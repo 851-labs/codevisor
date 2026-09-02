@@ -204,6 +204,14 @@ extension VirtualizedTranscriptScrollView {
         // Otherwise its first TextKit measurement can race the 1pt placeholder.
         position(host: host, at: index)
         host.syncContentWidth()
+        if defersActivePlaceholderPresentation(for: row) {
+            deferredActivePlaceholderKey = key
+            host.installRootView(
+                AnyView(Color.clear.frame(height: row.estimatedHeight)),
+                knownHeight: row.estimatedHeight
+            )
+            return true
+        }
         let rootView = measuredRootView(for: row)
         let knownHeight: CGFloat? =
             if row.id.isCacheableSettledRow,
@@ -222,6 +230,24 @@ extension VirtualizedTranscriptScrollView {
         synchronizePendingSendHistoryPositions()
         synchronizeSendAssistantVisibility()
         return true
+    }
+
+    /// Whether `row` is the aggregate active placeholder that the pending
+    /// first active projection is about to replace, while the document is
+    /// still hidden behind the initial presentation gate.
+    func defersActivePlaceholderPresentation(for row: TranscriptVirtualRow) -> Bool {
+        guard case .active = row.id else { return false }
+        return isAwaitingFirstActiveProjection && !initialPresentationGate.isReady
+    }
+
+    /// Gives a deferred placeholder its real content once the first active
+    /// projection has published but left the aggregate row in place (an item
+    /// that projects to no precise rows yet).
+    func presentDeferredActivePlaceholderIfNeeded() {
+        guard let key = deferredActivePlaceholderKey, !isAwaitingFirstActiveProjection else { return }
+        deferredActivePlaceholderKey = nil
+        guard rowByKey[key] != nil, mountedHosts[key] != nil else { return }
+        replaceMountedHost(for: key)
     }
 
     func usesNativeMarkdownHost(for row: TranscriptVirtualRow) -> Bool {

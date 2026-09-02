@@ -131,6 +131,15 @@ extension VirtualizedTranscriptScrollView {
         mountedHosts[key] = host
         position(host: host, at: index)
         host.syncContentWidth()
+        if defersActivePlaceholderPresentation(for: row) {
+            deferredActivePlaceholderKey = key
+            host.install(
+                row: row,
+                rootView: AnyView(Color.clear.frame(height: row.estimatedHeight)),
+                force: true
+            )
+            return true
+        }
         host.install(
             row: row,
             rootView: measuredRootView(for: row),
@@ -143,6 +152,26 @@ extension VirtualizedTranscriptScrollView {
         synchronizePendingSendHistoryPositions()
         synchronizeSendAssistantVisibility()
         return true
+    }
+
+    /// Whether `row` is the aggregate active placeholder that the pending
+    /// first active projection is about to replace, while the document is
+    /// still hidden behind the initial presentation gate.
+    func defersActivePlaceholderPresentation(for row: TranscriptVirtualRow) -> Bool {
+        guard case .active = row.id else { return false }
+        return isAwaitingFirstActiveProjection && !initialPresentationGate.isReady
+    }
+
+    /// Gives a deferred placeholder its real content once the first active
+    /// projection has published but left the aggregate row in place (an item
+    /// that projects to no precise rows yet).
+    func presentDeferredActivePlaceholderIfNeeded() {
+        guard let key = deferredActivePlaceholderKey, !isAwaitingFirstActiveProjection else { return }
+        deferredActivePlaceholderKey = nil
+        guard let row = rowByKey[key], let host = mountedHosts[key] else { return }
+        host.install(row: row, rootView: measuredRootView(for: row), force: true)
+        host.resetReportedContentHeight()
+        host.prepareForImmediatePresentation()
     }
 
     func promoteTargetWindowIfReady() {
