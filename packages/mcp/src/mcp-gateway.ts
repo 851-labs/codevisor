@@ -19,7 +19,7 @@ import { z } from "zod"
 import type { FileMetadata } from "@codevisor/api"
 import { makeAttachmentStore } from "@codevisor/db"
 import { executeToolDescription, makeGatewayCatalog } from "./mcp-gateway-catalog.js"
-import type { McpManagerConfig } from "./mcp-manager.js"
+import type { McpManagerConfig } from "./mcp-manager-types.js"
 import { invokeGatewayPluginTool } from "./mcp-plugin-tools.js"
 import {
   type SandboxArtifactCollector,
