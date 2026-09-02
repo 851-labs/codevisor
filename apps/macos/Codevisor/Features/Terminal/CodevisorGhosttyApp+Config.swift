@@ -102,7 +102,7 @@ extension CodevisorGhosttyApp {
         }
     }
 
-    /// Writes a tiny config file with our font + color overrides, and returns
+    /// Writes a tiny config file with our font-size + color overrides, and returns
     /// its path. With no theme, the terminal follows the system light/dark
     /// appearance and the cursor inverts the cell under it (so it stays
     /// visible on backgrounds apps paint themselves); with a theme, it takes
@@ -116,8 +116,10 @@ extension CodevisorGhosttyApp {
         // crash reporter and starts it on a background "sentry-init" thread,
         // which intermittently segfaults at launch on macOS 26/27 betas.
         // Codevisor has its own crash reporting; Ghostty's stays off.
+        // No font-family: libghostty falls back to its embedded default
+        // (JetBrains Mono, with ligatures), so the embedded terminal renders
+        // exactly like stock Ghostty. Only the size is pinned to the app's.
         var contents = """
-            font-family = Menlo
             font-size = \(terminalFontSize)
             crash-report = false
 

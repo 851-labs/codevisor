@@ -27,10 +27,11 @@ scoped to the session's working directory.
      Carbon, AppKit, Foundation, CoreFoundation, Security, ApplicationServices,
      AudioToolbox, UniformTypeIdentifiers, GameController, Combine.
 
-`CodevisorGhosttyApp` writes a temp config with `font-family = Menlo` and the app's
-terminal font size so the renderer has a font even though Ghostty's bundled
-JetBrains Mono isn't shipped (otherwise `ghostty_surface_new` fails), and so the
-embedded terminal scale matches the rest of the app chrome.
+`CodevisorGhosttyApp` writes a temp config with the app's terminal font size so
+the embedded terminal scale matches the rest of the app chrome. It deliberately
+sets no `font-family`: libghostty compiles its default font (JetBrains Mono +
+Symbols Nerd Font) into the static library, so leaving the family unset renders
+the same glyphs, metrics, and ligatures as stock Ghostty.
 
 **Resources:** the `xterm-ghostty` terminfo + shell-integration are bundled as
 `Codevisor/Resources/ghostty-resources.tar.gz` (layout: `ghostty/shell-integration`
