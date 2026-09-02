@@ -10,6 +10,9 @@ import { defineConfig } from "vitest/config"
 // scaffolding, not product code.
 export default defineConfig({
   test: {
+    // These tests spawn fake harness CLIs and auth servers per test; on a loaded CI runner — where every
+    // package's suite runs in parallel — they need well past vitest's 5s default.
+    testTimeout: 30_000,
     coverage: {
       all: true,
       include: ["src/**/*.ts"],

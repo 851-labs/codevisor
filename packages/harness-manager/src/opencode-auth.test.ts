@@ -45,10 +45,6 @@ server.listen(0, "127.0.0.1", () => { const address = server.address(); console.
   return path
 }
 
-// Every provider/login/logout call boots a fresh fake `opencode serve` Node
-// process, so these tests spend their time in process startup: ~1s locally,
-// but several seconds on a loaded CI runner where every package's suite runs
-// in parallel. The budget reflects that, not the code under test.
 describe("OpenCode provider authentication", () => {
   it("uses the profile XDG data directory", () => {
     expect(openCodeAuthPath({ HOME: "/home/test" })).toBe(
@@ -59,57 +55,53 @@ describe("OpenCode provider authentication", () => {
     )
   })
 
-  it(
-    "lists, adds, replaces, and removes profile-scoped credentials",
-    { timeout: 30_000 },
-    async () => {
-      const root = mkdtempSync(join(tmpdir(), "codevisor-opencode-auth-"))
-      const data = join(root, "data")
-      mkdirSync(data, { recursive: true })
-      const command = fakeOpenCode(root)
-      const manager = makeOpenCodeAuthManager({
-        profile: async () => ({
-          command,
-          cwd: root,
-          env: { ...process.env, HOME: root, XDG_DATA_HOME: data },
-          authPath: join(data, "opencode", "auth.json")
-        })
+  it("lists, adds, replaces, and removes profile-scoped credentials", async () => {
+    const root = mkdtempSync(join(tmpdir(), "codevisor-opencode-auth-"))
+    const data = join(root, "data")
+    mkdirSync(data, { recursive: true })
+    const command = fakeOpenCode(root)
+    const manager = makeOpenCodeAuthManager({
+      profile: async () => ({
+        command,
+        cwd: root,
+        env: { ...process.env, HOME: root, XDG_DATA_HOME: data },
+        authPath: join(data, "opencode", "auth.json")
       })
+    })
 
-      expect(await manager.providers("account-1")).toEqual([
-        expect.objectContaining({
-          id: "openai",
-          methods: [
-            expect.objectContaining({ id: "0", type: "oauth" }),
-            expect.objectContaining({ id: "1", type: "api" })
-          ]
-        })
-      ])
-
-      const api = await manager.beginLogin(
-        "account-1",
-        "openai",
-        "1",
-        { organization: "personal" },
-        "sk-secret"
-      )
-      expect(api.state).toBe("complete")
-      expect((await manager.providers("account-1"))[0]?.credentialType).toBe("api")
-
-      await manager.logout("account-1", "openai")
-      expect((await manager.providers("account-1"))[0]?.credentialType).toBeUndefined()
-
-      const oauth = await manager.beginLogin("account-1", "openai", "0", { plan: "plus" })
-      expect(oauth).toMatchObject({
-        state: "waiting",
-        authorization: { method: "code", url: "https://example.test/login" }
+    expect(await manager.providers("account-1")).toEqual([
+      expect.objectContaining({
+        id: "openai",
+        methods: [
+          expect.objectContaining({ id: "0", type: "oauth" }),
+          expect.objectContaining({ id: "1", type: "api" })
+        ]
       })
-      expect((await manager.answer(oauth.id, "right-code")).state).toBe("complete")
-      expect((await manager.providers("account-1"))[0]?.credentialType).toBe("oauth")
-    }
-  )
+    ])
 
-  it("serializes auth servers that belong to the same profile", { timeout: 30_000 }, async () => {
+    const api = await manager.beginLogin(
+      "account-1",
+      "openai",
+      "1",
+      { organization: "personal" },
+      "sk-secret"
+    )
+    expect(api.state).toBe("complete")
+    expect((await manager.providers("account-1"))[0]?.credentialType).toBe("api")
+
+    await manager.logout("account-1", "openai")
+    expect((await manager.providers("account-1"))[0]?.credentialType).toBeUndefined()
+
+    const oauth = await manager.beginLogin("account-1", "openai", "0", { plan: "plus" })
+    expect(oauth).toMatchObject({
+      state: "waiting",
+      authorization: { method: "code", url: "https://example.test/login" }
+    })
+    expect((await manager.answer(oauth.id, "right-code")).state).toBe("complete")
+    expect((await manager.providers("account-1"))[0]?.credentialType).toBe("oauth")
+  })
+
+  it("serializes auth servers that belong to the same profile", async () => {
     const root = mkdtempSync(join(tmpdir(), "codevisor-opencode-auth-lock-"))
     const data = join(root, "data")
     mkdirSync(data, { recursive: true })

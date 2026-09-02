@@ -6,6 +6,9 @@ import { defineConfig } from "vitest/config"
 // the server and adapter packages use.
 export default defineConfig({
   test: {
+    // Skills tests clone real git repositories and shuffle symlinked trees; on a loaded CI runner — where every
+    // package's suite runs in parallel — they need well past vitest's 5s default.
+    testTimeout: 30_000,
     coverage: {
       all: true,
       include: ["src/**/*.ts"],

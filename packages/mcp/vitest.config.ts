@@ -11,6 +11,10 @@ import { defineConfig } from "vitest/config"
 // shared test scaffolding, not product code.
 export default defineConfig({
   test: {
+    // MCP tests stand up real HTTP upstreams, stdio transports, and gateway
+    // sessions per test; on a loaded CI runner — where every
+    // package's suite runs in parallel — they need well past vitest's 5s default.
+    testTimeout: 30_000,
     coverage: {
       all: true,
       include: ["src/**/*.ts"],
