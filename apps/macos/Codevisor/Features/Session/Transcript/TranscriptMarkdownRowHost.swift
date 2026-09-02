@@ -26,7 +26,7 @@ final class TranscriptMarkdownRowHost: TranscriptMountedRowHost {
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
-        layer?.masksToBounds = true
+        installVerticalClipMask()
         addSubview(decoration)
         addSubview(markdownView)
     }

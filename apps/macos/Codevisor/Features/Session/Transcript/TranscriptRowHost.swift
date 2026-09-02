@@ -39,7 +39,7 @@ final class TranscriptRowHost: TranscriptMountedRowHost {
         // The virtualizer is the only owner of row geometry. Until a natural
         // height has been committed, keep hosted content inside the current
         // ledger frame so an estimate can never paint over its neighbor.
-        layer?.masksToBounds = true
+        installVerticalClipMask()
         contentHost.translatesAutoresizingMaskIntoConstraints = false
         contentController.sizingOptions = [.intrinsicContentSize]
         contentHost.setContentHuggingPriority(.required, for: .vertical)

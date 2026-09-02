@@ -2,12 +2,12 @@
     import AppKit
 
     /// Settled-transcript table: the same TextKit table as `MarkdownTableView`,
-    /// hosted directly (no SwiftUI) inside a `TableScrollView` so a table wider
+    /// hosted directly (no SwiftUI) inside a `TableBleedContainer` so a table wider
     /// than its min-content width scrolls sideways instead of wrapping mid-word.
     @MainActor
     final class NativeMarkdownTableBlockView: NativeMarkdownContentView {
         private let tableView: TableTextView
-        private let scrollView: TableScrollView
+        private let bleedContainer: TableBleedContainer
         private let model: TableModel
         private let renderMemo = MarkdownTableRenderMemo()
         private var measuredWidth: CGFloat = -1
@@ -37,7 +37,7 @@
             container.lineFragmentPadding = 0
             layoutManager.addTextContainer(container)
             tableView = TableTextView(frame: .zero, textContainer: container)
-            scrollView = TableScrollView(tableTextView: tableView)
+            bleedContainer = TableBleedContainer(tableTextView: tableView)
 
             super.init(frame: .zero)
             self.linkAction = linkAction
@@ -59,13 +59,8 @@
                 .cursor: NSCursor.pointingHand,
             ]
             tableView.update(model: model, renderMemo: renderMemo)
-            addSubview(scrollView)
-
-            wantsLayer = true
-            layer?.cornerRadius = MarkdownTableMetrics.cornerRadius
-            layer?.masksToBounds = true
-            layer?.borderWidth = 1
-            layer?.borderColor = NSColor(theme.tableBorderColor).cgColor
+            bleedContainer.scrollView.setBorderColor(NSColor(theme.tableBorderColor))
+            addSubview(bleedContainer)
         }
 
         @available(*, unavailable)
@@ -90,9 +85,9 @@
 
         override func layout() {
             super.layout()
-            scrollView.frame = bounds
-            scrollView.needsLayout = true
-            scrollView.layoutSubtreeIfNeeded()
+            bleedContainer.frame = bounds
+            bleedContainer.needsLayout = true
+            bleedContainer.layoutSubtreeIfNeeded()
         }
     }
 #endif

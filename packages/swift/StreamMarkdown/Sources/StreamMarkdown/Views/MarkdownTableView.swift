@@ -45,11 +45,6 @@
                 ),
                 renderMemo: renderMemo
             )
-            .clipShape(RoundedRectangle(cornerRadius: MarkdownTableMetrics.cornerRadius))
-            .overlay(
-                RoundedRectangle(cornerRadius: MarkdownTableMetrics.cornerRadius)
-                    .strokeBorder(theme.tableBorderColor, lineWidth: 1)
-            )
         }
     }
 
@@ -121,7 +116,7 @@
 
         func makeCoordinator() -> MarkdownTextViewLinkCoordinator { .init() }
 
-        func makeNSView(context: Context) -> TableScrollView {
+        func makeNSView(context: Context) -> TableBleedContainer {
             // Build an explicit TextKit 1 stack: `NSTextTable` is a TextKit 1
             // construct and does not lay out under an NSTextView's default
             // TextKit 2 stack.
@@ -153,7 +148,9 @@
             ]
             context.coordinator.install(on: textView, action: linkAction)
             textView.update(model: model, renderMemo: renderMemo)
-            return TableScrollView(tableTextView: textView)
+            let bleedContainer = TableBleedContainer(tableTextView: textView)
+            bleedContainer.scrollView.setBorderColor(NSColor(model.theme.tableBorderColor))
+            return bleedContainer
         }
 
         /// The width the table is laid out at: the granted width, or the
@@ -163,12 +160,12 @@
         }
 
         func sizeThatFits(
-            _ proposal: ProposedViewSize, nsView scrollView: TableScrollView, context _: Context
+            _ proposal: ProposedViewSize, nsView container: TableBleedContainer, context _: Context
         ) -> CGSize? {
             guard let proposed = proposal.width, proposed.isFinite else {
                 // Unspecified / infinite proposal: the ideal size at the current
                 // width (or a modest default before the view has one).
-                let ideal = scrollView.bounds.width > 1 ? scrollView.bounds.width : 400
+                let ideal = container.bounds.width > 1 ? container.bounds.width : 400
                 return CGSize(
                     width: ideal, height: renderMemo.size(for: model, width: layoutWidth(for: ideal)).height
                 )

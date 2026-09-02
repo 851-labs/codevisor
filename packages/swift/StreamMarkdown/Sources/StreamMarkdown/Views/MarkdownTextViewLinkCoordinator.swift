@@ -29,9 +29,10 @@
     }
 
     extension SelectableTextTableView {
-        func updateNSView(_ scrollView: TableScrollView, context: Context) {
-            scrollView.tableTextView.linkAction = linkAction
-            scrollView.tableTextView.update(model: model, renderMemo: renderMemo)
+        func updateNSView(_ container: TableBleedContainer, context: Context) {
+            container.scrollView.tableTextView.linkAction = linkAction
+            container.scrollView.tableTextView.update(model: model, renderMemo: renderMemo)
+            container.scrollView.setBorderColor(NSColor(model.theme.tableBorderColor))
         }
     }
 
