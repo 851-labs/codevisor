@@ -18,22 +18,13 @@ extension VirtualizedTranscriptScrollView {
     }
 
     func plannedMountedRange(scrollDelta: CGFloat = 0) -> Range<Int> {
-        let distance = currentDistanceFromBottom()
-        if !initialPresentationGate.isReady {
-            let runway = viewportHeight * Self.initialRunwayViewportCount
-            return virtualLayout.visibleRange(
-                distanceFromBottom: distance,
-                viewportHeight: viewportHeight,
-                runwayBefore: runway,
-                runwayAfter: runway,
-            )
-        }
-        return virtualWindowPolicy.targetRange(
+        windowPlanner.plannedRange(
             layout: virtualLayout,
-            distanceFromBottom: distance,
+            distanceFromBottom: currentDistanceFromBottom(),
             viewportHeight: viewportHeight,
             scrollDelta: scrollDelta,
-            currentRange: windowRange(for: virtualWindowHandoff.targetKeys),
+            isInitialPresentationReady: initialPresentationGate.isReady,
+            currentTargetKeys: virtualWindowHandoff.targetKeys
         )
     }
 
@@ -55,12 +46,13 @@ extension VirtualizedTranscriptScrollView {
             viewportHeight: viewportHeight,
             overscanCount: 0,
         )
-        let retainedIndices = Set(targetRange).union(visibleRange)
         virtualWindowHandoff.setTarget(
-            Set(
-                retainedIndices.compactMap { index in
-                    virtualLayout.keys.indices.contains(index) ? virtualLayout.keys[index] : nil
-                }))
+            TranscriptWindowPlanner.targetKeys(
+                layout: virtualLayout,
+                targetRange: targetRange,
+                visibleRange: visibleRange
+            )
+        )
 
         let mountPlan = virtualWindowPolicy.mountPlan(
             targetRange: targetRange,
@@ -151,17 +143,6 @@ extension VirtualizedTranscriptScrollView {
         synchronizePendingSendHistoryPositions()
         synchronizeSendAssistantVisibility()
         return true
-    }
-
-    func windowRange(for keys: Set<String>) -> Range<Int>? {
-        guard !keys.isEmpty else { return nil }
-        let indices = keys.compactMap { virtualLayout.indexByKey[$0] }.sorted()
-        guard indices.count == keys.count,
-            let first = indices.first,
-            let last = indices.last,
-            last - first + 1 == indices.count
-        else { return nil }
-        return first..<(last + 1)
     }
 
     func promoteTargetWindowIfReady() {

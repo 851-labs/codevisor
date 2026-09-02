@@ -213,23 +213,19 @@ extension VirtualizedTranscriptScrollView {
             initialPositionApplied,
             viewportHeight > 0
         else { return }
-        let requiredKeys = Set(
-            plannedMountedRange().compactMap { index in
-                virtualLayout.keys.indices.contains(index) ? virtualLayout.keys[index] : nil
-            })
+        let requiredKeys = virtualLayout.keys(in: plannedMountedRange())
         let mountedKeys = Set(mountedHosts.keys)
         guard requiredKeys.isSubset(of: mountedKeys) else {
             updateMountedRows()
             return
         }
-        let resolvedKeys = Set(
-            requiredKeys.filter { key in
-                guard let host = mountedHosts[key] else { return false }
-                return measurements[key] != nil
-                    && !measurements.isStale(key)
-                    && host.isAttachmentGeometryReady
-                    && host.isPresentationReady
-            })
+        let resolvedKeys = TranscriptMountedWindowReadiness.resolvedKeys(
+            required: requiredKeys,
+            measurements: measurements
+        ) { key in
+            guard let host = mountedHosts[key] else { return false }
+            return host.isAttachmentGeometryReady && host.isPresentationReady
+        }
         _ = bottomJumpGate.resolve(
             requiredKeys: requiredKeys,
             resolvedKeys: resolvedKeys,
@@ -244,10 +240,7 @@ extension VirtualizedTranscriptScrollView {
             viewportHeight > 0
         else { return }
 
-        let requiredKeys = Set(
-            plannedMountedRange().compactMap { index in
-                virtualLayout.keys.indices.contains(index) ? virtualLayout.keys[index] : nil
-            })
+        let requiredKeys = virtualLayout.keys(in: plannedMountedRange())
         let mountedKeys = Set(mountedHosts.keys)
         guard requiredKeys.isSubset(of: mountedKeys) else {
             // Resolving estimates can change which rows intersect the initial
@@ -256,14 +249,13 @@ extension VirtualizedTranscriptScrollView {
             updateMountedRows()
             return
         }
-        let resolvedKeys = Set(
-            requiredKeys.filter { key in
-                guard let host = mountedHosts[key] else { return false }
-                return measurements[key] != nil
-                    && !measurements.isStale(key)
-                    && host.isAttachmentGeometryReady
-                    && host.isPresentationReady
-            })
+        let resolvedKeys = TranscriptMountedWindowReadiness.resolvedKeys(
+            required: requiredKeys,
+            measurements: measurements
+        ) { key in
+            guard let host = mountedHosts[key] else { return false }
+            return host.isAttachmentGeometryReady && host.isPresentationReady
+        }
         guard
             initialPresentationGate.resolve(
                 isHydrating: isLoadingInitialHistory || isPreparingInitialProjection,
@@ -335,15 +327,8 @@ extension VirtualizedTranscriptScrollView {
     ) -> SessionVirtualTranscriptRestoreState {
         let targetKeys = virtualWindowHandoff.targetKeys
         let restoreKeys = targetKeys.isEmpty ? Set(mountedHosts.keys) : targetKeys
-        let indices = restoreKeys.compactMap { virtualLayout.indexByKey[$0] }.sorted()
-        let renderedWindow: SessionRenderedTranscriptWindow? = indices.first.flatMap { first in
-            guard let last = indices.last,
-                virtualLayout.keys.indices.contains(first)
-            else { return nil }
-            return SessionRenderedTranscriptWindow(
-                anchorKey: virtualLayout.keys[first],
-                count: last - first + 1,
-            )
+        let renderedWindow = virtualLayout.renderedWindow(covering: restoreKeys).map {
+            SessionRenderedTranscriptWindow(anchorKey: $0.anchorKey, count: $0.count)
         }
         return SessionVirtualTranscriptRestoreState(
             measurementCacheKey: measurementCache.activeKey,

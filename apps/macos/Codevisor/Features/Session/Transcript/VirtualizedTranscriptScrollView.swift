@@ -35,17 +35,28 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     let transcriptDocumentView = FlippedTranscriptDocumentView()
     let streamingTextFrameClock = StreamingTextAnimationFrameClock()
     let paginationLoadingIndicator = NSProgressIndicator()
-    var rows: [TranscriptVirtualRow] = []
-    var rowByKey: [String: TranscriptVirtualRow] = [:]
-    var projectedRows: [TranscriptVirtualRow] = []
+    /// Row bookkeeping shared with the other platform; see `TranscriptRowSet`.
+    var rowSet = TranscriptRowSet()
+    var rows: [TranscriptVirtualRow] { rowSet.rows }
+    var rowByKey: [String: TranscriptVirtualRow] { rowSet.rowByKey }
+    var projectedRows: [TranscriptVirtualRow] {
+        get { rowSet.projectedRows }
+        set { rowSet.projectedRows = newValue }
+    }
+    var activeRows: [TranscriptVirtualRow] {
+        get { rowSet.activeRows }
+        set { rowSet.activeRows = newValue }
+    }
+    var activeRowsRange: Range<Int>? {
+        get { rowSet.activeRowsRange }
+        set { rowSet.activeRowsRange = newValue }
+    }
     var projectedRowsVersion: TranscriptRowSetRevision?
     /// Visibility and projection revisions advance independently. Keep the
     /// raw projection revision so disclosure changes cannot be mistaken for a
     /// newly-published settled transcript.
     var receivedProjectionRevision: UInt64?
-    var activeRows: [TranscriptVirtualRow] = []
     var activeRowsVersion: TranscriptRowSetRevision?
-    var activeRowsRange: Range<Int>?
 
     struct DeferredSendProjection {
         let projectedRows: [TranscriptVirtualRow]
@@ -88,6 +99,12 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     let markdownHostCache = TranscriptMarkdownHostCache()
     var recycledMarkdownHosts: [TranscriptMarkdownRowHost] = []
     let virtualWindowPolicy = TranscriptVirtualWindowPolicy()
+    var windowPlanner: TranscriptWindowPlanner {
+        TranscriptWindowPlanner(
+            policy: virtualWindowPolicy,
+            initialRunwayViewportCount: Self.initialRunwayViewportCount
+        )
+    }
     /// The desired pixel runway and the last runway known to be fully laid
     /// out. Keeping both makes a window transition two-phase: prepare the new
     /// runway first, then retire the previous one.

@@ -101,68 +101,38 @@ extension VirtualizedTranscriptScrollView {
     func rebuildDocumentGeometry(changedHeights: [String: CGFloat]? = nil) {
         let previousLayout = virtualLayout
         let previousDistance = initialPositionApplied ? currentDistanceFromBottom() : nil
-        let followsStreamingLatest = followsLatest && rows.contains { $0.id.isActiveRow }
-        // Composer geometry is represented by the final spacer row. If its
-        // measured height settles while the reader is already at the bottom,
-        // keep the latest content stationary; ordinary idle-row changes still
-        // preserve their visible block anchor below.
-        let pinsBottomSpacerChange =
-            previousDistance.map { $0 <= Self.atBottomThreshold } == true
-            && bottomSpacerGeometryWillChange(from: previousLayout)
-        let pinsBottom =
-            bottomJumpGate.isActive
-            || initialBottomPin.isActive
-            || pinsBottomSpacerChange
-        let visibleAnchorKey: String?
-        if !pinsBottom,
-            !followsStreamingLatest,
-            let previousDistance,
-            !previousLayout.isEmpty
-        {
-            let visibleRange = previousLayout.visibleRange(
-                distanceFromBottom: previousDistance,
-                viewportHeight: viewportHeight,
-                overscanCount: 0,
-            )
-            visibleAnchorKey =
-                visibleRange.compactMap { index -> String? in
-                    guard previousLayout.keys.indices.contains(index) else { return nil }
-                    let key = previousLayout.keys[index]
-                    return measurements[key] == nil ? nil : key
-                }.first
-                ?? visibleRange.first.flatMap { index in
-                    previousLayout.keys.indices.contains(index)
-                        ? previousLayout.keys[index]
-                        : nil
-                }
-        } else {
-            visibleAnchorKey = nil
-        }
-        let distanceToPreserve: CGFloat? =
-            if let lockedRestoreDistance {
-                lockedRestoreDistance
-            } else if pinsBottom {
-                0
-            } else if initialPositionApplied {
-                followsStreamingLatest ? 0 : currentDistanceFromBottom()
-            } else {
-                nil
-            }
-
+        // ChatGPT follows the bottom only while the latest turn is live. An
+        // idle transcript is static even when its distance is zero, so opening
+        // a disclosure preserves the reader's viewport instead of pushing the
+        // clicked header offscreen.
+        let plan = TranscriptGeometryRebuildPlan(
+            previousLayout: previousLayout,
+            previousDistanceFromBottom: previousDistance,
+            viewportHeight: viewportHeight,
+            followsStreamingLatest: followsLatest && rows.contains { $0.id.isActiveRow },
+            lockedRestoreDistance: lockedRestoreDistance,
+            initialPositionApplied: initialPositionApplied,
+            gatePinsBottom: bottomJumpGate.isActive || initialBottomPin.isActive,
+            bottomSpacerWillChange: TranscriptDocumentGeometry.bottomSpacerGeometryWillChange(
+                from: previousLayout,
+                spacerRow: rowByKey[TranscriptVirtualRow.ID.bottomSpacer.layoutKey],
+                measurements: measurements
+            ),
+            atBottomThreshold: Self.atBottomThreshold,
+            measurements: measurements
+        )
         var initialRestoreRange: Range<Int>?
         applyPositionTransaction {
             virtualLayout =
-                incrementallyUpdatedLayout(changedHeights: changedHeights)
-                ?? VirtualTranscriptLayout(
-                    items: rows.map {
-                        .init(
-                            key: $0.layoutKey,
-                            estimatedHeight: $0.estimatedHeight,
-                            spacingAfter: $0.spacingAfter
-                        )
-                    },
-                    measuredHeights: measurements.heightsByKey,
-                    spacing: Self.rowSpacing,
+                TranscriptDocumentGeometry.incrementallyUpdatedLayout(
+                    virtualLayout,
+                    rowCount: rows.count,
+                    changedHeights: changedHeights
+                )
+                ?? TranscriptDocumentGeometry.layout(
+                    rows: rows,
+                    measurements: measurements,
+                    spacing: Self.rowSpacing
                 )
             initialRestoreRange = pendingInitialState?.virtualTranscript?.renderedWindow.flatMap {
                 virtualLayout.renderedRange(anchorKey: $0.anchorKey, count: $0.count)
@@ -184,18 +154,10 @@ extension VirtualizedTranscriptScrollView {
                 applyPendingInitialPositionIfPossible()
             } else if let anchor = disclosureViewportAnchor {
                 setViewportTop(anchor.viewportTop)
-            } else if let distanceToPreserve {
-                let anchoredDistance =
-                    pinsBottom
-                    ? nil
-                    : visibleAnchorKey.flatMap { key in
-                        virtualLayout.distanceFromBottom(
-                            preservingAnchor: key,
-                            previousLayout: previousLayout,
-                            previousDistanceFromBottom: distanceToPreserve,
-                        )
-                    }
-                let resolvedDistance = anchoredDistance ?? distanceToPreserve
+            } else if let resolvedDistance = plan.resolvedDistanceFromBottom(
+                newLayout: virtualLayout,
+                previousLayout: previousLayout
+            ) {
                 if lockedRestoreDistance != nil {
                     lockedRestoreDistance = resolvedDistance
                 }
@@ -210,35 +172,6 @@ extension VirtualizedTranscriptScrollView {
         synchronizePendingSendHistoryPositions()
         updateMountedRows(rangeOverride: initialRestoreRange)
         updateInitialPresentationReadiness()
-    }
-
-    func bottomSpacerGeometryWillChange(
-        from previousLayout: VirtualTranscriptLayout
-    ) -> Bool {
-        let key = TranscriptVirtualRow.ID.bottomSpacer.layoutKey
-        guard let previousIndex = previousLayout.indexByKey[key],
-            previousLayout.heights.indices.contains(previousIndex),
-            let row = rowByKey[key]
-        else { return false }
-        let nextHeight = measurements[key] ?? row.estimatedHeight
-        return abs(previousLayout.heights[previousIndex] - nextHeight) > 0.5
-    }
-
-    func incrementallyUpdatedLayout(
-        changedHeights: [String: CGFloat]?,
-    ) -> VirtualTranscriptLayout? {
-        guard let changedHeights, !changedHeights.isEmpty,
-            !virtualLayout.isEmpty,
-            virtualLayout.keys.count == rows.count
-        else { return nil }
-        var layout = virtualLayout
-        for (key, height) in changedHeights {
-            guard let updated = layout.updatingHeight(forKey: key, to: height) else {
-                return nil
-            }
-            layout = updated
-        }
-        return layout
     }
 
     func measuredRootView(for row: TranscriptVirtualRow) -> AnyView {

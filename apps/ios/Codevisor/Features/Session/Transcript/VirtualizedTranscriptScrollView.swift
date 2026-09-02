@@ -30,17 +30,28 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     let paginationLoadingIndicator = UIActivityIndicatorView(style: .medium)
     weak var hostingParent: UIViewController?
 
-    var rows: [TranscriptVirtualRow] = []
-    var rowByKey: [String: TranscriptVirtualRow] = [:]
-    var projectedRows: [TranscriptVirtualRow] = []
+    /// Row bookkeeping shared with the other platform; see `TranscriptRowSet`.
+    var rowSet = TranscriptRowSet()
+    var rows: [TranscriptVirtualRow] { rowSet.rows }
+    var rowByKey: [String: TranscriptVirtualRow] { rowSet.rowByKey }
+    var projectedRows: [TranscriptVirtualRow] {
+        get { rowSet.projectedRows }
+        set { rowSet.projectedRows = newValue }
+    }
+    var activeRows: [TranscriptVirtualRow] {
+        get { rowSet.activeRows }
+        set { rowSet.activeRows = newValue }
+    }
+    var activeRowsRange: Range<Int>? {
+        get { rowSet.activeRowsRange }
+        set { rowSet.activeRowsRange = newValue }
+    }
     var projectedRowsVersion: TranscriptRowSetRevision?
     /// Received and applied projection revisions differ while UIKit defers a
     /// prepend until an active drag/deceleration ends.
     var receivedProjectionRevision: UInt64?
     var appliedProjectionRevision: UInt64?
-    var activeRows: [TranscriptVirtualRow] = []
     var activeRowsVersion: TranscriptRowSetRevision?
-    var activeRowsRange: Range<Int>?
     var virtualLayout = VirtualTranscriptLayout(
         items: [],
         measuredHeights: [:],
@@ -54,6 +65,12 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     var parkedHosts: [String: TranscriptRowHost] = [:]
     var parkedHostLRU: [String] = []
     let virtualWindowPolicy = TranscriptVirtualWindowPolicy()
+    var windowPlanner: TranscriptWindowPlanner {
+        TranscriptWindowPlanner(
+            policy: virtualWindowPolicy,
+            initialRunwayViewportCount: Self.initialRunwayViewportCount
+        )
+    }
     var virtualWindowHandoff = TranscriptVirtualWindowHandoff()
     var pendingWindowScrollDelta: CGFloat = 0
     var lastObservedContentOffsetY: CGFloat?

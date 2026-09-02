@@ -10,22 +10,13 @@ import TranscriptKit
 
 extension VirtualizedTranscriptScrollView {
     func plannedMountedRange(scrollDelta: CGFloat = 0) -> Range<Int> {
-        let distance = currentDistanceFromBottom()
-        if !initialPresentationGate.isReady {
-            let runway = contentView.bounds.height * Self.initialRunwayViewportCount
-            return virtualLayout.visibleRange(
-                distanceFromBottom: distance,
-                viewportHeight: contentView.bounds.height,
-                runwayBefore: runway,
-                runwayAfter: runway
-            )
-        }
-        return virtualWindowPolicy.targetRange(
+        windowPlanner.plannedRange(
             layout: virtualLayout,
-            distanceFromBottom: distance,
+            distanceFromBottom: currentDistanceFromBottom(),
             viewportHeight: contentView.bounds.height,
             scrollDelta: scrollDelta,
-            currentRange: windowRange(for: virtualWindowHandoff.targetKeys)
+            isInitialPresentationReady: initialPresentationGate.isReady,
+            currentTargetKeys: virtualWindowHandoff.targetKeys
         )
     }
 
@@ -108,15 +99,10 @@ extension VirtualizedTranscriptScrollView {
             viewportHeight: contentView.bounds.height,
             overscanCount: 0
         )
-        // A restored or rapidly changing target should normally contain the
-        // viewport, but make visible coverage an invariant even if it does not.
-        let retainedIndices = Set(targetRange).union(visibleRange)
-        let targetKeys = Set(
-            retainedIndices.compactMap { index in
-                virtualLayout.keys.indices.contains(index)
-                    ? virtualLayout.keys[index]
-                    : nil
-            }
+        let targetKeys = TranscriptWindowPlanner.targetKeys(
+            layout: virtualLayout,
+            targetRange: targetRange,
+            visibleRange: visibleRange
         )
         let targetChanged = targetKeys != virtualWindowHandoff.targetKeys
         if targetChanged {
@@ -286,25 +272,6 @@ extension VirtualizedTranscriptScrollView {
         synchronizePendingSendHistoryPositions()
         synchronizeSendAssistantVisibility()
         return true
-    }
-
-    func windowRange(for keys: Set<String>) -> Range<Int>? {
-        guard !keys.isEmpty else { return nil }
-        let indices = keys.compactMap { virtualLayout.indexByKey[$0] }.sorted()
-        guard indices.count == keys.count,
-            let first = indices.first,
-            let last = indices.last,
-            last - first + 1 == indices.count
-        else { return nil }
-        return first..<(last + 1)
-    }
-
-    func keys(in range: Range<Int>) -> Set<String> {
-        Set(
-            range.compactMap { index in
-                virtualLayout.keys.indices.contains(index) ? virtualLayout.keys[index] : nil
-            }
-        )
     }
 
     func promoteTargetWindowIfReady() -> Bool {
