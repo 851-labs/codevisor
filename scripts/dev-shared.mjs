@@ -3,6 +3,7 @@
 // bookkeeping, filesystem probes, and the worktree icon color derivation.
 import { access, readdir } from "node:fs/promises"
 import { createServer } from "node:net"
+import { join } from "node:path"
 
 export function colorFromHash(hash) {
   const hue = Number.parseInt(hash.slice(0, 8), 16) % 360
