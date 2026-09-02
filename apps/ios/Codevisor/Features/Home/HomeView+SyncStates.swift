@@ -5,144 +5,144 @@ import SwiftUI
 /// native failure alert, and the refreshable surface used by loading, empty,
 /// and unavailable states.
 extension HomeView {
-    var settingsButton: some View {
-        Button {
-            presentedSettingsDestination = .root
-        } label: {
-            Image(systemName: "gearshape")
+  var settingsButton: some View {
+    Button {
+      presentedSettingsDestination = .root
+    } label: {
+      Image(systemName: "gearshape")
+    }
+    .accessibilityLabel("Settings")
+  }
+
+  /// Machines whose last sync attempt failed — named in the alert and
+  /// retried together. Fleet-aggregated: no single "selected" machine
+  /// gets to speak for the others.
+  var failedSyncMachines: [CodevisorMachine] {
+    machines.allMachines.filter { machine in
+      if case .stale = machines.navigationSyncStateByMachineId[machine.id] { return true }
+      return false
+    }
+  }
+
+  var failedSyncMachineIDs: Set<String> {
+    Set(failedSyncMachines.map(\.id))
+  }
+
+  /// Cached records stay persisted for recovery, but Home only presents
+  /// content backed by an authoritative current snapshot.
+  var currentNavigationMachineIDs: Set<String> {
+    Set(
+      machines.allMachines.compactMap { machine in
+        machines.navigationSyncStateByMachineId[machine.id] == .current
+          ? machine.id
+          : nil
+      }
+    )
+  }
+
+  var showsSyncFailureAlert: Bool {
+    !failedSyncMachineIDs.subtracting(dismissedSyncFailureMachineIDs).isEmpty
+  }
+
+  var syncFailureAlertIsPresented: Binding<Bool> {
+    Binding(
+      get: { showsSyncFailureAlert },
+      set: { isPresented in
+        if !isPresented {
+          dismissSyncFailureAlert()
         }
-        .accessibilityLabel("Settings")
-    }
+      }
+    )
+  }
 
-    /// Machines whose last sync attempt failed — named in the alert and
-    /// retried together. Fleet-aggregated: no single "selected" machine
-    /// gets to speak for the others.
-    var failedSyncMachines: [CodevisorMachine] {
-        machines.allMachines.filter { machine in
-            if case .stale = machines.navigationSyncStateByMachineId[machine.id] { return true }
-            return false
-        }
+  var syncFailureAlertTitle: String {
+    if let machine = failedSyncMachines.first, failedSyncMachines.count == 1 {
+      return "\(machine.name) is unavailable"
     }
+    return "\(failedSyncMachines.count) machines are unavailable"
+  }
 
-    var failedSyncMachineIDs: Set<String> {
-        Set(failedSyncMachines.map(\.id))
+  var syncFailureAlertMessage: String {
+    if failedSyncMachines.count == 1 {
+      return "Chats from this machine are hidden until it reconnects."
     }
+    return "Chats from these machines are hidden until they reconnect."
+  }
 
-    /// Cached records stay persisted for recovery, but Home only presents
-    /// content backed by an authoritative current snapshot.
-    var currentNavigationMachineIDs: Set<String> {
-        Set(
-            machines.allMachines.compactMap { machine in
-                machines.navigationSyncStateByMachineId[machine.id] == .current
-                    ? machine.id
-                    : nil
-            }
-        )
+  /// True once ANY machine has completed a sync this launch — enough to
+  /// honestly claim "there are no chats" instead of "still loading".
+  var anyMachineSynced: Bool {
+    machines.allMachines.contains { machine in
+      machines.navigationSyncStateByMachineId[machine.id] == .current
     }
+  }
 
-    var showsSyncFailureAlert: Bool {
-        !failedSyncMachineIDs.subtracting(dismissedSyncFailureMachineIDs).isEmpty
-    }
+  /// The machines that failed, named — "your machines" while none have.
+  var failedSyncMachineNames: String {
+    let names = failedSyncMachines.map(\.name)
+    return names.isEmpty ? "your machines" : names.joined(separator: ", ")
+  }
 
-    var syncFailureAlertIsPresented: Binding<Bool> {
-        Binding(
-            get: { showsSyncFailureAlert },
-            set: { isPresented in
-                if !isPresented {
-                    dismissSyncFailureAlert()
-                }
-            }
-        )
+  /// Reconnects every machine whose sync failed — retry addresses the
+  /// machines that actually broke, not a "selected" one.
+  func retryFailedMachines() {
+    let failed = failedSyncMachines
+    Task {
+      for machine in failed {
+        // A full re-preparation, not a bare reconnect: a failed
+        // machine's request gate is latched, and only preparation
+        // clears that latch before requests flow again.
+        await machines.prepareMachine(machine.id)
+      }
     }
+  }
 
-    var syncFailureAlertTitle: String {
-        if let machine = failedSyncMachines.first, failedSyncMachines.count == 1 {
-            return "\(machine.name) is unavailable"
-        }
-        return "\(failedSyncMachines.count) machines are unavailable"
-    }
+  func dismissSyncFailureAlert() {
+    dismissedSyncFailureMachineIDs.formUnion(failedSyncMachineIDs)
+  }
 
-    var syncFailureAlertMessage: String {
-        if failedSyncMachines.count == 1 {
-            return "Chats from this machine are hidden until it reconnects."
-        }
-        return "Chats from these machines are hidden until they reconnect."
-    }
+  func openFailedMachineSettings() {
+    let failed = failedSyncMachines
+    dismissSyncFailureAlert()
+    presentedSettingsDestination = .machines(
+      focusedMachineID: failed.count == 1 ? failed[0].id : nil
+    )
+  }
 
-    /// True once ANY machine has completed a sync this launch — enough to
-    /// honestly claim "there are no chats" instead of "still loading".
-    var anyMachineSynced: Bool {
-        machines.allMachines.contains { machine in
-            machines.navigationSyncStateByMachineId[machine.id] == .current
-        }
+  /// Keep state content fixed over the same native list surface used when
+  /// rows exist. The list owns refresh and rubber-band scrolling; the
+  /// overlay stays centered in the visible viewport instead of moving with
+  /// the scroll content.
+  func refreshableState<Content: View>(
+    allowsStateHitTesting: Bool = true,
+    @ViewBuilder content: @escaping () -> Content
+  ) -> some View {
+    List {
+      EmptyView()
     }
+    .listStyle(.plain)
+    .scrollContentBackground(.hidden)
+    .background(Color(.systemBackground))
+    .refreshable {
+      await refreshNavigation()
+    }
+    .overlay {
+      content()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(allowsStateHitTesting)
+    }
+  }
 
-    /// The machines that failed, named — "your machines" while none have.
-    var failedSyncMachineNames: String {
-        let names = failedSyncMachines.map(\.name)
-        return names.isEmpty ? "your machines" : names.joined(separator: ", ")
+  func refreshNavigation() async {
+    for machine in machines.allMachines {
+      // A failed machine is latched in the request gate; an ordinary
+      // refresh would fail instantly from cache. Pull-to-refresh is an
+      // explicit "try again" — re-prepare, which clears the latch.
+      if case .failed = machines.availabilityByMachineId[machine.id] {
+        await machines.prepareMachine(machine.id)
+      } else {
+        await machines.refreshNavigationState(for: machine.id)
+      }
     }
-
-    /// Reconnects every machine whose sync failed — retry addresses the
-    /// machines that actually broke, not a "selected" one.
-    func retryFailedMachines() {
-        let failed = failedSyncMachines
-        Task {
-            for machine in failed {
-                // A full re-preparation, not a bare reconnect: a failed
-                // machine's request gate is latched, and only preparation
-                // clears that latch before requests flow again.
-                await machines.prepareMachine(machine.id)
-            }
-        }
-    }
-
-    func dismissSyncFailureAlert() {
-        dismissedSyncFailureMachineIDs.formUnion(failedSyncMachineIDs)
-    }
-
-    func openFailedMachineSettings() {
-        let failed = failedSyncMachines
-        dismissSyncFailureAlert()
-        presentedSettingsDestination = .machines(
-            focusedMachineID: failed.count == 1 ? failed[0].id : nil
-        )
-    }
-
-    /// Keep state content fixed over the same native list surface used when
-    /// rows exist. The list owns refresh and rubber-band scrolling; the
-    /// overlay stays centered in the visible viewport instead of moving with
-    /// the scroll content.
-    func refreshableState<Content: View>(
-        allowsStateHitTesting: Bool = true,
-        @ViewBuilder content: @escaping () -> Content
-    ) -> some View {
-        List {
-            EmptyView()
-        }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .background(Color(.systemBackground))
-        .refreshable {
-            await refreshNavigation()
-        }
-        .overlay {
-            content()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .allowsHitTesting(allowsStateHitTesting)
-        }
-    }
-
-    func refreshNavigation() async {
-        for machine in machines.allMachines {
-            // A failed machine is latched in the request gate; an ordinary
-            // refresh would fail instantly from cache. Pull-to-refresh is an
-            // explicit "try again" — re-prepare, which clears the latch.
-            if case .failed = machines.availabilityByMachineId[machine.id] {
-                await machines.prepareMachine(machine.id)
-            } else {
-                await machines.refreshNavigationState(for: machine.id)
-            }
-        }
-    }
+  }
 }

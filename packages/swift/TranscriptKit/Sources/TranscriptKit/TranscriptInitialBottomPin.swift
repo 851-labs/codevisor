@@ -7,18 +7,18 @@
 /// first visible frame above the bottom. A genuine non-bottom restoration does
 /// not acquire this pin because its saved block anchor remains authoritative.
 public struct TranscriptInitialBottomPin: Sendable, Equatable {
-    public private(set) var isActive = false
-    public private(set) var isConfigured = false
+  public private(set) var isActive = false
+  public private(set) var isConfigured = false
 
-    public init() {}
+  public init() {}
 
-    public mutating func configure(restoresNonBottomPosition: Bool) {
-        guard !isConfigured else { return }
-        isConfigured = true
-        isActive = !restoresNonBottomPosition
-    }
+  public mutating func configure(restoresNonBottomPosition: Bool) {
+    guard !isConfigured else { return }
+    isConfigured = true
+    isActive = !restoresNonBottomPosition
+  }
 
-    public mutating func release() {
-        isActive = false
-    }
+  public mutating func release() {
+    isActive = false
+  }
 }

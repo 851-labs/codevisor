@@ -7,36 +7,36 @@ import TranscriptKit
 /// them, and long turns split further into prelude, activity, and epilogue
 /// slices so each row measures independently.
 public enum AssistantTurnPresentation: Equatable, Sendable {
-    case complete
-    case planning
-    case result
-    case completePrelude
-    case resultPrelude
-    case activity
-    case epilogue
+  case complete
+  case planning
+  case result
+  case completePrelude
+  case resultPrelude
+  case activity
+  case epilogue
 
-    public var showsPlanning: Bool {
-        switch self {
-        case .complete, .planning, .completePrelude: true
-        case .result, .resultPrelude, .activity, .epilogue: false
-        }
+  public var showsPlanning: Bool {
+    switch self {
+    case .complete, .planning, .completePrelude: true
+    case .result, .resultPrelude, .activity, .epilogue: false
     }
-    public var showsPlanDocument: Bool { self == .complete }
-    public var showsResultWork: Bool {
-        switch self {
-        case .complete, .result, .completePrelude, .resultPrelude: true
-        case .planning, .activity, .epilogue: false
-        }
+  }
+  public var showsPlanDocument: Bool { self == .complete }
+  public var showsResultWork: Bool {
+    switch self {
+    case .complete, .result, .completePrelude, .resultPrelude: true
+    case .planning, .activity, .epilogue: false
     }
-    public var showsActivity: Bool { showsResultWork || self == .activity }
-    public var showsResponse: Bool { self == .complete || self == .result }
-    public var showsEpilogue: Bool { showsResponse || self == .epilogue }
+  }
+  public var showsActivity: Bool { showsResultWork || self == .activity }
+  public var showsResponse: Bool { self == .complete || self == .result }
+  public var showsEpilogue: Bool { showsResponse || self == .epilogue }
 
-    /// The slice a projected assistant chrome row renders.
-    public init(chromeSlice: TranscriptAssistantChromeSlice) {
-        switch chromeSlice {
-        case .activity: self = .activity
-        case .epilogue: self = .epilogue
-        }
+  /// The slice a projected assistant chrome row renders.
+  public init(chromeSlice: TranscriptAssistantChromeSlice) {
+    switch chromeSlice {
+    case .activity: self = .activity
+    case .epilogue: self = .epilogue
     }
+  }
 }

@@ -14,32 +14,32 @@ import CodevisorCore
 @MainActor
 @Observable
 final class ChatPane: Pane {
-    let id: UUID
-    let kind: PaneKind = .chat
-    @ObservationIgnored var onGroupCommand: ((PaneGroupCommand) -> Void)?
-    /// Unused: the chat's focus lives with the composer, outside the pane.
-    @ObservationIgnored var onFocusChanged: ((Bool) -> Void)?
-    /// Wired by the group to the session screen's composer focus.
-    @ObservationIgnored var onFocus: (() -> Void)?
-    /// The chat content factory, wired by the session screen (observable so
-    /// the pane host re-renders when the screen mounts and provides it).
-    var contentProvider: (() -> AnyView)?
+  let id: UUID
+  let kind: PaneKind = .chat
+  @ObservationIgnored var onGroupCommand: ((PaneGroupCommand) -> Void)?
+  /// Unused: the chat's focus lives with the composer, outside the pane.
+  @ObservationIgnored var onFocusChanged: ((Bool) -> Void)?
+  /// Wired by the group to the session screen's composer focus.
+  @ObservationIgnored var onFocus: (() -> Void)?
+  /// The chat content factory, wired by the session screen (observable so
+  /// the pane host re-renders when the screen mounts and provides it).
+  var contentProvider: (() -> AnyView)?
 
-    init(id: UUID) {
-        self.id = id
-    }
+  init(id: UUID) {
+    self.id = id
+  }
 
-    func makeView() -> AnyView {
-        contentProvider?() ?? AnyView(EmptyView())
-    }
+  func makeView() -> AnyView {
+    contentProvider?() ?? AnyView(EmptyView())
+  }
 
-    func focus() {
-        onFocus?()
-    }
+  func focus() {
+    onFocus?()
+  }
 
-    func visibilityChanged(_ visible: Bool) {}
+  func visibilityChanged(_ visible: Bool) {}
 
-    func willDelete() async {}
+  func willDelete() async {}
 
-    func detach() {}
+  func detach() {}
 }

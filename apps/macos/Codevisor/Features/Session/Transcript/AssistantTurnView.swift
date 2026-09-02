@@ -9,532 +9,532 @@ import SwiftUI
 /// a "Worked for…" disclosure, the final answer renders expanded at the bottom,
 /// and a truthful activity status shows while the agent is working or waiting.
 struct AssistantTurnView: View {
-    let turn: AssistantTurn
-    /// Stable id of the owning assistant message — the disclosure key, stable
-    /// across the active→settled transition and lazy remounts.
-    let turnID: UUID
-    let isWaitingOnUser: Bool
-    let waitingOnBackgroundTask: String?
-    /// Explicit goal work shown after the current response. Unlike Thinking…,
-    /// this can remain active while a final-looking answer is being verified.
-    let goalActivity: GoalActivity?
-    let presentation: AssistantTurnPresentation
-    private let initiallyExpanded: Bool?
-    @Environment(\.transcriptDisclosure) private var disclosureStore
-    @Environment(\.runningSubagentToolCallIds) private var runningSubagentToolCallIds
-    @Environment(\.transcriptController) private var transcriptController
-    @Environment(\.transcriptPerformAnchoredDisclosureChange) private var performAnchoredDisclosureChange
-    @Environment(\.transcriptInvalidateRowMeasurement) private var invalidateRowMeasurement
-    @Environment(\.theme) private var theme
-    @Environment(\.openSettings) private var openSettings
-    @Environment(\.quickLook) private var quickLook
-    @Environment(\.attachmentImages) private var attachmentImages
-    @Environment(\.streamingTextAnimationVisibility) private var textAnimationVisibility
-    /// Turn-scoped semantic stream ledger. Existing entries are seeded as
-    /// settled when this row mounts (including a navigation remount); entries
-    /// first created afterward retain their initial live entrance animation.
-    @State private var textAnimationPresentation = StreamingTextAnimationPresentation()
-    /// Transient one-shot guard for the finish/assert auto-collapse. Stays
-    /// `@State`: it only matters while the turn is generating/settling, which
-    /// is the mounted active row. A settled remount resets it harmlessly.
-    @State private var hasAutoCollapsed = false
-    @State private var isHovered = false
+  let turn: AssistantTurn
+  /// Stable id of the owning assistant message — the disclosure key, stable
+  /// across the active→settled transition and lazy remounts.
+  let turnID: UUID
+  let isWaitingOnUser: Bool
+  let waitingOnBackgroundTask: String?
+  /// Explicit goal work shown after the current response. Unlike Thinking…,
+  /// this can remain active while a final-looking answer is being verified.
+  let goalActivity: GoalActivity?
+  let presentation: AssistantTurnPresentation
+  private let initiallyExpanded: Bool?
+  @Environment(\.transcriptDisclosure) private var disclosureStore
+  @Environment(\.runningSubagentToolCallIds) private var runningSubagentToolCallIds
+  @Environment(\.transcriptController) private var transcriptController
+  @Environment(\.transcriptPerformAnchoredDisclosureChange) private var performAnchoredDisclosureChange
+  @Environment(\.transcriptInvalidateRowMeasurement) private var invalidateRowMeasurement
+  @Environment(\.theme) private var theme
+  @Environment(\.openSettings) private var openSettings
+  @Environment(\.quickLook) private var quickLook
+  @Environment(\.attachmentImages) private var attachmentImages
+  @Environment(\.streamingTextAnimationVisibility) private var textAnimationVisibility
+  /// Turn-scoped semantic stream ledger. Existing entries are seeded as
+  /// settled when this row mounts (including a navigation remount); entries
+  /// first created afterward retain their initial live entrance animation.
+  @State private var textAnimationPresentation = StreamingTextAnimationPresentation()
+  /// Transient one-shot guard for the finish/assert auto-collapse. Stays
+  /// `@State`: it only matters while the turn is generating/settling, which
+  /// is the mounted active row. A settled remount resets it harmlessly.
+  @State private var hasAutoCollapsed = false
+  @State private var isHovered = false
 
-    init(
-        turn: AssistantTurn,
-        turnID: UUID = UUID(),
-        initiallyExpanded: Bool? = nil,
-        isWaitingOnUser: Bool = false,
-        waitingOnBackgroundTask: String? = nil,
-        goalActivity: GoalActivity? = nil,
-        presentation: AssistantTurnPresentation = .complete
-    ) {
-        self.turn = turn
-        self.turnID = turnID
-        self.initiallyExpanded = initiallyExpanded
-        self.isWaitingOnUser = isWaitingOnUser
-        self.waitingOnBackgroundTask = waitingOnBackgroundTask
-        self.goalActivity = goalActivity
-        self.presentation = presentation
-        _hasAutoCollapsed = State(initialValue: turn.isGenerating && turn.finalTextIsAsserted)
+  init(
+    turn: AssistantTurn,
+    turnID: UUID = UUID(),
+    initiallyExpanded: Bool? = nil,
+    isWaitingOnUser: Bool = false,
+    waitingOnBackgroundTask: String? = nil,
+    goalActivity: GoalActivity? = nil,
+    presentation: AssistantTurnPresentation = .complete
+  ) {
+    self.turn = turn
+    self.turnID = turnID
+    self.initiallyExpanded = initiallyExpanded
+    self.isWaitingOnUser = isWaitingOnUser
+    self.waitingOnBackgroundTask = waitingOnBackgroundTask
+    self.goalActivity = goalActivity
+    self.presentation = presentation
+    _hasAutoCollapsed = State(initialValue: turn.isGenerating && turn.finalTextIsAsserted)
+  }
+
+  // Disclosure hoisted to the session store so lazy remounts preserve it.
+  // The default reproduces the old init seeding: expanded while running,
+  // collapsed once finished / when a provider-asserted final is streaming.
+  private var store: TranscriptDisclosureStore { disclosureStore ?? .previews }
+
+  /// Both worked sections: planning (above the plan card) and the
+  /// implementation that follows approval (below it).
+  private var sectionKeys: [TranscriptDisclosureStore.Key] {
+    switch presentation {
+    case .complete: [.turn(turnID), .turnImplementation(turnID)]
+    case .planning: [.turn(turnID)]
+    case .result: [.turnImplementation(turnID)]
+    case .completePrelude: [.turn(turnID), .turnImplementation(turnID)]
+    case .resultPrelude: [.turnImplementation(turnID)]
+    case .activity, .epilogue: []
     }
+  }
 
-    // Disclosure hoisted to the session store so lazy remounts preserve it.
-    // The default reproduces the old init seeding: expanded while running,
-    // collapsed once finished / when a provider-asserted final is streaming.
-    private var store: TranscriptDisclosureStore { disclosureStore ?? .previews }
+  private func isExpanded(_ key: TranscriptDisclosureStore.Key) -> Bool {
+    // A subagent still running in the background keeps the section
+    // "unsettled" so it defaults open until the work finishes, even after
+    // the turn ended.
+    let settled = (!turn.isGenerating || turn.finalTextIsAsserted) && !turnHasRunningSubagent
+    return store.isExpanded(key, default: initiallyExpanded ?? !settled)
+  }
 
-    /// Both worked sections: planning (above the plan card) and the
-    /// implementation that follows approval (below it).
-    private var sectionKeys: [TranscriptDisclosureStore.Key] {
-        switch presentation {
-        case .complete: [.turn(turnID), .turnImplementation(turnID)]
-        case .planning: [.turn(turnID)]
-        case .result: [.turnImplementation(turnID)]
-        case .completePrelude: [.turn(turnID), .turnImplementation(turnID)]
-        case .resultPrelude: [.turnImplementation(turnID)]
-        case .activity, .epilogue: []
-        }
-    }
+  /// True while any subagent spawned by this turn is still running in the
+  /// background — the turn can end before its subagents finish.
+  private var turnHasRunningSubagent: Bool {
+    !runningSubagentToolCallIds.isEmpty
+      && turn.subagents.keys.contains { runningSubagentToolCallIds.contains($0) }
+  }
 
-    private func isExpanded(_ key: TranscriptDisclosureStore.Key) -> Bool {
-        // A subagent still running in the background keeps the section
-        // "unsettled" so it defaults open until the work finishes, even after
-        // the turn ended.
-        let settled = (!turn.isGenerating || turn.finalTextIsAsserted) && !turnHasRunningSubagent
-        return store.isExpanded(key, default: initiallyExpanded ?? !settled)
-    }
+  /// Match the actual collapsible content: streaming by itself is represented
+  /// by the separate activity indicator and must not create an empty Worked
+  /// disclosure.
+  private func showsPlanningSection(_ items: [WorkedItem]) -> Bool {
+    if turn.hasDeferredWorkedDetails { return true }
+    return !items.isEmpty
+  }
 
-    /// True while any subagent spawned by this turn is still running in the
-    /// background — the turn can end before its subagents finish.
-    private var turnHasRunningSubagent: Bool {
-        !runningSubagentToolCallIds.isEmpty
-            && turn.subagents.keys.contains { runningSubagentToolCallIds.contains($0) }
-    }
-
-    /// Match the actual collapsible content: streaming by itself is represented
-    /// by the separate activity indicator and must not create an empty Worked
-    /// disclosure.
-    private func showsPlanningSection(_ items: [WorkedItem]) -> Bool {
-        if turn.hasDeferredWorkedDetails { return true }
-        return !items.isEmpty
-    }
-
-    var body: some View {
-        let animationEnabled = prepareTextAnimationPresentation()
-        let beforePlan = turn.workedItemsBeforePlan
-        let afterPlan = turn.workedItemsAfterPlan
-        // Hoisted: `finalText` re-scans the turn's entries per read, and this
-        // body runs on every streaming flush.
-        let finalText = turn.finalText
-        // Goal planning can begin before the assistant has said anything. In
-        // that phase the ordinary Thinking…/tool activity remains the single
-        // progress signal. The goal-specific label appears only once there is
-        // a response for it to follow in transcript order.
-        let postResponseGoalActivity = finalText == nil ? nil : goalActivity
-        VStack(alignment: .leading, spacing: 14) {
-            // Planning/exploration collapses into the first "Worked for…"
-            // section, above the proposed plan.
-            if presentation.showsPlanning, showsPlanningSection(beforePlan) {
-                workedSection(
-                    items: beforePlan,
-                    key: .turn(turnID),
-                    timerLabel: turn.planBoundary == nil,
-                    allowsDeferred: true
-                )
-            }
-
-            if presentation.showsPlanDocument,
-                let planDocument = turn.planDocument, !planDocument.isEmpty
-            {
-                PlanDocumentView(markdown: planDocument)
-            }
-            // The step checklist lives in the pinned TodoPanelView above the
-            // composer (session-level, all harnesses) rather than per turn.
-
-            // Once the plan is approved, the implementation gets its own
-            // "Worked for…" section BELOW the plan, so approved work reads in
-            // order (plan → build) instead of piling up above the plan card.
-            if presentation.showsResultWork, !afterPlan.isEmpty {
-                workedSection(
-                    items: afterPlan,
-                    key: .turnImplementation(turnID),
-                    timerLabel: true,
-                    allowsDeferred: false
-                )
-            }
-
-            // A transient failure (e.g. 529 overload) is being retried — show it
-            // instead of the plain "Thinking…" so the chat isn't a silent freeze.
-            if presentation.showsActivity,
-                !isWaitingOnUser, turn.isGenerating, let retry = turn.retryStatus
-            {
-                ChatActivityRow(retryLabel(retry))
-                    .suppressedDuringStreamingTextEntrance()
-            } else if postResponseGoalActivity == nil, presentation.showsActivity,
-                !isWaitingOnUser, turn.showsActivityIndicator,
-                turn.contextCompactionStatus != .started
-            {
-                if turn.isThinking {
-                    ShimmeringText.thinking
-                        .suppressedDuringStreamingTextEntrance()
-                } else {
-                    // Commentary is not `finalText`, but its glyph fade is
-                    // still visible activity and wins over this idle fallback.
-                    ShimmeringText(text: "Waiting on harness...")
-                        .suppressedDuringStreamingTextEntrance()
-                }
-            }
-
-            // The final answer streams here, final-styled from its first
-            // chunk: the candidate is the last text span not phase-tagged
-            // commentary. It demotes into the worked section only if the
-            // provider retro-tags it (Claude preamble before a tool call) or a
-            // newer text span starts — codex tags messages up front, so its
-            // candidate never demotes.
-            if presentation.showsResponse,
-                let final = finalText, case let .text(entryID, markdown) = final
-            {
-                // Selection lives inside each native TextKit run. Keeping it
-                // there avoids a selection modifier on the segment VStack and
-                // keeps first-click geometry identical to display geometry.
-                //
-                // Streaming and settled responses use the same block renderer,
-                // so completing a turn does not replace its text geometry.
-                assistantResponse(
-                    entryID: entryID,
-                    markdown: markdown,
-                    animationEnabled: animationEnabled
-                )
-            }
-
-            if presentation.showsResponse, finalText == nil, !turn.attachments.isEmpty {
-                assistantResponse(
-                    entryID: "attachments",
-                    markdown: "",
-                    animationEnabled: animationEnabled
-                )
-            }
-
-            if presentation.showsEpilogue,
-                let final = finalText, case let .text(_, markdown) = final
-            {
-                if let waitingOnBackgroundTask {
-                    ShimmeringText.waitingOnBackgroundTask(waitingOnBackgroundTask)
-                        .suppressedDuringStreamingTextEntrance()
-                }
-                if !turn.isGenerating {
-                    // Copies just the final answer text, not the worked/tool
-                    // content. Hidden until hover so the transcript stays clean.
-                    MessageCopyButton(text: markdown, help: "Copy response", isRevealed: isHovered)
-                        .opacity(isHovered ? 1 : 0)
-                }
-            }
-
-            if presentation.showsEpilogue, !isWaitingOnUser, let postResponseGoalActivity {
-                ShimmeringText(text: goalActivityLabel(postResponseGoalActivity))
-                    .suppressedDuringStreamingTextEntrance()
-            }
-
-            // A non-clean stop (error / limit / refusal / gave-up retry) surfaces
-            // here, attached to this turn — never a silent "stopped for no
-            // reason". Clean completions and silently-recovered turns carry no
-            // stopDetail and render nothing.
-            if presentation.showsEpilogue,
-                !turn.isGenerating, let stopDetail = turn.stopDetail
-            {
-                turnErrorRow(stopDetail)
-            }
-        }
-        .markdownLinkHandler(openMarkdownLink)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        // Whole-row hover target, full width and height: AppKit tracking
-        // (not .onHover) so the transparent regions count too.
-        .hoverTracking($isHovered)
-        .onChange(of: turn.isGenerating) { _, generating in
-            if generating {
-                if !hasAutoCollapsed {
-                    for key in sectionKeys { store.setExpanded(key, true) }
-                    invalidateRowMeasurement?()
-                }
-                return
-            }
-            // Collapse once the assistant message is fully finished, when we
-            // know the real final text. Stays collapsed afterward.
-            autoCollapse()
-        }
-        // Provider-asserted finality (codex phase "final") means no more work
-        // follows — settle the worked section the moment the answer STARTS
-        // streaming instead of waiting for the turn to end.
-        .onChange(of: turn.finalTextIsAsserted) { _, asserted in
-            guard turn.isGenerating else { return }
-            if asserted {
-                autoCollapse()
-            } else {
-                reopenForActiveWork()
-            }
-        }
-        // A turn can end while its subagents keep running in the background;
-        // the collapse deferred at turn end fires once the last one finishes.
-        .onChange(of: turnHasRunningSubagent) { _, running in
-            if !running, !turn.isGenerating { autoCollapse() }
-        }
-    }
-
-    @ViewBuilder
-    private func assistantResponse(
-        entryID: String,
-        markdown: String,
-        animationEnabled: Bool
-    ) -> some View {
-        StreamingAssistantResponseView(
-            turnID: turnID,
-            entryID: entryID,
-            markdown: markdown,
-            attachments: turn.attachments,
-            isGenerating: turn.isGenerating,
-            animationPresentation: textAnimationPresentation,
-            animationEnabled: animationEnabled
-        ) { file, label in
-            VStack(alignment: .leading, spacing: 4) {
-                AttachmentThumbnailView(file: file, inline: true)
-                Text(label)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private func prepareTextAnimationPresentation() -> Bool {
-        textAnimationPresentation.establishBaseline(
-            settling: turn,
-            turnID: turnID
+  var body: some View {
+    let animationEnabled = prepareTextAnimationPresentation()
+    let beforePlan = turn.workedItemsBeforePlan
+    let afterPlan = turn.workedItemsAfterPlan
+    // Hoisted: `finalText` re-scans the turn's entries per read, and this
+    // body runs on every streaming flush.
+    let finalText = turn.finalText
+    // Goal planning can begin before the assistant has said anything. In
+    // that phase the ordinary Thinking…/tool activity remains the single
+    // progress signal. The goal-specific label appears only once there is
+    // a response for it to follow in transcript order.
+    let postResponseGoalActivity = finalText == nil ? nil : goalActivity
+    VStack(alignment: .leading, spacing: 14) {
+      // Planning/exploration collapses into the first "Worked for…"
+      // section, above the proposed plan.
+      if presentation.showsPlanning, showsPlanningSection(beforePlan) {
+        workedSection(
+          items: beforePlan,
+          key: .turn(turnID),
+          timerLabel: turn.planBoundary == nil,
+          allowsDeferred: true
         )
-        if let textAnimationVisibility {
-            textAnimationPresentation.updateVisibility(
-                generation: textAnimationVisibility.generation,
-                isVisible: textAnimationVisibility.isVisible
-            ) {
-                TranscriptStreamingTextIdentity.settledStreamIDs(
-                    turn: turn,
-                    turnID: turnID
-                )
-            }
-        }
-        if turn.hasHydratedWorkedDetails {
-            textAnimationPresentation.settleRestoredStreams(
-                {
-                    TranscriptStreamingTextIdentity.settledStreamIDs(
-                        turn: turn,
-                        turnID: turnID
-                    )
-                },
-                restorationID: turn.detailRevision
-            )
-        }
-        return textAnimationPresentation.animationsEnabled
-    }
+      }
 
-    private func retryLabel(_ retry: RetryStatus) -> String {
-        guard let attempt = retry.attempt, let of = retry.of else { return retry.message }
-        return "\(retry.message) \(attempt)/\(of)"
-    }
+      if presentation.showsPlanDocument,
+        let planDocument = turn.planDocument, !planDocument.isEmpty
+      {
+        PlanDocumentView(markdown: planDocument)
+      }
+      // The step checklist lives in the pinned TodoPanelView above the
+      // composer (session-level, all harnesses) rather than per turn.
 
-    private func openMarkdownLink(_ url: URL) -> Bool {
-        TranscriptMarkdownLinkOpener.open(url, quickLook: quickLook, attachmentImages: attachmentImages)
-    }
+      // Once the plan is approved, the implementation gets its own
+      // "Worked for…" section BELOW the plan, so approved work reads in
+      // order (plan → build) instead of piling up above the plan card.
+      if presentation.showsResultWork, !afterPlan.isEmpty {
+        workedSection(
+          items: afterPlan,
+          key: .turnImplementation(turnID),
+          timerLabel: true,
+          allowsDeferred: false
+        )
+      }
 
-    @ViewBuilder
-    private func turnErrorRow(_ message: String) -> some View {
-        if turn.stopKind == "usageLimit" {
-            // Out of credits: the fix is a different account, not a retry.
-            ChatErrorRow(
-                message,
-                actionTitle: "Switch Account",
-                action: {
-                    SettingsRouter.shared.showHarnesses()
-                    openSettings()
-                }
-            )
-        } else if let transcriptController,
-            transcriptController.errorRequiresHarnessAuthentication,
-            transcriptController.errorMessage == message
-        {
-            ChatErrorRow(
-                message,
-                actionTitle: "Open Harness Settings",
-                action: {
-                    SettingsRouter.shared.showHarnesses()
-                    openSettings()
-                }
-            )
-        } else if let transcriptController,
-            transcriptController.canRetryTurn(turnID)
-        {
-            ChatErrorRow(
-                message,
-                actionTitle: "Retry response",
-                action: { Task { await transcriptController.retryTurn(turnID) } }
-            )
+      // A transient failure (e.g. 529 overload) is being retried — show it
+      // instead of the plain "Thinking…" so the chat isn't a silent freeze.
+      if presentation.showsActivity,
+        !isWaitingOnUser, turn.isGenerating, let retry = turn.retryStatus
+      {
+        ChatActivityRow(retryLabel(retry))
+          .suppressedDuringStreamingTextEntrance()
+      } else if postResponseGoalActivity == nil, presentation.showsActivity,
+        !isWaitingOnUser, turn.showsActivityIndicator,
+        turn.contextCompactionStatus != .started
+      {
+        if turn.isThinking {
+          ShimmeringText.thinking
+            .suppressedDuringStreamingTextEntrance()
         } else {
-            ChatErrorRow(message)
+          // Commentary is not `finalText`, but its glyph fade is
+          // still visible activity and wins over this idle fallback.
+          ShimmeringText(text: "Waiting on harness...")
+            .suppressedDuringStreamingTextEntrance()
         }
-    }
+      }
 
-    private func goalActivityLabel(_ activity: GoalActivity) -> String {
-        switch activity {
-        case .planning: "Planning…"
-        case .verifying: "Verifying…"
+      // The final answer streams here, final-styled from its first
+      // chunk: the candidate is the last text span not phase-tagged
+      // commentary. It demotes into the worked section only if the
+      // provider retro-tags it (Claude preamble before a tool call) or a
+      // newer text span starts — codex tags messages up front, so its
+      // candidate never demotes.
+      if presentation.showsResponse,
+        let final = finalText, case let .text(entryID, markdown) = final
+      {
+        // Selection lives inside each native TextKit run. Keeping it
+        // there avoids a selection modifier on the segment VStack and
+        // keeps first-click geometry identical to display geometry.
+        //
+        // Streaming and settled responses use the same block renderer,
+        // so completing a turn does not replace its text geometry.
+        assistantResponse(
+          entryID: entryID,
+          markdown: markdown,
+          animationEnabled: animationEnabled
+        )
+      }
+
+      if presentation.showsResponse, finalText == nil, !turn.attachments.isEmpty {
+        assistantResponse(
+          entryID: "attachments",
+          markdown: "",
+          animationEnabled: animationEnabled
+        )
+      }
+
+      if presentation.showsEpilogue,
+        let final = finalText, case let .text(_, markdown) = final
+      {
+        if let waitingOnBackgroundTask {
+          ShimmeringText.waitingOnBackgroundTask(waitingOnBackgroundTask)
+            .suppressedDuringStreamingTextEntrance()
         }
-    }
+        if !turn.isGenerating {
+          // Copies just the final answer text, not the worked/tool
+          // content. Hidden until hover so the transcript stays clean.
+          MessageCopyButton(text: markdown, help: "Copy response", isRevealed: isHovered)
+            .opacity(isHovered ? 1 : 0)
+        }
+      }
 
-    private func autoCollapse() {
-        guard !hasAutoCollapsed else { return }
-        // Keep the work visible while a subagent is still running in the
-        // background; this re-fires from the onChange above once it settles.
-        guard !turnHasRunningSubagent else { return }
-        hasAutoCollapsed = true
-        // Commit layout immediately. The reveal component animates only its
-        // pixels; virtual-row height is never an intermediate animation value.
-        for key in sectionKeys { store.setExpanded(key, false) }
-        // Store-driven: the collapse re-renders entirely inside this row's
-        // hosting controller, so explicitly ask the virtualizer to remeasure —
-        // settled rows (a turn whose background subagent just finished) have
-        // no other layout pass coming.
-        invalidateRowMeasurement?()
-    }
+      if presentation.showsEpilogue, !isWaitingOnUser, let postResponseGoalActivity {
+        ShimmeringText(text: goalActivityLabel(postResponseGoalActivity))
+          .suppressedDuringStreamingTextEntrance()
+      }
 
-    /// A provider can retro-tag optimistic answer text as commentary when a
-    /// tool starts. Undo an early final collapse so live work is visible and
-    /// non-collapsible again.
-    private func reopenForActiveWork() {
-        hasAutoCollapsed = false
-        for key in sectionKeys { store.setExpanded(key, true) }
-        invalidateRowMeasurement?()
+      // A non-clean stop (error / limit / refusal / gave-up retry) surfaces
+      // here, attached to this turn — never a silent "stopped for no
+      // reason". Clean completions and silently-recovered turns carry no
+      // stopDetail and render nothing.
+      if presentation.showsEpilogue,
+        !turn.isGenerating, let stopDetail = turn.stopDetail
+      {
+        turnErrorRow(stopDetail)
+      }
     }
+    .markdownLinkHandler(openMarkdownLink)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    // Whole-row hover target, full width and height: AppKit tracking
+    // (not .onHover) so the transparent regions count too.
+    .hoverTracking($isHovered)
+    .onChange(of: turn.isGenerating) { _, generating in
+      if generating {
+        if !hasAutoCollapsed {
+          for key in sectionKeys { store.setExpanded(key, true) }
+          invalidateRowMeasurement?()
+        }
+        return
+      }
+      // Collapse once the assistant message is fully finished, when we
+      // know the real final text. Stays collapsed afterward.
+      autoCollapse()
+    }
+    // Provider-asserted finality (codex phase "final") means no more work
+    // follows — settle the worked section the moment the answer STARTS
+    // streaming instead of waiting for the turn to end.
+    .onChange(of: turn.finalTextIsAsserted) { _, asserted in
+      guard turn.isGenerating else { return }
+      if asserted {
+        autoCollapse()
+      } else {
+        reopenForActiveWork()
+      }
+    }
+    // A turn can end while its subagents keep running in the background;
+    // the collapse deferred at turn end fires once the last one finishes.
+    .onChange(of: turnHasRunningSubagent) { _, running in
+      if !running, !turn.isGenerating { autoCollapse() }
+    }
+  }
 
-    /// One "Worked for…" disclosure over `items`, keyed independently so the
-    /// planning and implementation sections collapse on their own.
-    private func workedSection(
-        items: [WorkedItem],
-        key: TranscriptDisclosureStore.Key,
-        timerLabel: Bool,
-        allowsDeferred: Bool
-    ) -> some View {
-        let expanded = isExpanded(key)
-        let deferredDetailItemID =
-            allowsDeferred && turn.hasDeferredWorkedDetails
-            ? turn.deferredDetailItemId
-            : nil
-        return VStack(alignment: .leading, spacing: 12) {
-            // Early-collapsed sections (asserted final answer streaming) are
-            // already settled: give them the chevron so the user can peek at
-            // the work while the answer is still writing.
-            if turn.isGenerating, !hasAutoCollapsed {
-                workedHeader(
-                    label: sectionLabel(timer: timerLabel),
-                    showsChevron: false,
-                    expanded: expanded,
-                    deferredDetailItemID: nil
-                )
+  @ViewBuilder
+  private func assistantResponse(
+    entryID: String,
+    markdown: String,
+    animationEnabled: Bool
+  ) -> some View {
+    StreamingAssistantResponseView(
+      turnID: turnID,
+      entryID: entryID,
+      markdown: markdown,
+      attachments: turn.attachments,
+      isGenerating: turn.isGenerating,
+      animationPresentation: textAnimationPresentation,
+      animationEnabled: animationEnabled
+    ) { file, label in
+      VStack(alignment: .leading, spacing: 4) {
+        AttachmentThumbnailView(file: file, inline: true)
+        Text(label)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+    }
+  }
+
+  private func prepareTextAnimationPresentation() -> Bool {
+    textAnimationPresentation.establishBaseline(
+      settling: turn,
+      turnID: turnID
+    )
+    if let textAnimationVisibility {
+      textAnimationPresentation.updateVisibility(
+        generation: textAnimationVisibility.generation,
+        isVisible: textAnimationVisibility.isVisible
+      ) {
+        TranscriptStreamingTextIdentity.settledStreamIDs(
+          turn: turn,
+          turnID: turnID
+        )
+      }
+    }
+    if turn.hasHydratedWorkedDetails {
+      textAnimationPresentation.settleRestoredStreams(
+        {
+          TranscriptStreamingTextIdentity.settledStreamIDs(
+            turn: turn,
+            turnID: turnID
+          )
+        },
+        restorationID: turn.detailRevision
+      )
+    }
+    return textAnimationPresentation.animationsEnabled
+  }
+
+  private func retryLabel(_ retry: RetryStatus) -> String {
+    guard let attempt = retry.attempt, let of = retry.of else { return retry.message }
+    return "\(retry.message) \(attempt)/\(of)"
+  }
+
+  private func openMarkdownLink(_ url: URL) -> Bool {
+    TranscriptMarkdownLinkOpener.open(url, quickLook: quickLook, attachmentImages: attachmentImages)
+  }
+
+  @ViewBuilder
+  private func turnErrorRow(_ message: String) -> some View {
+    if turn.stopKind == "usageLimit" {
+      // Out of credits: the fix is a different account, not a retry.
+      ChatErrorRow(
+        message,
+        actionTitle: "Switch Account",
+        action: {
+          SettingsRouter.shared.showHarnesses()
+          openSettings()
+        }
+      )
+    } else if let transcriptController,
+      transcriptController.errorRequiresHarnessAuthentication,
+      transcriptController.errorMessage == message
+    {
+      ChatErrorRow(
+        message,
+        actionTitle: "Open Harness Settings",
+        action: {
+          SettingsRouter.shared.showHarnesses()
+          openSettings()
+        }
+      )
+    } else if let transcriptController,
+      transcriptController.canRetryTurn(turnID)
+    {
+      ChatErrorRow(
+        message,
+        actionTitle: "Retry response",
+        action: { Task { await transcriptController.retryTurn(turnID) } }
+      )
+    } else {
+      ChatErrorRow(message)
+    }
+  }
+
+  private func goalActivityLabel(_ activity: GoalActivity) -> String {
+    switch activity {
+    case .planning: "Planning…"
+    case .verifying: "Verifying…"
+    }
+  }
+
+  private func autoCollapse() {
+    guard !hasAutoCollapsed else { return }
+    // Keep the work visible while a subagent is still running in the
+    // background; this re-fires from the onChange above once it settles.
+    guard !turnHasRunningSubagent else { return }
+    hasAutoCollapsed = true
+    // Commit layout immediately. The reveal component animates only its
+    // pixels; virtual-row height is never an intermediate animation value.
+    for key in sectionKeys { store.setExpanded(key, false) }
+    // Store-driven: the collapse re-renders entirely inside this row's
+    // hosting controller, so explicitly ask the virtualizer to remeasure —
+    // settled rows (a turn whose background subagent just finished) have
+    // no other layout pass coming.
+    invalidateRowMeasurement?()
+  }
+
+  /// A provider can retro-tag optimistic answer text as commentary when a
+  /// tool starts. Undo an early final collapse so live work is visible and
+  /// non-collapsible again.
+  private func reopenForActiveWork() {
+    hasAutoCollapsed = false
+    for key in sectionKeys { store.setExpanded(key, true) }
+    invalidateRowMeasurement?()
+  }
+
+  /// One "Worked for…" disclosure over `items`, keyed independently so the
+  /// planning and implementation sections collapse on their own.
+  private func workedSection(
+    items: [WorkedItem],
+    key: TranscriptDisclosureStore.Key,
+    timerLabel: Bool,
+    allowsDeferred: Bool
+  ) -> some View {
+    let expanded = isExpanded(key)
+    let deferredDetailItemID =
+      allowsDeferred && turn.hasDeferredWorkedDetails
+      ? turn.deferredDetailItemId
+      : nil
+    return VStack(alignment: .leading, spacing: 12) {
+      // Early-collapsed sections (asserted final answer streaming) are
+      // already settled: give them the chevron so the user can peek at
+      // the work while the answer is still writing.
+      if turn.isGenerating, !hasAutoCollapsed {
+        workedHeader(
+          label: sectionLabel(timer: timerLabel),
+          showsChevron: false,
+          expanded: expanded,
+          deferredDetailItemID: nil
+        )
+      } else {
+        Button {
+          let change = {
+            if expanded {
+              store.setExpanded(key, false)
             } else {
-                Button {
-                    let change = {
-                        if expanded {
-                            store.setExpanded(key, false)
-                        } else {
-                            store.setExpanded(key, true)
-                        }
-                        invalidateRowMeasurement?()
-                    }
-                    performAnchoredDisclosureChange?(change) ?? change()
-                } label: {
-                    workedHeader(
-                        label: sectionLabel(timer: timerLabel),
-                        showsChevron: true,
-                        expanded: expanded,
-                        deferredDetailItemID: deferredDetailItemID
-                    )
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(TranscriptWorkedSectionButtonStyle())
+              store.setExpanded(key, true)
             }
-
-            // The divider belongs to the disclosure header, not its revealed
-            // contents, so a rendered Worked section keeps the line in both
-            // its collapsed and expanded states.
-            Divider()
-
-            TranscriptDisclosureContentReveal(
-                isExpanded: expanded && !items.isEmpty
-            ) {
-                VStack(alignment: .leading, spacing: 12) {
-                    // Answered questions ride here too: the reducer synthesizes
-                    // a tool call for each, so they group and render inline with
-                    // the other tool calls that surround them.
-                    TranscriptItemsView(
-                        items: items,
-                        turn: turn,
-                        turnID: turnID,
-                        isTurnActive: turn.isGenerating,
-                        animationPresentation: textAnimationPresentation,
-                        animationEnabled: textAnimationPresentation.animationsEnabled
-                    )
-                }
-            }
+            invalidateRowMeasurement?()
+          }
+          performAnchoredDisclosureChange?(change) ?? change()
+        } label: {
+          workedHeader(
+            label: sectionLabel(timer: timerLabel),
+            showsChevron: true,
+            expanded: expanded,
+            deferredDetailItemID: deferredDetailItemID
+          )
+          .contentShape(Rectangle())
         }
-    }
+        .buttonStyle(TranscriptWorkedSectionButtonStyle())
+      }
 
-    private func workedHeader(
-        label: some View,
-        showsChevron: Bool,
-        expanded: Bool,
-        deferredDetailItemID: String?
-    ) -> some View {
-        HStack(spacing: 6) {
-            label
-            if showsChevron {
-                TranscriptWorkedDisclosureIndicator(
-                    expanded: expanded,
-                    deferredDetailItemID: deferredDetailItemID
-                )
-            }
-            Spacer(minLength: 0)
+      // The divider belongs to the disclosure header, not its revealed
+      // contents, so a rendered Worked section keeps the line in both
+      // its collapsed and expanded states.
+      Divider()
+
+      TranscriptDisclosureContentReveal(
+        isExpanded: expanded && !items.isEmpty
+      ) {
+        VStack(alignment: .leading, spacing: 12) {
+          // Answered questions ride here too: the reducer synthesizes
+          // a tool call for each, so they group and render inline with
+          // the other tool calls that surround them.
+          TranscriptItemsView(
+            items: items,
+            turn: turn,
+            turnID: turnID,
+            isTurnActive: turn.isGenerating,
+            animationPresentation: textAnimationPresentation,
+            animationEnabled: textAnimationPresentation.animationsEnabled
+          )
         }
-        .font(.callout)
-        .foregroundStyle(.secondary)
-        // The worked-section reveal must never animate or displace its label
-        // row. The nested chevron still installs its own value-scoped rotation.
-        .transaction { transaction in
-            transaction.animation = nil
+      }
+    }
+  }
+
+  private func workedHeader(
+    label: some View,
+    showsChevron: Bool,
+    expanded: Bool,
+    deferredDetailItemID: String?
+  ) -> some View {
+    HStack(spacing: 6) {
+      label
+      if showsChevron {
+        TranscriptWorkedDisclosureIndicator(
+          expanded: expanded,
+          deferredDetailItemID: deferredDetailItemID
+        )
+      }
+      Spacer(minLength: 0)
+    }
+    .font(.callout)
+    .foregroundStyle(.secondary)
+    // The worked-section reveal must never animate or displace its label
+    // row. The nested chevron still installs its own value-scoped rotation.
+    .transaction { transaction in
+      transaction.animation = nil
+    }
+  }
+
+  /// The section label: the live "Working for Xs" / final "Worked for Xs"
+  /// timer for the active work, or a static "Planned" for the planning
+  /// section once a plan exists (the implementation section carries the
+  /// timer from there on).
+  @ViewBuilder
+  private func sectionLabel(timer: Bool) -> some View {
+    if timer {
+      if turn.isGenerating {
+        TimelineView(.periodic(from: turn.startedAt ?? Date(), by: 1)) { context in
+          Text("Working for \(format(elapsedSeconds(to: context.date)))")
         }
+      } else {
+        Text(workedTitle)
+      }
+    } else {
+      Text("Planned")
     }
+  }
 
-    /// The section label: the live "Working for Xs" / final "Worked for Xs"
-    /// timer for the active work, or a static "Planned" for the planning
-    /// section once a plan exists (the implementation section carries the
-    /// timer from there on).
-    @ViewBuilder
-    private func sectionLabel(timer: Bool) -> some View {
-        if timer {
-            if turn.isGenerating {
-                TimelineView(.periodic(from: turn.startedAt ?? Date(), by: 1)) { context in
-                    Text("Working for \(format(elapsedSeconds(to: context.date)))")
-                }
-            } else {
-                Text(workedTitle)
-            }
-        } else {
-            Text("Planned")
-        }
-    }
+  private func elapsedSeconds(to date: Date) -> Int {
+    guard let start = turn.startedAt else { return 0 }
+    return max(0, Int(date.timeIntervalSince(start)))
+  }
 
-    private func elapsedSeconds(to date: Date) -> Int {
-        guard let start = turn.startedAt else { return 0 }
-        return max(0, Int(date.timeIntervalSince(start)))
-    }
+  private func format(_ seconds: Int) -> String {
+    seconds < 60 ? "\(seconds)s" : "\(seconds / 60)m \(seconds % 60)s"
+  }
 
-    private func format(_ seconds: Int) -> String {
-        seconds < 60 ? "\(seconds)s" : "\(seconds / 60)m \(seconds % 60)s"
-    }
-
-    private var workedTitle: String {
-        guard let duration = turn.duration, duration >= 1 else { return "Worked for a moment" }
-        return "Worked for \(format(Int(duration.rounded())))"
-    }
+  private var workedTitle: String {
+    guard let duration = turn.duration, duration >= 1 else { return "Worked for a moment" }
+    return "Worked for \(format(Int(duration.rounded())))"
+  }
 }
 
 #Preview("Worked-for expanded") {
-    ScrollView {
-        if case let .assistant(message) = SampleData.conversation[1] {
-            AssistantTurnView(turn: message.turn, initiallyExpanded: true).padding()
-        }
+  ScrollView {
+    if case let .assistant(message) = SampleData.conversation[1] {
+      AssistantTurnView(turn: message.turn, initiallyExpanded: true).padding()
     }
-    .frame(width: 600, height: 640)
+  }
+  .frame(width: 600, height: 640)
 }
 
 #Preview("Thinking") {
-    if case let .assistant(message) = SampleData.streamingConversation[1] {
-        AssistantTurnView(turn: message.turn).padding().frame(width: 580)
-    }
+  if case let .assistant(message) = SampleData.streamingConversation[1] {
+    AssistantTurnView(turn: message.turn).padding().frame(width: 580)
+  }
 }

@@ -5,6 +5,6 @@ import Foundation
 /// bridge converts this marker to `.streamMarkdownRoundedBackground`, which
 /// the TextKit layout manager paints behind the selectable glyphs.
 enum InlineCodeChipAttribute: AttributedStringKey {
-    typealias Value = Bool
-    static let name = "com.851labs.codevisor.inlineCodeChip"
+  typealias Value = Bool
+  static let name = "com.851labs.codevisor.inlineCodeChip"
 }

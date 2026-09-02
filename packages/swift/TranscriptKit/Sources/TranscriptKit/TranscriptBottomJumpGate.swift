@@ -9,31 +9,31 @@ import Foundation
 /// released as soon as the mounted destination window is fully resolved, so
 /// later disclosure changes retain the transcript's normal anchor behavior.
 public struct TranscriptBottomJumpGate: Sendable, Equatable {
-    public private(set) var isActive = false
+  public private(set) var isActive = false
 
-    public init() {}
+  public init() {}
 
-    public mutating func begin() {
-        isActive = true
-    }
+  public mutating func begin() {
+    isActive = true
+  }
 
-    public mutating func cancel() {
-        isActive = false
-    }
+  public mutating func cancel() {
+    isActive = false
+  }
 
-    /// Returns true only when this call completes an active jump.
-    @discardableResult
-    public mutating func resolve(
-        requiredKeys: Set<String>,
-        resolvedKeys: Set<String>,
-        hasPendingMeasurements: Bool
-    ) -> Bool {
-        guard isActive,
-            !requiredKeys.isEmpty,
-            !hasPendingMeasurements,
-            requiredKeys.isSubset(of: resolvedKeys)
-        else { return false }
-        isActive = false
-        return true
-    }
+  /// Returns true only when this call completes an active jump.
+  @discardableResult
+  public mutating func resolve(
+    requiredKeys: Set<String>,
+    resolvedKeys: Set<String>,
+    hasPendingMeasurements: Bool
+  ) -> Bool {
+    guard isActive,
+      !requiredKeys.isEmpty,
+      !hasPendingMeasurements,
+      requiredKeys.isSubset(of: resolvedKeys)
+    else { return false }
+    isActive = false
+    return true
+  }
 }

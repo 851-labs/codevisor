@@ -4,33 +4,33 @@ import SwiftUI
 /// disclosure row: converging, settled, or waiting on the user. Shared by
 /// every settings pane on both platforms.
 public enum MachineSyncBadge {
-    case syncing
-    case synced
-    case attention(String)
+  case syncing
+  case synced
+  case attention(String)
 
-    @ViewBuilder
-    public var view: some View {
-        switch self {
-        case .syncing:
-            HStack(spacing: 5) {
-                ProgressView().controlSize(.small)
-                Text("Syncing…")
-            }
-            .foregroundStyle(.secondary)
-        case .synced:
-            HStack(spacing: 5) {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                Text("Synced")
-                    .foregroundStyle(.secondary)
-            }
-        case .attention(let label):
-            HStack(spacing: 5) {
-                Image(systemName: "exclamationmark.circle.fill")
-                    .foregroundStyle(.orange)
-                Text(label)
-                    .foregroundStyle(.secondary)
-            }
-        }
+  @ViewBuilder
+  public var view: some View {
+    switch self {
+    case .syncing:
+      HStack(spacing: 5) {
+        ProgressView().controlSize(.small)
+        Text("Syncing…")
+      }
+      .foregroundStyle(.secondary)
+    case .synced:
+      HStack(spacing: 5) {
+        Image(systemName: "checkmark.circle.fill")
+          .foregroundStyle(.green)
+        Text("Synced")
+          .foregroundStyle(.secondary)
+      }
+    case .attention(let label):
+      HStack(spacing: 5) {
+        Image(systemName: "exclamationmark.circle.fill")
+          .foregroundStyle(.orange)
+        Text(label)
+          .foregroundStyle(.secondary)
+      }
     }
+  }
 }

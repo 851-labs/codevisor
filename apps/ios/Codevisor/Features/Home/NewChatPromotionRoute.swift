@@ -4,5 +4,5 @@ import Foundation
 /// stack. Home's ordinary workspace route is mounted underneath before the
 /// animation begins and becomes authoritative as soon as the morph ends.
 enum NewChatPromotionRoute: Hashable {
-    case workspace
+  case workspace
 }

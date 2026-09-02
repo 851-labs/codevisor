@@ -9,393 +9,393 @@ import ACPKit
 /// routed into `turn.subagents[parent]` instead of the main entry list; they
 /// never affect the main turn's thinking state.
 public enum TranscriptReducer {
-    public static func apply(_ update: SessionUpdate, to turn: inout AssistantTurn) {
-        switch update {
-        case let .agentMessageChunk(block, messageId, parentToolCallId, phase):
-            if let parent = parentToolCallId {
-                var bucket = turn.subagents[parent] ?? SubagentTranscript()
-                bucket.isThinking = false
-                appendText(
-                    text(from: block), messageId: messageId, entries: &bucket.entries, nextTextId: &bucket.nextTextId)
-                turn.subagents[parent] = bucket
-            } else {
-                turn.isThinking = false
-                let entryId = appendText(
-                    text(from: block), messageId: messageId, entries: &turn.entries, nextTextId: &turn.nextTextId)
-                // Finality rides per chunk (codex tags whole messages) or as a
-                // zero-length retro-tag (Claude demoting streamed preamble once
-                // a tool call starts). Keyed by entry id so `finalText` can
-                // skip commentary spans; subagent threads never split a final
-                // answer out, so phases are main-thread only.
-                if let phase, let entryId {
-                    turn.textPhases[entryId] = phase
-                }
-            }
-
-        case let .agentThoughtChunk(_, _, parentToolCallId):
-            // Thoughts surface only as the ephemeral "Thinking…" indicator; they
-            // are not persisted as transcript entries.
-            if let parent = parentToolCallId {
-                var bucket = turn.subagents[parent] ?? SubagentTranscript()
-                bucket.isThinking = true
-                turn.subagents[parent] = bucket
-            } else {
-                turn.isThinking = true
-            }
-
-        case .userMessageChunk(_, _):
-            break  // Echo of the user's own input.
-
-        case let .toolCall(call):
-            if let parent = call.parentToolCallId {
-                var bucket = turn.subagents[parent] ?? SubagentTranscript()
-                bucket.isThinking = false
-                upsertTool(call, entries: &bucket.entries)
-                turn.subagents[parent] = bucket
-            } else {
-                turn.isThinking = false
-                upsertTool(call, entries: &turn.entries)
-            }
-            // An agent call gets its bucket eagerly so the UI can render the
-            // nested section before any child output arrives.
-            if call.kind == .agent, turn.subagents[call.toolCallId] == nil {
-                turn.subagents[call.toolCallId] = SubagentTranscript()
-            }
-
-        case let .toolCallUpdate(update):
-            applyToolUpdate(update, to: &turn)
-
-        case let .plan(plan):
-            turn.plan = plan
-
-        case let .planDocument(markdown):
-            turn.isThinking = false
-            turn.planDocument = markdown
-            // Mark where the plan landed in the stream so the work that follows
-            // approval renders below the plan card, not folded in above it.
-            turn.planBoundary = turn.entries.count
-
-        case let .contextCompaction(id, status):
-            turn.isThinking = false
-            applyContextCompaction(id: id, status: status, entries: &turn.entries)
-
-        case let .questionResolved(resolution):
-            // An answered question renders as a normal tool-call row, inline in
-            // the arrival position it resolved. `upsertTool` dedupes by id, so
-            // replay redelivering the pair is idempotent.
-            turn.isThinking = false
-            upsertTool(syntheticQuestionCall(for: resolution), entries: &turn.entries)
-
-        case .question, .availableCommandsUpdate, .currentModeUpdate, .configOptionUpdate,
-            .usageUpdate, .goalUpdate, .goalCleared:
-            // Session-level state; handled by SessionModel, not the transcript.
-            break
-        }
-    }
-
-    /// Replaces the streamed final span with the server's durable artifact-aware
-    /// Markdown and associates the promoted files with the turn. This is a
-    /// replacement, not another chunk, so reconnect and live delivery converge.
-    public static func finalizeAssistant(
-        markdown: String,
-        messageId: String?,
-        attachments: [Attachment],
-        to turn: inout AssistantTurn
-    ) {
+  public static func apply(_ update: SessionUpdate, to turn: inout AssistantTurn) {
+    switch update {
+    case let .agentMessageChunk(block, messageId, parentToolCallId, phase):
+      if let parent = parentToolCallId {
+        var bucket = turn.subagents[parent] ?? SubagentTranscript()
+        bucket.isThinking = false
+        appendText(
+          text(from: block), messageId: messageId, entries: &bucket.entries, nextTextId: &bucket.nextTextId)
+        turn.subagents[parent] = bucket
+      } else {
         turn.isThinking = false
-        turn.attachments = attachments
-        let identified = messageId.flatMap { textIndex("acp:\($0)", in: turn.entries) }
-        if let index = identified ?? turn.finalTextIndex,
-            case let .text(id, _) = turn.entries[index]
-        {
-            turn.entries[index] = .text(id: id, markdown: markdown)
-            return
+        let entryId = appendText(
+          text(from: block), messageId: messageId, entries: &turn.entries, nextTextId: &turn.nextTextId)
+        // Finality rides per chunk (codex tags whole messages) or as a
+        // zero-length retro-tag (Claude demoting streamed preamble once
+        // a tool call starts). Keyed by entry id so `finalText` can
+        // skip commentary spans; subagent threads never split a final
+        // answer out, so phases are main-thread only.
+        if let phase, let entryId {
+          turn.textPhases[entryId] = phase
         }
-        guard !markdown.isEmpty else { return }
-        let id: String
-        if let messageId {
-            id = "acp:\(messageId)"
-        } else {
-            id = "t\(turn.nextTextId)"
-            turn.nextTextId += 1
-        }
-        turn.entries.append(.text(id: id, markdown: markdown))
+      }
+
+    case let .agentThoughtChunk(_, _, parentToolCallId):
+      // Thoughts surface only as the ephemeral "Thinking…" indicator; they
+      // are not persisted as transcript entries.
+      if let parent = parentToolCallId {
+        var bucket = turn.subagents[parent] ?? SubagentTranscript()
+        bucket.isThinking = true
+        turn.subagents[parent] = bucket
+      } else {
+        turn.isThinking = true
+      }
+
+    case .userMessageChunk(_, _):
+      break  // Echo of the user's own input.
+
+    case let .toolCall(call):
+      if let parent = call.parentToolCallId {
+        var bucket = turn.subagents[parent] ?? SubagentTranscript()
+        bucket.isThinking = false
+        upsertTool(call, entries: &bucket.entries)
+        turn.subagents[parent] = bucket
+      } else {
+        turn.isThinking = false
+        upsertTool(call, entries: &turn.entries)
+      }
+      // An agent call gets its bucket eagerly so the UI can render the
+      // nested section before any child output arrives.
+      if call.kind == .agent, turn.subagents[call.toolCallId] == nil {
+        turn.subagents[call.toolCallId] = SubagentTranscript()
+      }
+
+    case let .toolCallUpdate(update):
+      applyToolUpdate(update, to: &turn)
+
+    case let .plan(plan):
+      turn.plan = plan
+
+    case let .planDocument(markdown):
+      turn.isThinking = false
+      turn.planDocument = markdown
+      // Mark where the plan landed in the stream so the work that follows
+      // approval renders below the plan card, not folded in above it.
+      turn.planBoundary = turn.entries.count
+
+    case let .contextCompaction(id, status):
+      turn.isThinking = false
+      applyContextCompaction(id: id, status: status, entries: &turn.entries)
+
+    case let .questionResolved(resolution):
+      // An answered question renders as a normal tool-call row, inline in
+      // the arrival position it resolved. `upsertTool` dedupes by id, so
+      // replay redelivering the pair is idempotent.
+      turn.isThinking = false
+      upsertTool(syntheticQuestionCall(for: resolution), entries: &turn.entries)
+
+    case .question, .availableCommandsUpdate, .currentModeUpdate, .configOptionUpdate,
+      .usageUpdate, .goalUpdate, .goalCleared:
+      // Session-level state; handled by SessionModel, not the transcript.
+      break
+    }
+  }
+
+  /// Replaces the streamed final span with the server's durable artifact-aware
+  /// Markdown and associates the promoted files with the turn. This is a
+  /// replacement, not another chunk, so reconnect and live delivery converge.
+  public static func finalizeAssistant(
+    markdown: String,
+    messageId: String?,
+    attachments: [Attachment],
+    to turn: inout AssistantTurn
+  ) {
+    turn.isThinking = false
+    turn.attachments = attachments
+    let identified = messageId.flatMap { textIndex("acp:\($0)", in: turn.entries) }
+    if let index = identified ?? turn.finalTextIndex,
+      case let .text(id, _) = turn.entries[index]
+    {
+      turn.entries[index] = .text(id: id, markdown: markdown)
+      return
+    }
+    guard !markdown.isEmpty else { return }
+    let id: String
+    if let messageId {
+      id = "acp:\(messageId)"
+    } else {
+      id = "t\(turn.nextTextId)"
+      turn.nextTextId += 1
+    }
+    turn.entries.append(.text(id: id, markdown: markdown))
+  }
+
+  // MARK: - Helpers
+
+  private static func text(from block: ContentBlock) -> String {
+    block.textValue ?? ""
+  }
+
+  /// Appends streamed text. ACP `messageId` is the semantic boundary between
+  /// assistant messages, so it wins over adjacency when present. Returns the
+  /// id of the text entry the chunk addressed — for zero-length chunks with a
+  /// messageId that's the (possibly not yet created) span the chunk's phase
+  /// retro-tags; without one there is nothing to address.
+  @discardableResult
+  private static func appendText(
+    _ newText: String,
+    messageId: String?,
+    entries: inout [TranscriptEntry],
+    nextTextId: inout Int
+  ) -> String? {
+    if let messageId {
+      let id = "acp:\(messageId)"
+      guard !newText.isEmpty else { return id }
+      if let index = textIndex(id, in: entries) {
+        appendInPlace(newText, toTextEntryAt: index, in: &entries)
+      } else {
+        entries.append(.text(id: id, markdown: newText))
+      }
+      return id
     }
 
-    // MARK: - Helpers
-
-    private static func text(from block: ContentBlock) -> String {
-        block.textValue ?? ""
+    guard !newText.isEmpty else { return nil }
+    if case let .text(id, _) = entries.last {
+      appendInPlace(newText, toTextEntryAt: entries.count - 1, in: &entries)
+      return id
+    } else {
+      let id = "t\(nextTextId)"
+      nextTextId += 1
+      entries.append(.text(id: id, markdown: newText))
+      return id
     }
+  }
 
-    /// Appends streamed text. ACP `messageId` is the semantic boundary between
-    /// assistant messages, so it wins over adjacency when present. Returns the
-    /// id of the text entry the chunk addressed — for zero-length chunks with a
-    /// messageId that's the (possibly not yet created) span the chunk's phase
-    /// retro-tags; without one there is nothing to address.
-    @discardableResult
-    private static func appendText(
-        _ newText: String,
-        messageId: String?,
-        entries: inout [TranscriptEntry],
-        nextTextId: inout Int
-    ) -> String? {
-        if let messageId {
-            let id = "acp:\(messageId)"
-            guard !newText.isEmpty else { return id }
-            if let index = textIndex(id, in: entries) {
-                appendInPlace(newText, toTextEntryAt: index, in: &entries)
-            } else {
-                entries.append(.text(id: id, markdown: newText))
-            }
-            return id
-        }
+  /// Appends to a text entry without copying the accumulated run.
+  /// `existing + newText` re-copies everything streamed so far on every
+  /// flush — O(turn²) over a long answer. Taking the string out of the
+  /// entry first makes its storage uniquely referenced, so `+=` extends it
+  /// in place at amortized O(newText).
+  private static func appendInPlace(
+    _ newText: String,
+    toTextEntryAt index: Int,
+    in entries: inout [TranscriptEntry]
+  ) {
+    guard case .text(let id, var existing) = entries[index] else { return }
+    entries[index] = .text(id: id, markdown: "")
+    existing += newText
+    entries[index] = .text(id: id, markdown: existing)
+  }
 
-        guard !newText.isEmpty else { return nil }
-        if case let .text(id, _) = entries.last {
-            appendInPlace(newText, toTextEntryAt: entries.count - 1, in: &entries)
-            return id
-        } else {
-            let id = "t\(nextTextId)"
-            nextTextId += 1
-            entries.append(.text(id: id, markdown: newText))
-            return id
-        }
+  private static func textIndex(_ id: String, in entries: [TranscriptEntry]) -> Int? {
+    entries.firstIndex {
+      if case let .text(existingId, _) = $0 { return existingId == id }
+      return false
     }
+  }
 
-    /// Appends to a text entry without copying the accumulated run.
-    /// `existing + newText` re-copies everything streamed so far on every
-    /// flush — O(turn²) over a long answer. Taking the string out of the
-    /// entry first makes its storage uniquely referenced, so `+=` extends it
-    /// in place at amortized O(newText).
-    private static func appendInPlace(
-        _ newText: String,
-        toTextEntryAt index: Int,
-        in entries: inout [TranscriptEntry]
-    ) {
-        guard case .text(let id, var existing) = entries[index] else { return }
-        entries[index] = .text(id: id, markdown: "")
-        existing += newText
-        entries[index] = .text(id: id, markdown: existing)
+  private static func toolIndex(_ toolCallId: String, in entries: [TranscriptEntry]) -> Int? {
+    entries.firstIndex {
+      if case let .tool(call) = $0 { return call.toolCallId == toolCallId }
+      return false
     }
+  }
 
-    private static func textIndex(_ id: String, in entries: [TranscriptEntry]) -> Int? {
+  /// Inserts compaction where it starts and updates that same entry when the
+  /// lifecycle settles. Older persisted events may not carry an id; for
+  /// those, completion/failure targets the latest compaction deterministically.
+  private static func applyContextCompaction(
+    id: String?,
+    status: ContextCompactionStatus,
+    entries: inout [TranscriptEntry]
+  ) {
+    let matchingIndex: Int? =
+      if let id {
         entries.firstIndex {
-            if case let .text(existingId, _) = $0 { return existingId == id }
-            return false
+          if case let .contextCompaction(existingId, _) = $0 { return existingId == id }
+          return false
         }
-    }
-
-    private static func toolIndex(_ toolCallId: String, in entries: [TranscriptEntry]) -> Int? {
-        entries.firstIndex {
-            if case let .tool(call) = $0 { return call.toolCallId == toolCallId }
-            return false
+      } else {
+        entries.lastIndex {
+          if case .contextCompaction = $0 { return true }
+          return false
         }
+      }
+
+    switch status {
+    case .started:
+      if let matchingIndex, let id {
+        entries[matchingIndex] = .contextCompaction(id: id, status: .started)
+      } else {
+        entries.append(
+          .contextCompaction(
+            id: id ?? nextLegacyCompactionId(in: entries),
+            status: .started
+          ))
+      }
+    case .completed:
+      if let matchingIndex, case let .contextCompaction(existingId, _) = entries[matchingIndex] {
+        entries[matchingIndex] = .contextCompaction(id: existingId, status: .completed)
+      } else if let id {
+        // A client can attach between lifecycle notifications. Preserve
+        // the only position it observed instead of dropping completion.
+        entries.append(.contextCompaction(id: id, status: .completed))
+      }
+    case .failed:
+      if let matchingIndex { entries.remove(at: matchingIndex) }
     }
+  }
 
-    /// Inserts compaction where it starts and updates that same entry when the
-    /// lifecycle settles. Older persisted events may not carry an id; for
-    /// those, completion/failure targets the latest compaction deterministically.
-    private static func applyContextCompaction(
-        id: String?,
-        status: ContextCompactionStatus,
-        entries: inout [TranscriptEntry]
-    ) {
-        let matchingIndex: Int? =
-            if let id {
-                entries.firstIndex {
-                    if case let .contextCompaction(existingId, _) = $0 { return existingId == id }
-                    return false
-                }
-            } else {
-                entries.lastIndex {
-                    if case .contextCompaction = $0 { return true }
-                    return false
-                }
-            }
+  private static func nextLegacyCompactionId(in entries: [TranscriptEntry]) -> String {
+    let ids = Set(
+      entries.compactMap { entry -> String? in
+        if case let .contextCompaction(id, _) = entry { return id }
+        return nil
+      })
+    var offset = ids.count
+    while ids.contains("legacy-\(offset)") { offset += 1 }
+    return "legacy-\(offset)"
+  }
 
-        switch status {
-        case .started:
-            if let matchingIndex, let id {
-                entries[matchingIndex] = .contextCompaction(id: id, status: .started)
-            } else {
-                entries.append(
-                    .contextCompaction(
-                        id: id ?? nextLegacyCompactionId(in: entries),
-                        status: .started
-                    ))
-            }
-        case .completed:
-            if let matchingIndex, case let .contextCompaction(existingId, _) = entries[matchingIndex] {
-                entries[matchingIndex] = .contextCompaction(id: existingId, status: .completed)
-            } else if let id {
-                // A client can attach between lifecycle notifications. Preserve
-                // the only position it observed instead of dropping completion.
-                entries.append(.contextCompaction(id: id, status: .completed))
-            }
-        case .failed:
-            if let matchingIndex { entries.remove(at: matchingIndex) }
+  private static func upsertTool(_ call: ToolCall, entries: inout [TranscriptEntry]) {
+    if let index = toolIndex(call.toolCallId, in: entries), case let .tool(existing) = entries[index] {
+      // A full re-send replaces the call, but must not clobber streamed
+      // state it omits (diffStats/content arrive on separate updates).
+      var merged = call
+      if merged.diffStats == nil { merged.diffStats = existing.diffStats }
+      if merged.content == nil { merged.content = existing.content }
+      entries[index] = .tool(merged)
+    } else {
+      entries.append(.tool(call))
+    }
+  }
+
+  /// Synthesizes the tool call that stands in for an answered question, so it
+  /// flows through the same grouping/rendering path as every other tool call.
+  /// The id is derived from the question id so replays upsert in place. The
+  /// row title is the question itself (single) or a count (multiple); the
+  /// expandable content carries the chosen answer(s).
+  private static func syntheticQuestionCall(for resolution: QuestionResolution) -> ToolCall {
+    let questions = resolution.questions
+    let title: String
+    switch questions.count {
+    case 1: title = questions[0].question
+    case 0: title = "Answered a question"
+    default: title = "Answered \(questions.count) questions"
+    }
+    let body: String
+    if questions.count == 1 {
+      body = answerText(for: questions[0], in: resolution)
+    } else {
+      body =
+        questions
+        .map { "\($0.question)\n\(answerText(for: $0, in: resolution))" }
+        .joined(separator: "\n\n")
+    }
+    return ToolCall(
+      toolCallId: "question:\(resolution.questionId)",
+      title: title,
+      kind: .question,
+      status: .completed,
+      content: body.isEmpty ? nil : [.content(.text(body))]
+    )
+  }
+
+  /// The chosen answer text for one sub-question: the selected option
+  /// label(s) plus any free-form note, or "No answer" when nothing was picked.
+  private static func answerText(for question: QuestionSpec, in resolution: QuestionResolution) -> String {
+    guard let entry = resolution.answers?[question.id] else { return "No answer" }
+    var parts = entry.answers
+    if let note = entry.note, !note.isEmpty { parts.append(note) }
+    return parts.isEmpty ? "No answer" : parts.joined(separator: ", ")
+  }
+
+  /// Routes a tool-call update by id lookup — main entries first, then every
+  /// subagent thread — because settle updates (tool results, interrupt
+  /// force-settles) do not carry `parentToolCallId`. Unknown ids fall back to
+  /// the update's own parent attribution, then to the main list.
+  private static func applyToolUpdate(_ update: ToolCallUpdate, to turn: inout AssistantTurn) {
+    if let index = toolIndex(update.toolCallId, in: turn.entries),
+      case let .tool(existing) = turn.entries[index]
+    {
+      turn.isThinking = false
+      turn.entries[index] = .tool(existing.applying(update))
+      cascadeSettleIfParent(update, in: &turn)
+      return
+    }
+    for key in turn.subagents.keys {
+      guard var bucket = turn.subagents[key],
+        let index = toolIndex(update.toolCallId, in: bucket.entries),
+        case let .tool(existing) = bucket.entries[index]
+      else { continue }
+      bucket.entries[index] = .tool(existing.applying(update))
+      turn.subagents[key] = bucket
+      cascadeSettleIfParent(update, in: &turn)
+      return
+    }
+    if let parent = update.parentToolCallId {
+      var bucket = turn.subagents[parent] ?? SubagentTranscript()
+      bucket.entries.append(.tool(update.asToolCall()))
+      turn.subagents[parent] = bucket
+    } else {
+      turn.isThinking = false
+      turn.entries.append(.tool(update.asToolCall()))
+    }
+  }
+
+  /// When the settled call is itself a subagent parent, its children must
+  /// not keep spinning: settle the whole nested thread (and any threads
+  /// nested below it) with the parent's outcome.
+  private static func cascadeSettleIfParent(_ update: ToolCallUpdate, in turn: inout AssistantTurn) {
+    guard let status = update.status,
+      let outcome = outcome(for: status),
+      turn.subagents[update.toolCallId] != nil
+    else { return }
+    var queue = [update.toolCallId]
+    var visited: Set<String> = []
+    while let id = queue.popLast() {
+      guard visited.insert(id).inserted, var bucket = turn.subagents[id] else { continue }
+      bucket.isThinking = false
+      settle(entries: &bucket.entries, outcome: outcome)
+      turn.subagents[id] = bucket
+      for case let .tool(call) in bucket.entries where turn.subagents[call.toolCallId] != nil {
+        queue.append(call.toolCallId)
+      }
+    }
+  }
+
+  private static func outcome(for status: ToolCallStatus) -> TurnOutcome? {
+    switch status {
+    case .completed: return .completed
+    case .failed: return .failed
+    case .cancelled: return .cancelled
+    case .pending, .inProgress: return nil
+    }
+  }
+
+  // MARK: - Turn settling
+
+  /// How a turn reached its end, for settling tool calls that never received
+  /// a terminal status of their own.
+  public enum TurnOutcome: Sendable, Equatable {
+    case completed, cancelled, failed
+  }
+
+  /// Marks every non-terminal tool call in the turn — including those inside
+  /// subagent threads — with the outcome's terminal status, so in-progress
+  /// indicators can never outlive the turn.
+  public static func settleToolCalls(_ turn: inout AssistantTurn, outcome: TurnOutcome) {
+    settle(entries: &turn.entries, outcome: outcome)
+    for key in turn.subagents.keys {
+      guard var bucket = turn.subagents[key] else { continue }
+      bucket.isThinking = false
+      settle(entries: &bucket.entries, outcome: outcome)
+      turn.subagents[key] = bucket
+    }
+  }
+
+  private static func settle(entries: inout [TranscriptEntry], outcome: TurnOutcome) {
+    for index in entries.indices {
+      guard case var .tool(call) = entries[index], !call.isSettled else { continue }
+      call.status =
+        switch outcome {
+        case .completed: .completed
+        case .cancelled: .cancelled
+        case .failed: .failed
         }
+      entries[index] = .tool(call)
     }
-
-    private static func nextLegacyCompactionId(in entries: [TranscriptEntry]) -> String {
-        let ids = Set(
-            entries.compactMap { entry -> String? in
-                if case let .contextCompaction(id, _) = entry { return id }
-                return nil
-            })
-        var offset = ids.count
-        while ids.contains("legacy-\(offset)") { offset += 1 }
-        return "legacy-\(offset)"
-    }
-
-    private static func upsertTool(_ call: ToolCall, entries: inout [TranscriptEntry]) {
-        if let index = toolIndex(call.toolCallId, in: entries), case let .tool(existing) = entries[index] {
-            // A full re-send replaces the call, but must not clobber streamed
-            // state it omits (diffStats/content arrive on separate updates).
-            var merged = call
-            if merged.diffStats == nil { merged.diffStats = existing.diffStats }
-            if merged.content == nil { merged.content = existing.content }
-            entries[index] = .tool(merged)
-        } else {
-            entries.append(.tool(call))
-        }
-    }
-
-    /// Synthesizes the tool call that stands in for an answered question, so it
-    /// flows through the same grouping/rendering path as every other tool call.
-    /// The id is derived from the question id so replays upsert in place. The
-    /// row title is the question itself (single) or a count (multiple); the
-    /// expandable content carries the chosen answer(s).
-    private static func syntheticQuestionCall(for resolution: QuestionResolution) -> ToolCall {
-        let questions = resolution.questions
-        let title: String
-        switch questions.count {
-        case 1: title = questions[0].question
-        case 0: title = "Answered a question"
-        default: title = "Answered \(questions.count) questions"
-        }
-        let body: String
-        if questions.count == 1 {
-            body = answerText(for: questions[0], in: resolution)
-        } else {
-            body =
-                questions
-                .map { "\($0.question)\n\(answerText(for: $0, in: resolution))" }
-                .joined(separator: "\n\n")
-        }
-        return ToolCall(
-            toolCallId: "question:\(resolution.questionId)",
-            title: title,
-            kind: .question,
-            status: .completed,
-            content: body.isEmpty ? nil : [.content(.text(body))]
-        )
-    }
-
-    /// The chosen answer text for one sub-question: the selected option
-    /// label(s) plus any free-form note, or "No answer" when nothing was picked.
-    private static func answerText(for question: QuestionSpec, in resolution: QuestionResolution) -> String {
-        guard let entry = resolution.answers?[question.id] else { return "No answer" }
-        var parts = entry.answers
-        if let note = entry.note, !note.isEmpty { parts.append(note) }
-        return parts.isEmpty ? "No answer" : parts.joined(separator: ", ")
-    }
-
-    /// Routes a tool-call update by id lookup — main entries first, then every
-    /// subagent thread — because settle updates (tool results, interrupt
-    /// force-settles) do not carry `parentToolCallId`. Unknown ids fall back to
-    /// the update's own parent attribution, then to the main list.
-    private static func applyToolUpdate(_ update: ToolCallUpdate, to turn: inout AssistantTurn) {
-        if let index = toolIndex(update.toolCallId, in: turn.entries),
-            case let .tool(existing) = turn.entries[index]
-        {
-            turn.isThinking = false
-            turn.entries[index] = .tool(existing.applying(update))
-            cascadeSettleIfParent(update, in: &turn)
-            return
-        }
-        for key in turn.subagents.keys {
-            guard var bucket = turn.subagents[key],
-                let index = toolIndex(update.toolCallId, in: bucket.entries),
-                case let .tool(existing) = bucket.entries[index]
-            else { continue }
-            bucket.entries[index] = .tool(existing.applying(update))
-            turn.subagents[key] = bucket
-            cascadeSettleIfParent(update, in: &turn)
-            return
-        }
-        if let parent = update.parentToolCallId {
-            var bucket = turn.subagents[parent] ?? SubagentTranscript()
-            bucket.entries.append(.tool(update.asToolCall()))
-            turn.subagents[parent] = bucket
-        } else {
-            turn.isThinking = false
-            turn.entries.append(.tool(update.asToolCall()))
-        }
-    }
-
-    /// When the settled call is itself a subagent parent, its children must
-    /// not keep spinning: settle the whole nested thread (and any threads
-    /// nested below it) with the parent's outcome.
-    private static func cascadeSettleIfParent(_ update: ToolCallUpdate, in turn: inout AssistantTurn) {
-        guard let status = update.status,
-            let outcome = outcome(for: status),
-            turn.subagents[update.toolCallId] != nil
-        else { return }
-        var queue = [update.toolCallId]
-        var visited: Set<String> = []
-        while let id = queue.popLast() {
-            guard visited.insert(id).inserted, var bucket = turn.subagents[id] else { continue }
-            bucket.isThinking = false
-            settle(entries: &bucket.entries, outcome: outcome)
-            turn.subagents[id] = bucket
-            for case let .tool(call) in bucket.entries where turn.subagents[call.toolCallId] != nil {
-                queue.append(call.toolCallId)
-            }
-        }
-    }
-
-    private static func outcome(for status: ToolCallStatus) -> TurnOutcome? {
-        switch status {
-        case .completed: return .completed
-        case .failed: return .failed
-        case .cancelled: return .cancelled
-        case .pending, .inProgress: return nil
-        }
-    }
-
-    // MARK: - Turn settling
-
-    /// How a turn reached its end, for settling tool calls that never received
-    /// a terminal status of their own.
-    public enum TurnOutcome: Sendable, Equatable {
-        case completed, cancelled, failed
-    }
-
-    /// Marks every non-terminal tool call in the turn — including those inside
-    /// subagent threads — with the outcome's terminal status, so in-progress
-    /// indicators can never outlive the turn.
-    public static func settleToolCalls(_ turn: inout AssistantTurn, outcome: TurnOutcome) {
-        settle(entries: &turn.entries, outcome: outcome)
-        for key in turn.subagents.keys {
-            guard var bucket = turn.subagents[key] else { continue }
-            bucket.isThinking = false
-            settle(entries: &bucket.entries, outcome: outcome)
-            turn.subagents[key] = bucket
-        }
-    }
-
-    private static func settle(entries: inout [TranscriptEntry], outcome: TurnOutcome) {
-        for index in entries.indices {
-            guard case var .tool(call) = entries[index], !call.isSettled else { continue }
-            call.status =
-                switch outcome {
-                case .completed: .completed
-                case .cancelled: .cancelled
-                case .failed: .failed
-                }
-            entries[index] = .tool(call)
-        }
-    }
+  }
 }

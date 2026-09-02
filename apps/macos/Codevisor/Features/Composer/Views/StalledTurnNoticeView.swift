@@ -16,25 +16,25 @@ import SwiftUI
 /// This rail is the sole delayed-stall surface and owns the recovery action;
 /// the transcript keeps its ordinary shimmer instead of escalating its copy.
 struct StalledTurnNoticeView: View {
-    let controller: SessionController
+  let controller: SessionController
 
-    var body: some View {
-        if controller.isTakingLongerThanExpected {
-            ComposerNoticeRail(
-                "Taking longer than expected"
-                    + (controller.providerActivityPhase.map { " during \($0.label)" } ?? ""),
-                kind: .warning,
-                systemImage: "clock.badge.exclamationmark",
-                actionTitle: "Stop and reconnect",
-                action: {
-                    Task {
-                        await controller.stop()
-                        if !controller.isSending {
-                            await controller.reconnect()
-                        }
-                    }
-                }
-            )
+  var body: some View {
+    if controller.isTakingLongerThanExpected {
+      ComposerNoticeRail(
+        "Taking longer than expected"
+          + (controller.providerActivityPhase.map { " during \($0.label)" } ?? ""),
+        kind: .warning,
+        systemImage: "clock.badge.exclamationmark",
+        actionTitle: "Stop and reconnect",
+        action: {
+          Task {
+            await controller.stop()
+            if !controller.isSending {
+              await controller.reconnect()
+            }
+          }
         }
+      )
     }
+  }
 }

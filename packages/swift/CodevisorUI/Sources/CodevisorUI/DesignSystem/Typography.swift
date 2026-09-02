@@ -16,104 +16,104 @@ import SwiftUI
 /// style genuinely doesn't fit (SF Symbol glyph sizing, display-scale hero
 /// titles, and deliberately compact chrome).
 public enum Typography {
-    // MARK: Platform floors (HIG "Ensuring legibility")
+  // MARK: Platform floors (HIG "Ensuring legibility")
 
-    /// The HIG minimum legible text size for the current platform.
-    /// iOS/iPadOS: 11 pt · macOS: 10 pt. Nothing readable may go below this.
-    public static let minimumTextSize: CGFloat = {
-        #if os(macOS)
-            return 10
-        #else
-            return 11
-        #endif
-    }()
+  /// The HIG minimum legible text size for the current platform.
+  /// iOS/iPadOS: 11 pt · macOS: 10 pt. Nothing readable may go below this.
+  public static let minimumTextSize: CGFloat = {
+    #if os(macOS)
+      return 10
+    #else
+      return 11
+    #endif
+  }()
 
-    /// The HIG default body text size for the current platform.
-    /// iOS/iPadOS: 17 pt · macOS: 13 pt.
-    public static let defaultTextSize: CGFloat = {
-        #if os(macOS)
-            return 13
-        #else
-            return 17
-        #endif
-    }()
+  /// The HIG default body text size for the current platform.
+  /// iOS/iPadOS: 17 pt · macOS: 13 pt.
+  public static let defaultTextSize: CGFloat = {
+    #if os(macOS)
+      return 13
+    #else
+      return 17
+    #endif
+  }()
 
-    /// The smallest comfortable interactive target for the current platform.
-    /// The visible glyph can remain compact; use `expandedHitTarget` to grow
-    /// its hit region without changing surrounding layout.
-    public static let minimumInteractiveTargetSize: CGFloat = {
-        #if os(macOS)
-            return 20
-        #else
-            return 44
-        #endif
-    }()
+  /// The smallest comfortable interactive target for the current platform.
+  /// The visible glyph can remain compact; use `expandedHitTarget` to grow
+  /// its hit region without changing surrounding layout.
+  public static let minimumInteractiveTargetSize: CGFloat = {
+    #if os(macOS)
+      return 20
+    #else
+      return 44
+    #endif
+  }()
 
-    // MARK: SF Symbol glyph sizes
+  // MARK: SF Symbol glyph sizes
 
-    /// Point sizes for `Image(systemName:)` glyphs in app chrome. These are
-    /// glyph sizes, not text sizes — but they are still tokens so the same
-    /// role always renders at the same size.
-    public enum IconSize {
-        /// Disclosure chevrons in settings rows.
-        public static let disclosure: CGFloat = 10
-        /// The smallest allowed glyph: close/remove badges, picker
-        /// indicators, and other compact overlay controls. Matches the
-        /// macOS 10 pt legibility floor — never size a glyph below this.
-        public static let compact: CGFloat = 10
-        /// Small chrome glyphs: tab icons, "+" buttons, chip icons,
-        /// prev/next arrows.
-        public static let chrome: CGFloat = 12
-        /// Toolbar-weight glyphs: attach button, overflow ellipsis,
-        /// provider icons.
-        public static let toolbar: CGFloat = 13
-        /// Hero/empty-state symbols above a title (onboarding steps,
-        /// migration screens, failure states).
-        public static let hero: CGFloat = 34
-    }
+  /// Point sizes for `Image(systemName:)` glyphs in app chrome. These are
+  /// glyph sizes, not text sizes — but they are still tokens so the same
+  /// role always renders at the same size.
+  public enum IconSize {
+    /// Disclosure chevrons in settings rows.
+    public static let disclosure: CGFloat = 10
+    /// The smallest allowed glyph: close/remove badges, picker
+    /// indicators, and other compact overlay controls. Matches the
+    /// macOS 10 pt legibility floor — never size a glyph below this.
+    public static let compact: CGFloat = 10
+    /// Small chrome glyphs: tab icons, "+" buttons, chip icons,
+    /// prev/next arrows.
+    public static let chrome: CGFloat = 12
+    /// Toolbar-weight glyphs: attach button, overflow ellipsis,
+    /// provider icons.
+    public static let toolbar: CGFloat = 13
+    /// Hero/empty-state symbols above a title (onboarding steps,
+    /// migration screens, failure states).
+    public static let hero: CGFloat = 34
+  }
 
-    // MARK: Display sizes (macOS)
+  // MARK: Display sizes (macOS)
 
-    /// Display-scale sizes that intentionally exceed the built-in text
-    /// styles. Use through the `Font` extensions below.
-    public enum DisplaySize {
-        /// Onboarding welcome hero title.
-        public static let heroTitle: CGFloat = 36
-        /// Onboarding step / consent screen title.
-        public static let stepTitle: CGFloat = 28
-        /// Empty-state hero title. Matches macOS `.largeTitle` (26 pt);
-        /// prefer `.largeTitle` where the semantic style is available.
-        public static let emptyStateTitle: CGFloat = 26
-    }
+  /// Display-scale sizes that intentionally exceed the built-in text
+  /// styles. Use through the `Font` extensions below.
+  public enum DisplaySize {
+    /// Onboarding welcome hero title.
+    public static let heroTitle: CGFloat = 36
+    /// Onboarding step / consent screen title.
+    public static let stepTitle: CGFloat = 28
+    /// Empty-state hero title. Matches macOS `.largeTitle` (26 pt);
+    /// prefer `.largeTitle` where the semantic style is available.
+    public static let emptyStateTitle: CGFloat = 26
+  }
 
-    // MARK: Compact chrome (macOS)
+  // MARK: Compact chrome (macOS)
 
-    /// Pane/workspace tab labels — the deliberate "between `.subheadline`
-    /// (11 pt) and `.callout` (12 pt)" size used across the tab system.
-    public static let tabLabelSize: CGFloat = 11.5
+  /// Pane/workspace tab labels — the deliberate "between `.subheadline`
+  /// (11 pt) and `.callout` (12 pt)" size used across the tab system.
+  public static let tabLabelSize: CGFloat = 11.5
 }
 
 // MARK: - Semantic fonts
 
 extension Font {
-    /// Onboarding welcome hero title (36 pt bold display size).
-    public static let heroTitle = Font.system(
-        size: Typography.DisplaySize.heroTitle, weight: .bold
-    )
+  /// Onboarding welcome hero title (36 pt bold display size).
+  public static let heroTitle = Font.system(
+    size: Typography.DisplaySize.heroTitle, weight: .bold
+  )
 
-    /// Onboarding step / consent screen title (28 pt bold display size).
-    public static let stepTitle = Font.system(
-        size: Typography.DisplaySize.stepTitle, weight: .bold
-    )
+  /// Onboarding step / consent screen title (28 pt bold display size).
+  public static let stepTitle = Font.system(
+    size: Typography.DisplaySize.stepTitle, weight: .bold
+  )
 
-    /// Empty-state hero title (26 pt semibold — the macOS `.largeTitle`
-    /// size with the app's hero weight).
-    public static let emptyStateTitle = Font.system(
-        size: Typography.DisplaySize.emptyStateTitle, weight: .semibold
-    )
+  /// Empty-state hero title (26 pt semibold — the macOS `.largeTitle`
+  /// size with the app's hero weight).
+  public static let emptyStateTitle = Font.system(
+    size: Typography.DisplaySize.emptyStateTitle, weight: .semibold
+  )
 
-    /// Pane/workspace tab label (11.5 pt).
-    public static func tabLabel(weight: Font.Weight = .regular) -> Font {
-        .system(size: Typography.tabLabelSize, weight: weight)
-    }
+  /// Pane/workspace tab label (11.5 pt).
+  public static func tabLabel(weight: Font.Weight = .regular) -> Font {
+    .system(size: Typography.tabLabelSize, weight: weight)
+  }
 }

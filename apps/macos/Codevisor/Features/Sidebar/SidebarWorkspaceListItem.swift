@@ -5,10 +5,10 @@ import Foundation
 /// session/project are resolved from the live session list so status and
 /// activation reuse the session machinery.
 struct SidebarWorkspaceListItem: Identifiable {
-    let workspace: Workspace
-    let sessions: [ChatSession]
-    let primarySession: ChatSession?
-    let project: Project?
+  let workspace: Workspace
+  let sessions: [ChatSession]
+  let primarySession: ChatSession?
+  let project: Project?
 
-    var id: SidebarFleetItemID { .workspace(workspace) }
+  var id: SidebarFleetItemID { .workspace(workspace) }
 }

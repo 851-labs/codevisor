@@ -8,17 +8,17 @@ import CoreGraphics
 /// has moved away from the bottom, preserving the raw content offset keeps the
 /// content under their eyes stationary instead.
 public enum TranscriptViewportResizeAdjustment: Sendable, Equatable {
-    case pinToBottom
-    case keepContentOffset
+  case pinToBottom
+  case keepContentOffset
 
-    public static func resolve(
-        previousDistanceFromBottom: CGFloat,
-        atBottomThreshold: CGFloat,
-        isUserInteracting: Bool
-    ) -> Self {
-        guard !isUserInteracting,
-            previousDistanceFromBottom <= max(0, atBottomThreshold)
-        else { return .keepContentOffset }
-        return .pinToBottom
-    }
+  public static func resolve(
+    previousDistanceFromBottom: CGFloat,
+    atBottomThreshold: CGFloat,
+    isUserInteracting: Bool
+  ) -> Self {
+    guard !isUserInteracting,
+      previousDistanceFromBottom <= max(0, atBottomThreshold)
+    else { return .keepContentOffset }
+    return .pinToBottom
+  }
 }

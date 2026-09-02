@@ -6,234 +6,234 @@ import StreamMarkdown
 /// markdown pipeline as the final answer — the codex CLI's "Proposed Plan"
 /// cell equivalent.
 public struct PlanDocumentView: View {
-    let markdown: String
+  let markdown: String
 
-    public init(markdown: String) {
-        self.markdown = markdown
-    }
-    @Environment(\.theme) private var theme
+  public init(markdown: String) {
+    self.markdown = markdown
+  }
+  @Environment(\.theme) private var theme
 
-    public var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 5) {
-                Image(systemName: "list.bullet.clipboard")
-                    .font(.caption2)
-                Text("Proposed Plan")
-                    .font(.callout.weight(.semibold))
-            }
-            .foregroundStyle(.secondary)
-            StreamingMarkdownView(markdown)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8).fill(theme.cardBackground))
-        .themedCardShadow(theme)
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator, lineWidth: 1))
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Proposed plan")
+  public var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 5) {
+        Image(systemName: "list.bullet.clipboard")
+          .font(.caption2)
+        Text("Proposed Plan")
+          .font(.callout.weight(.semibold))
+      }
+      .foregroundStyle(.secondary)
+      StreamingMarkdownView(markdown)
     }
+    .padding(12)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(RoundedRectangle(cornerRadius: 8).fill(theme.cardBackground))
+    .themedCardShadow(theme)
+    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator, lineWidth: 1))
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Proposed plan")
+  }
 }
 
 /// The independently virtualized top of a proposed-plan card.
 public struct PlanDocumentHeaderView: View {
-    @Environment(\.theme) private var theme
+  @Environment(\.theme) private var theme
 
-    public init() {}
+  public init() {}
 
-    public var body: some View {
-        HStack(spacing: 5) {
-            Image(systemName: "list.bullet.clipboard")
-                .font(.caption2)
-            Text("Proposed Plan")
-                .font(.callout.weight(.semibold))
-        }
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 12)
-        .padding(.top, 12)
-        .padding(.bottom, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            PlanDocumentFragmentBackground(
-                color: theme.cardBackground,
-                includesTop: true,
-                includesBottom: false
-            )
-        )
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Proposed plan")
+  public var body: some View {
+    HStack(spacing: 5) {
+      Image(systemName: "list.bullet.clipboard")
+        .font(.caption2)
+      Text("Proposed Plan")
+        .font(.callout.weight(.semibold))
     }
+    .foregroundStyle(.secondary)
+    .padding(.horizontal, 12)
+    .padding(.top, 12)
+    .padding(.bottom, 8)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(
+      PlanDocumentFragmentBackground(
+        color: theme.cardBackground,
+        includesTop: true,
+        includesBottom: false
+      )
+    )
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Proposed plan")
+  }
 }
 
 /// One bounded Markdown chunk inside the virtualized proposed-plan card.
 public struct PlanDocumentBlockView: View {
-    private let blocks: [MarkdownBlock]
-    private let documentSource: String
-    private let streamID: String
-    private let animationGroupID: String
-    private let isStreaming: Bool
-    private let isFirst: Bool
-    private let isLast: Bool
-    private let fragmentLayout: MarkdownFragmentLayout?
-    @Environment(\.theme) private var theme
-    @Environment(\.markdownTheme) private var markdownTheme
+  private let blocks: [MarkdownBlock]
+  private let documentSource: String
+  private let streamID: String
+  private let animationGroupID: String
+  private let isStreaming: Bool
+  private let isFirst: Bool
+  private let isLast: Bool
+  private let fragmentLayout: MarkdownFragmentLayout?
+  @Environment(\.theme) private var theme
+  @Environment(\.markdownTheme) private var markdownTheme
 
-    public init(
-        block: MarkdownBlock,
-        documentSource: String,
-        streamID: String,
-        animationGroupID: String? = nil,
-        isStreaming: Bool,
-        isFirst: Bool,
-        isLast: Bool,
-        fragmentLayout: MarkdownFragmentLayout? = nil
-    ) {
-        blocks = [block]
-        self.documentSource = documentSource
-        self.streamID = streamID
-        self.animationGroupID = animationGroupID ?? streamID
-        self.isStreaming = isStreaming
-        self.isFirst = isFirst
-        self.isLast = isLast
-        self.fragmentLayout = fragmentLayout
-    }
+  public init(
+    block: MarkdownBlock,
+    documentSource: String,
+    streamID: String,
+    animationGroupID: String? = nil,
+    isStreaming: Bool,
+    isFirst: Bool,
+    isLast: Bool,
+    fragmentLayout: MarkdownFragmentLayout? = nil
+  ) {
+    blocks = [block]
+    self.documentSource = documentSource
+    self.streamID = streamID
+    self.animationGroupID = animationGroupID ?? streamID
+    self.isStreaming = isStreaming
+    self.isFirst = isFirst
+    self.isLast = isLast
+    self.fragmentLayout = fragmentLayout
+  }
 
-    public init(
-        blocks: [MarkdownBlock],
-        documentSource: String,
-        streamID: String,
-        animationGroupID: String? = nil,
-        isStreaming: Bool,
-        isFirst: Bool,
-        isLast: Bool,
-        fragmentLayout: MarkdownFragmentLayout? = nil
-    ) {
-        precondition(!blocks.isEmpty, "Plan Markdown rows must contain at least one block")
-        self.blocks = blocks
-        self.documentSource = documentSource
-        self.streamID = streamID
-        self.animationGroupID = animationGroupID ?? streamID
-        self.isStreaming = isStreaming
-        self.isFirst = isFirst
-        self.isLast = isLast
-        self.fragmentLayout = fragmentLayout
-    }
+  public init(
+    blocks: [MarkdownBlock],
+    documentSource: String,
+    streamID: String,
+    animationGroupID: String? = nil,
+    isStreaming: Bool,
+    isFirst: Bool,
+    isLast: Bool,
+    fragmentLayout: MarkdownFragmentLayout? = nil
+  ) {
+    precondition(!blocks.isEmpty, "Plan Markdown rows must contain at least one block")
+    self.blocks = blocks
+    self.documentSource = documentSource
+    self.streamID = streamID
+    self.animationGroupID = animationGroupID ?? streamID
+    self.isStreaming = isStreaming
+    self.isFirst = isFirst
+    self.isLast = isLast
+    self.fragmentLayout = fragmentLayout
+  }
 
-    public var body: some View {
-        markdownContent
-            .padding(.horizontal, 12)
-            .padding(.top, fragmentLayout != nil || isFirst ? 0 : markdownTheme.blockSpacing)
-            .padding(.bottom, isLast ? 12 : 0)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                PlanDocumentFragmentBackground(
-                    color: theme.cardBackground,
-                    includesTop: false,
-                    includesBottom: isLast
-                )
-            )
-    }
+  public var body: some View {
+    markdownContent
+      .padding(.horizontal, 12)
+      .padding(.top, fragmentLayout != nil || isFirst ? 0 : markdownTheme.blockSpacing)
+      .padding(.bottom, isLast ? 12 : 0)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(
+        PlanDocumentFragmentBackground(
+          color: theme.cardBackground,
+          includesTop: false,
+          includesBottom: isLast
+        )
+      )
+  }
 
-    @ViewBuilder
-    private var markdownContent: some View {
-        if let fragmentLayout {
-            MarkdownFragmentRenderView(
-                blocks: blocks,
-                documentSource: documentSource,
-                streamID: streamID,
-                animationGroupID: animationGroupID,
-                isStreaming: isStreaming,
-                layout: fragmentLayout
-            )
-        } else {
-            MarkdownBlockRenderView(
-                blocks: blocks,
-                documentSource: documentSource,
-                streamID: streamID,
-                animationGroupID: animationGroupID,
-                isStreaming: isStreaming
-            )
-        }
+  @ViewBuilder
+  private var markdownContent: some View {
+    if let fragmentLayout {
+      MarkdownFragmentRenderView(
+        blocks: blocks,
+        documentSource: documentSource,
+        streamID: streamID,
+        animationGroupID: animationGroupID,
+        isStreaming: isStreaming,
+        layout: fragmentLayout
+      )
+    } else {
+      MarkdownBlockRenderView(
+        blocks: blocks,
+        documentSource: documentSource,
+        streamID: streamID,
+        animationGroupID: animationGroupID,
+        isStreaming: isStreaming
+      )
     }
+  }
 }
 
 private struct PlanDocumentFragmentBackground: View {
-    let color: AnyShapeStyle
-    let includesTop: Bool
-    let includesBottom: Bool
+  let color: AnyShapeStyle
+  let includesTop: Bool
+  let includesBottom: Bool
 
-    var body: some View {
-        UnevenRoundedRectangle(
-            topLeadingRadius: includesTop ? 8 : 0,
-            bottomLeadingRadius: includesBottom ? 8 : 0,
-            bottomTrailingRadius: includesBottom ? 8 : 0,
-            topTrailingRadius: includesTop ? 8 : 0
-        )
-        .fill(color)
-        .overlay {
-            PlanDocumentFragmentBorder(
-                includesTop: includesTop,
-                includesBottom: includesBottom
-            )
-            .stroke(.separator, lineWidth: 1)
-        }
+  var body: some View {
+    UnevenRoundedRectangle(
+      topLeadingRadius: includesTop ? 8 : 0,
+      bottomLeadingRadius: includesBottom ? 8 : 0,
+      bottomTrailingRadius: includesBottom ? 8 : 0,
+      topTrailingRadius: includesTop ? 8 : 0
+    )
+    .fill(color)
+    .overlay {
+      PlanDocumentFragmentBorder(
+        includesTop: includesTop,
+        includesBottom: includesBottom
+      )
+      .stroke(.separator, lineWidth: 1)
     }
+  }
 }
 
 private struct PlanDocumentFragmentBorder: Shape {
-    let includesTop: Bool
-    let includesBottom: Bool
+  let includesTop: Bool
+  let includesBottom: Bool
 
-    func path(in rect: CGRect) -> Path {
-        let radius: CGFloat = 8
-        var path = Path()
-        if includesTop {
-            path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
-            path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + radius))
-            path.addQuadCurve(
-                to: CGPoint(x: rect.minX + radius, y: rect.minY),
-                control: CGPoint(x: rect.minX, y: rect.minY)
-            )
-            path.addLine(to: CGPoint(x: rect.maxX - radius, y: rect.minY))
-            path.addQuadCurve(
-                to: CGPoint(x: rect.maxX, y: rect.minY + radius),
-                control: CGPoint(x: rect.maxX, y: rect.minY)
-            )
-            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        } else if includesBottom {
-            path.move(to: CGPoint(x: rect.minX, y: rect.minY))
-            path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY - radius))
-            path.addQuadCurve(
-                to: CGPoint(x: rect.minX + radius, y: rect.maxY),
-                control: CGPoint(x: rect.minX, y: rect.maxY)
-            )
-            path.addLine(to: CGPoint(x: rect.maxX - radius, y: rect.maxY))
-            path.addQuadCurve(
-                to: CGPoint(x: rect.maxX, y: rect.maxY - radius),
-                control: CGPoint(x: rect.maxX, y: rect.maxY)
-            )
-            path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-        } else {
-            path.move(to: CGPoint(x: rect.minX, y: rect.minY))
-            path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
-            path.move(to: CGPoint(x: rect.maxX, y: rect.minY))
-            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        }
-        return path
+  func path(in rect: CGRect) -> Path {
+    let radius: CGFloat = 8
+    var path = Path()
+    if includesTop {
+      path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+      path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + radius))
+      path.addQuadCurve(
+        to: CGPoint(x: rect.minX + radius, y: rect.minY),
+        control: CGPoint(x: rect.minX, y: rect.minY)
+      )
+      path.addLine(to: CGPoint(x: rect.maxX - radius, y: rect.minY))
+      path.addQuadCurve(
+        to: CGPoint(x: rect.maxX, y: rect.minY + radius),
+        control: CGPoint(x: rect.maxX, y: rect.minY)
+      )
+      path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+    } else if includesBottom {
+      path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+      path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY - radius))
+      path.addQuadCurve(
+        to: CGPoint(x: rect.minX + radius, y: rect.maxY),
+        control: CGPoint(x: rect.minX, y: rect.maxY)
+      )
+      path.addLine(to: CGPoint(x: rect.maxX - radius, y: rect.maxY))
+      path.addQuadCurve(
+        to: CGPoint(x: rect.maxX, y: rect.maxY - radius),
+        control: CGPoint(x: rect.maxX, y: rect.maxY)
+      )
+      path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+    } else {
+      path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+      path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+      path.move(to: CGPoint(x: rect.maxX, y: rect.minY))
+      path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
     }
+    return path
+  }
 }
 
 #Preview {
-    PlanDocumentView(
-        markdown: """
-            # Add goal banner
+  PlanDocumentView(
+    markdown: """
+      # Add goal banner
 
-            1. Extend the wire schema with `SessionGoal`
-            2. Map codex `thread/goal/*` in the provider
-            3. Render the banner above the composer
+      1. Extend the wire schema with `SessionGoal`
+      2. Map codex `thread/goal/*` in the provider
+      3. Render the banner above the composer
 
-            **Verification**: run the dev app and set a goal.
-            """
-    )
-    .padding()
-    .frame(width: 560)
+      **Verification**: run the dev app and set a goal.
+      """
+  )
+  .padding()
+  .frame(width: 560)
 }

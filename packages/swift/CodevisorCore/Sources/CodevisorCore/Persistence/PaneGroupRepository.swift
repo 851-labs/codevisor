@@ -6,13 +6,13 @@ import Foundation
 /// per pane key with no reaping, so stable keys are what let terminals
 /// reattach instead of orphaning shells.
 public protocol PaneGroupRepository: Sendable {
-    func load(sessionId: UUID, placement: PaneGroupPlacement) -> PaneGroupState?
-    func save(_ state: PaneGroupState, sessionId: UUID, placement: PaneGroupPlacement)
-    func removeAll()
+  func load(sessionId: UUID, placement: PaneGroupPlacement) -> PaneGroupState?
+  func save(_ state: PaneGroupState, sessionId: UUID, placement: PaneGroupPlacement)
+  func removeAll()
 }
 
 public extension PaneGroupRepository {
-    func removeAll() {}
+  func removeAll() {}
 }
 
 /// File/in-memory backed pane-group repository. All sessions' states live
@@ -25,65 +25,65 @@ public extension PaneGroupRepository {
 /// select/toggle/height drag, and re-reading + re-decoding every session's
 /// state from disk per save was measurable main-thread work.
 public final class DefaultPaneGroupRepository: PaneGroupRepository, @unchecked Sendable {
-    private let store: any PersistenceStore
-    private let key = "paneGroups"
-    private let lock = NSLock()
-    private var cache: [String: PaneGroupState]?
+  private let store: any PersistenceStore
+  private let key = "paneGroups"
+  private let lock = NSLock()
+  private var cache: [String: PaneGroupState]?
 
-    public init(store: any PersistenceStore) {
-        self.store = store
-    }
+  public init(store: any PersistenceStore) {
+    self.store = store
+  }
 
-    public func load(sessionId: UUID, placement: PaneGroupPlacement) -> PaneGroupState? {
-        loadAll()[Self.storageKey(sessionId: sessionId, placement: placement)]
-    }
+  public func load(sessionId: UUID, placement: PaneGroupPlacement) -> PaneGroupState? {
+    loadAll()[Self.storageKey(sessionId: sessionId, placement: placement)]
+  }
 
-    public func save(_ state: PaneGroupState, sessionId: UUID, placement: PaneGroupPlacement) {
-        var all = loadAll()
-        all[Self.storageKey(sessionId: sessionId, placement: placement)] = state
-        lock.withLock { cache = all }
-        do {
-            try store.saveData(JSONEncoder().encode(all), forKey: key)
-        } catch {
-            Log.persistence.error(
-                "Failed to save \(self.key, privacy: .public): \(String(describing: error), privacy: .public)")
-        }
+  public func save(_ state: PaneGroupState, sessionId: UUID, placement: PaneGroupPlacement) {
+    var all = loadAll()
+    all[Self.storageKey(sessionId: sessionId, placement: placement)] = state
+    lock.withLock { cache = all }
+    do {
+      try store.saveData(JSONEncoder().encode(all), forKey: key)
+    } catch {
+      Log.persistence.error(
+        "Failed to save \(self.key, privacy: .public): \(String(describing: error), privacy: .public)")
     }
+  }
 
-    public func removeAll() {
-        lock.withLock { cache = [:] }
-        do {
-            try store.removeData(forKey: key)
-        } catch {
-            Log.persistence.error(
-                "Failed to clear \(self.key, privacy: .public): \(String(describing: error), privacy: .public)"
-            )
-        }
+  public func removeAll() {
+    lock.withLock { cache = [:] }
+    do {
+      try store.removeData(forKey: key)
+    } catch {
+      Log.persistence.error(
+        "Failed to clear \(self.key, privacy: .public): \(String(describing: error), privacy: .public)"
+      )
     }
+  }
 
-    private static func storageKey(sessionId: UUID, placement: PaneGroupPlacement) -> String {
-        switch placement {
-        case .bottom: sessionId.uuidString
-        case .center: "\(sessionId.uuidString):center"
-        }
+  private static func storageKey(sessionId: UUID, placement: PaneGroupPlacement) -> String {
+    switch placement {
+    case .bottom: sessionId.uuidString
+    case .center: "\(sessionId.uuidString):center"
     }
+  }
 
-    private func loadAll() -> [String: PaneGroupState] {
-        if let cached = lock.withLock({ cache }) { return cached }
-        let loaded: [String: PaneGroupState]
-        if let data = store.loadData(forKey: key) {
-            do {
-                loaded = try JSONDecoder().decode([String: PaneGroupState].self, from: data)
-            } catch {
-                // No banner: a lost tab layout is recoverable in place; the
-                // quarantined backup and fault log keep it diagnosable.
-                handleCorruptPayload(store: store, key: key, data: data, error: error)
-                loaded = [:]
-            }
-        } else {
-            loaded = [:]
-        }
-        lock.withLock { if cache == nil { cache = loaded } }
-        return loaded
+  private func loadAll() -> [String: PaneGroupState] {
+    if let cached = lock.withLock({ cache }) { return cached }
+    let loaded: [String: PaneGroupState]
+    if let data = store.loadData(forKey: key) {
+      do {
+        loaded = try JSONDecoder().decode([String: PaneGroupState].self, from: data)
+      } catch {
+        // No banner: a lost tab layout is recoverable in place; the
+        // quarantined backup and fault log keep it diagnosable.
+        handleCorruptPayload(store: store, key: key, data: data, error: error)
+        loaded = [:]
+      }
+    } else {
+      loaded = [:]
     }
+    lock.withLock { if cache == nil { cache = loaded } }
+    return loaded
+  }
 }

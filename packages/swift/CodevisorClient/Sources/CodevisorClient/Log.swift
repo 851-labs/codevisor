@@ -12,22 +12,22 @@ import os
 /// redaction turns release-build diagnostics into `<private>`, which defeats
 /// the purpose. Never log message bodies, tokens, or file contents.
 public enum Log {
-    public static let subsystem = "com.851labs.codevisor"
+  public static let subsystem = "com.851labs.codevisor"
 
-    public static let persistence = Logger(subsystem: subsystem, category: "persistence")
-    public static let server = Logger(subsystem: subsystem, category: "server")
-    public static let session = Logger(subsystem: subsystem, category: "session")
-    public static let machines = Logger(subsystem: subsystem, category: "machines")
-    public static let sync = Logger(subsystem: subsystem, category: "sync")
-    public static let theming = Logger(subsystem: subsystem, category: "theming")
-    public static let terminal = Logger(subsystem: subsystem, category: "terminal")
-    public static let updates = Logger(subsystem: subsystem, category: "updates")
-    public static let attachments = Logger(subsystem: subsystem, category: "attachments")
-    public static let computerUse = Logger(subsystem: subsystem, category: "computer-use")
-    public static let onboarding = Logger(subsystem: subsystem, category: "onboarding")
-    public static let cloud = Logger(subsystem: subsystem, category: "cloud")
-    public static let plugins = Logger(subsystem: subsystem, category: "plugins")
-    /// Errors that were also surfaced to the user (mirrors every
-    /// `ErrorReporter.report` so the banner text is findable in logs).
-    public static let surfaced = Logger(subsystem: subsystem, category: "surfaced")
+  public static let persistence = Logger(subsystem: subsystem, category: "persistence")
+  public static let server = Logger(subsystem: subsystem, category: "server")
+  public static let session = Logger(subsystem: subsystem, category: "session")
+  public static let machines = Logger(subsystem: subsystem, category: "machines")
+  public static let sync = Logger(subsystem: subsystem, category: "sync")
+  public static let theming = Logger(subsystem: subsystem, category: "theming")
+  public static let terminal = Logger(subsystem: subsystem, category: "terminal")
+  public static let updates = Logger(subsystem: subsystem, category: "updates")
+  public static let attachments = Logger(subsystem: subsystem, category: "attachments")
+  public static let computerUse = Logger(subsystem: subsystem, category: "computer-use")
+  public static let onboarding = Logger(subsystem: subsystem, category: "onboarding")
+  public static let cloud = Logger(subsystem: subsystem, category: "cloud")
+  public static let plugins = Logger(subsystem: subsystem, category: "plugins")
+  /// Errors that were also surfaced to the user (mirrors every
+  /// `ErrorReporter.report` so the banner text is findable in logs).
+  public static let surfaced = Logger(subsystem: subsystem, category: "surfaced")
 }

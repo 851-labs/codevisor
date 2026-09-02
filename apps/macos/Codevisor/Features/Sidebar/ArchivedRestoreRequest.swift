@@ -5,31 +5,31 @@ import Foundation
 /// before acting: the row looks exactly like a live one, so an unguarded click
 /// would silently un-archive whatever the user was only trying to read.
 struct ArchivedRestoreRequest: Identifiable {
-    enum Target {
-        case project(Project)
-        case session(ChatSession)
-    }
+  enum Target {
+    case project(Project)
+    case session(ChatSession)
+  }
 
-    let target: Target
+  let target: Target
 
-    var id: UUID {
-        switch target {
-        case let .project(project): project.id
-        case let .session(session): session.id
-        }
+  var id: UUID {
+    switch target {
+    case let .project(project): project.id
+    case let .session(session): session.id
     }
+  }
 
-    var name: String {
-        switch target {
-        case let .project(project): project.name
-        case let .session(session): session.title
-        }
+  var name: String {
+    switch target {
+    case let .project(project): project.name
+    case let .session(session): session.title
     }
+  }
 
-    var kind: String {
-        switch target {
-        case .project: "project"
-        case .session: "chat"
-        }
+  var kind: String {
+    switch target {
+    case .project: "project"
+    case .session: "chat"
     }
+  }
 }

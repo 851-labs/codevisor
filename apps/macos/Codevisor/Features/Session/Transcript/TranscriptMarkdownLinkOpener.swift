@@ -10,17 +10,17 @@ import TranscriptKit
 /// way.
 @MainActor
 enum TranscriptMarkdownLinkOpener {
-    static func open(
-        _ url: URL,
-        quickLook: QuickLookController?,
-        attachmentImages: AttachmentImageStore?
-    ) -> Bool {
-        guard let path = markdownLocalFilePath(url.relativeString) else { return false }
-        let file = PreviewFile(serverPath: path)
-        quickLook?.present(
-            .remote(source: file.source, name: file.name, mimeType: file.mimeType),
-            attachmentStore: attachmentImages
-        )
-        return true
-    }
+  static func open(
+    _ url: URL,
+    quickLook: QuickLookController?,
+    attachmentImages: AttachmentImageStore?
+  ) -> Bool {
+    guard let path = markdownLocalFilePath(url.relativeString) else { return false }
+    let file = PreviewFile(serverPath: path)
+    quickLook?.present(
+      .remote(source: file.source, name: file.name, mimeType: file.mimeType),
+      attachmentStore: attachmentImages
+    )
+    return true
+  }
 }

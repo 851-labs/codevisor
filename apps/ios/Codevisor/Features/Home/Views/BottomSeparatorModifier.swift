@@ -5,14 +5,14 @@ import SwiftUI
 /// native move: an explicit row trait can otherwise travel with the reused
 /// cell that used to be last.
 struct BottomSeparatorModifier: ViewModifier {
-    let isHidden: Bool?
+  let isHidden: Bool?
 
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if isHidden == true {
-            content.listRowSeparator(.hidden, edges: .bottom)
-        } else {
-            content
-        }
+  @ViewBuilder
+  func body(content: Content) -> some View {
+    if isHidden == true {
+      content.listRowSeparator(.hidden, edges: .bottom)
+    } else {
+      content
     }
+  }
 }

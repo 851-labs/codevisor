@@ -6,21 +6,21 @@ import SwiftUI
 /// Opens the update center — the one surface for everything updatable —
 /// with a fresh fleet-wide check under way.
 struct AppUpdateCommands: Commands {
-    let environment: AppEnvironment
+  let environment: AppEnvironment
 
-    var body: some Commands {
-        CommandGroup(after: .appSettings) {
-            CheckForUpdatesMenuItem(center: environment.updateCenter)
-        }
+  var body: some Commands {
+    CommandGroup(after: .appSettings) {
+      CheckForUpdatesMenuItem(center: environment.updateCenter)
     }
+  }
 }
 
 private struct CheckForUpdatesMenuItem: View {
-    let center: UpdateCenter
+  let center: UpdateCenter
 
-    var body: some View {
-        Button("Check for Updates…") {
-            center.isPresented = true
-        }
+  var body: some View {
+    Button("Check for Updates…") {
+      center.isPresented = true
     }
+  }
 }

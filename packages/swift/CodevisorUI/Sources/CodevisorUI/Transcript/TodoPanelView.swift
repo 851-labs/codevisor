@@ -6,158 +6,158 @@ import ACPKit
 /// Collapsible: the header always shows progress and the current step; the
 /// body lists every step.
 public struct TodoPanelView: View {
-    let plan: Plan
-    @Binding var isExpanded: Bool
-    var glassNamespace: Namespace.ID? = nil
-    var maximumExpandedHeight: CGFloat? = nil
+  let plan: Plan
+  @Binding var isExpanded: Bool
+  var glassNamespace: Namespace.ID? = nil
+  var maximumExpandedHeight: CGFloat? = nil
 
-    public init(
-        plan: Plan,
-        isExpanded: Binding<Bool>,
-        glassNamespace: Namespace.ID? = nil,
-        maximumExpandedHeight: CGFloat? = nil
-    ) {
-        self.plan = plan
-        self._isExpanded = isExpanded
-        self.glassNamespace = glassNamespace
-        self.maximumExpandedHeight = maximumExpandedHeight
-    }
-    @Environment(\.theme) private var theme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  public init(
+    plan: Plan,
+    isExpanded: Binding<Bool>,
+    glassNamespace: Namespace.ID? = nil,
+    maximumExpandedHeight: CGFloat? = nil
+  ) {
+    self.plan = plan
+    self._isExpanded = isExpanded
+    self.glassNamespace = glassNamespace
+    self.maximumExpandedHeight = maximumExpandedHeight
+  }
+  @Environment(\.theme) private var theme
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var completedCount: Int {
-        plan.entries.count { $0.status == .completed }
-    }
+  private var completedCount: Int {
+    plan.entries.count { $0.status == .completed }
+  }
 
-    private var currentStep: PlanEntry? {
-        plan.entries.first { $0.status == .inProgress } ?? plan.entries.first { $0.status == .pending }
-    }
+  private var currentStep: PlanEntry? {
+    plan.entries.first { $0.status == .inProgress } ?? plan.entries.first { $0.status == .pending }
+  }
 
-    public var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Button {
-                // The reveal below commits layout atomically and owns only the
-                // content's pixel entrance.
-                isExpanded.toggle()
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "checklist")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text("\(completedCount)/\(plan.entries.count)")
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.tertiary)
-                    if isExpanded {
-                        Text("Progress")
-                            .font(.caption.weight(.semibold))
-                    }
-                    if !isExpanded, let current = currentStep {
-                        Text(current.content)
-                            .font(.caption)
-                            .lineLimit(1)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.down")
-                        .font(.caption2.weight(.semibold))
-                        .rotationEffect(.degrees(isExpanded ? 0 : -90))
-                        .foregroundStyle(.tertiary)
-                        .animation(Motion.indicator(reduceMotion: reduceMotion), value: isExpanded)
-                }
-                .contentShape(Rectangle())
+  public var body: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      Button {
+        // The reveal below commits layout atomically and owns only the
+        // content's pixel entrance.
+        isExpanded.toggle()
+      } label: {
+        HStack(spacing: 6) {
+          Image(systemName: "checklist")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          Text("\(completedCount)/\(plan.entries.count)")
+            .font(.caption2.monospacedDigit())
+            .foregroundStyle(.tertiary)
+          if isExpanded {
+            Text("Progress")
+              .font(.caption.weight(.semibold))
+          }
+          if !isExpanded, let current = currentStep {
+            Text(current.content)
+              .font(.caption)
+              .lineLimit(1)
+              .foregroundStyle(.secondary)
+          }
+          Spacer(minLength: 0)
+          Image(systemName: "chevron.down")
+            .font(.caption2.weight(.semibold))
+            .rotationEffect(.degrees(isExpanded ? 0 : -90))
+            .foregroundStyle(.tertiary)
+            .animation(Motion.indicator(reduceMotion: reduceMotion), value: isExpanded)
+        }
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .expandedHitTarget(
+        base: 24,
+        minimum: Typography.minimumInteractiveTargetSize
+      )
+      .accessibilityLabel("Progress, \(completedCount) of \(plan.entries.count) done")
+      .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+      .accessibilityAddTraits(.isButton)
+
+      TranscriptDisclosureContentReveal(isExpanded: isExpanded) {
+        Group {
+          if let maximumExpandedHeight {
+            ViewThatFits(in: .vertical) {
+              entries
+              ScrollView {
+                entries
+              }
+              .scrollIndicators(.visible)
             }
-            .buttonStyle(.plain)
-            .expandedHitTarget(
-                base: 24,
-                minimum: Typography.minimumInteractiveTargetSize
-            )
-            .accessibilityLabel("Progress, \(completedCount) of \(plan.entries.count) done")
-            .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
-            .accessibilityAddTraits(.isButton)
-
-            TranscriptDisclosureContentReveal(isExpanded: isExpanded) {
-                Group {
-                    if let maximumExpandedHeight {
-                        ViewThatFits(in: .vertical) {
-                            entries
-                            ScrollView {
-                                entries
-                            }
-                            .scrollIndicators(.visible)
-                        }
-                        .frame(maxHeight: maximumExpandedHeight)
-                        // A flexible frame accepts the full proposed height up
-                        // to its cap. Use its ideal height so short plans hug
-                        // their rows; overflowing plans still scroll at the cap.
-                        .fixedSize(horizontal: false, vertical: true)
-                    } else {
-                        entries
-                    }
-                }
-                .padding(.top, 6)
-            }
+            .frame(maxHeight: maximumExpandedHeight)
+            // A flexible frame accepts the full proposed height up
+            // to its cap. Use its ideal height so short plans hug
+            // their rows; overflowing plans still scroll at the cap.
+            .fixedSize(horizontal: false, vertical: true)
+          } else {
+            entries
+          }
         }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .composerGlassSurface(
-            cornerRadius: ComposerGlassStyle.accessoryCornerRadius,
-            id: .todos,
-            in: glassNamespace
-        )
+        .padding(.top, 6)
+      }
     }
+    .padding(10)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .composerGlassSurface(
+      cornerRadius: ComposerGlassStyle.accessoryCornerRadius,
+      id: .todos,
+      in: glassNamespace
+    )
+  }
 
-    private var entries: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            ForEach(Array(plan.entries.enumerated()), id: \.offset) { _, entry in
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Image(systemName: symbol(for: entry.status))
-                        .foregroundStyle(color(for: entry.status))
-                        .font(.caption)
-                    Text(entry.content)
-                        .font(.callout.weight(entry.status == .inProgress ? .medium : .regular))
-                        .strikethrough(entry.status == .completed, color: .secondary)
-                        .foregroundStyle(textStyle(for: entry.status))
-                }
-            }
+  private var entries: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      ForEach(Array(plan.entries.enumerated()), id: \.offset) { _, entry in
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+          Image(systemName: symbol(for: entry.status))
+            .foregroundStyle(color(for: entry.status))
+            .font(.caption)
+          Text(entry.content)
+            .font(.callout.weight(entry.status == .inProgress ? .medium : .regular))
+            .strikethrough(entry.status == .completed, color: .secondary)
+            .foregroundStyle(textStyle(for: entry.status))
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+      }
     }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
 
-    private func symbol(for status: PlanEntryStatus) -> String {
-        switch status {
-        case .pending: return "circle"
-        case .inProgress: return "circle.lefthalf.filled"
-        case .completed: return "checkmark.circle.fill"
-        }
+  private func symbol(for status: PlanEntryStatus) -> String {
+    switch status {
+    case .pending: return "circle"
+    case .inProgress: return "circle.lefthalf.filled"
+    case .completed: return "checkmark.circle.fill"
     }
+  }
 
-    private func color(for status: PlanEntryStatus) -> Color {
-        switch status {
-        case .pending: return Color.secondary.opacity(0.6)
-        case .inProgress: return Color.primary
-        case .completed: return theme.statusOK
-        }
+  private func color(for status: PlanEntryStatus) -> Color {
+    switch status {
+    case .pending: return Color.secondary.opacity(0.6)
+    case .inProgress: return Color.primary
+    case .completed: return theme.statusOK
     }
+  }
 
-    private func textStyle(for status: PlanEntryStatus) -> AnyShapeStyle {
-        switch status {
-        case .pending: return AnyShapeStyle(.secondary)
-        case .inProgress: return AnyShapeStyle(Color.primary)
-        case .completed: return AnyShapeStyle(.secondary)
-        }
+  private func textStyle(for status: PlanEntryStatus) -> AnyShapeStyle {
+    switch status {
+    case .pending: return AnyShapeStyle(.secondary)
+    case .inProgress: return AnyShapeStyle(Color.primary)
+    case .completed: return AnyShapeStyle(.secondary)
     }
+  }
 }
 
 #Preview {
-    @Previewable @State var isExpanded = false
-    return TodoPanelView(
-        plan: Plan(entries: [
-            PlanEntry(content: "Read the existing code", priority: .high, status: .completed),
-            PlanEntry(content: "Implement the change", priority: .medium, status: .inProgress),
-            PlanEntry(content: "Add tests", priority: .low, status: .pending),
-        ]),
-        isExpanded: $isExpanded
-    )
-    .padding()
-    .frame(width: 520)
+  @Previewable @State var isExpanded = false
+  return TodoPanelView(
+    plan: Plan(entries: [
+      PlanEntry(content: "Read the existing code", priority: .high, status: .completed),
+      PlanEntry(content: "Implement the change", priority: .medium, status: .inProgress),
+      PlanEntry(content: "Add tests", priority: .low, status: .pending),
+    ]),
+    isExpanded: $isExpanded
+  )
+  .padding()
+  .frame(width: 520)
 }

@@ -9,327 +9,327 @@ import Foundation
 // CUA's macOS driver (trycua/cua, b8a0f32a0).
 @_silgen_name("_AXUIElementGetWindow")
 private func AXUIElementGetWindowID(
-    _ element: AXUIElement,
-    _ windowID: UnsafeMutablePointer<CGWindowID>
+  _ element: AXUIElement,
+  _ windowID: UnsafeMutablePointer<CGWindowID>
 ) -> AXError
 
 func computerUseWindowID(for element: AXUIElement) -> CGWindowID? {
-    var pid: pid_t = 0
-    let targetPID = AXUIElementGetPid(element, &pid) == .success ? pid : nil
-    return computerUsePerformAccessibilityRead(targetPID: targetPID) {
-        var windowID: CGWindowID = 0
-        guard AXUIElementGetWindowID(element, &windowID) == .success, windowID != 0 else {
-            return nil
-        }
-        return windowID
+  var pid: pid_t = 0
+  let targetPID = AXUIElementGetPid(element, &pid) == .success ? pid : nil
+  return computerUsePerformAccessibilityRead(targetPID: targetPID) {
+    var windowID: CGWindowID = 0
+    guard AXUIElementGetWindowID(element, &windowID) == .success, windowID != 0 else {
+      return nil
     }
+    return windowID
+  }
 }
 
 func computerUseWindowIsOnVisibleSpace(
-    _ windowID: CGWindowID,
-    windowInfo: [[String: Any]]
+  _ windowID: CGWindowID,
+  windowInfo: [[String: Any]]
 ) -> Bool {
-    windowInfo.contains { info in
-        (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value == windowID
-    }
+  windowInfo.contains { info in
+    (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value == windowID
+  }
 }
 
 extension ComputerUseBridge {
-    private func mainWindow(_ application: AXUIElement) throws -> AXUIElement {
-        let candidates =
-            [
-                elementAttribute(application, kAXFocusedWindowAttribute),
-                elementAttribute(application, kAXMainWindowAttribute),
-            ].compactMap { $0 } + elementsAttribute(application, kAXWindowsAttribute)
-        if let window = candidates.first(where: { candidate in
-            stringAttribute(candidate, kAXRoleAttribute) == (kAXWindowRole as String)
-        }) {
-            return window
-        }
-        throw BridgeError("The app has no accessible window")
+  private func mainWindow(_ application: AXUIElement) throws -> AXUIElement {
+    let candidates =
+      [
+        elementAttribute(application, kAXFocusedWindowAttribute),
+        elementAttribute(application, kAXMainWindowAttribute),
+      ].compactMap { $0 } + elementsAttribute(application, kAXWindowsAttribute)
+    if let window = candidates.first(where: { candidate in
+      stringAttribute(candidate, kAXRoleAttribute) == (kAXWindowRole as String)
+    }) {
+      return window
     }
+    throw BridgeError("The app has no accessible window")
+  }
 
-    /// Keep a session attached to one composited window even if another Space
-    /// changes the app's focused/main window. If that window closes, fall back
-    /// to the app's current main window and establish a new identity.
-    /// Re-pins the session to a caller-chosen window from the inventory, so a
-    /// multi-window app can actually be navigated.
-    func selectSessionWindow(
-        sessionID: String,
-        application: AXUIElement,
-        requestedWindowID: CGWindowID
-    ) throws {
-        guard
-            elementsAttribute(application, kAXWindowsAttribute).contains(where: {
-                computerUseWindowID(for: $0) == requestedWindowID
-            })
-        else {
-            throw BridgeError(
-                "That window does not belong to this app. Use a windowId from the app state's windows list."
-            )
-        }
-        lock.withLock { windowIDBySession[sessionID] = requestedWindowID }
+  /// Keep a session attached to one composited window even if another Space
+  /// changes the app's focused/main window. If that window closes, fall back
+  /// to the app's current main window and establish a new identity.
+  /// Re-pins the session to a caller-chosen window from the inventory, so a
+  /// multi-window app can actually be navigated.
+  func selectSessionWindow(
+    sessionID: String,
+    application: AXUIElement,
+    requestedWindowID: CGWindowID
+  ) throws {
+    guard
+      elementsAttribute(application, kAXWindowsAttribute).contains(where: {
+        computerUseWindowID(for: $0) == requestedWindowID
+      })
+    else {
+      throw BridgeError(
+        "That window does not belong to this app. Use a windowId from the app state's windows list."
+      )
     }
+    lock.withLock { windowIDBySession[sessionID] = requestedWindowID }
+  }
 
-    func sessionWindow(
-        sessionID: String,
-        application: AXUIElement,
-        pid: pid_t
-    ) throws -> (element: AXUIElement, windowID: CGWindowID?) {
-        var lastError: Error?
-        // A successful LaunchServices completion only means the process is
-        // running. Native Computer Use waits for the first accessible window
-        // before returning state, so allow normal app startup to settle here.
-        // Windows on another Space are still published, so this never needs to
-        // activate the app to find them.
-        for attempt in 0..<80 {
-            do {
-                return try availableSessionWindow(
-                    sessionID: sessionID,
-                    application: application,
-                    pid: pid
-                )
-            } catch {
-                lastError = error
-                if attempt < 79 { Thread.sleep(forTimeInterval: 0.1) }
-            }
-        }
-        throw lastError ?? BridgeError("The app has no accessible window")
-    }
-
-    private func availableSessionWindow(
-        sessionID: String,
-        application: AXUIElement,
-        pid: pid_t
-    ) throws -> (element: AXUIElement, windowID: CGWindowID?) {
-        let pinnedID = lock.withLock { windowIDBySession[sessionID] }
-        if let pinnedID {
-            // AXWindows comes back empty while the app's windows are on
-            // another Space, which would silently drop the pin and re-resolve
-            // to whatever is focused. The focused/main windows still resolve
-            // then, so search those too.
-            let candidates =
-                elementsAttribute(application, kAXWindowsAttribute)
-                + [
-                    elementAttribute(application, kAXFocusedWindowAttribute),
-                    elementAttribute(application, kAXMainWindowAttribute),
-                ].compactMap { $0 }
-            if let pinned = candidates.first(where: { computerUseWindowID(for: $0) == pinnedID }) {
-                return (pinned, pinnedID)
-            }
-        }
-
-        let window = try mainWindow(application)
-        let windowID =
-            computerUseWindowID(for: window)
-            ?? frame(of: window).flatMap { matchingWindowID(pid: pid, frame: $0) }
-        lock.withLock {
-            if let windowID {
-                windowIDBySession[sessionID] = windowID
-            } else {
-                windowIDBySession.removeValue(forKey: sessionID)
-            }
-        }
-        return (window, windowID)
-    }
-
-    /// Modal sheets attached to a window. Apps are inconsistent about the
-    /// `AXSheets` attribute — Chess leaves it empty and exposes the sheet as
-    /// a plain child — so fall back to a role scan of the children.
-    /// The element the system reports at a screen point, which is the only
-    /// authority on where a control really is.
-    private func elementAtPosition(
-        application: AXUIElement,
-        point: CGPoint
-    ) -> AXUIElement? {
-        var pid: pid_t = 0
-        let targetPID = AXUIElementGetPid(application, &pid) == .success ? pid : nil
-        return computerUsePerformAccessibilityRead(targetPID: targetPID) {
-            var hit: AXUIElement?
-            guard
-                AXUIElementCopyElementAtPosition(
-                    application,
-                    Float(point.x),
-                    Float(point.y),
-                    &hit
-                ) == .success
-            else { return nil }
-            return hit
-        }
-    }
-
-    private func leafElements(
-        of element: AXUIElement,
-        limit: Int,
-        depth: Int = 0,
-        found: inout [AXUIElement]
-    ) {
-        guard found.count < limit, depth <= 8 else { return }
-        let children = elementsAttribute(element, kAXChildrenAttribute)
-        guard !children.isEmpty else {
-            if let box = frame(of: element), box.width > 8, box.height > 8 {
-                found.append(element)
-            }
-            return
-        }
-        for child in children {
-            leafElements(of: child, limit: limit, depth: depth + 1, found: &found)
-        }
-    }
-
-    /// Whether this window publishes upside-down content, established once per
-    /// window by hit-testing a sample of its controls. Chess is the case in
-    /// the wild: its SceneKit board reports view-space coordinates, so every
-    /// piece resolves to its mirror image.
-    func windowContentIsFlipped(
-        application: AXUIElement,
-        window: AXUIElement,
-        windowID: CGWindowID?,
-        windowFrame: CGRect
-    ) -> Bool {
-        if let windowID, let cached = lock.withLock({ flippedContentWindows[windowID] }) {
-            return cached
-        }
-        var samples: [AXUIElement] = []
-        leafElements(of: window, limit: 12, found: &samples)
-        var direct = 0
-        var mirrored = 0
-        for sample in samples {
-            guard let box = frame(of: sample) else { continue }
-            if let hit = elementAtPosition(
-                application: application,
-                point: CGPoint(x: box.midX, y: box.midY)
-            ), CFEqual(hit, sample) {
-                direct += 1
-                continue
-            }
-            let mirroredBox = computerUseMirroredFrame(box, in: windowFrame)
-            if let hit = elementAtPosition(
-                application: application,
-                point: CGPoint(x: mirroredBox.midX, y: mirroredBox.midY)
-            ), CFEqual(hit, sample) {
-                mirrored += 1
-            }
-        }
-        let flipped = computerUseFramesAreFlipped(
-            directHits: direct,
-            mirroredHits: mirrored,
-            samples: samples.count
+  func sessionWindow(
+    sessionID: String,
+    application: AXUIElement,
+    pid: pid_t
+  ) throws -> (element: AXUIElement, windowID: CGWindowID?) {
+    var lastError: Error?
+    // A successful LaunchServices completion only means the process is
+    // running. Native Computer Use waits for the first accessible window
+    // before returning state, so allow normal app startup to settle here.
+    // Windows on another Space are still published, so this never needs to
+    // activate the app to find them.
+    for attempt in 0..<80 {
+      do {
+        return try availableSessionWindow(
+          sessionID: sessionID,
+          application: application,
+          pid: pid
         )
-        if flipped {
-            Log.computerUse.log(
-                "Window \(windowID.map(String.init) ?? "?", privacy: .public) publishes flipped element frames (\(mirrored, privacy: .public)/\(samples.count, privacy: .public) samples); correcting"
-            )
-        }
-        if let windowID { lock.withLock { flippedContentWindows[windowID] = flipped } }
-        return flipped
+      } catch {
+        lastError = error
+        if attempt < 79 { Thread.sleep(forTimeInterval: 0.1) }
+      }
+    }
+    throw lastError ?? BridgeError("The app has no accessible window")
+  }
+
+  private func availableSessionWindow(
+    sessionID: String,
+    application: AXUIElement,
+    pid: pid_t
+  ) throws -> (element: AXUIElement, windowID: CGWindowID?) {
+    let pinnedID = lock.withLock { windowIDBySession[sessionID] }
+    if let pinnedID {
+      // AXWindows comes back empty while the app's windows are on
+      // another Space, which would silently drop the pin and re-resolve
+      // to whatever is focused. The focused/main windows still resolve
+      // then, so search those too.
+      let candidates =
+        elementsAttribute(application, kAXWindowsAttribute)
+        + [
+          elementAttribute(application, kAXFocusedWindowAttribute),
+          elementAttribute(application, kAXMainWindowAttribute),
+        ].compactMap { $0 }
+      if let pinned = candidates.first(where: { computerUseWindowID(for: $0) == pinnedID }) {
+        return (pinned, pinnedID)
+      }
     }
 
-    /// Corrects one element's frame in a flipped window. Per element, because
-    /// the flip is not window-wide: Chess reports its title bar correctly and
-    /// only its board upside down, so anything that already resolves to
-    /// itself is left untouched.
-    func correctedFrame(
-        of element: AXUIElement,
-        reported: CGRect,
-        application: AXUIElement,
-        windowFrame: CGRect
-    ) -> CGRect {
-        if let hit = elementAtPosition(
-            application: application,
-            point: CGPoint(x: reported.midX, y: reported.midY)
-        ), CFEqual(hit, element) {
-            return reported
-        }
-        let mirrored = computerUseMirroredFrame(reported, in: windowFrame)
-        if let hit = elementAtPosition(
-            application: application,
-            point: CGPoint(x: mirrored.midX, y: mirrored.midY)
-        ), CFEqual(hit, element) {
-            return mirrored
-        }
-        // Neither position resolves to this element (occluded, or a container
-        // whose hit-test lands on a child). Reporting the app's own value
-        // beats inventing one.
-        return reported
+    let window = try mainWindow(application)
+    let windowID =
+      computerUseWindowID(for: window)
+      ?? frame(of: window).flatMap { matchingWindowID(pid: pid, frame: $0) }
+    lock.withLock {
+      if let windowID {
+        windowIDBySession[sessionID] = windowID
+      } else {
+        windowIDBySession.removeValue(forKey: sessionID)
+      }
     }
+    return (window, windowID)
+  }
 
-    /// Every window the app currently exposes, so a caller can see that an
-    /// action opened a new one (⌘N in a document app) instead of silently
-    /// staring at the window the session happens to be pinned to.
-    func windowInventory(
-        application: AXUIElement,
-        pinnedWindowID: CGWindowID?
-    ) -> [[String: Any]] {
-        let focusedID = elementAttribute(application, kAXFocusedWindowAttribute)
-            .flatMap { computerUseWindowID(for: $0) }
-        return elementsAttribute(application, kAXWindowsAttribute).compactMap { candidate in
-            guard let id = computerUseWindowID(for: candidate) else { return nil }
-            var entry: [String: Any] = [
-                "windowId": Int(id),
-                "isSessionWindow": id == pinnedWindowID,
-                "isFocused": id == focusedID,
-                "hasModalSheet": !sheetElements(of: candidate).isEmpty,
-                "isOnActiveSpace": windowIsOnVisibleSpace(id),
-            ]
-            if let title = stringAttribute(candidate, kAXTitleAttribute), !title.isEmpty {
-                entry["title"] = title
-            }
-            if let frame = frame(of: candidate) { entry["screenBounds"] = frameObject(frame) }
-            return entry
-        }
+  /// Modal sheets attached to a window. Apps are inconsistent about the
+  /// `AXSheets` attribute — Chess leaves it empty and exposes the sheet as
+  /// a plain child — so fall back to a role scan of the children.
+  /// The element the system reports at a screen point, which is the only
+  /// authority on where a control really is.
+  private func elementAtPosition(
+    application: AXUIElement,
+    point: CGPoint
+  ) -> AXUIElement? {
+    var pid: pid_t = 0
+    let targetPID = AXUIElementGetPid(application, &pid) == .success ? pid : nil
+    return computerUsePerformAccessibilityRead(targetPID: targetPID) {
+      var hit: AXUIElement?
+      guard
+        AXUIElementCopyElementAtPosition(
+          application,
+          Float(point.x),
+          Float(point.y),
+          &hit
+        ) == .success
+      else { return nil }
+      return hit
     }
+  }
 
-    func sheetElements(of window: AXUIElement) -> [AXUIElement] {
-        let declared = elementsAttribute(window, "AXSheets")
-        if !declared.isEmpty { return declared }
-        return elementsAttribute(window, kAXChildrenAttribute).filter {
-            stringAttribute($0, kAXRoleAttribute) == "AXSheet"
-        }
+  private func leafElements(
+    of element: AXUIElement,
+    limit: Int,
+    depth: Int = 0,
+    found: inout [AXUIElement]
+  ) {
+    guard found.count < limit, depth <= 8 else { return }
+    let children = elementsAttribute(element, kAXChildrenAttribute)
+    guard !children.isEmpty else {
+      if let box = frame(of: element), box.width > 8, box.height > 8 {
+        found.append(element)
+      }
+      return
     }
+    for child in children {
+      leafElements(of: child, limit: limit, depth: depth + 1, found: &found)
+    }
+  }
 
-    /// A sheet is its own WindowServer window sitting inside its parent's
-    /// bounds, and it is app-modal: events stamped with the parent's window
-    /// id are refused while it is up. Resolve the window that actually owns
-    /// the point so pointer events reach the dialog.
-    func deliveryTarget(
-        point: CGPoint,
-        window: AXUIElement,
-        windowID: CGWindowID?,
-        windowFrame: CGRect?
-    ) -> (windowID: CGWindowID?, windowFrame: CGRect?) {
-        for sheet in sheetElements(of: window) {
-            guard let sheetFrame = frame(of: sheet), sheetFrame.contains(point) else { continue }
-            return (computerUseWindowID(for: sheet) ?? windowID, sheetFrame)
-        }
-        return (windowID, windowFrame)
+  /// Whether this window publishes upside-down content, established once per
+  /// window by hit-testing a sample of its controls. Chess is the case in
+  /// the wild: its SceneKit board reports view-space coordinates, so every
+  /// piece resolves to its mirror image.
+  func windowContentIsFlipped(
+    application: AXUIElement,
+    window: AXUIElement,
+    windowID: CGWindowID?,
+    windowFrame: CGRect
+  ) -> Bool {
+    if let windowID, let cached = lock.withLock({ flippedContentWindows[windowID] }) {
+      return cached
     }
+    var samples: [AXUIElement] = []
+    leafElements(of: window, limit: 12, found: &samples)
+    var direct = 0
+    var mirrored = 0
+    for sample in samples {
+      guard let box = frame(of: sample) else { continue }
+      if let hit = elementAtPosition(
+        application: application,
+        point: CGPoint(x: box.midX, y: box.midY)
+      ), CFEqual(hit, sample) {
+        direct += 1
+        continue
+      }
+      let mirroredBox = computerUseMirroredFrame(box, in: windowFrame)
+      if let hit = elementAtPosition(
+        application: application,
+        point: CGPoint(x: mirroredBox.midX, y: mirroredBox.midY)
+      ), CFEqual(hit, sample) {
+        mirrored += 1
+      }
+    }
+    let flipped = computerUseFramesAreFlipped(
+      directHits: direct,
+      mirroredHits: mirrored,
+      samples: samples.count
+    )
+    if flipped {
+      Log.computerUse.log(
+        "Window \(windowID.map(String.init) ?? "?", privacy: .public) publishes flipped element frames (\(mirrored, privacy: .public)/\(samples.count, privacy: .public) samples); correcting"
+      )
+    }
+    if let windowID { lock.withLock { flippedContentWindows[windowID] = flipped } }
+    return flipped
+  }
 
-    private func matchingWindowID(pid: pid_t, frame: CGRect) -> CGWindowID? {
-        guard
-            let windows = CGWindowListCopyWindowInfo(
-                [.excludeDesktopElements],
-                kCGNullWindowID
-            ) as? [[String: Any]]
-        else { return nil }
-        return windows.compactMap { info -> (id: CGWindowID, overlap: CGFloat)? in
-            guard (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == pid,
-                let number = info[kCGWindowNumber as String] as? NSNumber,
-                let bounds = info[kCGWindowBounds as String] as? NSDictionary,
-                let candidate = CGRect(dictionaryRepresentation: bounds)
-            else { return nil }
-            let overlap = candidate.intersection(frame)
-            return (number.uint32Value, overlap.width * overlap.height)
-        }
-        .max(by: { $0.overlap < $1.overlap })?.id
+  /// Corrects one element's frame in a flipped window. Per element, because
+  /// the flip is not window-wide: Chess reports its title bar correctly and
+  /// only its board upside down, so anything that already resolves to
+  /// itself is left untouched.
+  func correctedFrame(
+    of element: AXUIElement,
+    reported: CGRect,
+    application: AXUIElement,
+    windowFrame: CGRect
+  ) -> CGRect {
+    if let hit = elementAtPosition(
+      application: application,
+      point: CGPoint(x: reported.midX, y: reported.midY)
+    ), CFEqual(hit, element) {
+      return reported
     }
+    let mirrored = computerUseMirroredFrame(reported, in: windowFrame)
+    if let hit = elementAtPosition(
+      application: application,
+      point: CGPoint(x: mirrored.midX, y: mirrored.midY)
+    ), CFEqual(hit, element) {
+      return mirrored
+    }
+    // Neither position resolves to this element (occluded, or a container
+    // whose hit-test lands on a child). Reporting the app's own value
+    // beats inventing one.
+    return reported
+  }
 
-    func windowIsOnVisibleSpace(_ windowID: CGWindowID) -> Bool {
-        let info =
-            CGWindowListCopyWindowInfo(
-                [.optionOnScreenOnly, .excludeDesktopElements],
-                kCGNullWindowID
-            ) as? [[String: Any]] ?? []
-        return computerUseWindowIsOnVisibleSpace(windowID, windowInfo: info)
+  /// Every window the app currently exposes, so a caller can see that an
+  /// action opened a new one (⌘N in a document app) instead of silently
+  /// staring at the window the session happens to be pinned to.
+  func windowInventory(
+    application: AXUIElement,
+    pinnedWindowID: CGWindowID?
+  ) -> [[String: Any]] {
+    let focusedID = elementAttribute(application, kAXFocusedWindowAttribute)
+      .flatMap { computerUseWindowID(for: $0) }
+    return elementsAttribute(application, kAXWindowsAttribute).compactMap { candidate in
+      guard let id = computerUseWindowID(for: candidate) else { return nil }
+      var entry: [String: Any] = [
+        "windowId": Int(id),
+        "isSessionWindow": id == pinnedWindowID,
+        "isFocused": id == focusedID,
+        "hasModalSheet": !sheetElements(of: candidate).isEmpty,
+        "isOnActiveSpace": windowIsOnVisibleSpace(id),
+      ]
+      if let title = stringAttribute(candidate, kAXTitleAttribute), !title.isEmpty {
+        entry["title"] = title
+      }
+      if let frame = frame(of: candidate) { entry["screenBounds"] = frameObject(frame) }
+      return entry
     }
+  }
+
+  func sheetElements(of window: AXUIElement) -> [AXUIElement] {
+    let declared = elementsAttribute(window, "AXSheets")
+    if !declared.isEmpty { return declared }
+    return elementsAttribute(window, kAXChildrenAttribute).filter {
+      stringAttribute($0, kAXRoleAttribute) == "AXSheet"
+    }
+  }
+
+  /// A sheet is its own WindowServer window sitting inside its parent's
+  /// bounds, and it is app-modal: events stamped with the parent's window
+  /// id are refused while it is up. Resolve the window that actually owns
+  /// the point so pointer events reach the dialog.
+  func deliveryTarget(
+    point: CGPoint,
+    window: AXUIElement,
+    windowID: CGWindowID?,
+    windowFrame: CGRect?
+  ) -> (windowID: CGWindowID?, windowFrame: CGRect?) {
+    for sheet in sheetElements(of: window) {
+      guard let sheetFrame = frame(of: sheet), sheetFrame.contains(point) else { continue }
+      return (computerUseWindowID(for: sheet) ?? windowID, sheetFrame)
+    }
+    return (windowID, windowFrame)
+  }
+
+  private func matchingWindowID(pid: pid_t, frame: CGRect) -> CGWindowID? {
+    guard
+      let windows = CGWindowListCopyWindowInfo(
+        [.excludeDesktopElements],
+        kCGNullWindowID
+      ) as? [[String: Any]]
+    else { return nil }
+    return windows.compactMap { info -> (id: CGWindowID, overlap: CGFloat)? in
+      guard (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == pid,
+        let number = info[kCGWindowNumber as String] as? NSNumber,
+        let bounds = info[kCGWindowBounds as String] as? NSDictionary,
+        let candidate = CGRect(dictionaryRepresentation: bounds)
+      else { return nil }
+      let overlap = candidate.intersection(frame)
+      return (number.uint32Value, overlap.width * overlap.height)
+    }
+    .max(by: { $0.overlap < $1.overlap })?.id
+  }
+
+  func windowIsOnVisibleSpace(_ windowID: CGWindowID) -> Bool {
+    let info =
+      CGWindowListCopyWindowInfo(
+        [.optionOnScreenOnly, .excludeDesktopElements],
+        kCGNullWindowID
+      ) as? [[String: Any]] ?? []
+    return computerUseWindowIsOnVisibleSpace(windowID, windowInfo: info)
+  }
 }

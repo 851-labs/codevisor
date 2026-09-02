@@ -2,6 +2,6 @@ import CoreGraphics
 import Foundation
 
 struct TranscriptDisclosureViewportAnchor {
-    let id: UUID
-    let viewportTop: CGFloat
+  let id: UUID
+  let viewportTop: CGFloat
 }

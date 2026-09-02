@@ -5,94 +5,94 @@ import SwiftUI
 /// Connects one machine's harness model to the app environment and owns the
 /// pane's presentation. Section rendering lives in `HarnessMachineSections`.
 struct HarnessMachinePane: View {
-    @Environment(AppEnvironment.self) private var environment
-    @Environment(\.theme) private var theme
-    let machine: CodevisorMachine
+  @Environment(AppEnvironment.self) private var environment
+  @Environment(\.theme) private var theme
+  let machine: CodevisorMachine
 
-    @State private var model = HarnessMachineModel()
-    @State private var authenticationHarness: ServerHarness?
-    @State private var detailHarness: ServerHarness?
-    @State private var showsCustomEditor = false
-    @State private var editingCustomHarnessId: String?
+  @State private var model = HarnessMachineModel()
+  @State private var authenticationHarness: ServerHarness?
+  @State private var detailHarness: ServerHarness?
+  @State private var showsCustomEditor = false
+  @State private var editingCustomHarnessId: String?
 
-    private var serverId: String { machine.id }
+  private var serverId: String { machine.id }
 
-    var body: some View {
-        HarnessMachineSections(
-            model: model,
-            onScan: {
-                Task { presentAuthentication(await model.scan()) }
-            },
-            onAuthenticate: { authenticationHarness = $0 },
-            onShowDetail: { detailHarness = $0 },
-            onEditCustom: { id in
-                editingCustomHarnessId = id
-                showsCustomEditor = true
-            }
-        )
-        .task(id: serverId) {
-            model.configure(for: serverId, dependencies: modelDependencies)
-            presentAuthentication(await model.scan())
-        }
-        .onChange(of: environment.harnessCatalogRevision(for: serverId)) { _, _ in
-            // Lifecycle events and mutations invalidate the light catalog.
-            Task { presentAuthentication(await model.refresh()) }
-        }
-        .sheet(item: $authenticationHarness) { harness in
-            HarnessAuthenticationView(harness: harness) { model.replaceHarness($0) }
-        }
-        .sheet(item: $detailHarness) { harness in
-            HarnessDetailSheet(harness: harness)
-        }
-        .sheet(isPresented: $showsCustomEditor) {
-            CustomHarnessEditorSheet(editingId: editingCustomHarnessId) { harnesses in
-                model.replaceCatalog(harnesses, notifying: true)
-            }
-        }
-        .alert(
-            model.operationError?.title ?? "",
-            isPresented: Binding(
-                get: { model.operationError != nil },
-                set: { if !$0 { model.dismissOperationError() } }
-            ),
-            presenting: model.operationError
-        ) { _ in
-            Button("OK") {}
-                .settingsActionTint(theme)
-        } message: { error in
-            Text(error.message)
-        }
-        .environment(\.settingsMachineId, machine.id)
+  var body: some View {
+    HarnessMachineSections(
+      model: model,
+      onScan: {
+        Task { presentAuthentication(await model.scan()) }
+      },
+      onAuthenticate: { authenticationHarness = $0 },
+      onShowDetail: { detailHarness = $0 },
+      onEditCustom: { id in
+        editingCustomHarnessId = id
+        showsCustomEditor = true
+      }
+    )
+    .task(id: serverId) {
+      model.configure(for: serverId, dependencies: modelDependencies)
+      presentAuthentication(await model.scan())
     }
-
-    private var modelDependencies: HarnessMachineModel.Dependencies {
-        let environment = environment
-        let serverId = serverId
-        return HarnessMachineModel.Dependencies(
-            loadCatalog: {
-                try await environment.harnessService(for: serverId).allHarnesses()
-            },
-            rescanCatalog: {
-                try await environment.harnessService(for: serverId).rescanHarnesses()
-            },
-            setDesiredEnabled: { id, enabled in
-                try await environment.machines.client(for: serverId)
-                    .setHarnessDesiredEnabled(id: id, enabled: enabled)
-            },
-            startUpdate: { id in
-                try await environment.machines.client(for: serverId).updateHarness(id: id)
-            },
-            catalogDidChange: {
-                environment.harnessCatalogDidChange(onServer: serverId)
-            },
-            lifecycleDidChange: { lifecycle, id in
-                environment.setHarnessLifecycle(lifecycle, harnessId: id, onServer: serverId)
-            }
-        )
+    .onChange(of: environment.harnessCatalogRevision(for: serverId)) { _, _ in
+      // Lifecycle events and mutations invalidate the light catalog.
+      Task { presentAuthentication(await model.refresh()) }
     }
-
-    private func presentAuthentication(_ harness: ServerHarness?) {
-        guard authenticationHarness == nil, let harness else { return }
-        authenticationHarness = harness
+    .sheet(item: $authenticationHarness) { harness in
+      HarnessAuthenticationView(harness: harness) { model.replaceHarness($0) }
     }
+    .sheet(item: $detailHarness) { harness in
+      HarnessDetailSheet(harness: harness)
+    }
+    .sheet(isPresented: $showsCustomEditor) {
+      CustomHarnessEditorSheet(editingId: editingCustomHarnessId) { harnesses in
+        model.replaceCatalog(harnesses, notifying: true)
+      }
+    }
+    .alert(
+      model.operationError?.title ?? "",
+      isPresented: Binding(
+        get: { model.operationError != nil },
+        set: { if !$0 { model.dismissOperationError() } }
+      ),
+      presenting: model.operationError
+    ) { _ in
+      Button("OK") {}
+        .settingsActionTint(theme)
+    } message: { error in
+      Text(error.message)
+    }
+    .environment(\.settingsMachineId, machine.id)
+  }
+
+  private var modelDependencies: HarnessMachineModel.Dependencies {
+    let environment = environment
+    let serverId = serverId
+    return HarnessMachineModel.Dependencies(
+      loadCatalog: {
+        try await environment.harnessService(for: serverId).allHarnesses()
+      },
+      rescanCatalog: {
+        try await environment.harnessService(for: serverId).rescanHarnesses()
+      },
+      setDesiredEnabled: { id, enabled in
+        try await environment.machines.client(for: serverId)
+          .setHarnessDesiredEnabled(id: id, enabled: enabled)
+      },
+      startUpdate: { id in
+        try await environment.machines.client(for: serverId).updateHarness(id: id)
+      },
+      catalogDidChange: {
+        environment.harnessCatalogDidChange(onServer: serverId)
+      },
+      lifecycleDidChange: { lifecycle, id in
+        environment.setHarnessLifecycle(lifecycle, harnessId: id, onServer: serverId)
+      }
+    )
+  }
+
+  private func presentAuthentication(_ harness: ServerHarness?) {
+    guard authenticationHarness == nil, let harness else { return }
+    authenticationHarness = harness
+  }
 }

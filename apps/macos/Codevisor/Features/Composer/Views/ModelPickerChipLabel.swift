@@ -1,34 +1,34 @@
 import SwiftUI
 
 struct ModelPickerChipLabel: View {
-    let group: ModelMenuGroup?
-    let modelName: String?
+  let group: ModelMenuGroup?
+  let modelName: String?
 
-    var body: some View {
-        HStack(spacing: 5) {
-            if let modelName {
-                if let group {
-                    HarnessIcon(
-                        harnessId: group.id,
-                        fallbackSymbolName: group.symbolName,
-                        size: 14
-                    )
-                    .foregroundStyle(.secondary)
-                    .frame(width: 16, height: 16)
-                    .accessibilityHidden(true)
-                }
-
-                Text(modelName)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            } else {
-                Text("Select a harness")
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
+  var body: some View {
+    HStack(spacing: 5) {
+      if let modelName {
+        if let group {
+          HarnessIcon(
+            harnessId: group.id,
+            fallbackSymbolName: group.symbolName,
+            size: 14
+          )
+          .foregroundStyle(.secondary)
+          .frame(width: 16, height: 16)
+          .accessibilityHidden(true)
         }
-        .contentShape(Rectangle())
+
+        Text(modelName)
+          .foregroundStyle(.primary)
+          .lineLimit(1)
+          .truncationMode(.tail)
+      } else {
+        Text("Select a harness")
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .truncationMode(.tail)
+      }
     }
+    .contentShape(Rectangle())
+  }
 }

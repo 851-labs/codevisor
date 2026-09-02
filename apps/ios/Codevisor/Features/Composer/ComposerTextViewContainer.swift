@@ -4,21 +4,21 @@ import UIKit
 /// own editor. Keeping the editor inside its controller hierarchy is required
 /// for UIKit to open the software keyboard from a programmatic focus request.
 final class ComposerTextViewContainer: UIView {
-    var activation: (() -> Void)?
-    var localEditor: HeightReportingTextView?
+  var activation: (() -> Void)?
+  var localEditor: HeightReportingTextView?
 
-    override func didMoveToWindow() {
-        super.didMoveToWindow()
-        activateIfPossible()
-    }
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    activateIfPossible()
+  }
 
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        ComposerTextViewHandoffRegistry.layoutEditor(ownedBy: self)
-        subviews.forEach { $0.frame = bounds }
-    }
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    ComposerTextViewHandoffRegistry.layoutEditor(ownedBy: self)
+    subviews.forEach { $0.frame = bounds }
+  }
 
-    func activateIfPossible() {
-        activation?()
-    }
+  func activateIfPossible() {
+    activation?()
+  }
 }

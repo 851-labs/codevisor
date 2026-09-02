@@ -6,44 +6,44 @@ import TranscriptKit
 
 @MainActor
 struct TranscriptWorkedRowsVisibilityTests {
-    @Test("Worked content is removed before virtualization while its header remains")
-    func collapsedRows() {
-        let messageID = UUID()
-        let message = AssistantMessage(
-            id: messageID,
-            turn: AssistantTurn(
-                entries: [
-                    .text(id: "commentary", markdown: "One\n\nTwo\n\nThree")
-                ],
-                textPhases: ["commentary": .commentary]
-            )
-        )
-        let rows = TranscriptActiveRowProjection.rows(for: .assistant(message))
-        let store = TranscriptDisclosureStore()
-        store.setExpanded(.turn(messageID), true)
+  @Test("Worked content is removed before virtualization while its header remains")
+  func collapsedRows() {
+    let messageID = UUID()
+    let message = AssistantMessage(
+      id: messageID,
+      turn: AssistantTurn(
+        entries: [
+          .text(id: "commentary", markdown: "One\n\nTwo\n\nThree")
+        ],
+        textPhases: ["commentary": .commentary]
+      )
+    )
+    let rows = TranscriptActiveRowProjection.rows(for: .assistant(message))
+    let store = TranscriptDisclosureStore()
+    store.setExpanded(.turn(messageID), true)
 
-        let initiallyExpanded = TranscriptWorkedRowsVisibility.present(
-            rows,
-            disclosure: store,
-            activeItem: .assistant(message),
-            runningSubagentToolCallIDs: []
-        )
-        #expect(initiallyExpanded.rows.contains(where: isWorkedContent))
+    let initiallyExpanded = TranscriptWorkedRowsVisibility.present(
+      rows,
+      disclosure: store,
+      activeItem: .assistant(message),
+      runningSubagentToolCallIDs: []
+    )
+    #expect(initiallyExpanded.rows.contains(where: isWorkedContent))
 
-        store.setExpanded(.turn(messageID), false)
-        let collapsed = TranscriptWorkedRowsVisibility.present(
-            rows,
-            disclosure: store,
-            activeItem: .assistant(message),
-            runningSubagentToolCallIDs: []
-        )
+    store.setExpanded(.turn(messageID), false)
+    let collapsed = TranscriptWorkedRowsVisibility.present(
+      rows,
+      disclosure: store,
+      activeItem: .assistant(message),
+      runningSubagentToolCallIDs: []
+    )
 
-        #expect(collapsed.rows.contains { $0.id == .assistantWorkedHeader(messageID, .planning) })
-        #expect(!collapsed.rows.contains(where: isWorkedContent))
-        #expect(collapsed.visibilityRevision != initiallyExpanded.visibilityRevision)
-    }
+    #expect(collapsed.rows.contains { $0.id == .assistantWorkedHeader(messageID, .planning) })
+    #expect(!collapsed.rows.contains(where: isWorkedContent))
+    #expect(collapsed.visibilityRevision != initiallyExpanded.visibilityRevision)
+  }
 
-    private func isWorkedContent(_ row: TranscriptPresentationRow) -> Bool {
-        row.workedSection?.role == .content
-    }
+  private func isWorkedContent(_ row: TranscriptPresentationRow) -> Bool {
+    row.workedSection?.role == .content
+  }
 }

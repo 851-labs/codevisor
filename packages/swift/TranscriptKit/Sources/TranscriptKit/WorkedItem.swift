@@ -4,260 +4,260 @@ import ACPKit
 /// A presentation item within the "Worked for…" section: reasoning text, a
 /// group of consecutive tool calls, or an inline lifecycle event.
 public struct ToolCallGroup: Identifiable, Sendable, Equatable {
-    public let id: String
-    public let calls: [ToolCall]
-    public let hasUnsettledCall: Bool
+  public let id: String
+  public let calls: [ToolCall]
+  public let hasUnsettledCall: Bool
 
-    /// Convenience initializer for detached callers such as previews. The
-    /// transcript grouper uses the internal initializer below so it can carry
-    /// the activity bit it already accumulated while grouping.
-    public init(calls: [ToolCall]) {
-        self.init(calls: calls, hasUnsettledCall: calls.contains { !$0.isSettled })
-    }
+  /// Convenience initializer for detached callers such as previews. The
+  /// transcript grouper uses the internal initializer below so it can carry
+  /// the activity bit it already accumulated while grouping.
+  public init(calls: [ToolCall]) {
+    self.init(calls: calls, hasUnsettledCall: calls.contains { !$0.isSettled })
+  }
 
-    public init(calls: [ToolCall], hasUnsettledCall: Bool) {
-        id = calls.first?.toolCallId ?? ""
-        self.calls = calls
-        self.hasUnsettledCall = hasUnsettledCall
-    }
+  public init(calls: [ToolCall], hasUnsettledCall: Bool) {
+    id = calls.first?.toolCallId ?? ""
+    self.calls = calls
+    self.hasUnsettledCall = hasUnsettledCall
+  }
 }
 
 public enum WorkedItem: Identifiable, Sendable, Equatable {
-    case text(id: String, markdown: String)
-    case toolGroup(ToolCallGroup)
-    case contextCompaction(id: String, status: ContextCompactionStatus)
-    /// A subagent spawn rendered as its own collapsible section with a nested
-    /// transcript (`AssistantTurn.subagentItems(_:)`), never folded into a
-    /// tool-group summary.
-    case subagent(id: String, call: ToolCall)
+  case text(id: String, markdown: String)
+  case toolGroup(ToolCallGroup)
+  case contextCompaction(id: String, status: ContextCompactionStatus)
+  /// A subagent spawn rendered as its own collapsible section with a nested
+  /// transcript (`AssistantTurn.subagentItems(_:)`), never folded into a
+  /// tool-group summary.
+  case subagent(id: String, call: ToolCall)
 
-    public var id: String {
-        switch self {
-        case let .text(id, _): return "wtext:\(id)"
-        case let .toolGroup(group): return "wgroup:\(group.id)"
-        case let .contextCompaction(id, _): return "wcompaction:\(id)"
-        case let .subagent(id, _): return "wagent:\(id)"
-        }
+  public var id: String {
+    switch self {
+    case let .text(id, _): return "wtext:\(id)"
+    case let .toolGroup(group): return "wgroup:\(group.id)"
+    case let .contextCompaction(id, _): return "wcompaction:\(id)"
+    case let .subagent(id, _): return "wagent:\(id)"
     }
+  }
 }
 
 extension AssistantTurn {
-    /// The worked-for entries grouped for display: consecutive tool calls are
-    /// collapsed into a single `toolGroup`, with reasoning text in between.
-    /// Excludes the final text answer — the finished-turn presentation.
-    public var workedItems: [WorkedItem] {
-        groupedItems(workedEntries)
+  /// The worked-for entries grouped for display: consecutive tool calls are
+  /// collapsed into a single `toolGroup`, with reasoning text in between.
+  /// Excludes the final text answer — the finished-turn presentation.
+  public var workedItems: [WorkedItem] {
+    groupedItems(workedEntries)
+  }
+
+  /// Worked items produced before the plan was proposed (exploration and
+  /// planning). When the turn has no plan this is the whole worked section, so
+  /// non-plan turns render exactly as before.
+  public var workedItemsBeforePlan: [WorkedItem] {
+    guard let boundary = planBoundary else { return workedItems }
+    return groupedItems(workedSlice(0..<min(boundary, entries.count)))
+  }
+
+  /// Worked items produced after the plan was proposed — the implementation
+  /// that follows approval — so they render below the plan card in their own
+  /// section. Empty until work follows the plan.
+  public var workedItemsAfterPlan: [WorkedItem] {
+    guard let boundary = planBoundary else { return [] }
+    return groupedItems(workedSlice(min(boundary, entries.count)..<entries.count))
+  }
+
+  /// Entries in `range`, minus the final-answer span (it renders separately).
+  private func workedSlice(_ range: Range<Int>) -> [TranscriptEntry] {
+    let finalIndex = finalTextIndex
+    return range.compactMap { index in index == finalIndex ? nil : entries[index] }
+  }
+
+  /// Every entry grouped in strict arrival order, including trailing text.
+  /// Used while the turn is generating so the transcript streams in place —
+  /// text and tool groups must never reorder around each other mid-turn.
+  public var streamingItems: [WorkedItem] {
+    groupedItems(entries)
+  }
+
+  /// A subagent's nested thread grouped with the same rules as the top
+  /// level. Because `subagents` is flat, an agent call inside this thread
+  /// becomes a `.subagent` item of its own — nesting recurses by lookup.
+  public func subagentItems(_ parentToolCallId: String) -> [WorkedItem] {
+    groupedItems(subagents[parentToolCallId]?.entries ?? [])
+  }
+
+  private func groupedItems(_ source: [TranscriptEntry]) -> [WorkedItem] {
+    var items: [WorkedItem] = []
+    var group: [ToolCall] = []
+    var groupHasUnsettledCall = false
+
+    func flush() {
+      guard !group.isEmpty else { return }
+      items.append(
+        .toolGroup(
+          ToolCallGroup(
+            calls: group,
+            hasUnsettledCall: groupHasUnsettledCall
+          )))
+      group = []
+      groupHasUnsettledCall = false
     }
 
-    /// Worked items produced before the plan was proposed (exploration and
-    /// planning). When the turn has no plan this is the whole worked section, so
-    /// non-plan turns render exactly as before.
-    public var workedItemsBeforePlan: [WorkedItem] {
-        guard let boundary = planBoundary else { return workedItems }
-        return groupedItems(workedSlice(0..<min(boundary, entries.count)))
-    }
-
-    /// Worked items produced after the plan was proposed — the implementation
-    /// that follows approval — so they render below the plan card in their own
-    /// section. Empty until work follows the plan.
-    public var workedItemsAfterPlan: [WorkedItem] {
-        guard let boundary = planBoundary else { return [] }
-        return groupedItems(workedSlice(min(boundary, entries.count)..<entries.count))
-    }
-
-    /// Entries in `range`, minus the final-answer span (it renders separately).
-    private func workedSlice(_ range: Range<Int>) -> [TranscriptEntry] {
-        let finalIndex = finalTextIndex
-        return range.compactMap { index in index == finalIndex ? nil : entries[index] }
-    }
-
-    /// Every entry grouped in strict arrival order, including trailing text.
-    /// Used while the turn is generating so the transcript streams in place —
-    /// text and tool groups must never reorder around each other mid-turn.
-    public var streamingItems: [WorkedItem] {
-        groupedItems(entries)
-    }
-
-    /// A subagent's nested thread grouped with the same rules as the top
-    /// level. Because `subagents` is flat, an agent call inside this thread
-    /// becomes a `.subagent` item of its own — nesting recurses by lookup.
-    public func subagentItems(_ parentToolCallId: String) -> [WorkedItem] {
-        groupedItems(subagents[parentToolCallId]?.entries ?? [])
-    }
-
-    private func groupedItems(_ source: [TranscriptEntry]) -> [WorkedItem] {
-        var items: [WorkedItem] = []
-        var group: [ToolCall] = []
-        var groupHasUnsettledCall = false
-
-        func flush() {
-            guard !group.isEmpty else { return }
-            items.append(
-                .toolGroup(
-                    ToolCallGroup(
-                        calls: group,
-                        hasUnsettledCall: groupHasUnsettledCall
-                    )))
-            group = []
-            groupHasUnsettledCall = false
-        }
-
-        for entry in source {
-            switch entry {
-            case let .text(id, markdown):
-                flush()
-                items.append(.text(id: id, markdown: markdown))
-            case let .tool(call) where call.kind == .agent || subagents[call.toolCallId] != nil:
-                flush()
-                items.append(.subagent(id: call.toolCallId, call: call))
-            case let .tool(call):
-                group.append(call)
-                groupHasUnsettledCall = groupHasUnsettledCall || !call.isSettled
-            case let .contextCompaction(id, status):
-                flush()
-                items.append(.contextCompaction(id: id, status: status))
-            }
-        }
+    for entry in source {
+      switch entry {
+      case let .text(id, markdown):
         flush()
-        return items
+        items.append(.text(id: id, markdown: markdown))
+      case let .tool(call) where call.kind == .agent || subagents[call.toolCallId] != nil:
+        flush()
+        items.append(.subagent(id: call.toolCallId, call: call))
+      case let .tool(call):
+        group.append(call)
+        groupHasUnsettledCall = groupHasUnsettledCall || !call.isSettled
+      case let .contextCompaction(id, status):
+        flush()
+        items.append(.contextCompaction(id: id, status: status))
+      }
     }
+    flush()
+    return items
+  }
 
-    /// Tool-call ids not yet followed by prose or a compaction marker — the
-    /// calls whose groups follow-the-work auto-expansion keeps open. One
-    /// reverse scan that stops at the first blocking entry; probing each
-    /// group with `isTrailingToolGroup` instead made the active turn's item
-    /// list O(groups × entries) on every streaming flush. Semantics are
-    /// identical: an id is in this set exactly when `isTrailingToolGroup`
-    /// returns true for it.
-    public var trailingToolCallIds: Set<String> {
-        var ids: Set<String> = []
-        for entry in entries.reversed() {
-            switch entry {
-            case let .tool(call):
-                ids.insert(call.toolCallId)
-            case let .text(_, markdown):
-                if !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return ids }
-            case .contextCompaction:
-                return ids
-            }
-        }
+  /// Tool-call ids not yet followed by prose or a compaction marker — the
+  /// calls whose groups follow-the-work auto-expansion keeps open. One
+  /// reverse scan that stops at the first blocking entry; probing each
+  /// group with `isTrailingToolGroup` instead made the active turn's item
+  /// list O(groups × entries) on every streaming flush. Semantics are
+  /// identical: an id is in this set exactly when `isTrailingToolGroup`
+  /// returns true for it.
+  public var trailingToolCallIds: Set<String> {
+    var ids: Set<String> = []
+    for entry in entries.reversed() {
+      switch entry {
+      case let .tool(call):
+        ids.insert(call.toolCallId)
+      case let .text(_, markdown):
+        if !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return ids }
+      case .contextCompaction:
         return ids
+      }
     }
+    return ids
+  }
 
-    /// True while the tool group ending in `toolCallId` is still the tail of
-    /// the streamed transcript — no text has followed it yet. Drives the
-    /// group's auto-expansion: open while the model is working through it,
-    /// collapsed once it moves on to prose.
-    public func isTrailingToolGroup(lastToolCallId toolCallId: String) -> Bool {
-        guard
-            let index = entries.lastIndex(where: {
-                if case let .tool(call) = $0 { return call.toolCallId == toolCallId }
-                return false
-            })
-        else { return false }
-        return !entries[entries.index(after: index)...].contains { entry in
-            switch entry {
-            case let .text(_, markdown):
-                !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            case .contextCompaction:
-                true
-            case .tool:
-                false
-            }
-        }
+  /// True while the tool group ending in `toolCallId` is still the tail of
+  /// the streamed transcript — no text has followed it yet. Drives the
+  /// group's auto-expansion: open while the model is working through it,
+  /// collapsed once it moves on to prose.
+  public func isTrailingToolGroup(lastToolCallId toolCallId: String) -> Bool {
+    guard
+      let index = entries.lastIndex(where: {
+        if case let .tool(call) = $0 { return call.toolCallId == toolCallId }
+        return false
+      })
+    else { return false }
+    return !entries[entries.index(after: index)...].contains { entry in
+      switch entry {
+      case let .text(_, markdown):
+        !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      case .contextCompaction:
+        true
+      case .tool:
+        false
+      }
     }
+  }
 }
 
 /// Summarizes a group of tool calls into a one-line description and an icon,
 /// e.g. "Read 6 files" or "Searched code, ran 2 commands".
 public enum ToolCallSummary {
-    public enum Category: Equatable {
-        case edit, read, search, webSearch, execute, fetch, delete, move, agent, question, other
-    }
+  public enum Category: Equatable {
+    case edit, read, search, webSearch, execute, fetch, delete, move, agent, question, other
+  }
 
-    public static func category(_ kind: ToolKind?) -> Category {
-        switch kind {
-        case .edit: return .edit
-        case .read: return .read
-        case .search: return .search
-        case .webSearch: return .webSearch
-        case .execute: return .execute
-        case .fetch: return .fetch
-        case .delete: return .delete
-        case .move: return .move
-        case .agent: return .agent
-        case .question: return .question
-        default: return .other
-        }
+  public static func category(_ kind: ToolKind?) -> Category {
+    switch kind {
+    case .edit: return .edit
+    case .read: return .read
+    case .search: return .search
+    case .webSearch: return .webSearch
+    case .execute: return .execute
+    case .fetch: return .fetch
+    case .delete: return .delete
+    case .move: return .move
+    case .agent: return .agent
+    case .question: return .question
+    default: return .other
     }
+  }
 
-    public static func describe(_ calls: [ToolCall]) -> String {
-        guard !calls.isEmpty else { return "" }
-        if calls.allSatisfy(\.isIntegrationPresentationCall) {
-            return calls.count == 1 ? "Used an integration tool" : "Used \(calls.count) integration tools"
-        }
-        var order: [Category] = []
-        var counts: [Category: Int] = [:]
-        for call in calls {
-            let category = category(call.kind)
-            if counts[category] == nil { order.append(category) }
-            counts[category, default: 0] += 1
-        }
-        let phrases = order.map { phrase($0, counts[$0] ?? 0) }
-        return capitalizingFirst(join(phrases))
+  public static func describe(_ calls: [ToolCall]) -> String {
+    guard !calls.isEmpty else { return "" }
+    if calls.allSatisfy(\.isIntegrationPresentationCall) {
+      return calls.count == 1 ? "Used an integration tool" : "Used \(calls.count) integration tools"
     }
-
-    public static func symbol(_ calls: [ToolCall]) -> String {
-        if !calls.isEmpty, calls.allSatisfy(\.isIntegrationPresentationCall) {
-            return "puzzlepiece.extension"
-        }
-        var counts: [Category: Int] = [:]
-        for call in calls { counts[category(call.kind), default: 0] += 1 }
-        let dominant = counts.max { lhs, rhs in lhs.value < rhs.value }?.key ?? .other
-        switch dominant {
-        case .search, .webSearch: return "magnifyingglass"
-        case .execute: return "terminal"
-        case .edit: return "pencil"
-        case .read: return "doc.text"
-        case .fetch: return "globe"
-        case .delete: return "trash"
-        case .move: return "arrow.right.doc.on.clipboard"
-        case .agent: return "wand.and.sparkles"
-        case .question: return "questionmark.bubble"
-        case .other: return "wrench.and.screwdriver"
-        }
+    var order: [Category] = []
+    var counts: [Category: Int] = [:]
+    for call in calls {
+      let category = category(call.kind)
+      if counts[category] == nil { order.append(category) }
+      counts[category, default: 0] += 1
     }
+    let phrases = order.map { phrase($0, counts[$0] ?? 0) }
+    return capitalizingFirst(join(phrases))
+  }
 
-    // MARK: - Phrasing
-
-    public static func phrase(_ category: Category, _ count: Int) -> String {
-        let single = count == 1
-        switch category {
-        case .read: return single ? "read a file" : "read \(count) files"
-        case .search: return "searched code"
-        case .webSearch: return single ? "searched the web" : "ran \(count) web searches"
-        case .execute: return single ? "ran a command" : "ran \(count) commands"
-        case .edit: return single ? "edited a file" : "edited \(count) files"
-        case .fetch: return single ? "fetched a resource" : "fetched \(count) resources"
-        case .delete: return single ? "deleted a file" : "deleted \(count) files"
-        case .move: return single ? "moved a file" : "moved \(count) files"
-        case .agent: return single ? "ran an agent" : "ran \(count) agents"
-        case .question: return single ? "asked a question" : "asked \(count) questions"
-        case .other: return single ? "ran a tool" : "ran \(count) tools"
-        }
+  public static func symbol(_ calls: [ToolCall]) -> String {
+    if !calls.isEmpty, calls.allSatisfy(\.isIntegrationPresentationCall) {
+      return "puzzlepiece.extension"
     }
-
-    public static func join(_ phrases: [String]) -> String {
-        switch phrases.count {
-        case 0: return "ran tools"
-        case 1: return phrases[0]
-        case 2: return "\(phrases[0]) and \(phrases[1])"
-        default: return phrases.dropLast().joined(separator: ", ") + ", and " + (phrases.last ?? "")
-        }
+    var counts: [Category: Int] = [:]
+    for call in calls { counts[category(call.kind), default: 0] += 1 }
+    let dominant = counts.max { lhs, rhs in lhs.value < rhs.value }?.key ?? .other
+    switch dominant {
+    case .search, .webSearch: return "magnifyingglass"
+    case .execute: return "terminal"
+    case .edit: return "pencil"
+    case .read: return "doc.text"
+    case .fetch: return "globe"
+    case .delete: return "trash"
+    case .move: return "arrow.right.doc.on.clipboard"
+    case .agent: return "wand.and.sparkles"
+    case .question: return "questionmark.bubble"
+    case .other: return "wrench.and.screwdriver"
     }
+  }
 
-    public static func capitalizingFirst(_ string: String) -> String {
-        guard let first = string.first else { return string }
-        return first.uppercased() + string.dropFirst()
+  // MARK: - Phrasing
+
+  public static func phrase(_ category: Category, _ count: Int) -> String {
+    let single = count == 1
+    switch category {
+    case .read: return single ? "read a file" : "read \(count) files"
+    case .search: return "searched code"
+    case .webSearch: return single ? "searched the web" : "ran \(count) web searches"
+    case .execute: return single ? "ran a command" : "ran \(count) commands"
+    case .edit: return single ? "edited a file" : "edited \(count) files"
+    case .fetch: return single ? "fetched a resource" : "fetched \(count) resources"
+    case .delete: return single ? "deleted a file" : "deleted \(count) files"
+    case .move: return single ? "moved a file" : "moved \(count) files"
+    case .agent: return single ? "ran an agent" : "ran \(count) agents"
+    case .question: return single ? "asked a question" : "asked \(count) questions"
+    case .other: return single ? "ran a tool" : "ran \(count) tools"
     }
+  }
+
+  public static func join(_ phrases: [String]) -> String {
+    switch phrases.count {
+    case 0: return "ran tools"
+    case 1: return phrases[0]
+    case 2: return "\(phrases[0]) and \(phrases[1])"
+    default: return phrases.dropLast().joined(separator: ", ") + ", and " + (phrases.last ?? "")
+    }
+  }
+
+  public static func capitalizingFirst(_ string: String) -> String {
+    guard let first = string.first else { return string }
+    return first.uppercased() + string.dropFirst()
+  }
 }

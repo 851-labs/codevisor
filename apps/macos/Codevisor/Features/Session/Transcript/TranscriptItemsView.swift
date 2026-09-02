@@ -8,243 +8,243 @@ import SwiftUI
 /// sections. Shared by the top-level turn transcript and each nested subagent
 /// section, so a subagent's thread is literally the same UI, one level down.
 struct TranscriptItemsView: View {
-    let items: [WorkedItem]
-    @Environment(\.theme) private var theme
-    /// The owning turn: subagent threads are looked up here by tool call id.
-    let turn: AssistantTurn
-    let turnID: UUID
-    let isTurnActive: Bool
-    let animationPresentation: StreamingTextAnimationPresentation
-    let animationEnabled: Bool
-    /// Nil for the main turn; a tool-call id for the subagent transcript
-    /// bucket currently being rendered.
-    var parentToolCallID: String? = nil
-    var depth: Int = 0
+  let items: [WorkedItem]
+  @Environment(\.theme) private var theme
+  /// The owning turn: subagent threads are looked up here by tool call id.
+  let turn: AssistantTurn
+  let turnID: UUID
+  let isTurnActive: Bool
+  let animationPresentation: StreamingTextAnimationPresentation
+  let animationEnabled: Bool
+  /// Nil for the main turn; a tool-call id for the subagent transcript
+  /// bucket currently being rendered.
+  var parentToolCallID: String? = nil
+  var depth: Int = 0
 
-    /// Depth at which further subagent sections render as plain tool rows.
-    /// Real nesting is one level (subagents can't spawn subagents today);
-    /// the cap is a rendering guard, not a data limit.
-    private static let maxNestingDepth = 3
+  /// Depth at which further subagent sections render as plain tool rows.
+  /// Real nesting is one level (subagents can't spawn subagents today);
+  /// the cap is a rendering guard, not a data limit.
+  private static let maxNestingDepth = 3
 
-    var body: some View {
-        // One reverse scan per body evaluation; probing per group made this
-        // O(groups × entries) on every streaming flush.
-        let trailingToolCallIds = depth == 0 && isTurnActive ? turn.trailingToolCallIds : []
-        ForEach(items) { item in
-            switch item {
-            case let .text(entryID, markdown):
-                // Streaming render mode while the turn is live: commentary
-                // spans stream the same way the final answer does, so they get
-                // the same O(growing block) per-flush cost bound.
-                StreamingMarkdownView(
-                    markdown,
-                    isComplete: !isTurnActive,
-                    foregroundColor: theme.textSecondary,
-                    streamID: streamID(for: entryID),
-                    animationPresentation: animationPresentation,
-                    animationEnabled: animationEnabled
-                )
-            case let .toolGroup(group):
-                ToolGroupView(
-                    group: group,
-                    isTurnActive: isTurnActive,
-                    followsLatestWork: depth == 0 && isTurnActive
-                        && (group.calls.last.map { trailingToolCallIds.contains($0.toolCallId) } ?? false),
-                    automaticDisclosurePolicy: depth == 0
-                        ? .followLatestWork
-                        : .remainExpandedAfterActivity
-                )
-            case let .contextCompaction(_, status):
-                switch status {
-                case .started:
-                    ShimmeringText.compactingContext
-                case .completed:
-                    AgentStatusText.contextCompacted
-                case .failed:
-                    EmptyView()
-                }
-            case let .subagent(_, call):
-                if depth + 1 < Self.maxNestingDepth {
-                    SubagentSectionView(
-                        call: call,
-                        turn: turn,
-                        turnID: turnID,
-                        isTurnActive: isTurnActive,
-                        animationPresentation: animationPresentation,
-                        animationEnabled: animationEnabled,
-                        depth: depth + 1
-                    )
-                } else {
-                    ToolCallRow(call: call, isTurnActive: isTurnActive)
-                }
-            }
+  var body: some View {
+    // One reverse scan per body evaluation; probing per group made this
+    // O(groups × entries) on every streaming flush.
+    let trailingToolCallIds = depth == 0 && isTurnActive ? turn.trailingToolCallIds : []
+    ForEach(items) { item in
+      switch item {
+      case let .text(entryID, markdown):
+        // Streaming render mode while the turn is live: commentary
+        // spans stream the same way the final answer does, so they get
+        // the same O(growing block) per-flush cost bound.
+        StreamingMarkdownView(
+          markdown,
+          isComplete: !isTurnActive,
+          foregroundColor: theme.textSecondary,
+          streamID: streamID(for: entryID),
+          animationPresentation: animationPresentation,
+          animationEnabled: animationEnabled
+        )
+      case let .toolGroup(group):
+        ToolGroupView(
+          group: group,
+          isTurnActive: isTurnActive,
+          followsLatestWork: depth == 0 && isTurnActive
+            && (group.calls.last.map { trailingToolCallIds.contains($0.toolCallId) } ?? false),
+          automaticDisclosurePolicy: depth == 0
+            ? .followLatestWork
+            : .remainExpandedAfterActivity
+        )
+      case let .contextCompaction(_, status):
+        switch status {
+        case .started:
+          ShimmeringText.compactingContext
+        case .completed:
+          AgentStatusText.contextCompacted
+        case .failed:
+          EmptyView()
         }
-    }
-
-    private func streamID(for entryID: String) -> String {
-        if let parentToolCallID {
-            return TranscriptStreamingTextIdentity.subagent(
-                turnID: turnID,
-                parentToolCallID: parentToolCallID,
-                entryID: entryID
-            )
+      case let .subagent(_, call):
+        if depth + 1 < Self.maxNestingDepth {
+          SubagentSectionView(
+            call: call,
+            turn: turn,
+            turnID: turnID,
+            isTurnActive: isTurnActive,
+            animationPresentation: animationPresentation,
+            animationEnabled: animationEnabled,
+            depth: depth + 1
+          )
+        } else {
+          ToolCallRow(call: call, isTurnActive: isTurnActive)
         }
-        return TranscriptStreamingTextIdentity.main(turnID: turnID, entryID: entryID)
+      }
     }
+  }
+
+  private func streamID(for entryID: String) -> String {
+    if let parentToolCallID {
+      return TranscriptStreamingTextIdentity.subagent(
+        turnID: turnID,
+        parentToolCallID: parentToolCallID,
+        entryID: entryID
+      )
+    }
+    return TranscriptStreamingTextIdentity.main(turnID: turnID, entryID: entryID)
+  }
 }
 
 /// A subagent's thread, inline in the chat: a collapsible header row (the
 /// Task tool call) whose body is the subagent's own transcript rendered with
 /// the same components as the parent turn.
 struct SubagentSectionView: View {
-    let call: ToolCall
-    let turn: AssistantTurn
-    let turnID: UUID
-    let isTurnActive: Bool
-    let animationPresentation: StreamingTextAnimationPresentation
-    let animationEnabled: Bool
-    let depth: Int
-    @Environment(\.theme) private var theme
-    @Environment(\.transcriptDisclosure) private var disclosureStore
-    @Environment(\.runningSubagentToolCallIds) private var runningSubagentToolCallIds
-    @Environment(\.transcriptPerformAnchoredDisclosureChange) private var performAnchoredDisclosureChange
-    /// Transient one-shot guard for the settle collapse. Stays `@State`: it
-    /// only matters while the subagent is running/settling, which happens in
-    /// the mounted active row. A settled remount resets it harmlessly
-    /// (the settle onChange can't re-fire without a state change).
-    @State private var hasAutoCollapsed = false
+  let call: ToolCall
+  let turn: AssistantTurn
+  let turnID: UUID
+  let isTurnActive: Bool
+  let animationPresentation: StreamingTextAnimationPresentation
+  let animationEnabled: Bool
+  let depth: Int
+  @Environment(\.theme) private var theme
+  @Environment(\.transcriptDisclosure) private var disclosureStore
+  @Environment(\.runningSubagentToolCallIds) private var runningSubagentToolCallIds
+  @Environment(\.transcriptPerformAnchoredDisclosureChange) private var performAnchoredDisclosureChange
+  /// Transient one-shot guard for the settle collapse. Stays `@State`: it
+  /// only matters while the subagent is running/settling, which happens in
+  /// the mounted active row. A settled remount resets it harmlessly
+  /// (the settle onChange can't re-fire without a state change).
+  @State private var hasAutoCollapsed = false
 
-    // Disclosure hoisted to the session store (survives lazy remounts).
-    // Default open while running, collapsed when revisiting a finished thread.
-    private var store: TranscriptDisclosureStore { disclosureStore ?? .previews }
-    private var disclosureKey: TranscriptDisclosureStore.Key { .subagent(call.toolCallId) }
+  // Disclosure hoisted to the session store (survives lazy remounts).
+  // Default open while running, collapsed when revisiting a finished thread.
+  private var store: TranscriptDisclosureStore { disclosureStore ?? .previews }
+  private var disclosureKey: TranscriptDisclosureStore.Key { .subagent(call.toolCallId) }
 
-    private var isExpanded: Bool {
-        store.isExpanded(disclosureKey, default: isRunning)
-    }
+  private var isExpanded: Bool {
+    store.isExpanded(disclosureKey, default: isRunning)
+  }
 
-    /// Running while the turn is live and the call is open, OR — once the turn
-    /// has ended — while the subagent is still working in the background (its
-    /// call was force-settled at turn end, so the background snapshot is the
-    /// only remaining signal that it's alive).
-    private var isRunning: Bool {
-        (isTurnActive && !call.isSettled) || runningSubagentToolCallIds.contains(call.toolCallId)
-    }
+  /// Running while the turn is live and the call is open, OR — once the turn
+  /// has ended — while the subagent is still working in the background (its
+  /// call was force-settled at turn end, so the background snapshot is the
+  /// only remaining signal that it's alive).
+  private var isRunning: Bool {
+    (isTurnActive && !call.isSettled) || runningSubagentToolCallIds.contains(call.toolCallId)
+  }
 
-    private var items: [WorkedItem] { turn.subagentItems(call.toolCallId) }
-    private var transcript: SubagentTranscript? { turn.subagents[call.toolCallId] }
+  private var items: [WorkedItem] { turn.subagentItems(call.toolCallId) }
+  private var transcript: SubagentTranscript? { turn.subagents[call.toolCallId] }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-            TranscriptDisclosureContentReveal(isExpanded: isExpanded) {
-                VStack(alignment: .leading, spacing: 12) {
-                    TranscriptItemsView(
-                        items: items,
-                        turn: turn,
-                        turnID: turnID,
-                        isTurnActive: isTurnActive,
-                        animationPresentation: animationPresentation,
-                        animationEnabled: animationEnabled,
-                        parentToolCallID: call.toolCallId,
-                        depth: depth
-                    )
-                    if isRunning, transcript?.isThinking == true {
-                        ShimmeringText.thinking
-                    } else if isRunning, items.isEmpty {
-                        ShimmeringText.startingAgent
-                    }
-                }
-                .padding(.leading, 24)
-                .padding(.top, 8)
-            }
+  var body: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      header
+      TranscriptDisclosureContentReveal(isExpanded: isExpanded) {
+        VStack(alignment: .leading, spacing: 12) {
+          TranscriptItemsView(
+            items: items,
+            turn: turn,
+            turnID: turnID,
+            isTurnActive: isTurnActive,
+            animationPresentation: animationPresentation,
+            animationEnabled: animationEnabled,
+            parentToolCallID: call.toolCallId,
+            depth: depth
+          )
+          if isRunning, transcript?.isThinking == true {
+            ShimmeringText.thinking
+          } else if isRunning, items.isEmpty {
+            ShimmeringText.startingAgent
+          }
         }
-        // Collapse once the subagent stops running — including background work
-        // that outlives the turn; manual toggles still work after.
-        .onChange(of: isRunning) { _, running in
-            if !running, !hasAutoCollapsed {
-                hasAutoCollapsed = true
-                store.setExpanded(disclosureKey, false)
-            }
-        }
+        .padding(.leading, 24)
+        .padding(.top, 8)
+      }
     }
+    // Collapse once the subagent stops running — including background work
+    // that outlives the turn; manual toggles still work after.
+    .onChange(of: isRunning) { _, running in
+      if !running, !hasAutoCollapsed {
+        hasAutoCollapsed = true
+        store.setExpanded(disclosureKey, false)
+      }
+    }
+  }
 
-    private var header: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "wand.and.sparkles")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .frame(width: 16)
-            Text(call.displayTitle)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .foregroundStyle(.secondary)
-                .shimmering(isRunning)
-            statusGlyph
-            TranscriptDisclosureChevron(expanded: isExpanded)
-            Spacer(minLength: 0)
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            let change = { store.toggle(disclosureKey, default: isRunning) }
-            performAnchoredDisclosureChange?(change) ?? change()
-        }
+  private var header: some View {
+    HStack(spacing: 8) {
+      Image(systemName: "wand.and.sparkles")
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .frame(width: 16)
+      Text(call.displayTitle)
+        .lineLimit(1)
+        .truncationMode(.tail)
+        .foregroundStyle(.secondary)
+        .shimmering(isRunning)
+      statusGlyph
+      TranscriptDisclosureChevron(expanded: isExpanded)
+      Spacer(minLength: 0)
     }
+    .contentShape(Rectangle())
+    .onTapGesture {
+      let change = { store.toggle(disclosureKey, default: isRunning) }
+      performAnchoredDisclosureChange?(change) ?? change()
+    }
+  }
 
-    @ViewBuilder
-    private var statusGlyph: some View {
-        switch call.status {
-        case .failed:
-            Image(systemName: "xmark.circle")
-                .font(.caption)
-                .foregroundStyle(theme.statusError)
-        case .cancelled:
-            Image(systemName: "slash.circle")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        default:
-            EmptyView()
-        }
+  @ViewBuilder
+  private var statusGlyph: some View {
+    switch call.status {
+    case .failed:
+      Image(systemName: "xmark.circle")
+        .font(.caption)
+        .foregroundStyle(theme.statusError)
+    case .cancelled:
+      Image(systemName: "slash.circle")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    default:
+      EmptyView()
     }
+  }
 }
 
 #Preview("Subagent section") {
-    var turn = AssistantTurn(isGenerating: true)
-    TranscriptReducer.apply(
-        .toolCall(ToolCall(toolCallId: "task-1", title: "Agent: map the chat UI", kind: .agent, status: .inProgress)),
-        to: &turn
-    )
-    TranscriptReducer.apply(
-        .agentMessageChunk(
-            .text("Scanning the session views first."), messageId: "msg-sub", parentToolCallId: "task-1"),
-        to: &turn
-    )
-    TranscriptReducer.apply(
-        .toolCall(
-            ToolCall(
-                toolCallId: "sub-1", title: "Read SessionView.swift", kind: .read, status: .completed,
-                parentToolCallId: "task-1")),
-        to: &turn
-    )
-    TranscriptReducer.apply(
-        .toolCall(
-            ToolCall(
-                toolCallId: "sub-2", title: "Searched for streamFingerprint", kind: .search, status: .inProgress,
-                parentToolCallId: "task-1")),
-        to: &turn
-    )
-    return ScrollView {
-        VStack(alignment: .leading, spacing: 12) {
-            TranscriptItemsView(
-                items: turn.streamingItems,
-                turn: turn,
-                turnID: UUID(),
-                isTurnActive: true,
-                animationPresentation: StreamingTextAnimationPresentation(),
-                animationEnabled: true
-            )
-        }
-        .padding()
+  var turn = AssistantTurn(isGenerating: true)
+  TranscriptReducer.apply(
+    .toolCall(ToolCall(toolCallId: "task-1", title: "Agent: map the chat UI", kind: .agent, status: .inProgress)),
+    to: &turn
+  )
+  TranscriptReducer.apply(
+    .agentMessageChunk(
+      .text("Scanning the session views first."), messageId: "msg-sub", parentToolCallId: "task-1"),
+    to: &turn
+  )
+  TranscriptReducer.apply(
+    .toolCall(
+      ToolCall(
+        toolCallId: "sub-1", title: "Read SessionView.swift", kind: .read, status: .completed,
+        parentToolCallId: "task-1")),
+    to: &turn
+  )
+  TranscriptReducer.apply(
+    .toolCall(
+      ToolCall(
+        toolCallId: "sub-2", title: "Searched for streamFingerprint", kind: .search, status: .inProgress,
+        parentToolCallId: "task-1")),
+    to: &turn
+  )
+  return ScrollView {
+    VStack(alignment: .leading, spacing: 12) {
+      TranscriptItemsView(
+        items: turn.streamingItems,
+        turn: turn,
+        turnID: UUID(),
+        isTurnActive: true,
+        animationPresentation: StreamingTextAnimationPresentation(),
+        animationEnabled: true
+      )
     }
-    .frame(width: 560, height: 320)
+    .padding()
+  }
+  .frame(width: 560, height: 320)
 }

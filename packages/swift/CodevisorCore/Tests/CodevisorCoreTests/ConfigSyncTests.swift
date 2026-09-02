@@ -9,322 +9,322 @@ import Testing
 @MainActor
 @Suite("ConfigSync")
 struct ConfigSyncTests {
-    private func makeRemote(_ id: String) -> CodevisorMachine {
-        CodevisorMachine(
-            id: id,
-            name: id,
-            baseURL: URL(string: "http://\(id).test:49361")!,
-            kind: "remote"
+  private func makeRemote(_ id: String) -> CodevisorMachine {
+    CodevisorMachine(
+      id: id,
+      name: id,
+      baseURL: URL(string: "http://\(id).test:49361")!,
+      kind: "remote"
+    )
+  }
+
+  private func makeController(
+    fakes: [String: SyncFakeServerClient],
+    remotes: [CodevisorMachine]
+  ) throws -> MachineController {
+    let store = InMemoryStore()
+    try store.saveData(
+      JSONEncoder().encode(
+        MachineRegistry(selectedMachineId: "local", remoteMachines: remotes)
+      ),
+      forKey: "machines"
+    )
+    return MachineController(
+      store: store,
+      projectList: ProjectListModel(
+        projectRepository: DefaultProjectRepository(store: InMemoryStore()),
+        sessionRepository: DefaultSessionRepository(store: InMemoryStore())
+      ),
+      clientFactory: { machine in
+        fakes[machine.id] ?? SyncFakeServerClient(projects: [], sessions: [])
+      }
+    )
+  }
+
+  private func waitForSync(_ predicate: () -> Bool) async throws {
+    for _ in 0..<200 {
+      if predicate() { return }
+      try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    Issue.record("Timed out waiting for sync condition")
+  }
+
+  @Test("Writes stamp strictly increasing clocks and persist locally")
+  func writesStampAndPersist() throws {
+    let controller = try makeController(
+      fakes: ["local": SyncFakeServerClient(projects: [], sessions: [])],
+      remotes: []
+    )
+    let store = InMemoryStore()
+    let sync = ConfigSync(machines: controller, store: store)
+
+    sync.set(namespace: "settings", key: "updateChannel", value: .string("alpha"))
+    sync.set(namespace: "settings", key: "updateChannel", value: .string("stable"))
+
+    let entries = sync.entries(namespace: "settings")
+    #expect(entries.count == 1)
+    #expect(sync.value(namespace: "settings", key: "updateChannel") == .string("stable"))
+
+    // The replica survives a fresh instance over the same store, and the
+    // device id is stable.
+    let reloaded = ConfigSync(machines: controller, store: store)
+    #expect(reloaded.value(namespace: "settings", key: "updateChannel") == .string("stable"))
+    #expect(reloaded.deviceId == sync.deviceId)
+  }
+
+  @Test("A write gossips to every reachable machine")
+  func writesGossip() async throws {
+    let remoteA = makeRemote("remote-a")
+    let remoteB = makeRemote("remote-b")
+    let fakeA = SyncFakeServerClient(projects: [], sessions: [])
+    let fakeB = SyncFakeServerClient(projects: [], sessions: [])
+    let controller = try makeController(
+      fakes: [
+        "local": SyncFakeServerClient(projects: [], sessions: []),
+        remoteA.id: fakeA,
+        remoteB.id: fakeB,
+      ],
+      remotes: [remoteA, remoteB]
+    )
+    await controller.refreshStatus(for: remoteA.id)
+    await controller.refreshStatus(for: remoteB.id)
+    let sync = ConfigSync(machines: controller, store: InMemoryStore())
+
+    sync.set(namespace: "settings", key: "updateChannel", value: .string("alpha"))
+
+    try await waitForSync {
+      fakeA.syncEntries(namespace: "settings").count == 1
+        && fakeB.syncEntries(namespace: "settings").count == 1
+    }
+    #expect(fakeA.syncEntries(namespace: "settings").first?.value == .string("alpha"))
+  }
+
+  @Test("Synchronizing adopts newer remote entries and pushes local ones")
+  func synchronizeConverges() async throws {
+    let remote = makeRemote("remote-a")
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    fake.seedSyncEntries(
+      namespace: "settings",
+      [
+        ServerSyncEntry(
+          key: "updateChannel",
+          value: .string("alpha"),
+          timestamp: ServerSyncTimestamp(
+            wallMs: 10_000_000_000_000,
+            counter: 0,
+            deviceId: "other-device"
+          )
         )
+      ]
+    )
+    let controller = try makeController(
+      fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],
+      remotes: [remote]
+    )
+    let sync = ConfigSync(machines: controller, store: InMemoryStore())
+    sync.set(namespace: "settings", key: "theme", value: .string("dark"))
+
+    await sync.synchronize(machineId: remote.id)
+
+    // The remote's (far-future) channel wins locally; the local theme
+    // landed remotely in the same round trip.
+    #expect(sync.value(namespace: "settings", key: "updateChannel") == .string("alpha"))
+    #expect(fake.syncEntries(namespace: "settings").contains { $0.key == "theme" })
+    #expect(sync.revisionsByNamespace["settings", default: 0] >= 2)
+  }
+
+  @Test("The update channel replicates out and applies from remote changes")
+  func updateChannelSeed() async throws {
+    let environment = AppEnvironment.preview()
+
+    environment.setAlphaUpdatesEnabled(true)
+    #expect(
+      environment.configSync.value(namespace: "settings", key: "updateChannel")
+        == .string("alpha"))
+    #expect(environment.machines.serverUpdateChannel == .alpha)
+
+    // Another device flips it back: the synced entry applies locally —
+    // settings, Sparkle preference, and the server-check channel follow.
+    environment.configSync.applyRemoteChange(
+      namespace: "settings",
+      entries: [
+        ServerSyncEntry(
+          key: "updateChannel",
+          value: .string("stable"),
+          timestamp: ServerSyncTimestamp(
+            wallMs: 20_000_000_000_000,
+            counter: 0,
+            deviceId: "other-device"
+          )
+        )
+      ]
+    )
+    #expect(environment.settings.alphaUpdatesEnabled == false)
+    #expect(environment.appUpdate.allowsAlphaUpdates == false)
+    #expect(environment.machines.serverUpdateChannel == .stable)
+  }
+
+  @Test("The ferry moves skill blobs from havers to needers")
+  func skillsFerry() async throws {
+    let remoteA = makeRemote("remote-a")
+    let remoteB = makeRemote("remote-b")
+    let fakeA = SyncFakeServerClient(projects: [], sessions: [])
+    let fakeB = SyncFakeServerClient(projects: [], sessions: [])
+    let hash = String(repeating: "a", count: 64)
+    fakeA.configureWantedSkill(directoryName: "deploy", hash: hash)
+    fakeA.seedSkillBlob(hash: hash, Data("archive-bytes".utf8))
+    fakeB.configureWantedSkill(directoryName: "deploy", hash: hash)
+    let controller = try makeController(
+      fakes: [
+        "local": SyncFakeServerClient(projects: [], sessions: []),
+        remoteA.id: fakeA,
+        remoteB.id: fakeB,
+      ],
+      remotes: [remoteA, remoteB]
+    )
+    await controller.refreshStatus(for: remoteA.id)
+    await controller.refreshStatus(for: remoteB.id)
+    let sync = ConfigSync(machines: controller, store: InMemoryStore())
+
+    await sync.synchronizeSkills()
+
+    // B received A's archive and the follow-up reconcile applied it.
+    #expect(fakeB.skillBlob(hash: hash) == Data("archive-bytes".utf8))
+    #expect(fakeB.appliedSkills == ["deploy"])
+    #expect(fakeA.appliedSkills == ["deploy"])
+  }
+
+  @Test("A machine connecting triggers an immediate targeted pass")
+  func machineArrivalSyncs() async throws {
+    let remote = makeRemote("remote-a")
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    let controller = try makeController(
+      fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],
+      remotes: [remote]
+    )
+    let sync = ConfigSync(machines: controller, store: InMemoryStore())
+    var connected: [String] = []
+    controller.onMachineConnected = { machineId in
+      connected.append(machineId)
+      Task { await sync.synchronizeMachine(machineId) }
     }
 
-    private func makeController(
-        fakes: [String: SyncFakeServerClient],
-        remotes: [CodevisorMachine]
-    ) throws -> MachineController {
-        let store = InMemoryStore()
-        try store.saveData(
-            JSONEncoder().encode(
-                MachineRegistry(selectedMachineId: "local", remoteMachines: remotes)
-            ),
-            forKey: "machines"
-        )
-        return MachineController(
-            store: store,
-            projectList: ProjectListModel(
-                projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-                sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-            ),
-            clientFactory: { machine in
-                fakes[machine.id] ?? SyncFakeServerClient(projects: [], sessions: [])
-            }
-        )
+    await controller.connectMachine(remote.id)
+
+    #expect(connected == [remote.id])
+    // The targeted pass reached the machine: gossip plus all three
+    // reconcile/publish calls, with no periodic sweep involved.
+    try await waitForSync {
+      fake.operationLog.contains("mcps.reconcile")
+        && fake.operationLog.contains("harnesses.reconcile")
+        && fake.operationLog.contains("plugins.reconcile")
+        && fake.operationLog.contains("accounts.publish")
+        && fake.operationLog.contains("skills.reconcile")
     }
+    controller.stopEventSync()
+  }
 
-    private func waitForSync(_ predicate: () -> Bool) async throws {
-        for _ in 0..<200 {
-            if predicate() { return }
-            try await Task.sleep(nanoseconds: 10_000_000)
-        }
-        Issue.record("Timed out waiting for sync condition")
+  @Test("Adding a machine records the onboarding sync choice on it")
+  func addAppliesSyncChoice() async throws {
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    let controller = MachineController(
+      store: InMemoryStore(),
+      projectList: ProjectListModel(
+        projectRepository: DefaultProjectRepository(store: InMemoryStore()),
+        sessionRepository: DefaultSessionRepository(store: InMemoryStore())
+      ),
+      clientFactory: { _ in fake }
+    )
+
+    _ = try await controller.addRemoteValidating(
+      host: "box.test",
+      name: "Box",
+      token: nil,
+      syncConfig: false
+    )
+
+    try await waitForSync { fake.operationLog.contains("sync.participation:false") }
+    controller.stopEventSync()
+  }
+
+  @Test("Full sync passes reconcile MCPs and publish rosters per machine")
+  func fullPassReconciles() async throws {
+    let remote = makeRemote("remote-a")
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    let controller = try makeController(
+      fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],
+      remotes: [remote]
+    )
+    await controller.refreshStatus(for: remote.id)
+    let sync = ConfigSync(machines: controller, store: InMemoryStore())
+
+    await sync.synchronizeAll()
+
+    #expect(fake.operationLog.contains("mcps.reconcile"))
+    #expect(fake.operationLog.contains("harnesses.reconcile"))
+    #expect(fake.operationLog.contains("plugins.reconcile"))
+    #expect(fake.operationLog.contains("accounts.publish"))
+    #expect(fake.operationLog.contains("skills.reconcile"))
+  }
+
+  @Test("A gossiped write reconciles receivers immediately")
+  func gossipReconcilesReceivers() async throws {
+    let remote = makeRemote("remote-a")
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    let controller = try makeController(
+      fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],
+      remotes: [remote]
+    )
+    await controller.refreshStatus(for: remote.id)
+    let sync = ConfigSync(machines: controller, store: InMemoryStore())
+
+    sync.set(namespace: "mcps", key: "GitHub", value: .object(["enabled": .bool(true)]))
+
+    // The push lands the entry AND applies it on the receiver in the
+    // same breath — no waiting for the periodic sweep.
+    try await waitForSync {
+      fake.syncEntries(namespace: "mcps").count == 1
+        && fake.operationLog.contains("mcps.reconcile")
     }
+  }
 
-    @Test("Writes stamp strictly increasing clocks and persist locally")
-    func writesStampAndPersist() throws {
-        let controller = try makeController(
-            fakes: ["local": SyncFakeServerClient(projects: [], sessions: [])],
-            remotes: []
-        )
-        let store = InMemoryStore()
-        let sync = ConfigSync(machines: controller, store: store)
+  @Test("A machine reporting applied harness changes bumps its catalog")
+  func harnessReconcileBumpsCatalog() async throws {
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    fake._harnessesSyncApplied = ["opencode"]
+    let controller = try makeController(fakes: ["m1": fake], remotes: [makeRemote("m1")])
+    await controller.refreshStatus(for: "m1")
+    let sync = ConfigSync(machines: controller, store: InMemoryStore())
+    var changed: [String] = []
+    sync.onHarnessCatalogChanged = { changed.append($0) }
+    sync.set(
+      namespace: "harnesses",
+      key: "opencode",
+      value: .object(["enabled": .bool(true), "installed": .bool(true)])
+    )
+    try await waitForSync { changed.contains("m1") }
+  }
 
-        sync.set(namespace: "settings", key: "updateChannel", value: .string("alpha"))
-        sync.set(namespace: "settings", key: "updateChannel", value: .string("stable"))
+  @Test("Tombstones remove values and win over older writes")
+  func tombstonesWin() throws {
+    let controller = try makeController(
+      fakes: ["local": SyncFakeServerClient(projects: [], sessions: [])],
+      remotes: []
+    )
+    let sync = ConfigSync(machines: controller, store: InMemoryStore())
+    sync.set(namespace: "settings", key: "theme", value: .string("dark"))
+    sync.remove(namespace: "settings", key: "theme")
 
-        let entries = sync.entries(namespace: "settings")
-        #expect(entries.count == 1)
-        #expect(sync.value(namespace: "settings", key: "updateChannel") == .string("stable"))
+    #expect(sync.value(namespace: "settings", key: "theme") == nil)
+    #expect(sync.entries(namespace: "settings").first?.deleted == true)
 
-        // The replica survives a fresh instance over the same store, and the
-        // device id is stable.
-        let reloaded = ConfigSync(machines: controller, store: store)
-        #expect(reloaded.value(namespace: "settings", key: "updateChannel") == .string("stable"))
-        #expect(reloaded.deviceId == sync.deviceId)
-    }
-
-    @Test("A write gossips to every reachable machine")
-    func writesGossip() async throws {
-        let remoteA = makeRemote("remote-a")
-        let remoteB = makeRemote("remote-b")
-        let fakeA = SyncFakeServerClient(projects: [], sessions: [])
-        let fakeB = SyncFakeServerClient(projects: [], sessions: [])
-        let controller = try makeController(
-            fakes: [
-                "local": SyncFakeServerClient(projects: [], sessions: []),
-                remoteA.id: fakeA,
-                remoteB.id: fakeB,
-            ],
-            remotes: [remoteA, remoteB]
-        )
-        await controller.refreshStatus(for: remoteA.id)
-        await controller.refreshStatus(for: remoteB.id)
-        let sync = ConfigSync(machines: controller, store: InMemoryStore())
-
-        sync.set(namespace: "settings", key: "updateChannel", value: .string("alpha"))
-
-        try await waitForSync {
-            fakeA.syncEntries(namespace: "settings").count == 1
-                && fakeB.syncEntries(namespace: "settings").count == 1
-        }
-        #expect(fakeA.syncEntries(namespace: "settings").first?.value == .string("alpha"))
-    }
-
-    @Test("Synchronizing adopts newer remote entries and pushes local ones")
-    func synchronizeConverges() async throws {
-        let remote = makeRemote("remote-a")
-        let fake = SyncFakeServerClient(projects: [], sessions: [])
-        fake.seedSyncEntries(
-            namespace: "settings",
-            [
-                ServerSyncEntry(
-                    key: "updateChannel",
-                    value: .string("alpha"),
-                    timestamp: ServerSyncTimestamp(
-                        wallMs: 10_000_000_000_000,
-                        counter: 0,
-                        deviceId: "other-device"
-                    )
-                )
-            ]
-        )
-        let controller = try makeController(
-            fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],
-            remotes: [remote]
-        )
-        let sync = ConfigSync(machines: controller, store: InMemoryStore())
-        sync.set(namespace: "settings", key: "theme", value: .string("dark"))
-
-        await sync.synchronize(machineId: remote.id)
-
-        // The remote's (far-future) channel wins locally; the local theme
-        // landed remotely in the same round trip.
-        #expect(sync.value(namespace: "settings", key: "updateChannel") == .string("alpha"))
-        #expect(fake.syncEntries(namespace: "settings").contains { $0.key == "theme" })
-        #expect(sync.revisionsByNamespace["settings", default: 0] >= 2)
-    }
-
-    @Test("The update channel replicates out and applies from remote changes")
-    func updateChannelSeed() async throws {
-        let environment = AppEnvironment.preview()
-
-        environment.setAlphaUpdatesEnabled(true)
-        #expect(
-            environment.configSync.value(namespace: "settings", key: "updateChannel")
-                == .string("alpha"))
-        #expect(environment.machines.serverUpdateChannel == .alpha)
-
-        // Another device flips it back: the synced entry applies locally —
-        // settings, Sparkle preference, and the server-check channel follow.
-        environment.configSync.applyRemoteChange(
-            namespace: "settings",
-            entries: [
-                ServerSyncEntry(
-                    key: "updateChannel",
-                    value: .string("stable"),
-                    timestamp: ServerSyncTimestamp(
-                        wallMs: 20_000_000_000_000,
-                        counter: 0,
-                        deviceId: "other-device"
-                    )
-                )
-            ]
-        )
-        #expect(environment.settings.alphaUpdatesEnabled == false)
-        #expect(environment.appUpdate.allowsAlphaUpdates == false)
-        #expect(environment.machines.serverUpdateChannel == .stable)
-    }
-
-    @Test("The ferry moves skill blobs from havers to needers")
-    func skillsFerry() async throws {
-        let remoteA = makeRemote("remote-a")
-        let remoteB = makeRemote("remote-b")
-        let fakeA = SyncFakeServerClient(projects: [], sessions: [])
-        let fakeB = SyncFakeServerClient(projects: [], sessions: [])
-        let hash = String(repeating: "a", count: 64)
-        fakeA.configureWantedSkill(directoryName: "deploy", hash: hash)
-        fakeA.seedSkillBlob(hash: hash, Data("archive-bytes".utf8))
-        fakeB.configureWantedSkill(directoryName: "deploy", hash: hash)
-        let controller = try makeController(
-            fakes: [
-                "local": SyncFakeServerClient(projects: [], sessions: []),
-                remoteA.id: fakeA,
-                remoteB.id: fakeB,
-            ],
-            remotes: [remoteA, remoteB]
-        )
-        await controller.refreshStatus(for: remoteA.id)
-        await controller.refreshStatus(for: remoteB.id)
-        let sync = ConfigSync(machines: controller, store: InMemoryStore())
-
-        await sync.synchronizeSkills()
-
-        // B received A's archive and the follow-up reconcile applied it.
-        #expect(fakeB.skillBlob(hash: hash) == Data("archive-bytes".utf8))
-        #expect(fakeB.appliedSkills == ["deploy"])
-        #expect(fakeA.appliedSkills == ["deploy"])
-    }
-
-    @Test("A machine connecting triggers an immediate targeted pass")
-    func machineArrivalSyncs() async throws {
-        let remote = makeRemote("remote-a")
-        let fake = SyncFakeServerClient(projects: [], sessions: [])
-        let controller = try makeController(
-            fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],
-            remotes: [remote]
-        )
-        let sync = ConfigSync(machines: controller, store: InMemoryStore())
-        var connected: [String] = []
-        controller.onMachineConnected = { machineId in
-            connected.append(machineId)
-            Task { await sync.synchronizeMachine(machineId) }
-        }
-
-        await controller.connectMachine(remote.id)
-
-        #expect(connected == [remote.id])
-        // The targeted pass reached the machine: gossip plus all three
-        // reconcile/publish calls, with no periodic sweep involved.
-        try await waitForSync {
-            fake.operationLog.contains("mcps.reconcile")
-                && fake.operationLog.contains("harnesses.reconcile")
-                && fake.operationLog.contains("plugins.reconcile")
-                && fake.operationLog.contains("accounts.publish")
-                && fake.operationLog.contains("skills.reconcile")
-        }
-        controller.stopEventSync()
-    }
-
-    @Test("Adding a machine records the onboarding sync choice on it")
-    func addAppliesSyncChoice() async throws {
-        let fake = SyncFakeServerClient(projects: [], sessions: [])
-        let controller = MachineController(
-            store: InMemoryStore(),
-            projectList: ProjectListModel(
-                projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-                sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-            ),
-            clientFactory: { _ in fake }
-        )
-
-        _ = try await controller.addRemoteValidating(
-            host: "box.test",
-            name: "Box",
-            token: nil,
-            syncConfig: false
-        )
-
-        try await waitForSync { fake.operationLog.contains("sync.participation:false") }
-        controller.stopEventSync()
-    }
-
-    @Test("Full sync passes reconcile MCPs and publish rosters per machine")
-    func fullPassReconciles() async throws {
-        let remote = makeRemote("remote-a")
-        let fake = SyncFakeServerClient(projects: [], sessions: [])
-        let controller = try makeController(
-            fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],
-            remotes: [remote]
-        )
-        await controller.refreshStatus(for: remote.id)
-        let sync = ConfigSync(machines: controller, store: InMemoryStore())
-
-        await sync.synchronizeAll()
-
-        #expect(fake.operationLog.contains("mcps.reconcile"))
-        #expect(fake.operationLog.contains("harnesses.reconcile"))
-        #expect(fake.operationLog.contains("plugins.reconcile"))
-        #expect(fake.operationLog.contains("accounts.publish"))
-        #expect(fake.operationLog.contains("skills.reconcile"))
-    }
-
-    @Test("A gossiped write reconciles receivers immediately")
-    func gossipReconcilesReceivers() async throws {
-        let remote = makeRemote("remote-a")
-        let fake = SyncFakeServerClient(projects: [], sessions: [])
-        let controller = try makeController(
-            fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],
-            remotes: [remote]
-        )
-        await controller.refreshStatus(for: remote.id)
-        let sync = ConfigSync(machines: controller, store: InMemoryStore())
-
-        sync.set(namespace: "mcps", key: "GitHub", value: .object(["enabled": .bool(true)]))
-
-        // The push lands the entry AND applies it on the receiver in the
-        // same breath — no waiting for the periodic sweep.
-        try await waitForSync {
-            fake.syncEntries(namespace: "mcps").count == 1
-                && fake.operationLog.contains("mcps.reconcile")
-        }
-    }
-
-    @Test("A machine reporting applied harness changes bumps its catalog")
-    func harnessReconcileBumpsCatalog() async throws {
-        let fake = SyncFakeServerClient(projects: [], sessions: [])
-        fake._harnessesSyncApplied = ["opencode"]
-        let controller = try makeController(fakes: ["m1": fake], remotes: [makeRemote("m1")])
-        await controller.refreshStatus(for: "m1")
-        let sync = ConfigSync(machines: controller, store: InMemoryStore())
-        var changed: [String] = []
-        sync.onHarnessCatalogChanged = { changed.append($0) }
-        sync.set(
-            namespace: "harnesses",
-            key: "opencode",
-            value: .object(["enabled": .bool(true), "installed": .bool(true)])
-        )
-        try await waitForSync { changed.contains("m1") }
-    }
-
-    @Test("Tombstones remove values and win over older writes")
-    func tombstonesWin() throws {
-        let controller = try makeController(
-            fakes: ["local": SyncFakeServerClient(projects: [], sessions: [])],
-            remotes: []
-        )
-        let sync = ConfigSync(machines: controller, store: InMemoryStore())
-        sync.set(namespace: "settings", key: "theme", value: .string("dark"))
-        sync.remove(namespace: "settings", key: "theme")
-
-        #expect(sync.value(namespace: "settings", key: "theme") == nil)
-        #expect(sync.entries(namespace: "settings").first?.deleted == true)
-
-        // A remote write OLDER than the tombstone does not resurrect it.
-        let stale = ServerSyncEntry(
-            key: "theme",
-            value: .string("light"),
-            timestamp: ServerSyncTimestamp(wallMs: 1, counter: 0, deviceId: "old-device")
-        )
-        sync.applyRemoteChange(namespace: "settings", entries: [stale])
-        #expect(sync.value(namespace: "settings", key: "theme") == nil)
-    }
+    // A remote write OLDER than the tombstone does not resurrect it.
+    let stale = ServerSyncEntry(
+      key: "theme",
+      value: .string("light"),
+      timestamp: ServerSyncTimestamp(wallMs: 1, counter: 0, deviceId: "old-device")
+    )
+    sync.applyRemoteChange(namespace: "settings", entries: [stale])
+    #expect(sync.value(namespace: "settings", key: "theme") == nil)
+  }
 }
