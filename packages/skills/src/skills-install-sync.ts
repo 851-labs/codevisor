@@ -7,9 +7,13 @@ import type { ManagedSkillSpec } from "./skills-manager.js"
 import {
   copyDirectory,
   hasSkillFile,
+  installedManagedState,
   isDirectory,
   MANAGED_SKILL_MARKER,
-  MANAGED_SKILL_MARKER_CONTENT
+  MANAGED_SKILL_MARKER_CONTENT,
+  MANAGED_SKILL_STATE,
+  managedSourceState,
+  type ManagedSkillState
 } from "./skills-store.js"
 
 /// Bulk synchronization: re-linking global skills into every harness, and
@@ -60,6 +64,27 @@ export const makeSkillsSyncOperations = (context: SkillsInstallContext) => {
         continue
       }
 
+      let source: ManagedSkillState | undefined
+      if (skill.enabled) {
+        /* v8 ignore next -- packaged managed sources are validated during release assembly. */
+        if (!(await isDirectory(skill.sourcePath)) || !(await hasSkillFile(skill.sourcePath))) {
+          throw new Error(`Managed skill source is invalid: ${skill.sourcePath}`)
+        }
+        source = await managedSourceState(skill.sourcePath)
+        if (existing !== undefined) {
+          const installed = await installedManagedState(destination)
+          // Identical content needs no rewrite, and a copy installed from a
+          // newer source (another Codevisor build on this machine) is kept.
+          if (
+            installed !== undefined &&
+            (installed.fingerprint === source.fingerprint ||
+              installed.sourceModifiedMs > source.sourceModifiedMs)
+          ) {
+            continue
+          }
+        }
+      }
+
       // Remove app-owned copy-mode installs before replacing the canonical
       // source. Symlinks can stay when enabled because they resolve to the
       // freshly written canonical directory; disabled skills remove both.
@@ -91,13 +116,10 @@ export const makeSkillsSyncOperations = (context: SkillsInstallContext) => {
       }
 
       if (existing !== undefined) await safeRemove(destination)
-      if (!skill.enabled) continue
-      /* v8 ignore next -- packaged managed sources are validated during release assembly. */
-      if (!(await isDirectory(skill.sourcePath)) || !(await hasSkillFile(skill.sourcePath))) {
-        throw new Error(`Managed skill source is invalid: ${skill.sourcePath}`)
-      }
+      if (!skill.enabled || source === undefined) continue
       await copyDirectory(skill.sourcePath, destination)
       await writeFile(join(destination, MANAGED_SKILL_MARKER), MANAGED_SKILL_MARKER_CONTENT, "utf8")
+      await writeFile(join(destination, MANAGED_SKILL_STATE), JSON.stringify(source), "utf8")
     }
 
     const enabled = skills.filter((skill) => skill.enabled).map((skill) => skill.directoryName)

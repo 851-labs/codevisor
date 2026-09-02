@@ -1,4 +1,12 @@
-import { existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync } from "node:fs"
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  symlinkSync,
+  utimesSync,
+  writeFileSync
+} from "node:fs"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import {
@@ -116,5 +124,59 @@ describe("sync", () => {
     const home = makeHome()
     const scan = await manager(home).sync()
     expect(scan.global).toEqual([])
+  })
+})
+
+describe("managed skill synchronization across servers", () => {
+  it("converges managed skills on the newest packaged source across servers", async () => {
+    const home = makeHome()
+    const older = join(home, "release-build/browser-use")
+    const newer = join(home, "dev-build/browser-use")
+    writeSkill(older, { body: "Release instructions.", name: "browser-use" })
+    writeSkill(newer, { body: "Development instructions.", name: "browser-use" })
+    const past = new Date(Date.now() - 60 * 60 * 1000)
+    utimesSync(join(older, "SKILL.md"), past, past)
+    const installed = join(home, ".agents/skills/browser-use")
+    const skills = manager(home)
+
+    await skills.syncManaged([{ directoryName: "browser-use", enabled: true, sourcePath: older }])
+    expect(readFileSync(join(installed, "SKILL.md"), "utf8")).toContain("Release instructions.")
+
+    // Re-syncing identical content is a no-op: files written alongside survive.
+    writeFileSync(join(installed, "sentinel.txt"), "kept")
+    await skills.syncManaged([{ directoryName: "browser-use", enabled: true, sourcePath: older }])
+    expect(existsSync(join(installed, "sentinel.txt"))).toBe(true)
+
+    // A newer build replaces the release copy (a dangling link in the source is tolerated)...
+    symlinkSync(join(home, "missing-target"), join(newer, "dangling"))
+    mkdirSync(join(newer, "references"))
+    writeFileSync(join(newer, "references", "notes.md"), "Reference notes.")
+    writeFileSync(join(newer, "metadata.json"), "{}")
+    mkdirSync(join(newer, ".git"))
+    writeFileSync(join(newer, ".git", "HEAD"), "ref: refs/heads/main")
+    await skills.syncManaged([{ directoryName: "browser-use", enabled: true, sourcePath: newer }])
+    expect(readFileSync(join(installed, "SKILL.md"), "utf8")).toContain("Development instructions.")
+    expect(existsSync(join(installed, "sentinel.txt"))).toBe(false)
+
+    // ...and the release build syncing afterwards leaves the newer copy alone.
+    await skills.syncManaged([{ directoryName: "browser-use", enabled: true, sourcePath: older }])
+    expect(readFileSync(join(installed, "SKILL.md"), "utf8")).toContain("Development instructions.")
+
+    // Installs that predate the state file, or carry a corrupt one, are replaced.
+    writeFileSync(join(installed, ".codevisor-managed-skill.json"), "{not json")
+    await skills.syncManaged([{ directoryName: "browser-use", enabled: true, sourcePath: older }])
+    expect(readFileSync(join(installed, "SKILL.md"), "utf8")).toContain("Release instructions.")
+    writeFileSync(
+      join(installed, ".codevisor-managed-skill.json"),
+      JSON.stringify({ fingerprint: 1 })
+    )
+    await skills.syncManaged([{ directoryName: "browser-use", enabled: true, sourcePath: newer }])
+    expect(readFileSync(join(installed, "SKILL.md"), "utf8")).toContain("Development instructions.")
+    expect(
+      JSON.parse(readFileSync(join(installed, ".codevisor-managed-skill.json"), "utf8"))
+    ).toMatchObject({
+      fingerprint: expect.any(String),
+      sourceModifiedMs: expect.any(Number)
+    })
   })
 })
