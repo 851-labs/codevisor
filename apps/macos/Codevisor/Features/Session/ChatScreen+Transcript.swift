@@ -15,7 +15,7 @@ extension ChatScreen {
                 ActiveTranscriptProjectionScope(
                     controller: controller,
                     projectedRows: projectedRows
-                ) { activeRows, activeRowsVersion, isActiveProjectionPending in
+                ) { activeRows, activeRowsVersion, isActiveProjectionPending, isAwaitingFirstActiveProjection in
                     let visibleRows = workedRowsVisibilityCache.presentSettled(
                         projectedRows,
                         sourceVersion: projectedRowsVersion,
@@ -50,6 +50,7 @@ extension ChatScreen {
                             isLoadingInitialHistory: controller.isLoadingInitialHistory,
                             isPreparingInitialProjection: isPreparingTranscript,
                             isActiveProjectionPending: isActiveProjectionPending,
+                            isAwaitingFirstActiveProjection: isAwaitingFirstActiveProjection,
                             layoutFingerprint: transcriptLayoutFingerprint,
                             scrollCommand: scrollCommand,
                             sendAnimationRequest: controller.userSendAnimationRequest,

@@ -24,6 +24,7 @@ extension VirtualizedTranscriptScrollView {
         let newIsLoadingInitialHistory = input.isLoadingInitialHistory
         let newIsPreparingInitialProjection = input.isPreparingInitialProjection
         let newIsActiveProjectionPending = input.isActiveProjectionPending
+        let newIsAwaitingFirstActiveProjection = input.isAwaitingFirstActiveProjection
         let newLayoutFingerprint = input.layoutFingerprint
         let newScrollCommand = input.scrollCommand
         let newSendAnimationRequest = input.sendAnimationRequest
@@ -54,6 +55,7 @@ extension VirtualizedTranscriptScrollView {
         self.onOlderHistoryPresented = onOlderHistoryPresented
         isPreparingInitialProjection = newIsPreparingInitialProjection
         isActiveProjectionPending = newIsActiveProjectionPending
+        isAwaitingFirstActiveProjection = newIsAwaitingFirstActiveProjection
         isLoadingInitialHistory = newIsLoadingInitialHistory
         guard !newIsPreparingInitialProjection else {
             setNeedsLayout()

@@ -4,10 +4,13 @@ import TranscriptKit
 
 /// Observes only the token-level active slot, parses it away from MainActor,
 /// and leaves the cached settled projection untouched.
+/// The content closure receives the active rows, their version, whether a
+/// newer projection than the published one is in flight, and whether no
+/// projection has been published yet for the current active item.
 public struct ActiveTranscriptProjectionScope<Content: View>: View {
     private let controller: SessionController
     private let projectedRows: [TranscriptPresentationRow]
-    private let content: ([TranscriptPresentationRow], UInt64, Bool) -> Content
+    private let content: ([TranscriptPresentationRow], UInt64, Bool, Bool) -> Content
     @State private var activeRows: [TranscriptPresentationRow] = []
     @State private var activeRowsVersion: UInt64 = 0
     @State private var publishedProjectionKey: TaskKey?
@@ -17,7 +20,7 @@ public struct ActiveTranscriptProjectionScope<Content: View>: View {
     public init(
         controller: SessionController,
         projectedRows: [TranscriptPresentationRow],
-        @ViewBuilder content: @escaping ([TranscriptPresentationRow], UInt64, Bool) -> Content
+        @ViewBuilder content: @escaping ([TranscriptPresentationRow], UInt64, Bool, Bool) -> Content
     ) {
         self.controller = controller
         self.projectedRows = projectedRows
@@ -30,7 +33,16 @@ public struct ActiveTranscriptProjectionScope<Content: View>: View {
         let isActiveProjectionPending =
             projectedItem != nil
             && publishedProjectionKey != projectionKey
-        content(activeRows, activeRowsVersion, isActiveProjectionPending)
+        // `isActiveProjectionPending` lags by design on a steady stream: the
+        // model advances every frame just before the rows prepared for the
+        // previous frame publish, so exact key equality is rarely true while
+        // tokens flow. Gates that only need the active slot to have *some*
+        // precise geometry (initial presentation, warm reattachment) must not
+        // wait for that; they wait for the first publication for this item.
+        let isAwaitingFirstActiveProjection =
+            projectedItem != nil
+            && publishedProjectionKey?.projectedID != projectedItem?.id
+        content(activeRows, activeRowsVersion, isActiveProjectionPending, isAwaitingFirstActiveProjection)
             .task(id: taskKey) {
                 guard let projectedItem else {
                     projectionWorker.cancel()

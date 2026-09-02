@@ -160,6 +160,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     /// that provisional topology; otherwise an uncached chat visibly jumps from
     /// the aggregate estimate to the final block layout.
     var isActiveProjectionPending = false
+    var isAwaitingFirstActiveProjection = false
     var scrollCommand = TranscriptScrollCommand()
     var receivedSendAnimationToken: UInt64?
     var pendingSendAnimationRequest: UserSendAnimationRequest?

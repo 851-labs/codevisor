@@ -260,7 +260,7 @@ extension VirtualizedTranscriptScrollView {
         guard
             initialPresentationGate.resolve(
                 isHydrating: isLoadingInitialHistory || isPreparingInitialProjection,
-                isActiveProjectionPending: isActiveProjectionPending,
+                isActiveProjectionPending: isAwaitingFirstActiveProjection,
                 requiredKeys: requiredKeys,
                 resolvedKeys: resolvedKeys,
                 hasPendingMeasurements: !pendingMeasuredHeights.isEmpty

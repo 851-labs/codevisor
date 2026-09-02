@@ -48,6 +48,9 @@ public struct TranscriptSurfaceInput {
     public var isLoadingInitialHistory: Bool
     public var isPreparingInitialProjection: Bool
     public var isActiveProjectionPending: Bool
+    /// No precise active projection has been published yet for the current
+    /// active item, so the aggregate placeholder is all the surface has.
+    public var isAwaitingFirstActiveProjection: Bool
     public var layoutFingerprint: Int
     public var scrollCommand: TranscriptScrollCommand
     public var sendAnimationRequest: UserSendAnimationRequest?
@@ -73,6 +76,7 @@ public struct TranscriptSurfaceInput {
         isLoadingInitialHistory: Bool,
         isPreparingInitialProjection: Bool,
         isActiveProjectionPending: Bool,
+        isAwaitingFirstActiveProjection: Bool = false,
         layoutFingerprint: Int,
         scrollCommand: TranscriptScrollCommand,
         sendAnimationRequest: UserSendAnimationRequest?,
@@ -97,6 +101,7 @@ public struct TranscriptSurfaceInput {
         self.isLoadingInitialHistory = isLoadingInitialHistory
         self.isPreparingInitialProjection = isPreparingInitialProjection
         self.isActiveProjectionPending = isActiveProjectionPending
+        self.isAwaitingFirstActiveProjection = isAwaitingFirstActiveProjection
         self.layoutFingerprint = layoutFingerprint
         self.scrollCommand = scrollCommand
         self.sendAnimationRequest = sendAnimationRequest
