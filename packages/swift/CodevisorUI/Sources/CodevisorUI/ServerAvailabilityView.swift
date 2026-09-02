@@ -13,6 +13,10 @@ public struct ServerAvailabilityView: View {
     private let dataUpgradeProgress: LocalDataUpgradeProgress?
     private let appUpdateInProgress: Bool
     private let retry: () -> Void
+    /// Re-points the caller at this Mac. Offered only for remote machines
+    /// whose wait is open-ended (see `ServerAvailabilityFallbackPolicy`);
+    /// nil when the caller has no local machine to fall back to.
+    private let useLocalMachine: (() -> Void)?
 
     public init(
         machineId: String,
@@ -21,6 +25,7 @@ public struct ServerAvailabilityView: View {
         isLocal: Bool,
         dataUpgradeProgress: LocalDataUpgradeProgress? = nil,
         appUpdateInProgress: Bool = false,
+        useLocalMachine: (() -> Void)? = nil,
         retry: @escaping () -> Void
     ) {
         self.machineId = machineId
@@ -30,6 +35,7 @@ public struct ServerAvailabilityView: View {
         self.dataUpgradeProgress = dataUpgradeProgress
         self.appUpdateInProgress = appUpdateInProgress
         self.retry = retry
+        self.useLocalMachine = useLocalMachine
     }
 
     public var body: some View {
@@ -73,9 +79,18 @@ public struct ServerAvailabilityView: View {
                     .frame(maxWidth: 320)
                 }
 
-                if isFailed {
-                    Button("Try Again", action: retry)
-                        .buttonStyle(.borderedProminent)
+                if isFailed || offersLocalMachine {
+                    HStack(spacing: 10) {
+                        if isFailed {
+                            Button("Try Again", action: retry)
+                                .buttonStyle(.borderedProminent)
+                        }
+                        if offersLocalMachine, let useLocalMachine {
+                            Button("Use This Mac Instead", action: useLocalMachine)
+                                .buttonStyle(.bordered)
+                                .accessibilityHint("Start new chats on this Mac instead of \(machineName)")
+                        }
+                    }
                 }
             }
         }
@@ -95,6 +110,17 @@ public struct ServerAvailabilityView: View {
 
     private var progressFraction: Double? {
         activeMigration?.state == "running" ? activeMigration?.fractionCompleted : nil
+    }
+
+    private var offersLocalMachine: Bool {
+        useLocalMachine != nil
+            && ServerAvailabilityFallbackPolicy.offersLocalMachine(
+                isLocal: isLocal,
+                availability: availability,
+                hasLocalMachine: true,
+                appUpdateInProgress: appUpdateInProgress,
+                migrationInProgress: activeMigration != nil
+            )
     }
 
     private var isFailed: Bool {

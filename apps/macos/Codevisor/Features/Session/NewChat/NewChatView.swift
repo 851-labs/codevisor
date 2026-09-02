@@ -95,6 +95,10 @@ struct NewChatView: View {
     /// Which run picker chip the pointer is over; its neighbouring dividers
     /// hide so the hover capsule never butts against a hairline.
     @State var hoveredRunPicker: RunPicker?
+    /// Set when the user escaped a blocked remote target from the
+    /// availability screen. Outranks navigation's initial target and the
+    /// remembered machine so the page re-points before a draft exists.
+    @State var composerMachineFallbackId: String?
     @Namespace private var composerGlassNamespace
     @Environment(\.openSettings) var openSettings
 

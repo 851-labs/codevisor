@@ -8,6 +8,7 @@ extension NewChatView {
     /// routing reads this preference.
     var composerServerId: String {
         if let controller { return controller.project.serverId }
+        if let composerMachineFallbackId { return composerMachineFallbackId }
         if let initialProjectTarget { return initialProjectTarget.serverId }
         if let remembered = environment.composerDefaults.lastNewWorkspaceServerId,
             environment.machines.allMachines.contains(where: { $0.id == remembered })
@@ -72,7 +73,10 @@ extension NewChatView {
                 dataUpgradeProgress: composerMachine.isLocal
                     ? environment.localServer?.dataUpgradeProgress
                     : nil,
-                appUpdateInProgress: environment.appUpdate.isUpdating
+                appUpdateInProgress: environment.appUpdate.isUpdating,
+                useLocalMachine: localFallbackMachine.map { local in
+                    { useLocalMachineForComposer(local) }
+                }
             ) {
                 Task {
                     await environment.machines.retryMachine(composerMachine.id)
@@ -90,6 +94,32 @@ extension NewChatView {
         environment.machines.machine(for: composerServerId)
             ?? environment.machines.allMachines.first
             ?? CodevisorMachine.local
+    }
+
+    /// This Mac, when the page is aimed at a remote machine and the fleet
+    /// still has a local server to fall back to.
+    private var localFallbackMachine: CodevisorMachine? {
+        guard !composerMachine.isLocal else { return nil }
+        return environment.machines.machine(for: CodevisorMachine.local.id)
+    }
+
+    /// The escape hatch from a blocked remote target. Performs the same
+    /// re-point as the composer's machine picker, but works while the
+    /// composer is unmounted. The retained page draft may itself be aimed at
+    /// the remote machine (the picker retargets drafts in place, and that is
+    /// how a remote became the default), so it is re-pointed like the picker
+    /// would; otherwise only the remembered machine changes. The page-local
+    /// override then mounts the composer on this Mac.
+    private func useLocalMachineForComposer(_ local: CodevisorMachine) {
+        composerMachineFallbackId = local.id
+        let draft =
+            controller
+            ?? store.draft(project: .runTargetPlaceholder(serverId: local.id))
+        if draft.project.serverId == local.id {
+            environment.composerDefaults.rememberNewWorkspaceServer(serverId: local.id)
+        } else {
+            selectTargetMachine(local, controller: draft)
+        }
     }
 
     private var composerServerAvailability: ServerAvailability {
