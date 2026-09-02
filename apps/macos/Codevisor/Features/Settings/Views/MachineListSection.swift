@@ -19,11 +19,26 @@ struct MachinePaneRoute: Hashable {
 /// sync badge on the row — that pushes each machine's page. A
 /// single-machine fleet skips the list and shows its one machine's sections
 /// inline.
-struct MachineListSection<Content: View>: View {
+struct MachineListSection<Content: View, Footer: View>: View {
     @Environment(AppEnvironment.self) private var environment
     let pane: MachinePaneRoute.Pane
     let badge: (CodevisorMachine) -> MachineSyncBadge
-    @ViewBuilder let content: (CodevisorMachine) -> Content
+    let content: (CodevisorMachine) -> Content
+    /// Fleet-level list actions. A single-machine fleet renders that
+    /// machine's own actions inline, so the footer only shows under a list.
+    let footer: () -> Footer
+
+    init(
+        pane: MachinePaneRoute.Pane,
+        badge: @escaping (CodevisorMachine) -> MachineSyncBadge,
+        @ViewBuilder content: @escaping (CodevisorMachine) -> Content,
+        @ViewBuilder footer: @escaping () -> Footer
+    ) {
+        self.pane = pane
+        self.badge = badge
+        self.content = content
+        self.footer = footer
+    }
 
     var body: some View {
         let machines = environment.machines.allMachines
@@ -41,7 +56,19 @@ struct MachineListSection<Content: View>: View {
                         }
                     }
                 }
+            } footer: {
+                footer()
             }
         }
+    }
+}
+
+extension MachineListSection where Footer == EmptyView {
+    init(
+        pane: MachinePaneRoute.Pane,
+        badge: @escaping (CodevisorMachine) -> MachineSyncBadge,
+        @ViewBuilder content: @escaping (CodevisorMachine) -> Content
+    ) {
+        self.init(pane: pane, badge: badge, content: content) { EmptyView() }
     }
 }

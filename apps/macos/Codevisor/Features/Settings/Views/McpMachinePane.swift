@@ -144,7 +144,7 @@ struct McpMachinePane: View {
                 }
             }
         }
-        Section("MCP Servers") {
+        Section {
             if managed.isEmpty {
                 Text("No MCP servers added yet.")
                     .foregroundStyle(.secondary)
@@ -153,16 +153,21 @@ struct McpMachinePane: View {
                     serverRow(server)
                 }
             }
-            Button {
-                showingAdd = true
-            } label: {
-                Label("Add MCP Server…", systemImage: "plus")
-            }
-            .settingsActionTint(theme)
             if let errorMessage {
                 Label(errorMessage, systemImage: "exclamationmark.triangle")
                     .font(.callout)
                     .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("MCP Servers")
+        } footer: {
+            SettingsListActions {
+                Button {
+                    showingAdd = true
+                } label: {
+                    Label("Add MCP Server…", systemImage: "plus")
+                }
+                .settingsActionTint(theme)
             }
         }
         importSection
@@ -201,13 +206,6 @@ struct McpMachinePane: View {
                         onImport: { Task { await importIdentities([candidate.identity]) } }
                     )
                 }
-                if candidates.count > 1 {
-                    Button("Import All") {
-                        Task { await importIdentities(candidates.map(\.identity)) }
-                    }
-                    .settingsActionTint(theme)
-                    .disabled(!importingIdentities.isEmpty)
-                }
                 if let importFeedback {
                     Text(importFeedback)
                         .font(.callout)
@@ -215,6 +213,16 @@ struct McpMachinePane: View {
                 }
             } header: {
                 Text("Found in Your Harnesses")
+            } footer: {
+                if candidates.count > 1 {
+                    SettingsListActions {
+                        Button("Import All") {
+                            Task { await importIdentities(candidates.map(\.identity)) }
+                        }
+                        .settingsActionTint(theme)
+                        .disabled(!importingIdentities.isEmpty)
+                    }
+                }
             }
         }
     }

@@ -85,10 +85,13 @@ struct AppearanceSettingsView: View {
                         }
                     }
                 }
-                Button("Import Theme…") { showingImporter = true }
-                    .settingsActionTint(theme)
             } header: {
                 Text("Custom Themes")
+            } footer: {
+                SettingsListActions {
+                    Button("Import Theme…") { showingImporter = true }
+                        .settingsActionTint(theme)
+                }
             }
         }
         .settingsPaneFormStyle(theme)

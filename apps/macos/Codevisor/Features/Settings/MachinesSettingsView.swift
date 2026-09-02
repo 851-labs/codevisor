@@ -78,14 +78,17 @@ struct MachinesSettingsView: View {
                         machineRow(machine)
                     }
                 }
-                Button {
-                    showingAdd = true
-                } label: {
-                    Label("Add Remote Machine…", systemImage: "plus")
-                }
-                .settingsActionTint(theme)
             } header: {
                 Text("Machines")
+            } footer: {
+                SettingsListActions {
+                    Button {
+                        showingAdd = true
+                    } label: {
+                        Label("Add Remote Machine…", systemImage: "plus")
+                    }
+                    .settingsActionTint(theme)
+                }
             }
             // The cloud account (sign-in, self-hosted server) as its own
             // "Cloud" section.

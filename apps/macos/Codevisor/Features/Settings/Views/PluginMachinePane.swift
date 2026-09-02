@@ -162,9 +162,8 @@ struct PluginMachinePane: View {
         return "\(base) \(count) open pane\(count == 1 ? "" : "s") will be closed."
     }
 
-    @ViewBuilder
     private var content: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        Section {
             if isLoading, plugins == nil {
                 HStack {
                     ProgressView().controlSize(.small)
@@ -187,7 +186,12 @@ struct PluginMachinePane: View {
                         pluginRow(plugin)
                     }
                 }
-                HStack(spacing: 10) {
+            }
+        } footer: {
+            // The actions arrive with the list: nothing to install into
+            // while the list is still loading or the machine is unreachable.
+            if plugins != nil {
+                SettingsListActions {
                     Button {
                         activeSheet = .browse
                     } label: {

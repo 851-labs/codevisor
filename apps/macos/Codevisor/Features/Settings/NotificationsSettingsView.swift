@@ -102,13 +102,16 @@ struct NotificationsSettingsView: View {
                         customSoundRow(sound)
                     }
                 }
-                Button("Add Sound…") {
-                    soundImportTarget = nil
-                    showingSoundImporter = true
-                }
-                .settingsActionTint(theme)
             } header: {
                 Text("Custom Sounds")
+            } footer: {
+                SettingsListActions {
+                    Button("Add Sound…") {
+                        soundImportTarget = nil
+                        showingSoundImporter = true
+                    }
+                    .settingsActionTint(theme)
+                }
             }
 
             Section("Test") {

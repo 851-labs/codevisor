@@ -175,7 +175,7 @@ struct SkillMachinePane: View {
     }
 
     private var globalSection: some View {
-        Section("Global Skills") {
+        Section {
             if isLoading, scan == nil {
                 HStack {
                     ProgressView().controlSize(.small)
@@ -201,7 +201,14 @@ struct SkillMachinePane: View {
                         globalSkillRow(skill)
                     }
                 }
-                HStack(spacing: 10) {
+            }
+        } header: {
+            Text("Global Skills")
+        } footer: {
+            // The actions arrive with the list: nothing to add to while the
+            // scan is still loading or the machine is unreachable.
+            if scan != nil {
+                SettingsListActions {
                     Button {
                         showingCreate = true
                     } label: {

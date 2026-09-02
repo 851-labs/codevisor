@@ -27,25 +27,16 @@ struct SkillsSettingsView: View {
         Form {
             MachineListSection(pane: .skills, badge: badge) { machine in
                 SkillMachinePane(machine: machine)
-            }
-            // A single-machine fleet renders that machine's own actions
-            // inline; the fleet-level ones only earn their place above a list.
-            if environment.machines.allMachines.count > 1 {
-                Section {
-                    HStack(spacing: 10) {
-                        Button {
-                            showingCreate = true
-                        } label: {
-                            Label("New Skill…", systemImage: "plus")
-                        }
+            } footer: {
+                SettingsListActions(message: actionError) {
+                    Button {
+                        showingCreate = true
+                    } label: {
+                        Label("New Skill…", systemImage: "plus")
+                    }
+                    .settingsActionTint(theme)
+                    Button("Import Skills…") { showingRemoteImport = true }
                         .settingsActionTint(theme)
-                        Button("Import Skills…") { showingRemoteImport = true }
-                            .settingsActionTint(theme)
-                    }
-                    if let actionError {
-                        Label(actionError, systemImage: "exclamationmark.triangle")
-                            .foregroundStyle(.secondary)
-                    }
                 }
             }
         }

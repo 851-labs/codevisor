@@ -32,29 +32,20 @@ struct PluginsSettingsView: View {
         Form {
             MachineListSection(pane: .plugins, badge: badge) { machine in
                 PluginMachinePane(machine: machine)
-            }
-            // A single-machine fleet renders that machine's own actions
-            // inline; the fleet-level ones only earn their place above a list.
-            if environment.machines.allMachines.count > 1 {
-                Section {
-                    HStack(spacing: 10) {
-                        Button {
-                            activeSheet = .browse
-                        } label: {
-                            Label("Browse Plugins…", systemImage: "magnifyingglass")
-                        }
-                        .settingsActionTint(theme)
-                        Button {
-                            activeSheet = .install(initialSource: nil)
-                        } label: {
-                            Label("Install Plugin…", systemImage: "plus")
-                        }
-                        .settingsActionTint(theme)
+            } footer: {
+                SettingsListActions(message: actionError) {
+                    Button {
+                        activeSheet = .browse
+                    } label: {
+                        Label("Browse Plugins…", systemImage: "magnifyingglass")
                     }
-                    if let actionError {
-                        Label(actionError, systemImage: "exclamationmark.triangle")
-                            .foregroundStyle(.secondary)
+                    .settingsActionTint(theme)
+                    Button {
+                        activeSheet = .install(initialSource: nil)
+                    } label: {
+                        Label("Install Plugin…", systemImage: "plus")
                     }
+                    .settingsActionTint(theme)
                 }
             }
         }

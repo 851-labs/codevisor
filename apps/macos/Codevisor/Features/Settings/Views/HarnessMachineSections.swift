@@ -51,8 +51,7 @@ struct HarnessMachineSections: View {
         } header: {
             Text("Installed")
         } footer: {
-            HStack(spacing: 10) {
-                Spacer(minLength: 0)
+            SettingsListActions {
                 Button(action: onScan) {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
@@ -61,7 +60,6 @@ struct HarnessMachineSections: View {
                 Button("Add Custom Harness…") { onEditCustom(nil) }
                     .settingsActionTint(theme)
             }
-            .font(.body)
         }
     }
 

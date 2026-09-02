@@ -15,21 +15,14 @@ struct McpSettingsView: View {
         Form {
             MachineListSection(pane: .mcps, badge: badge) { machine in
                 McpMachinePane(machine: machine)
-            }
-            // A single-machine fleet renders that machine's own Add inline;
-            // the fleet-level action only earns its place above a list.
-            if environment.machines.allMachines.count > 1 {
-                Section {
+            } footer: {
+                SettingsListActions(message: addError) {
                     Button {
                         showingAdd = true
                     } label: {
                         Label("Add MCP Server…", systemImage: "plus")
                     }
                     .settingsActionTint(theme)
-                    if let addError {
-                        Label(addError, systemImage: "exclamationmark.triangle")
-                            .foregroundStyle(.secondary)
-                    }
                 }
             }
         }
