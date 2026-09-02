@@ -5,36 +5,6 @@ import CodevisorUI
 import StreamMarkdown
 import SwiftUI
 
-/// Which chronological slice of a settled assistant turn this row owns.
-/// Active turns use `.complete`; settled plan turns split into planning and
-/// result rows with `PlanDocumentView` virtualized independently between them.
-enum AssistantTurnPresentation: Equatable {
-    case complete
-    case planning
-    case result
-    case completePrelude
-    case resultPrelude
-    case activity
-    case epilogue
-
-    var showsPlanning: Bool {
-        switch self {
-        case .complete, .planning, .completePrelude: true
-        case .result, .resultPrelude, .activity, .epilogue: false
-        }
-    }
-    var showsPlanDocument: Bool { self == .complete }
-    var showsResultWork: Bool {
-        switch self {
-        case .complete, .result, .completePrelude, .resultPrelude: true
-        case .planning, .activity, .epilogue: false
-        }
-    }
-    var showsActivity: Bool { showsResultWork || self == .activity }
-    var showsResponse: Bool { self == .complete || self == .result }
-    var showsEpilogue: Bool { showsResponse || self == .epilogue }
-}
-
 /// Renders one assistant turn: reasoning text and tool-call groups collapse into
 /// a "Worked for…" disclosure, the final answer renders expanded at the bottom,
 /// and a truthful activity status shows while the agent is working or waiting.

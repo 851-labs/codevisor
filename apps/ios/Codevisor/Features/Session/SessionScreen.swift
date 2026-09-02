@@ -456,25 +456,27 @@ struct SessionTranscriptView: View {
                     },
                     rowContent: { row in
                         AnyView(
-                            TranscriptVirtualRowContent(row: row, controller: controller)
-                                .reportsStreamingTextAnimationActivity()
-                                .environment(\.theme, theme)
-                                .environment(\.attachmentImages, attachmentImages)
-                                .environment(\.transcriptDisclosure, disclosure)
-                                .environment(\.transcriptController, controller)
-                                .environment(
-                                    \.streamingTextAnimationVisibility,
-                                    textAnimationVisibility
-                                )
-                                .environment(
-                                    \.streamingTextAnimationRegistry,
-                                    textAnimationRegistry
-                                )
-                                .environment(
-                                    \.runningSubagentToolCallIds,
-                                    controller.runningSubagentToolCallIds
-                                )
-                                .environment(\.markdownTableBleed, 16)
+                            TranscriptRowContentView(
+                                row: row, controller: controller, leaves: .iOS(controller: controller)
+                            )
+                            .reportsStreamingTextAnimationActivity()
+                            .environment(\.theme, theme)
+                            .environment(\.attachmentImages, attachmentImages)
+                            .environment(\.transcriptDisclosure, disclosure)
+                            .environment(\.transcriptController, controller)
+                            .environment(
+                                \.streamingTextAnimationVisibility,
+                                textAnimationVisibility
+                            )
+                            .environment(
+                                \.streamingTextAnimationRegistry,
+                                textAnimationRegistry
+                            )
+                            .environment(
+                                \.runningSubagentToolCallIds,
+                                controller.runningSubagentToolCallIds
+                            )
+                            .environment(\.markdownTableBleed, 16)
                         )
                     },
                     onViewportChange: { state in

@@ -234,7 +234,7 @@ struct ChatScreen: View {
                             },
                             rowContent: { row in
                                 AnyView(
-                                    virtualRowContent(row)
+                                    TranscriptRowContentView(row: row, controller: controller, leaves: rowLeaves)
                                         .reportsStreamingTextAnimationActivity()
                                         .environment(\.theme, theme)
                                         .environment(\.attachmentImages, attachmentImages)
@@ -670,99 +670,6 @@ struct ChatScreen: View {
         return hasher.finalize()
     }
 
-    @ViewBuilder
-    private func virtualRowContent(_ row: TranscriptVirtualRow) -> some View {
-        switch row.content {
-        case let .message(item, waitingOnBackgroundTask):
-            ConversationItemView(
-                item: item,
-                isWaitingOnUser: controller.pendingQuestion != nil,
-                waitingOnBackgroundTask: waitingOnBackgroundTask
-            )
-        case let .assistantPlanning(message):
-            AssistantTurnView(
-                turn: message.turn,
-                turnID: message.id,
-                isWaitingOnUser: controller.pendingQuestion != nil,
-                presentation: .planning
-            )
-        case let .planDocument(markdown):
-            PlanDocumentView(markdown: markdown)
-        case .planHeader:
-            PlanDocumentHeaderView()
-        case let .assistantResult(message, waitingOnBackgroundTask):
-            AssistantTurnView(
-                turn: message.turn,
-                turnID: message.id,
-                isWaitingOnUser: controller.pendingQuestion != nil,
-                waitingOnBackgroundTask: waitingOnBackgroundTask,
-                presentation: .result
-            )
-        case let .assistantWorkedHeader(header):
-            TranscriptSettledWorkedHeaderRow(header: header)
-        case let .activeWorkedHeader(header):
-            TranscriptActiveWorkedHeaderRow(controller: controller, header: header)
-        case let .assistantWorkedItem(item):
-            TranscriptSettledWorkedItemRow(item: item)
-        case let .activeWorkedItem(reference):
-            TranscriptActiveWorkedItemRow(controller: controller, reference: reference)
-        case let .assistantChrome(message, slice, waitingOnBackgroundTask):
-            AssistantTurnView(
-                turn: message.turn,
-                turnID: message.id,
-                isWaitingOnUser: controller.pendingQuestion != nil,
-                waitingOnBackgroundTask: waitingOnBackgroundTask,
-                presentation: assistantPresentation(for: slice)
-            )
-        case let .markdownChunk(chunk):
-            TranscriptMarkdownChunkView(chunk: chunk, streamID: row.layoutKey)
-        case let .assistantAttachment(attachment):
-            VStack(alignment: .leading, spacing: 4) {
-                AttachmentThumbnailView(file: attachment.file, inline: true)
-                Text(attachment.label)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        case let .active(item):
-            TranscriptActiveItemView(controller: controller, projectedItem: item)
-        case let .setup(phases):
-            SessionSetupView(phases: phases)
-        case let .optimistic(message, showsStartingAgent):
-            if !message.text.isEmpty || !message.attachments.isEmpty {
-                UserMessageView(message: message)
-                if showsStartingAgent {
-                    ShimmeringText.startingAgent
-                        .suppressedDuringStreamingTextEntrance()
-                }
-            }
-        case let .backgroundTask(description):
-            ChatActivityRow("Waiting on \(description)...")
-                .suppressedDuringStreamingTextEntrance()
-        case let .updateGate(harnessName):
-            ChatActivityRow("Waiting for \(harnessName) to finish updating...")
-                .suppressedDuringStreamingTextEntrance()
-        case let .connecting(message):
-            ChatActivityRow(message)
-                .suppressedDuringStreamingTextEntrance()
-        case let .serverWait(message):
-            ChatActivityRow(message)
-                .suppressedDuringStreamingTextEntrance()
-        case let .error(message):
-            errorBanner(message)
-        case let .bottomSpacer(height):
-            Color.clear.frame(height: height)
-        }
-    }
-
-    private func assistantPresentation(
-        for slice: TranscriptAssistantChromeSlice
-    ) -> AssistantTurnPresentation {
-        switch slice {
-        case .activity: .activity
-        case .epilogue: .epilogue
-        }
-    }
-
     private var composerOverlay: some View {
         VStack(spacing: ComposerGlassStyle.clusterSpacing) {
             if let todos = controller.visibleTodos {
@@ -893,6 +800,10 @@ struct ChatScreen: View {
         )
     }
 
+    private var rowLeaves: TranscriptRowLeaves {
+        .macOS(errorRow: { AnyView(errorBanner($0)) })
+    }
+
     @ViewBuilder
     private func errorBanner(_ message: String) -> some View {
         if message == serverUnreachableErrorMessage {
@@ -915,62 +826,6 @@ struct ChatScreen: View {
                 actionTitle: "Retry",
                 action: { Task { await controller.retrySessionFailure() } }
             )
-        }
-    }
-}
-
-/// The one transcript row that re-renders on token flushes. Deliberately the
-/// ONLY view whose body reads `controller.activeItem`: Observation scopes
-/// invalidation to the body that read the property, so streaming updates
-/// re-evaluate this subtree alone while the settled ForEach above stays
-/// inert. Folding this read into the transcript container's body would put
-/// every row back on the per-flush AttributeGraph diff — the O(transcript)
-/// cost that made streaming degrade with conversation length.
-private struct TranscriptActiveItemView: View {
-    let controller: SessionController
-    let projectedItem: ConversationItem
-    @Environment(\.transcriptInvalidateRowMeasurement) private var invalidateRowMeasurement
-
-    var body: some View {
-        let revision = controller.activeItemRevision
-        let waitingOnBackgroundTask = controller.waitingBackgroundTaskDescription
-        let goal = controller.model?.goal
-        let goalActivity = goal?.status == .active ? goal?.activity : nil
-        let item = TranscriptActiveItemResolver.resolve(
-            projected: projectedItem,
-            live: controller.activeItem,
-            settled: controller.settledConversation
-        )
-        ConversationItemView(
-            item: item,
-            isWaitingOnUser: controller.pendingQuestion != nil,
-            waitingOnBackgroundTask: waitingOnBackgroundTask,
-            goalActivity: goalActivity
-        )
-        // The active row is hosted behind the transcript's observation
-        // isolation boundary, so environment values injected by the
-        // outer row factory are otherwise frozen until this row is
-        // remounted. Read and inject subagent activity here so a newly
-        // active child starts shimmering while its parent is still
-        // generating, not only after the parent turn settles.
-        .environment(
-            \.runningSubagentToolCallIds,
-            controller.runningSubagentToolCallIds
-        )
-        // Like subagent activity above, the outer active-row host's
-        // environment is frozen from when streaming began. Refresh
-        // hover suspension here so copy affordances wake up as soon
-        // as the turn ends into a background-task wait.
-        .environment(\.hoverTrackingSuspended, controller.isSending)
-        .id(item.id)
-        .onChange(of: revision, initial: true) { _, _ in
-            invalidateRowMeasurement?()
-        }
-        .onChange(of: waitingOnBackgroundTask) { _, _ in
-            invalidateRowMeasurement?()
-        }
-        .onChange(of: goalActivity) { _, _ in
-            invalidateRowMeasurement?()
         }
     }
 }
