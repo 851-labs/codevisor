@@ -97,12 +97,21 @@
             nsView: SelectableTextKitView,
             context: Context
         ) -> CGSize? {
-            let text = context.coordinator.preparedText(
+            let prepared = context.coordinator.preparedText(
                 for: content,
                 animation: streamingAnimation
-            ).text
+            )
+            // A hosting-controller size probe can run before `updateNSView`
+            // has applied this value's text. Measure the text this probe was
+            // given, not whatever the view last displayed; `setContent` is a
+            // no-op for an unchanged string.
+            nsView.setContent(
+                prepared.text,
+                latestAnimationEnd: prepared.latestAnimationEnd,
+                activeAnimationRanges: prepared.activeAnimationRanges
+            )
             let width = resolvedWidth(
-                for: text,
+                for: prepared.text,
                 proposalWidth: proposal.width,
                 context: context
             )

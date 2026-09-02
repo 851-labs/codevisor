@@ -76,10 +76,18 @@
             uiView: SelectableTextKitView,
             context: Context
         ) -> CGSize? {
-            let text = context.coordinator.preparedText(
+            let prepared = context.coordinator.preparedText(
                 for: attributedText,
                 animation: streamingAnimation
-            ).text
+            )
+            // See the AppKit representable: measure the text this probe was
+            // given, not the view's previous content.
+            uiView.setContent(
+                prepared.text,
+                latestAnimationEnd: prepared.latestAnimationEnd,
+                activeAnimationRanges: prepared.activeAnimationRanges
+            )
+            let text = prepared.text
             let width = resolvedWidth(
                 for: text,
                 proposalWidth: proposal.width,
