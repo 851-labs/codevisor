@@ -59,11 +59,11 @@ struct McpManagedServerRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             if server.kind == "browserUse", let browserConfiguration {
                 Menu {
-                    // Remote machines never offer Chrome: the extension
-                    // handshake needs someone at that machine's desktop, so
-                    // Browser Use always runs the managed browser there.
+                    // A remote machine can use an extension that is already
+                    // connected, but installation controls stay on its host.
                     if browserConfiguration.chromeAvailable,
                         browserConfiguration.supportsExtensionFlow
+                            || browserConfiguration.chromeConnected
                     {
                         Button {
                             Task { await setPreferredBrowser("chrome") }
@@ -200,11 +200,10 @@ struct McpManagedServerRow: View {
     }
 
     private func preferredBrowserLabel(_ configuration: ServerBrowserUseConfiguration) -> String {
-        // Whatever an old preference says, a server without the extension
-        // flow always runs the managed browser.
-        if !configuration.supportsExtensionFlow { return "Codevisor Browser" }
         switch configuration.preferredBrowser {
-        case "chrome": return configuration.chromeConnected ? "Chrome" : "Chrome · Setup"
+        case "chrome":
+            if configuration.chromeConnected { return "Chrome" }
+            return configuration.supportsExtensionFlow ? "Chrome · Setup" : "Codevisor Browser"
         case "managed": return "Codevisor Browser"
         default: return "Choose Browser"
         }

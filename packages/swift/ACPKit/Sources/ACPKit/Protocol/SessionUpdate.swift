@@ -123,6 +123,7 @@ public struct QuestionOption: Sendable, Codable, Equatable, Identifiable {
 
 /// Optional first-party composer treatment for deterministic setup flows.
 public enum QuestionPresentation: String, Sendable, Codable, Equatable {
+    case browserChoice
     case browserExtensionSetup
     case browserExtensionWaiting
 }

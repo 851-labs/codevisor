@@ -39,9 +39,9 @@ export const BrowserUseConfiguration = Schema.Struct({
   chromeAvailable: Schema.Boolean,
   chromeConnected: Schema.Boolean,
   managedAvailable: Schema.Boolean,
-  // False on remote-kind servers: no desktop user is at that machine, so the
-  // Chrome-extension flow is disabled and setup auto-selects the managed
-  // browser. Optional for servers that predate the field (treat as true).
+  // False when this server cannot launch local Chrome installation controls.
+  // Composer setup may still hand the user off to Codevisor on that machine.
+  // Optional for servers that predate the field (treat as true).
   extensionFlowSupported: Schema.optional(Schema.Boolean),
   developmentExtensionPath: Schema.optional(Schema.String)
 })

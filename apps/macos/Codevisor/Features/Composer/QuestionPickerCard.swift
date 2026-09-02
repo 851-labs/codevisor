@@ -39,10 +39,6 @@ struct QuestionPickerContent: View {
     @State private var notes: [String: String] = [:]
     @State private var notesHeight: CGFloat = 24
     @State private var highlighted = 0
-    @State private var browserExtensionArchiveURL: URL?
-    @State private var browserExtensionIconURL: URL?
-    @State private var browserExtensionArchiveError: String?
-    @State private var isBrowserExtensionFileHovered = false
     @State private var didOpenBrowserExtensions = false
     /// Weak handles to the picker's AppKit focus targets: the key anchor
     /// (option list) and the notes editor's text view, so explicit moves —
@@ -63,17 +59,17 @@ struct QuestionPickerContent: View {
 
     private var isLastQuestion: Bool { questionIndex >= request.questions.count - 1 }
 
-    private var isResolving: Bool {
-        didStartResolving || controller.isResolvingQuestion
-    }
+    private var isResolving: Bool { didStartResolving || controller.isResolvingQuestion }
 
-    /// "Other" needs its note text — everything else can submit freely
-    /// (unanswered questions are allowed, codex-style).
+    /// "Other" needs its note text. Generic questions may be unanswered
+    /// (codex-style), while browser choice is an explicit navigation step.
     private var isSubmittable: Bool {
         request.questions.allSatisfy { question in
             let selected = selections[question.id, default: []]
             let note = (notes[question.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            return !selected.contains(Self.otherToken) || !note.isEmpty
+            let hasValidOther = !selected.contains(Self.otherToken) || !note.isEmpty
+            let hasBrowserChoice = question.presentation != .browserChoice || !selected.isEmpty
+            return hasValidOther && hasBrowserChoice
         }
     }
 
@@ -90,7 +86,9 @@ struct QuestionPickerContent: View {
                     }
                     header(question)
                     optionList(question)
-                    notesEditor(question)
+                    if question.presentation != .browserChoice {
+                        notesEditor(question)
+                    }
                     footer(question)
                 }
             }
@@ -127,15 +125,9 @@ struct QuestionPickerContent: View {
             selections = [:]
             notes = [:]
             highlighted = 0
-            browserExtensionArchiveURL = nil
-            browserExtensionIconURL = nil
-            browserExtensionArchiveError = nil
             didOpenBrowserExtensions = false
             didStartResolving = false
             focusPicker()
-        }
-        .task(id: request.questionId) {
-            await loadBrowserExtensionArchiveIfNeeded()
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Agent question")
@@ -148,248 +140,42 @@ struct QuestionPickerContent: View {
             || question.presentation == .browserExtensionWaiting
     }
 
+    /// Chrome setup can manipulate AppKit and Chrome only when this app owns
+    /// the server running the chat. Remote machines keep the same durable
+    /// question, but render a handoff that the host Mac can finish.
+    private var canInstallBrowserExtensionLocally: Bool {
+        controller.project.serverId == CodevisorMachine.local.id
+    }
+
     private func browserExtensionSetup(_ question: QuestionSpec) -> some View {
-        let isWaiting = question.presentation == .browserExtensionWaiting
-        return VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text("Add Codevisor to Chrome")
-                    .font(.callout.weight(.semibold))
-                Spacer(minLength: 12)
-                dismissButton
-            }
-
-            Group {
-                if didOpenBrowserExtensions {
-                    browserExtensionDragStage
-                } else {
-                    browserExtensionOpenStage
-                }
-            }
-            .frame(maxWidth: .infinity)
-
-            HStack(spacing: 8) {
-                if isWaiting {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("Waiting for Chrome…")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 8)
-                HStack(spacing: 4) {
-                    if didOpenBrowserExtensions {
-                        navButton("arrow.left", help: "Back to Open Chrome Extensions") {
-                            showBrowserExtensionOpenStage()
-                        }
-                    } else {
-                        if let backOptionLabel = question.backOptionLabel {
-                            navButton("arrow.left", help: "Back") {
-                                submitDirectAnswer(question, label: backOptionLabel)
-                            }
-                        }
-                        navButton("arrow.right", help: "Continue to Install Extension") {
-                            showBrowserExtensionDragStage()
-                        }
-                    }
-                }
-            }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(isWaiting ? "Finish Chrome setup" : "Connect Chrome")
-    }
-
-    private var browserExtensionOpenStage: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 12) {
-                browserChromeIcon
-                Text("Open Chrome’s Extensions page")
-                    .font(.callout.weight(.medium))
-                    .fixedSize(horizontal: true, vertical: false)
-                Spacer(minLength: 16)
-                openChromeExtensionsButton
-            }
-            .frame(maxWidth: .infinity)
-
-            VStack(spacing: 10) {
-                HStack(spacing: 10) {
-                    browserChromeIcon
-                    Text("Open Chrome’s Extensions page")
-                        .font(.callout.weight(.medium))
-                }
-                openChromeExtensionsButton
-            }
-            .frame(maxWidth: .infinity)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(theme.cardQuietBackground)
+        BrowserExtensionQuestionContent(
+            controller: controller,
+            question: question,
+            canInstallLocally: canInstallBrowserExtensionLocally,
+            didOpenBrowserExtensions: $didOpenBrowserExtensions,
+            cancel: { cancel() },
+            submitBack: { submitDirectAnswer(question, label: $0) },
+            performSetupAction: performBrowserSetupAction,
+            showDragStage: showBrowserExtensionDragStage
         )
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Open Chrome’s Extensions page")
-    }
-
-    private var browserExtensionDragStage: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 12) {
-                Text("Drag this file into Chrome’s Extensions page")
-                    .font(.callout.weight(.medium))
-                    .fixedSize(horizontal: true, vertical: false)
-                Spacer(minLength: 16)
-                browserExtensionFile
-            }
-            .frame(maxWidth: .infinity)
-
-            VStack(spacing: 10) {
-                Text("Drag this file into Chrome’s Extensions page")
-                    .font(.callout.weight(.medium))
-                    .multilineTextAlignment(.center)
-                browserExtensionFile
-            }
-            .frame(maxWidth: .infinity)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(theme.cardQuietBackground)
-        )
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Drag Codevisor into the Chrome Extensions page")
-    }
-
-    private var browserChromeIcon: some View {
-        Image("browser-chrome")
-            .resizable()
-            .interpolation(.high)
-            .scaledToFit()
-            .frame(width: 36, height: 36)
-            .accessibilityHidden(true)
-    }
-
-    private var openChromeExtensionsButton: some View {
-        Button("Open Chrome Extensions") {
-            performBrowserSetupAction("Open Extensions")
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.regular)
-        .fixedSize()
-    }
-
-    private func browserExtensionFileIcon(_ url: URL) -> some View {
-        let icon =
-            browserExtensionIconURL
-            .flatMap(NSImage.init(contentsOf:))
-            ?? NSWorkspace.shared.icon(forFile: url.path)
-        icon.size = NSSize(width: 48, height: 48)
-        return Image(nsImage: icon)
-            .resizable()
-            .interpolation(.high)
-            .scaledToFit()
-            .frame(width: 36, height: 36)
-            .accessibilityHidden(true)
-    }
-
-    private var browserExtensionFileBackground: some ShapeStyle {
-        if isBrowserExtensionFileHovered {
-            return AnyShapeStyle(theme.cardHoverBackground)
-        }
-        return AnyShapeStyle(Color.clear)
-    }
-
-    @ViewBuilder
-    private var browserExtensionFile: some View {
-        if let browserExtensionArchiveURL {
-            HStack(spacing: 8) {
-                browserExtensionFileIcon(browserExtensionArchiveURL)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Codevisor for Chrome.zip")
-                        .font(.caption.weight(.medium))
-                        .lineLimit(1)
-                    Label("Drag", systemImage: "hand.draw")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(.horizontal, 8)
-            .frame(width: 208, height: 52, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(browserExtensionFileBackground)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(theme.border.opacity(0.7), lineWidth: 0.5)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .onHover { isBrowserExtensionFileHovered = $0 }
-            .onDrag {
-                NSItemProvider(contentsOf: browserExtensionArchiveURL) ?? NSItemProvider()
-            }
-            .help("Drag the Codevisor extension into Chrome")
-            .accessibilityLabel("Codevisor Chrome Extension zip file")
-            .accessibilityHint("Drag this file onto the Chrome Extensions page")
-        } else if browserExtensionArchiveError != nil {
-            HStack(spacing: 8) {
-                Image(systemName: "exclamationmark.triangle")
-                    .foregroundStyle(.secondary)
-                Text("Extension file unavailable")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 4)
-                Button("Retry") {
-                    Task { await loadBrowserExtensionArchiveIfNeeded(force: true) }
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            }
-            .frame(width: 208, height: 52)
-        } else {
-            HStack(spacing: 8) {
-                ProgressView()
-                    .controlSize(.small)
-                Text("Preparing extension…")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(width: 208, height: 52)
-        }
-    }
-
-    private func loadBrowserExtensionArchiveIfNeeded(force: Bool = false) async {
-        guard question.map(isBrowserExtensionPresentation) == true else { return }
-        if !force, browserExtensionArchiveURL != nil { return }
-        browserExtensionArchiveError = nil
-        do {
-            browserExtensionArchiveURL = try await controller.browserExtensionArchive()
-            browserExtensionIconURL = try? await controller.browserExtensionIcon()
-        } catch {
-            browserExtensionArchiveURL = nil
-            browserExtensionIconURL = nil
-            browserExtensionArchiveError = String(describing: error)
-        }
     }
 
     private func performBrowserSetupAction(_ action: String) {
         if action == "Open Extensions" {
-            showBrowserExtensionDragStage()
+            showBrowserExtensionDragStage(true)
         }
         Task {
             await controller.performBrowserExtensionSetupAction(action)
         }
     }
 
-    private func showBrowserExtensionOpenStage() {
-        didOpenBrowserExtensions = false
+    private func showBrowserExtensionDragStage(_ isVisible: Bool) {
+        didOpenBrowserExtensions = isVisible
         focusPicker()
     }
+}
 
-    private func showBrowserExtensionDragStage() {
-        didOpenBrowserExtensions = true
-        focusPicker()
-    }
-
+private extension QuestionPickerContent {
     private var dismissButton: some View {
         Button {
             cancel()
@@ -568,27 +354,43 @@ struct QuestionPickerContent: View {
             // Action buttons cluster tighter than the hint text.
             HStack(spacing: 4) {
                 if let backOptionLabel = question.backOptionLabel {
-                    navButton("arrow.left", help: "Back") {
+                    ComposerNavigationButton(
+                        systemImage: "arrow.left",
+                        help: "Back",
+                        accessibilityLabel: "Back"
+                    ) {
                         submitDirectAnswer(question, label: backOptionLabel)
                     }
                 }
                 if questionIndex > 0 {
-                    navButton("arrow.left", help: "Previous question (←)") {
+                    ComposerNavigationButton(
+                        systemImage: "arrow.left",
+                        help: "Previous question (←)",
+                        accessibilityLabel: "Previous question"
+                    ) {
                         moveQuestion(-1)
                     }
                 }
                 if !isLastQuestion {
                     // More questions ahead: advance instead of submitting.
-                    navButton("arrow.right", help: "Next question (→)") {
+                    ComposerNavigationButton(
+                        systemImage: "arrow.right",
+                        help: "Next question (→)",
+                        accessibilityLabel: "Next question"
+                    ) {
                         moveQuestion(1)
                     }
                 } else {
+                    let isBrowserChoice = question.presentation == .browserChoice
                     ComposerSubmitButton(
+                        systemImage: isBrowserChoice ? "arrow.right" : "arrow.up",
                         isEnabled: isSubmittable,
                         help: isSubmittable
-                            ? "Submit answers (↩)"
-                            : "\"Other\" needs an answer below",
-                        accessibilityLabel: "Submit answers"
+                            ? isBrowserChoice ? "Continue (↩)" : "Submit answers (↩)"
+                            : isBrowserChoice
+                                ? "Choose a browser to continue"
+                                : "\"Other\" needs an answer below",
+                        accessibilityLabel: isBrowserChoice ? "Continue" : "Submit answers"
                     ) {
                         submit()
                     }
@@ -597,26 +399,11 @@ struct QuestionPickerContent: View {
         }
     }
 
-    private func navButton(
-        _ systemImage: String,
-        help: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 12, weight: .semibold))
-                .frame(width: 26, height: 26)
-                .foregroundStyle(Color.primary)
-                .background(Circle().fill(Color.secondary.opacity(0.16)))
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .help(help)
-        .accessibilityLabel(help)
-    }
+}
 
-    // MARK: - Behavior
+// MARK: - Behavior
 
+private extension QuestionPickerContent {
     private func notesBinding(_ question: QuestionSpec) -> Binding<String> {
         Binding(
             get: { notes[question.id] ?? "" },
@@ -791,6 +578,20 @@ struct QuestionPickerContent: View {
     }
 
     private func handleBrowserExtensionKey(_ key: QuestionPickerKey, question: QuestionSpec) -> Bool {
+        if !canInstallBrowserExtensionLocally {
+            switch key {
+            case .enter, .space, .left:
+                if let backOptionLabel = question.backOptionLabel {
+                    submitDirectAnswer(question, label: backOptionLabel)
+                }
+                return true
+            case .escape:
+                cancel()
+                return true
+            case .right, .up, .down, .digit:
+                return true
+            }
+        }
         switch key {
         case .enter, .space:
             if !didOpenBrowserExtensions {
@@ -799,14 +600,14 @@ struct QuestionPickerContent: View {
             return true
         case .left:
             if didOpenBrowserExtensions {
-                showBrowserExtensionOpenStage()
+                showBrowserExtensionDragStage(false)
             } else if let backOptionLabel = question.backOptionLabel {
                 submitDirectAnswer(question, label: backOptionLabel)
             }
             return true
         case .right:
             if !didOpenBrowserExtensions {
-                showBrowserExtensionDragStage()
+                showBrowserExtensionDragStage(true)
             }
             return true
         case .escape:

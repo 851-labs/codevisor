@@ -10,7 +10,7 @@ import SwiftUI
 /// time with arrow pagination, selections and notes accumulated across
 /// questions and submitted once. The common case — one single-select
 /// question — answers on a single tap. The hosting ComposerBar owns the glass
-/// surface and the "Submitting response…" overlay.
+/// surface and the generic "Submitting response…" overlay.
 struct QuestionCardView: View {
     @Bindable var controller: SessionController
     let request: QuestionRequest
@@ -53,7 +53,9 @@ struct QuestionCardView: View {
 
     @ViewBuilder
     var body: some View {
-        if let question, isBrowserExtensionPresentation(question) {
+        if let question, question.presentation == .browserChoice {
+            BrowserChoiceQuestionCard(controller: controller, question: question)
+        } else if let question, isBrowserExtensionPresentation(question) {
             BrowserExtensionQuestionCard(controller: controller, question: question)
         } else {
             genericQuestionCard

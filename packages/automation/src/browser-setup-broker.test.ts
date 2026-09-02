@@ -13,7 +13,6 @@ const fixture = (
     connected?: boolean
     preference?: string
     setupMode?: "development" | "webStore"
-    extensionFlowSupported?: boolean
   } = {}
 ) => {
   let preference = options.preference
@@ -50,13 +49,7 @@ const fixture = (
     openExtensionWebStore: openWebStore
   } as unknown as BrowserUseProvider
   const events: RuntimeEvent[] = []
-  const broker = makeBrowserSetupBroker(
-    db,
-    provider,
-    options.extensionFlowSupported === undefined
-      ? {}
-      : { extensionFlowSupported: options.extensionFlowSupported }
-  )
+  const broker = makeBrowserSetupBroker(db, provider)
   broker.setSink("session", async (event) => {
     events.push(event)
   })
@@ -106,9 +99,20 @@ describe("browser setup broker", () => {
     const resolving = selected.broker.resolveBackend("session")
     await tick()
     expect(
-      (selected.events.at(-1)!.payload as { questions: Array<{ question: string }> }).questions[0]
-        ?.question
-    ).toBe("Which browser should I use?")
+      (
+        selected.events.at(-1)!.payload as {
+          questions: Array<{
+            allowsOther: boolean
+            presentation?: string
+            question: string
+          }>
+        }
+      ).questions[0]
+    ).toMatchObject({
+      allowsOther: false,
+      presentation: "browserChoice",
+      question: "Which browser should I use?"
+    })
     await answer(selected.broker, selected.events, "Use Codevisor Browser")
     await expect(resolving).resolves.toBe("managed")
     expect(selected.preference()).toBe("managed")
@@ -119,20 +123,36 @@ describe("browser setup broker", () => {
     expect(explicit.preference()).toBeUndefined()
   })
 
-  it("auto-selects the managed browser when the extension flow is unsupported", async () => {
-    // A remote-kind server: Chrome may exist on the machine, but no desktop
-    // user is there to complete the extension handshake — no questions, no
-    // persisted preference, even for an explicit extension request.
-    const remote = fixture({ connected: true, extensionFlowSupported: false })
-    await expect(remote.broker.resolveBackend("session")).resolves.toBe("managed")
-    await expect(remote.broker.resolveBackend("session", "extension")).resolves.toBe("managed")
-    expect(remote.events).toHaveLength(0)
-    expect(remote.preference()).toBeUndefined()
+  it("resumes when Chrome is connected from another client", async () => {
+    const current = fixture()
+    const resolving = current.broker.resolveBackend("session")
+    await tick()
+    await answer(current.broker, current.events, "Use Google Chrome")
+    await tick()
 
-    const savedChrome = fixture({ preference: "chrome", extensionFlowSupported: false })
-    await expect(savedChrome.broker.resolveBackend("session")).resolves.toBe("managed")
-    expect(savedChrome.events).toHaveLength(0)
-    expect(savedChrome.preference()).toBe("chrome")
+    const setup = current.events.at(-1)!.payload as {
+      questions: Array<{ backOptionLabel?: string; presentation?: string }>
+    }
+    expect(setup.questions[0]).toMatchObject({
+      backOptionLabel: "Back",
+      presentation: "browserExtensionSetup"
+    })
+
+    // The client showing this question may be remote. Opening the same chat
+    // on the host machine and connecting Chrome resolves the held call for
+    // every client without invoking a setup action from this one.
+    current.connect()
+    await expect(resolving).resolves.toBe("extension")
+    expect(current.preference()).toBe("chrome")
+    expect(current.openExtensions).not.toHaveBeenCalled()
+    expect(
+      current.events.some(
+        (event) =>
+          (event.payload as { sessionUpdate?: string; outcome?: string }).sessionUpdate ===
+            "question_resolved" &&
+          (event.payload as { outcome?: string }).outcome === "autoResolved"
+      )
+    ).toBe(true)
   })
 
   it("treats an explicit Chrome request as a session override", async () => {
@@ -271,7 +291,7 @@ describe("browser setup broker", () => {
     await expect(reconnecting).resolves.toBe("extension")
   })
 
-  it("turns Other and Escape into deterministic tool rejection", async () => {
+  it("turns invalid answers and Escape into deterministic tool rejection", async () => {
     const other = fixture()
     const otherCall = other.broker.resolveBackend("session")
     await tick()

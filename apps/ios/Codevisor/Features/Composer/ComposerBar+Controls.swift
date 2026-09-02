@@ -138,15 +138,7 @@ extension ComposerBar {
             // Goal creation remains the ordinary composer interaction. Only
             // an existing goal in edit mode uses the save checkmark.
             Image(systemName: controller.isGoalEditing ? "checkmark" : "arrow.up")
-                .font(.subheadline.weight(.bold))
-                .scaledFrame(width: 30, height: 30, relativeTo: .subheadline)
-                .foregroundStyle(canSend ? Color(.systemBackground) : Color.secondary.opacity(0.75))
-                .background(
-                    Circle().fill(
-                        canSend ? Color.primary.opacity(0.85) : Color.secondary.opacity(0.16)
-                    )
-                )
-                .expandedHitTarget(base: 30)
+                .composerCircleActionLabel(.primary, isEnabled: canSend)
         }
         .buttonStyle(.plain)
         .disabled(!canSend)
@@ -265,11 +257,7 @@ extension ComposerBar {
             Task { await controller.stop() }
         } label: {
             Image(systemName: "stop.fill")
-                .font(.caption.weight(.bold))
-                .scaledFrame(width: 30, height: 30, relativeTo: .caption)
-                .foregroundStyle(.secondary)
-                .background(Circle().fill(Color.secondary.opacity(0.16)))
-                .expandedHitTarget(base: 30)
+                .composerCircleActionLabel(.secondary)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Stop")

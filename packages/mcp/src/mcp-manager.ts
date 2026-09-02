@@ -167,9 +167,9 @@ export interface McpManagerConfig {
   /// ownership (exactly one machine rotates a server's tokens; the rest
   /// mirror them through config sync). Defaults to "local".
   readonly serverId?: string
-  /// The server's --kind. Remote-kind servers have no desktop user at the
-  /// machine, so the Chrome-extension browser flow is disabled and Browser
-  /// Use resolves straight to the managed browser. Defaults to "local".
+  /// The server's --kind. Remote-kind servers cannot launch the local Chrome
+  /// installer from Settings; composer setup can still hand the user off to
+  /// the app running on that machine. Defaults to "local".
   readonly serverKind?: "local" | "remote"
   readonly syncManagedSkills?: (skills: ReadonlyArray<ManagedSkillSpec>) => Promise<void>
   /// Installed plugins' declared agent tools, exposed through the gateway as
@@ -234,9 +234,7 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
     [codevisorProvider.id, codevisorProvider]
   ])
   const extensionFlowSupported = config.serverKind !== "remote"
-  const browserSetupBroker = makeBrowserSetupBroker(config.db, browserProvider, {
-    extensionFlowSupported
-  })
+  const browserSetupBroker = makeBrowserSetupBroker(config.db, browserProvider)
   const builtinProviderState = (
     id: "browser" | "computer",
     enabled: boolean

@@ -422,23 +422,11 @@ extension ComposerBar {
             id: .composer,
             in: glassNamespace
         )
-        // Submission blanket over the whole card, exactly like the macOS
-        // composer shell.
+        // Generic questions keep the submission blanket. Deterministic
+        // browser selection stays mounted and reports progress on its
+        // explicit Continue button.
         .overlay {
-            if controller.activeQuestion != nil, controller.isResolvingQuestion {
-                RoundedRectangle(cornerRadius: ComposerGlassStyle.composerCornerRadius)
-                    .fill(Color(.systemGroupedBackground).opacity(0.72))
-                    .overlay {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                            Text("Submitting response…")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Submitting response")
-            }
+            QuestionResolutionOverlay(controller: controller)
         }
         .disabled(controller.isResolvingQuestion)
         // The transcript fades where it slides underneath the card: this

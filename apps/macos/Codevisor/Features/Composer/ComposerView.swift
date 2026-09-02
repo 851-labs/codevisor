@@ -49,7 +49,6 @@ struct ComposerCard: View {
     @State private var isSlashMenuDismissed = false
     @State private var slashMenuContentHeight: CGFloat = 0
     @State private var isStopButtonHovered = false
-    @State private var isGoalBackButtonHovered = false
     /// Owned by the shared composer shell so the question state can provide
     /// immediate submission feedback before the controller's async flag flips.
     @State private var didStartResolvingQuestion = false
@@ -276,21 +275,13 @@ private extension ComposerCard {
 
     /// Leaves edit-goal mode without changing the goal (the banner returns).
     private var goalEditBackButton: some View {
-        Button {
+        ComposerNavigationButton(
+            systemImage: "arrow.left",
+            help: "Back — keep the current goal (esc)",
+            accessibilityLabel: "Back"
+        ) {
             withAnimation(.snappy(duration: 0.15)) { controller.exitGoalComposer() }
-        } label: {
-            Image(systemName: "arrow.left")
-                .font(.system(size: 12, weight: .semibold))
-                .frame(width: 26, height: 26)
-                .foregroundStyle(Color.primary)
-                // Same quiet brighten-on-hover as the other filled buttons.
-                .background(Circle().fill(Color.secondary.opacity(isGoalBackButtonHovered ? 0.22 : 0.16)))
-                .contentShape(Circle())
         }
-        .buttonStyle(.plain)
-        .onHover { isGoalBackButtonHovered = $0 }
-        .help("Back — keep the current goal (esc)")
-        .accessibilityLabel("Back")
         .accessibilityHint("Keep the current goal. Keyboard shortcut: Escape")
     }
 

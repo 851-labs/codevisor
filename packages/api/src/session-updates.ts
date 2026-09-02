@@ -174,6 +174,7 @@ export type QuestionOption = typeof QuestionOption.Type
 
 /** Optional first-party composer treatment for deterministic setup flows. */
 export const QuestionPresentation = Schema.Literals([
+  "browserChoice",
   "browserExtensionSetup",
   "browserExtensionWaiting"
 ])

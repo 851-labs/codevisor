@@ -138,6 +138,20 @@ struct ProtocolCodableTests {
                     outcome: .cancelled,
                     questions: []
                 )))
+        try roundTrip(
+            SessionUpdate.question(
+                QuestionRequest(
+                    questionId: "browser-choice",
+                    questions: [
+                        QuestionSpec(
+                            id: "browser_preference",
+                            question: "Which browser should I use?",
+                            options: [QuestionOption(label: "Use Codevisor Browser")],
+                            allowsOther: false,
+                            presentation: .browserChoice
+                        )
+                    ]
+                )))
     }
 
     @Test("Goal update decodes a null token budget and rejects unknown statuses")
