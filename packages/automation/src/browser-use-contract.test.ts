@@ -61,8 +61,18 @@ describe("Browser Use tool contract", () => {
     expect(id).toBe(CODEVISOR_BROWSER_EXTENSION_ID)
     expect(manifest.permissions).toContain("debugger")
     expect(manifest.permissions).toEqual(
-      expect.arrayContaining(["downloads", "offscreen", "clipboardRead", "clipboardWrite"])
+      expect.arrayContaining([
+        "downloads",
+        "offscreen",
+        "clipboardRead",
+        "clipboardWrite",
+        "tabGroups"
+      ])
     )
+    expect(readFileSync(join(extension!, "background.js"), "utf8")).toContain(
+      'importScripts("tab-groups.js")'
+    )
+    expect(readFileSync(join(extension!, "tab-groups.js"), "utf8")).toContain("chrome.tabs.group(")
     expect(readFileSync(join(extension!, "offscreen.html"), "utf8")).toContain("offscreen.js")
     expect(readFileSync(join(extension!, "offscreen.js"), "utf8")).toContain(
       "document.execCommand(type)"

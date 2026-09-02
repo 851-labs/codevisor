@@ -176,6 +176,7 @@ describe.sequential("Codevisor code executor", () => {
       { path: "browser.navigate", args: { url: "https://example.com/" } },
       { path: "browser.tabs", args: { action: "select", id: "tab-1" } },
       { path: "browser.tab_info", args: {} },
+      { path: "browser.markTab", args: { id: "tab-1", status: "deliverable" } },
       {
         path: "browser.finalizeTabs",
         args: { native: true, keepIds: ["tab-1"] }

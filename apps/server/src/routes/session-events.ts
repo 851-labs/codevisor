@@ -7,6 +7,7 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "../server-context.js"
+import { promoteAssistantArtifacts } from "./assistant-artifacts.js"
 
 /// The standing per-session sink: every runtime event — in-turn or
 /// agent-initiated — is persisted and fanned out here. User echoes are
@@ -38,12 +39,19 @@ export const sessionEventSink =
       })()
     }
     const payload = objectPayload(event.payload)
-    if (
-      event.kind === "session.error" ||
-      (event.kind === "session.updated" &&
-        (payload.turnState === "ended" || typeof payload.stopReason === "string"))
-    ) {
-      return materializeRuntimeEvent(services.db, fanout, serverId, event, sessionId)
+    if (event.kind === "session.updated" && payload.turnState === "ended") {
+      return (async () => {
+        // Attachments the reply embeds must be durable before the turn closes,
+        // so the finalized item and the turn-end event land in that order.
+        await promoteAssistantArtifacts(services, fanout, serverId, sessionId).catch(
+          (cause: unknown) => {
+            console.error(
+              `Assistant artifact promotion failed for ${sessionId}: ${cause instanceof Error ? cause.message : String(cause)}`
+            )
+          }
+        )
+        await materializeRuntimeEvent(services.db, fanout, serverId, event, sessionId)
+      })()
     }
     return materializeRuntimeEvent(services.db, fanout, serverId, event, sessionId)
   }

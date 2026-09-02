@@ -33,6 +33,7 @@ export default defineConfig({
         "src/browser-setup-broker.ts",
         "src/browser-snapshot.ts",
         "src/browser-use-invoke-interaction.ts",
+        "src/browser-use-invoke-mouse.ts",
         "src/browser-use-invoke-navigation.ts",
         "src/browser-use-invoke-page.ts",
         "src/browser-use-invoke-playwright.ts",

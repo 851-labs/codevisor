@@ -1,4 +1,5 @@
 importScripts("relay-config.js")
+importScripts("tab-groups.js")
 
 const connections = new Set()
 const CODEVISOR_RELAY = globalThis.CODEVISOR_RELAY
@@ -56,7 +57,10 @@ const tabTarget = (tab) => ({
   targetId: String(tab.id),
   type: "page",
   title: tab.title ?? "",
-  url: tabUrl(tab)
+  url: tabUrl(tab),
+  ...(Number.isInteger(tab.groupId) && tab.groupId !== TAB_GROUP_NONE
+    ? { groupId: tab.groupId }
+    : {})
 })
 
 class CodevisorConnection {
@@ -142,6 +146,9 @@ class CodevisorConnection {
         message.method.slice("Codevisor.clipboard.".length),
         message.params ?? {}
       )
+    }
+    if (message.method?.startsWith("Codevisor.tabGroups.")) {
+      return handleTabGroupCommand(this.allowedTabs, message)
     }
     if (message.method === "Codevisor.armDownload") {
       const sessionId = message.sessionId

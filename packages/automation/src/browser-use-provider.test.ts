@@ -3,6 +3,7 @@ import { rmSync, existsSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
+import { pointerOverlayExpression } from "./browser-cursor.js"
 import { makeBrowserUseProvider } from "./browser-use-provider.js"
 
 const directories: string[] = []
@@ -91,6 +92,41 @@ describe("Browser Use direct CDP engine", () => {
         expect(clicked.content[0]).toMatchObject({ type: "text" })
         if (clicked.content[0]?.type === "text")
           expect(clicked.content[0].text).toContain('"path": "cdp"')
+
+        // The presented pointer travelled to the button and pulsed once the click landed.
+        const pointer = await provider.invoke(context, "cdp.send", {
+          method: "Runtime.evaluate",
+          params: {
+            expression: pointerOverlayExpression({ kind: "inspect" }),
+            returnByValue: true
+          }
+        })
+        if (pointer.content[0]?.type !== "text") throw new Error("Missing pointer inspection")
+        const buttonBox = await provider.invoke(context, "playwright.evaluate", {
+          locator: { role: "button", name: "Increment", exact: true },
+          function:
+            "(element) => { const r = element.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } }"
+        })
+        if (buttonBox.content[0]?.type !== "text") throw new Error("Missing button box")
+        const centre = (
+          JSON.parse(buttonBox.content[0].text) as { value: { x: number; y: number } }
+        ).value
+        expect(JSON.parse(pointer.content[0].text)).toMatchObject({
+          result: {
+            result: {
+              value: {
+                cursors: [
+                  {
+                    shown: true,
+                    pulses: 1,
+                    x: expect.closeTo(centre.x, 0),
+                    y: expect.closeTo(centre.y, 0)
+                  }
+                ]
+              }
+            }
+          }
+        })
 
         const second = await provider.invoke(context, "snapshot", {})
         const secondText = second.content.find((block) => block.type === "text")

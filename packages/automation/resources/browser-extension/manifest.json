@@ -12,6 +12,7 @@
     "alarms",
     "debugger",
     "tabs",
+    "tabGroups",
     "history",
     "downloads",
     "offscreen",

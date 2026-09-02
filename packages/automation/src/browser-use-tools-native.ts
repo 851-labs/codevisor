@@ -15,13 +15,14 @@ export const browserUseNativeTools: ReadonlyArray<Tool> = [
   ),
   tool(
     "tabs",
-    "List, create, close, or select a browser tab. Use action new to open a URL that is not already open; use openTabs and claimTab only to take over a specifically matched existing tab.",
+    "List, create, close, or select a browser tab. Use action new to open a URL that is not already open; use openTabs and claimTab only to take over a specifically matched existing tab. scope session lists only tabs this session created, claimed, or kept at an earlier finalize, with their origin.",
     objectSchema(
       {
         action: { type: "string", enum: ["list", "new", "close", "select"] },
         id: { type: "string" },
         index: { type: "number", minimum: 0 },
-        url: { type: "string" }
+        url: { type: "string" },
+        scope: { type: "string", enum: ["all", "session"] }
       },
       ["action"]
     )
@@ -53,6 +54,24 @@ export const browserUseNativeTools: ReadonlyArray<Tool> = [
         status: { type: "string", enum: ["deliverable", "handoff"] }
       },
       ["status"]
+    )
+  ),
+  tool(
+    "tab_groups",
+    "Organize tabs into Chrome tab groups in the user's browser. list returns every group with its tab ids; ensure adds tabIds to the group whose title matches (creating it with color if none exists) and is the right choice for a group you keep adding to; create always makes a new group; add moves tabIds into groupId; update changes a group's title, color, or collapsed state; ungroup removes tabIds from their groups. Colors: grey, blue, red, yellow, green, pink, purple, cyan, orange. User Chrome backend only.",
+    objectSchema(
+      {
+        action: { type: "string", enum: ["list", "create", "ensure", "add", "update", "ungroup"] },
+        tabIds: { type: "array", items: { type: "string" }, minItems: 1 },
+        groupId: { type: "number" },
+        title: { type: "string" },
+        color: {
+          type: "string",
+          enum: ["grey", "blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange"]
+        },
+        collapsed: { type: "boolean" }
+      },
+      ["action"]
     )
   ),
   tool("tab_info", "Return id, title, and URL for the selected browser tab."),
@@ -147,13 +166,25 @@ export const browserUseNativeTools: ReadonlyArray<Tool> = [
   ),
   tool(
     "press_key",
-    "Press a key or chord in the page using trusted CDP keyboard input.",
+    "Press a key or chord in the page using trusted CDP keyboard input. Modifier keys held through key_down apply.",
+    objectSchema({ key: { type: "string" } }, ["key"])
+  ),
+  tool(
+    "key_down",
+    "Hold a key down using trusted CDP keyboard input, like Playwright's keyboard.down. Held modifier keys (Shift, Control, Alt, Meta) apply to later key events until key_up.",
+    objectSchema({ key: { type: "string" } }, ["key"])
+  ),
+  tool(
+    "key_up",
+    "Release a key held by key_down, like Playwright's keyboard.up.",
     objectSchema({ key: { type: "string" } }, ["key"])
   ),
   tool(
     "keyboard_type",
-    "Type text at the currently focused page element using trusted CDP input.",
-    objectSchema({ text: { type: "string" } }, ["text"])
+    "Type text at the currently focused page element using trusted CDP input. mode keys presses each character as a key event (Playwright's keyboard.type); the default inserts the text directly (keyboard.insertText).",
+    objectSchema({ text: { type: "string" }, mode: { type: "string", enum: ["insert", "keys"] } }, [
+      "text"
+    ])
   ),
   tool(
     "wait",
@@ -193,15 +224,38 @@ export const browserUseNativeTools: ReadonlyArray<Tool> = [
   ),
   tool(
     "mouse_move",
-    "Move the page pointer to CSS viewport coordinates.",
+    "Move the page pointer to CSS viewport coordinates. While a button is held through mouse_down the move drags; steps interpolates intermediate moves like Playwright's mouse.move.",
     objectSchema(
       {
         x: { type: "number" },
         y: { type: "number" },
+        steps: { type: "number", minimum: 1 },
         keys: { type: "array", items: { type: "string" } }
       },
       ["x", "y"]
     )
+  ),
+  tool(
+    "mouse_down",
+    "Press and hold a mouse button at the current pointer position (or x, y) using trusted CDP input, like Playwright's mouse.down. Pair with mouse_move and mouse_up to drag.",
+    objectSchema({
+      x: { type: "number" },
+      y: { type: "number" },
+      button: { type: "string", enum: ["left", "right", "middle"] },
+      clickCount: { type: "number", minimum: 1 },
+      keys: { type: "array", items: { type: "string" } }
+    })
+  ),
+  tool(
+    "mouse_up",
+    "Release a mouse button held by mouse_down at the current pointer position (or x, y), like Playwright's mouse.up.",
+    objectSchema({
+      x: { type: "number" },
+      y: { type: "number" },
+      button: { type: "string", enum: ["left", "right", "middle"] },
+      clickCount: { type: "number", minimum: 1 },
+      keys: { type: "array", items: { type: "string" } }
+    })
   ),
   tool(
     "mouse_drag",
@@ -226,7 +280,7 @@ export const browserUseNativeTools: ReadonlyArray<Tool> = [
   ),
   tool(
     "mouse_scroll",
-    "Scroll by CSS pixel deltas.",
+    "Scroll by CSS pixel deltas at x, y, or at the current pointer position when omitted.",
     objectSchema(
       {
         x: { type: "number" },

@@ -18,6 +18,16 @@ export class SkillsError extends Error {
 export const CANONICAL_SKILLS_DIR = "~/.agents/skills"
 export const MANAGED_SKILL_MARKER = ".codevisor-managed-skill"
 export const MANAGED_SKILL_MARKER_CONTENT = "codevisor-managed-skill-v1\n"
+/// Records which packaged source an installed managed skill came from, so
+/// two Codevisor servers sharing one home (a release build and a development
+/// build, or two app versions during an upgrade) converge on the newest
+/// skill instead of overwriting each other on every sync.
+export const MANAGED_SKILL_STATE = ".codevisor-managed-skill.json"
+
+export interface ManagedSkillState {
+  readonly fingerprint: string
+  readonly sourceModifiedMs: number
+}
 
 /// Kebab-case a skill directory name, converting path-traversal attempts and
 /// special characters into hyphens. Ported from skills installer.ts.
@@ -66,6 +76,53 @@ export const EXCLUDE_DIRS: ReadonlySet<string> = new Set([".git", "__pycache__",
 /// sha256 over the skill folder's sorted relative paths and file contents —
 /// two directories hash equal iff their meaningful contents are identical.
 /// Used to recognize independent copies of canonical skills.
+const newestModification = async (dir: string): Promise<number> => {
+  let newest = 0
+  const walk = async (current: string): Promise<void> => {
+    for (const entry of await readdir(current, { withFileTypes: true })) {
+      const entryPath = join(current, entry.name)
+      if (entry.isDirectory()) {
+        if (!EXCLUDE_DIRS.has(entry.name)) await walk(entryPath)
+        continue
+      }
+      if (EXCLUDE_FILES.has(entry.name)) continue
+      try {
+        newest = Math.max(newest, (await stat(entryPath)).mtimeMs)
+      } catch {
+        // A broken symlink contributes nothing to the modification time.
+      }
+    }
+  }
+  await walk(dir)
+  return newest
+}
+
+export const managedSourceState = async (sourcePath: string): Promise<ManagedSkillState> => ({
+  fingerprint: await skillContentHash(sourcePath),
+  sourceModifiedMs: await newestModification(sourcePath)
+})
+
+export const installedManagedState = async (
+  destination: string
+): Promise<ManagedSkillState | undefined> => {
+  try {
+    const parsed: unknown = JSON.parse(
+      await readFile(join(destination, MANAGED_SKILL_STATE), "utf8")
+    )
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      typeof (parsed as ManagedSkillState).fingerprint === "string" &&
+      typeof (parsed as ManagedSkillState).sourceModifiedMs === "number"
+    ) {
+      return parsed as ManagedSkillState
+    }
+  } catch {
+    // Installs from before the state file existed are treated as older.
+  }
+  return undefined
+}
+
 export const skillContentHash = async (dir: string): Promise<string> => {
   const hash = createHash("sha256")
   const walk = async (current: string, prefix: string): Promise<void> => {

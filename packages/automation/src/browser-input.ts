@@ -1,6 +1,87 @@
 import { delay, evaluatedValue } from "./browser-cdp.js"
 import type { BrowserRuntime, PageHandle, ResolvedElement } from "./browser-cdp-engine.js"
+import type { BrowserCursor } from "./browser-cursor.js"
 import { releaseElement, resolveElement } from "./browser-locators.js"
+
+export {
+  browserKeyDescription,
+  dispatchKeyEvent,
+  heldKeyDescription,
+  modifierKeyMask,
+  pressKey
+} from "./browser-keyboard.js"
+
+export type MouseButton = "left" | "right" | "middle"
+
+/**
+ * Where a session's pointer is and which buttons it holds, mirroring Playwright's `Mouse`, so
+ * `move → down → move → up` sequences compose into real drags and `wheel` scrolls in place.
+ */
+export interface PointerState {
+  x: number
+  y: number
+  buttons: number
+  /** Keyboard modifier mask currently held through key_down, mirroring Playwright's `Keyboard`. */
+  modifiers: number
+}
+
+export const initialPointerState = (): PointerState => ({ x: 0, y: 0, buttons: 0, modifiers: 0 })
+
+export const mouseButtonName = (value: unknown): MouseButton =>
+  value === "right" || value === "middle" ? value : "left"
+
+export const mouseButtonMask = (button: MouseButton): number =>
+  button === "left" ? 1 : button === "right" ? 2 : 4
+
+/** The CDP `button` to report on a move while buttons are held; Chrome wants the primary one. */
+export const heldButtonName = (buttons: number): MouseButton | undefined =>
+  (buttons & 1) !== 0
+    ? "left"
+    : (buttons & 2) !== 0
+      ? "right"
+      : (buttons & 4) !== 0
+        ? "middle"
+        : undefined
+
+export interface MouseDispatch {
+  readonly dialogOpened: boolean
+  readonly completion: Promise<void>
+}
+
+/**
+ * Dispatch one trusted mouse event, racing it against a modal JavaScript dialog. Chrome
+ * deliberately keeps the input command pending while a dialog is open, so the event is reported
+ * as delivered and the caller can let the next tool inspect and handle the dialog.
+ */
+export const dispatchMouseEvent = async (
+  runtime: BrowserRuntime,
+  page: PageHandle,
+  params: Readonly<Record<string, unknown>>
+): Promise<MouseDispatch> => {
+  let resolveDialog = (): void => undefined
+  const dialog = new Promise<void>((resolve) => {
+    resolveDialog = resolve
+  })
+  const stop = runtime.connection.on(
+    "Page.javascriptDialogOpening",
+    () => resolveDialog(),
+    page.sessionId
+  )
+  const command = runtime.connection
+    .send("Input.dispatchMouseEvent", params, page.sessionId)
+    .then(() => undefined)
+  try {
+    const outcome = await Promise.race([
+      command.then(() => "completed" as const),
+      dialog.then(() => "dialog" as const)
+    ])
+    if (outcome === "completed") return { dialogOpened: false, completion: command }
+    const completion = command.catch(() => undefined)
+    return { dialogOpened: true, completion }
+  } finally {
+    stop()
+  }
+}
 
 export const dispatchClick = async (
   runtime: BrowserRuntime,
@@ -9,41 +90,16 @@ export const dispatchClick = async (
   y: number,
   button: string,
   count: number,
-  modifiers = 0
+  modifiers = 0,
+  cursor?: BrowserCursor
 ): Promise<void> => {
-  const normalized = button === "right" || button === "middle" ? button : "left"
-  const buttonMask = normalized === "left" ? 1 : normalized === "right" ? 2 : 4
-  const dispatch = async (
-    params: Readonly<Record<string, unknown>>
-  ): Promise<{ readonly dialogOpened: boolean; readonly completion: Promise<void> }> => {
-    let resolveDialog = (): void => undefined
-    const dialog = new Promise<void>((resolve) => {
-      resolveDialog = resolve
-    })
-    const stop = runtime.connection.on(
-      "Page.javascriptDialogOpening",
-      () => resolveDialog(),
-      page.sessionId
-    )
-    const command = runtime.connection
-      .send("Input.dispatchMouseEvent", params, page.sessionId)
-      .then(() => undefined)
-    try {
-      const outcome = await Promise.race([
-        command.then(() => "completed" as const),
-        dialog.then(() => "dialog" as const)
-      ])
-      if (outcome === "completed") return { dialogOpened: false, completion: command }
-      // Chrome deliberately keeps the input command pending while a modal JavaScript dialog is
-      // open. Return the click as delivered so the next tool call can inspect and handle the
-      // dialog; accepting or dismissing it lets this command finish in the background.
-      const completion = command.catch(() => undefined)
-      return { dialogOpened: true, completion }
-    } finally {
-      stop()
-    }
-  }
+  const normalized = mouseButtonName(button)
+  const buttonMask = mouseButtonMask(normalized)
+  const dispatch = (params: Readonly<Record<string, unknown>>): Promise<MouseDispatch> =>
+    dispatchMouseEvent(runtime, page, params)
 
+  // Let the presented pointer arrive before the trusted input lands, as Computer Use does.
+  await cursor?.move(x, y)
   const moved = await dispatch({ type: "mouseMoved", x, y, modifiers })
   if (moved.dialogOpened) return
   for (let clickCount = 1; clickCount <= count; clickCount++) {
@@ -90,6 +146,7 @@ export const dispatchClick = async (
     if (released.dialogOpened) return
     if (clickCount < count) await delay(80)
   }
+  await cursor?.pulse(x, y)
 }
 
 export const triggerMediaDownload = async (
@@ -192,10 +249,12 @@ export const fillElement = async (
   page: PageHandle,
   target: unknown,
   text: string,
-  slowly: boolean
+  slowly: boolean,
+  cursor?: BrowserCursor
 ): Promise<void> => {
   const element = await resolveElement(runtime, page, target)
   try {
+    await cursor?.move(element.x, element.y)
     await fillResolvedElement(runtime, page, element, text, slowly, true)
   } finally {
     await releaseElement(runtime, page, element)
@@ -224,7 +283,8 @@ export const setCheckedElement = async (
   runtime: BrowserRuntime,
   page: PageHandle,
   element: ResolvedElement,
-  desired: boolean
+  desired: boolean,
+  cursor?: BrowserCursor
 ): Promise<void> => {
   const before = await checkedState(runtime, page, element)
   if (before.error !== undefined) throw new Error(before.error)
@@ -232,7 +292,7 @@ export const setCheckedElement = async (
   if (before.radio === true && !desired) {
     throw new Error("Radio buttons can only be unchecked by selecting another radio button")
   }
-  await dispatchClick(runtime, page, element.x, element.y, "left", 1)
+  await dispatchClick(runtime, page, element.x, element.y, "left", 1, 0, cursor)
   const after = await checkedState(runtime, page, element)
   if (after.checked !== desired) {
     throw new Error(`Clicking the control did not change its checked state to ${desired}`)
@@ -260,87 +320,6 @@ export const selectOptionsElement = async (
   )
   if (result.error !== undefined) throw new Error(result.error)
   return result.selected ?? []
-}
-
-export const browserKeyDescription = (
-  value: string
-): {
-  key: string
-  code: string
-  windowsVirtualKeyCode: number
-  modifiers: number
-  text?: string
-} => {
-  const parts = value
-    .split("+")
-    .map((part) => part.trim())
-    .filter(Boolean)
-  if (parts.length === 0) throw new Error("key is required")
-  let modifiers = 0
-  for (const modifier of parts.slice(0, -1)) {
-    switch (modifier.toLowerCase()) {
-      case "alt":
-      case "option":
-        modifiers |= 1
-        break
-      case "ctrl":
-      case "control":
-        modifiers |= 2
-        break
-      case "controlormeta":
-        modifiers |= process.platform === "darwin" ? 4 : 2
-        break
-      case "meta":
-      case "cmd":
-      case "command":
-        modifiers |= 4
-        break
-      case "shift":
-        modifiers |= 8
-        break
-      default:
-        throw new Error(`Unsupported key modifier: ${modifier}`)
-    }
-  }
-  const raw = parts.at(-1)!
-  const named: Readonly<Record<string, [string, string, number]>> = {
-    enter: ["Enter", "Enter", 13],
-    return: ["Enter", "Enter", 13],
-    tab: ["Tab", "Tab", 9],
-    escape: ["Escape", "Escape", 27],
-    esc: ["Escape", "Escape", 27],
-    backspace: ["Backspace", "Backspace", 8],
-    delete: ["Delete", "Delete", 46],
-    space: [" ", "Space", 32],
-    spacebar: [" ", "Space", 32],
-    left: ["ArrowLeft", "ArrowLeft", 37],
-    arrowleft: ["ArrowLeft", "ArrowLeft", 37],
-    right: ["ArrowRight", "ArrowRight", 39],
-    arrowright: ["ArrowRight", "ArrowRight", 39],
-    up: ["ArrowUp", "ArrowUp", 38],
-    arrowup: ["ArrowUp", "ArrowUp", 38],
-    down: ["ArrowDown", "ArrowDown", 40],
-    arrowdown: ["ArrowDown", "ArrowDown", 40],
-    home: ["Home", "Home", 36],
-    end: ["End", "End", 35],
-    pageup: ["PageUp", "PageUp", 33],
-    pagedown: ["PageDown", "PageDown", 34]
-  }
-  const match = named[raw.toLowerCase()]
-  if (match !== undefined)
-    return { key: match[0], code: match[1], windowsVirtualKeyCode: match[2], modifiers }
-  if ([...raw].length !== 1) throw new Error(`Unsupported key: ${raw}`)
-  const upper = raw.toUpperCase()
-  const letter = /^[A-Z]$/.test(upper)
-  const code = letter ? `Key${upper}` : /^[0-9]$/.test(raw) ? `Digit${raw}` : raw
-  const key = (modifiers & 8) !== 0 ? upper : raw
-  return {
-    key,
-    code,
-    windowsVirtualKeyCode: upper.codePointAt(0)!,
-    modifiers,
-    ...((modifiers & (2 | 4)) === 0 ? { text: key } : {})
-  }
 }
 
 export const mouseModifierMask = (value: unknown): number => {
@@ -375,28 +354,4 @@ export const mouseModifierMask = (value: unknown): number => {
     }
   }
   return mask
-}
-
-export const pressKey = async (
-  runtime: BrowserRuntime,
-  page: PageHandle,
-  value: string
-): Promise<void> => {
-  const key = browserKeyDescription(value)
-  await runtime.connection.send(
-    "Input.dispatchKeyEvent",
-    { type: key.text === undefined ? "rawKeyDown" : "keyDown", ...key },
-    page.sessionId
-  )
-  await runtime.connection.send(
-    "Input.dispatchKeyEvent",
-    {
-      type: "keyUp",
-      key: key.key,
-      code: key.code,
-      windowsVirtualKeyCode: key.windowsVirtualKeyCode,
-      modifiers: key.modifiers
-    },
-    page.sessionId
-  )
 }

@@ -41,7 +41,7 @@ export const invokePlaywrightTools = async (
   invocation: BrowserToolInvocation,
   state: BrowserToolSessionState
 ): Promise<CallToolResult | undefined> => {
-  const { active, args, backend, page, toolName } = invocation
+  const { active, args, backend, cursor, page, toolName } = invocation
   const { downloadsDir } = state
   switch (toolName) {
     case "playwright.domSnapshot":
@@ -213,7 +213,8 @@ export const invokePlaywrightTools = async (
           element.y,
           String(args.button ?? "left"),
           args.doubleClick === true ? 2 : 1,
-          mouseModifierMask(args.modifiers)
+          mouseModifierMask(args.modifiers),
+          cursor
         )
       } finally {
         await releaseElement(active, page, element)
@@ -231,6 +232,7 @@ export const invokePlaywrightTools = async (
       )
       let actual: string | undefined
       try {
+        await cursor.move(element.x, element.y)
         actual = await fillResolvedElement(active, page, element, value, false, true)
       } finally {
         await releaseElement(active, page, element)
@@ -247,6 +249,7 @@ export const invokePlaywrightTools = async (
         Number(args.timeoutMs ?? 30_000)
       )
       try {
+        await cursor.move(element.x, element.y)
         await fillResolvedElement(active, page, element, value, false, false)
       } finally {
         await releaseElement(active, page, element)
@@ -294,7 +297,7 @@ export const invokePlaywrightTools = async (
         Number(args.timeoutMs ?? 30_000)
       )
       try {
-        await setCheckedElement(active, page, element, desired)
+        await setCheckedElement(active, page, element, desired, cursor)
       } finally {
         await releaseElement(active, page, element)
       }
@@ -311,6 +314,7 @@ export const invokePlaywrightTools = async (
       )
       let selected: string[]
       try {
+        await cursor.move(element.x, element.y)
         selected = await selectOptionsElement(active, page, element, args.values)
       } finally {
         await releaseElement(active, page, element)

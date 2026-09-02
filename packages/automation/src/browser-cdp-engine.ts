@@ -8,6 +8,8 @@ export interface TargetInfo {
   readonly type: string
   readonly title: string
   readonly url: string
+  /// Chrome tab group membership, reported by the user-browser extension only.
+  readonly groupId?: number
 }
 
 export interface BrowserSnapshot {

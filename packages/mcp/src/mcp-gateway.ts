@@ -16,13 +16,16 @@ import { randomUUID } from "node:crypto"
 import { realpathSync, statSync } from "node:fs"
 import { isAbsolute, relative, resolve } from "node:path"
 import { z } from "zod"
+import type { FileMetadata } from "@codevisor/api"
+import { makeAttachmentStore } from "@codevisor/db"
 import { executeToolDescription, makeGatewayCatalog } from "./mcp-gateway-catalog.js"
-import type { McpManagerConfig } from "./mcp-manager-types.js"
+import type { McpManagerConfig } from "./mcp-manager.js"
 import { invokeGatewayPluginTool } from "./mcp-plugin-tools.js"
 import {
+  type SandboxArtifactCollector,
+  type SandboxArtifactPersistence,
   sandboxOutputContent,
-  sandboxSuccessfulToolResult,
-  type SandboxArtifactCollector
+  sandboxSuccessfulToolResult
 } from "./mcp-sandbox-results.js"
 import { errorMessage, run, type UpstreamConnection } from "./mcp-support.js"
 
@@ -64,6 +67,46 @@ export interface McpGatewayDeps {
   readonly gateways: Map<string, GatewayRuntime>
   readonly isSuppressed: (name: string) => boolean
   readonly record: (id: string) => Promise<McpServerRecord>
+}
+
+export interface BrowserSessionTab {
+  readonly id: string
+  readonly url?: string
+  readonly origin?: string
+}
+
+/** Appended to a failed `execute` result so the retry reuses still-open agent-created tabs. */
+export const browserSessionTabsNotice = (tabs: ReadonlyArray<BrowserSessionTab>): string => {
+  const created = tabs.filter((tab) => tab.origin === "created")
+  if (created.length === 0) return ""
+  return (
+    "\n\nBrowser Use tabs this session opened are still open. Reuse one with " +
+    "browser.tabs.get(id) instead of calling browser.tabs.new() again:\n" +
+    created.map((tab) => `- ${tab.id} ${tab.url ?? ""}`.trimEnd()).join("\n")
+  )
+}
+
+const ARTIFACT_EXTENSIONS: Readonly<Record<string, string>> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/gif": "gif",
+  "image/webp": "webp",
+  "image/svg+xml": "svg",
+  "application/pdf": "pdf",
+  "audio/wav": "wav",
+  "audio/mpeg": "mp3",
+  "text/plain": "txt",
+  "application/json": "json"
+}
+
+/// `browser.screenshot` + `image/png` → `browser-screenshot.png`.
+export const artifactFileName = (toolPath: string, mimeType: string): string => {
+  const base = toolPath
+    .replace(/[^a-z0-9]+/gi, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase()
+  const extension = ARTIFACT_EXTENSIONS[mimeType.split(";")[0]?.trim() ?? ""] ?? "bin"
+  return `${base.length === 0 ? "artifact" : base}.${extension}`
 }
 
 export const makeMcpGateway = (deps: McpGatewayDeps) => {
@@ -187,6 +230,52 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
     return provider.invoke(providerContext, toolName, safeArgs)
   }
 
+  /// Emitted tool artifacts (screenshots and the like) become immutable server
+  /// files so the agent can embed them in its reply and the user can open them.
+  const attachmentStore = makeAttachmentStore(config.dataDir)
+  const artifactPersistence: SandboxArtifactPersistence = {
+    persist: async ({ data, mimeType, toolPath }) => {
+      const stored = await attachmentStore.put(data)
+      const metadata: FileMetadata = {
+        id: randomUUID(),
+        name: artifactFileName(toolPath, mimeType),
+        mimeType,
+        sizeBytes: stored.sizeBytes,
+        sha256: stored.sha256,
+        kind: mimeType.startsWith("image/") ? "image" : "file",
+        createdAt: new Date().toISOString()
+      }
+      await run(config.db.createDiskFile(metadata))
+      return {
+        fileId: metadata.id,
+        name: metadata.name,
+        mimeType: metadata.mimeType,
+        sizeBytes: metadata.sizeBytes,
+        kind: metadata.kind
+      }
+    }
+  }
+
+  /// A failed script leaves whatever tabs it opened behind. Tell the agent about them so the
+  /// retry reuses those tabs instead of opening duplicates.
+  const openBrowserSessionTabs = async (
+    sessionId: string,
+    projectId: string | undefined
+  ): Promise<string> => {
+    const provider = automationProviders.get("browser")
+    if (provider === undefined) return ""
+    const listed = await invokeAutomationProvider(
+      provider,
+      { sessionId, ...(projectId === undefined ? {} : { projectId }) },
+      "tabs",
+      { action: "list", scope: "session" }
+    )
+    const block = listed.content.find((entry) => entry.type === "text")
+    if (listed.isError === true || block?.type !== "text") return ""
+    const parsed = JSON.parse(block.text) as { tabs?: ReadonlyArray<BrowserSessionTab> }
+    return browserSessionTabsNotice(parsed.tabs ?? [])
+  }
+
   const gatewayRuntime = async (sessionId: string, projectId?: string): Promise<GatewayRuntime> => {
     const inventory = await integrationInventory(projectId, sessionId)
     return {
@@ -213,8 +302,10 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
         const artifacts: SandboxArtifactCollector = {
           content: [],
           maxItems: 4,
-          maxBytes: 10 * 1024 * 1024
+          maxBytes: 10 * 1024 * 1024,
+          persistence: artifactPersistence
         }
+        let usedBrowser = false
         const result = await codeExecutor.execute(
           code,
           {
@@ -264,23 +355,26 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
                   typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {}
                 const provider = automationProviders.get(serverId)
                 if (provider !== undefined) {
-                  return sandboxSuccessfulToolResult(
+                  if (serverId === "browser") usedBrowser = true
+                  return await sandboxSuccessfulToolResult(
                     await invokeAutomationProvider(
                       provider,
                       { sessionId, ...(projectId === undefined ? {} : { projectId }) },
                       toolName,
                       toolArgs
                     ),
-                    artifacts
+                    artifacts,
+                    path
                   )
                 }
                 const connection = await connectUpstream(serverId)
-                return sandboxSuccessfulToolResult(
+                return await sandboxSuccessfulToolResult(
                   (await connection.client.callTool({
                     name: toolName,
                     arguments: toolArgs
                   })) as CallToolResult,
-                  artifacts
+                  artifacts,
+                  path
                 )
               } catch (cause) {
                 throw new CodeExecutionToolError(errorMessage(cause))
@@ -290,7 +384,13 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
           { signal }
         )
         if (result.error !== undefined) {
-          return { isError: true, content: [{ type: "text" as const, text: result.error }] }
+          const openTabs = usedBrowser
+            ? await openBrowserSessionTabs(sessionId, projectId).catch(() => "")
+            : ""
+          return {
+            isError: true,
+            content: [{ type: "text" as const, text: `${result.error}${openTabs}` }]
+          }
         }
         return {
           content: [

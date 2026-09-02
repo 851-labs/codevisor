@@ -1,6 +1,7 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import type { AutomationProviderContext } from "./automation-provider.js"
 import {
+  booleanArgument,
   currentPage,
   discardTargetState,
   jsonResult,
@@ -10,11 +11,14 @@ import {
   waitForCreatedTarget
 } from "./browser-cdp-engine.js"
 import type { BrowserRuntime, TargetInfo } from "./browser-cdp-engine.js"
+import { makeBrowserCursorRegistry } from "./browser-cursor.js"
+import { initialPointerState, type PointerState } from "./browser-input.js"
 import type { BrowserBackend } from "./browser-use-provider.js"
 import { invokeNavigationTools } from "./browser-use-invoke-navigation.js"
 import { invokePlaywrightTools } from "./browser-use-invoke-playwright.js"
 import { invokePageTools } from "./browser-use-invoke-page.js"
 import { invokeInteractionTools } from "./browser-use-invoke-interaction.js"
+import { invokeMouseTools } from "./browser-use-invoke-mouse.js"
 import type { BrowserToolInvocation, BrowserToolSessionState } from "./browser-use-invoke-types.js"
 
 export type {
@@ -29,14 +33,38 @@ const toolHandlers = [
   invokeNavigationTools,
   invokePlaywrightTools,
   invokePageTools,
-  invokeInteractionTools
+  invokeInteractionTools,
+  invokeMouseTools
 ]
+
+const TAB_GROUP_COLORS: ReadonlySet<string> = new Set([
+  "grey",
+  "blue",
+  "red",
+  "yellow",
+  "green",
+  "pink",
+  "purple",
+  "cyan",
+  "orange"
+])
 
 export const runtimeKey = (context: AutomationProviderContext, backend: BrowserBackend): string =>
   backend === "managed" ? `managed:${context.projectId ?? "global"}` : "extension"
 
 export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
   const { selectedTargets, sessionBackends, sessionDispositions, sessionTargets } = state
+  const cursors = makeBrowserCursorRegistry()
+  // Per-session pointer and held-modifier state, so mouse_down/mouse_move/mouse_up and
+  // key_down/key_up compose the way Playwright's Mouse and Keyboard do.
+  const pointers = new Map<string, PointerState>()
+  const pointerFor = (sessionKey: string): PointerState => {
+    const existing = pointers.get(sessionKey)
+    if (existing !== undefined) return existing
+    const created = initialPointerState()
+    pointers.set(sessionKey, created)
+    return created
+  }
   return async (
     context: AutomationProviderContext,
     active: BrowserRuntime,
@@ -59,21 +87,39 @@ export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
           ...(sessionDispositions.get(sessionKey)?.keys() ?? [])
         ])
         const controlled = sessionTargets.get(sessionKey) ?? new Map()
+        const kept: string[] = []
+        const closed: string[] = []
+        const released: string[] = []
+        // Tabs handed to the user stay visible to later turns as origin "kept": the agent can
+        // still find, regroup, or reuse them, and no later finalize closes them.
+        const remembered = new Map<string, "created" | "claimed" | "kept">()
         for (const [targetId, origin] of controlled) {
           const tabSessionId = active.sessions.get(targetId)
           if (origin === "created" && !keepIds.has(targetId)) {
             await active.connection.send("Target.closeTarget", { targetId }).catch(() => undefined)
-          } else if (tabSessionId !== undefined) {
-            await active.connection
-              .send("Target.detachFromTarget", { sessionId: tabSessionId })
-              .catch(() => undefined)
+            closed.push(targetId)
+          } else {
+            if (tabSessionId !== undefined) {
+              await active.connection
+                .send("Target.detachFromTarget", { sessionId: tabSessionId })
+                .catch(() => undefined)
+            }
+            if (origin === "claimed") released.push(targetId)
+            else {
+              kept.push(targetId)
+              remembered.set(targetId, "kept")
+            }
           }
           discardTargetState(active, targetId)
         }
-        sessionTargets.delete(sessionKey)
+        if (remembered.size === 0) sessionTargets.delete(sessionKey)
+        else sessionTargets.set(sessionKey, remembered)
         sessionDispositions.delete(sessionKey)
         selectedTargets.delete(sessionKey)
-        return jsonResult({ finalized: true, kept: [...keepIds] })
+        cursors.release(sessionKey)
+        pointers.delete(sessionKey)
+        // Report exactly what happened so the agent can describe it to the user accurately.
+        return jsonResult({ finalized: true, kept, closed, released })
       }
       const targetId = selectedTargets.get(sessionKey)
       if (targetId === undefined) return jsonResult({ finalized: true, tabsClosed: false })
@@ -86,6 +132,8 @@ export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
       discardTargetState(active, targetId)
       sessionTargets.get(sessionKey)?.delete(targetId)
       selectedTargets.delete(sessionKey)
+      cursors.release(sessionKey)
+      pointers.delete(sessionKey)
       return jsonResult({ finalized: true, tabsClosed: args.close === true })
     }
     if (toolName === "markTab") {
@@ -151,15 +199,102 @@ export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
       }
       targets ??= await pageTargets(active)
       const selectedId = selectedTargets.get(sessionKey)
+      const controlledTabs = sessionTargets.get(sessionKey)
+      if (args.scope === "session") {
+        targets = targets.filter((target) => controlledTabs?.has(target.targetId) === true)
+      }
       return jsonResult({
         tabs: targets.map((target, index) => ({
           id: target.targetId,
           index,
           selected: target.targetId === selectedId,
+          ...(target.groupId === undefined ? {} : { groupId: target.groupId }),
+          ...(controlledTabs?.has(target.targetId) === true
+            ? { origin: controlledTabs.get(target.targetId) }
+            : {}),
           title: target.title,
           url: target.url
         }))
       })
+    }
+    if (toolName === "tab_groups") {
+      if (backend !== "extension") {
+        throw new Error("Tab groups are only available with the user Chrome backend")
+      }
+      const action = stringArgument(args, "action")
+      const tabIds = (): string[] => {
+        const raw = args.tabIds
+        if (
+          !Array.isArray(raw) ||
+          raw.length === 0 ||
+          !raw.every((value) => typeof value === "string" && /^\d+$/.test(value))
+        ) {
+          throw new Error("tabIds must be a non-empty array of tab ids from tabs")
+        }
+        return raw
+      }
+      const groupId = (): number => {
+        const value = args.groupId
+        if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+          throw new Error("groupId must be the id of a group returned by tab_groups")
+        }
+        return value
+      }
+      const appearance = (): Readonly<Record<string, unknown>> => {
+        const properties: Record<string, unknown> = {}
+        if (args.title !== undefined) properties.title = stringArgument(args, "title")
+        if (args.color !== undefined) {
+          if (typeof args.color !== "string" || !TAB_GROUP_COLORS.has(args.color)) {
+            throw new Error(`color must be one of ${[...TAB_GROUP_COLORS].join(", ")}`)
+          }
+          properties.color = args.color
+        }
+        if (args.collapsed !== undefined) properties.collapsed = booleanArgument(args, "collapsed")
+        return properties
+      }
+      const send = (method: string, params: Readonly<Record<string, unknown>>) =>
+        active.connection.send<Readonly<Record<string, unknown>>>(
+          `Codevisor.tabGroups.${method}`,
+          params
+        )
+      switch (action) {
+        case "list":
+          return jsonResult(await send("list", {}))
+        case "create":
+          return jsonResult(await send("create", { tabIds: tabIds(), ...appearance() }))
+        case "ensure": {
+          // Idempotent "the group called X": add to an existing group with that title, else
+          // create it. Prevents a fresh group per turn when an agent keeps a session group.
+          const title = stringArgument(args, "title")
+          const listed = (await send("list", {})) as {
+            groups?: ReadonlyArray<{ id: number; title?: string; tabIds?: ReadonlyArray<string> }>
+          }
+          const ids = tabIds()
+          const existing = (listed.groups ?? []).find((group) => group.title === title)
+          if (existing === undefined) {
+            return jsonResult({
+              ...(await send("create", { tabIds: ids, ...appearance() })),
+              created: true
+            })
+          }
+          const missing = ids.filter((id) => !(existing.tabIds ?? []).includes(id))
+          if (missing.length > 0) await send("add", { groupId: existing.id, tabIds: missing })
+          const { title: _title, ...restyle } = appearance()
+          return jsonResult({
+            ...(await send("update", { groupId: existing.id, ...restyle })),
+            created: false
+          })
+        }
+        case "add":
+          return jsonResult(await send("add", { groupId: groupId(), tabIds: tabIds() }))
+        case "update":
+          return jsonResult(await send("update", { groupId: groupId(), ...appearance() }))
+        case "ungroup":
+          await send("ungroup", { tabIds: tabIds() })
+          return jsonResult({ ungrouped: tabIds() })
+        default:
+          throw new Error("tab_groups.action must be list, create, ensure, add, update, or ungroup")
+      }
     }
     if (toolName === "user.history") {
       if (backend !== "extension") {
@@ -195,7 +330,15 @@ export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
     }
 
     const page = await currentPage(active, selectedTargets, sessionKey)
-    const invocation: BrowserToolInvocation = { active, args, backend, page, toolName }
+    const invocation: BrowserToolInvocation = {
+      active,
+      args,
+      backend,
+      cursor: cursors.cursorFor(active, page, sessionKey),
+      page,
+      pointer: pointerFor(sessionKey),
+      toolName
+    }
     for (const invoke of toolHandlers) {
       const result = await invoke(invocation, state)
       if (result !== undefined) return result
