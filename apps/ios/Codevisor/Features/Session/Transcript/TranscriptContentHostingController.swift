@@ -78,7 +78,13 @@ final class TranscriptContentHostingController: UIHostingController<AnyView> {
         let measured = sizeThatFits(
             in: CGSize(width: width, height: .greatestFiniteMagnitude),
         ).height
-        guard measured.isFinite, measured > 0 else { return }
+        // An empty row (an active turn's epilogue slice before it has content,
+        // a spacer at zero) still needs to report: the host only becomes
+        // presentation-ready on its first report, and the initial presentation
+        // gate waits for every required row. Clamping to 1pt matches AppKit;
+        // dropping the report kept a mid-stream transcript hidden until the
+        // response finished and the epilogue finally had a height.
+        guard measured.isFinite, measured >= 0 else { return }
         let scale = TranscriptPixelGeometry.displayScale(for: view)
         let height = max(1, TranscriptPixelGeometry.ceil(measured, scale: scale))
         guard TranscriptPixelGeometry.differs(lastReportedHeight, height, scale: scale) else {
