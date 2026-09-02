@@ -3,6 +3,11 @@ import { defineConfig } from "vitest/config"
 export default defineConfig({
   test: {
     include: ["src/**/*.test.ts", "test/**/*.test.ts"],
+    // Every test here boots a server (database, fake agent runtime, MCP
+    // manager, terminals) and drives it over HTTP; on a loaded CI runner —
+    // where every package suite runs in parallel — the heaviest scenarios need
+    // well past vitest's 5s default.
+    testTimeout: 30_000,
     coverage: {
       all: true,
       include: ["src/**/*.ts"],
