@@ -79,12 +79,18 @@ struct SessionRow: View {
             .fill(Color(.tertiarySystemFill))
             .frame(width: Self.harnessWidth, height: Self.harnessWidth)
             .overlay {
-                HarnessIconView(
-                    harnessId: session.harnessId,
-                    fallbackSymbolName: harnessSymbol,
-                    size: 20
-                )
-                .foregroundStyle(.secondary)
+                if session.title.isEmpty || session.title == "New Chat" {
+                    Image(systemName: "message.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(.secondary)
+                } else {
+                    HarnessIconView(
+                        harnessId: session.harnessId,
+                        fallbackSymbolName: harnessSymbol,
+                        size: 20
+                    )
+                    .foregroundStyle(.secondary)
+                }
             }
     }
 }
