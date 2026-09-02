@@ -109,12 +109,21 @@
                 )
 
             case let .list(list):
-                MarkdownFlattenedListRenderer.attributedString(
-                    list,
-                    theme: theme,
-                    foreground: foreground,
-                    chipBackground: chipBackground
-                )
+                if let items = simpleListItems(list) {
+                    self.list(
+                        items: items,
+                        theme: theme,
+                        foreground: foreground,
+                        chipBackground: chipBackground
+                    )
+                } else {
+                    MarkdownFlattenedListRenderer.attributedString(
+                        list,
+                        theme: theme,
+                        foreground: foreground,
+                        chipBackground: chipBackground
+                    )
+                }
 
             case let .blockQuote(blocks):
                 MarkdownFlattenedListRenderer.attributedString(
@@ -127,6 +136,31 @@
             case .codeBlock, .table, .thematicBreak:
                 NSAttributedString()
             }
+        }
+
+        /// A tight list whose items are each one paragraph — or, mid-stream,
+        /// still empty — is the parser's simple list shape in all but name.
+        /// Rendering it through the simple path keeps one marker geometry
+        /// while a streaming list flips between the two forms as items land.
+        private static func simpleListItems(
+            _ list: MarkdownList
+        ) -> [(marker: String, text: MarkdownText)]? {
+            guard list.isTight else { return nil }
+            var items: [(marker: String, text: MarkdownText)] = []
+            for (index, item) in list.items.enumerated() {
+                guard !item.isTask else { return nil }
+                let marker = list.marker(for: item, at: index)
+                switch item.blocks.count {
+                case 0:
+                    items.append((marker: marker, text: MarkdownText("")))
+                case 1:
+                    guard case let .paragraph(text) = item.blocks[0] else { return nil }
+                    items.append((marker: marker, text: text))
+                default:
+                    return nil
+                }
+            }
+            return items
         }
 
         static func canRenderFlattenedList(_ list: MarkdownList) -> Bool {
