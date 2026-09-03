@@ -10,6 +10,9 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   /// Tests that need capability responses (or to delay them) install one.
   var capabilitiesHandler: (@Sendable (String) async throws -> ServerCapabilities)?
   var resolvedCapabilitiesHandler: (@Sendable (String, String, [String: String]) async throws -> ServerCapabilities)?
+  /// Tests exercising composer attachments install one; the protocol
+  /// default rejects uploads.
+  var uploadFileHandler: (@Sendable (String, String, Data) async throws -> ServerFileMetadata)?
 
   let lock = NSLock()
   private var _projects: [ServerProject]
@@ -36,6 +39,11 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
     _sessions = sessions
     _workspaces = workspaces
     _panes = panes
+  }
+
+  func uploadFile(name: String, mimeType: String, data: Data) async throws -> ServerFileMetadata {
+    guard let uploadFileHandler else { throw CodevisorServerClientError.invalidResponse }
+    return try await uploadFileHandler(name, mimeType, data)
   }
 
   func setSessions(_ sessions: [ServerSession]) {

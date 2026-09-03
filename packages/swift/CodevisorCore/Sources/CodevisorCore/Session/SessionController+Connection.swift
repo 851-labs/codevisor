@@ -207,6 +207,11 @@ extension SessionController {
     serverClient = client
     composerDefaultsScope = .newWorkspace(serverId: project.serverId)
     self.project = project
+    // Staged attachments were uploaded to the old machine, and file ids
+    // are machine-local: sending their refs to the new machine fails its
+    // send-time lookup with "Unknown attachment file". Re-upload from the
+    // retained bytes so the refs match the client that will send them.
+    reuploadAllAttachments()
     // Any kept worktree belongs to the old machine's project.
     sessionCwdOverride = nil
     worktreeName = nil

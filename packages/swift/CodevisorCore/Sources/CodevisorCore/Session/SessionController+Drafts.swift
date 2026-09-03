@@ -73,7 +73,7 @@ extension SessionController {
 
     // Server file ids are not assumed to survive indefinitely. Re-upload
     // the persisted local bytes and produce fresh refs for the next send.
-    for attachment in composerAttachments { startUpload(attachment) }
+    reuploadAllAttachments()
   }
 
   func draftDidChange() {

@@ -302,6 +302,23 @@ extension SessionController {
     }
   }
 
+  /// Discards every server file ref and re-uploads from the local bytes the
+  /// composer still holds. Server file ids are minted per machine, so this
+  /// is required whenever `serverClient` moves to a different machine
+  /// (`retarget`); restored drafts also go through here because their refs
+  /// are not assumed to survive a relaunch. Placeholders still waiting on
+  /// their drop/paste provider are skipped: they upload through whatever
+  /// client is current once their bytes resolve.
+  func reuploadAllAttachments() {
+    for task in uploadTasks.values { task.cancel() }
+    uploadTasks.removeAll()
+    for index in composerAttachments.indices {
+      guard composerAttachments[index].state != .loading else { continue }
+      composerAttachments[index].state = .uploading
+      startUpload(composerAttachments[index])
+    }
+  }
+
   private func setAttachmentState(_ id: UUID, _ state: ComposerAttachment.State) {
     guard let index = composerAttachments.firstIndex(where: { $0.id == id }) else { return }
     composerAttachments[index].state = state
