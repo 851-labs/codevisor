@@ -317,13 +317,16 @@ struct TranscriptReducerTests {
     #expect(turn.duration == nil)
   }
 
-  @Test("A full tool_call re-send preserves streamed diffStats and content it omits")
+  @Test("A full tool_call re-send preserves streamed detail fields it omits")
   func resendPreservesStreamedState() {
     let turn = reduce([
       .toolCall(ToolCall(toolCallId: "a", title: "Edit", kind: .edit, status: .pending)),
       .toolCallUpdate(
         ToolCallUpdate(
           toolCallId: "a",
+          rawInput: ["command": "apply patch"],
+          rawOutput: "done",
+          exitCode: 0,
           diffStats: [ToolCallDiffStat(path: "/a", added: 5, removed: 2)]
         )),
       .toolCall(ToolCall(toolCallId: "a", title: "Edited a.txt", kind: .edit, status: .completed)),
@@ -334,6 +337,9 @@ struct TranscriptReducerTests {
     }
     #expect(call.title == "Edited a.txt")
     #expect(call.status == .completed)
+    #expect(call.rawInput?["command"] == .string("apply patch"))
+    #expect(call.rawOutput == .string("done"))
+    #expect(call.exitCode == 0)
     #expect(call.diffStats == [ToolCallDiffStat(path: "/a", added: 5, removed: 2)])
   }
 }

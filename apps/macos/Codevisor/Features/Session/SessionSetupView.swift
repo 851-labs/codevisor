@@ -50,14 +50,13 @@ struct SessionSetupPhaseView: View {
           header(showsChevron: true)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(TranscriptWorkedSectionButtonStyle())
       } else {
         header(showsChevron: false)
       }
 
       TranscriptDisclosureContentReveal(isExpanded: isExpanded && hasDetail) {
         VStack(alignment: .leading, spacing: 8) {
-          Divider()
           if let message = phase.failureMessage {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
               Image(systemName: "exclamationmark.triangle.fill")
@@ -72,7 +71,11 @@ struct SessionSetupPhaseView: View {
             .foregroundStyle(theme.statusError)
           }
           if !phase.logs.isEmpty {
-            logLines
+            PlainOutputView(
+              title: "Logs",
+              text: phase.logs.map(\.text).joined(separator: "\n"),
+              followsTail: phase.isRunning
+            )
           }
         }
         // The gap belongs to the disclosed body rather than the
@@ -134,58 +137,6 @@ struct SessionSetupPhaseView: View {
       Label(phase.failedTitle, systemImage: "exclamationmark.triangle.fill")
         .foregroundStyle(theme.statusWarn)
     }
-  }
-
-  /// Tallest the log panel grows before it scrolls (~12 rows).
-  private static let logMaxHeight: CGFloat = 200
-
-  private var logLines: some View {
-    ViewThatFits(in: .vertical) {
-      logTextView
-      ScrollView {
-        logTextView
-      }
-      .defaultScrollAnchor(.bottom)
-    }
-    // SelectableTextView supplies a synchronous TextKit sizeThatFits.
-    // ViewThatFits uses the natural-height body until it reaches this cap,
-    // then chooses the scrolling fallback without a geometry/state loop.
-    .frame(maxHeight: Self.logMaxHeight)
-    .background(
-      RoundedRectangle(cornerRadius: 8)
-        .fill(theme.cardQuietBackground)
-    )
-  }
-
-  private var logTextView: some View {
-    SelectableTextView(attributedText: logText, fillsWidth: true)
-      .padding(10)
-  }
-
-  private var logText: NSAttributedString {
-    let result = NSMutableAttributedString()
-    let font = NSFont.monospacedSystemFont(
-      ofSize: NSFont.preferredFont(forTextStyle: .caption1).pointSize,
-      weight: .regular
-    )
-    let paragraph = NSMutableParagraphStyle()
-    paragraph.lineSpacing = 2
-    for (index, line) in phase.logs.enumerated() {
-      if index > 0 { result.append(NSAttributedString(string: "\n")) }
-      result.append(
-        NSAttributedString(
-          string: line.text,
-          attributes: [
-            .font: font,
-            .paragraphStyle: paragraph,
-            .foregroundColor: NSColor(
-              line.stream == "stderr" ? theme.textSecondary : theme.textTertiary
-            ),
-          ]
-        )
-      )
-    }
-    return result
   }
 
   private var completedTitle: String {

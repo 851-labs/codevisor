@@ -64,6 +64,10 @@ export const ToolCallPayload = Schema.Struct({
   locations: Schema.optional(Schema.Unknown),
   rawInput: Schema.optional(Schema.Unknown),
   rawOutput: Schema.optional(Schema.Unknown),
+  /** Numeric process exit status when the harness exposes one. This is a
+   *  Codevisor extension: ACP's generic tool-call shape has no dedicated
+   *  command-result field. */
+  exitCode: Schema.optional(Schema.Number),
   _meta: Schema.optional(Schema.Unknown)
 })
 export type ToolCallPayload = typeof ToolCallPayload.Type

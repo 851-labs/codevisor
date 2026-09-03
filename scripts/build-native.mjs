@@ -96,6 +96,8 @@ if (target === "macos") {
     { environment, layout }
   )
 } else {
-  console.error("usage: bun scripts/build-native.mjs <macos|ios|pixelbook|list:macos> [xcodebuild arguments]")
+  console.error(
+    "usage: bun scripts/build-native.mjs <macos|ios|pixelbook|list:macos> [xcodebuild arguments]"
+  )
   process.exitCode = 2
 }

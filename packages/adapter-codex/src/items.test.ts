@@ -60,7 +60,7 @@ describe("CodexProvider", () => {
     })
     client.emit("item/started", {
       item: {
-        command: "rg runner",
+        command: "rg runner\nprintf 'second line'",
         id: "item-cmd",
         status: "inProgress",
         type: "commandExecution"
@@ -71,7 +71,7 @@ describe("CodexProvider", () => {
     client.emit("item/completed", {
       item: {
         aggregatedOutput: "release.yml",
-        command: "rg runner",
+        command: "rg runner\nprintf 'second line'",
         exitCode: 0,
         id: "item-cmd",
         status: "completed",
@@ -126,6 +126,7 @@ describe("CodexProvider", () => {
         sessionUpdate: "tool_call",
         toolCallId: "item-cmd",
         kind: "execute",
+        rawInput: { command: "rg runner\nprintf 'second line'" },
         status: "in_progress",
         title: "Ran rg runner"
       })
@@ -135,6 +136,8 @@ describe("CodexProvider", () => {
         sessionUpdate: "tool_call_update",
         toolCallId: "item-cmd",
         status: "completed",
+        exitCode: 0,
+        rawInput: { command: "rg runner\nprintf 'second line'" },
         rawOutput: "release.yml"
       })
     )

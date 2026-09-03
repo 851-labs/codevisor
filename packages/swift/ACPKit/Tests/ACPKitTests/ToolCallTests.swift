@@ -14,7 +14,8 @@ struct ToolCallTests {
         content: [.content(.text("done"))],
         locations: [ToolCallLocation(path: "/a", line: 3)],
         rawInput: ["path": "/a"],
-        rawOutput: ["ok": true]
+        rawOutput: ["ok": true],
+        exitCode: 0
       ))
     #expect(merged.title == "Read file")  // unchanged
     #expect(merged.kind == .read)  // unchanged
@@ -23,6 +24,7 @@ struct ToolCallTests {
     #expect(merged.locations?.first?.line == 3)
     #expect(merged.rawInput?["path"] == .string("/a"))
     #expect(merged.rawOutput?["ok"] == .bool(true))
+    #expect(merged.exitCode == 0)
   }
 
   @Test("applying can overwrite title and kind")
@@ -49,10 +51,11 @@ struct ToolCallTests {
 
   @Test("cancelled status round-trips and is terminal")
   func cancelledStatus() throws {
-    let call = ToolCall(toolCallId: "t1", title: "Edit", status: .cancelled)
+    let call = ToolCall(toolCallId: "t1", title: "Edit", status: .cancelled, exitCode: 130)
     let data = try ACPJSON.encoder.encode(call)
     let decoded = try ACPJSON.decoder.decode(ToolCall.self, from: data)
     #expect(decoded.status == .cancelled)
+    #expect(decoded.exitCode == 130)
     #expect(decoded.isSettled)
     #expect(!ToolCall(toolCallId: "t1", title: "Edit", status: .inProgress).isSettled)
     #expect(!ToolCall(toolCallId: "t1", title: "Edit").isSettled)

@@ -28,7 +28,7 @@ public struct ToolCallRow: View {
   /// per-render main-thread cost.
   @State private var totalsCache = DiffTotalsCache()
 
-  private var hasContent: Bool { !(call.content?.isEmpty ?? true) }
+  private var hasDetails: Bool { call.hasPresentableDetails }
 
   private var hasOnlyDiffContent: Bool {
     guard let content = call.content, !content.isEmpty else { return false }
@@ -64,20 +64,20 @@ public struct ToolCallRow: View {
         if let totals {
           DiffCounter(totals: totals)
         }
-        if hasContent {
+        if hasDetails {
           TranscriptDisclosureChevron(expanded: isExpanded)
         }
         Spacer(minLength: 0)
       }
       .contentShape(Rectangle())
       .onTapGesture {
-        if hasContent {
+        if hasDetails {
           let change = { store.toggle(disclosureKey, default: false) }
           performAnchoredDisclosureChange?(change) ?? change()
         }
       }
 
-      TranscriptDisclosureContentReveal(isExpanded: isExpanded && hasContent) {
+      TranscriptDisclosureContentReveal(isExpanded: isExpanded && hasDetails) {
         // Diffs carry their own card; wrapping them in the labeled
         // output card double-borders them for no benefit.
         Group {
@@ -89,6 +89,8 @@ public struct ToolCallRow: View {
                 }
               }
             }
+          } else if call.kind == .execute {
+            ShellToolCallDetails(call: call)
           } else {
             ToolCallContentCard(call: call)
           }
@@ -280,6 +282,66 @@ public struct DiffCounter: View {
   }
 }
 
+/// Shell commands use the same editor-like card and single-document viewport
+/// as file diffs, minus gutters, syntax colors, and changed-line fills.
+private struct ShellToolCallDetails: View {
+  let call: ToolCall
+
+  private var outputText: String? {
+    if let rawOutput = call.rawOutputDetailSection() {
+      return rawOutput.text
+    }
+
+    let textBlocks = (call.content ?? []).compactMap { content -> String? in
+      guard case let .content(block) = content,
+        case let .text(text, _) = block
+      else { return nil }
+      return text
+    }
+    if !textBlocks.isEmpty {
+      return textBlocks.joined(separator: "\n")
+    }
+
+    let terminals = (call.content ?? []).compactMap { content -> String? in
+      guard case let .terminal(terminalId) = content else { return nil }
+      return "Terminal \(terminalId)"
+    }
+    return terminals.isEmpty ? nil : terminals.joined(separator: "\n")
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      if let outputText {
+        PlainOutputView(
+          title: "Shell",
+          text: outputText,
+          emptyMessage: "No output"
+        )
+      } else if call.isSettled {
+        PlainOutputView(title: "Shell", text: "", emptyMessage: "No output")
+      }
+
+      ForEach(Array((call.content ?? []).enumerated()), id: \.offset) { _, content in
+        supplementaryContent(content)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func supplementaryContent(_ content: ToolCallContent) -> some View {
+    switch content {
+    case let .content(block):
+      if case let .resourceLink(link) = block {
+        ToolSourceLinkView(link: link)
+      }
+    case let .diff(path, oldText, newText):
+      DiffView(path: path, oldText: oldText, newText: newText)
+    case .terminal:
+      EmptyView()
+    }
+  }
+}
+
 /// The expanded content of a tool call: a labeled card with the output and a
 /// success/failure badge.
 public struct ToolCallContentCard: View {
@@ -287,12 +349,17 @@ public struct ToolCallContentCard: View {
   @Environment(\.theme) private var theme
 
   public var body: some View {
+    let rawSections = call.rawDetailSections()
     VStack(alignment: .leading, spacing: 8) {
       HStack {
         Text(label)
           .font(.caption2.weight(.semibold))
           .foregroundStyle(.secondary)
         Spacer()
+      }
+
+      ForEach(rawSections) { section in
+        ToolCallRawSectionView(section: section)
       }
 
       ForEach(Array((call.content ?? []).enumerated()), id: \.offset) { _, content in
@@ -303,7 +370,7 @@ public struct ToolCallContentCard: View {
       // reads/edits/searches signal success by their content.
       if call.isSettled, call.kind == .execute || call.status == .failed || call.status == .cancelled {
         HStack {
-          Spacer(); statusBadge
+          Spacer(); ToolCallStatusBadge(call: call)
         }
       }
     }
@@ -319,28 +386,7 @@ public struct ToolCallContentCard: View {
     case let .content(block):
       switch block {
       case let .text(text, _):
-        #if canImport(AppKit) || canImport(UIKit)
-          SelectableTextView(
-            attributedText: NSAttributedString(
-              string: text,
-              attributes: [
-                .font: OSFont.monospacedSystemFont(
-                  ofSize: OSFont.preferredFont(forTextStyle: .caption1).pointSize,
-                  weight: .regular
-                ),
-                .foregroundColor: OSColor(theme.textPrimary),
-              ]
-            ),
-            fillsWidth: true
-          )
-          .frame(maxWidth: .infinity, alignment: .leading)
-        #else
-          Text(text)
-            .font(.system(.caption, design: .monospaced))
-            .foregroundStyle(theme.textPrimary)
-            .textSelection(.enabled)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        #endif
+        ToolCallMonospacedText(text: text)
       // Web-search sources arrive as resource_link blocks; render each as
       // a tappable title over its host.
       case let .resourceLink(link):
@@ -370,15 +416,20 @@ public struct ToolCallContentCard: View {
     }
   }
 
-  @ViewBuilder
-  private var statusBadge: some View {
+}
+
+private struct ToolCallStatusBadge: View {
+  let call: ToolCall
+  @Environment(\.theme) private var theme
+
+  var body: some View {
     switch call.status {
     case .completed:
-      Label("Success", systemImage: "checkmark")
+      Label(call.exitCode.map { "Exit \($0)" } ?? "Success", systemImage: "checkmark")
         .font(.caption2)
         .foregroundStyle(theme.statusOK)
     case .failed:
-      Label("Failed", systemImage: "xmark")
+      Label(call.exitCode.map { "Exit \($0)" } ?? "Failed", systemImage: "xmark")
         .font(.caption2)
         .foregroundStyle(theme.statusError)
     case .cancelled:
@@ -388,6 +439,69 @@ public struct ToolCallContentCard: View {
     default:
       EmptyView()
     }
+  }
+}
+
+private struct ToolCallRawSectionView: View {
+  let section: ToolCallRawSection
+  @Environment(\.theme) private var theme
+  @Environment(\.transcriptInvalidateRowMeasurement) private var invalidateRowMeasurement
+  @State private var showsFullText = false
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Text(section.title)
+        .font(.caption2.weight(.semibold))
+        .foregroundStyle(.secondary)
+      if section.text.isEmpty {
+        Text(section.kind == .output ? "No output" : "Empty")
+          .font(.caption)
+          .italic()
+          .foregroundStyle(.secondary)
+      } else {
+        ToolCallMonospacedText(text: showsFullText ? section.text : section.preview)
+      }
+      if section.isTruncated {
+        Button(showsFullText ? "Show less" : "Show full") {
+          showsFullText.toggle()
+          invalidateRowMeasurement?()
+        }
+        .buttonStyle(.plain)
+        .font(.caption2.weight(.medium))
+        .foregroundStyle(theme.accent)
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
+private struct ToolCallMonospacedText: View {
+  let text: String
+  @Environment(\.theme) private var theme
+
+  var body: some View {
+    #if canImport(AppKit) || canImport(UIKit)
+      SelectableTextView(
+        attributedText: NSAttributedString(
+          string: text,
+          attributes: [
+            .font: OSFont.monospacedSystemFont(
+              ofSize: OSFont.preferredFont(forTextStyle: .caption1).pointSize,
+              weight: .regular
+            ),
+            .foregroundColor: OSColor(theme.textPrimary),
+          ]
+        ),
+        fillsWidth: true
+      )
+      .frame(maxWidth: .infinity, alignment: .leading)
+    #else
+      Text(text)
+        .font(.system(.caption, design: .monospaced))
+        .foregroundStyle(theme.textPrimary)
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    #endif
   }
 }
 

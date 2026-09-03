@@ -46,7 +46,8 @@ export const emitItemLifecycle = (
             sessionUpdate: "tool_call",
             status: "in_progress",
             title: command.length > 0 ? `Ran ${firstLine(command)}` : "Ran command",
-            toolCallId: itemId
+            toolCallId: itemId,
+            ...(command.length > 0 ? { rawInput: { command } } : {})
           })
         )
       } else {
@@ -56,9 +57,11 @@ export const emitItemLifecycle = (
             sessionUpdate: "tool_call_update",
             status: commandStatus(item),
             toolCallId: itemId,
+            ...(command.length > 0 ? { rawInput: { command } } : {}),
             ...(typeof item.aggregatedOutput === "string"
               ? { rawOutput: item.aggregatedOutput }
-              : {})
+              : {}),
+            ...(typeof item.exitCode === "number" ? { exitCode: item.exitCode } : {})
           })
         )
       }

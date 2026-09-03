@@ -256,6 +256,9 @@ public enum TranscriptReducer {
       var merged = call
       if merged.diffStats == nil { merged.diffStats = existing.diffStats }
       if merged.content == nil { merged.content = existing.content }
+      if merged.rawInput == nil { merged.rawInput = existing.rawInput }
+      if merged.rawOutput == nil { merged.rawOutput = existing.rawOutput }
+      if merged.exitCode == nil { merged.exitCode = existing.exitCode }
       entries[index] = .tool(merged)
     } else {
       entries.append(.tool(call))
