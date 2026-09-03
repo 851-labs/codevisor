@@ -5,8 +5,10 @@
   ///
   /// The virtualized transcript adopts this. Surfaces find it by walking their
   /// superview chain, hand it every primary-button click that is not on a
-  /// link, and forward the drag that follows. Everything else — native link
-  /// clicks, control-clicks, secondary buttons — stays with `NSTextView`.
+  /// link, and forward the drag that follows. A secondary click off a link
+  /// asks it for a menu before `NSTextView` can react, so the transcript-wide
+  /// selection is never disturbed. Everything else — native link clicks,
+  /// clicks the coordinator declines — stays with `NSTextView`.
   @MainActor
   public protocol TranscriptSelectionCoordinating: AnyObject {
     /// Returns true when the coordinator took the click. The surface then
@@ -18,8 +20,10 @@
     /// Called before a surface falls back to native tracking so a stale
     /// transcript-wide highlight never coexists with a native selection.
     func clearTranscriptSelection()
-    /// The context menu for a surface, or nil to use the surface's own.
-    func transcriptSelectionMenu(for surface: NSTextView) -> NSMenu?
+    /// The context menu for a secondary click at `event` on `surface`, or nil
+    /// to use the surface's own. The coordinator may move its selection to
+    /// what the click hit first, as native text views do.
+    func transcriptSelectionMenu(for surface: NSTextView, with event: NSEvent) -> NSMenu?
   }
 
   extension NSView {
@@ -63,8 +67,22 @@
     /// entry points so that routing to the coordinator happens exactly once
     /// per event.
     public final override func mouseDown(with event: NSEvent) {
+      if event.modifierFlags.contains(.control), presentTranscriptSelectionMenu(for: event) {
+        return
+      }
       if routeTranscriptSelectionMouseDown(event) { return }
       nativeMouseDown(with: event)
+    }
+
+    /// `NSTextView` answers a secondary click by making itself first
+    /// responder and moving its own selection to the word under the pointer
+    /// before it ever asks `menu(for:)`. The transcript coordinator drops its
+    /// selection the moment focus leaves it, so by the time the menu is
+    /// built there is nothing left to copy. Present the coordinator's menu
+    /// here instead, without giving `NSTextView` a turn.
+    public final override func rightMouseDown(with event: NSEvent) {
+      if presentTranscriptSelectionMenu(for: event) { return }
+      super.rightMouseDown(with: event)
     }
 
     public final override func mouseDragged(with event: NSEvent) {
@@ -129,8 +147,25 @@
       return true
     }
 
+    /// Shows the coordinator's menu for `event` and returns true, or returns
+    /// false when the click is on a link or the coordinator declines it.
+    private func presentTranscriptSelectionMenu(for event: NSEvent) -> Bool {
+      guard let coordinator = transcriptSelectionCoordinator,
+        !transcriptLinkHitTest(at: convert(event.locationInWindow, from: nil)),
+        let menu = coordinator.transcriptSelectionMenu(for: self, with: event)
+      else { return false }
+      popUpTranscriptSelectionMenu(menu, with: event)
+      return true
+    }
+
+    /// The one place a transcript selection menu is put on screen. Tests
+    /// override this because a real pop-up runs its own tracking loop.
+    open func popUpTranscriptSelectionMenu(_ menu: NSMenu, with event: NSEvent) {
+      NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
     open override func menu(for event: NSEvent) -> NSMenu? {
-      transcriptSelectionCoordinator?.transcriptSelectionMenu(for: self)
+      transcriptSelectionCoordinator?.transcriptSelectionMenu(for: self, with: event)
         ?? super.menu(for: event)
     }
 

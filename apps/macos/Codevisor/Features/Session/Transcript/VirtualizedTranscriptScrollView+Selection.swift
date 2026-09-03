@@ -100,55 +100,10 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
     applySelectionHighlights()
   }
 
-  func transcriptSelectionMenu(for _: NSTextView) -> NSMenu? {
-    guard hasTranscriptSelection else { return nil }
-    let menu = NSMenu()
-    let copyItem = NSMenuItem(title: "Copy", action: #selector(copy(_:)), keyEquivalent: "")
-    copyItem.target = self
-    menu.addItem(copyItem)
-    return menu
-  }
-
-  // MARK: Actions
-
-  @objc func copy(_: Any?) {
-    guard let text = selectedTranscriptText(), !text.isEmpty else { return }
-    let pasteboard = NSPasteboard.general
-    pasteboard.clearContents()
-    pasteboard.setString(text, forType: .string)
-  }
-
-  override func selectAll(_: Any?) {
-    guard let first = virtualLayout.keys.first, let last = virtualLayout.keys.last else { return }
-    stopSelectionAutoScroll()
-    textSelection.isDragging = false
-    textSelection.granularity = .character
-    textSelection.anchorRange = nil
-    textSelection.endpointTexts = [:]
-    textSelection.selection = TranscriptTextSelection(
-      anchor: .rowStart(first),
-      focus: .rowEnd(last)
-    )
-    applySelectionHighlights()
-  }
-
-  func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
-    switch item.action {
-    case #selector(copy(_:)):
-      return hasTranscriptSelection
-    case #selector(selectAll(_:)):
-      return !virtualLayout.isEmpty
-    default:
-      return true
-    }
-  }
-
   // MARK: Gesture
 
   private func startSelectionGesture(at point: TranscriptSelectionPoint, event: NSEvent) {
-    if let window, window.firstResponder !== self {
-      window.makeFirstResponder(self)
-    }
+    takeFocusForSelection()
     let granularity: TranscriptSelectionState.Granularity =
       switch event.clickCount {
       case 0, 1: .character
@@ -165,17 +120,31 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
       selection.focus = point
       textSelection.selection = selection
     } else {
-      let range = expandedRange(for: point, granularity: granularity)
-      textSelection.granularity = granularity
-      textSelection.anchorRange = range
-      textSelection.selection = TranscriptTextSelection(anchor: range.start, focus: range.end)
-      textSelection.endpointTexts = [:]
+      replaceSelection(at: point, granularity: granularity)
     }
     textSelection.isDragging = true
     textSelection.lastDragLocationInWindow = event.locationInWindow
     cacheEndpointTexts()
     applySelectionHighlights()
     startSelectionAutoScroll()
+  }
+
+  /// Anchors a fresh selection on the unit of text at `point`.
+  func replaceSelection(
+    at point: TranscriptSelectionPoint,
+    granularity: TranscriptSelectionState.Granularity
+  ) {
+    let range = expandedRange(for: point, granularity: granularity)
+    textSelection.granularity = granularity
+    textSelection.anchorRange = range
+    textSelection.selection = TranscriptTextSelection(anchor: range.start, focus: range.end)
+    textSelection.endpointTexts = [:]
+  }
+
+  func takeFocusForSelection() {
+    if let window, window.firstResponder !== self {
+      window.makeFirstResponder(self)
+    }
   }
 
   private func updateSelectionFocus(toWindowPoint windowPoint: NSPoint) {
@@ -205,7 +174,7 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
     applySelectionHighlights()
   }
 
-  private func selectionPoint(
+  func selectionPoint(
     _ lhs: TranscriptSelectionPoint,
     precedes rhs: TranscriptSelectionPoint
   ) -> Bool {
@@ -215,7 +184,7 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
     return (lhsRow, lhs.surface, lhs.offset) < (rhsRow, rhs.surface, rhs.offset)
   }
 
-  private func expandedRange(
+  func expandedRange(
     for point: TranscriptSelectionPoint,
     granularity: TranscriptSelectionState.Granularity
   ) -> TranscriptSelectionState.PointRange {
@@ -239,7 +208,7 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
     )
   }
 
-  private func cacheEndpointTexts() {
+  func cacheEndpointTexts() {
     guard let selection = textSelection.selection else { return }
     var texts: [String: [String]] = [:]
     for key in [selection.anchor.rowKey, selection.focus.rowKey] {
@@ -294,7 +263,7 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
     )
   }
 
-  private func selectionPoint(
+  func selectionPoint(
     in surface: TranscriptSurfaceTextView,
     atWindowPoint windowPoint: NSPoint
   ) -> TranscriptSelectionPoint? {
@@ -473,7 +442,7 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
     }
   }
 
-  private func stopSelectionAutoScroll() {
+  func stopSelectionAutoScroll() {
     textSelection.autoScrollTask?.cancel()
     textSelection.autoScrollTask = nil
   }
