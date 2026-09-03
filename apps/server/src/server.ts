@@ -22,6 +22,7 @@ import type {
 } from "./server-context.js"
 import { makeAttentionSettleScheduler } from "./infra/attention-settle.js"
 import { handleUpgrade } from "./routes/events.js"
+import { backfillProjectRepoUrls } from "./routes/project-repo-identity.js"
 import { readMcpOverlays } from "./infra/mcp-fleet.js"
 import { adoptLegacySyncIdentity } from "./infra/sync-identity.js"
 import {
@@ -370,6 +371,15 @@ export const startCodevisorServer = (
               return
             }
             app = makeCodevisorServerApp(services, config, fanout)
+            // Projects recorded before remotes were tracked learn theirs
+            // now, off the request path; the list route repeats the same
+            // reconcile (memoized) for anything this sweep misses.
+            void backfillProjectRepoUrls(
+              services.db,
+              config.id,
+              fanout,
+              services.resolveGitEnvironment
+            ).catch(swallowError)
             resolve({
               host: config.host,
               port,

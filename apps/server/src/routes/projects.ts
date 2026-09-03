@@ -1,7 +1,5 @@
-import { randomUUID } from "node:crypto"
-import type { Project, ProjectSetupUpdate, Worktree, WorktreeSetupUpdate } from "@codevisor/api"
+import type { Worktree, WorktreeSetupUpdate } from "@codevisor/api"
 import {
-  CreateProjectFromGitRequest as CreateProjectFromGitRequestSchema,
   CreateProjectRequest as CreateProjectRequestSchema,
   CreateScratchProjectRequest as CreateScratchProjectRequestSchema,
   CreateWorktreeRequest as CreateWorktreeRequestSchema,
@@ -9,18 +7,15 @@ import {
 } from "@codevisor/api"
 import {
   DatabaseError,
-  managedRepoPath,
   scratchWorkspacePath,
   scratchWorkspacesRoot,
   type CodevisorDatabaseService
 } from "@codevisor/db"
-import { existsSync, mkdirSync, readdirSync, rmSync, rmdirSync } from "node:fs"
+import { mkdirSync, readdirSync, rmdirSync } from "node:fs"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { dirname } from "node:path"
 import {
-  CloneError,
   addWorktree,
-  cloneRepository,
   isGitWorkTree,
   isWorktreeBranchCollision,
   listCodevisorWorktreeBranchNames,
@@ -49,8 +44,12 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "../server-context.js"
-import { cloneDirectoryName, looksLikeGitUrl } from "./project-git-url.js"
+import { routeProjectFromGit } from "./project-clone.js"
+import { probeProject } from "./project-probe.js"
+import { discoverRepoUrl, reconcileProjectRepoUrls } from "./project-repo-identity.js"
 import { projectRecommendationsForRequest } from "./project-recommendations.js"
+
+export { probeProject } from "./project-probe.js"
 
 export const routeProjects = async (
   services: CodevisorServerServices,
@@ -62,7 +61,16 @@ export const routeProjects = async (
 ): Promise<boolean> => {
   const serverId = config.id
   if (request.method === "GET" && url.pathname === "/v1/projects") {
-    const projects = await run(services.db.listProjects)
+    // Each list refreshes this machine's view of every folder's remote
+    // (memoized), so a remote added after the project was — or a project
+    // recorded before remotes were tracked — links up without a restart.
+    const environment = await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
+    const projects = await reconcileProjectRepoUrls(
+      services.db,
+      serverId,
+      await run(services.db.listProjects),
+      environment
+    )
     writeJson(
       response,
       200,
@@ -77,8 +85,22 @@ export const routeProjects = async (
   }
 
   if (request.method === "POST" && url.pathname === "/v1/projects") {
+    const payload = await readSchema(request, CreateProjectRequestSchema)
+    // A folder-added project is born with its remote, so it groups with
+    // its siblings on other machines from the first list.
+    const repoUrl =
+      payload.repoUrl ??
+      (existingDirectory(payload.folderPath) === undefined
+        ? undefined
+        : await discoverRepoUrl(
+            payload.folderPath,
+            await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
+          ))
     const project = await run(
-      services.db.createProject(await readSchema(request, CreateProjectRequestSchema))
+      services.db.createProject({
+        ...payload,
+        ...(repoUrl === undefined ? {} : { repoUrl })
+      })
     )
     await appendAndPublish(services.db, fanout, "project.created", project.id, project)
     writeJson(response, 201, await probeProject(serverId, project))
@@ -86,70 +108,7 @@ export const routeProjects = async (
   }
 
   if (request.method === "POST" && url.pathname === "/v1/projects/from-git") {
-    const payload = await readSchema(request, CreateProjectFromGitRequestSchema)
-    const repoUrl = payload.url.trim()
-    if (!looksLikeGitUrl(repoUrl)) {
-      throw new HttpFailure(400, `Not a git URL: ${payload.url}`, "invalid_url")
-    }
-    const name = payload.name?.trim() || cloneDirectoryName(repoUrl)
-    if (name === undefined || name.length === 0) {
-      throw new HttpFailure(
-        400,
-        "Could not derive a project name from the URL; pass one explicitly",
-        "invalid_url"
-      )
-    }
-    const destination = managedRepoPath(name)
-    if (existsSync(destination)) {
-      throw new HttpFailure(
-        409,
-        `${destination} already exists on this machine; add it as a local directory instead`,
-        "already_exists"
-      )
-    }
-
-    const newProjectId = payload.id ?? randomUUID()
-    const publishSetup = makeProjectSetupPublisher(services.db, fanout, newProjectId, repoUrl)
-    const startedAt = Date.now()
-    await publishSetup({ state: "started" })
-    try {
-      mkdirSync(dirname(destination), { recursive: true })
-      const environment = await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
-      await cloneRepository(
-        repoUrl,
-        destination,
-        (stream, line) => {
-          void publishSetup({ state: "log", stream, line }).catch(swallowError)
-        },
-        environment
-      )
-      await publishSetup({ state: "completed", durationMs: Date.now() - startedAt })
-    } catch (cause) {
-      /* v8 ignore next -- cloneRepository always throws CloneError; the fallback guards mkdir failures. */
-      const code = cause instanceof CloneError ? cause.code : undefined
-      await publishSetup({
-        state: "failed",
-        message: failureMessage(cause),
-        /* v8 ignore next -- spawn-level clone failures carry no classification; exercised directly in git.test.ts. */
-        ...(code === undefined ? {} : { code }),
-        durationMs: Date.now() - startedAt
-      })
-      // Never leave a partial checkout behind: the name must be retryable.
-      /* v8 ignore next -- best-effort cleanup; a second fault still surfaces the git error. */
-      rmSync(destination, { force: true, recursive: true })
-      throw cause
-    }
-
-    const project = await run(
-      services.db.createProject({
-        id: newProjectId,
-        folderPath: destination,
-        name,
-        repoUrl
-      })
-    )
-    await appendAndPublish(services.db, fanout, "project.created", project.id, project)
-    writeJson(response, 201, await probeProject(serverId, project))
+    await routeProjectFromGit(services, fanout, serverId, request, response)
     return true
   }
 
@@ -426,33 +385,6 @@ const isWorktreeNameCollision = (cause: unknown): boolean =>
 
 type WorktreeSetupDetail = Omit<WorktreeSetupUpdate, "worktreeId" | "projectId" | "name" | "branch">
 
-/// Serialized project.setup progress for clone-from-git, mirroring the
-/// worktree.setup pattern: clients follow the client-supplied project id on
-/// the event stream while the HTTP request is still in flight.
-const makeProjectSetupPublisher = (
-  db: CodevisorDatabaseService,
-  fanout: EventFanout,
-  projectId: string,
-  repoUrl: string
-): ((
-  detail: Partial<ProjectSetupUpdate> & { state: ProjectSetupUpdate["state"] }
-) => Promise<void>) => {
-  let chain: Promise<void> = Promise.resolve()
-  return (detail) => {
-    const update: ProjectSetupUpdate = {
-      projectId,
-      url: repoUrl,
-      ...detail
-    }
-    const next = chain.then(async () => {
-      await appendAndPublish(db, fanout, "project.setup", projectId, update)
-    })
-    /* v8 ignore next -- keeps the chain alive if the event log write fails; awaited callers still see the failure via `next`. */
-    chain = next.catch(() => undefined)
-    return next
-  }
-}
-
 const makeWorktreeSetupPublisher = (
   db: CodevisorDatabaseService,
   fanout: EventFanout,
@@ -479,21 +411,3 @@ const makeWorktreeSetupPublisher = (
     return next
   }
 }
-
-/// Annotates this server's locations with whether their folder is a git
-/// repository so clients can decide if the worktree option is available, and
-/// marks scratch-workspace backing projects (folder under
-/// ~/codevisor/workspaces) so clients can hide them from project pickers.
-export const probeProject = async (serverId: string, project: Project): Promise<Project> => ({
-  ...project,
-  locations: await Promise.all(
-    project.locations.map(async (location) =>
-      location.serverId === serverId && existingDirectory(location.folderPath) !== undefined
-        ? { ...location, isGitRepository: await isGitWorkTree(location.folderPath) }
-        : location
-    )
-  ),
-  ...(project.locations.some((location) => dirname(location.folderPath) === scratchWorkspacesRoot())
-    ? { isScratch: true }
-    : {})
-})

@@ -12,7 +12,7 @@ export const makeProjectsService = (
   context: ServiceContext
 ): Pick<
   CodevisorDatabaseService,
-  "createProject" | "listProjects" | "updateProject" | "deleteProject"
+  "createProject" | "listProjects" | "updateProject" | "deleteProject" | "setProjectRepoUrl"
 > => {
   const { sqlite, config, locationRowsFor, getProject } = context
 
@@ -215,6 +215,16 @@ export const makeProjectsService = (
             cascadeUnarchiveProject(id)
           }
         })()
+        return getProject(id)
+      }),
+    setProjectRepoUrl: (id, repoUrl) =>
+      attempt("setProjectRepoUrl", () => {
+        const result = sqlite
+          .prepare("update projects set repo_url = ? where id = ? collate nocase")
+          .run(repoUrl, id)
+        if (result.changes === 0) {
+          throw new Error(`Project not found: ${id}`)
+        }
         return getProject(id)
       }),
     deleteProject: (id) =>

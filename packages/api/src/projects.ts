@@ -43,6 +43,11 @@ export const Project = Schema.Struct({
   /// /v1/projects/from-git). Machine-independent by design: any machine can
   /// materialize the same project by cloning the same remote.
   repoUrl: Schema.optional(Schema.String),
+  /// Normalized identity of `repoUrl` (see `repoIdentityKey`): equal keys
+  /// mean the same repository, whichever machine or clone path it lives at.
+  /// Server-derived on every response, never stored, so clients group
+  /// projects across machines without agreeing on a normalization scheme.
+  repoKey: Schema.optional(Schema.String),
   /// An explicit base for newly-created worktrees. Absent preserves the
   /// legacy origin/main (then HEAD) behavior for existing projects.
   worktreeBase: Schema.optional(ProjectWorktreeBase),
@@ -159,6 +164,48 @@ export const UpdateProjectRequest = Schema.Struct({
   worktreeBase: Schema.optional(Schema.NullOr(ProjectWorktreeBase))
 })
 export type UpdateProjectRequest = typeof UpdateProjectRequest.Type
+
+/// Collapses the many spellings of one git remote into a single comparable
+/// key: `git@github.com:Acme/Widget.git`, `ssh://git@github.com/acme/widget`
+/// and `https://github.com/acme/widget/` all become `github.com/acme/widget`.
+/// Scheme, credentials, port, a trailing `.git` and trailing slashes are
+/// dropped; host and path are lowercased (the major forges are
+/// case-insensitive, and a case-only collision between two distinct repos is
+/// far rarer than the same repo cloned with different casing). Remotes with
+/// no network host (local paths, file://) return undefined: the same local
+/// path on two machines says nothing about whether it is the same repo.
+export const repoIdentityKey = (rawUrl: string): string | undefined => {
+  const url = rawUrl.trim()
+  if (url.length === 0) return undefined
+  let host: string
+  let path: string
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(url)) {
+    let parsed: URL
+    try {
+      parsed = new URL(url)
+    } catch {
+      return undefined
+    }
+    host = parsed.hostname
+    path = decodeURIComponent(parsed.pathname)
+  } else {
+    // scp-like syntax: [user@]host:path — the colon must not start `//`.
+    const scp = /^(?:[^@/\s]+@)?([^:/\s]+):(?!\/\/)(.+)$/.exec(url)
+    if (scp === null) return undefined
+    host = scp[1]!
+    path = scp[2]!
+  }
+  host = host.toLowerCase().replace(/^\[|\]$/g, "")
+  path = path
+    .replace(/\\/g, "/")
+    .replace(/\/+$/, "")
+    .replace(/\.git$/i, "")
+    .replace(/^\/+/, "")
+    .replace(/^~\/?/, "")
+    .toLowerCase()
+  if (host.length === 0 || path.length === 0) return undefined
+  return `${host}/${path}`
+}
 
 /// A pane workspace: the server-owned identity of one working surface inside
 /// a project. It names the surface, points at the directory it works in (a

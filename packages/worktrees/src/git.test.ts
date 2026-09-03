@@ -10,6 +10,7 @@ import {
   classifyCloneFailure,
   cloneRepository,
   gitBranchDiffTotals,
+  gitRemoteUrl,
   isGitWorkTree,
   isWorktreeBranchCollision,
   listCodevisorWorktreeBranchNames,
@@ -50,6 +51,27 @@ describe("git helper", () => {
     // The spawn fails before git can write to stderr, exercising the
     // error-message fallback in the buffered git helper.
     expect(await isGitWorkTree("/nonexistent-codevisor-repo")).toBe(false)
+  })
+
+  it("discovers the origin remote, falling back to the first remote", async () => {
+    const { repo } = makeRepo()
+    expect(await gitRemoteUrl(repo)).toBeUndefined()
+    expect(await gitRemoteUrl("/nonexistent-codevisor-repo")).toBeUndefined()
+
+    execFileSync("git", ["remote", "add", "upstream", "git@github.com:acme/upstream.git"], {
+      cwd: repo
+    })
+    expect(await gitRemoteUrl(repo)).toBe("git@github.com:acme/upstream.git")
+
+    execFileSync("git", ["remote", "add", "origin", "https://github.com/acme/widget.git"], {
+      cwd: repo
+    })
+    expect(await gitRemoteUrl(repo)).toBe("https://github.com/acme/widget.git")
+
+    // A linked worktree shares the main checkout's remotes.
+    const linked = join(repo, "..", "linked")
+    execFileSync("git", ["worktree", "add", linked, "-b", "linked"], { cwd: repo })
+    expect(await gitRemoteUrl(linked)).toBe("https://github.com/acme/widget.git")
   })
 
   it("lists names already occupying the shared Codevisor branch namespace", async () => {

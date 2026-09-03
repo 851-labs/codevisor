@@ -75,6 +75,35 @@ export const isGitWorkTree = async (dir: string): Promise<boolean> => {
   }
 }
 
+/// The URL of the repository's `origin` remote, falling back to the first
+/// configured remote when there is no `origin`. Undefined for a directory
+/// that is not a git work tree or has no remotes at all. This is the raw
+/// configured string; @codevisor/api's `repoIdentityKey` normalizes it so
+/// the same repository checked out on several machines lines up.
+export const gitRemoteUrl = async (
+  dir: string,
+  env?: NodeJS.ProcessEnv
+): Promise<string | undefined> => {
+  // `git remote get-url` fails (rather than printing nothing) for an
+  // unknown remote, so a resolved value is always a non-empty URL.
+  const remoteUrl = (remote: string): Promise<string> =>
+    git("remote-url", ["remote", "get-url", remote], dir, env)
+  try {
+    return await remoteUrl("origin")
+  } catch {
+    // No origin (or not a repository): fall through to the remote list.
+  }
+  try {
+    const first = (await git("list-remotes", ["remote"], dir, env))
+      .split("\n")
+      .map((name) => name.trim())
+      .find((name) => name.length > 0)
+    return first === undefined ? undefined : await remoteUrl(first)
+  } catch {
+    return undefined
+  }
+}
+
 /// Returns the names already occupying Codevisor's shared local branch
 /// namespace. Worktree directories and server databases may be isolated, but
 /// every server operating on the same repository still shares these refs.

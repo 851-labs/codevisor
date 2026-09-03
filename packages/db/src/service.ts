@@ -70,6 +70,13 @@ export interface CodevisorDatabaseService {
     request: UpdateProjectRequest
   ) => Effect.Effect<Project, DatabaseError>
   readonly deleteProject: (id: string) => Effect.Effect<void, DatabaseError>
+  /// Records the git remote discovered in a project's folder on this machine
+  /// (null clears it). Deliberately not part of UpdateProjectRequest: the
+  /// remote is observed, not chosen.
+  readonly setProjectRepoUrl: (
+    id: string,
+    repoUrl: string | null
+  ) => Effect.Effect<Project, DatabaseError>
   readonly createWorktree: (
     projectId: string,
     name: string,

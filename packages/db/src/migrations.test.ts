@@ -250,6 +250,11 @@ describe("@codevisor/db", () => {
     await expect(run(db.archiveSession("missing"))).rejects.toBeInstanceOf(DatabaseError)
     await run(db.deleteSession(secondSession.id))
     await expect(run(db.getSessionDetail(secondSession.id))).rejects.toBeInstanceOf(DatabaseError)
+    expect(
+      (await run(db.setProjectRepoUrl(clientProject.id, "git@github.com:acme/widget.git"))).repoUrl
+    ).toBe("git@github.com:acme/widget.git")
+    expect((await run(db.setProjectRepoUrl(clientProject.id, null))).repoUrl).toBeUndefined()
+    await expect(run(db.setProjectRepoUrl("missing", "x"))).rejects.toBeInstanceOf(DatabaseError)
     await run(db.deleteProject(clientProject.id))
     await expect(run(db.getSessionDetail(clientSession.id))).rejects.toBeInstanceOf(DatabaseError)
     await expect(run(db.deleteProject("missing"))).rejects.toBeInstanceOf(DatabaseError)
