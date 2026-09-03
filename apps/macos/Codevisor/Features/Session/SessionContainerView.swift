@@ -283,10 +283,8 @@ struct SessionContainerView: View {
 
   /// The session content: a browser-style tab bar above the selected
   /// tab's split layout.
-  /// The EXPLICIT page fill matters: the bare NavigationSplitView detail
-  /// surface is the NSWindow background, which desktop tinting shifts a
-  /// few shades — the terminal's opaque surface can't follow that, so
-  /// both sides paint the same resolved color instead.
+  /// System themes reveal the native window backdrop. Custom themes paint
+  /// one explicit page color behind every workspace pane.
   var contentColumn: some View {
     // WorkspaceRepository is intentionally non-observable. Server pane
     // reconciliation bumps this shared token so a tab created on another
@@ -335,10 +333,7 @@ struct SessionContainerView: View {
         onCenterTreeLiveChanged: { tree in liveCenterTree = tree }
       )
     }
-    // System theme: NO fill — the window's live tinted backdrop is the
-    // one surface behind chat, tab band, and (transparent) terminal
-    // alike. Custom palettes paint their own page color.
-    .background(theme.isSystem ? Color.clear : theme.windowBackground)
+    .background(theme.contentBackground)
     // The hairline under the top bar: drawn by the CENTER panel's top
     // edge (the sidebar stays seamless under the toolbar). Suppressed
     // when the tab bar is showing — the tab strip already has its own

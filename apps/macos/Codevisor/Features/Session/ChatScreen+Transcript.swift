@@ -10,7 +10,7 @@ import TranscriptKit
 extension ChatScreen {
   var transcriptSurface: some View {
     ZStack {
-      theme.windowBackground
+      theme.contentBackground
       if isTranscriptMounted {
         ActiveTranscriptProjectionScope(
           controller: controller,

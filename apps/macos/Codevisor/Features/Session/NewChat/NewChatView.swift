@@ -107,7 +107,12 @@ struct NewChatView: View {
   }
 
   var body: some View {
-    machineScopedBody
+    if paneDraftId == nil, theme.isSystem {
+      machineScopedBody
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+    } else {
+      machineScopedBody
+    }
   }
 
   var content: some View {
@@ -189,6 +194,7 @@ struct NewChatView: View {
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .background(theme.contentBackground)
     // Pinned to the pane's top edge as an overlay: appearing or
     // dismissing the notice never shifts the composer's layout. Update
     // notices moved to the update center; only setup failures remain

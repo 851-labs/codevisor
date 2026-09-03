@@ -38,6 +38,12 @@ public struct Theme: Equatable, Sendable {
     palette.map { Color(rgba: $0.windowBackground) } ?? Color.themeWindowBackground
   }
 
+  /// Full-page content surface. System themes reveal the native window
+  /// backdrop; custom themes paint their explicit editor background.
+  public var contentBackground: Color {
+    isSystem ? .clear : windowBackground
+  }
+
   /// The sidebar surface. System keeps `.regularMaterial` vibrancy; themed
   /// paints the opaque sidebar color (matching the Pierre/web behavior).
   public var sidebarBackground: AnyShapeStyle {

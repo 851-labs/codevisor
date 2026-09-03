@@ -238,7 +238,7 @@ private struct SplitLeafView: View {
 
   var body: some View {
     ZStack {
-      theme.windowBackground
+      theme.contentBackground
       if openingEdge == nil {
         leafContent
           .transition(.opacity)
@@ -365,7 +365,7 @@ private struct SplitLeafHeader: View {
     }
     .padding(.horizontal, 8)
     .frame(height: 28)
-    .background(theme.isSystem ? Color.clear : theme.windowBackground)
+    .background(theme.contentBackground)
     .overlay(alignment: .bottom) { Divider() }
     .alert(renameAlertTitle, isPresented: $showingRename) {
       TextField("Name", text: $renameText)
