@@ -5,9 +5,11 @@ import CodevisorUI
 import StreamMarkdown
 import TranscriptKit
 
-/// Removes transcript pixels beneath the floating composer and its bottom
-/// margin so the full card sits over the chat panel's backing surface.
+/// Fades transcript pixels beneath the floating composer's top edge, then
+/// removes them beneath the rest of the card and its bottom margin.
 struct ComposerTranscriptMask: View {
+  private static let fadeHeight: CGFloat = 28
+
   let composerSize: CGSize
   let bottomInset: CGFloat
 
@@ -29,7 +31,18 @@ struct ComposerTranscriptMask: View {
           topLeadingRadius: ComposerCard.cornerRadius,
           topTrailingRadius: ComposerCard.cornerRadius
         )
-        visibleArea.addPath(holeShape.path(in: holeRect))
+        let holePath = holeShape.path(in: holeRect)
+        visibleArea.addPath(holePath)
+
+        let fadeEndY = holeRect.minY + min(Self.fadeHeight, holeRect.height)
+        context.fill(
+          holePath,
+          with: .linearGradient(
+            Gradient(colors: [.white, .clear]),
+            startPoint: CGPoint(x: holeRect.midX, y: holeRect.minY),
+            endPoint: CGPoint(x: holeRect.midX, y: fadeEndY)
+          )
+        )
       }
 
       context.fill(
