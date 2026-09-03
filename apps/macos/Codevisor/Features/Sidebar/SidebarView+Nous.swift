@@ -29,24 +29,22 @@ extension SidebarView {
   func nousTabRows(_ item: SidebarWorkspaceListItem) -> some View {
     let workspace = item.workspace
     let routesSelection = routesSelectedSession(workspace)
-    ForEach(Array(workspace.centerTabs.enumerated()), id: \.element.id) { index, tab in
+    ForEach(workspace.centerTabs) { tab in
       // A split tab is FLATTENED into one row per pane at the tab's own
-      // level (no grouping row): the active pane carries the selection,
-      // and the tab's ⌘N hint sits on its first pane.
+      // level (no grouping row): the active pane carries the selection.
       if tab.root.allGroups.count > 1 {
-        ForEach(Array(tab.root.allGroups.enumerated()), id: \.element.id) { leafIndex, leaf in
+        ForEach(tab.root.allGroups, id: \.id) { leaf in
           nousPaneRow(
             leafId: leaf.id,
             state: leaf.state,
             tab: tab,
             in: item,
-            routesSelection: routesSelection,
-            shortcutHint: leafIndex == 0 ? nousShortcutHint(index: index, routesSelection: routesSelection) : nil
+            routesSelection: routesSelection
           )
           .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
         }
       } else {
-        nousTabRow(tab, index: index, in: item, routesSelection: routesSelection)
+        nousTabRow(tab, in: item, routesSelection: routesSelection)
           .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
       }
     }
@@ -57,8 +55,7 @@ extension SidebarView {
     state: PaneGroupState,
     tab: WorkspaceTab,
     in item: SidebarWorkspaceListItem,
-    routesSelection: Bool,
-    shortcutHint: String?
+    routesSelection: Bool
   ) -> some View {
     let workspace = item.workspace
     let descriptor = nousLeafDescriptor(leafId: leafId, persisted: state, in: workspace)
@@ -71,7 +68,6 @@ extension SidebarView {
       store: store,
       isSelected: routesSelection && workspace.selectedCenterTabId == tab.id
         && tab.activeLeafId == leafId,
-      shortcutHint: shortcutHint,
       isReordering: isReordering,
       titleFont: itemTitleFont,
       hierarchyIndent: hierarchyIndent,
@@ -83,7 +79,6 @@ extension SidebarView {
 
   private func nousTabRow(
     _ tab: WorkspaceTab,
-    index: Int,
     in item: SidebarWorkspaceListItem,
     routesSelection: Bool
   ) -> some View {
@@ -97,7 +92,6 @@ extension SidebarView {
       chatSession: chatSession,
       store: store,
       isSelected: routesSelection && workspace.selectedCenterTabId == tab.id,
-      shortcutHint: nousShortcutHint(index: index, routesSelection: routesSelection),
       isReordering: isReordering,
       titleFont: itemTitleFont,
       hierarchyIndent: hierarchyIndent,
@@ -108,12 +102,6 @@ extension SidebarView {
         renamingNousTab = NousTabRenameRequest(workspaceId: workspace.id, tabId: tab.id)
       }
     )
-  }
-
-  /// The strip's ⌘1–⌘9 hints move here with the tabs; only the mounted
-  /// workspace answers them.
-  private func nousShortcutHint(index: Int, routesSelection: Bool) -> String? {
-    routesSelection && index < 9 ? ShortcutCatalog.tabSelectionHint(index: index) : nil
   }
 
   /// The pane that names the tab: its active leaf's selected pane. A

@@ -2,8 +2,8 @@ import CodevisorCore
 import SwiftUI
 
 /// A workspace tab as a sidebar row (Nous mode): the tab's kind glyph — a
-/// chat tab borrows the chat row's live status icon — its title, the
-/// strip's ⌘N hint for the mounted workspace, and a hover close button.
+/// chat tab borrows the chat row's live status icon — its title, and a
+/// hover close button.
 struct SidebarWorkspaceTabRow: View {
   let title: String
   let kind: PaneKind
@@ -13,7 +13,6 @@ struct SidebarWorkspaceTabRow: View {
   let chatSession: ChatSession?
   let store: SessionStore?
   let isSelected: Bool
-  let shortcutHint: String?
   let isReordering: Bool
   let titleFont: Font
   let hierarchyIndent: CGFloat
@@ -35,7 +34,6 @@ struct SidebarWorkspaceTabRow: View {
           .font(titleFont)
           .lineLimit(1)
           .frame(maxWidth: .infinity, alignment: .leading)
-        // Hint when idle, close on hover — the strip capsule's arrangement.
         if isHovered {
           Button(action: onClose) {
             Image(systemName: "xmark")
@@ -46,12 +44,6 @@ struct SidebarWorkspaceTabRow: View {
           .help(closeTitle)
           .accessibilityLabel("Close \(title)")
           .frame(width: 24, height: 14, alignment: .trailing)
-        } else if let shortcutHint {
-          Text(shortcutHint)
-            .font(.caption2)
-            .monospacedDigit()
-            .foregroundStyle(.tertiary)
-            .frame(width: 24, height: 14, alignment: .trailing)
         }
       }
       .padding(.horizontal, 8)
