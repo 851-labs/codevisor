@@ -2,13 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!--
-	  One running instance, always. Sparkle's installer terminates and
-	  watches a single instance; a second one survives the bundle swap and
-	  crashes in dyld once its deleted binary is touched.
-	-->
-	<key>LSMultipleInstancesProhibited</key>
-	<true/>
 	<key>SUAllowsAutomaticUpdates</key>
 	<true/>
 	<key>SUEnableAutomaticChecks</key>

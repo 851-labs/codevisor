@@ -119,49 +119,105 @@ extension LocalCodevisorServer {
     }
   }
 
+  /// Consecutive "no live process" answers from the job probe before a
+  /// managed server is declared dead: launchd needs a moment after
+  /// registration to spawn the job, and one probe can race that.
+  static let deadJobProbeThreshold = 3
+  /// Health attempts between job probes and between progress log lines.
+  static let healthProbeReportEvery = 8
+
   func waitUntilHealthy(
     process: Process?,
     expectedBootId: String?,
     requiresBundledIdentity: Bool = false,
     initialAttemptLimit: Int? = nil,
-    extendsForDataUpgrade: Bool = false
+    extendsForDataUpgrade: Bool = false,
+    jobProbe: (@MainActor () async -> Bool?)? = nil
   ) async -> LocalCodevisorServerState {
     // Breaking data upgrades are allowed to take minutes. Progress comes
     // from the sidecar, so this wait is bounded generously without making
-    // the UI appear frozen.
+    // the UI appear frozen. A managed job that launchd confirms is alive is
+    // likewise given the full budget: a slow boot (a big terminal-buffer
+    // restore, a login-shell PATH probe) is not a dead job.
     var attempt = 0
     var attemptLimit = initialAttemptLimit ?? healthPollAttempts
+    var lastProbeError = "none"
+    var deadJobProbes = 0
     while attempt < attemptLimit {
       attempt += 1
       refreshDataUpgradeProgress(expectedBootId: expectedBootId)
       if extendsForDataUpgrade, dataUpgradeProgress?.state == "running" {
         attemptLimit = max(attemptLimit, healthPollAttempts)
       }
-      if let health = await currentHealth() {
-        guard expectedBootId == nil || health.bootId == expectedBootId else {
-          state = .unavailable(
-            "A different Codevisor server answered while the local server was starting."
+      do {
+        let health = try await client.health()
+        if health.ok {
+          guard expectedBootId == nil || health.bootId == expectedBootId else {
+            return fail(
+              "A different Codevisor server answered while the local server was starting (boot \(health.bootId ?? "?"), expected \(expectedBootId ?? "?"))."
+            )
+          }
+          guard
+            !requiresBundledIdentity
+              || (health.serviceManaged == true && healthMatchesBundledRuntime(health))
+          else {
+            return fail(
+              "The local server does not match this Codevisor build (server \(health.version) build \(health.buildNumber.map(String.init) ?? "?"), managed \(health.serviceManaged == true))."
+            )
+          }
+          dataUpgradeProgress = nil
+          state = .started
+          lifecycleLog.note(
+            "waitUntilHealthy: healthy after \(attempt) attempt(s) (version \(health.version), boot \(health.bootId ?? "?"))"
           )
           return state
         }
-        guard !requiresBundledIdentity || (health.serviceManaged == true && healthMatchesBundledRuntime(health))
-        else {
-          state = .unavailable(
-            "The local server does not match this Codevisor build."
-          )
-          return state
-        }
-        dataUpgradeProgress = nil
-        state = .started
-        return state
+        lastProbeError = "health not ok"
+      } catch {
+        lastProbeError = String(describing: error)
       }
       if let process, !process.isRunning {
-        state = .unavailable("Codevisor server exited before becoming ready. See \(logURL.path)")
-        return state
+        return fail(
+          "Codevisor server exited before becoming ready (status \(process.terminationStatus)). See \(logURL.path)"
+        )
+      }
+      // Also probe on the last budgeted attempt: a managed job launchd
+      // confirms alive earns the full budget instead of failing here.
+      if attempt % Self.healthProbeReportEvery == 0 || attempt == attemptLimit {
+        var jobNote = ""
+        if let jobProbe {
+          switch await jobProbe() {
+          case .some(true):
+            deadJobProbes = 0
+            attemptLimit = max(attemptLimit, healthPollAttempts)
+            jobNote = ", launchd job running"
+          case .some(false):
+            deadJobProbes += 1
+            jobNote = ", launchd job has no process (\(deadJobProbes)/\(Self.deadJobProbeThreshold))"
+            if deadJobProbes >= Self.deadJobProbeThreshold {
+              return fail(
+                "Codevisor's background server exited before becoming ready (last probe: \(lastProbeError)). See \(logURL.path)"
+              )
+            }
+          case .none:
+            jobNote = ", launchd job state unknown"
+          }
+        }
+        lifecycleLog.note(
+          "waitUntilHealthy: attempt \(attempt)/\(attemptLimit), last probe: \(lastProbeError)\(jobNote)"
+        )
       }
       try? await Task.sleep(for: healthPollInterval)
     }
-    state = .unavailable("Timed out waiting for Codevisor server. See \(logURL.path)")
+    return fail(
+      "Timed out waiting for Codevisor server after \(attempt) attempt(s) (last probe: \(lastProbeError)). See \(logURL.path)"
+    )
+  }
+
+  /// Records a wait failure in the timeline and the observable state.
+  private func fail(_ message: String) -> LocalCodevisorServerState {
+    lifecycleLog.error("waitUntilHealthy: \(message)")
+    state = .unavailable(message)
     return state
   }
 

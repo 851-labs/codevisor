@@ -118,3 +118,32 @@ struct ProcessCommandRunnerTests {
     }
   }
 }
+
+@Suite("LaunchctlPrintOutput")
+struct LaunchctlPrintOutputTests {
+  @Test("Finds the job's live pid")
+  func findsPid() {
+    let output = """
+      gui/501/com.851labs.Codevisor.ServerAgent = {
+      \tactive count = 1
+      \tpath = /Users/me/Library/LaunchAgents/com.851labs.Codevisor.ServerAgent.plist
+      \tstate = running
+      \tpid = 70634
+      \tprogram = /bin/bash
+      }
+      """
+    #expect(LaunchctlPrintOutput.pid(in: output) == 70634)
+  }
+
+  @Test("A job without a process has no pid")
+  func noPid() {
+    let output = """
+      gui/501/com.851labs.Codevisor.ServerAgent = {
+      \tactive count = 0
+      \tstate = not running
+      \tlast exit code = 78
+      }
+      """
+    #expect(LaunchctlPrintOutput.pid(in: output) == nil)
+  }
+}

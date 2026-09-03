@@ -59,81 +59,6 @@ struct LocalCodevisorServerTests {
     #expect(launches.first?.environment["CODEVISOR_TEST"] == "1")
   }
 
-  @Test("Starts and adopts the platform-managed server")
-  func startsManagedServer() async throws {
-    let entrypoint = try makeRuntimeEntrypoint(version: "0.2.0")
-    var managed = ServerHealth.running(version: "0.2.0")
-    managed.serviceManaged = true
-    managed.appOwned = true
-    let client = FakeLocalServerClient(healthResults: [
-      .failure(TestError()),
-      .success(managed),
-    ])
-    var prepares = 0
-    var starts = 0
-    var directLaunches = 0
-    let server = LocalCodevisorServer(
-      client: client,
-      entrypoint: entrypoint,
-      launcher: { _ in
-        directLaunches += 1
-        return Process()
-      }
-    )
-    server.configureManagedService(
-      LocalCodevisorManagedService(
-        prepare: { prepares += 1 },
-        start: { starts += 1 },
-        stop: {}
-      )
-    )
-
-    #expect(await server.ensureRunning() == .started)
-    #expect(prepares == 1)
-    #expect(starts == 1)
-    #expect(directLaunches == 0)
-  }
-
-  @Test("Falls back when an enabled managed server never becomes healthy")
-  func fallsBackFromDeadManagedServer() async throws {
-    let entrypoint = try makeRuntimeEntrypoint(version: "0.2.0")
-    let client = FakeLocalServerClient(healthResults: [
-      .failure(TestError()),
-      // A process answering with the wrong bundled identity is just as
-      // unusable as an agent script that exited before binding.
-      .success(.ready),
-    ])
-    var starts = 0
-    var stops = 0
-    var directLaunches = 0
-    var terminatedPorts: [Int] = []
-    let server = LocalCodevisorServer(
-      client: client,
-      entrypoint: entrypoint,
-      launcher: { request in
-        directLaunches += 1
-        client.acceptBoot(request.bootId)
-        return Process()
-      },
-      healthPollInterval: .milliseconds(1),
-      healthPollAttempts: 2,
-      managedStartupPollAttempts: 1,
-      staleListenerTerminator: { terminatedPorts.append($0) }
-    )
-    server.configureManagedService(
-      LocalCodevisorManagedService(
-        start: { starts += 1 },
-        stop: { stops += 1 }
-      )
-    )
-
-    #expect(await server.ensureRunning() == .started)
-    #expect(starts == 1)
-    #expect(stops == 1)
-    #expect(directLaunches == 1)
-    #expect(terminatedPorts == [CodevisorServerConfig.localPort])
-  }
-
   @Test("Publishes blocking data-upgrade progress while waiting for health")
   func publishesDataUpgradeProgress() async throws {
     let directory = try makeTemporaryDirectory()
@@ -345,11 +270,21 @@ extension ServerHealth {
   }
 }
 
+/// A UserDefaults suite private to one test, so safe-mode requests never
+/// leak between tests or into the developer's real preferences.
+func makeIsolatedDefaults() -> UserDefaults {
+  let name = "codevisor-tests-\(UUID().uuidString)"
+  let defaults = UserDefaults(suiteName: name)!
+  defaults.removePersistentDomain(forName: name)
+  return defaults
+}
+
 final class FakeLocalServerClient: CodevisorServerClienting, @unchecked Sendable {
   private let lock = NSLock()
   private var healthResults: [Result<ServerHealth, Error>]
   private(set) var shutdownRequests = 0
   private var healthCalls = 0
+  var healthCallCount: Int { lock.withLock { healthCalls } }
   private var acceptedBootId: String?
   /// Runs on every health() call with the 1-based call number, before the
   /// result is returned. Lets tests key side effects (like data-upgrade

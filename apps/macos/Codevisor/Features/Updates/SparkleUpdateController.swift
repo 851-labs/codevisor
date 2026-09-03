@@ -3,6 +3,7 @@ import CodevisorCore
 import CodevisorCoreMac
 import Foundation
 import Sparkle
+import os
 
 /// Owns Sparkle for the lifetime of the app and adapts its native updater to
 /// the observable model behind Settings › Updates. Sparkle never shows its
@@ -80,6 +81,8 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
   /// mid-flight): the driver accepts whatever that session finds, and a
   /// fresh check starts as soon as Sparkle is free.
   private func beginInstall() {
+    Log.updates.log("install: begin (session in progress: \(self.updater.sessionInProgress))")
+    ServerLifecycleLog.default.note("update: install requested")
     installSessionActive = true
     serverPreparedForUpdate = false
     AppUpdateHandoff.writeStatus(state: "installing")
@@ -112,6 +115,8 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
   }
 
   private func failInstall(_ message: String) {
+    Log.updates.error("install: failed: \(message, privacy: .public)")
+    ServerLifecycleLog.default.error("update: install failed: \(message)")
     installSessionActive = false
     serverPreparedForUpdate = false
     AppUpdateHandoff.writeStatus(state: "failed", message: message)
@@ -156,6 +161,9 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
   }
 
   func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
+    Log.updates.log(
+      "check: found \(item.displayVersionString, privacy: .public) (\(item.versionString, privacy: .public)), installing: \(self.installSessionActive)"
+    )
     let releasePageURL = item.infoURL ?? item.fullReleaseNotesURL ?? item.releaseNotesURL
     model.reportAvailable(version: item.displayVersionString, releasePageURL: releasePageURL)
     if installSessionActive {
@@ -179,6 +187,8 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
   }
 
   func updater(_ updater: SPUUpdater, willInstallUpdate item: SUAppcastItem) {
+    Log.updates.log("install: Sparkle will install \(item.displayVersionString, privacy: .public)")
+    ServerLifecycleLog.default.note("update: installing \(item.displayVersionString)")
     if installSessionActive {
       AppUpdateHandoff.writeStatus(
         state: "installing",
@@ -214,6 +224,7 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
         return
       }
       let others = Self.otherRunningInstanceCount()
+      Log.updates.log("install: relaunch postponed; other instances running: \(others)")
       guard others == 0 else {
         self.failInstall(
           others == 1
@@ -235,6 +246,8 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
         return
       }
       self.model.reportProgress("Restarting…")
+      Log.updates.log("install: server prepared; handing over to Sparkle for the relaunch")
+      ServerLifecycleLog.default.note("update: server prepared, Sparkle relaunching the app")
       installHandler()
     }
     return true

@@ -20,6 +20,13 @@ update_request_path="$data_dir/app-update-request.json"
 mkdir -p "$data_dir" "$logs_dir"
 exec >>"$logs_dir/server.log" 2>&1
 
+# Every step of the agent script lands in the same timeline the app and the
+# server write to, so a boot that never reaches `node` is still explained.
+log() {
+  printf '[%s] [agent %s] %s\n' "$(/bin/date -u +%FT%TZ)" "$$" "$*"
+}
+log "agent script started from $resources_dir"
+
 if [[ ! -x "$node_bin" || ! -f "$entrypoint" ]]; then
   printf '[%s] Bundled Codevisor server runtime is incomplete: %s\n' "$(/bin/date -u +%FT%TZ)" "$runtime_dir"
   exit 78
@@ -29,14 +36,19 @@ fi
 # moved or deleted after startup. Keep the daemon and every child process
 # anchored in durable application data instead of that transient bundle.
 cd "$data_dir"
+path_probe_started="$(/bin/date +%s)"
 login_path="$(/bin/zsh -lic 'printf %s "$PATH"' 2>/dev/null || true)"
 if [[ -n "$login_path" ]]; then
   export PATH="$login_path"
+  log "login-shell PATH resolved in $(( $(/bin/date +%s) - path_probe_started ))s"
+else
+  log "login-shell PATH probe failed after $(( $(/bin/date +%s) - path_probe_started ))s; keeping the inherited PATH"
 fi
 export CODEVISOR_APP_HOSTED=1
 export CODEVISOR_APP_UPDATE_REQUEST_PATH="$update_request_path"
 
 computer_name="$(/usr/sbin/scutil --get ComputerName 2>/dev/null || /bin/hostname)"
+log "exec node $entrypoint (port 49361)"
 printf '[%s] Starting bundled Codevisor server\n' "$(/bin/date -u +%FT%TZ)"
 exec -a codevisor-server "$node_bin" "$entrypoint" serve \
   --host 0.0.0.0 \

@@ -57,15 +57,21 @@ public struct LocalCodevisorManagedService {
   public var prepare: @MainActor () async throws -> Void
   public var start: @MainActor () async throws -> Void
   public var stop: @MainActor () async throws -> Void
+  /// Whether launchd currently has a live process for the job: true/false
+  /// when known, nil when it cannot be determined. Lets the health wait
+  /// tell "still booting" (keep waiting) from "exited" (fail now).
+  public var isJobRunning: @MainActor () async -> Bool?
 
   public init(
     prepare: @escaping @MainActor () async throws -> Void = {},
     start: @escaping @MainActor () async throws -> Void,
-    stop: @escaping @MainActor () async throws -> Void
+    stop: @escaping @MainActor () async throws -> Void,
+    isJobRunning: @escaping @MainActor () async -> Bool? = { nil }
   ) {
     self.prepare = prepare
     self.start = start
     self.stop = stop
+    self.isJobRunning = isJobRunning
   }
 }
 
@@ -95,4 +101,9 @@ public protocol LocalServerControlling: AnyObject, Observable {
   /// running again.
   func abandonAppUpdate() async
   func shutdown() async -> Bool
+  /// The next launch runs the server as a child of the app instead of the
+  /// platform-managed background service ("safe mode"): a one-shot escape
+  /// when the managed service cannot start. The server then quits with the
+  /// app, and the launch after that tries the managed service again.
+  func requestSafeModeOnNextLaunch()
 }

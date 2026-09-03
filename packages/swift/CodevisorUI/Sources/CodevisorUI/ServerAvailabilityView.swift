@@ -17,6 +17,20 @@ public struct ServerAvailabilityView: View {
   /// whose wait is open-ended (see `ServerAvailabilityFallbackPolicy`);
   /// nil when the caller has no local machine to fall back to.
   private let useLocalMachine: (() -> Void)?
+  /// Relaunches the app, which starts the local server again the normal
+  /// way. Local machine only; offered when the start failed or is taking
+  /// longer than `slowStartThreshold`.
+  private let restart: (() -> Void)?
+  /// Relaunches the app with the server as a plain child process instead
+  /// of the background service — the escape hatch when the service cannot
+  /// start. Local machine only; offered on failure.
+  private let restartInSafeMode: (() -> Void)?
+
+  /// After this long on "Starting Codevisor Server", offer a restart: a
+  /// healthy start takes seconds, so waiting longer means something stuck.
+  public static let slowStartThreshold: Duration = .seconds(20)
+
+  @State private var startIsSlow = false
 
   public init(
     machineId: String,
@@ -26,6 +40,8 @@ public struct ServerAvailabilityView: View {
     dataUpgradeProgress: LocalDataUpgradeProgress? = nil,
     appUpdateInProgress: Bool = false,
     useLocalMachine: (() -> Void)? = nil,
+    restart: (() -> Void)? = nil,
+    restartInSafeMode: (() -> Void)? = nil,
     retry: @escaping () -> Void
   ) {
     self.machineId = machineId
@@ -36,6 +52,8 @@ public struct ServerAvailabilityView: View {
     self.appUpdateInProgress = appUpdateInProgress
     self.retry = retry
     self.useLocalMachine = useLocalMachine
+    self.restart = restart
+    self.restartInSafeMode = restartInSafeMode
   }
 
   public var body: some View {
@@ -79,11 +97,27 @@ public struct ServerAvailabilityView: View {
           .frame(maxWidth: 320)
         }
 
-        if isFailed || offersLocalMachine {
+        if isFailed || offersLocalMachine || offersSlowStartRestart {
           HStack(spacing: 10) {
-            if isFailed {
+            if isFailed, let restart, isLocal {
+              // A local failure names its cause above; the fixes are a
+              // fresh start, or a start that skips the background
+              // service entirely.
+              Button("Restart", action: restart)
+                .buttonStyle(.borderedProminent)
+              if let restartInSafeMode {
+                Button("Restart in Safe Mode", action: restartInSafeMode)
+                  .buttonStyle(.bordered)
+                  .help(
+                    "Run the server inside Codevisor instead of as a background service. It stops when Codevisor quits."
+                  )
+              }
+            } else if isFailed {
               Button("Try Again", action: retry)
                 .buttonStyle(.borderedProminent)
+            } else if offersSlowStartRestart, let restart {
+              Button("Restart", action: restart)
+                .buttonStyle(.bordered)
             }
             if offersLocalMachine, let useLocalMachine {
               Button("Use This Mac Instead", action: useLocalMachine)
@@ -93,6 +127,13 @@ public struct ServerAvailabilityView: View {
           }
         }
       }
+    }
+    .task(id: isLocalStartWait) {
+      startIsSlow = false
+      guard isLocalStartWait else { return }
+      try? await Task.sleep(for: Self.slowStartThreshold)
+      guard !Task.isCancelled else { return }
+      startIsSlow = true
     }
     .id(ServerStatusPresentationID(machineId: machineId, isWaiting: isActivelyWaiting))
     .padding(32)
@@ -121,6 +162,17 @@ public struct ServerAvailabilityView: View {
         appUpdateInProgress: appUpdateInProgress,
         migrationInProgress: activeMigration != nil
       )
+  }
+
+  /// The local server is starting (not updating or migrating).
+  private var isLocalStartWait: Bool {
+    guard isLocal, !appUpdateInProgress, activeMigration == nil else { return false }
+    if case .waiting(.starting) = availability { return true }
+    return false
+  }
+
+  private var offersSlowStartRestart: Bool {
+    isLocalStartWait && startIsSlow && restart != nil
   }
 
   private var isFailed: Bool {
@@ -176,7 +228,9 @@ public struct ServerAvailabilityView: View {
     case let .waiting(reason):
       switch reason {
       case .starting:
-        "Your cached workspaces are still available. This page will open when the server is ready."
+        offersSlowStartRestart
+          ? "This is taking longer than expected. Restarting Codevisor starts the server again; the server log has the details."
+          : "Your cached workspaces are still available. This page will open when the server is ready."
       case .connecting:
         "Waiting for the server to become available. This page will open automatically."
       case .updating:

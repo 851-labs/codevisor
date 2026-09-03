@@ -42,6 +42,19 @@ public final class LocalCodevisorServer: LocalServerControlling {
   let healthPollInterval: Duration
   let healthPollAttempts: Int
   private let managedStartupPollAttempts: Int
+  /// The server timeline (server.log + unified log); see ServerLifecycleLog.
+  let lifecycleLog: ServerLifecycleLog
+  private let safeModeStore: UserDefaults
+  /// Where `ensureRunning` currently is, for the watchdog and the failure
+  /// message: a start that never returns names the step it stalled in.
+  public private(set) var startupStep: String?
+  /// True when this boot skipped the managed service on request (a
+  /// "Restart in Safe Mode"): the server is an app-owned child.
+  public private(set) var isInSafeMode = false
+  /// How long a start may take before the watchdog logs the stalled step.
+  static let startupWatchdogInterval: Duration = .seconds(20)
+  /// UserDefaults key for the one-shot safe-mode request.
+  public static let safeModeDefaultsKey = "codevisor.server.safeModeOnNextLaunch"
   /// App-hosted servers are owned by exactly one app boot. The server also
   /// watches this app's PID and exits if the app crashes, preventing an
   /// updater backup or stale process from becoming the next launch's server.
@@ -90,7 +103,8 @@ public final class LocalCodevisorServer: LocalServerControlling {
     managedStartupPollAttempts: Int = 40,
     staleListenerTerminator: @escaping ListenerTerminator = {
       await LocalCodevisorServer.terminateListeners(onPort: $0)
-    }
+    },
+    safeModeStore: UserDefaults = .standard
   ) {
     self.client = client
     self.config = config
@@ -106,6 +120,19 @@ public final class LocalCodevisorServer: LocalServerControlling {
     self.healthPollAttempts = healthPollAttempts
     self.managedStartupPollAttempts = managedStartupPollAttempts
     self.staleListenerTerminator = staleListenerTerminator
+    self.safeModeStore = safeModeStore
+    self.lifecycleLog = ServerLifecycleLog(fileURL: logURL)
+  }
+
+  public func requestSafeModeOnNextLaunch() {
+    safeModeStore.set(true, forKey: Self.safeModeDefaultsKey)
+    lifecycleLog.note("Safe mode requested for the next launch")
+  }
+
+  private func consumeSafeModeRequest() -> Bool {
+    guard safeModeStore.bool(forKey: Self.safeModeDefaultsKey) else { return false }
+    safeModeStore.removeObject(forKey: Self.safeModeDefaultsKey)
+    return true
   }
 
   public func configureManagedService(_ service: LocalCodevisorManagedService) {
@@ -124,29 +151,58 @@ public final class LocalCodevisorServer: LocalServerControlling {
   }
 
   private func performEnsureRunning() async -> LocalCodevisorServerState {
+    var clock = StepClock()
+    let safeMode = consumeSafeModeRequest()
+    lifecycleLog.note(
+      "ensureRunning: begin (bundled runtime \(bundledServerVersion() ?? "none"), managed service \(managedService == nil ? "absent" : "configured")\(safeMode ? ", SAFE MODE requested" : ""))"
+    )
+    // The watchdog names the step a start stalled in — the one line that
+    // was missing when an update left the app on "Starting Codevisor
+    // Server" for minutes with nothing in any log.
+    let watchdog = Task { @MainActor [weak self] in
+      try? await Task.sleep(for: Self.startupWatchdogInterval)
+      guard !Task.isCancelled, let self, let step = self.startupStep else { return }
+      self.lifecycleLog.fault(
+        "ensureRunning: still in step '\(step)' after \(Self.startupWatchdogInterval)"
+      )
+    }
+    defer {
+      watchdog.cancel()
+      startupStep = nil
+      lifecycleLog.note("ensureRunning: end → \(state) (\(clock.totalMilliseconds) ms total)")
+    }
+    let step: (String) -> Void = { [self] name in
+      startupStep = name
+    }
+
+    step("computer-use bridge")
     let computerUseConfiguration: ComputerUseBridge.Configuration?
     do {
       computerUseConfiguration = try computerUseBridge?.start()
     } catch {
       computerUseConfiguration = nil
-      Log.server.error(
-        "Computer Use bridge failed to start: \(String(describing: error), privacy: .public)"
-      )
+      lifecycleLog.error("Computer Use bridge failed to start: \(error)")
     }
-    if let managedService {
+    lifecycleLog.note("ensureRunning: computer-use bridge ready (\(clock.lap()) ms)")
+
+    if let managedService, !safeMode {
+      step("prepare managed service")
       do {
         // Platform migrations must run before the first health probe:
         // a legacy KeepAlive job can otherwise answer that probe and
         // restart faster than the stale-listener shutdown path.
         try await managedService.prepare()
+        lifecycleLog.note("ensureRunning: managed service prepared (\(clock.lap()) ms)")
       } catch {
-        state = .unavailable(
-          "Codevisor could not prepare its background service: \(String(describing: error))"
-        )
-        return state
+        return fail("Codevisor could not prepare its background service: \(error)")
       }
     }
+
+    step("health probe")
     if let health = await currentHealth() {
+      lifecycleLog.note(
+        "ensureRunning: a server answered (version \(health.version), boot \(health.bootId ?? "?"), managed \(health.serviceManaged == true), app-owned \(health.appOwned == true)) (\(clock.lap()) ms)"
+      )
       if let activeBootId, health.bootId == activeBootId {
         dataUpgradeProgress = nil
         state = .alreadyRunning
@@ -160,6 +216,7 @@ public final class LocalCodevisorServer: LocalServerControlling {
         startUpdateRequestMonitor()
         dataUpgradeProgress = nil
         state = .alreadyRunning
+        lifecycleLog.note("ensureRunning: adopting the running managed server")
         return state
       }
 
@@ -173,69 +230,65 @@ public final class LocalCodevisorServer: LocalServerControlling {
         return state
       }
 
+      step("stop stale server")
+      lifecycleLog.note("ensureRunning: stopping a stale server that does not match this build")
       if health.serviceManaged == true {
         try? await managedService?.stop()
       }
       let stopped = await stopStaleServer()
+      lifecycleLog.note("ensureRunning: stale server \(stopped ? "stopped" : "NOT stopped") (\(clock.lap()) ms)")
       guard stopped else {
-        state = .unavailable(
-          "Another Codevisor server is still running and could not be stopped."
-        )
-        return state
+        return fail("Another Codevisor server is still running and could not be stopped.")
       }
+    } else {
+      lifecycleLog.note("ensureRunning: no server answering (\(clock.lap()) ms)")
     }
 
     if let process, process.isRunning {
+      step("wait for owned process")
       return await waitUntilHealthy(process: process, expectedBootId: activeBootId)
     }
 
     guard let entrypoint else {
-      state = .unavailable("Codevisor server entrypoint was not found")
-      return state
+      return fail("Codevisor server entrypoint was not found")
     }
 
     // Relocate pre-canonical server state now that no server is serving
     // it: any healthy-but-stale server was stopped above, and the launch
     // below opens the database at the canonical path.
     if databasePath == Self.defaultDatabasePath() {
+      step("migrate legacy data")
       Self.migrateLegacyServerData()
+      lifecycleLog.note("ensureRunning: legacy data check done (\(clock.lap()) ms)")
     }
 
-    if let managedService {
+    if let managedService, !safeMode {
+      // The managed service is the only production path. It either comes
+      // up or this reports exactly why; the app never silently downgrades
+      // to a child process that dies with it. "Restart in Safe Mode" is
+      // the user's explicit way to do that.
+      step("register managed service")
       do {
         try await managedService.start()
-        startUpdateRequestMonitor()
-        let managedState = await waitUntilHealthy(
-          process: nil,
-          expectedBootId: nil,
-          requiresBundledIdentity: true,
-          initialAttemptLimit: managedStartupPollAttempts,
-          extendsForDataUpgrade: true
-        )
-        if case .unavailable = managedState {
-          // Registration is not proof that the agent's executable
-          // stayed alive. Tear down a job whose script exited or
-          // never bound the port, then continue into the app-owned
-          // child process path below.
-          try? await managedService.stop()
-          await staleListenerTerminator(port)
-          state = .idle
-          Log.server.error(
-            "Managed server did not become healthy; using app-owned fallback"
-          )
-        } else {
-          return managedState
-        }
+        lifecycleLog.note("ensureRunning: managed service registered (\(clock.lap()) ms)")
       } catch {
-        // A user may disable the background item in System Settings.
-        // Keep the app functional with the old child-process lifecycle
-        // and scope the failure to durability rather than the server.
-        Log.server.error(
-          "Managed server unavailable; using app-owned fallback: \(String(describing: error), privacy: .public)"
-        )
+        return fail("Codevisor's background server could not be started: \(error)")
       }
+      startUpdateRequestMonitor()
+      step("wait for managed server")
+      let managedState = await waitUntilHealthy(
+        process: nil,
+        expectedBootId: nil,
+        requiresBundledIdentity: true,
+        initialAttemptLimit: managedStartupPollAttempts,
+        extendsForDataUpgrade: true,
+        jobProbe: managedService.isJobRunning
+      )
+      lifecycleLog.note("ensureRunning: managed server wait → \(managedState) (\(clock.lap()) ms)")
+      return managedState
     }
 
+    step(safeMode ? "launch app-owned server (safe mode)" : "launch app-owned server")
     do {
       let bootId = UUID().uuidString
       activeBootId = bootId
@@ -264,13 +317,25 @@ public final class LocalCodevisorServer: LocalServerControlling {
       )
       let launched = try launcher(request)
       process = launched
+      isInSafeMode = safeMode && managedService != nil
       observeTermination(of: launched)
+      lifecycleLog.note(
+        "ensureRunning: launched app-owned server pid \(launched.processIdentifier) boot \(bootId)\(isInSafeMode ? " (safe mode)" : "") (\(clock.lap()) ms)"
+      )
+      step("wait for app-owned server")
       return await waitUntilHealthy(process: launched, expectedBootId: bootId)
     } catch {
       activeBootId = nil
-      state = .unavailable(String(describing: error))
-      return state
+      return fail("Codevisor server could not be launched: \(error)")
     }
+  }
+
+  /// Records a startup failure in the timeline and the observable state.
+  @discardableResult
+  private func fail(_ message: String) -> LocalCodevisorServerState {
+    lifecycleLog.error("ensureRunning: \(message)")
+    state = .unavailable(message)
+    return state
   }
 
   /// How long the app waits for the server's live chats to finish before
@@ -287,20 +352,36 @@ public final class LocalCodevisorServer: LocalServerControlling {
   public func prepareForAppUpdate(
     onStatus: @escaping @MainActor (String) -> Void = { _ in }
   ) async -> Bool {
+    var clock = StepClock()
+    lifecycleLog.note("prepareForAppUpdate: begin")
     updateRequestMonitor?.cancel()
     updateRequestMonitor = nil
     updateRequestSource?.cancel()
     updateRequestSource = nil
     await drainForAppUpdate(onStatus: onStatus)
-    try? await managedService?.stop()
-    return await shutdown()
+    lifecycleLog.note("prepareForAppUpdate: drain finished (\(clock.lap()) ms)")
+    do {
+      try await managedService?.stop()
+      lifecycleLog.note("prepareForAppUpdate: managed service stopped (\(clock.lap()) ms)")
+    } catch {
+      lifecycleLog.error("prepareForAppUpdate: managed service stop failed: \(error)")
+    }
+    let stopped = await shutdown()
+    lifecycleLog.note(
+      "prepareForAppUpdate: server \(stopped ? "stopped" : "NOT stopped") (\(clock.lap()) ms, \(clock.totalMilliseconds) ms total)"
+    )
+    return stopped
   }
 
   /// Asks the server to drain and polls until it reports drained. A server
   /// that cannot answer (already gone, or predating the drain) is treated as
   /// drained: the shutdown that follows behaves exactly as before.
   private func drainForAppUpdate(onStatus: @escaping @MainActor (String) -> Void) async {
-    guard let first = try? await client.beginRestartDrain(interrupt: false) else { return }
+    guard let first = try? await client.beginRestartDrain(interrupt: false) else {
+      lifecycleLog.note("prepareForAppUpdate: server has no restart drain (or is not answering)")
+      return
+    }
+    lifecycleLog.note("prepareForAppUpdate: drain \(first.state), \(first.remaining) live turn(s)")
     if first.isDrained { return }
     let clock = ContinuousClock()
     let deadline = clock.now + Self.appUpdateDrainTimeout
@@ -312,6 +393,7 @@ public final class LocalCodevisorServer: LocalServerControlling {
       onStatus("Waiting for \(chats) to finish…")
       if clock.now >= deadline, !interrupted {
         interrupted = true
+        lifecycleLog.note("prepareForAppUpdate: drain deadline reached, interrupting live turns")
         _ = try? await client.beginRestartDrain(interrupt: true)
       }
       try? await Task.sleep(for: Self.appUpdateDrainPollInterval)
@@ -319,6 +401,7 @@ public final class LocalCodevisorServer: LocalServerControlling {
   }
 
   public func abandonAppUpdate() async {
+    lifecycleLog.note("abandonAppUpdate: releasing the drain")
     try? await client.cancelRestartDrain()
     if await isHealthy() {
       startUpdateRequestMonitor()
@@ -326,6 +409,7 @@ public final class LocalCodevisorServer: LocalServerControlling {
     }
     // The server was already stopped for the update: bring it back so the
     // app is usable again without a relaunch.
+    lifecycleLog.note("abandonAppUpdate: server is down; starting it again")
     await ensureRunning()
   }
 
@@ -336,11 +420,10 @@ public final class LocalCodevisorServer: LocalServerControlling {
   public func shutdown() async -> Bool {
     do {
       try await client.requestShutdown()
+      lifecycleLog.note("shutdown: server acknowledged the shutdown request")
     } catch {
       // Expected when the server is already gone; termination follows.
-      Log.server.debug(
-        "Shutdown request failed: \(String(describing: error), privacy: .public)"
-      )
+      lifecycleLog.note("shutdown: request not answered (\(error)); escalating")
     }
     // The server acknowledges shutdown before exiting so the response can
     // flush. Give that contract one bounded grace period, then escalate.
@@ -350,6 +433,7 @@ public final class LocalCodevisorServer: LocalServerControlling {
       return true
     }
     if let process, process.isRunning {
+      lifecycleLog.note("shutdown: terminating owned process \(process.processIdentifier)")
       process.terminate()
       try? await Task.sleep(for: .milliseconds(300))
     }
@@ -357,6 +441,7 @@ public final class LocalCodevisorServer: LocalServerControlling {
       finishShutdown()
       return true
     }
+    lifecycleLog.note("shutdown: signalling whatever still listens on port \(port)")
     await staleListenerTerminator(port)
     for _ in 0..<30 {
       if !(await isHealthy()) {
@@ -372,6 +457,8 @@ public final class LocalCodevisorServer: LocalServerControlling {
     process = nil
     activeBootId = nil
     dataUpgradeProgress = nil
+    isInSafeMode = false
     state = .idle
+    lifecycleLog.note("shutdown: server is down")
   }
 }

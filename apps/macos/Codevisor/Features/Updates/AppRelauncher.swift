@@ -21,7 +21,8 @@ enum AppRelauncher {
     // Deliberately not `open -n`: a second instance is exactly what must
     // never exist. Sparkle's installer tracks one running instance, and a
     // survivor has its bundle deleted from under it mid-update (the dyld
-    // `strlen` crash). Info.plist also sets LSMultipleInstancesProhibited.
+    // `strlen` crash). The updater also refuses to install while another
+    // instance of this bundle is running.
     let environmentArguments = ProcessInfo.processInfo.environment
       .filter { $0.key.hasPrefix("CODEVISOR_") }
       .sorted { $0.key < $1.key }
