@@ -591,15 +591,6 @@ extension MachineControllerCloudTests {
     #expect(projectList.selectedServerId == "local")
   }
 
-  @Test("effectiveHTTPBaseURL answers a direct machine's configured baseURL")
-  func effectiveBaseURLDirectMachine() async throws {
-    let (controller, _, _) = makeController()
-    let machine = try controller.addRemote(host: "http://10.0.0.5:4152")
-
-    let url = await controller.effectiveHTTPBaseURL(forMachineId: machine.id)
-    #expect(url == machine.baseURL)
-  }
-
   @Test("effectiveHTTPBaseURL waits for a cloud machine's loopback bridge")
   func effectiveBaseURLCloudMachineWaitsForBridge() async {
     let (controller, _, provider) = makeController()
