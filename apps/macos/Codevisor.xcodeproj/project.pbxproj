@@ -15,6 +15,7 @@
 		FCE74E942FF368F000B42227 /* CodevisorUI in Frameworks */ = {isa = PBXBuildFile; productRef = FCE74E952FF368F000B42227 /* CodevisorUI */; };
 		FCE74E8E2FF368F000B42227 /* CodevisorTheming in Frameworks */ = {isa = PBXBuildFile; productRef = FCE74E8F2FF368F000B42227 /* CodevisorTheming */; };
 		FCE74E902FF368F000B42227 /* CodeHighlighter in Frameworks */ = {isa = PBXBuildFile; productRef = FCE74E912FF368F000B42227 /* CodeHighlighter */; };
+		FCE74E962FF368F000B42227 /* Autocomplete in Frameworks */ = {isa = PBXBuildFile; productRef = FCE74E972FF368F000B42227 /* Autocomplete */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -41,6 +42,7 @@
 				FCE74E942FF368F000B42227 /* CodevisorUI in Frameworks */,
 				FCE74E8E2FF368F000B42227 /* CodevisorTheming in Frameworks */,
 				FCE74E902FF368F000B42227 /* CodeHighlighter in Frameworks */,
+				FCE74E962FF368F000B42227 /* Autocomplete in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -96,6 +98,7 @@
 				FCE74E952FF368F000B42227 /* CodevisorUI */,
 				FCE74E8F2FF368F000B42227 /* CodevisorTheming */,
 				FCE74E912FF368F000B42227 /* CodeHighlighter */,
+				FCE74E972FF368F000B42227 /* Autocomplete */,
 			);
 			productName = MyApp;
 			productReference = 000000000000000000000120 /* Codevisor.app */;
@@ -546,6 +549,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = FC8A031D2FF3634D00689171 /* XCLocalSwiftPackageReference "../../packages/swift" */;
 			productName = CodevisorUI;
+		};
+		FCE74E972FF368F000B42227 /* Autocomplete */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FC8A031D2FF3634D00689171 /* XCLocalSwiftPackageReference "../../packages/swift" */;
+			productName = Autocomplete;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

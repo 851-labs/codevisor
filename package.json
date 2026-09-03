@@ -13,6 +13,7 @@
     "dev:ios": "bun scripts/dev-ios.mjs",
     "build:macos": "bun scripts/build-native.mjs macos",
     "build:ios": "bun scripts/build-native.mjs ios",
+    "build:pixelbook": "bun scripts/build-native.mjs pixelbook",
     "ghostty:build": "bun scripts/ghostty-artifact.mjs build",
     "dev:scripts:test": "node --test scripts/*.test.mjs",
     "build": "turbo run build",

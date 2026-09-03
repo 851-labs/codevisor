@@ -65,6 +65,28 @@ if (target === "macos") {
   console.log(
     `\nBuilt iOS simulator app: ${join(layout.build.ios.derivedData, "Build/Products/Debug-iphonesimulator/Codevisor.app")}`
   )
+} else if (target === "pixelbook") {
+  // PixelBook, the component gallery, links only Autocomplete, so it needs none of the
+  // server/Ghostty bootstrap the product apps do.
+  await runXcodebuild(
+    repoRoot,
+    "pixelbook",
+    [
+      "-project",
+      "apps/pixelbook/PixelBook.xcodeproj",
+      "-scheme",
+      "PixelBook",
+      "-configuration",
+      "Debug",
+      "CODE_SIGNING_ALLOWED=NO",
+      ...forwardedArguments,
+      "build"
+    ],
+    { environment, layout }
+  )
+  console.log(
+    `\nBuilt PixelBook app: ${join(layout.build.pixelbook.derivedData, "Build/Products/Debug/PixelBook.app")}`
+  )
 } else if (target === "list:macos") {
   await bootstrapDevelopment(repoRoot, { environment })
   await runXcodebuild(
@@ -74,6 +96,6 @@ if (target === "macos") {
     { environment, layout }
   )
 } else {
-  console.error("usage: bun scripts/build-native.mjs <macos|ios|list:macos> [xcodebuild arguments]")
+  console.error("usage: bun scripts/build-native.mjs <macos|ios|pixelbook|list:macos> [xcodebuild arguments]")
   process.exitCode = 2
 }

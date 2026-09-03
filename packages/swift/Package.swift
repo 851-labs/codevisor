@@ -23,6 +23,7 @@ let package = Package(
     .library(name: "CodevisorCore", targets: ["CodevisorCore"]),
     .library(name: "CodevisorCoreMac", targets: ["CodevisorCoreMac"]),
     .library(name: "CodevisorUI", targets: ["CodevisorUI"]),
+    .library(name: "Autocomplete", targets: ["Autocomplete"]),
   ],
   dependencies: [
     .package(url: "https://github.com/PostHog/posthog-ios.git", exact: "3.59.3"),
@@ -252,6 +253,22 @@ let package = Package(
         "ACPKit",
       ],
       path: "CodevisorUI/Tests/CodevisorUITests",
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+
+    // MARK: Autocomplete (filterable, keyboard-navigable pickers composed like
+    // SwiftUI views: searchable menus, inline popups, command palettes. The
+    // state types are platform-neutral; the views are AppKit-hosted SwiftUI.
+    // No Codevisor dependencies, so it stays reusable and cheap to build.)
+    .target(
+      name: "Autocomplete",
+      path: "Autocomplete/Sources/Autocomplete",
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .testTarget(
+      name: "AutocompleteTests",
+      dependencies: ["Autocomplete"],
+      path: "Autocomplete/Tests/AutocompleteTests",
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
 

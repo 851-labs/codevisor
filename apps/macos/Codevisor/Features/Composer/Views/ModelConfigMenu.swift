@@ -1,11 +1,12 @@
 import ACPKit
 import CodevisorCore
 import CodevisorUI
+import Autocomplete
 import SwiftUI
 
 /// Separate model and parameter controls shared by draft and connected
-/// composers. The model picker follows Xcode's searchable picker presentation;
-/// parameters use a native menu grouped by option.
+/// composers. The model picker follows Xcode's searchable picker presentation
+/// (via Autocomplete); parameters use a native menu grouped by option.
 struct ModelConfigMenu: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.openSettings) private var openSettings
@@ -18,9 +19,10 @@ struct ModelConfigMenu: View {
   @State private var isSwitchingHarness = false
   @State private var pendingModelValue: String?
   @State private var pendingModelGroupId: String?
-  @State private var keyboardTarget: ModelPickerKeyboardTarget?
-  @State private var hoverTarget: ModelPickerKeyboardTarget?
-  @State private var presentedModelPickerListHeight: CGFloat?
+  @State private var highlight = Autocomplete.Highlight<ModelPickerTarget>(navigation: .menu)
+  /// Measured from the unfiltered list when the popover opens so filtering
+  /// never resizes it.
+  @State private var presentedListHeight: CGFloat?
 
   var body: some View {
     // A background revalidation must not replace an already-usable model
@@ -52,7 +54,7 @@ private extension ModelConfigMenu {
       if isPresented {
         isPresented = false
       } else {
-        presentedModelPickerListHeight = unfilteredModelPickerListHeight
+        presentedListHeight = listHeight(for: modelCatalog)
         isPresented = true
       }
     } label: {
@@ -72,7 +74,7 @@ private extension ModelConfigMenu {
       attachmentAnchor: .rect(.bounds),
       arrowEdge: .bottom
     ) {
-      modelPickerPopover
+      modelPickerPopup
     }
   }
 
@@ -102,148 +104,68 @@ private extension ModelConfigMenu {
     .accessibilityValue(parameterAccessibilityValue)
   }
 
-  private var modelPickerPopover: some View {
-    VStack(spacing: 0) {
-      modelSearchField
+  private static let footerTitle = "Manage Harnesses…"
+  private static let metrics = Autocomplete.Style.xcodeMenu.metrics
 
-      Group {
-        if resolvedFavoriteModels.isEmpty, filteredModelGroups.isEmpty {
-          Text("No matching models")
-            .font(.system(size: 13))
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-          ScrollViewReader { proxy in
-            ScrollView {
-              LazyVStack(
-                alignment: .leading,
-                spacing: XcodeModelPickerMetrics.sectionSpacing
-              ) {
-                if !resolvedFavoriteModels.isEmpty {
-                  favoritesSection
-                }
+  private var modelPickerPopup: some View {
+    let catalog = modelCatalog
+    return Autocomplete.Root(
+      highlight: highlight,
+      isDisabled: isSwitchingHarness,
+      onDismiss: { isPresented = false }
+    ) {
+      Autocomplete.Input(text: $modelSearch, accessibilityLabel: "Filter models")
 
-                ForEach(filteredModelGroups) { group in
-                  modelGroup(group)
-                }
-              }
-              .padding(
-                .horizontal,
-                XcodeModelPickerMetrics.listHorizontalInset
-              )
-              .padding(.vertical, XcodeModelPickerMetrics.listVerticalInset)
-              .background(ModelPickerScrollerConfigurator())
-            }
-            .scrollBounceBehavior(modelPickerScrollBounceBehavior)
-            .onChange(of: keyboardTarget) { _, target in
-              scrollKeyboardTargetIntoView(target, using: proxy)
+      Autocomplete.List(height: presentedListHeight ?? listHeight(for: catalog)) {
+        if catalog.sections.isEmpty {
+          Autocomplete.Empty("No matching models")
+        }
+        ForEach(catalog.sections) { section in
+          Autocomplete.Group(section.title) {
+            ForEach(section.items) { item in
+              modelItem(item)
             }
           }
         }
       }
-      .frame(maxWidth: .infinity)
-      .frame(height: modelPickerListHeight)
 
-      Divider()
-
-      ModelPickerFooterRow(
-        title: "Manage Harnesses…",
-        isKeyboardHighlighted: highlightedTarget == .manageHarnesses,
-        onHover: { isHovering in
-          updateHoverTarget(.manageHarnesses, isHovering: isHovering)
-        },
-        action: showHarnessSettings
-      )
-    }
-    .frame(width: modelPickerPopoverWidth)
-    .onAppear {
-      modelSearch = ""
-      if presentedModelPickerListHeight == nil {
-        presentedModelPickerListHeight = unfilteredModelPickerListHeight
+      Autocomplete.Footer(
+        id: ModelPickerTarget.manageHarnesses, help: "Open Harness Settings", action: showHarnessSettings
+      ) {
+        Text(Self.footerTitle)
       }
-      hoverTarget = nil
-      keyboardTarget = nil
     }
+    .frame(width: Self.metrics.popupWidth(fitting: catalog.allTitles + [Self.footerTitle]))
     .onDisappear {
-      modelSearch = ""
-      presentedModelPickerListHeight = nil
-      hoverTarget = nil
-      keyboardTarget = nil
+      presentedListHeight = nil
     }
-    .onChange(of: normalizedModelSearch) {
-      hoverTarget = nil
-      reconcileKeyboardTarget()
-    }
-    .onHover { isHovering in
-      if !isHovering {
-        hoverTarget = nil
+  }
+
+  private func modelItem(_ item: ModelPickerModelItem) -> some View {
+    Autocomplete.Item(
+      id: item.id,
+      isSelected: isCurrent(item.model, in: item.group),
+      accessibilityAction: Autocomplete.ItemAction(name: item.favoriteAction.label) { toggleFavorite(item) },
+      action: { selectModelItem(item) }
+    ) { _ in
+      Text(item.model.name)
+        .lineLimit(1)
+    } accessory: { _ in
+      Button {
+        toggleFavorite(item)
+      } label: {
+        Image(systemName: item.favoriteAction.symbolName)
+          .font(.system(size: 11, weight: .regular))
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .contentShape(Rectangle())
       }
-    }
-    .background {
-      ModelPickerKeyMonitor(
-        onMoveUp: { moveKeyboardTarget(by: -1) },
-        onMoveDown: { moveKeyboardTarget(by: 1) },
-        onSubmit: activateKeyboardTarget,
-        onCancel: { isPresented = false }
-      )
-      .frame(width: 0, height: 0)
+      .buttonStyle(.plain)
+      .help(item.favoriteAction.label)
     }
   }
 
-  private var modelSearchField: some View {
-    ModelFilterField(
-      text: $modelSearch,
-      onMoveUp: { moveKeyboardTarget(by: -1) },
-      onMoveDown: { moveKeyboardTarget(by: 1) },
-      onSubmit: activateKeyboardTarget,
-      onCancel: { isPresented = false }
-    )
-    .frame(height: XcodeModelPickerMetrics.searchFieldHeight)
-    .padding(.horizontal, XcodeModelPickerMetrics.searchHorizontalInset)
-    .padding(.top, XcodeModelPickerMetrics.searchTopInset)
-    .padding(.bottom, XcodeModelPickerMetrics.searchBottomInset)
-    .accessibilityLabel("Filter models")
-  }
-
-  private func modelGroup(_ group: ModelMenuGroup) -> some View {
-    modelSection(
-      title: group.name,
-      items: visibleModels(in: group).map {
-        ModelPickerModelItem(group: group, model: $0)
-      },
-      favoriteAction: .add
-    )
-  }
-
-  private var favoritesSection: some View {
-    modelSection(
-      title: "Favorites",
-      items: resolvedFavoriteModels,
-      favoriteAction: .remove
-    )
-  }
-
-  private func modelSection(
-    title: String,
-    items: [ModelPickerModelItem],
-    favoriteAction: ModelPickerFavoriteAction
-  ) -> some View {
-    ModelPickerModelSection(
-      title: title,
-      items: items,
-      favoriteAction: favoriteAction,
-      highlightedTarget: highlightedTarget,
-      isDisabled: isSwitchingHarness,
-      isSelected: { isCurrent($0.model, in: $0.group) },
-      onHover: { updateHoverTarget($0, isHovering: $1) },
-      onFavoriteAction: { item in
-        switch favoriteAction {
-        case .add: favorite(item.model, in: item.group)
-        case .remove: unfavorite(ModelPickerFavorite(model: item.model, group: item.group))
-        }
-      },
-      onSelect: selectModelItem
-    )
+  private func listHeight(for catalog: ModelPickerCatalog) -> CGFloat {
+    Self.metrics.listHeight(groupItemCounts: catalog.groupItemCounts)
   }
 
   private func selectModelItem(_ item: ModelPickerModelItem) {
@@ -254,139 +176,8 @@ private extension ModelConfigMenu {
     }
   }
 
-  private var visibleKeyboardTargets: [ModelPickerKeyboardTarget] {
-    var targets = resolvedFavoriteModels.map {
-      modelTarget($0.model, in: $0.group)
-    }
-    targets.append(
-      contentsOf: filteredModelGroups.flatMap { group in
-        visibleModels(in: group).map { modelTarget($0, in: group) }
-      }
-    )
-    targets.append(.manageHarnesses)
-    return targets
-  }
-
-  private var highlightedTarget: ModelPickerKeyboardTarget? {
-    hoverTarget ?? keyboardTarget
-  }
-
-  private func modelTarget(
-    _ model: SessionConfigSelectOption,
-    in group: ModelMenuGroup
-  ) -> ModelPickerKeyboardTarget {
-    .model(groupID: group.id, value: model.value)
-  }
-
-  private func reconcileKeyboardTarget() {
-    guard let keyboardTarget else { return }
-    if !visibleKeyboardTargets.contains(keyboardTarget) {
-      self.keyboardTarget = nil
-    }
-  }
-
-  private func updateHoverTarget(
-    _ target: ModelPickerKeyboardTarget,
-    isHovering: Bool
-  ) {
-    if isHovering {
-      hoverTarget = target
-    } else if hoverTarget == target {
-      hoverTarget = nil
-    }
-  }
-
-  private func moveKeyboardTarget(by offset: Int) {
-    hoverTarget = nil
-    let targets = visibleKeyboardTargets
-    guard !targets.isEmpty else {
-      keyboardTarget = nil
-      return
-    }
-
-    guard let keyboardTarget, let index = targets.firstIndex(of: keyboardTarget) else {
-      self.keyboardTarget = offset < 0 ? targets.last : targets.first
-      return
-    }
-
-    let nextIndex = min(max(index + offset, targets.startIndex), targets.index(before: targets.endIndex))
-    self.keyboardTarget = targets[nextIndex]
-  }
-
-  private func activateKeyboardTarget() {
-    guard let keyboardTarget else { return }
-    switch keyboardTarget {
-    case let .model(groupID, value):
-      guard
-        visibleKeyboardTargets.contains(keyboardTarget),
-        let group = modelGroups.first(where: { $0.id == groupID }),
-        let model = group.modelOption.options.first(where: {
-          $0.value == value
-        })
-      else { return }
-      if isCurrent(model, in: group) {
-        isPresented = false
-      } else {
-        choose(model: value, in: group)
-      }
-    case .manageHarnesses:
-      showHarnessSettings()
-    }
-  }
-
-  private func scrollKeyboardTargetIntoView(
-    _ target: ModelPickerKeyboardTarget?,
-    using proxy: ScrollViewProxy
-  ) {
-    guard let target, target != .manageHarnesses else { return }
-    proxy.scrollTo(target, anchor: .center)
-  }
-
   private var normalizedModelSearch: String {
     modelSearch.trimmingCharacters(in: .whitespacesAndNewlines)
-  }
-
-  private var modelPickerPopoverWidth: CGFloat {
-    XcodeModelPickerMetrics.popoverWidth(for: modelGroups)
-  }
-
-  private var modelPickerListHeight: CGFloat {
-    presentedModelPickerListHeight ?? unfilteredModelPickerListHeight
-  }
-
-  private var modelPickerScrollBounceBehavior: ScrollBounceBehavior {
-    let contentHeight = XcodeModelPickerMetrics.listContentHeight(
-      sectionItemCounts: modelCatalog.sectionItemCounts
-    )
-    return contentHeight > modelPickerListHeight ? .always : .basedOnSize
-  }
-
-  private var unfilteredModelPickerListHeight: CGFloat {
-    modelPickerListHeight(
-      for: ModelPickerCatalog(
-        groups: modelGroups,
-        favoriteIDs: favoriteModelIDs,
-        query: ""
-      )
-    )
-  }
-
-  private func modelPickerListHeight(for catalog: ModelPickerCatalog) -> CGFloat {
-    XcodeModelPickerMetrics.listHeight(
-      sectionItemCounts: catalog.sectionItemCounts
-    )
-  }
-
-  private var filteredModelGroups: [ModelMenuGroup] {
-    modelCatalog.regularGroups
-  }
-
-  private var resolvedFavoriteModels: [ModelPickerModelItem] {
-    modelCatalog.favorites
-  }
-
-  private func visibleModels(in group: ModelMenuGroup) -> [SessionConfigSelectOption] {
-    modelCatalog.regularModels(in: group)
   }
 
   private var modelCatalog: ModelPickerCatalog {
@@ -397,21 +188,15 @@ private extension ModelConfigMenu {
     )
   }
 
-  private func favorite(_ model: SessionConfigSelectOption, in group: ModelMenuGroup) {
-    let favorite = ModelPickerFavorite(model: model, group: group)
-    guard !favoriteModelIDs.contains(favorite) else { return }
-    clearModelHighlight()
-    favoriteModelIDs = favoriteModelIDs + [favorite]
-  }
-
-  private func unfavorite(_ favorite: ModelPickerFavorite) {
-    clearModelHighlight()
-    favoriteModelIDs = favoriteModelIDs.filter { $0 != favorite }
-  }
-
-  private func clearModelHighlight() {
-    hoverTarget = nil
-    keyboardTarget = nil
+  private func toggleFavorite(_ item: ModelPickerModelItem) {
+    highlight.reset()
+    switch item.favoriteAction {
+    case .add:
+      guard !favoriteModelIDs.contains(item.favorite) else { return }
+      favoriteModelIDs = favoriteModelIDs + [item.favorite]
+    case .remove:
+      favoriteModelIDs = favoriteModelIDs.filter { $0 != item.favorite }
+    }
   }
 
   private func showHarnessSettings() {

@@ -6,7 +6,7 @@ import { developmentLayout } from "./dev-layout.mjs"
 
 export function xcodebuildArguments(layout, platform, arguments_) {
   const platformLayout = layout.build[platform]
-  if (platformLayout === undefined || !["macos", "ios"].includes(platform)) {
+  if (platformLayout === undefined || !["macos", "ios", "pixelbook"].includes(platform)) {
     throw new Error(`Unknown Xcode platform ${platform}`)
   }
   return [

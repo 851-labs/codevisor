@@ -68,6 +68,10 @@ export function developmentLayout(repoRoot, environment = process.env) {
         derivedData: join(buildRoot, "ios", "DerivedData"),
         sourcePackages: join(buildRoot, "ios", "SourcePackages")
       },
+      pixelbook: {
+        derivedData: join(buildRoot, "pixelbook", "DerivedData"),
+        sourcePackages: join(buildRoot, "pixelbook", "SourcePackages")
+      },
       packageCache: join(buildRoot, "swift-package-cache"),
       bunCache: join(buildRoot, "bun-cache"),
       nodeGyp: join(buildRoot, "node-gyp"),
