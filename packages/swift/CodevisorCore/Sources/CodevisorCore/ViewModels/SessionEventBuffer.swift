@@ -1,6 +1,19 @@
 import ACPKit
 import Synchronization
 
+/// A buffered stream event plus the server cursor that delivered it. The
+/// cursor is nil only for events injected without an envelope (tests and
+/// synthetic local events); such events never advance the resume cursor.
+struct SessionPendingStreamEvent: Equatable, Sendable {
+  var event: ServerSessionStreamEvent
+  var cursor: Int?
+
+  init(_ event: ServerSessionStreamEvent, cursor: Int? = nil) {
+    self.event = event
+    self.cursor = cursor
+  }
+}
+
 /// Thread-safe ingress for the live ACP stream.
 ///
 /// The socket consumer writes here without entering the main actor. Only the
@@ -9,7 +22,7 @@ import Synchronization
 /// presentation frame.
 final class SessionEventBuffer: Sendable {
   private struct State: Sendable {
-    var events: [ServerSessionStreamEvent] = []
+    var events: [SessionPendingStreamEvent] = []
     var generation: UInt64 = 0
     var acceptsEvents = false
   }
@@ -29,11 +42,11 @@ final class SessionEventBuffer: Sendable {
   /// Returns true only for the event that changed the buffer from empty to
   /// non-empty. A stale consumer returns false and cannot re-arm presentation.
   @discardableResult
-  func append(_ event: ServerSessionStreamEvent, generation: UInt64) -> Bool {
+  func append(_ event: ServerSessionStreamEvent, cursor: Int? = nil, generation: UInt64) -> Bool {
     state.withLock { state in
       guard state.acceptsEvents, state.generation == generation else { return false }
       let needsWakeup = state.events.isEmpty
-      state.events.append(event)
+      state.events.append(SessionPendingStreamEvent(event, cursor: cursor))
       return needsWakeup
     }
   }
@@ -42,7 +55,7 @@ final class SessionEventBuffer: Sendable {
     state.withLock { $0.events.isEmpty }
   }
 
-  func takeAll() -> [ServerSessionStreamEvent] {
+  func takeAll() -> [SessionPendingStreamEvent] {
     state.withLock { state in
       let events = state.events
       state.events.removeAll(keepingCapacity: true)

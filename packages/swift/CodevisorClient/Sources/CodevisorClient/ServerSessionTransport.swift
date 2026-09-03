@@ -3,6 +3,19 @@ import CodevisorProtocol
 import Foundation
 import TranscriptKit
 
+/// One decoded stream event together with the cursor of the server envelope
+/// it came from. Session sockets scope that cursor to the session's own
+/// revision sequence — the same value `streamEvents(since:)` resumes from.
+public struct ServerSessionStreamEnvelope: Equatable, Sendable {
+  public let cursor: Int
+  public let event: ServerSessionStreamEvent
+
+  public init(cursor: Int, event: ServerSessionStreamEvent) {
+    self.cursor = cursor
+    self.event = event
+  }
+}
+
 public struct ServerSessionTransport: Sendable {
   public static let liveOnlyEventCursor = 9_007_199_254_740_991
 
@@ -121,6 +134,17 @@ extension ServerSessionTransport {
   public func streamEvents(
     since: Int = Self.liveOnlyEventCursor
   ) -> AsyncThrowingStream<ServerSessionStreamEvent, any Error> {
+    Self.droppingCursors(streamEnvelopes(since: since))
+  }
+
+  /// The session-scoped stream with each event tagged by the cursor of the
+  /// envelope that carried it. Consumers that apply events incrementally
+  /// record that cursor so a later resubscription — on a new transport after
+  /// a route flip, or after a reconcile — resumes exactly after the last
+  /// event they applied instead of replaying from a stale page cursor.
+  public func streamEnvelopes(
+    since: Int = Self.liveOnlyEventCursor
+  ) -> AsyncThrowingStream<ServerSessionStreamEnvelope, any Error> {
     AsyncThrowingStream { continuation in
       // The upstream subscription is acquired synchronously at stream
       // construction, NOT inside the bridge task. Callers subscribe and
@@ -134,7 +158,7 @@ extension ServerSessionTransport {
         do {
           for try await event in upstream {
             for update in Self.sessionStreamEvents(from: event) {
-              continuation.yield(update)
+              continuation.yield(ServerSessionStreamEnvelope(cursor: event.id, event: update))
             }
           }
           continuation.finish()
@@ -151,6 +175,14 @@ extension ServerSessionTransport {
   public func legacyStreamEvents(
     since: Int
   ) -> AsyncThrowingStream<ServerSessionStreamEvent, any Error> {
+    Self.droppingCursors(legacyStreamEnvelopes(since: since))
+  }
+
+  /// Cursor-tagged form of `legacyStreamEvents`; the cursor is the global
+  /// event id, which is what the legacy stream's `since` expects.
+  public func legacyStreamEnvelopes(
+    since: Int
+  ) -> AsyncThrowingStream<ServerSessionStreamEnvelope, any Error> {
     AsyncThrowingStream { continuation in
       // Acquired synchronously for the same reason as `streamEvents`:
       // subscription registration must complete before the caller's
@@ -163,8 +195,26 @@ extension ServerSessionTransport {
             event.subjectId.caseInsensitiveCompare(sessionId.uuidString) == .orderedSame
           {
             for update in Self.sessionStreamEvents(from: event) {
-              continuation.yield(update)
+              continuation.yield(ServerSessionStreamEnvelope(cursor: event.id, event: update))
             }
+          }
+          continuation.finish()
+        } catch {
+          continuation.finish(throwing: error)
+        }
+      }
+      continuation.onTermination = { _ in task.cancel() }
+    }
+  }
+
+  private static func droppingCursors(
+    _ envelopes: AsyncThrowingStream<ServerSessionStreamEnvelope, any Error>
+  ) -> AsyncThrowingStream<ServerSessionStreamEvent, any Error> {
+    AsyncThrowingStream { continuation in
+      let task = Task {
+        do {
+          for try await envelope in envelopes {
+            continuation.yield(envelope.event)
           }
           continuation.finish()
         } catch {

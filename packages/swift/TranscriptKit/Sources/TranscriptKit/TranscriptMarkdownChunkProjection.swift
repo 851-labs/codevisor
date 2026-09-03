@@ -409,11 +409,20 @@ enum TranscriptMarkdownChunkProjection {
     }
   }
 
+  /// Blocks that share one prose row. A list or quote that carries no code,
+  /// table, or rule renders inline with surrounding prose, so it must stay
+  /// in the prose chunk: giving it a row of its own — and merging it back
+  /// when the parser reshapes it a token later — changes row identity and
+  /// restarts the reveal animation for everything in the moved block.
   private static func isTextBlock(_ block: MarkdownBlock) -> Bool {
     switch block {
     case .heading, .paragraph, .bulletList, .orderedList:
       true
-    case .codeBlock, .list, .blockQuote, .table, .thematicBreak:
+    case let .list(list):
+      !requiresStructuralFragmentation(list.items.flatMap(\.blocks))
+    case let .blockQuote(blocks):
+      !requiresStructuralFragmentation(blocks)
+    case .codeBlock, .table, .thematicBreak:
       false
     }
   }

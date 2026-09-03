@@ -52,6 +52,24 @@ extension SessionModel {
         page = try await transport.transcriptPage(limit: Self.initialTranscriptPageSize)
       }
       usesPaginatedHistory = true
+      if appliedStateIsCurrent(through: page.eventCursor) {
+        // Everything this snapshot describes has already been applied
+        // from the live stream (and possibly more). Installing it would
+        // rewind the visible turn to an older prefix and then replay the
+        // difference — the transcript "shrinks and re-types" — for no
+        // information gain. Keep the applied state and just make sure the
+        // stream is running from where it left off.
+        Log.session.notice(
+          "Skipped a history snapshot at cursor \(page.eventCursor, privacy: .public); live stream already applied through \(String(describing: self.serverEventCursor), privacy: .public)"
+        )
+        await startConsumer()
+        if defersPromptQueue {
+          schedulePromptQueueLoad()
+        } else {
+          await loadPromptQueue(ifUnchangedSince: promptQueueRevision)
+        }
+        return .loaded
+      }
       olderHistoryCursor = page.nextBefore
       hasOlderHistory = page.hasMore
       setConversation(page.conversation)
@@ -101,6 +119,21 @@ extension SessionModel {
     }
 
     return await loadLegacyHistory()
+  }
+
+  /// Whether the live stream has already carried this model strictly past a
+  /// snapshot taken at `cursor`. True only for a model that has applied
+  /// live events (its resume cursor is set) and whose cursor is beyond the
+  /// snapshot's. A fresh model, a legacy stream, or a snapshot at or after
+  /// the applied cursor all still load normally — an equal-cursor snapshot
+  /// carries the same text, and it is also how a server-side repair that
+  /// produced no event (a stuck row marked finished) reaches the client.
+  func appliedStateIsCurrent(through cursor: Int) -> Bool {
+    guard let applied = serverEventCursor,
+      applied < ServerSessionTransport.liveOnlyEventCursor,
+      hasActiveItem || !settledConversation.isEmpty
+    else { return false }
+    return applied > cursor
   }
 
   private func surfaceHistoryLoadFailure(_ outcome: SessionHistoryLoadOutcome) {

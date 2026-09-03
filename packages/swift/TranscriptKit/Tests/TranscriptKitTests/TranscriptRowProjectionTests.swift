@@ -460,3 +460,46 @@ private extension TranscriptPresentationRow {
     }
   }
 }
+
+extension TranscriptRowProjectionTests {
+  private func chunks(for markdown: String) throws -> [TranscriptMarkdownChunk] {
+    let message = AssistantMessage(
+      id: UUID(uuidString: "00000000-0000-0000-0000-00000000C0DE")!,
+      turn: AssistantTurn(entries: [.text(id: "answer", markdown: markdown)])
+    )
+    let rows = try TranscriptRowProjectionCache.project(
+      makeInput(settled: [.assistant(message)]),
+      options: .init(includesConnectingRow: true)
+    )
+    return rows.compactMap { row in
+      if case let .markdownChunk(chunk) = row.content { chunk } else { nil }
+    }
+  }
+
+  /// Every token of a streaming answer must project its prose and list into
+  /// the same row. A list that moved into a row of its own when a new `- `
+  /// marker arrived and merged back a token later replayed the whole list's
+  /// reveal animation on every item.
+  @Test func streamingListStaysInTheProseRowAcrossItemBoundaries() throws {
+    let prefix = "This repo is Codevisor.\n\nIts main pieces are:\n\n"
+    let sources = [
+      prefix + "- ",
+      prefix + "- `apps/macos` — native app",
+      prefix + "- `apps/macos` — native app\n- ",
+      prefix + "- `apps/macos` — native app\n- `apps/ios` — companion",
+      prefix + "- `apps/macos` — native app\n\n- `apps/ios` — loose list",
+      prefix + "- `apps/macos` — native app\n  - nested item",
+    ]
+    for source in sources {
+      let chunks = try chunks(for: source)
+      #expect(chunks.count == 1, "expected one row for \(source.debugDescription)")
+      #expect(chunks.first?.ordinal == 0)
+      #expect(chunks.first?.blocks.count == 3, "expected prose + list in one row for \(source.debugDescription)")
+    }
+  }
+
+  @Test func listsWithCodeBlocksStillFragmentStructurally() throws {
+    let chunks = try chunks(for: "Intro\n\n- item\n\n  ```swift\n  let x = 1\n  ```\n")
+    #expect(chunks.count > 1)
+  }
+}

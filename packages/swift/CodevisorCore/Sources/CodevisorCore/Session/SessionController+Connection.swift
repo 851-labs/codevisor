@@ -248,6 +248,24 @@ extension SessionController {
     serverClient = client
   }
 
+  /// Re-homes a live chat after its machine's route flipped (direct ↔
+  /// relay): same machine, same records, new transport. Unlike
+  /// `reconnect()`, this never discards the model — a streaming turn keeps
+  /// its conversation and resumes its event stream from the last applied
+  /// cursor, so the transcript does not rewind to a server snapshot and
+  /// re-type itself. A controller with no model yet falls back to a full
+  /// reconnect, which is the only way to obtain one.
+  public func rehome(with client: any CodevisorServerClienting) async {
+    adoptServerClient(client)
+    guard let model, let serverSession else {
+      await reconnect()
+      return
+    }
+    await model.adoptTransport(
+      ServerSessionTransport(client: client, sessionId: serverSession.id)
+    )
+  }
+
   /// Tears down any connection and reconnects — used when the harness or
   /// project changes on the new-chat page.
   public func reconnect() async {

@@ -119,6 +119,9 @@ extension MachineController {
     let known = connection.lastKnownRoute
     connection.lastKnownRoute = newRoute
     guard let known, known != newRoute else { return }
+    Log.machines.notice(
+      "Machine \(id, privacy: .public) route flipped \(String(describing: known), privacy: .public) → \(String(describing: newRoute), privacy: .public); re-homing streams"
+    )
     // Coalesce: a flapping probe (LAN and relay trading places) must not
     // tear the streams down once per flip. The last flip in a burst wins
     // and triggers exactly one re-home.

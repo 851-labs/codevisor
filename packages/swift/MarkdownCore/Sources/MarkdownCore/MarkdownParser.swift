@@ -262,8 +262,20 @@ final class MD4CParserContext {
     isTight: Bool,
     items: [MarkdownListItem]
   ) -> MarkdownBlock {
+    // An item with no blocks is one whose marker has arrived but whose
+    // text has not (`- ` at the live edge of a stream). Treat it as an
+    // empty paragraph so a tight simple list keeps the simple shape while
+    // it grows; flipping to the recursive shape on every new item and
+    // back once its text lands changed the block's identity twice per
+    // item, which re-partitioned transcript rows and replayed the reveal
+    // animation of the whole list.
     let simpleTexts: [MarkdownText]? = items.reduce(into: []) { result, item in
-      guard !item.isTask, item.blocks.count == 1,
+      guard !item.isTask else { result = nil; return }
+      if item.blocks.isEmpty {
+        result?.append(MarkdownText(spans: []))
+        return
+      }
+      guard item.blocks.count == 1,
         case let .paragraph(text) = item.blocks[0]
       else { result = nil; return }
       result?.append(text)

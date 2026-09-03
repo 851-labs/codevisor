@@ -13,11 +13,13 @@ extension SessionModel {
   /// while a turn is running.
   func startConsumer() async {
     guard consumerTask == nil else { return }
-    let events: AsyncThrowingStream<ServerSessionStreamEvent, any Error>
+    let events: AsyncThrowingStream<ServerSessionStreamEnvelope, any Error>
     if usesPaginatedHistory {
-      events = serverEventCursor.map { transport.streamEvents(since: $0) } ?? transport.streamEvents()
+      events =
+        serverEventCursor.map { transport.streamEnvelopes(since: $0) }
+        ?? transport.streamEnvelopes()
     } else {
-      events = transport.legacyStreamEvents(
+      events = transport.legacyStreamEnvelopes(
         since: serverEventCursor ?? ServerSessionTransport.liveOnlyEventCursor
       )
     }
@@ -25,9 +27,11 @@ extension SessionModel {
     let consumerGeneration = pendingEvents.beginConsumer()
     consumerTask = Task.detached(priority: .userInitiated) { [weak self] in
       do {
-        for try await event in events {
+        for try await envelope in events {
           guard !Task.isCancelled, self != nil else { break }
-          if pendingEvents.append(event, generation: consumerGeneration) {
+          if pendingEvents.append(
+            envelope.event, cursor: envelope.cursor, generation: consumerGeneration
+          ) {
             Task { @MainActor [weak self] in
               self?.scheduleFlush()
             }
@@ -39,6 +43,31 @@ extension SessionModel {
         await self?.handleEventStreamFailure(error)
       }
     }
+  }
+
+  /// Re-homes a live session onto a new transport — the same machine over a
+  /// different route (direct ↔ relay). The conversation already applied is
+  /// newer than any snapshot the server could hand back, so nothing is
+  /// reloaded: the dead socket is dropped, its unapplied buffer discarded,
+  /// and a fresh subscription resumes from the last applied cursor. The
+  /// server replays anything after it, so the transcript neither regresses
+  /// nor re-animates.
+  public func adoptTransport(_ transport: ServerSessionTransport) async {
+    self.transport = transport
+    consumerTask?.cancel()
+    consumerTask = nil
+    scheduledFlushTask?.cancel()
+    scheduledFlushTask = nil
+    isFlushScheduled = false
+    // Events buffered but not yet applied came over the old route and are
+    // not reflected in `serverEventCursor`; the new subscription replays
+    // them. Dropping them here also retires the old consumer generation so
+    // a late yield from the cancelled iterator cannot slip in.
+    pendingEvents.invalidateConsumer()
+    Log.session.notice(
+      "Adopting a new session transport; resuming the event stream from cursor \(String(describing: self.serverEventCursor), privacy: .public)"
+    )
+    await startConsumer()
   }
 
   private func handleEventStreamFailure(_ error: any Error) async {
@@ -131,9 +160,19 @@ extension SessionModel {
     isFlushScheduled = false
     let events = Self.coalesced(pendingEvents.takeAll())
     guard !events.isEmpty else { return }
-    for event in events {
-      apply(event)
+    for pending in events {
+      apply(pending.event)
+      advanceServerEventCursor(to: pending.cursor)
     }
+  }
+
+  /// Records that every event through `cursor` is now reflected in the
+  /// conversation. Only ever moves forward: a coalesced batch carries the
+  /// highest cursor it merged, and replayed history can never rewind it.
+  func advanceServerEventCursor(to cursor: Int?) {
+    guard let cursor else { return }
+    if let current = serverEventCursor, current >= cursor { return }
+    serverEventCursor = cursor
   }
 
   /// Semantic barriers (prompt completion, cancellation, stream completion)
@@ -163,27 +202,47 @@ extension SessionModel {
   /// stream at once. Zero-length chunks are retro-tag markers and never
   /// merge; annotated chunks are left alone.
   static func coalesced(_ events: [ServerSessionStreamEvent]) -> [ServerSessionStreamEvent] {
+    coalesced(events.map { SessionPendingStreamEvent($0) }).map(\.event)
+  }
+
+  /// Cursor-aware form: a merged chunk carries the newest cursor of the run
+  /// it absorbed, so applying it advances the resume cursor past every
+  /// token it contains.
+  static func coalesced(_ events: [SessionPendingStreamEvent]) -> [SessionPendingStreamEvent] {
     guard events.count > 1 else { return events }
-    var result: [ServerSessionStreamEvent] = []
+    var result: [SessionPendingStreamEvent] = []
     result.reserveCapacity(events.count)
-    for event in events {
-      if case let .update(.agentMessageChunk(block, messageId, parent, phase)) = event,
+    for pending in events {
+      if case let .update(.agentMessageChunk(block, messageId, parent, phase)) = pending.event,
         case let .text(text, annotations) = block, annotations == nil, !text.isEmpty,
+        let previous = result.last,
         case let .update(.agentMessageChunk(previousBlock, previousId, previousParent, previousPhase)) =
-          result.last,
+          previous.event,
         case let .text(previousText, previousAnnotations) = previousBlock,
         previousAnnotations == nil, !previousText.isEmpty,
         messageId == previousId, parent == previousParent, phase == previousPhase
       {
-        result[result.count - 1] = .update(
-          .agentMessageChunk(
-            .text(previousText + text), messageId: messageId, parentToolCallId: parent, phase: phase
-          ))
+        result[result.count - 1] = SessionPendingStreamEvent(
+          .update(
+            .agentMessageChunk(
+              .text(previousText + text), messageId: messageId, parentToolCallId: parent, phase: phase
+            )),
+          cursor: Self.newestCursor(previous.cursor, pending.cursor)
+        )
       } else {
-        result.append(event)
+        result.append(pending)
       }
     }
     return result
+  }
+
+  private static func newestCursor(_ lhs: Int?, _ rhs: Int?) -> Int? {
+    switch (lhs, rhs) {
+    case let (lhs?, rhs?): max(lhs, rhs)
+    case let (lhs?, nil): lhs
+    case let (nil, rhs?): rhs
+    case (nil, nil): nil
+    }
   }
 
   /// Stops the live event consumer and drops any buffered events. Called

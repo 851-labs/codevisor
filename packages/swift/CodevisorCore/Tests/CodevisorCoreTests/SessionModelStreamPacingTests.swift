@@ -69,15 +69,19 @@ struct SessionModelStreamPacingTests {
     let buffer = SessionEventBuffer()
     let firstGeneration = buffer.beginConsumer()
 
-    #expect(buffer.append(chunk("a"), generation: firstGeneration))
-    #expect(!buffer.append(chunk("b"), generation: firstGeneration))
-    #expect(buffer.takeAll() == [chunk("a"), chunk("b")])
+    #expect(buffer.append(chunk("a"), cursor: 7, generation: firstGeneration))
+    #expect(!buffer.append(chunk("b"), cursor: 8, generation: firstGeneration))
+    #expect(
+      buffer.takeAll() == [
+        SessionPendingStreamEvent(chunk("a"), cursor: 7),
+        SessionPendingStreamEvent(chunk("b"), cursor: 8),
+      ])
 
     buffer.invalidateConsumer()
     let secondGeneration = buffer.beginConsumer()
     #expect(!buffer.append(chunk("stale"), generation: firstGeneration))
     #expect(buffer.append(chunk("current"), generation: secondGeneration))
-    #expect(buffer.takeAll() == [chunk("current")])
+    #expect(buffer.takeAll() == [SessionPendingStreamEvent(chunk("current"))])
   }
 
   @Test("A visible semantic drain waits for the display boundary")

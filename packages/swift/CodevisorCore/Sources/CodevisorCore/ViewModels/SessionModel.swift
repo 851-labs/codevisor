@@ -283,11 +283,16 @@ public final class SessionModel {
   /// open until the queue drains (or the user clears it).
   public var onQueuedPromptsChanged: (() -> Void)?
 
-  let transport: ServerSessionTransport
+  /// Replaced in place by `adoptTransport` when the machine's route flips;
+  /// the conversation and its resume cursor survive the swap.
+  var transport: ServerSessionTransport
   private let sessionId: String
   let now: @Sendable () -> Date
   let stalledTurnQuietInterval: Duration
   let quietTurnScheduler: SessionQuietTurnScheduler
+  /// The server revision this model's state is current through. Seeded by
+  /// the history page and advanced by every applied stream event, so a
+  /// resubscription never replays what is already on screen.
   var serverEventCursor: Int?
   /// History contains complete config-option snapshots from the runtime that
   /// originally created the chat. During replay, retain only their selected

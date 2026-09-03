@@ -252,3 +252,35 @@ struct MarkdownParserTests {
     #expect(closedComplete)
   }
 }
+
+@Suite("Markdown parser streaming list shape")
+struct MarkdownParserStreamingListShapeTests {
+  @Test("A tight list keeps the simple shape while its newest item is still empty")
+  func tightListWithEmptyTrailingItemStaysSimple() {
+    let parser = MarkdownParser()
+    let growing = parser.parse("Pieces:\n- one\n- two\n- ")
+    let settled = parser.parse("Pieces:\n- one\n- two\n- three")
+
+    guard case let .bulletList(growingItems)? = growing.last else {
+      Issue.record("expected a simple bullet list, got \(String(describing: growing.last?.id))")
+      return
+    }
+    #expect(growingItems.map(\.plainText) == ["one", "two", ""])
+    guard case let .bulletList(settledItems)? = settled.last else {
+      Issue.record("expected a simple bullet list, got \(String(describing: settled.last?.id))")
+      return
+    }
+    #expect(settledItems.map(\.plainText) == ["one", "two", "three"])
+  }
+
+  @Test("Loose, nested, and task lists keep the recursive shape")
+  func structuredListsStayRecursive() {
+    let parser = MarkdownParser()
+    for source in ["- a\n\n- b", "- a\n  - nested", "- [ ] task"] {
+      guard case .list? = parser.parse(source).last else {
+        Issue.record("expected a recursive list for \(source.debugDescription)")
+        continue
+      }
+    }
+  }
+}
