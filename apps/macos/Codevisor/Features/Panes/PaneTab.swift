@@ -39,7 +39,11 @@ struct PaneTab: View {
   private var barHeight: CGFloat { PaneTabStripStyle.barHeight }
   private var capsuleHeight: CGFloat { barHeight - 2 * capsuleInset }
 
-  private var iconName: String {
+  private var iconName: String { Self.iconName(for: kind, isAgentOwned: isAgentOwned) }
+
+  /// The kind glyph every tab presentation shares (strip capsules and the
+  /// Nous sidebar rows alike).
+  static func iconName(for kind: PaneKind, isAgentOwned: Bool) -> String {
     switch kind {
     case .chat: "text.bubble"
     case .terminal: isAgentOwned ? "server.rack" : "terminal"

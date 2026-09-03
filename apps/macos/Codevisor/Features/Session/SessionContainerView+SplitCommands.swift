@@ -55,6 +55,7 @@ extension SessionContainerView {
   }
 
   func selectRelativeCenterTab(offset: Int) {
+    if isNousMode, store.nousStepHandler?(offset) == true { return }
     let workspace = store.workspace(for: session, project: project)
     guard workspace.centerTabs.count > 1,
       let index = workspace.selectedCenterTabIndex

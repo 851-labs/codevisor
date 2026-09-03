@@ -51,6 +51,36 @@ extension SessionContainerView {
     return paneTitle(descriptor)
   }
 
+  /// A sidebar-originated (Nous) tab action for this workspace.
+  func performCenterTabRequest(_ request: CenterTabRequest) {
+    switch request.action {
+    case let .select(tabId): selectCenterTab(tabId)
+    case let .close(tabId): closeCenterTab(tabId)
+    case .new: addCenterTab()
+    case let .selectLeaf(leafId): selectCenterLeaf(leafId)
+    case let .closeLeaf(leafId): closeLeaf(leafId)
+    }
+  }
+
+  /// Brings one split leaf forward: its tab is selected first when it is
+  /// not the current one, then the leaf becomes the active group and its
+  /// pane takes focus — what clicking the pane's header would do.
+  func selectCenterLeaf(_ leafId: UUID) {
+    let workspace = store.workspace(for: session, project: project)
+    guard let tab = workspace.centerTabs.first(where: { $0.root.group(id: leafId) != nil }) else {
+      return
+    }
+    if workspace.selectedCenterTabId != tab.id {
+      selectCenterTab(tab.id)
+    }
+    guard (activeLeafId ?? tab.activeLeafId) != leafId || workspace.selectedCenterTabId != tab.id
+    else { return }
+    activateLeaf(leafId)
+    let model = configuredCenterModel(leafId: leafId)
+    model.selectedPane?.visibilityChanged(true)
+    DispatchQueue.main.async { model.focusSelectedPane() }
+  }
+
   func selectCenterTab(_ tabId: UUID) {
     var workspace = store.workspace(for: session, project: project)
     guard let tab = workspace.centerTabs.first(where: { $0.id == tabId }) else { return }

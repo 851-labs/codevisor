@@ -38,7 +38,7 @@ struct SidebarFilterMenu: View {
     switch organization {
     case .compact:
       Divider()
-    case .byWorkspace:
+    case .byWorkspace, .nous:
       Divider()
       Toggle("Show empty workspaces", isOn: showEmptyWorkspaces)
     case .byProject:

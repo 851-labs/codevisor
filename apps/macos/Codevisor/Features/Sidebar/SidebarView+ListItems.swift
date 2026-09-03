@@ -117,6 +117,10 @@ extension SidebarView {
   var workspaceItems: [SidebarWorkspaceListItem] {
     _ = workspaceRevision
     _ = environment.workspaceSync.revision
+    // Nous renders each workspace's tabs; the mounted container reports
+    // its tab writes (⌘T/⌘W/⌘1-9) through the store since the
+    // repository itself is not observable.
+    _ = store?.workspaceLayoutRevision
     let sessionItems = chronologicalSessions
     let sessionRank = Dictionary(
       sessionItems.enumerated().map { ($0.element.id, $0.offset) },
@@ -172,7 +176,12 @@ extension SidebarView {
           workspace.createdAt
         )
       }
-      .filter { showEmptyWorkspaces || !$0.item.sessions.isEmpty }
+      .filter {
+        showEmptyWorkspaces || !$0.item.sessions.isEmpty
+          // In Nous a workspace whose only open content is a terminal
+          // (its last chat closed) is not empty: its tab is a live row.
+          || (isNousMode && $0.item.primarySession != nil && $0.item.workspace.hasOpenNonChatContent)
+      }
       .sorted {
         if $0.rank != $1.rank { return $0.rank < $1.rank }
         return $0.created > $1.created

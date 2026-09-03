@@ -60,13 +60,17 @@ extension SidebarView {
     )
 
     if expandedWorkspaces.contains(item.workspace.id) {
-      if let project = item.project {
-        ForEach(item.sessions) { session in
-          reorderableChronologicalSessionRow(session, project: project, isNested: true)
-            .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+      if isNousMode {
+        nousTabRows(item)
+      } else {
+        if let project = item.project {
+          ForEach(item.sessions) { session in
+            reorderableChronologicalSessionRow(session, project: project, isNested: true)
+              .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+          }
         }
       }
-      if item.sessions.isEmpty {
+      if item.sessions.isEmpty && !isNousMode {
         Text("No tabs yet")
           .font(.subheadline)
           .foregroundStyle(.tertiary)
@@ -91,13 +95,7 @@ extension SidebarView {
     // Top-level workspace organization uses workspace selection styling.
     // A nested workspace is only a disclosure container; its child chat
     // owns selection instead.
-    let routesSelectedSession: Bool = {
-      guard case let .session(serverId, sessionId) = selection,
-        serverId == item.workspace.serverId
-      else { return false }
-      return environment.workspaces.workspaceId(forSession: sessionId) == item.workspace.id
-    }()
-    let isSelected = onToggle == nil && routesSelectedSession
+    let isSelected = onToggle == nil && routesSelectedSession(item.workspace)
     return SidebarWorkspaceRow(
       item: item,
       store: store,
@@ -112,8 +110,17 @@ extension SidebarView {
       onRename: {
         workspaceRenameTitle = item.workspace.name
         renamingWorkspace = item.workspace
-      }
+      },
+      onNewTab: isNousMode ? { addNousTab(in: item) } : nil
     )
+  }
+
+  /// Whether the sidebar's selected chat lives in this workspace.
+  func routesSelectedSession(_ workspace: Workspace) -> Bool {
+    guard case let .session(serverId, sessionId) = selection,
+      serverId == workspace.serverId
+    else { return false }
+    return environment.workspaces.workspaceId(forSession: sessionId) == workspace.id
   }
 
   /// Archives the WORKSPACE (not just a chat): the record is flagged, its

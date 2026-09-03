@@ -32,6 +32,8 @@ struct SidebarView: View {
   @State var renameTitle = ""
   @State var renamingWorkspace: Workspace?
   @State var workspaceRenameTitle = ""
+  @State var renamingNousTab: NousTabRenameRequest?
+  @State var nousTabRenameTitle = ""
   /// Bumped after workspace mutations (backfill sweep, renames) so the
   /// non-observable repository is re-read.
   @State var workspaceRevision = 0
@@ -130,7 +132,7 @@ struct SidebarView: View {
                 .geometryGroup()
                 .transition(.identity)
             }
-          } else if organization == .byWorkspace {
+          } else if organization.isWorkspaceList {
             ForEach(workspaceItems) { item in
               workspaceFolder(item)
                 .geometryGroup()
@@ -152,7 +154,7 @@ struct SidebarView: View {
               .padding(.horizontal, 10)
               .padding(.vertical, 4)
               .transition(.identity)
-          } else if organization == .byWorkspace && workspaceItems.isEmpty {
+          } else if organization.isWorkspaceList && workspaceItems.isEmpty {
             Text("No workspaces yet")
               .font(.caption)
               .foregroundStyle(.tertiary)
@@ -176,6 +178,7 @@ struct SidebarView: View {
         .padding(.horizontal, 8)
         .padding(.bottom, 8)
         .animation(Motion.listReflow(reduceMotion: reduceMotion), value: workspaceItems.map(\.id))
+        .animation(Motion.listReflow(reduceMotion: reduceMotion), value: nousTabIDs)
         .animation(Motion.listReflow(reduceMotion: reduceMotion), value: chronologicalSessions.map(\.id))
         .animation(
           Motion.listReflow(reduceMotion: reduceMotion),
@@ -233,6 +236,13 @@ struct SidebarView: View {
             workspaceRevision += 1
           },
           onPerformRestore: { performRestore($0) }
+        )
+      )
+      .modifier(
+        NousTabRenameAlert(
+          request: $renamingNousTab,
+          title: $nousTabRenameTitle,
+          onRename: { renameNousTab($0, to: $1) }
         ))
   }
 
@@ -250,6 +260,12 @@ struct SidebarView: View {
       // sweeps the visible chats so every one has an owning workspace.
       .onChange(of: organizationRaw, initial: true) { _, _ in
         backfillWorkspaces()
+        revealRoutedNousWorkspace()
+      }
+      // A tab added to a workspace (⌘T, a New Tab conversion elsewhere)
+      // shows up as a row; make sure its folder is open to receive it.
+      .onChange(of: nousTabIDs) { oldIDs, newIDs in
+        revealNousTabWorkspaces(added: Set(newIDs).subtracting(oldIDs))
       }
       .onChange(of: chronologicalSessions.map(\.orderingID)) { oldIDs, newIDs in
         deferredSessionOrder.incorporate(newIDs)
@@ -301,6 +317,15 @@ struct SidebarView: View {
   private var sidebarConfiguredView: some View {
     sidebarSheetsView
       .onAppear(perform: restoreExpandedState)
+      // The docked sidebar answers ⇧⌘[ / ⇧⌘] in Nous mode (the drawer copy
+      // stays passive so there is exactly one owner of the step).
+      .task(id: store.map(ObjectIdentifier.init)) {
+        guard publishesSceneActions else { return }
+        store?.nousStepHandler = { offset in stepNous(offset) }
+      }
+      .onDisappear {
+        if publishesSceneActions { store?.nousStepHandler = nil }
+      }
       .onChange(of: expanded) { _, newValue in
         expandedProjectsRaw = newValue.map(\.uuidString).sorted().joined(separator: "\n")
       }
@@ -357,7 +382,7 @@ struct SidebarView: View {
       Text(
         {
           switch organization {
-          case .byWorkspace: "Workspaces"
+          case .byWorkspace, .nous: "Workspaces"
           case .compact: "Agents"
           case .byProject: "Projects"
           }

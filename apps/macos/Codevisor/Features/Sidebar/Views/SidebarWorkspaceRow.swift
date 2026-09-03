@@ -18,6 +18,8 @@ struct SidebarWorkspaceRow: View {
   let onActivateSession: (ChatSession) -> Void
   let onArchive: () -> Void
   let onRename: () -> Void
+  /// Nous mode only: adds a tab to this workspace (the sidebar's ⌘T).
+  var onNewTab: (() -> Void)? = nil
 
   var body: some View {
     HoverableRow(
@@ -114,6 +116,15 @@ struct SidebarWorkspaceRow: View {
       }
     }
     .contextMenu {
+      if let onNewTab {
+        Button {
+          onNewTab()
+        } label: {
+          Label("New Tab", systemImage: "plus")
+            .labelStyle(.titleAndIcon)
+        }
+        Divider()
+      }
       Button {
         onRename()
       } label: {

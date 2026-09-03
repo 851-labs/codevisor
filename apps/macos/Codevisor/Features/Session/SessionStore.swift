@@ -3,6 +3,24 @@ import Observation
 import CodevisorCore
 import ACPKit
 
+/// What the sidebar asks a workspace's mounted container to do with its
+/// top tabs. The sidebar cannot act on tabs itself: a terminal or New Tab
+/// row has no chat to route through, and closing a tab runs the container's
+/// pane-close machinery (archiving chats, evicting leaves).
+struct CenterTabRequest: Equatable {
+  enum Action: Equatable {
+    case select(UUID)
+    case close(UUID)
+    case new
+    /// A pane row: the split leaf to bring forward (its tab comes along).
+    case selectLeaf(UUID)
+    case closeLeaf(UUID)
+  }
+
+  let workspaceId: UUID
+  let action: Action
+}
+
 /// Caches one `SessionController` per session id so an in-flight conversation
 /// survives navigation (e.g. the new-chat → session handoff) and re-selecting a
 /// session in the sidebar.
@@ -80,6 +98,20 @@ final class SessionStore {
   /// Whether this store's window is key. A selected chat behind Settings or
   /// another Codevisor window is not the focused chat.
   var isWindowFocused = false
+  /// Bumped by a mounted workspace container after it writes workspace
+  /// LAYOUT (tabs added/closed/moved/selected). The repository is not
+  /// observable; this is how the sidebar's Nous mode — which renders those
+  /// tabs as rows — learns to re-read.
+  var workspaceLayoutRevision = 0
+  /// A sidebar-originated tab instruction for one workspace's container
+  /// (Nous mode). Consumed by that container: through its routing task
+  /// when it mounts, or immediately when it is already on screen.
+  var centerTabRequest: CenterTabRequest?
+  /// Nous: ⇧⌘[ / ⇧⌘] step through the sidebar's flat pane list, across
+  /// workspaces. Installed by the docked sidebar (which owns that order
+  /// and the route change); returns false when it cannot answer, and the
+  /// container falls back to cycling its own tabs.
+  @ObservationIgnored var nousStepHandler: ((Int) -> Bool)?
   /// Session ids in access order, most recent last — drives controller
   /// eviction so browsing many sessions doesn't accumulate every transcript
   /// ever opened (conversations retain full tool outputs and diffs).

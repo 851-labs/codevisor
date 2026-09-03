@@ -47,6 +47,14 @@ struct SessionContainerView: View {
   /// The chat this container last published as focused, so `onDisappear`
   /// releases only its own focus (see the modifier in `body`).
   @State var publishedFocusCandidate: UUID?
+  @ClientPreference("sidebar.organization", default: SidebarOrganization.compact.rawValue)
+  private var sidebarOrganizationRaw
+
+  /// Nous: the sidebar lists this workspace's tabs, so the in-content
+  /// strip stays hidden and sidebar clicks drive tab selection here.
+  var isNousMode: Bool {
+    SidebarOrganization(rawValue: sidebarOrganizationRaw) == .nous
+  }
 
   var body: some View {
     contentColumn
@@ -84,6 +92,22 @@ struct SessionContainerView: View {
       }
       .onChange(of: environment.workspaceSync.revision, initial: true) { _, _ in
         synchronizeMountedPaneGroups()
+      }
+      // Every structural tab write bumps the local token; mirror it to the
+      // store so the Nous sidebar re-reads the repository.
+      .onChange(of: workspaceRevision) { _, _ in
+        store.workspaceLayoutRevision += 1
+      }
+      // A sidebar tab click while this workspace is already mounted.
+      // Requests that arrive with a route change are consumed by the
+      // routing task below instead; re-checking the store avoids acting
+      // twice when both observe the same request.
+      .onChange(of: store.centerTabRequest) { _, request in
+        guard let request, store.centerTabRequest == request,
+          request.workspaceId == store.workspace(for: session, project: project).id
+        else { return }
+        store.centerTabRequest = nil
+        performCenterTabRequest(request)
       }
       // Read = focus: publish the chat pane facing the user in this
       // window (selected pane of the active split leaf). The store
@@ -143,15 +167,43 @@ struct SessionContainerView: View {
           workspaceRevision += 1
           liveCenterTree = tab.root
         }
-        if let routedTabId = routedWorkspace.tabId(containingChat: session.id),
-          routedWorkspace.selectedCenterTabId != routedTabId
-        {
+        // A Nous sidebar click names the exact tab to show (a terminal or
+        // New Tab row has no chat of its own to route by); otherwise the
+        // routed chat's tab wins.
+        let pendingRequest = takeCenterTabRequest(for: routedWorkspace.id)
+        var requestedTabId: UUID?
+        var requestedLeafId: UUID?
+        switch pendingRequest?.action {
+        case let .select(tabId)? where routedWorkspace.centerTabs.contains(where: { $0.id == tabId }):
+          requestedTabId = tabId
+        case let .selectLeaf(leafId)?:
+          if let tab = routedWorkspace.centerTabs.first(where: { $0.root.group(id: leafId) != nil }) {
+            requestedTabId = tab.id
+            requestedLeafId = leafId
+          }
+        default:
+          break
+        }
+        let routedTabId = requestedTabId ?? routedWorkspace.tabId(containingChat: session.id)
+        if let routedTabId, routedWorkspace.selectedCenterTabId != routedTabId {
           routedWorkspace.selectedCenterTabId = routedTabId
           environment.workspaces.save(routedWorkspace)
           workspaceRevision += 1
           liveCenterTree = routedWorkspace.centerTree
         }
-        if let primaryLeaf = routedWorkspace.centerTree.groupId(containingChat: session.id) {
+        if requestedTabId != nil,
+          let requestedTab = routedWorkspace.selectedCenterTab,
+          let leafId = requestedLeafId
+            ?? (requestedTab.root.groupId(containingChat: session.id) == nil
+              ? requestedTab.activeLeafId : nil)
+        {
+          // A named pane, or a tab holding no routed chat: that leaf takes
+          // over, exactly as clicking its header would arrange it.
+          let model = configuredCenterModel(leafId: leafId)
+          activateLeaf(leafId)
+          model.selectedPane?.visibilityChanged(true)
+          DispatchQueue.main.async { model.focusSelectedPane() }
+        } else if let primaryLeaf = routedWorkspace.centerTree.groupId(containingChat: session.id) {
           let model = configuredCenterModel(leafId: primaryLeaf)
           if let chatPane = model.state.panes.first(where: {
             $0.kind == .chat && $0.chatSessionId == session.id
@@ -172,6 +224,12 @@ struct SessionContainerView: View {
           // keyboard target.
           _ = configuredCenterModel(leafId: firstLeaf)
           activateLeaf(firstLeaf)
+        }
+        switch pendingRequest?.action {
+        case .new?: addCenterTab()
+        case let .close(tabId)?: closeCenterTab(tabId)
+        case let .closeLeaf(leafId)?: closeLeaf(leafId)
+        default: break
         }
         // Upward focus feedback: clicking into any chat's composer
         // makes its group the active one (terminals do the same through
@@ -208,9 +266,19 @@ struct SessionContainerView: View {
   }
 
   /// Whether the center tab strip is on screen. Read by `contentColumn` to
-  /// decide whether the top hairline is still needed.
+  /// decide whether the top hairline is still needed. Nous moves the tabs
+  /// into the sidebar, so the strip never shows there.
   var isShowingCenterTabBar: Bool {
-    store.workspace(for: session, project: project).centerTabs.count > 1
+    !isNousMode && store.workspace(for: session, project: project).centerTabs.count > 1
+  }
+
+  /// Claims the sidebar's pending tab request if it targets this workspace.
+  func takeCenterTabRequest(for workspaceId: UUID) -> CenterTabRequest? {
+    guard let request = store.centerTabRequest, request.workspaceId == workspaceId else {
+      return nil
+    }
+    store.centerTabRequest = nil
+    return request
   }
 
   /// The session content: a browser-style tab bar above the selected
@@ -227,7 +295,7 @@ struct SessionContainerView: View {
     let workspace = store.workspace(for: session, project: project)
     let bottomGroup = store.paneGroup(for: session, project: project)
     return VStack(spacing: 0) {
-      if workspace.centerTabs.count > 1 {
+      if isShowingCenterTabBar {
         WorkspaceTabBar(
           tabs: workspace.centerTabs,
           selectedTabId: workspace.selectedCenterTabId,
