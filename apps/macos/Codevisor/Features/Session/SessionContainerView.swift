@@ -317,6 +317,7 @@ struct SessionContainerView: View {
       SessionScreen(
         controller: controller,
         paneGroup: bottomGroup,
+        isBottomPanelEnabled: !isNousMode,
         centerGroup: activeCenterModel(in: workspace),
         focus: sessionFocus,
         centerTree: liveCenterTree ?? workspace.centerTree,

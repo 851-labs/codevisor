@@ -11,6 +11,11 @@ struct SessionScreen: View {
   @Bindable var controller: SessionController
   /// The ⌘J bottom panel's pane group.
   var paneGroup: PaneGroupModel
+  /// Nous mode turns the bottom panel off: it neither renders nor answers
+  /// ⌘J (every toggle path — menu, focused terminal, focus-controller
+  /// relay — ends in `togglePanes`, the one guard). Its persisted state is
+  /// left alone, so leaving the mode brings the panel back as it was.
+  var isBottomPanelEnabled = true
   /// The center pane group: the chat pane plus any terminals opened (or
   /// dropped) beside it. Always visible — it IS the page content. Its tab
   /// strip is hosted by the container in the window's top bar.
@@ -47,7 +52,7 @@ struct SessionScreen: View {
       // The bottom panel (tab bar + selected pane) mounts only while
       // open. ⌘J and View ▸ Toggle Bottom Panel bring it back; the
       // bar's top edge is the resize handle.
-      if paneGroup.state.isVisible {
+      if isBottomPanelEnabled && paneGroup.state.isVisible {
         VStack(spacing: 0) {
           PaneGroupBar(
             group: paneGroup,
@@ -73,11 +78,13 @@ struct SessionScreen: View {
       .frame(width: 0, height: 0)
     )
     .animation(Motion.panel(reduceMotion: reduceMotion), value: paneGroup.state.isVisible)
+    // Nil while disabled so View ▸ Toggle Bottom Panel greys out rather
+    // than silently doing nothing.
     .focusedSceneValue(
       \.terminalToggle,
-      TerminalToggleAction(sessionId: paneGroup.sessionId) {
-        togglePanes()
-      }
+      isBottomPanelEnabled
+        ? TerminalToggleAction(sessionId: paneGroup.sessionId) { togglePanes() }
+        : nil
     )
     // (Background-task terminal tabs are synced by the WORKSPACE
     // container across every chat's controller — a per-chat sync here
@@ -164,6 +171,7 @@ struct SessionScreen: View {
   /// Toggles the pane group's content and moves keyboard focus to match
   /// (selected pane on open, composer on close).
   private func togglePanes() {
+    guard isBottomPanelEnabled else { return }
     let target = paneGroup.toggle()
     // Defer focus until SwiftUI has mounted/removed the panel.
     DispatchQueue.main.async { focus.apply(target) }
