@@ -241,6 +241,36 @@ extension SidebarView {
     selection = target
   }
 
+  /// ⇧⌘[ / ⇧⌘] from the content column, routed by
+  /// `SessionStore.sidebarStepHandler`: each organization that lists rows in
+  /// a single keyboard order answers for itself. False lets the container
+  /// cycle its own tabs.
+  func stepSidebar(_ offset: Int) -> Bool {
+    switch organization {
+    case .nous: stepNous(offset)
+    case .compact: stepAgents(offset)
+    case .byWorkspace, .byProject: false
+    }
+  }
+
+  /// Agents: moves to the previous/next chat in the flat chronological list,
+  /// stopping at either end (no wrap). False when the routed chat is not
+  /// listed (filtered out, or a new-chat placeholder is selected).
+  func stepAgents(_ offset: Int) -> Bool {
+    guard organization == .compact else { return false }
+    let items = chronologicalSessions
+    guard !items.isEmpty,
+      case .session(let serverId, let id)? = selection,
+      let current = items.firstIndex(where: { $0.id == .session(serverId: serverId, id: id) })
+    else { return false }
+    let targetIndex = current + offset
+    // At the end of the list the key is consumed but nothing moves — the
+    // container must not fall back to wrapping within its own tabs.
+    guard items.indices.contains(targetIndex) else { return true }
+    activateSession(items[targetIndex].session)
+    return true
+  }
+
   @ViewBuilder
   private func reorderableSessionRow(_ session: ChatSession) -> some View {
     if order == .none {

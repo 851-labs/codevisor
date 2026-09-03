@@ -317,14 +317,14 @@ struct SidebarView: View {
   private var sidebarConfiguredView: some View {
     sidebarSheetsView
       .onAppear(perform: restoreExpandedState)
-      // The docked sidebar answers ⇧⌘[ / ⇧⌘] in Nous mode (the drawer copy
-      // stays passive so there is exactly one owner of the step).
+      // The docked sidebar answers ⇧⌘[ / ⇧⌘] in Nous and Agents mode (the
+      // drawer copy stays passive so there is exactly one owner of the step).
       .task(id: store.map(ObjectIdentifier.init)) {
         guard publishesSceneActions else { return }
-        store?.nousStepHandler = { offset in stepNous(offset) }
+        store?.sidebarStepHandler = { offset in stepSidebar(offset) }
       }
       .onDisappear {
-        if publishesSceneActions { store?.nousStepHandler = nil }
+        if publishesSceneActions { store?.sidebarStepHandler = nil }
       }
       .onChange(of: expanded) { _, newValue in
         expandedProjectsRaw = newValue.map(\.uuidString).sorted().joined(separator: "\n")

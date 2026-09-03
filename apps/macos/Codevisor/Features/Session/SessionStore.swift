@@ -116,11 +116,12 @@ final class SessionStore {
   /// (Nous mode). Consumed by that container: through its routing task
   /// when it mounts, or immediately when it is already on screen.
   var centerTabRequest: CenterTabRequest?
-  /// Nous: ⇧⌘[ / ⇧⌘] step through the sidebar's flat pane list, across
-  /// workspaces. Installed by the docked sidebar (which owns that order
-  /// and the route change); returns false when it cannot answer, and the
-  /// container falls back to cycling its own tabs.
-  @ObservationIgnored var nousStepHandler: ((Int) -> Bool)?
+  /// ⇧⌘[ / ⇧⌘] step through the sidebar rows instead of the container's
+  /// tabs: Nous walks the flat pane list across workspaces, Agents walks
+  /// the chronological chat list. Installed by the docked sidebar (which
+  /// owns that order and the route change); returns false when it cannot
+  /// answer, and the container falls back to cycling its own tabs.
+  @ObservationIgnored var sidebarStepHandler: ((Int) -> Bool)?
   /// Panes the user closed, newest last, per workspace — what ⌘⇧T brings
   /// back. In memory only: the archive is the durable recovery for chats;
   /// this is the browser-style undo for the current run.

@@ -56,6 +56,16 @@ struct SessionContainerView: View {
     SidebarOrganization(rawValue: sidebarOrganizationRaw) == .nous
   }
 
+  /// Nous and Agents hand ⇧⌘[ / ⇧⌘] to the sidebar (see
+  /// `SessionStore.sidebarStepHandler`); the other organizations keep the
+  /// keys on this workspace's own tabs.
+  var stepsSidebarRows: Bool {
+    switch SidebarOrganization(rawValue: sidebarOrganizationRaw) {
+    case .nous, .compact: true
+    default: false
+    }
+  }
+
   var body: some View {
     contentColumn
       // The NATIVE toolbar names the workspace — editable inline, like a
