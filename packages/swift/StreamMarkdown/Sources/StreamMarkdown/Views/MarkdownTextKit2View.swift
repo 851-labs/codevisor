@@ -8,7 +8,7 @@
   /// `layoutManager` property. That keeps viewport-based, noncontiguous text
   /// layout enabled for the lifetime of the surface.
   @MainActor
-  final class MarkdownTextKit2View: NSTextView, NSTextViewDelegate {
+  final class MarkdownTextKit2View: TranscriptSurfaceTextView, NSTextViewDelegate {
     private lazy var markdownLayoutDelegate = MarkdownTextLayoutDelegate()
     /// NSTextLayoutManager keeps a weak reference to its content manager;
     /// the view owns the TextKit 2 root for the lifetime of the surface.
@@ -205,31 +205,55 @@
       (textElement as? NSTextParagraph)?.attributedString
     }
 
+    /// A layout fragment is one paragraph, and a quote decorates whole
+    /// paragraphs (including the spacing runs between them), so the bar
+    /// covers the fragment's full frame. Fragments tile the container, so
+    /// consecutive quoted paragraphs join into one rule with no seam.
     private func drawQuoteBars(at point: CGPoint, in context: CGContext) {
-      guard let attributedText else { return }
-      for line in textLineFragments {
-        let range = validRange(line.characterRange, in: attributedText)
-        guard range.length > 0,
-          let decoration = attributedText.attribute(
-            .streamMarkdownQuoteDecoration,
-            at: range.location,
-            effectiveRange: nil
-          ) as? TextKitQuoteDecoration
-        else { continue }
+      guard let decoration = quoteDecoration else { return }
+      let origin = CGPoint(x: point.x - layoutFragmentFrame.minX, y: point.y)
+      for rect in quoteBarRects(decoration) {
+        TextKitQuoteBarPainter.fill(
+          rect.offsetBy(dx: origin.x, dy: origin.y),
+          color: decoration.color,
+          in: context
+        )
+      }
+    }
 
-        context.saveGState()
-        context.setFillColor(decoration.color.cgColor)
-        for offset in decoration.barOffsets {
-          context.fill(
-            CGRect(
-              x: point.x + offset,
-              y: point.y + line.typographicBounds.minY,
-              width: decoration.barWidth,
-              height: line.typographicBounds.height
-            )
-          )
-        }
-        context.restoreGState()
+    /// The bars sit at the container's left edge, outside the indented
+    /// paragraph frame — and a spacing run between quoted paragraphs has a
+    /// zero-width frame. TextKit 2 culls and invalidates fragments by these
+    /// bounds, so without the bars declared here the spacers are never
+    /// drawn (gaps) and partial redraws re-composite the translucent bar
+    /// over itself (darker bands).
+    override var renderingSurfaceBounds: CGRect {
+      var bounds = super.renderingSurfaceBounds
+      guard let decoration = quoteDecoration else { return bounds }
+      for rect in quoteBarRects(decoration) {
+        bounds = bounds.union(rect.offsetBy(dx: -layoutFragmentFrame.minX, dy: 0))
+      }
+      return bounds
+    }
+
+    private var quoteDecoration: TextKitQuoteDecoration? {
+      guard let attributedText, attributedText.length > 0 else { return nil }
+      return attributedText.attribute(
+        .streamMarkdownQuoteDecoration,
+        at: 0,
+        effectiveRange: nil
+      ) as? TextKitQuoteDecoration
+    }
+
+    /// Bar rects in container coordinates for this fragment's vertical span.
+    private func quoteBarRects(_ decoration: TextKitQuoteDecoration) -> [CGRect] {
+      decoration.barOffsets.map { offset in
+        CGRect(
+          x: offset,
+          y: 0,
+          width: decoration.barWidth,
+          height: layoutFragmentFrame.height
+        )
       }
     }
 

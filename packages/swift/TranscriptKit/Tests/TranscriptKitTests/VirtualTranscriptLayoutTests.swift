@@ -3,6 +3,25 @@ import Testing
 @testable import TranscriptKit
 
 struct VirtualTranscriptLayoutTests {
+  @Test func indexNearestToOffsetUsesTopDownRowEdges() {
+    // Rows: a 0..100, spacing 20, b 120..320, spacing 20, c 340..640, d 660..1060.
+    let layout = VirtualTranscriptLayout(items: items, measuredHeights: [:], spacing: 20)
+    #expect(layout.index(nearestToOffset: -50) == 0)
+    #expect(layout.index(nearestToOffset: 0) == 0)
+    #expect(layout.index(nearestToOffset: 99) == 0)
+    // Inside a row near the bottom of the document, where bottom-anchored
+    // offsets would otherwise point at the following row.
+    #expect(layout.index(nearestToOffset: 345) == 2)
+    #expect(layout.index(nearestToOffset: 700) == 3)
+    // Spacing belongs to the nearer row.
+    #expect(layout.index(nearestToOffset: 105) == 0)
+    #expect(layout.index(nearestToOffset: 115) == 1)
+    #expect(layout.index(nearestToOffset: 5000) == 3)
+    #expect(
+      VirtualTranscriptLayout(items: [], measuredHeights: [:], spacing: 20)
+        .index(nearestToOffset: 10) == nil)
+  }
+
   @Test func itemSpacingOverridesKeepBlocksGrouped() {
     let layout = VirtualTranscriptLayout(
       items: [

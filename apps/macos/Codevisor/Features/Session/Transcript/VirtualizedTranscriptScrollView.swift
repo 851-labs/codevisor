@@ -78,6 +78,8 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   var layoutFingerprint = 0
 
   var mountedHosts: [String: TranscriptMountedRowHost] = [:]
+  /// The transcript-wide text selection; see `+Selection.swift`.
+  let textSelection = TranscriptSelectionState()
   var recycledHosts: [TranscriptRowHost] = []
   /// Detached hosts remain immediately reusable. Hosts exceeding the warm
   /// pool are released one at a time after the gesture.
@@ -254,6 +256,12 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   /// controller's type-to-focus monitor.
   override var acceptsFirstResponder: Bool { true }
 
+  /// `NSScrollView` passes first-responder status on to its document view
+  /// and, when that view declines, leaves the window as first responder.
+  /// The transcript must hold focus itself so Copy and Select All reach the
+  /// transcript-wide selection.
+  override func becomeFirstResponder() -> Bool { true }
+
   override init(frame frameRect: NSRect) {
     super.init(frame: frameRect)
     streamingTextFrameClock.setFrameRequester { [weak self] in
@@ -384,6 +392,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
       interruptSendPresentation()
       isDetaching = true
       uninstallPresentationFrameDriver()
+      uninstallSelectionMouseMonitor()
     } else if newWindow != nil {
       isDetaching = false
     }
@@ -394,7 +403,28 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     super.viewDidMoveToWindow()
     if window != nil {
       installPresentationFrameDriver()
+      installSelectionMouseMonitor()
     }
+  }
+
+  /// Focus moving anywhere else (composer, a native link click inside a
+  /// surface) dismisses the selection, matching the surfaces' own behavior
+  /// so old highlights never accumulate across the transcript.
+  override func resignFirstResponder() -> Bool {
+    let resigned = super.resignFirstResponder()
+    if resigned, textSelection.selection != nil {
+      clearTranscriptSelection()
+    }
+    return resigned
+  }
+
+  /// A click on the clip view outside the document (a short transcript)
+  /// never reaches a row; it still dismisses the selection.
+  override func mouseDown(with event: NSEvent) {
+    if textSelection.selection != nil {
+      clearTranscriptSelection()
+    }
+    super.mouseDown(with: event)
   }
 
   override func layout() {
@@ -434,6 +464,10 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   }
 
   override func keyDown(with event: NSEvent) {
+    if event.keyCode == 53, textSelection.selection != nil {  // Escape
+      clearTranscriptSelection()
+      return
+    }
     let scrollKeys: Set<UInt16> = [115, 116, 119, 121, 123, 124, 125, 126]
     guard scrollKeys.contains(event.keyCode) else {
       super.keyDown(with: event)

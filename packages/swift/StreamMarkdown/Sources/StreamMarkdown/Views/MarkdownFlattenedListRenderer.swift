@@ -9,7 +9,7 @@
   enum MarkdownFlattenedListRenderer {
     private static let listIndent: CGFloat = 24
     private static let listMarkerWidth: CGFloat = 22
-    private static let quoteIndent: CGFloat = 11
+    private static let quoteIndent = MarkdownFragmentMetrics.quoteIndent
 
     private struct RenderContext {
       var contentIndent: CGFloat = 0

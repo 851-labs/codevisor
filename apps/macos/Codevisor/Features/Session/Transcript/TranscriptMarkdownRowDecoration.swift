@@ -120,14 +120,20 @@ final class TranscriptMarkdownRowDecoration: NSView {
       chunk.container == .planDocument && chunk.isLastInDocument
       ? TranscriptMarkdownRowLayout.planBottomInset
       : 0
-    NSColor(style.markdown.quoteBarColor).setFill()
-    for depth in 0..<fragment.quoteDepth {
-      NSRect(
-        x: planInset + CGFloat(depth) * MarkdownFragmentMetrics.quoteIndent,
-        y: 0,
-        width: MarkdownFragmentMetrics.quoteBarWidth,
-        height: max(1, bounds.height - planBottom)
-      ).fill()
+    if let context = NSGraphicsContext.current?.cgContext {
+      let color = NSColor(style.markdown.quoteBarColor)
+      for depth in 0..<fragment.quoteDepth {
+        TextKitQuoteBarPainter.fill(
+          NSRect(
+            x: planInset + CGFloat(depth) * MarkdownFragmentMetrics.quoteIndent,
+            y: 0,
+            width: MarkdownFragmentMetrics.quoteBarWidth,
+            height: max(1, bounds.height - planBottom)
+          ),
+          color: color,
+          in: context
+        )
+      }
     }
 
     let markerAttributes: [NSAttributedString.Key: Any] = [

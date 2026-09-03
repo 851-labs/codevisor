@@ -234,6 +234,13 @@
       builtWidth = bounds.width
     }
 
+    override func transcriptPlainText(in range: NSRange) -> String {
+      guard let storage = textStorage, let tsv = Self.tsv(from: storage, in: range) else {
+        return super.transcriptPlainText(in: range)
+      }
+      return tsv
+    }
+
     override func writeSelection(
       to pboard: NSPasteboard, types: [NSPasteboard.PasteboardType]
     ) -> Bool {

@@ -210,8 +210,9 @@ struct SelectableTextViewTests {
     )
 
     #expect(level1Decoration.barOffsets == [0])
-    #expect(level2Decoration.barOffsets == [0, 11])
-    #expect(level2Style.headIndent == 22)
+    let indent = MarkdownFragmentMetrics.quoteIndent
+    #expect(level2Decoration.barOffsets == [0, indent])
+    #expect(level2Style.headIndent == 2 * indent)
   }
 
   @Test("Quotes inside lists preserve marker and quote indentation")
@@ -253,7 +254,7 @@ struct SelectableTextViewTests {
     )
 
     #expect(decoration.barOffsets == [22])
-    #expect(style.headIndent == 33)
+    #expect(style.headIndent == 22 + MarkdownFragmentMetrics.quoteIndent)
   }
 
   @Test("Content updates preserve and clamp selection")

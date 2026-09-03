@@ -161,6 +161,28 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
 
   public var isEmpty: Bool { keys.isEmpty }
 
+  /// The row containing `offset` (measured from the top of the first row).
+  /// Spacing between two rows belongs to the nearer one, and offsets above
+  /// or below the transcript clamp to its first and last row. `bottomOffsets`
+  /// is bottom-anchored, so the bottom edge is derived from `heights` here.
+  public func index(nearestToOffset offset: CGFloat) -> Int? {
+    guard !keys.isEmpty else { return nil }
+    if offset <= topOffsets[0] { return 0 }
+    var low = 0
+    var high = keys.count - 1
+    while low < high {
+      let mid = (low + high + 1) / 2
+      if topOffsets[mid] <= offset { low = mid } else { high = mid - 1 }
+    }
+    let bottom = topOffsets[low] + heights[low]
+    if offset > bottom, low + 1 < keys.count,
+      offset - bottom > topOffsets[low + 1] - offset
+    {
+      return low + 1
+    }
+    return low
+  }
+
   public func frame(at index: Int) -> CGRect {
     guard keys.indices.contains(index) else { return .zero }
     return CGRect(x: 0, y: topOffsets[index], width: 0, height: heights[index])

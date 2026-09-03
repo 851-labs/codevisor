@@ -23,7 +23,7 @@
     private let copyButton = NSButton()
     private let divider = NSBox()
     private let scrollView = TranscriptHorizontalScrollView()
-    private let codeTextView = NSTextView(usingTextLayoutManager: true)
+    private let codeTextView = TranscriptSurfaceTextView(usingTextLayoutManager: true)
     private var highlightTask: Task<Void, Never>?
     private var copyResetTask: Task<Void, Never>?
     private var contentSize = CGSize(width: 1, height: 1)

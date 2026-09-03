@@ -78,6 +78,32 @@
       return measuredHeight
     }
 
+    /// The text of each selectable surface `setContent` would create for
+    /// `blocks`, in order. Lets the transcript copy rows that are currently
+    /// unmounted using exactly the surface structure a mounted row has.
+    public static func plainTextSurfaces(
+      blocks: [MarkdownBlock],
+      theme: MarkdownTheme
+    ) -> [String] {
+      if MarkdownTextRunRenderer.canRenderAsTextRun(blocks) {
+        return [NativeMarkdownTextContentView.attributedText(for: blocks, theme: theme).string]
+      }
+      return blocks.compactMap { block in
+        switch block {
+        case .heading, .paragraph, .bulletList, .orderedList, .blockQuote, .list:
+          return NativeMarkdownTextContentView.attributedText(for: [block], theme: theme).string
+        case let .codeBlock(_, code, _):
+          return code
+        case let .table(headers, _, rows):
+          return ([headers] + rows)
+            .map { $0.map(\.plainText).joined(separator: "\t") }
+            .joined(separator: "\n")
+        case .thematicBreak:
+          return nil
+        }
+      }
+    }
+
     public override func layout() {
       super.layout()
       if contentViews.count == 1, let view = contentViews.first {
@@ -193,7 +219,7 @@
       textView.frame = bounds
     }
 
-    private static func attributedText(
+    static func attributedText(
       for blocks: [MarkdownBlock],
       theme: MarkdownTheme
     ) -> NSAttributedString {

@@ -409,10 +409,10 @@ struct MarkdownBlockView: View {
 
   @ViewBuilder
   private func quoteFallback(_ blocks: [MarkdownBlock]) -> some View {
-    HStack(spacing: 8) {
+    HStack(spacing: MarkdownFragmentMetrics.quoteIndent - MarkdownFragmentMetrics.quoteBarWidth) {
       Rectangle()
         .fill(theme.quoteBarColor)
-        .frame(width: 3)
+        .frame(width: MarkdownFragmentMetrics.quoteBarWidth)
       recursiveQuote(blocks)
     }
     .fixedSize(horizontal: false, vertical: true)

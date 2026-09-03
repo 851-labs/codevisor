@@ -221,4 +221,46 @@ struct SettledMarkdownViewTests {
 
     #expect(delta <= 1)
   }
+
+  @Test("Adjacent translucent quote bar pieces tile without seams at 2x")
+  func quoteBarPiecesTileWithoutSeams() throws {
+    let scale: CGFloat = 2
+    let width = 8, height = 80
+    let context = try #require(
+      CGContext(
+        data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+        space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    context.scaleBy(x: scale, y: scale)
+    let color = NSColor(white: 1, alpha: 0.2)
+    // Three pieces with fractional shared edges, as line/layout fragments produce.
+    for (top, bottom) in [(0.0, 10.3), (10.3, 21.7), (21.7, 30.0)] {
+      TextKitQuoteBarPainter.fill(
+        CGRect(x: 1, y: top, width: 2, height: bottom - top), color: color, in: context)
+    }
+    let data = try #require(context.data).assumingMemoryBound(to: UInt8.self)
+    let column = 2 * Int(scale) + 1  // inside the 2pt bar
+    let alphas = (0..<height).map { row in data[(row * width + column) * 4 + 3] }
+    let covered = alphas.filter { $0 > 0 }
+    #expect(covered.count == Int(30 * scale))
+    // No pixel composited twice (darker) or missed (lighter) inside the bar.
+    #expect(Set(covered).count == 1, "seam values: \(Set(covered))")
+  }
+
+  @Test("Every character of a multi-paragraph quote carries the bar decoration")
+  func quoteDecorationCoversSpacingBetweenParagraphs() {
+    let text = MarkdownTextRunRenderer.attributedString(
+      for: [.blockQuote([.paragraph("First paragraph."), .paragraph("Second paragraph.")])],
+      theme: .default,
+      foregroundColor: .primary
+    )
+    var uncovered = 0
+    text.enumerateAttribute(
+      .streamMarkdownQuoteDecoration,
+      in: NSRange(location: 0, length: text.length)
+    ) { value, range, _ in
+      if value == nil { uncovered += range.length }
+    }
+    #expect(text.length > 0)
+    #expect(uncovered == 0)
+  }
 }

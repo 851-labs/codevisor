@@ -74,6 +74,7 @@ extension VirtualizedTranscriptScrollView {
     }
     synchronizePendingSendHistoryPositions()
     synchronizeSendAssistantVisibility()
+    refreshSelectionHighlightsIfNeeded()
   }
 
   func reconcileVirtualWindow(
@@ -386,6 +387,7 @@ extension VirtualizedTranscriptScrollView {
   }
 
   func storeDetachedHost(_ host: TranscriptMountedRowHost, for key: String) {
+    selectionHostWillDetach(host, key: key)
     host.onHeightChange = nil
     host.layer?.removeAnimation(forKey: Self.disclosureExitAnimationKey)
     host.layer?.removeAnimation(forKey: Self.disclosureCollapseAnimationKey)
@@ -485,6 +487,7 @@ extension VirtualizedTranscriptScrollView {
     for key in replacementKeys {
       replaceMountedHost(for: key)
     }
+    refreshSelectionHighlightsIfNeeded()
   }
 
   /// A response becoming settled is a data transition, not a new visual

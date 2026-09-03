@@ -7,7 +7,7 @@
   import SwiftUI
 
   @MainActor
-  open class TranscriptSelectableTextView: NSTextView {
+  open class TranscriptSelectableTextView: TranscriptSurfaceTextView {
     private struct LinkHit {
       let value: Any
       let range: NSRange
@@ -104,7 +104,7 @@
       updateLinkHover(at: nil)
     }
 
-    public override func mouseDown(with event: NSEvent) {
+    public override func nativeMouseDown(with event: NSEvent) {
       let point = convert(event.locationInWindow, from: nil)
       if event.clickCount == 1,
         event.modifierFlags.intersection([.shift, .command, .option, .control]).isEmpty,
@@ -129,7 +129,7 @@
         mouseSelectionAnchor = nil
       }
 
-      super.mouseDown(with: event)
+      super.nativeMouseDown(with: event)
 
       // NSTextView usually tracks the entire drag inside mouseDown. Keep the
       // mouseDragged/mouseUp overrides below as well for OS versions that
@@ -142,15 +142,15 @@
       }
     }
 
-    public override func mouseDragged(with event: NSEvent) {
-      super.mouseDragged(with: event)
+    public override func nativeMouseDragged(with event: NSEvent) {
+      super.nativeMouseDragged(with: event)
       let point = convert(event.locationInWindow, from: nil)
       correctVisualLineEndSelection(at: point)
       cancelPendingServerFileLinkIfDragged(to: point)
     }
 
-    public override func mouseUp(with event: NSEvent) {
-      super.mouseUp(with: event)
+    public override func nativeMouseUp(with event: NSEvent) {
+      super.nativeMouseUp(with: event)
       let point = convert(event.locationInWindow, from: nil)
       correctVisualLineEndSelection(at: point)
       finishMouseSelectionRepaint()
@@ -221,6 +221,12 @@
 
     private func linkRange(at viewPoint: NSPoint) -> NSRange? {
       linkHit(at: viewPoint)?.range
+    }
+
+    /// Glyph-precise: the transcript-wide selection only yields to native
+    /// handling when the pointer is actually over link glyphs.
+    public override func transcriptLinkHitTest(at point: NSPoint) -> Bool {
+      linkHit(at: point) != nil
     }
 
     private func linkHit(at viewPoint: NSPoint) -> LinkHit? {
