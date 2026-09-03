@@ -209,6 +209,16 @@ public final class WorkspaceSyncModel {
     }
     if active.contains(where: { $0.id == anchorSessionId }) { return .keep }
     if let replacement = active.first { return .selectSession(replacement.id) }
+    // No live chat left, but the workspace still shows a terminal or
+    // plugin pane: it stays listed (Nous lists those tabs as rows) and a
+    // session route is the only way to mount it, so the archived anchor
+    // still routed to it keeps the route. A workspace reduced to the New
+    // Tab placeholder is dismissed as before.
+    if workspace.hasOpenNonChatContent,
+      repository.workspaceId(forSession: anchorSessionId) == workspaceId
+    {
+      return .keep
+    }
     return .dismiss
   }
 }

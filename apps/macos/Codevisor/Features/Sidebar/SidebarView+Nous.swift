@@ -328,15 +328,3 @@ struct NousTabRenameAlert: ViewModifier {
       }
   }
 }
-
-extension Workspace {
-  /// Whether any center tab shows something other than the New Tab
-  /// placeholder that is not a chat (a terminal or plugin pane).
-  var hasOpenNonChatContent: Bool {
-    centerTabs.contains { tab in
-      tab.root.allGroups.contains { group in
-        group.state.panes.contains { $0.kind == .terminal || $0.kind == .plugin }
-      }
-    }
-  }
-}
