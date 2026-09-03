@@ -26,7 +26,7 @@ struct LongListStory: View {
 
   var body: some View {
     Autocomplete.Root(highlight: highlight, onDismiss: { query = "" }) {
-      Autocomplete.Input(text: $query, prompt: "Filter items")
+      Autocomplete.Input(text: $query, prompt: "Search")
       Autocomplete.List(height: listHeight) {
         if matches.isEmpty {
           Autocomplete.Empty("No matching items")

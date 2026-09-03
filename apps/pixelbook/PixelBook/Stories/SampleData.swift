@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// A flat item for the plain stories.
 struct Language: Identifiable, Hashable {
@@ -10,9 +11,8 @@ struct Language: Identifiable, Hashable {
 struct Command: Identifiable, Hashable {
   let id: String
   let title: String
-  let detail: String
   let symbol: String
-  let shortcut: String?
+  let shortcut: KeyboardShortcut?
 }
 
 /// Grouped items for the group, favorites, and footer stories.
@@ -40,24 +40,16 @@ enum SampleData {
   ].map(Language.init(id:))
 
   static let commands = [
+    Command(id: "new-chat", title: "New Chat", symbol: "plus.bubble", shortcut: KeyboardShortcut("n")),
+    Command(id: "open-project", title: "Open Project…", symbol: "folder", shortcut: KeyboardShortcut("o")),
+    Command(id: "toggle-sidebar", title: "Toggle Sidebar", symbol: "sidebar.left", shortcut: KeyboardShortcut("0")),
     Command(
-      id: "new-chat", title: "New Chat", detail: "Start a conversation in this project", symbol: "plus.bubble",
-      shortcut: "⌘N"),
-    Command(
-      id: "open-project", title: "Open Project…", detail: "Add a repository to the sidebar", symbol: "folder",
-      shortcut: "⌘O"),
-    Command(
-      id: "toggle-sidebar", title: "Toggle Sidebar", detail: "Show or hide the navigator", symbol: "sidebar.left",
-      shortcut: "⌘0"),
-    Command(
-      id: "compact", title: "Compact Transcript", detail: "Summarize to free context",
-      symbol: "arrow.down.right.and.arrow.up.left", shortcut: nil),
-    Command(
-      id: "review", title: "Review Diff", detail: "Ask the harness for a code review",
-      symbol: "checkmark.rectangle.stack", shortcut: nil),
-    Command(
-      id: "settings", title: "Settings…", detail: "Harnesses, machines, appearance", symbol: "gearshape", shortcut: "⌘,"
+      id: "previous-tab", title: "Previous Tab", symbol: "arrow.left.square",
+      shortcut: KeyboardShortcut("[", modifiers: [.command, .shift])
     ),
+    Command(id: "compact", title: "Compact Transcript", symbol: "arrow.down.right.and.arrow.up.left", shortcut: nil),
+    Command(id: "review", title: "Review Diff", symbol: "checkmark.rectangle.stack", shortcut: nil),
+    Command(id: "settings", title: "Settings…", symbol: "gearshape", shortcut: KeyboardShortcut(",")),
   ]
 
   static let harnesses = [

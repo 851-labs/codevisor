@@ -42,7 +42,7 @@
       ///     first responder.
       public init(
         text: Binding<String>,
-        prompt: String = "Filter",
+        prompt: String = "Search",
         accessibilityLabel: String? = nil,
         focusesOnAppear: Bool = false,
         focus: InputFocus? = nil

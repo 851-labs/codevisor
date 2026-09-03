@@ -106,10 +106,29 @@ struct NewTabPageView: View {
           Autocomplete.Empty("No matching options")
         }
         ForEach(matches) { option in
-          Autocomplete.Item(id: option.id, action: { open(option) }) { _ in
-            HStack(spacing: 8) {
-              icon(for: option)
-                .frame(width: 18, height: 18)
+          switch option.kind {
+          case .chat:
+            Autocomplete.Item(id: option.id, icon: Image(systemName: "text.bubble"), action: { open(option) }) { _ in
+              Text(option.title)
+            }
+          case .terminal:
+            Autocomplete.Item(id: option.id, icon: Image(systemName: "terminal"), action: { open(option) }) { _ in
+              Text(option.title)
+            }
+          case let .plugin(pluginId, paneType, iconPath):
+            Autocomplete.Item(id: option.id, action: { open(option) }) {
+              if let client {
+                PluginIconView(
+                  pluginId: pluginId,
+                  paneType: paneType,
+                  iconPath: iconPath,
+                  client: client,
+                  cacheNamespace: iconCacheNamespace
+                )
+              } else {
+                Image(systemName: "puzzlepiece.extension")
+              }
+            } label: { _ in
               Text(option.title)
             }
           }
@@ -120,28 +139,6 @@ struct NewTabPageView: View {
     .composerGlassSurface(cornerRadius: Self.popupCornerRadius)
     .accessibilityElement(children: .contain)
     .accessibilityLabel("New tab")
-  }
-
-  @ViewBuilder
-  private func icon(for option: NewTabOption) -> some View {
-    switch option.kind {
-    case .chat:
-      Image(systemName: "text.bubble")
-    case .terminal:
-      Image(systemName: "terminal")
-    case let .plugin(pluginId, paneType, iconPath):
-      if let client {
-        PluginIconView(
-          pluginId: pluginId,
-          paneType: paneType,
-          iconPath: iconPath,
-          client: client,
-          cacheNamespace: iconCacheNamespace
-        )
-      } else {
-        Image(systemName: "puzzlepiece.extension")
-      }
-    }
   }
 
   private func open(_ option: NewTabOption) {

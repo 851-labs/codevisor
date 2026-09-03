@@ -26,8 +26,10 @@
     /// background, hover reporting, keyboard acceptance, and an optional
     /// trailing accessory that sits outside the row's button so it can be a
     /// control of its own.
-    struct Item<ID: Hashable, Label: View, Accessory: View>: View {
+    struct Item<ID: Hashable, Icon: View, Label: View, Accessory: View>: View {
       let id: ID
+      let icon: Icon?
+      let shortcut: KeyboardShortcut?
       let isSelected: Bool
       let isDisabled: Bool
       let accessibilityAction: ItemAction?
@@ -40,22 +42,75 @@
       @Environment(Highlight<ID>.self) private var highlight
       @State private var isHovering = false
 
+      /// - Parameters:
+      ///   - shortcut: The key equivalent shown dimmed at the trailing edge —
+      ///     the same value the host binds with `keyboardShortcut`.
+      ///   - icon: A leading glyph in a fixed slot, so titles align whether
+      ///     or not every row has one. Any view; see the `Image` overloads
+      ///     for the common case.
       public init(
         id: ID,
+        shortcut: KeyboardShortcut? = nil,
         isSelected: Bool = false,
         isDisabled: Bool = false,
         accessibilityAction: ItemAction? = nil,
         action: @escaping () -> Void,
+        @ViewBuilder icon: () -> Icon,
         @ViewBuilder label: @escaping (ItemContext) -> Label,
         @ViewBuilder accessory: @escaping (ItemContext) -> Accessory
       ) {
         self.id = id
+        self.icon = icon()
+        self.shortcut = shortcut
         self.isSelected = isSelected
         self.isDisabled = isDisabled
         self.accessibilityAction = accessibilityAction
         self.action = action
         self.label = label
         self.accessory = accessory
+      }
+
+      /// "⌘N", "⇧⌘[", "⌃⌥⌘←" — modifiers in the order the menu bar uses.
+      static func symbols(for shortcut: KeyboardShortcut) -> String {
+        var text = ""
+        let modifiers = shortcut.modifiers
+        if modifiers.contains(.control) { text += "⌃" }
+        if modifiers.contains(.option) { text += "⌥" }
+        if modifiers.contains(.shift) { text += "⇧" }
+        if modifiers.contains(.command) { text += "⌘" }
+        return text + keySymbol(for: shortcut.key)
+      }
+
+      static func accessibilityDescription(for shortcut: KeyboardShortcut) -> String {
+        var parts: [String] = []
+        let modifiers = shortcut.modifiers
+        if modifiers.contains(.control) { parts.append("Control") }
+        if modifiers.contains(.option) { parts.append("Option") }
+        if modifiers.contains(.shift) { parts.append("Shift") }
+        if modifiers.contains(.command) { parts.append("Command") }
+        parts.append(keySymbol(for: shortcut.key))
+        return parts.joined(separator: " ")
+      }
+
+      private static func keySymbol(for key: KeyEquivalent) -> String {
+        switch key {
+        case .return: "↩"
+        case .delete: "⌫"
+        case .deleteForward: "⌦"
+        case .escape: "⎋"
+        case .tab: "⇥"
+        case .space: "␣"
+        case .upArrow: "↑"
+        case .downArrow: "↓"
+        case .leftArrow: "←"
+        case .rightArrow: "→"
+        case .home: "↖"
+        case .end: "↘"
+        case .pageUp: "⇞"
+        case .pageDown: "⇟"
+        case .clear: "⌧"
+        default: String(key.character).uppercased()
+        }
       }
 
       private var effectiveDisabled: Bool { isDisabled || host.isDisabled }
@@ -77,9 +132,19 @@
         let bottomCornerRadius = isLastInPopup ? metrics.bottomCornerRadius : metrics.itemCornerRadius
         ZStack(alignment: .trailing) {
           Button(action: action) {
-            HStack(spacing: 0) {
+            HStack(spacing: metrics.itemIconSpacing) {
+              if let icon {
+                icon
+                  .frame(width: metrics.itemIconSize, height: metrics.itemIconSize)
+                  .accessibilityHidden(true)
+              }
               label(context)
               Spacer(minLength: 8)
+              if let shortcut {
+                Text(Self.symbols(for: shortcut))
+                  .foregroundStyle(isHighlighted ? AnyShapeStyle(.white.opacity(0.75)) : AnyShapeStyle(.secondary))
+                  .accessibilityLabel(Self.accessibilityDescription(for: shortcut))
+              }
             }
             .font(metrics.menuFont)
             .foregroundStyle(isHighlighted ? Color.white : Color.primary)
@@ -147,6 +212,55 @@
   public extension Autocomplete.Item where Accessory == EmptyView {
     init(
       id: ID,
+      shortcut: KeyboardShortcut? = nil,
+      isSelected: Bool = false,
+      isDisabled: Bool = false,
+      accessibilityAction: Autocomplete.ItemAction? = nil,
+      action: @escaping () -> Void,
+      @ViewBuilder icon: () -> Icon,
+      @ViewBuilder label: @escaping (Autocomplete.ItemContext) -> Label
+    ) {
+      self.id = id
+      self.icon = icon()
+      self.shortcut = shortcut
+      self.isSelected = isSelected
+      self.isDisabled = isDisabled
+      self.accessibilityAction = accessibilityAction
+      self.action = action
+      self.label = label
+      self.accessory = nil
+    }
+  }
+
+  public extension Autocomplete.Item where Icon == Image {
+    init(
+      id: ID,
+      icon: Image? = nil,
+      shortcut: KeyboardShortcut? = nil,
+      isSelected: Bool = false,
+      isDisabled: Bool = false,
+      accessibilityAction: Autocomplete.ItemAction? = nil,
+      action: @escaping () -> Void,
+      @ViewBuilder label: @escaping (Autocomplete.ItemContext) -> Label,
+      @ViewBuilder accessory: @escaping (Autocomplete.ItemContext) -> Accessory
+    ) {
+      self.id = id
+      self.icon = icon
+      self.shortcut = shortcut
+      self.isSelected = isSelected
+      self.isDisabled = isDisabled
+      self.accessibilityAction = accessibilityAction
+      self.action = action
+      self.label = label
+      self.accessory = accessory
+    }
+  }
+
+  public extension Autocomplete.Item where Icon == Image, Accessory == EmptyView {
+    init(
+      id: ID,
+      icon: Image? = nil,
+      shortcut: KeyboardShortcut? = nil,
       isSelected: Bool = false,
       isDisabled: Bool = false,
       accessibilityAction: Autocomplete.ItemAction? = nil,
@@ -154,6 +268,8 @@
       @ViewBuilder label: @escaping (Autocomplete.ItemContext) -> Label
     ) {
       self.id = id
+      self.icon = icon
+      self.shortcut = shortcut
       self.isSelected = isSelected
       self.isDisabled = isDisabled
       self.accessibilityAction = accessibilityAction

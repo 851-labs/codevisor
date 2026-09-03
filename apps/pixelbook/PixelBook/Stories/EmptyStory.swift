@@ -22,7 +22,7 @@ struct EmptyStory: View {
 
   var body: some View {
     Autocomplete.Root(highlight: highlight, onDismiss: { query = "" }) {
-      Autocomplete.Input(text: $query, prompt: "Filter languages")
+      Autocomplete.Input(text: $query, prompt: "Search")
       Autocomplete.List(height: metrics.listHeight(itemCount: items.count)) {
         if matches.isEmpty {
           Autocomplete.Empty(items.isEmpty ? "No languages available" : "No matching languages")

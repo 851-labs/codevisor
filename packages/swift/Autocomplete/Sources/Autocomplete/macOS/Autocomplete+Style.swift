@@ -25,6 +25,9 @@
       public var itemHeight: CGFloat = 24
       public var itemCornerRadius: CGFloat = 6
       public var itemHorizontalInset: CGFloat = 11
+      /// The leading glyph slot on items that have one.
+      public var itemIconSize: CGFloat = 18
+      public var itemIconSpacing: CGFloat = 8
       /// Space reserved at an item's trailing edge for a hover accessory.
       public var itemAccessoryWidth: CGFloat = 22
       public var itemAccessoryTrailingInset: CGFloat = 2

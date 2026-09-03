@@ -41,7 +41,7 @@ struct FavoritesStory: View {
 
   var body: some View {
     Autocomplete.Root(highlight: highlight, onDismiss: { query = "" }) {
-      Autocomplete.Input(text: $query, prompt: "Filter models")
+      Autocomplete.Input(text: $query, prompt: "Search")
       Autocomplete.List(height: metrics.listHeight(groupItemCounts: groupItemCounts)) {
         if favoriteModels.isEmpty, regular.isEmpty {
           Autocomplete.Empty("No matching models")

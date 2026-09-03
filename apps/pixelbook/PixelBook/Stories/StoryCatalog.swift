@@ -22,7 +22,7 @@ enum StoryCatalog {
       id: "rich-items",
       title: "Rich items",
       summary:
-        "Item labels are arbitrary views. A command-palette row with symbol, detail, and shortcut; the subsequence filter; inline navigation so Return runs the first match."
+        "Item's first-party icon and shortcut slots, formatted from real KeyboardShortcut values; the subsequence filter; inline navigation so Return runs the first match."
     ) {
       RichItemsStory()
     },

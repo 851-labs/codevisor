@@ -25,7 +25,7 @@ struct GroupsStory: View {
 
   var body: some View {
     Autocomplete.Root(highlight: highlight, onDismiss: { query = "" }) {
-      Autocomplete.Input(text: $query, prompt: "Filter models")
+      Autocomplete.Input(text: $query, prompt: "Search")
       Autocomplete.List(height: metrics.listHeight(groupItemCounts: harnesses.map(\.models.count))) {
         if matches.isEmpty {
           Autocomplete.Empty("No matching models")
