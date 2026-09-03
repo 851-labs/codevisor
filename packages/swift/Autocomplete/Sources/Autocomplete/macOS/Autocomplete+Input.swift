@@ -3,6 +3,22 @@
   import SwiftUI
 
   public extension Autocomplete {
+    /// An imperative handle for giving an `Input` keyboard focus: hosts call
+    /// `focus()` when their surface becomes active (a pane gaining focus, a
+    /// palette being summoned) instead of the field grabbing focus by
+    /// itself.
+    @MainActor
+    @Observable
+    final class InputFocus {
+      public private(set) var requestTick = 0
+
+      public init() {}
+
+      public func focus() {
+        requestTick += 1
+      }
+    }
+
     /// The filter field at the top of a popup: a native `NSSearchField` (so
     /// editing, IME, and text commands behave) inside the darker capsule
     /// Xcode draws in its menu-hosted pickers. Takes first responder when it
@@ -11,14 +27,31 @@
       @Binding var text: String
       let prompt: String
       let accessibilityLabel: String
+      let focusesOnAppear: Bool
+      let focus: InputFocus?
 
       @Environment(\.autocompleteStyle) private var style
       @Environment(Host.self) private var host
 
-      public init(text: Binding<String>, prompt: String = "Filter", accessibilityLabel: String? = nil) {
+      /// - Parameters:
+      ///   - focusesOnAppear: Take keyboard focus as soon as the field is on
+      ///     screen. Right for a popup that is itself presented (a popover);
+      ///     wrong for one rendered inline, where focus belongs to whatever
+      ///     the user is working in until the host hands it over.
+      ///   - focus: An imperative handle; each `focus()` call makes the field
+      ///     first responder.
+      public init(
+        text: Binding<String>,
+        prompt: String = "Filter",
+        accessibilityLabel: String? = nil,
+        focusesOnAppear: Bool = false,
+        focus: InputFocus? = nil
+      ) {
         _text = text
         self.prompt = prompt
         self.accessibilityLabel = accessibilityLabel ?? prompt
+        self.focusesOnAppear = focusesOnAppear
+        self.focus = focus
       }
 
       public var body: some View {
@@ -27,7 +60,10 @@
           text: $text,
           prompt: prompt,
           accessibilityLabel: accessibilityLabel,
-          onCommand: host.send
+          focusesOnAppear: focusesOnAppear,
+          focusTick: focus?.requestTick ?? 0,
+          onCommand: host.send,
+          register: { host.inputField = $0 }
         )
         .frame(height: metrics.inputHeight)
         .padding(.horizontal, metrics.inputHorizontalInset)
@@ -43,7 +79,10 @@
       @Binding var text: String
       let prompt: String
       let accessibilityLabel: String
+      let focusesOnAppear: Bool
+      let focusTick: Int
       let onCommand: (KeyCommand) -> Void
+      let register: (NSSearchField) -> Void
 
       @Environment(\.autocompleteStyle) private var style
 
@@ -71,6 +110,7 @@
         searchField.sendsWholeSearchString = false
         searchField.setAccessibilityLabel(accessibilityLabel)
         configureSearchCell(searchField)
+        register(searchField)
         return container
       }
 
@@ -86,10 +126,16 @@
         }
         configureSearchCell(searchField)
 
-        guard !context.coordinator.didFocus else { return }
+        let coordinator = context.coordinator
+        let wantsInitialFocus = focusesOnAppear && !coordinator.didFocus
+        let wantsRequestedFocus = focusTick != coordinator.handledFocusTick
+        guard wantsInitialFocus || wantsRequestedFocus else { return }
+        coordinator.handledFocusTick = focusTick
         DispatchQueue.main.async {
           guard let window = searchField.window else { return }
-          context.coordinator.didFocus = window.makeFirstResponder(searchField)
+          if window.makeFirstResponder(searchField) {
+            coordinator.didFocus = true
+          }
         }
       }
 
@@ -106,6 +152,7 @@
       final class Coordinator: NSObject, NSSearchFieldDelegate {
         var text: Binding<String>
         var didFocus = false
+        var handledFocusTick = 0
         var onCommand: (KeyCommand) -> Void
 
         init(text: Binding<String>, onCommand: @escaping (KeyCommand) -> Void) {

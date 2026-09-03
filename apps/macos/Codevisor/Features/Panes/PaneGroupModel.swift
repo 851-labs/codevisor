@@ -44,6 +44,18 @@ final class PaneGroupModel: Identifiable {
   /// New Tab placeholder). This keeps a hidden terminal from remaining the
   /// first responder after its tab is replaced by a passive page.
   @ObservationIgnored var requestBackgroundFocus: (() -> Void)?
+  /// New Tab pages register where keyboard focus should go when their pane
+  /// is focused (their picker's input). Without one, the pane falls back to
+  /// neutral background focus.
+  @ObservationIgnored private var newTabFocusHandlers: [UUID: () -> Void] = [:]
+
+  func registerNewTabFocus(paneId: UUID, handler: @escaping () -> Void) {
+    newTabFocusHandlers[paneId] = handler
+  }
+
+  func unregisterNewTabFocus(paneId: UUID) {
+    newTabFocusHandlers[paneId] = nil
+  }
   /// Fired after a tab closes (the descriptor already removed) — the app
   /// layer cleans up per-pane resources (draft controllers) and archives
   /// closed established chats' sessions.
@@ -157,7 +169,11 @@ final class PaneGroupModel: Identifiable {
       case .chat:
         self.requestComposerFocus?()
       case .newTab:
-        self.requestBackgroundFocus?()
+        if let focusPage = self.newTabFocusHandlers[paneId] {
+          focusPage()
+        } else {
+          self.requestBackgroundFocus?()
+        }
       case .terminal, .plugin:
         break
       }

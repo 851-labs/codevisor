@@ -114,7 +114,9 @@ private extension ModelConfigMenu {
       isDisabled: isSwitchingHarness,
       onDismiss: { isPresented = false }
     ) {
-      Autocomplete.Input(text: $modelSearch, accessibilityLabel: "Filter models")
+      Autocomplete.Input(
+        text: $modelSearch, prompt: "Search", accessibilityLabel: "Search models", focusesOnAppear: true
+      )
 
       Autocomplete.List(height: presentedListHeight ?? listHeight(for: catalog)) {
         if catalog.sections.isEmpty {

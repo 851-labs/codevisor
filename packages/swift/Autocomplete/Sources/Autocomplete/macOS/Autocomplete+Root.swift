@@ -67,7 +67,7 @@
           highlight.reset()
         }
         .background {
-          KeyMonitor(onCommand: handle)
+          KeyMonitor(shouldHandle: host.wantsKeyEvent, onCommand: handle)
             .frame(width: 0, height: 0)
         }
       }
@@ -94,22 +94,27 @@
   }
 
   extension Autocomplete {
-    /// A window-wide key monitor that turns arrow, Return, Escape, and the
-    /// Emacs-style ⌃N/⌃P bindings into commands while the popup is presented.
-    /// It keeps navigation working even if focus leaves the input.
+    /// A key monitor that turns arrow, Return, Escape, and the Emacs-style
+    /// ⌃N/⌃P bindings into commands for the popup that owns the keyboard
+    /// (`Host.wantsKeyEvent`): the one whose input is being edited, in the
+    /// event's window.
     struct KeyMonitor: NSViewRepresentable {
+      let shouldHandle: (NSEvent, NSWindow?) -> Bool
       let onCommand: (KeyCommand) -> Void
 
       func makeCoordinator() -> Coordinator {
-        Coordinator(onCommand: onCommand)
+        Coordinator(shouldHandle: shouldHandle, onCommand: onCommand)
       }
 
       func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        context.coordinator.view = view
         context.coordinator.installMonitor()
-        return NSView()
+        return view
       }
 
       func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.shouldHandle = shouldHandle
         context.coordinator.onCommand = onCommand
         context.coordinator.installMonitor()
       }
@@ -120,17 +125,22 @@
 
       @MainActor
       final class Coordinator {
+        var shouldHandle: (NSEvent, NSWindow?) -> Bool
         var onCommand: (KeyCommand) -> Void
+        weak var view: NSView?
         private var monitor: Any?
 
-        init(onCommand: @escaping (KeyCommand) -> Void) {
+        init(shouldHandle: @escaping (NSEvent, NSWindow?) -> Bool, onCommand: @escaping (KeyCommand) -> Void) {
+          self.shouldHandle = shouldHandle
           self.onCommand = onCommand
         }
 
         func installMonitor() {
           guard monitor == nil else { return }
           monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, let command = Self.command(for: event) else { return event }
+            guard
+              let self, shouldHandle(event, view?.window), let command = Self.command(for: event)
+            else { return event }
             onCommand(command)
             return nil
           }

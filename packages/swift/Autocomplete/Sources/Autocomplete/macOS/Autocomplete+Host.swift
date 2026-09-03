@@ -1,4 +1,5 @@
 #if canImport(AppKit)
+  import AppKit
   import Observation
   import SwiftUI
 
@@ -45,6 +46,21 @@
       private(set) var scrollTarget: AnyHashable?
 
       var send: (KeyCommand) -> Void = { _ in }
+
+      /// The popup's `Input` field, if it has one. The key monitor only acts
+      /// while that field is editing, so a popup rendered inline (a pane's
+      /// new-tab page, a picker under a text view) never steals arrows and
+      /// Return from whatever else the user focused.
+      @ObservationIgnored weak var inputField: NSSearchField?
+
+      /// Whether a key event belongs to this popup: same window, and — when
+      /// the popup has an input — that input is the one being edited.
+      func wantsKeyEvent(_ event: NSEvent, in window: NSWindow?) -> Bool {
+        guard let window, event.window === window else { return false }
+        guard let inputField else { return true }
+        guard let editor = window.firstResponder as? NSTextView else { return false }
+        return editor.delegate === inputField
+      }
 
       func accept(_ id: AnyHashable) {
         acceptedID = id

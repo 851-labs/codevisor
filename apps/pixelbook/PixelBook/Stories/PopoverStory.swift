@@ -32,7 +32,7 @@ struct PopoverStory: View {
     .buttonStyle(.glass)
     .popover(isPresented: $isPresented, arrowEdge: .bottom) {
       Autocomplete.Root(highlight: highlight, onDismiss: { isPresented = false }) {
-        Autocomplete.Input(text: $query, prompt: "Filter languages")
+        Autocomplete.Input(text: $query, prompt: "Filter languages", focusesOnAppear: true)
         Autocomplete.List(height: listHeight) {
           if matches.isEmpty {
             Autocomplete.Empty("No matching languages")
