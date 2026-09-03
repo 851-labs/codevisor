@@ -59,10 +59,15 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
     selfServerId: core.selfServerId
   })
 
+  const serverOperations = makeMcpServerOperations(core, {
+    allTools,
+    connectUpstream,
+    refreshGatewayInventories
+  })
   const manager: McpManager = {
     detectAuth: detectMcpAuth,
-    ...makeMcpServerOperations(core, { allTools, connectUpstream, refreshGatewayInventories }),
-    ...makeMcpReplicationOperations(core),
+    ...serverOperations,
+    ...makeMcpReplicationOperations(core, { scheduleRefresh, connect: serverOperations.connect }),
     ...makeMcpOAuthFlows(core, { oauthProvider, validateOAuthConnection }),
     ...makeMcpGatewayOperations(core, {
       createGatewayConnection,
@@ -72,14 +77,22 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
     ...makeMcpBrowserOperations(core)
   }
 
-  /* v8 ignore start -- startup token restoration feeds the live OAuth refresh scheduler above. */
   void run(config.db.listMcpServers)
     .then((servers) => {
       for (const server of servers) {
         const oauth = core.secrets(server).oauth
-        if (oauth?.tokens !== undefined) scheduleRefresh(server, oauth.tokens)
+        if (oauth?.tokens === undefined) continue
+        scheduleRefresh(server, oauth.tokens)
+        // A mirror that received tokens but never tried them (older builds
+        // stopped at the import) heals on boot: enabled, credentialed, and
+        // still reporting "needs authorization" means "connect now".
+        if (server.enabled && server.connectionState === "needsAuthorization") {
+          /* v8 ignore next -- a refused boot reconnect already reports through the record's state. */
+          void serverOperations.connect(server.id).catch(() => undefined)
+        }
       }
     })
+    /* v8 ignore start -- listing the manager's own table only fails on a broken database. */
     .catch((cause: unknown) => reportBackgroundFailure("MCP OAuth restoration failed", cause))
   /* v8 ignore stop */
 

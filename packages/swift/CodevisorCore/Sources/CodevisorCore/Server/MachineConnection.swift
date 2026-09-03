@@ -366,20 +366,20 @@ extension MachineController {
 
   /// Resolves a fleet sync key (a server's config.id, how its entries are
   /// keyed in synced namespaces) back to the CLIENT-side machine id, via
-  /// the id each reachable server reported in /v1/info. "local" is the
-  /// local server's own id. Nil when no known machine reported that id.
+  /// the id each reachable server reported in /v1/info. Nil when no known
+  /// machine reported that id.
   public func machineId(forSyncKey key: String) -> String? {
-    if key == CodevisorMachine.local.id { return CodevisorMachine.local.id }
-    return statusByMachineId.first { $0.value.serverId == key }?.key
+    statusByMachineId.first { $0.value.serverId == key }?.key
   }
 
   /// The inverse of `machineId(forSyncKey:)`: the key a machine's server
-  /// uses for its single-writer sync entries. The local server identifies
-  /// as "local"; remotes report their id via /v1/info. Nil until a remote
-  /// has been probed — its readiness cannot be read yet either.
+  /// uses for its single-writer sync entries. Every server — the app-hosted
+  /// one included — reports its stable id via /v1/info; the client never
+  /// assumes one (a shared placeholder made two app-hosted Macs one machine
+  /// to the fleet). Nil until the machine has been probed — its readiness
+  /// cannot be read yet either.
   public func syncKey(forMachineId id: String) -> String? {
-    if id == CodevisorMachine.local.id { return CodevisorMachine.local.id }
-    return statusByMachineId[id]?.serverId
+    statusByMachineId[id]?.serverId
   }
 
   /// The display name for a sync key: the matching machine's fleet name,

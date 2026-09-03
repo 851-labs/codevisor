@@ -23,6 +23,7 @@ import type {
 import { makeAttentionSettleScheduler } from "./infra/attention-settle.js"
 import { handleUpgrade } from "./routes/events.js"
 import { readMcpOverlays } from "./infra/mcp-fleet.js"
+import { adoptLegacySyncIdentity } from "./infra/sync-identity.js"
 import {
   drainPromptQueue,
   makeTurnDispatchListener,
@@ -173,16 +174,45 @@ export const makeCodevisorServerApp = (
       void drainPromptQueue(services, fanout, routeState, config.id, sessionId).catch(swallowError)
     }
   })
+  // Identity first: a fleet that predates stable app-hosted ids still
+  // carries this machine's overlays (and OAuth refresh ownership) under
+  // "local", and they must be ours before suppression is derived from them.
+  const identityAdopted = adoptLegacySyncIdentity({
+    db: services.db,
+    serverId: config.id,
+    kind: config.kind,
+    mcp: services.mcp
+  })
+    .then((result) => {
+      for (const change of result.changed) {
+        void appendAndPublish(services.db, fanout, "sync.changed", change.namespace, {
+          namespace: change.namespace,
+          entries: change.entries
+        }).catch(swallowError)
+      }
+      // Re-owned tokens republish so mirrors learn who rotates them now.
+      if (result.adoptedOAuth.length > 0) {
+        void runBackgroundSyncReconcile(services, config, fanout, "mcps")
+      }
+    })
+    .catch(swallowError)
   // Suppression is enforcement state, not cache: the per-machine disable
   // overlays live in the sync replica, so a restarted server must re-apply
   // them before any session asks for tools. Enforcement only — the durable
   // readiness entry republishes on its usual triggers, not at boot.
   const mcpAtBoot = services.mcp
   if (mcpAtBoot !== undefined) {
-    void readMcpOverlays(services.db, config.id)
+    void identityAdopted
+      .then(() => readMcpOverlays(services.db, config.id))
       .then((overlays) => mcpAtBoot.setLocalSuppression(overlays.disabledHere))
       .catch(swallowError)
   }
+  // Every visible change to a managed MCP record (a connection settling,
+  // an OAuth expiry, a synced enable flip) reaches clients as mcp.updated
+  // so settings views follow the machine live instead of polling.
+  const unsubscribeMcpChanges = services.mcp?.subscribeServersChanged((id) => {
+    void appendAndPublish(services.db, fanout, "mcp.updated", id, { id }).catch(swallowError)
+  })
   // A rotated OAuth token republishes immediately: the refresh owner's
   // config plane must carry the new material before any mirror's old
   // access token expires.
@@ -210,6 +240,7 @@ export const makeCodevisorServerApp = (
       unsubscribePlugins?.()
       unsubscribeGate?.()
       unsubscribeRotations?.()
+      unsubscribeMcpChanges?.()
       webSocketServer.close()
       services.plugins?.close()
       void services.mcp?.close().catch(swallowError)

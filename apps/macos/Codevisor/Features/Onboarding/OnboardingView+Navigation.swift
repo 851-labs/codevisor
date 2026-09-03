@@ -141,7 +141,13 @@ extension OnboardingView {
     environment.settings.setPermissionsSetupSkipped(true)
     // Per-machine truth: skipping permissions disables Computer Use
     // HERE, never across the fleet.
-    McpFleet.disableLocally(environment.configSync, name: "Computer Use")
+    Task {
+      await McpFleet.disableLocally(
+        environment.configSync,
+        machines: environment.machines,
+        name: "Computer Use"
+      )
+    }
     navigate(to: .project, back: false)
   }
 

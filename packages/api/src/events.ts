@@ -46,6 +46,11 @@ export const EventKind = Schema.Literals([
   "terminal.output",
   "terminal.exit",
   "update.changed",
+  /// A managed MCP server's visible state changed on this machine
+  /// (definition, enabled wish, connection state, tool count) or it was
+  /// removed (subjectId = MCP server id). Payload: { id }. Clients refetch
+  /// the machine's server list; the event carries no state of its own.
+  "mcp.updated",
   /// A replicated config document changed on this server (subjectId =
   /// namespace). Payload: { namespace, entries } with only the entries the
   /// merge actually changed. Merging is idempotent, so replays are safe.

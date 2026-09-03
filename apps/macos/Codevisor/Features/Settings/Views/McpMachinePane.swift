@@ -20,6 +20,11 @@ struct McpMachinePane: View {
   )
 
   @State var servers: [ServerMcpServer] = []
+  /// Optimistic enable state by server id while a toggle is in flight: the
+  /// switch flips at once and rolls back only if the machine refuses.
+  @State var pendingEnabled: [String: Bool] = [:]
+  /// Coalesces bursts of mcp.updated events into one list refetch.
+  @State private var refreshTask: Task<Void, Never>?
   @State private var showingAdd = false
   @State var isLoading = true
   @State var errorMessage: String?
@@ -64,6 +69,16 @@ struct McpMachinePane: View {
       }
     }
     .task(id: machine.id) { await reload() }
+    .onChange(of: environment.mcpStateRevision(for: machine.id)) { _, _ in
+      // The machine reported a state change (connection settled, OAuth
+      // expired, synced flip applied): refetch, coalescing a burst.
+      refreshTask?.cancel()
+      refreshTask = Task {
+        try? await Task.sleep(for: .milliseconds(150))
+        guard !Task.isCancelled else { return }
+        await reloadServers()
+      }
+    }
     .environment(\.settingsMachineId, machine.id)
     .sheet(isPresented: $showingAdd) {
       McpServerEditorSheet(initialServer: nil) { values in

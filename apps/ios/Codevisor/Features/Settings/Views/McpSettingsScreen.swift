@@ -38,6 +38,9 @@ private struct McpMachineRows: View {
   @Environment(AppEnvironment.self) private var environment
   let machine: CodevisorMachine
   @State private var servers: [ServerMcpServer] = []
+  /// Optimistic enable state by server id while a toggle is in flight.
+  @State private var pendingEnabled: [String: Bool] = [:]
+  @State private var refreshTask: Task<Void, Never>?
   @State private var isLoading = true
   @State private var errorMessage: String?
 
@@ -68,6 +71,15 @@ private struct McpMachineRows: View {
       isLoading = true
       await load()
     }
+    .onChange(of: environment.mcpStateRevision(for: machine.id)) { _, _ in
+      // The machine reported a state change: refetch, coalescing a burst.
+      refreshTask?.cancel()
+      refreshTask = Task {
+        try? await Task.sleep(for: .milliseconds(150))
+        guard !Task.isCancelled else { return }
+        await load()
+      }
+    }
   }
 
   private func machineDisabled(_ server: ServerMcpServer) -> Bool {
@@ -76,7 +88,7 @@ private struct McpMachineRows: View {
   }
 
   private func serverRow(_ server: ServerMcpServer) -> some View {
-    let effectiveEnabled = server.enabled && !machineDisabled(server)
+    let effectiveEnabled = pendingEnabled[server.id] ?? (server.enabled && !machineDisabled(server))
     return HStack {
       VStack(alignment: .leading, spacing: 2) {
         HStack(spacing: 6) {
@@ -119,21 +131,33 @@ private struct McpMachineRows: View {
 
   /// The toggle's one meaning: available on THIS machine. Off writes the
   /// per-machine overlay only. On clears the overlay — and if the fleet
-  /// definition itself was off, re-enables it for the fleet.
+  /// definition itself was off, re-enables it for the fleet. The switch
+  /// flips at once either way; only a refused fleet re-enable rolls it back.
   private func setEnabled(_ server: ServerMcpServer, enabled: Bool) async {
     guard let key = environment.machines.syncKey(forMachineId: machine.id) else {
       errorMessage = "This machine hasn't reported its identity yet."
       return
     }
+    pendingEnabled[server.id] = enabled
+    defer { pendingEnabled[server.id] = nil }
+    let hadOverlay = machineDisabled(server)
     McpFleet.setDisabled(
       environment.configSync,
       machineId: key,
       name: server.name,
       disabled: !enabled
     )
-    if enabled, !server.enabled {
-      _ = try? await client.setMcpServerEnabled(id: server.id, enabled: true)
-      await load()
+    guard enabled, !server.enabled else { return }
+    do {
+      let updated = try await client.setMcpServerEnabled(id: server.id, enabled: true)
+      if let index = servers.firstIndex(where: { $0.id == server.id }) {
+        servers[index] = updated
+      }
+    } catch {
+      if hadOverlay {
+        McpFleet.setDisabled(environment.configSync, machineId: key, name: server.name, disabled: true)
+      }
+      errorMessage = ErrorReporter.userFacingMessage(for: error)
     }
   }
 

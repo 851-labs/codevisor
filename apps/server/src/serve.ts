@@ -138,14 +138,15 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
         onProgress: (progress) => writeDataUpgradeStatus(upgradeStatusPath, bootId, progress)
       })
     )
-    // A remote server must never identify as the default "local": every
-    // machine publishing sync entries under one key makes the fleet LWW-merge
-    // three machines into a single lying record. Without an explicit
-    // --serverId, remotes adopt the database's persisted machine identity —
-    // stable across restarts, renames, and updates, minted on first boot.
-    const serverId =
-      args.serverId ??
-      (resolvedKind === "remote" ? `machine-${resolveServerIdentity(databasePath)}` : "local")
+    // No server may identify as the default "local": every machine
+    // publishing sync entries under one key makes the fleet LWW-merge them
+    // into a single lying record — and app-hosted Macs used to do exactly
+    // that, sharing one overlay key, one readiness entry, and one OAuth
+    // refresh owner. Without an explicit --serverId, every kind adopts the
+    // database's persisted machine identity — stable across restarts,
+    // renames, and updates, minted on first boot. Rows written under the
+    // former id are adopted by the database's identity upgrade.
+    const serverId = args.serverId ?? `machine-${resolveServerIdentity(databasePath)}`
     const db = yield* makeDatabase({
       filename: databasePath,
       serverId,

@@ -200,13 +200,15 @@ export const makeMcpOAuthRuntime = (deps: McpOAuthRuntimeDeps) => {
       if (result !== "AUTHORIZED") throw new Error("OAuth reauthorization is required")
       refreshRetryAttempts.delete(id)
       const updated = await record(id)
-      await saveRecord(updated, { enabled: true, connectionState: "connected", detail: undefined })
+      await saveRecord(updated, { connectionState: "connected", detail: undefined })
       await closeConnection(id)
       await refreshGatewayInventories()
     } catch (cause) {
+      // A failed refresh is THIS machine's observation, never a fleet
+      // decision: the enabled wish stays put (it is config-synced) and the
+      // expiry travels through connection state and readiness instead.
       const updated = await record(id)
       await saveRecord(updated, {
-        enabled: false,
         connectionState: "expired",
         detail: `Authorization refresh failed: ${errorMessage(cause)}`
       })
@@ -229,7 +231,6 @@ export const makeMcpOAuthRuntime = (deps: McpOAuthRuntimeDeps) => {
     try {
       await connectUpstream(id, { allowDisabled: true, preserveState: true })
       await saveRecord(await record(id), {
-        enabled: true,
         connectionState: "connected",
         detail: undefined
       })
@@ -237,7 +238,6 @@ export const makeMcpOAuthRuntime = (deps: McpOAuthRuntimeDeps) => {
       await closeConnection(id)
       const current = await record(id)
       await saveRecord(current, {
-        enabled: false,
         connectionState: "needsAuthorization",
         toolCount: 0,
         detail: undefined

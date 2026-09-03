@@ -21,7 +21,11 @@ func reconcileSkippedPermissions(environment: AppEnvironment) async {
       let computer = servers.first(where: { $0.kind == "computerUse" })
     {
       if computer.enabled {
-        McpFleet.disableLocally(environment.configSync, name: computer.name)
+        await McpFleet.disableLocally(
+          environment.configSync,
+          machines: environment.machines,
+          name: computer.name
+        )
       }
       return
     }

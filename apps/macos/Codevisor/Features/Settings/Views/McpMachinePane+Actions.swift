@@ -24,6 +24,13 @@ extension McpMachinePane {
     nativeScan = try? await client.listNativeMcps()
   }
 
+  /// The light refetch mcp.updated drives: just the server list, never the
+  /// loading placeholder or the native scan.
+  func reloadServers() async {
+    guard let refreshed = try? await client.listMcpServers() else { return }
+    servers = refreshed
+  }
+
   /// True when the per-machine overlay switches this server off HERE.
   func machineDisabled(_ server: ServerMcpServer) -> Bool {
     guard let key = environment.machines.syncKey(forMachineId: machine.id) else { return false }
@@ -31,10 +38,16 @@ extension McpMachinePane {
   }
 
   /// The row's effective view of the server: a machine-disabled server
-  /// reads as off no matter what the fleet definition says.
+  /// reads as off no matter what the fleet definition says, and an
+  /// in-flight toggle shows its target state before any machine answers.
   func displayServer(_ server: ServerMcpServer) -> ServerMcpServer {
-    guard machineDisabled(server) else { return server }
     var copy = server
+    if let pending = pendingEnabled[server.id] {
+      copy.enabled = pending
+      if !pending { copy.connectionState = "disconnected" }
+      return copy
+    }
+    guard machineDisabled(server) else { return server }
     copy.enabled = false
     copy.connectionState = "disconnected"
     return copy
@@ -42,7 +55,10 @@ extension McpMachinePane {
 
   /// The toggle's one meaning: available on THIS machine. Off writes the
   /// per-machine overlay only. On clears the overlay — and if the fleet
-  /// definition itself was off, re-enables it for the fleet.
+  /// definition itself was off, re-enables it for the fleet. Both flip the
+  /// switch immediately; the fleet re-enable is the only server round trip,
+  /// and it answers before the upstream connects (the row follows the
+  /// connection through mcp.updated).
   func setEnabled(_ server: ServerMcpServer, enabled: Bool) async {
     if server.kind == "computerUse", enabled, machine.isLocal {
       permissions.refresh()
@@ -56,6 +72,9 @@ extension McpMachinePane {
       errorMessage = "This machine hasn't reported its identity yet."
       return
     }
+    pendingEnabled[server.id] = enabled
+    defer { pendingEnabled[server.id] = nil }
+    let hadOverlay = machineDisabled(server)
     McpFleet.setDisabled(
       environment.configSync,
       machineId: key,
@@ -66,16 +85,13 @@ extension McpMachinePane {
     do {
       let updated = try await client.setMcpServerEnabled(id: server.id, enabled: true)
       replace(server, with: updated)
-      if updated.connectionState == "needsSetup" {
-        for _ in 0..<90 {
-          try? await Task.sleep(for: .seconds(2))
-          let refreshed = try await client.listMcpServers()
-          guard let current = refreshed.first(where: { $0.id == server.id }) else { break }
-          replace(updated, with: current)
-          if current.connectionState != "needsSetup" { break }
-        }
-      }
+      errorMessage = nil
     } catch {
+      // Roll back: the fleet wish never landed, so the switch returns to
+      // off — and the overlay this press cleared comes back with it.
+      if hadOverlay {
+        McpFleet.setDisabled(environment.configSync, machineId: key, name: server.name, disabled: true)
+      }
       errorMessage = ErrorReporter.userFacingMessage(for: error)
     }
   }

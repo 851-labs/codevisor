@@ -6,6 +6,7 @@ import { makeMcpManager } from "./mcp-manager.js"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   cleanupMcpManagerTests,
+  connectionStateSettles,
   run,
   directories,
   databases,
@@ -58,10 +59,12 @@ describe("MCP manager secrets and replication", () => {
       transport: "http",
       url: "https://example.test/mcp"
     })
+    // The enabled wish is the caller's; needing authorization is reported
+    // through connection state rather than by overriding it.
     expect(oauthConfigured).toMatchObject({
       authType: "oauth",
       connectionState: "needsAuthorization",
-      enabled: false,
+      enabled: true,
       oauthScope: "read"
     })
     await manager.remove(oauthConfigured.id)
@@ -73,8 +76,11 @@ describe("MCP manager secrets and replication", () => {
       name: "Disconnected",
       transport: "stdio"
     })
-    const failed = await manager.update(disconnected.id, { enabled: true })
-    expect(failed.connectionState).toBe("error")
+    // Enabling answers before the upstream handshake settles; the failure
+    // lands on the record shortly after.
+    const enabling = await manager.update(disconnected.id, { enabled: true })
+    expect(enabling.enabled).toBe(true)
+    expect(await connectionStateSettles(manager, disconnected.id, "error")).toBe("error")
 
     await run(
       db.saveMcpServer({

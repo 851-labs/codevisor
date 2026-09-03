@@ -50,7 +50,6 @@ export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps):
     })
     if (result === "AUTHORIZED") {
       await saveRecord(await record(id), {
-        enabled: false,
         connectionState: "needsAuthorization",
         detail: undefined
       })
@@ -84,7 +83,6 @@ export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps):
       oauth: { ...value.oauth, codeVerifier: undefined, state: undefined }
     }))
     await saveRecord(await record(id), {
-      enabled: false,
       connectionState: "needsAuthorization",
       detail: undefined
     })
@@ -104,9 +102,10 @@ export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps):
         configuredClientSecret: value.oauth?.configuredClientSecret
       }
     }))
+    // Dropping tokens is an auth action, not a disable: the enabled wish
+    // is left alone so the fleet definition never flips underneath it.
     return publicServer(
       await saveRecord(current, {
-        enabled: false,
         connectionState: "needsAuthorization",
         toolCount: 0,
         detail: undefined

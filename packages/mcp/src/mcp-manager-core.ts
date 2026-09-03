@@ -59,6 +59,13 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
   const emitCredentialsRotated = (id: string): void => {
     for (const listener of [...rotationListeners]) listener(id)
   }
+  // Observers of a server record's visible state (the server publishes
+  // these as mcp.updated events so settings views follow connection
+  // transitions live instead of polling).
+  const changeListeners = new Set<(id: string) => void>()
+  const emitServerChanged = (id: string): void => {
+    for (const listener of [...changeListeners]) listener(id)
+  }
   const gateways = new Map<string, GatewayRuntime>()
   const sessionGatewayIds = new Map<string, string>()
   const state: McpManagerState = {
@@ -220,13 +227,33 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
     }
   }
 
-  const saveRecord = (server: McpServerRecord, patch: Partial<McpServerRecord> = {}) => {
+  /// The fields a change listener cares about: what a settings row renders.
+  const visibleSignature = (server: McpServerRecord): string =>
+    JSON.stringify([
+      server.name,
+      server.kind,
+      server.transport,
+      server.url,
+      server.command,
+      server.args,
+      server.enabled,
+      server.authType,
+      server.oauthScope,
+      server.connectionState,
+      server.toolCount,
+      server.detail
+    ])
+
+  const saveRecord = async (
+    server: McpServerRecord,
+    patch: Partial<McpServerRecord> = {}
+  ): Promise<McpServerRecord> => {
     const url = patch.url ?? server.url
     const command = patch.command ?? server.command
     const oauthScope = patch.oauthScope ?? server.oauthScope
     const detail = patch.detail
     const secretCipher = patch.secretCipher ?? server.secretCipher
-    return run(
+    const saved = await run(
       config.db.saveMcpServer({
         id: server.id,
         name: patch.name ?? server.name,
@@ -246,6 +273,12 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
         ...(secretCipher === undefined ? {} : { secretCipher })
       })
     )
+    // Secret rewrites change what the row shows (header/env names) even
+    // though the ciphertext itself is never compared.
+    if (patch.secretCipher !== undefined || visibleSignature(saved) !== visibleSignature(server)) {
+      emitServerChanged(saved.id)
+    }
+    return saved
   }
 
   const refreshBuiltinProviderStates = async (): Promise<void> => {
@@ -307,6 +340,7 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
     builtinProviderState,
     builtinsReady,
     callbackUrl,
+    changeListeners,
     closeConnection,
     codeExecutor,
     codevisorProvider,
@@ -315,6 +349,7 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
     connectionLocks,
     connections,
     emitCredentialsRotated,
+    emitServerChanged,
     extensionFlowSupported,
     gatewayBearerToken,
     gateways,

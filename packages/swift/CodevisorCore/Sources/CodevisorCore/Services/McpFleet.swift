@@ -51,9 +51,29 @@ public enum McpFleet {
   }
 
   /// Disables `name` on THIS machine — the per-machine escape hatch the
-  /// permission-skip flows use. Never touches the fleet definition.
-  public static func disableLocally(_ sync: ConfigSync, name: String) {
-    setDisabled(sync, machineId: CodevisorMachine.local.id, name: name, disabled: true)
+  /// permission-skip flows use. Never touches the fleet definition. The
+  /// local server's sync key is only known once its /v1/info probe has
+  /// answered, so this waits (bounded) for it rather than writing under a
+  /// placeholder id every app-hosted machine would share. False when the
+  /// server never identified itself in time; `reconcileSkippedPermissions`
+  /// heals that on the next launch.
+  @discardableResult
+  public static func disableLocally(
+    _ sync: ConfigSync,
+    machines: MachineController,
+    name: String,
+    timeout: Duration = .seconds(60)
+  ) async -> Bool {
+    let clock = ContinuousClock()
+    let deadline = clock.now + timeout
+    while true {
+      if let key = machines.syncKey(forMachineId: CodevisorMachine.local.id) {
+        setDisabled(sync, machineId: key, name: name, disabled: true)
+        return true
+      }
+      guard clock.now < deadline else { return false }
+      try? await Task.sleep(for: .milliseconds(500))
+    }
   }
 
   /// Flips the per-machine disable overlay. Restoring deletes the entry

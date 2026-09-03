@@ -57,6 +57,10 @@ public final class AppEnvironment {
   /// cards observe these and refetch the list. Accessors live in
   /// AppEnvironment+Plugins.swift.
   var pluginStateRevisions: [String: UInt64] = [:]
+  /// Monotonic, per-machine invalidation tokens bumped by `mcp.updated`
+  /// events; the MCP settings panes observe these and refetch the server
+  /// list. Accessors live in AppEnvironment+Mcp.swift.
+  var mcpStateRevisions: [String: UInt64] = [:]
   /// Monotonic, per-plugin reload tokens (keyed "serverId|pluginId") bumped
   /// by `plugin.updated` events; open plugin panes observe their plugin's
   /// token and re-run the full token→load flow when it moves. Accessors
@@ -174,6 +178,7 @@ public final class AppEnvironment {
     }
     applyBootSyncState()
     machines.onPluginStateChanged = { [weak self] in self?.pluginStateDidChange(onServer: $0) }
+    machines.onMcpStateChanged = { [weak self] in self?.mcpStateDidChange(onServer: $0) }
     machines.onPluginUpdated = { [weak self] in self?.pluginDidUpdate(onServer: $0, pluginId: $1) }
     // One-time split of pre-"1 workspace == 1 directory" workspaces whose
     // chats live in different worktrees. Runs before any window renders

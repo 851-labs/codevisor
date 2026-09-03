@@ -42,18 +42,17 @@ export const makeConnectUpstream = (core: McpManagerCore): ConnectUpstream => {
     const connecting = (async () => {
       const server = await record(id)
       if (server.kind !== "managed") throw new Error(`${server.name} is an internal provider`)
+      // Refusals before the try/finally below must release the lock too, or
+      // every later caller would be handed this rejected promise.
       if (!server.enabled && options.allowDisabled !== true) {
+        connectionLocks.delete(id)
         throw new Error(`${server.name} is disabled`)
       }
       if (state.locallySuppressed.has(server.name)) {
+        connectionLocks.delete(id)
         throw new Error(`${server.name} is disabled on this machine`)
       }
-      /* v8 ignore next -- preserveState is reserved for the live OAuth validation path. */
-      if (options.preserveState !== true) {
-        await saveRecord(server, { connectionState: "connecting", detail: undefined })
-      }
       const stored = secrets(server)
-      const client = new Client({ name: "Codevisor", version: "0.1.0" }, { capabilities: {} })
       // An empty bearer token is NO token — `""` must never shadow the
       // OAuth access token a sync import delivered (PostHog answers an
       // empty Authorization header with "No token provided" forever).
@@ -62,6 +61,24 @@ export const makeConnectUpstream = (core: McpManagerCore): ConnectUpstream => {
           ? undefined
           : stored.bearerToken
       const accessToken = bearer ?? stored.oauth?.tokens?.access_token
+      // An enabled OAuth server without tokens is a known state, not a
+      // connection to attempt: report it and let the user authorize.
+      if (server.authType === "oauth" && accessToken === undefined) {
+        if (server.connectionState !== "needsAuthorization") {
+          await saveRecord(server, {
+            connectionState: "needsAuthorization",
+            toolCount: 0,
+            detail: undefined
+          })
+        }
+        connectionLocks.delete(id)
+        throw new Error(`${server.name} needs authorization`)
+      }
+      /* v8 ignore next -- preserveState is reserved for the live OAuth validation path. */
+      if (options.preserveState !== true) {
+        await saveRecord(server, { connectionState: "connecting", detail: undefined })
+      }
+      const client = new Client({ name: "Codevisor", version: "0.1.0" }, { capabilities: {} })
       const transport =
         server.transport === "stdio"
           ? new StdioClientTransport({
@@ -77,10 +94,22 @@ export const makeConnectUpstream = (core: McpManagerCore): ConnectUpstream => {
               stored.headers
             )
       let phase = "initialize"
+      let abandoned = false
       try {
         await client.connect(transport as unknown as Transport)
         phase = "tools/list"
         const tools = await listAllUpstreamTools(client)
+        // Connections settle in the background, so the server may have
+        // been switched off mid-handshake: never cache (or report) a
+        // connection the record no longer wants.
+        const latest = await record(id)
+        if (
+          (!latest.enabled && options.allowDisabled !== true) ||
+          state.locallySuppressed.has(latest.name)
+        ) {
+          abandoned = true
+          throw new Error(`${latest.name} was disabled while connecting`)
+        }
         const connection: UpstreamConnection = {
           client,
           close: () => client.close(),
@@ -97,6 +126,8 @@ export const makeConnectUpstream = (core: McpManagerCore): ConnectUpstream => {
       } catch (cause) {
         /* v8 ignore next -- best-effort cleanup after the original connection failure. */
         await client.close().catch(() => undefined)
+        // The disable already recorded its own state; leave it be.
+        if (abandoned) throw cause
         console.error(
           `MCP connection failed for ${server.name} during ${phase}: ${errorMessage(cause)}`
         )

@@ -49,7 +49,7 @@ export const listen = async (server: Server): Promise<string> => {
 export const testManager = async (
   syncManagedSkills?: NonNullable<Parameters<typeof makeMcpManager>[0]["syncManagedSkills"]>,
   extraConfig: Partial<Parameters<typeof makeMcpManager>[0]> = {}
-): Promise<{ db: CodevisorDatabaseService; manager: McpManager }> => {
+): Promise<{ db: CodevisorDatabaseService; manager: McpManager; directory: string }> => {
   const directory = mkdtempSync(join(tmpdir(), "codevisor-mcp-manager-"))
   directories.push(directory)
   const db = await run(
@@ -63,7 +63,7 @@ export const testManager = async (
     ...extraConfig
   })
   managers.push(manager)
-  return { db, manager }
+  return { db, manager, directory }
 }
 
 export const workingUpstream = async () => {
@@ -150,4 +150,23 @@ export const workingUpstream = async () => {
     response.end(JSON.stringify({ jsonrpc: "2.0", id: message.id, result }))
   })
   return { calls, requests, url: `${await listen(server)}/mcp` }
+}
+
+/// Connections settle in the background after create/update: polls the
+/// record until it reports `expected` (or the timeout lapses) and returns
+/// the last observed state.
+export const connectionStateSettles = async (
+  manager: McpManager,
+  id: string,
+  expected: string,
+  timeoutMs = 10_000
+): Promise<string> => {
+  const deadline = Date.now() + timeoutMs
+  let state = ""
+  while (Date.now() < deadline) {
+    state = (await manager.list()).find((server) => server.id === id)?.connectionState ?? ""
+    if (state === expected) return state
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  return state
 }

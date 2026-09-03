@@ -147,6 +147,11 @@ public final class MachineController {
   /// the AppEnvironment bridges it to its plugin-state revision so mounted
   /// settings panes and New Tab cards refetch.
   @ObservationIgnored public var onPluginStateChanged: ((String) -> Void)?
+  /// Invoked when an `mcp.updated` event arrives for a machine — a managed
+  /// MCP server's visible state changed there (connection settled, OAuth
+  /// expired, a synced enable flip applied). The AppEnvironment bridges it
+  /// to its MCP-state revision so mounted settings panes refetch.
+  @ObservationIgnored public var onMcpStateChanged: ((String) -> Void)?
   /// Invoked when a `plugin.updated` event arrives (the plugin's code or
   /// install changed: restart, re-import, re-link) — the AppEnvironment
   /// bridges it to a per-plugin revision so that plugin's open panes

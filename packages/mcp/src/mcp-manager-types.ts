@@ -55,6 +55,15 @@ export interface McpManager {
   /// Fires after this machine rotates (or first saves) a server's OAuth
   /// tokens, so the config plane can republish immediately.
   readonly subscribeCredentialsRotated: (listener: (id: string) => void) => () => void
+  /// Takes over the refresh cycle of every server whose tokens name
+  /// `legacyOwner` as their rotator — the identity this machine used to
+  /// boot under. Without this, a renamed machine would treat its own
+  /// tokens as a mirror's and never refresh them. Returns the adopted ids.
+  readonly adoptOAuthOwnership: (legacyOwner: string) => Promise<ReadonlyArray<string>>
+  /// Fires whenever a server record's visible state changes (definition,
+  /// enabled flag, connection state, tool count, detail) or it is removed.
+  /// The server publishes these as `mcp.updated` events.
+  readonly subscribeServersChanged: (listener: (id: string) => void) => () => void
   readonly remove: (id: string) => Promise<void>
   readonly tools: (id?: string) => Promise<ReadonlyArray<McpTool>>
   readonly connect: (id: string) => Promise<McpServer>

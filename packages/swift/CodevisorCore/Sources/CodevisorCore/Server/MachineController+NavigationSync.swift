@@ -15,6 +15,7 @@ extension MachineController {
     "harness.lifecycle.updated",
     "plugin.state.updated",
     "plugin.updated",
+    "mcp.updated",
     "update.changed",
     "sync.changed",
   ]
@@ -172,6 +173,10 @@ extension MachineController {
       // A plugin started, stopped, crashed, or the installed list
       // changed — bump the revision so state chips and cards refetch.
       onPluginStateChanged?(serverId)
+    case "mcp.updated":
+      // A managed MCP server's state moved on this machine — bump the
+      // revision so the MCP settings pane refetches instead of polling.
+      onMcpStateChanged?(serverId)
     case "plugin.updated":
       // The plugin's code/install changed (restart, re-import, link) —
       // open panes reload. Deliberately NOT driven off
