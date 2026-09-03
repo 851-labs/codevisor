@@ -60,6 +60,14 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
   public var createdAt: Date
   /// Per-server folders for this project.
   public var locations: [ProjectLocation]
+  /// The git remote configured in the project's folder on its machine, as
+  /// the server observed it (nil for non-git folders, folders with no
+  /// remote, and records from servers predating remote tracking).
+  public var repoUrl: String?
+  /// Server-normalized identity of `repoUrl`: equal keys mean the same
+  /// repository, whichever machine holds the checkout. This is what groups
+  /// one project across machines; a project without one stands alone.
+  public var repoKey: String?
   /// Explicit worktree base selected in Manage Project. Nil preserves the
   /// server's legacy origin/main fallback for projects not yet configured.
   public var worktreeBase: ProjectWorktreeBase?
@@ -78,6 +86,8 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
     origin: SessionOrigin = .codevisor,
     createdAt: Date = Date(),
     locations: [ProjectLocation] = [],
+    repoUrl: String? = nil,
+    repoKey: String? = nil,
     worktreeBase: ProjectWorktreeBase? = nil,
     isScratch: Bool = false
   ) {
@@ -88,6 +98,8 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
     self.origin = origin
     self.createdAt = createdAt
     self.locations = locations
+    self.repoUrl = repoUrl
+    self.repoKey = repoKey
     self.worktreeBase = worktreeBase
     self.isScratch = isScratch
   }
@@ -131,7 +143,7 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
 
   private enum Keys: String, CodingKey {
     case id, serverId, name, folderURL, isArchived, origin, createdAt, locations
-    case isScratch, worktreeBase
+    case isScratch, worktreeBase, repoUrl, repoKey
   }
 
   // Custom decoding tolerates records persisted before locations existed
@@ -145,6 +157,8 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
     origin = try container.decodeIfPresent(SessionOrigin.self, forKey: .origin) ?? .codevisor
     createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
     isScratch = try container.decodeIfPresent(Bool.self, forKey: .isScratch) ?? false
+    repoUrl = try container.decodeIfPresent(String.self, forKey: .repoUrl)
+    repoKey = try container.decodeIfPresent(String.self, forKey: .repoKey)
     worktreeBase = try container.decodeIfPresent(ProjectWorktreeBase.self, forKey: .worktreeBase)
     if let locations = try container.decodeIfPresent([ProjectLocation].self, forKey: .locations) {
       self.locations = locations
@@ -166,6 +180,8 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
     try container.encode(origin, forKey: .origin)
     try container.encode(createdAt, forKey: .createdAt)
     try container.encode(locations, forKey: .locations)
+    try container.encodeIfPresent(repoUrl, forKey: .repoUrl)
+    try container.encodeIfPresent(repoKey, forKey: .repoKey)
     try container.encodeIfPresent(worktreeBase, forKey: .worktreeBase)
     try container.encode(isScratch, forKey: .isScratch)
   }

@@ -59,9 +59,13 @@ public struct ServerProject: Decodable, Equatable, Sendable {
   public var createdAt: String
   public var locations: [ServerProjectLocation]
   public var worktreeBase: ProjectWorktreeBase? = nil
-  /// The git remote this project was cloned from, for projects added via
-  /// clone-from-git. Absent on older servers and directory-based projects.
+  /// The git remote the server observed in this project's folder. Absent
+  /// on older servers (except for clone-from-git projects) and on folders
+  /// without a remote.
   public var repoUrl: String? = nil
+  /// Server-normalized identity of `repoUrl`, the cross-machine grouping
+  /// key. Absent on older servers, which leaves the project ungrouped.
+  public var repoKey: String? = nil
   /// True for the hidden backing project of a scratch workspace (folder
   /// under ~/codevisor/workspaces). Absent on older servers.
   public var isScratch: Bool? = nil
@@ -91,6 +95,8 @@ public struct ServerProject: Decodable, Equatable, Sendable {
           isGitRepository: location.isGitRepository
         )
       },
+      repoUrl: repoUrl,
+      repoKey: repoKey,
       worktreeBase: worktreeBase,
       isScratch: isScratch ?? false
     )
@@ -105,6 +111,7 @@ public struct ServerProject: Decodable, Equatable, Sendable {
     locations: [ServerProjectLocation],
     worktreeBase: ProjectWorktreeBase? = nil,
     repoUrl: String? = nil,
+    repoKey: String? = nil,
     isScratch: Bool? = nil
   ) {
     self.id = id
@@ -115,6 +122,7 @@ public struct ServerProject: Decodable, Equatable, Sendable {
     self.locations = locations
     self.worktreeBase = worktreeBase
     self.repoUrl = repoUrl
+    self.repoKey = repoKey
     self.isScratch = isScratch
   }
 }
