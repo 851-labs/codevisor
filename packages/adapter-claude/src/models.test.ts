@@ -82,6 +82,85 @@ describe("ClaudeProvider", () => {
     expect(model?.options).toEqual([{ name: "Sonnet", value: "sonnet" }])
   })
 
+  it("publishes a late model list as a config update when the startup race loses", async () => {
+    const fake = new FakeQuery()
+    const deliverModels = stallModelList(fake)
+    const events: Array<RuntimeEvent> = []
+    const created = await createWithLostModelListRace(fake, events)
+    // Session creation did not block on the list — and, without it, no
+    // model-derived option can be offered yet.
+    expect(created.metadata.configOptions).toEqual([])
+    expect(configUpdates(events)).toEqual([])
+
+    deliverModels([
+      {
+        description: "",
+        displayName: "Sonnet",
+        supportedEffortLevels: ["low", "high"],
+        supportsEffort: true,
+        supportsFastMode: true,
+        value: "sonnet"
+      }
+    ])
+    await settle()
+
+    expect(configUpdates(events)).toEqual([
+      {
+        configId: "model",
+        value: "sonnet",
+        configOptions: [
+          expect.objectContaining({
+            currentValue: "sonnet",
+            id: "model",
+            options: [{ name: "Sonnet", value: "sonnet" }]
+          }),
+          expect.objectContaining({ currentValue: "high", id: "effort" }),
+          expect.objectContaining({ currentValue: "standard", id: "speed" })
+        ]
+      }
+    ])
+    // The handle's own snapshots carry the list from here on.
+    await run(created.handle.setConfigOption("effort", "low"))
+    const latest = events.at(-1)?.payload as { configOptions?: Array<{ id: string }> }
+    expect(latest.configOptions?.map((option) => option.id)).toEqual(["model", "effort", "speed"])
+  })
+
+  it("reconciles a late model list with the model init already reported", async () => {
+    const fake = new FakeQuery()
+    const deliverModels = stallModelList(fake)
+    const events: Array<RuntimeEvent> = []
+    await createWithLostModelListRace(fake, events)
+    fake.push(initMessage("sdk-session-1", "claude-opus-4-8"))
+    await settle()
+
+    deliverModels([
+      { description: "", displayName: "Fable", value: "claude-fable-5" },
+      { description: "", displayName: "Opus (1M context)", value: "opus[1m]" }
+    ])
+    await settle()
+
+    expect(configUpdates(events)).toEqual([
+      expect.objectContaining({
+        configId: "model",
+        value: "opus[1m]",
+        configOptions: [expect.objectContaining({ currentValue: "opus[1m]", id: "model" })]
+      })
+    ])
+  })
+
+  it("drops a late model list once the session is closed", async () => {
+    const fake = new FakeQuery()
+    const deliverModels = stallModelList(fake)
+    const events: Array<RuntimeEvent> = []
+    const created = await createWithLostModelListRace(fake, events)
+    await run(created.handle.close)
+
+    deliverModels([{ description: "", displayName: "Sonnet", value: "sonnet" }])
+    await settle()
+
+    expect(configUpdates(events)).toEqual([])
+  })
+
   it("reconciles refusal fallback model ids with unambiguous picker aliases", async () => {
     const fake = new FakeQuery()
     vi.spyOn(fake, "supportedModels").mockResolvedValue([
@@ -228,3 +307,40 @@ describe("ClaudeProvider", () => {
     expect(speed?.currentValue).toBe("fast")
   })
 })
+
+type SupportedModels = Awaited<ReturnType<FakeQuery["supportedModels"]>>
+
+/// A model list that never answers on its own; the returned function delivers
+/// it once the test has let the startup race be lost.
+const stallModelList = (fake: FakeQuery): ((models: SupportedModels) => void) => {
+  let deliver: ((models: SupportedModels) => void) | undefined
+  vi.spyOn(fake, "supportedModels").mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        deliver = resolve
+      })
+  )
+  return (models) => deliver?.(models)
+}
+
+/// Creates a session whose model-list race is guaranteed lost (1ms budget),
+/// recording every runtime event into `events`.
+const createWithLostModelListRace = (fake: FakeQuery, events: Array<RuntimeEvent>) =>
+  run(
+    makeProvider(fake).createSession(
+      definition,
+      "/tmp",
+      async (event) => {
+        events.push(event)
+      },
+      undefined,
+      undefined,
+      { modelListTimeoutMs: 1 }
+    )
+  )
+
+const configUpdates = (events: ReadonlyArray<RuntimeEvent>): Array<Record<string, unknown>> =>
+  events
+    .filter((event) => event.kind === "session.updated")
+    .map((event) => event.payload as Record<string, unknown>)
+    .filter((payload) => Array.isArray(payload.configOptions))

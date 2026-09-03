@@ -568,8 +568,12 @@ extension SessionController {
     captureChatCreatedIfNeeded(model: model, harnessId: harnessId)
     await applyPendingGoal(to: model)
 
-    configCache.store(model.configOptions, forHarness: harnessId, onServer: project.serverId)
-    configOptionsByHarness[harnessId] = model.configOptions
+    // A runtime that reported no options (see `configOptions`) must not
+    // erase the cached catalog the composer is falling back to.
+    if !model.configOptions.isEmpty {
+      configCache.store(model.configOptions, forHarness: harnessId, onServer: project.serverId)
+      configOptionsByHarness[harnessId] = model.configOptions
+    }
 
     // This connect created the agent session (there was no id to resume
     // when it started), so there is no prior runtime configuration to

@@ -97,6 +97,44 @@ struct SessionControllerConfigurationTests {
     #expect(!controller.isLoadingModelMenu)
   }
 
+  @Test("A connected runtime with no options falls back to the cached catalog")
+  func connectedRuntimeWithoutOptionsUsesCachedCatalog() {
+    let cache = ConfigOptionCache(store: InMemoryStore())
+    let capability = capability(model: "opus[1m]")
+    let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/project"))
+    cache.store([capability], forServer: project.serverId)
+    let controller = SessionController(project: project, configCache: cache)
+    controller.harnesses = [capability.harness]
+    controller.selectedHarnessId = capability.harness.id
+    controller.connectedHarnessId = capability.harness.id
+    controller.preparationState = .ready
+    let sessionId = UUID()
+    // Claude's runtime reports NO options when its model list loses the
+    // startup race, and publishes the list later as a config update.
+    let model = SessionModel(
+      serverTransport: ServerSessionTransport(
+        client: FakeSessionServerClient(sessionId: sessionId),
+        sessionId: sessionId
+      ),
+      sessionId: sessionId.uuidString,
+      configOptions: []
+    )
+    controller.model = model
+
+    #expect(controller.configOptions == capability.configOptions)
+    #expect(controller.modelOption?.currentValue == "opus[1m]")
+    #expect(controller.hasModelMenu)
+    #expect(!controller.isLoadingModelMenu)
+
+    // The late list replaces the cached stand-in.
+    var live = capability.configOptions
+    live[0].currentValue = "sonnet"
+    live[0].options = [SessionConfigSelectOption(value: "sonnet", name: "Sonnet")]
+    model.applyRuntimeMetadata(modeState: nil, configOptions: live)
+    #expect(controller.configOptions == live)
+    #expect(controller.modelOption?.currentValue == "sonnet")
+  }
+
   @Test("Remote attention metadata does not republish the controller session")
   func ignoresPresentationOnlySessionUpdates() {
     let original = session()

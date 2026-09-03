@@ -227,6 +227,12 @@ export const makeAgents = (): AgentRuntimeService & {
       Effect.sync(() => {
         loads.push([harnessId, agentSessionId, cwd])
         sinks.set(agentSessionId, sink)
+        // A runtime whose option list never arrived (Claude's model list
+        // losing its startup race) reports no options at all.
+        if (cwd.includes("no-config-options")) {
+          configOptionsBySession.set(agentSessionId, [])
+          return { configOptions: [], sessionId: agentSessionId }
+        }
         if (cwd.includes("session-config")) {
           dependencyConfigSessions.add(agentSessionId)
           const configOptions = dependencyConfigOptions()

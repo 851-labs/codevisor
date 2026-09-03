@@ -413,6 +413,13 @@ const restoreSessionConfigSelections = async (
   sessionId: string,
   metadata: AgentSessionMetadata
 ): Promise<AgentSessionMetadata> => {
+  // No option list is not an answer: the Claude adapter returns none when its
+  // model list loses the startup race, and a snapshot derived from it would
+  // wipe the chat's saved model/effort. Leave the saved selections untouched
+  // so the next reconnect (or a late config update) can still restore them.
+  if (metadata.configOptions.length === 0) {
+    return metadata
+  }
   const saved = await run(services.db.getSessionConfigSelections(sessionId))
   let configOptions = metadata.configOptions
   let restoreFailed = false

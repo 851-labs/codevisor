@@ -362,27 +362,44 @@ export const makeStartSession = (deps: StartSessionDeps) => {
     // Best-effort model list: the control channel usually answers before the
     // first turn, but session creation must not hang on it.
     try {
+      const modelList = q.supportedModels()
       const models = await Promise.race([
-        q.supportedModels(),
+        modelList,
         new Promise<undefined>((resolvePromise) =>
           setTimeout(() => resolvePromise(undefined), sessionOptions?.modelListTimeoutMs ?? 3000)
         )
       ])
       if (models !== undefined) {
-        // The CLI's "default" pseudo-model is an alias, not a model — the
-        // picker shows real models only.
-        created.models = models
-          .filter((model) => model.value !== "default")
-          .map((model) => ({
-            name: model.displayName,
-            supportedEffortLevels: (model.supportsEffort === true
-              ? (model.supportedEffortLevels ?? [])
-              : []
-            ).filter((level) => SETTABLE_EFFORT_LEVELS.has(level)),
-            supportsFastMode: model.supportsFastMode === true,
-            value: model.value
-          }))
+        adoptModelList(created, models)
         currentClaudeModelFor(created)
+      } else {
+        // Losing the race does not cancel the request: the CLI still answers
+        // on its control channel, typically a few seconds later on a busy
+        // machine. Without the list `metadataFor` emits no config options at
+        // all (effort and speed derive from the current model), so the picker
+        // would vanish for the life of the session. Adopt the late list and
+        // publish it through the same config-update event a model change
+        // uses; the client folds it in and the picker appears late instead
+        // of never.
+        modelList.then(
+          (lateModels) => {
+            if (created.retired || created.models.length > 0) return
+            adoptModelList(created, lateModels)
+            // Init may already have reported the concrete model id; reconcile
+            // it against the picker rather than resetting to the first entry.
+            applyClaudeModelFromProvider(created, created.currentModel)
+            void created.emit({
+              kind: "session.updated",
+              payload: {
+                configId: "model",
+                configOptions: metadataFor(created).configOptions,
+                value: created.currentModel
+              },
+              subjectId: created.key
+            })
+          },
+          () => undefined
+        )
       }
     } catch {
       created.models = []
@@ -390,4 +407,22 @@ export const makeStartSession = (deps: StartSessionDeps) => {
     return created
   }
   return startSession
+}
+
+type SupportedModel = Awaited<ReturnType<ClaudeSession["q"]["supportedModels"]>>[number]
+
+/// The CLI's "default" pseudo-model is an alias, not a model — the picker
+/// shows real models only.
+const adoptModelList = (session: ClaudeSession, models: ReadonlyArray<SupportedModel>): void => {
+  session.models = models
+    .filter((model) => model.value !== "default")
+    .map((model) => ({
+      name: model.displayName,
+      supportedEffortLevels: (model.supportsEffort === true
+        ? (model.supportedEffortLevels ?? [])
+        : []
+      ).filter((level) => SETTABLE_EFFORT_LEVELS.has(level)),
+      supportsFastMode: model.supportsFastMode === true,
+      value: model.value
+    }))
 }

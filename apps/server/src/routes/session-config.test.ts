@@ -131,6 +131,37 @@ describe("session configuration routes", () => {
     })
   })
 
+  it("keeps saved config selections when a session opens with no config options", async () => {
+    const { agents, services } = await makeServices("server-a")
+    const folder = mkdtempSync(join(tmpdir(), "codevisor-no-config-options-"))
+    tempDirs.push(folder)
+    const project = await run(services.db.createProject({ folderPath: folder }))
+    const session = await run(
+      services.db.createSession({
+        projectId: project.id,
+        harnessId: "claude-code",
+        agentSessionId: "agent-no-config-options"
+      })
+    )
+    const saved = { effort: "high", model: "opus[1m]", speed: "standard" }
+    await run(services.db.replaceSessionConfigSelections(session.id, saved))
+    const server = await startWithApp(services)
+    runningServers.push(server)
+
+    const opened = await jsonRequest(server, `/v1/sessions/${session.id}/connect`, {
+      method: "POST"
+    })
+    expect(opened.status).toBe(200)
+    expect((opened.body as { readonly configOptions: unknown }).configOptions).toEqual([])
+    // Nothing to validate against, so nothing is applied — and, above all,
+    // nothing is overwritten.
+    expect(agents.configs).toEqual([])
+    expect(await run(services.db.getSessionConfigSelections(session.id))).toEqual(saved)
+    expect((await jsonRequest(server, `/v1/sessions/${session.id}`)).body).toMatchObject({
+      session: { configSelections: saved }
+    })
+  })
+
   it("shares session read and action-required state through the HTTP API", async () => {
     const { server, services } = await start()
     const project = await run(

@@ -131,10 +131,15 @@ extension SessionController {
   /// Selectable config options: live when connected, otherwise the cached
   /// (stale) options for the selected harness with any pending edits applied.
   public var configOptions: [SessionConfigOption] {
-    if let model, !model.configOptions.isEmpty || !isConnectingToHarness {
+    if let model, !model.configOptions.isEmpty {
       return model.configOptions
     }
-    guard let harnessId = selectedHarnessId else { return [] }
+    // A connected runtime with NO options is not an answer to trust: Claude
+    // reports none whenever its model list loses the startup race, and it
+    // publishes the list later as a config update. Until then, show the
+    // cached harness catalog rather than hiding the picker; a harness that
+    // genuinely has no options has nothing cached and still shows nothing.
+    guard let harnessId = activeHarnessId else { return [] }
     let pendingConfig = pendingConfigByHarness[harnessId] ?? [:]
     // Onboarding first seeds the controller with a harness-only catalog,
     // then warms the shared cache with model metadata in the background.
