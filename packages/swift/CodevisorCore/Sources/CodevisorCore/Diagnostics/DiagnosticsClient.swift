@@ -52,10 +52,6 @@ public final class DiagnosticsClient {
   private var dsn: String?
   private var sdkIsSetUp = false
 
-  /// Set after startup when Sentry confirms that the preceding opted-in run
-  /// crashed. The app uses this to show a transparent, dismissible notice.
-  public private(set) var crashedLastRun = false
-
   private init() {}
 
   /// Reads the public ingestion DSN embedded by the app target. An opted-out
@@ -118,10 +114,6 @@ public final class DiagnosticsClient {
     }
   }
 
-  public func dismissCrashNotice() {
-    crashedLastRun = false
-  }
-
   private func startIfNeeded() {
     guard !sdkIsSetUp, let dsn else { return }
 
@@ -176,20 +168,11 @@ public final class DiagnosticsClient {
       guard gate.isEnabled else { return nil }
       return DiagnosticsPrivacyFilter.sanitize(event)
     }
-    options.onLastRunStatusDetermined = { status, _ in
-      guard status == .didCrash, gate.isEnabled else { return }
-      Task { @MainActor in
-        guard DiagnosticsClient.shared.consentGate.isEnabled else { return }
-        DiagnosticsClient.shared.crashedLastRun = true
-      }
-    }
-
     SentrySDK.start(options: options)
     sdkIsSetUp = true
   }
 
   private func stopAndPurge() {
-    crashedLastRun = false
     if sdkIsSetUp {
       SentrySDK.close()
       sdkIsSetUp = false

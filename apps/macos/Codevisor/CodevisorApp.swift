@@ -260,7 +260,6 @@ struct RootView: View {
     // App-level fallback surface for errors with no natural home in the
     // UI (background sync, persistence).
     .overlay { ErrorBannerLayer() }
-    .overlay { DiagnosticsBannerLayer() }
     .onGeometryChange(for: CGFloat.self) { proxy in
       proxy.size.width
     } action: { width in
