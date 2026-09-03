@@ -20,6 +20,9 @@ struct SidebarWorkspaceRow: View {
   let onRename: () -> Void
   /// Nous mode only: adds a tab to this workspace (the sidebar's ⌘T).
   var onNewTab: (() -> Void)? = nil
+  /// Whether an unselected row drops to the secondary label color. Nous
+  /// rows keep the primary color like native sidebar items.
+  var dimsWhenUnselected = true
 
   var body: some View {
     HoverableRow(
@@ -104,7 +107,7 @@ struct SidebarWorkspaceRow: View {
       .padding(.vertical, 5)
       .frame(maxWidth: .infinity, alignment: .leading)
       .contentShape(Rectangle())
-      .foregroundStyle(isSelected ? Color.primary : .secondary)
+      .foregroundStyle(isSelected || !dimsWhenUnselected ? Color.primary : .secondary)
       .gesture(
         activationGesture,
         including: onToggle == nil ? .all : .none

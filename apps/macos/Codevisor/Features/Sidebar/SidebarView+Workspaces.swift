@@ -111,7 +111,8 @@ extension SidebarView {
         workspaceRenameTitle = item.workspace.name
         renamingWorkspace = item.workspace
       },
-      onNewTab: isNousMode ? { addNousTab(in: item) } : nil
+      onNewTab: isNousMode ? { addNousTab(in: item) } : nil,
+      dimsWhenUnselected: !isNousMode
     )
   }
 

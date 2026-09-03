@@ -51,7 +51,9 @@ struct SidebarWorkspaceTabRow: View {
       .padding(.vertical, 5)
       .frame(maxWidth: .infinity, alignment: .leading)
       .contentShape(Rectangle())
-      .foregroundStyle(isSelected ? Color.primary : .secondary)
+      // Native sidebar rows keep the label color whether or not they are
+      // selected; only the glyph and hover controls read as secondary.
+      .foregroundStyle(.primary)
       // Activate on pointer-down, like chat rows. A row gesture (not an
       // overlay) keeps the close button and context menu hit-testable.
       .gesture(
