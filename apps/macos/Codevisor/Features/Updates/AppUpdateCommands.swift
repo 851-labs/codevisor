@@ -3,24 +3,25 @@ import CodevisorCore
 import SwiftUI
 
 /// The app-menu "Check for Updates…" item, placed right below Settings.
-/// Opens the update center — the one surface for everything updatable —
-/// with a fresh fleet-wide check under way.
+/// Opens Settings › Updates — the one surface for everything updatable —
+/// which runs a fresh fleet-wide check as it appears.
 struct AppUpdateCommands: Commands {
   let environment: AppEnvironment
 
   var body: some Commands {
     CommandGroup(after: .appSettings) {
-      CheckForUpdatesMenuItem(center: environment.updateCenter)
+      CheckForUpdatesMenuItem()
     }
   }
 }
 
 private struct CheckForUpdatesMenuItem: View {
-  let center: UpdateCenter
+  @Environment(\.openSettings) private var openSettings
 
   var body: some View {
     Button("Check for Updates…") {
-      center.isPresented = true
+      SettingsRouter.shared.showUpdates()
+      openSettings()
     }
   }
 }

@@ -629,6 +629,7 @@ final class StubLocalServer: LocalServerControlling {
 
   func configureManagedService(_ service: LocalCodevisorManagedService) {}
   func ensureRunning() async -> LocalCodevisorServerState { state }
-  func prepareForAppUpdate() async -> Bool { true }
+  func prepareForAppUpdate(onStatus: @escaping @MainActor (String) -> Void) async -> Bool { true }
+  func abandonAppUpdate() async {}
   func shutdown() async -> Bool { true }
 }

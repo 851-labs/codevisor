@@ -388,6 +388,11 @@ public protocol CodevisorServerClienting: Sendable {
   ) async throws
   func requestShutdown() async throws
   func applyServerUpdate(channel: ServerUpdateChannel) async throws -> ServerUpdateApplied
+  /// The restart drain: begin/hurry, poll, and cancel. Defaults report an
+  /// already-drained server so fakes and older servers need no changes.
+  func beginRestartDrain(interrupt: Bool) async throws -> ServerRestartDrainState
+  func restartDrainState() async throws -> ServerRestartDrainState
+  func cancelRestartDrain() async throws
   func eventStream(since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error>
   /// Project/session metadata changes after a freshly loaded shell snapshot.
   func shellEventStream() -> AsyncThrowingStream<ServerEventEnvelope, any Error>

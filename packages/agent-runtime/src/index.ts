@@ -210,6 +210,7 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
         void Effect.runPromise(created.handle.close).catch(() => undefined)
         return { ...created.metadata, configOptions }
       }),
+    loadedAgentSessionIds: () => [...sessions.keys()],
     loadAgentSession: (harnessId, agentSessionId, cwd, sink, account, toolGateway) =>
       adapterPromise("loadAgentSession", () =>
         withSessionLifecycle(agentSessionId, async () => {

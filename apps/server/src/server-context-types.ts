@@ -15,6 +15,7 @@ import type { McpManager } from "@codevisor/mcp"
 import type { NativeMcpManager } from "@codevisor/mcp"
 import type { SkillsManager } from "@codevisor/skills"
 import type { PluginRegistryClient, PluginsManager } from "@codevisor/plugins"
+import type { RestartCoordinator } from "./restart-drain.js"
 
 /// The server's service/config contracts, the Effect service tag, and the
 /// event fanout every route publishes through.
@@ -64,6 +65,13 @@ export interface CodevisorServerConfig {
   /// exit (used by the macOS app to swap in an updated server runtime).
   readonly onShutdownRequested?: (() => void) | undefined
   readonly updater?: CodevisorServerUpdater | undefined
+  /// Where the restart drain records which sessions to bring back after the
+  /// process restarts. Absent (tests, embedded runs) keeps the record in
+  /// memory, so nothing resumes across a real restart.
+  readonly restartSnapshotPath?: string | undefined
+  /// How long an update waits for live turns to finish before interrupting
+  /// them. Defaults to ten minutes.
+  readonly restartDrainTimeoutMs?: number | undefined
   /// Host power policy for active locally hosted turns. The production macOS
   /// server supplies a scoped idle-sleep assertion; other platforms/tests
   /// omit it.
@@ -164,6 +172,12 @@ export interface RouteState {
   /// Sessions whose queue drain was held because a turn was active.
   /// Re-drained when that turn's terminal event arrives.
   readonly turnHeldSessions: Set<string>
+  /// Sessions whose prompt dispatch is held by the restart drain (an update
+  /// is waiting for live turns to end). Re-drained after the restart, or
+  /// immediately if the drain is cancelled.
+  readonly restartHeldSessions: Set<string>
+  /// The restart drain for this process; see restart-drain.ts.
+  readonly restart: RestartCoordinator
   /// The last published release-state fingerprint, so repeated update
   /// checks with an unchanged outcome emit no update.changed event.
   readonly updateSignature: { value?: string }

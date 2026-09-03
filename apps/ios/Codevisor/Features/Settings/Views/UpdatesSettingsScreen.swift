@@ -53,6 +53,12 @@ struct UpdatesSettingsScreen: View {
 
   private var updateAllSection: some View {
     Section {
+      if let notice = center.updateAllNotice {
+        Text(notice)
+          .font(.footnote)
+          .foregroundStyle(.red)
+          .fixedSize(horizontal: false, vertical: true)
+      }
       Button {
         Task { await center.updateAll() }
       } label: {
@@ -106,6 +112,13 @@ struct UpdatesSettingsScreen: View {
             .font(.footnote)
             .foregroundStyle(.red)
             .fixedSize(horizontal: false, vertical: true)
+        } else if component.phase == .updating, let status = component.statusMessage {
+          // What the machine is doing right now: draining chats,
+          // installing, restarting.
+          Text(status)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .contentTransition(.numericText())
         }
       }
       Spacer(minLength: 8)

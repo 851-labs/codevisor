@@ -166,7 +166,7 @@ describe("@codevisor/server self-updates", () => {
     expect(events[1]?.payload).toMatchObject({ latestVersion: "0.1.0", updateAvailable: false })
   })
 
-  it("refuses to apply an update while a chat is mid-turn", async () => {
+  it("refuses to apply an update while a chat is mid-turn when asked not to wait", async () => {
     const { agents, services } = await makeServices("server-busy")
     const server = await run(
       startCodevisorServer(
@@ -207,15 +207,17 @@ describe("@codevisor/server self-updates", () => {
       })
     ).body as { readonly id: string }
 
-    // "slow prompt" keeps the session in activePromptSessions for ~250ms; the
-    // update must be refused for that whole window.
+    // "slow prompt" keeps the session in activePromptSessions for ~250ms; a
+    // caller that opts out of the drain is refused for that whole window.
     await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
       body: JSON.stringify({ text: "slow prompt" }),
       method: "POST"
     })
     await waitFor(() => agents.prompts.length === 1)
 
-    const busy = await jsonRequest(server, "/v1/update/apply", { method: "POST" })
+    const busy = await jsonRequest(server, "/v1/update/apply?whenBusy=refuse", {
+      method: "POST"
+    })
     expect(busy.status).toBe(200)
     expect(busy.body).toMatchObject({ accepted: false, reason: "busy" })
 

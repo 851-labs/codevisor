@@ -206,6 +206,24 @@ public struct ServerUpdateInfo: Decodable, Equatable, Sendable {
   }
 }
 
+/// The server's restart drain (`/v1/restart/drain`): whether it is holding
+/// new prompts while live turns finish so it can restart safely.
+public struct ServerRestartDrainState: Decodable, Equatable, Sendable {
+  public var state: String
+  public var remaining: Int
+  public var startedAt: String?
+  public var deadlineAt: String?
+
+  public init(state: String, remaining: Int, startedAt: String? = nil, deadlineAt: String? = nil) {
+    self.state = state
+    self.remaining = remaining
+    self.startedAt = startedAt
+    self.deadlineAt = deadlineAt
+  }
+
+  public var isDrained: Bool { state == "drained" }
+}
+
 /// Response of `POST /v1/update/apply`.
 public struct ServerUpdateApplied: Decodable, Equatable, Sendable {
   public var accepted: Bool
@@ -219,17 +237,22 @@ public struct ServerUpdateApplied: Decodable, Equatable, Sendable {
   /// chats are still running. Absent on older servers and on plain
   /// already-up-to-date responses.
   public var reason: String?
+  /// True when the server accepted but is first waiting for live chats to
+  /// finish (its restart drain); `updateInfo().lastApply` reports progress.
+  public var draining: Bool?
 
   public init(
     accepted: Bool,
     targetVersion: String?,
     targetBuildNumber: Int? = nil,
-    reason: String? = nil
+    reason: String? = nil,
+    draining: Bool? = nil
   ) {
     self.accepted = accepted
     self.targetVersion = targetVersion
     self.targetBuildNumber = targetBuildNumber
     self.reason = reason
+    self.draining = draining
   }
 }
 
@@ -357,5 +380,29 @@ extension CodevisorServerClient {
   ) async throws -> ServerUpdateApplied {
     let suffix = channel == .stable ? "" : "?channel=\(channel.rawValue)"
     return try await send("/v1/update/apply\(suffix)", method: "POST", body: Optional<EmptyBody>.none)
+  }
+
+  private struct RestartDrainBody: Encodable {
+    var interrupt: Bool
+  }
+
+  /// Starts (or, with `interrupt`, hurries) the server's restart drain and
+  /// returns its current state; poll `restartDrainState()` until drained.
+  public func beginRestartDrain(interrupt: Bool = false) async throws -> ServerRestartDrainState {
+    try await send(
+      "/v1/restart/drain",
+      method: "POST",
+      body: RestartDrainBody(interrupt: interrupt)
+    )
+  }
+
+  public func restartDrainState() async throws -> ServerRestartDrainState {
+    try await get("/v1/restart/drain")
+  }
+
+  /// Abandons a drain whose update is not happening after all, so held
+  /// prompts dispatch again.
+  public func cancelRestartDrain() async throws {
+    try await sendNoResponse("/v1/restart/drain", method: "DELETE")
   }
 }

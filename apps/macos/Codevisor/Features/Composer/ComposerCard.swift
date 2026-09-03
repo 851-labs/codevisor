@@ -6,9 +6,10 @@ import CodevisorUI
 import UniformTypeIdentifiers
 
 extension EnvironmentValues {
-  /// True while an app self-update or a selected-server update is installing.
-  /// Injected at the root; the composer reads it to lock its submit action so
-  /// no new turn starts while the app/server is about to restart.
+  /// True while THIS app is installing its own update and about to restart.
+  /// Injected at the root; the composer reads it to lock its submit action.
+  /// A remote machine's server update does not set it: that server drains
+  /// and holds its own prompts.
   @Entry var isAppUpdateInProgress: Bool = false
 }
 
@@ -36,8 +37,8 @@ struct ComposerCard: View {
 
   @Environment(\.theme) private var theme
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  /// Locks the submit action while an app/server update is installing so no
-  /// new turn starts during the restart. Defaults to false (e.g. previews).
+  /// Locks the submit action while the app is installing its own update so
+  /// no new turn starts during the restart. Defaults to false (previews).
   @Environment(\.isAppUpdateInProgress) private var isAppUpdateInProgress
   // Match ChatInputEditor's first TextKit measurement so switching sessions
   // never shows the shorter pre-measurement card for a frame.

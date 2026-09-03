@@ -69,7 +69,9 @@ extension MachineController {
   /// Asks a machine's server to update itself, then waits for it to
   /// restart into the newer version before refreshing its state and
   /// resubscribing to its event stream. Tracks progress on THAT machine's
-  /// connection, so the attempt survives the user switching machines.
+  /// connection, so the attempt survives the user switching machines. A
+  /// server with chats mid-turn drains them first (holding new prompts) and
+  /// reports that through `lastApply`; the wait extends while it does.
   public func updateServer(machineId: String) async {
     let connection = connection(for: machineId)
     guard connection.updatePhase != .updating else { return }
@@ -77,6 +79,7 @@ extension MachineController {
     let updateChannel = serverUpdateChannel
     let initialVersion = connection.updateInfo?.currentVersion
     connection.updatePhase = .updating
+    defer { connection.updateStatusMessage = nil }
     // Close the gate before dispatching the update request. The server
     // may begin shutting down as soon as it handles that endpoint, before
     // the response has made the round trip back to this client.
@@ -104,25 +107,46 @@ extension MachineController {
       // The pre-apply handoff report, so a stale failure left by an
       // earlier attempt is never mistaken for this one's outcome.
       let initialApplyAt = connection.updateInfo?.lastApply?.at
-      for _ in 0..<updatePollAttempts {
+      if applied.draining == true {
+        connection.updateStatusMessage = "Waiting for chats to finish…"
+      }
+      // Deadline-based rather than a fixed attempt count: while the server
+      // reports it is still draining live chats, the deadline moves out —
+      // the server bounds the drain itself (and interrupts at its own
+      // deadline), so this never waits forever.
+      let clock = ContinuousClock()
+      let pollBudget = updatePollInterval * updatePollAttempts
+      var deadline = clock.now + pollBudget
+      while clock.now < deadline {
         try? await Task.sleep(for: updatePollInterval)
-        // App-hosted servers report their host app's unattended
-        // Sparkle session; a fresh failure ends the wait with the
-        // machine's real reason instead of a timeout.
+        // The machine's own progress report: draining, installing (on
+        // app-hosted Macs, the host app's headless Sparkle session), or a
+        // fresh failure — which ends the wait with the real reason
+        // instead of a timeout.
         let update = try? await client.updateInfo(
           refresh: false,
           channel: updateChannel
         )
         if let lastApply = update?.lastApply,
-          lastApply.state == "failed",
-          lastApply.at != initialApplyAt
+          lastApply.at != initialApplyAt || lastApply.state == "draining"
         {
-          connection.updatePhase = .failed(
-            lastApply.message ?? "The update failed on the machine."
-          )
-          markReady(for: machineId)
-          resumeEventStream(for: machineId)
-          return
+          switch lastApply.state {
+          case "failed":
+            connection.updatePhase = .failed(
+              lastApply.message ?? "The update failed on the machine."
+            )
+            markReady(for: machineId)
+            resumeEventStream(for: machineId)
+            return
+          case "draining":
+            connection.updateStatusMessage = lastApply.message ?? "Waiting for chats to finish…"
+            deadline = max(deadline, clock.now + pollBudget)
+            continue
+          case "installing":
+            connection.updateStatusMessage = lastApply.message ?? "Installing…"
+          default:
+            break
+          }
         }
         guard let info = try? await client.info() else { continue }
         var converged = false

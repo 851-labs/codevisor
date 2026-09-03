@@ -254,8 +254,8 @@ struct RootView: View {
         set: { quickLook.updatePreviewURL($0) }
       )
     )
-    // Locks the composer's submit action while an update installs (the
-    // app or selected server is about to restart).
+    // Locks the composer's submit action while this app installs its own
+    // update (it is about to restart).
     .environment(\.isAppUpdateInProgress, environment.isUpdateInProgress)
     // App-level fallback surface for errors with no natural home in the
     // UI (background sync, persistence).
@@ -350,10 +350,10 @@ struct RootView: View {
         await environment.cloud.bootstrap()
       }
     }
-    // The update center: the one surface for everything updatable,
-    // opened from the menu, the sidebar footer, or Settings. Also owns
-    // the fleet upkeep cadence.
-    .modifier(UpdateCenterPresentation())
+    // Fleet update upkeep: the periodic sweep behind the sidebar footer
+    // count and Settings › Updates, and the resume of an update-all the
+    // app's own restart interrupted.
+    .modifier(UpdateCenterUpkeep())
     // codevisor://add-machine deeplinks, printed by `codevisor setup` on a
     // remote machine. Extracted into its own modifier: inlining the
     // alerts here pushed this already-large chain past the Swift type

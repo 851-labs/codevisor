@@ -428,6 +428,7 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
       || path == "/v1/info"
       || path == "/v1/shutdown"
       || path.hasPrefix("/v1/update")
+      || path.hasPrefix("/v1/restart")
   }
 
   func applyAuthorization(to request: inout URLRequest) {

@@ -129,6 +129,9 @@ export const makeAgents = (): AgentRuntimeService & {
   const emit = async (sessionId: string, event: RuntimeEvent): Promise<void> => {
     await sinks.get(sessionId)?.(event)
   }
+  /// Turns that run until `cancel` ("prompt until cancelled"): lets tests
+  /// exercise interrupt paths deterministically instead of racing a timer.
+  const cancellable = new Map<string, () => void>()
   return {
     loads,
     prompts,
@@ -255,6 +258,21 @@ export const makeAgents = (): AgentRuntimeService & {
         if (text === "slow prompt") {
           await new Promise((resolve) => setTimeout(resolve, 250))
         }
+        if (text === "prompt until cancelled") {
+          const turnId = `turn-${prompts.length}`
+          await emit(sessionId, {
+            kind: "session.updated",
+            subjectId: sessionId,
+            payload: { initiatedBy: "user", turnId, turnState: "started" }
+          })
+          await new Promise<void>((resolve) => cancellable.set(sessionId, resolve))
+          await emit(sessionId, {
+            kind: "session.updated",
+            subjectId: sessionId,
+            payload: { initiatedBy: "user", stopReason: "cancelled", turnId, turnState: "ended" }
+          })
+          return { stopReason: "cancelled" }
+        }
         if (text === "prompt fails") {
           throw new Error("prompt failed")
         }
@@ -360,8 +378,11 @@ export const makeAgents = (): AgentRuntimeService & {
     cancel: (sessionId) =>
       Effect.sync(() => {
         cancellations.push(sessionId)
+        cancellable.get(sessionId)?.()
+        cancellable.delete(sessionId)
         return { runtimeState: "reusable" as const }
       }),
+    loadedAgentSessionIds: () => [...sinks.keys()],
     closeAgentSession: (sessionId) =>
       Effect.sync(() => {
         closes.push(sessionId)

@@ -39,6 +39,26 @@ struct AppUpdateModelTests {
     #expect(model.isUpdating)
   }
 
+  @Test("Install progress is reported and cleared with the phase")
+  func installProgress() {
+    let model = AppUpdateModel(currentVersion: "1.2.3")
+    model.reportAvailable(version: "1.2.4", releasePageURL: nil)
+    model.reportInstalling(version: "1.2.4", releasePageURL: nil)
+    model.reportProgress("Downloading…", fraction: 0.42)
+    #expect(model.statusMessage == "Downloading…")
+    #expect(model.progress == 0.42)
+
+    // Fractions are clamped; a step without a measure clears the bar.
+    model.reportProgress("Waiting for 2 chats to finish…", fraction: 1.7)
+    #expect(model.progress == 1)
+    model.reportProgress("Installing…")
+    #expect(model.progress == nil)
+
+    model.reportFailure("network unavailable")
+    #expect(model.statusMessage == nil)
+    #expect(model.progress == nil)
+  }
+
   @Test("Failures retain the release for retry")
   func retryableFailure() {
     let model = AppUpdateModel(currentVersion: "1.2.3")

@@ -23,10 +23,24 @@ import {
 } from "./server.js"
 import type { RunningCodevisorServer } from "./server.js"
 import type { CodevisorServerConfig, CodevisorServerServices } from "./server.js"
+import type { RestartCoordinator } from "./restart-drain.js"
 import { makeMcpManager } from "@codevisor/mcp"
 import { run, makeAgents } from "./test-support-agents.js"
 export * from "./test-support-agents.js"
 export * from "./test-support-stubs.js"
+
+/// A restart coordinator that never gates: for tests that assemble a
+/// `RouteState` by hand and don't exercise the restart drain.
+export const idleRestartCoordinator = (): RestartCoordinator => {
+  const startedAt = "2026-06-30T00:00:00.000Z"
+  return {
+    state: () => ({ state: "idle", remaining: 0, startedAt }),
+    isGated: () => false,
+    begin: async () => ({ state: "drained", remaining: 0, startedAt }),
+    cancel: async () => ({ state: "idle", remaining: 0, startedAt }),
+    close: () => {}
+  }
+}
 
 export class FakeProcess implements TerminalProcess {
   readonly writes: Array<string> = []

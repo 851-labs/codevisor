@@ -27,19 +27,26 @@ public final class AppUpdateModel {
   }
 
   public private(set) var phase: Phase = .idle
+  /// Download progress (0...1) while the update is downloading; nil when the
+  /// current step has no measurable progress.
+  public private(set) var progress: Double?
+  /// What the update is doing right now ("Downloading…", "Waiting for 2
+  /// chats to finish…"); nil outside an install.
+  public private(set) var statusMessage: String?
   public let currentVersion: String
   public let currentBuildNumber: Int?
   public private(set) var allowsAlphaUpdates: Bool
 
   /// Installed by the app target's Sparkle coordinator. The boolean is true
-  /// for a user-initiated check (show Sparkle's native UI) and false for a
-  /// quiet information check used to drive the sidebar banner.
+  /// for a user-initiated check and false for a quiet background check;
+  /// both report through this model — Sparkle never shows its own UI.
   public var checkHandler: (@MainActor (_ userInitiated: Bool) async -> Void)?
-  /// Presents Sparkle's native update UI for the release behind the banner.
+  /// Installs the release behind the banner headlessly: download, drain the
+  /// local server's chats, install, relaunch — progress lands in this model.
   public var installHandler: (@MainActor (AppUpdateRelease) async -> Void)?
-  /// Runs one headless check-download-install-relaunch cycle with no UI.
-  /// Used when a remote client asked this machine to update itself — there
-  /// may be nobody at this screen to accept a prompt.
+  /// The same headless cycle, started without a known release: used when a
+  /// remote client asked this machine's server to update itself, so the
+  /// feed check and the install run as one session.
   public var unattendedInstallHandler: (@MainActor () async -> Void)?
   /// Resets Sparkle's update cycle after the user changes channels.
   public var channelChangeHandler: (@MainActor (_ allowsAlpha: Bool) -> Void)?
@@ -119,6 +126,7 @@ public final class AppUpdateModel {
 
   public func reportUpToDate() {
     phase = .upToDate
+    reportProgress(nil)
   }
 
   public func reportInstalling(version: String, releasePageURL: URL?) {
@@ -127,12 +135,20 @@ public final class AppUpdateModel {
     )
   }
 
+  /// A step of the install: `progress` is the download fraction when known.
+  public func reportProgress(_ message: String?, fraction: Double? = nil) {
+    statusMessage = message
+    progress = fraction.map { min(1, max(0, $0)) }
+  }
+
   public func reportFailure(_ message: String) {
     phase = .failed(release: availableRelease, message: message)
+    reportProgress(nil)
   }
 
   public func reportIdle() {
     phase = .idle
+    reportProgress(nil)
   }
 
   public static func bundleVersion(_ bundle: Bundle = .main) -> String {

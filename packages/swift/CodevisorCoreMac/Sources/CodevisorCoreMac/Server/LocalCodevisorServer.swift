@@ -273,16 +273,60 @@ public final class LocalCodevisorServer: LocalServerControlling {
     }
   }
 
-  /// Stops launchd ownership before Sparkle replaces the bundle, then waits
-  /// for the old runtime to release its executable and database lease.
+  /// How long the app waits for the server's live chats to finish before
+  /// asking the server to interrupt them. The server has its own deadline;
+  /// this one only guards against a server that never reports drained.
+  static let appUpdateDrainTimeout: Duration = .seconds(15 * 60)
+  static let appUpdateDrainPollInterval: Duration = .seconds(1)
+
+  /// Drains live chats, stops launchd ownership before Sparkle replaces the
+  /// bundle, then waits for the old runtime to release its executable and
+  /// database lease. The drain snapshots the live sessions so the updated
+  /// server brings them back and dispatches any prompts held meanwhile.
   @discardableResult
-  public func prepareForAppUpdate() async -> Bool {
+  public func prepareForAppUpdate(
+    onStatus: @escaping @MainActor (String) -> Void = { _ in }
+  ) async -> Bool {
     updateRequestMonitor?.cancel()
     updateRequestMonitor = nil
     updateRequestSource?.cancel()
     updateRequestSource = nil
+    await drainForAppUpdate(onStatus: onStatus)
     try? await managedService?.stop()
     return await shutdown()
+  }
+
+  /// Asks the server to drain and polls until it reports drained. A server
+  /// that cannot answer (already gone, or predating the drain) is treated as
+  /// drained: the shutdown that follows behaves exactly as before.
+  private func drainForAppUpdate(onStatus: @escaping @MainActor (String) -> Void) async {
+    guard let first = try? await client.beginRestartDrain(interrupt: false) else { return }
+    if first.isDrained { return }
+    let clock = ContinuousClock()
+    let deadline = clock.now + Self.appUpdateDrainTimeout
+    var interrupted = false
+    while true {
+      guard let state = try? await client.restartDrainState() else { return }
+      if state.isDrained { return }
+      let chats = state.remaining == 1 ? "1 chat" : "\(state.remaining) chats"
+      onStatus("Waiting for \(chats) to finish…")
+      if clock.now >= deadline, !interrupted {
+        interrupted = true
+        _ = try? await client.beginRestartDrain(interrupt: true)
+      }
+      try? await Task.sleep(for: Self.appUpdateDrainPollInterval)
+    }
+  }
+
+  public func abandonAppUpdate() async {
+    try? await client.cancelRestartDrain()
+    if await isHealthy() {
+      startUpdateRequestMonitor()
+      return
+    }
+    // The server was already stopped for the update: bring it back so the
+    // app is usable again without a relaunch.
+    await ensureRunning()
   }
 
   /// Stops the running local server so a newer bundled runtime can take over

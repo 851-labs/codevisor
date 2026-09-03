@@ -83,7 +83,12 @@ final class MacServerAgentController {
     }.value
   }
 
-  func prepareForAppUpdate(localServer: (any LocalServerControlling)?) async -> Bool {
+  /// Drains and stops the local server ahead of a bundle swap. `onStatus`
+  /// receives progress such as "Waiting for 2 chats to finish…".
+  func prepareForAppUpdate(
+    localServer: (any LocalServerControlling)?,
+    onStatus: @escaping @MainActor (String) -> Void = { _ in }
+  ) async -> Bool {
     do {
       try await retireLegacyJobs()
     } catch {
@@ -93,7 +98,7 @@ final class MacServerAgentController {
       return false
     }
     if let localServer {
-      return await localServer.prepareForAppUpdate()
+      return await localServer.prepareForAppUpdate(onStatus: onStatus)
     } else {
       do {
         try await unregister()

@@ -119,6 +119,10 @@ export interface AgentRuntimeService {
     input: string | PromptInput
   ) => Effect.Effect<PromptResult, AgentRuntimeError>
   readonly cancel: (sessionId: string) => Effect.Effect<CancelResult, AgentRuntimeError>
+  /// The agent session ids (harness-native ids, as passed to
+  /// `loadAgentSession`) with a live process in this runtime. The restart
+  /// drain snapshots these so a server restart can bring them back.
+  readonly loadedAgentSessionIds: () => ReadonlyArray<string>
   /// Closes a loaded agent session and its process (background shells
   /// included). No-op when the session is not loaded — archiving a session
   /// that was never opened this server-lifetime has nothing to tear down.

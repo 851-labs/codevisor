@@ -239,6 +239,13 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   var _updateInfoRefreshes: [Bool] = []
   var _appliedChannels: [ServerUpdateChannel] = []
   var _busy = false
+  /// Simulated restart drain: `applyServerUpdate` accepts but the server
+  /// reports "draining" for this many update-info polls before restarting.
+  var _drainPollsRemaining = 0
+  /// Simulated in-flight harness update: inventory reads report the
+  /// harness as "updating" for this many reads after a trigger.
+  var _harnessLifecycleActivePolls = 0
+  var _harnessLifecycleReads = 0
   var currentBuildNumber: Int?
   var targetBuildNumber: Int?
   var applyFailureMessage: String?

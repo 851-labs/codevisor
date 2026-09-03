@@ -38,6 +38,21 @@ extension SyncFakeServerClient {
     lock.withLock { _busy = value }
   }
 
+  /// Makes the next apply accept with `draining: true` and report a
+  /// "draining" `lastApply` for `polls` update-info reads before the
+  /// simulated restart happens.
+  func configureDrain(polls: Int) {
+    lock.withLock { _drainPollsRemaining = polls }
+  }
+
+  /// After a harness update is triggered, inventory reads report it as
+  /// still updating for `polls` reads, then as finished.
+  func configureHarnessUpdateInProgress(polls: Int) {
+    lock.withLock { _harnessLifecycleActivePolls = polls }
+  }
+
+  var harnessLifecycleReads: Int { lock.withLock { _harnessLifecycleReads } }
+
   /// Makes the next apply accept the handoff but fail on the machine:
   /// nothing restarts and updateInfo starts reporting the failure.
   func configureApplyFailure(message: String) {
@@ -271,6 +286,17 @@ extension SyncFakeServerClient {
     lock.withLock {
       _updateInfoChannels.append(channel)
       _updateInfoRefreshes.append(refresh)
+      if lastApply?.state == "draining" {
+        // Still draining for a while; the last poll performs the restart
+        // the accepted apply deferred.
+        if _drainPollsRemaining > 1 {
+          _drainPollsRemaining -= 1
+        } else {
+          _drainPollsRemaining = 0
+          lastApply = nil
+          performSimulatedRestart()
+        }
+      }
       return ServerUpdateInfo(
         currentVersion: currentVersion,
         latestVersion: latestVersion,
@@ -311,20 +337,39 @@ extension SyncFakeServerClient {
         )
       }
       _operationLog.append("server.apply")
-      // The server restarts: unreachable for a few probes, then back on
-      // the new version.
-      downtimeRemaining = 3
       let targetVersion = latestVersion
-      currentVersion = installedVersionAfterUpdate ?? latestVersion
-      if let targetBuildNumber { currentBuildNumber = targetBuildNumber }
-      updateApplied = true
-      bootId = "boot-after-update"
+      if _drainPollsRemaining > 0 {
+        // Chats are mid-turn: accepted, but the restart waits for them.
+        lastApply = ServerUpdateApplyState(
+          state: "draining",
+          message: "Waiting for 2 chats to finish",
+          targetVersion: targetVersion,
+          at: "2026-06-30T00:00:02.000Z"
+        )
+        return ServerUpdateApplied(
+          accepted: true,
+          targetVersion: targetVersion,
+          targetBuildNumber: targetBuildNumber,
+          draining: true
+        )
+      }
+      performSimulatedRestart()
       return ServerUpdateApplied(
         accepted: true,
         targetVersion: targetVersion,
         targetBuildNumber: targetBuildNumber
       )
     }
+  }
+
+  /// The server restarts: unreachable for a few probes, then back on the
+  /// new version. Callers hold `lock`.
+  private func performSimulatedRestart() {
+    downtimeRemaining = 3
+    currentVersion = installedVersionAfterUpdate ?? latestVersion
+    if let targetBuildNumber { currentBuildNumber = targetBuildNumber }
+    updateApplied = true
+    bootId = "boot-after-update"
   }
   func issuePairingToken() async throws -> ServerPairingToken {
     ServerPairingToken(token: "hm_test", createdAt: "2026-06-30T00:00:00.000Z")
@@ -347,6 +392,21 @@ extension SyncFakeServerClient {
     )
   }
   func listHarnesses() async throws -> [ServerHarness] { lock.withLock { _harnesses } }
+
+  /// Inventory with lifecycle: while a simulated harness update is in
+  /// progress, every harness reports phase "updating".
+  func listHarnessesWithLifecycle() async throws -> [ServerHarness] {
+    lock.withLock {
+      _harnessLifecycleReads += 1
+      guard _harnessLifecycleActivePolls > 0 else { return _harnesses }
+      _harnessLifecycleActivePolls -= 1
+      return _harnesses.map { harness in
+        var updating = harness
+        updating.lifecycle = ServerHarnessLifecycleState(phase: "updating")
+        return updating
+      }
+    }
+  }
   func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness { fatalError("unused") }
   func upsertProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }
   func updateProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }

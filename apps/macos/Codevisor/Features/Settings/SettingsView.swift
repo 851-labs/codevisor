@@ -117,6 +117,12 @@ final class SettingsRouter {
     selectedTab = .machines
   }
 
+  /// Opens the Updates pane — the one surface for everything updatable.
+  func showUpdates() {
+    panePath = []
+    selectedTab = .updates
+  }
+
   /// Opens the Harnesses pane. Every machine's harnesses live right there
   /// as disclosures, so a deep link needs no machine-specific page — the
   /// machineId is accepted for callers that have one but changes nothing.
@@ -279,7 +285,7 @@ struct SettingsView: View {
   private var detailRoot: some View {
     switch router.selectedTab {
     case .updates:
-      UpdateCenterView(context: .settings)
+      UpdateCenterView()
         .navigationTitle("Updates")
     case .general:
       GeneralSettingsView()

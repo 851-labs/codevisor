@@ -2,55 +2,17 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// The one place updates live: every updatable component across the fleet
-/// (app, servers, agents, plugins), grouped by kind, with per-row installs
-/// and one properly ordered "Update All".
+/// Settings › Updates — the one place updates live: every updatable
+/// component across the fleet (app, servers, agents, plugins), grouped by
+/// kind, with per-row installs, live progress, and one properly ordered
+/// "Update All".
 struct UpdateCenterView: View {
-  enum Context {
-    case sheet
-    case settings
-  }
-
   @Environment(AppEnvironment.self) private var environment
-  @Environment(\.dismiss) private var dismiss
   @Environment(\.theme) private var theme
-
-  let context: Context
-
-  init(context: Context = .sheet) {
-    self.context = context
-  }
 
   private var center: UpdateCenter { environment.updateCenter }
 
   var body: some View {
-    Group {
-      switch context {
-      case .sheet:
-        sheetContent
-      case .settings:
-        settingsContent
-      }
-    }
-    .task { await center.refresh(force: true) }
-  }
-
-  private var sheetContent: some View {
-    VStack(spacing: 0) {
-      Form {
-        componentSections
-      }
-      .formStyle(.grouped)
-      .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
-      Divider().overlay(theme.isSystem ? Color.clear : theme.separator)
-      footer(showsDoneButton: true)
-        .themedSurface(.sheet)
-    }
-    .frame(width: 560, height: 480)
-    .themedSurface(.sheet)
-  }
-
-  private var settingsContent: some View {
     VStack(spacing: 0) {
       Form {
         updateChannelSection
@@ -58,8 +20,9 @@ struct UpdateCenterView: View {
       }
       .settingsPaneFormStyle(theme)
       Divider().overlay(theme.isSystem ? Color.clear : theme.separator)
-      footer(showsDoneButton: false)
+      footer
     }
+    .task { await center.refresh(force: true) }
   }
 
   private var updateChannelSection: some View {
@@ -141,6 +104,13 @@ struct UpdateCenterView: View {
             .font(.callout)
             .foregroundStyle(theme.statusError)
             .fixedSize(horizontal: false, vertical: true)
+        } else if component.phase == .updating, let status = component.statusMessage {
+          // What the machine is doing right now: draining chats,
+          // downloading, restarting.
+          Text(status)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .contentTransition(.numericText())
         }
       }
       Spacer(minLength: 8)
@@ -153,8 +123,14 @@ struct UpdateCenterView: View {
   private func trailing(for component: UpdateComponent) -> some View {
     switch component.phase {
     case .updating:
-      ProgressView()
-        .controlSize(.small)
+      if let progress = component.progress {
+        ProgressView(value: progress)
+          .progressViewStyle(.linear)
+          .frame(width: 96)
+      } else {
+        ProgressView()
+          .controlSize(.small)
+      }
     case .failed:
       Button("Try Again") { Task { await center.update(component) } }
         .controlSize(.small)
@@ -171,31 +147,34 @@ struct UpdateCenterView: View {
     }
   }
 
-  private func footer(showsDoneButton: Bool) -> some View {
-    HStack(spacing: 10) {
-      if center.isRefreshing {
-        ProgressView()
-          .controlSize(.small)
-      } else if let refreshed = center.lastRefreshedAt {
-        Text("Checked \(refreshed.formatted(date: .omitted, time: .shortened))")
+  private var footer: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      if let notice = center.updateAllNotice {
+        Text(notice)
           .font(.callout)
-          .foregroundStyle(.secondary)
+          .foregroundStyle(theme.statusError)
+          .fixedSize(horizontal: false, vertical: true)
       }
-      Spacer()
-      Button("Check Again") { Task { await center.refresh(force: true) } }
-        .settingsActionTint(theme)
-        .disabled(center.isRefreshing || center.isUpdatingAll)
-      if center.availableCount > 0 {
-        Button(center.isUpdatingAll ? "Updating…" : "Update All") {
-          Task { await center.updateAll() }
+      HStack(spacing: 10) {
+        if center.isRefreshing {
+          ProgressView()
+            .controlSize(.small)
+        } else if let refreshed = center.lastRefreshedAt {
+          Text("Checked \(refreshed.formatted(date: .omitted, time: .shortened))")
+            .font(.callout)
+            .foregroundStyle(.secondary)
         }
-        .buttonStyle(.borderedProminent)
-        .disabled(center.isUpdatingAll)
-      }
-      if showsDoneButton {
-        Button("Done") { dismiss() }
+        Spacer()
+        Button("Check Again") { Task { await center.refresh(force: true) } }
           .settingsActionTint(theme)
-          .keyboardShortcut(.cancelAction)
+          .disabled(center.isRefreshing || center.isUpdatingAll)
+        if center.availableCount > 0 {
+          Button(center.isUpdatingAll ? "Updating…" : "Update All") {
+            Task { await center.updateAll() }
+          }
+          .buttonStyle(.borderedProminent)
+          .disabled(center.isUpdatingAll)
+        }
       }
     }
     .padding()

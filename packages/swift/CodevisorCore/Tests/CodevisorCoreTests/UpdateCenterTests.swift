@@ -166,30 +166,6 @@ struct UpdateCenterTests {
     controller.stopEventSync()
   }
 
-  @Test("App updates dismiss the update sheet before invoking Sparkle")
-  func appUpdateDismissesSheet() async throws {
-    let controller = try makeController(
-      fakes: ["local": SyncFakeServerClient(projects: [], sessions: [])],
-      remotes: []
-    )
-    let appUpdate = AppUpdateModel(currentVersion: "1.0.0")
-    appUpdate.checkHandler = { _ in }
-    let center = UpdateCenter(machines: controller, appUpdate: appUpdate)
-    var sheetWasPresentedWhenInstallStarted: Bool?
-    appUpdate.installHandler = { _ in
-      sheetWasPresentedWhenInstallStarted = center.isPresented
-    }
-    appUpdate.reportAvailable(version: "2.0.0", releasePageURL: nil)
-    center.isPresented = true
-
-    let component = try #require(center.components.first { $0.kind == .app })
-    await center.update(component)
-
-    #expect(!center.isPresented)
-    #expect(sheetWasPresentedWhenInstallStarted == false)
-    controller.stopEventSync()
-  }
-
   @Test("An app update leaves the session for the relaunched client")
   func appUpdateLeavesSessionForRelaunch() async throws {
     let controller = try makeController(
@@ -214,7 +190,6 @@ struct UpdateCenterTests {
       store: store
     )
     await relaunched.resumePendingSessionIfNeeded()
-    #expect(relaunched.isPresented)
     #expect(store.loadData(forKey: "updateCenter.pendingSession") == nil)
     controller.stopEventSync()
   }
@@ -242,8 +217,70 @@ struct UpdateCenterTests {
 
     await center.resumePendingSessionIfNeeded()
 
-    #expect(center.isPresented)
     #expect(fake.operationLog.contains("harness.update:claude-code"))
+    #expect(store.loadData(forKey: "updateCenter.pendingSession") == nil)
+    controller.stopEventSync()
+  }
+
+  @Test("updateAll waits for a machine's harness updates to settle before its server restarts")
+  func updateAllWaitsForHarnessSettle() async throws {
+    let remote = makeRemote("remote-a")
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    fake.configureUpdate(current: "0.1.0", latest: "0.2.0")
+    fake.configureHarnesses([makeHarness(updateAvailable: true)])
+    // The triggered harness update keeps running on the machine for the
+    // next three inventory reads before it settles.
+    fake.configureHarnessUpdateInProgress(polls: 3)
+    let controller = try makeController(
+      fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],
+      remotes: [remote]
+    )
+    let center = UpdateCenter(
+      machines: controller,
+      appUpdate: AppUpdateModel(currentVersion: "1.0.0"),
+      harnessSettlePollInterval: .milliseconds(1),
+      harnessSettleAttempts: 50
+    )
+    await controller.refreshStatus(for: remote.id)
+    await center.refresh()
+
+    await center.updateAll()
+
+    #expect(fake.operationLog == ["harness.update:claude-code", "server.apply"])
+    // The server step only ran once the inventory reported the harness
+    // update finished (the harness refresh after the trigger, plus three
+    // "still updating" polls, plus the settled read).
+    #expect(fake.harnessLifecycleReads >= 4)
+    #expect(center.updateAllNotice == nil)
+    controller.stopEventSync()
+  }
+
+  @Test("updateAll stops before restarting the app when an earlier step failed")
+  func updateAllHaltsOnFailure() async throws {
+    let remote = makeRemote("remote-a")
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    fake.configureUpdate(current: "0.1.0", latest: "0.2.0")
+    // An old server that still refuses while busy: the server step fails.
+    fake.configureBusy(true)
+    let controller = try makeController(
+      fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],
+      remotes: [remote]
+    )
+    let store = InMemoryStore()
+    let appUpdate = AppUpdateModel(currentVersion: "1.0.0")
+    appUpdate.checkHandler = { _ in }
+    var appInstalls = 0
+    appUpdate.installHandler = { _ in appInstalls += 1 }
+    appUpdate.reportAvailable(version: "2.0.0", releasePageURL: nil)
+    let center = UpdateCenter(machines: controller, appUpdate: appUpdate, store: store)
+    await controller.refreshStatus(for: remote.id)
+    await center.refresh()
+
+    await center.updateAll()
+
+    #expect(appInstalls == 0)
+    #expect(center.updateAllNotice?.contains("remote-a") == true)
+    // Nothing is left for a relaunch that never happens.
     #expect(store.loadData(forKey: "updateCenter.pendingSession") == nil)
     controller.stopEventSync()
   }

@@ -12,6 +12,7 @@ import {
 } from "../server-context.js"
 import { materializeRuntimeEvent } from "./session-events.js"
 import { ensureAgentSessionFor } from "./session-workspace.js"
+import { RESTART_GATE_HARNESS_ID, RESTART_GATE_HARNESS_NAME } from "../restart-drain.js"
 
 export const reconcileOrphanedSessionTurns = async (
   services: CodevisorServerServices,
@@ -272,6 +273,30 @@ const sessionUpdateGate = async (
   return { harnessId: session.harnessId, harnessName: catalogName ?? session.harnessId }
 }
 
+/// Restart-drain gate: while the server waits for live turns to end before
+/// restarting for an update, new prompts stay durable in the queue and are
+/// simply not claimed. The next boot (or a cancelled drain) re-drains every
+/// held session. Returns true when the session was held.
+const holdForRestartDrain = async (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  routeState: RouteState,
+  sessionId: string
+): Promise<boolean> => {
+  if (!routeState.restart.isGated()) return false
+  const firstHold = !routeState.restartHeldSessions.has(sessionId)
+  routeState.restartHeldSessions.add(sessionId)
+  await publishPromptQueue(services.db, fanout, sessionId)
+  if (firstHold) {
+    await appendAndPublish(services.db, fanout, "session.updateGate.updated", sessionId, {
+      harnessId: RESTART_GATE_HARNESS_ID,
+      harnessName: RESTART_GATE_HARNESS_NAME,
+      state: "waiting"
+    }).catch(swallowError)
+  }
+  return true
+}
+
 export const drainPromptQueue = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
@@ -279,6 +304,10 @@ export const drainPromptQueue = async (
   serverId: string,
   sessionId: string
 ): Promise<void> => {
+  // Checked before the in-flight holds below: while the server drains for a
+  // restart, a prompt queued behind a live turn must also learn it will wait
+  // for the restart, not just for that turn.
+  if (await holdForRestartDrain(services, fanout, routeState, sessionId)) return
   if (routeState.activePromptSessions.has(sessionId)) {
     // This item really is waiting behind an in-flight prompt, so expose it to
     // clients as queued. The first prompt takes the owner path below and is
@@ -350,6 +379,10 @@ export const drainPromptQueue = async (
         return
       }
       /* v8 ignore stop */
+      // A restart drain that began mid-drain holds the *next* item the same
+      // way: this session's finished turn is exactly what the drain waited
+      // for, and claiming another would keep the server busy forever.
+      if (await holdForRestartDrain(services, fanout, routeState, sessionId)) return
       // Same hold mid-drain: a task-notification turn can begin between one
       // claimed prompt finishing and the next claim. Dispatching the next
       // item into that live turn would recreate the interleave this hold

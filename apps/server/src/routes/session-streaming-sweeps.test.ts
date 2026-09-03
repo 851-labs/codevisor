@@ -17,6 +17,7 @@ import {
   run,
   runningServers,
   tempDirs,
+  idleRestartCoordinator,
   waitFor
 } from "../test-support.js"
 
@@ -32,7 +33,9 @@ describe("streaming turn sweeps and prompt gating", () => {
       pendingPromptActions: new Set(),
       pendingSessionCreates: new Map(),
       turnHeldSessions: new Set(),
-      updateSignature: {}
+      updateSignature: {},
+      restartHeldSessions: new Set(),
+      restart: idleRestartCoordinator()
     })
 
     // Strand a turn "in the past": its harness died (or its terminal event
@@ -214,7 +217,9 @@ describe("streaming turn sweeps and prompt gating", () => {
       pendingPromptActions: new Set(),
       pendingSessionCreates: new Map(),
       turnHeldSessions: new Set(),
-      updateSignature: {}
+      updateSignature: {},
+      restartHeldSessions: new Set(),
+      restart: idleRestartCoordinator()
     }
     expect(await reconcileStaleStreamingTurns(services, fanout, routeState, "server-a")).toBe(0)
     expect(await run(services.db.getTranscriptPage(session.id, undefined, 8))).toMatchObject({
@@ -242,7 +247,9 @@ describe("streaming turn sweeps and prompt gating", () => {
       pendingPromptActions: new Set(),
       pendingSessionCreates: new Map(),
       turnHeldSessions: new Set(),
-      updateSignature: {}
+      updateSignature: {},
+      restartHeldSessions: new Set(),
+      restart: idleRestartCoordinator()
     }
     const unsubscribe = fanout.subscribe(
       makeTurnDispatchListener(services, fanout, routeState, "server-a")
@@ -321,7 +328,9 @@ describe("streaming turn sweeps and prompt gating", () => {
       pendingPromptActions: new Set(),
       pendingSessionCreates: new Map(),
       turnHeldSessions: new Set(),
-      updateSignature: {}
+      updateSignature: {},
+      restartHeldSessions: new Set(),
+      restart: idleRestartCoordinator()
     }
     // Simulate a task-notification turn starting the instant the first
     // dispatched turn ends — before the drain loop claims the next item.

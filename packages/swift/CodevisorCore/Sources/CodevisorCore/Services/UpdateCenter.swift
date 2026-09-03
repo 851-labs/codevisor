@@ -3,7 +3,7 @@ import Observation
 
 /// One updatable thing somewhere in the fleet: the app itself, a machine's
 /// server, or a harness/plugin on a machine. The row identity every update
-/// surface (sheet, footer count, update-all) folds over.
+/// surface (settings page, footer count, update-all) folds over.
 public struct UpdateComponent: Identifiable, Equatable, Sendable {
   public enum Kind: String, Sendable {
     case app
@@ -29,6 +29,11 @@ public struct UpdateComponent: Identifiable, Equatable, Sendable {
   public let latestVersion: String?
   public let updateAvailable: Bool
   public let phase: Phase
+  /// What an in-flight update is doing ("Waiting for 2 chats to finish…",
+  /// "Downloading…"); nil when there is nothing more specific than the phase.
+  public var statusMessage: String?
+  /// Determinate progress (0...1) of an in-flight update, when it has one.
+  public var progress: Double?
 }
 
 /// The fleet-wide update fold: app + every machine's server, harnesses, and
@@ -47,13 +52,17 @@ public final class UpdateCenter {
   /// the next launch. Nil in previews/tests without persistence.
   private let store: (any PersistenceStore)?
   private static let sessionKey = "updateCenter.pendingSession"
+  /// How often update-all re-reads a machine's harness inventory while
+  /// waiting for its in-flight harness updates to settle, and for how long.
+  private let harnessSettlePollInterval: Duration
+  private let harnessSettleAttempts: Int
 
-  /// Whether the update surface (sheet/screen) is open. Lives here so the
-  /// menu item, sidebar footer, and settings entry all drive one flag.
-  public var isPresented = false
   public private(set) var isRefreshing = false
   public private(set) var isUpdatingAll = false
   public private(set) var lastRefreshedAt: Date?
+  /// Why the last update-all stopped short (a step failed, so the app
+  /// restart was skipped). Cleared when the next run starts.
+  public private(set) var updateAllNotice: String?
   private var harnessesByMachine: [String: [ServerHarness]] = [:]
   private var pluginUpdatesByMachine: [String: [ServerPluginUpdateStatus]] = [:]
   /// Operation state for rows whose progress isn't streamed back into
@@ -64,13 +73,17 @@ public final class UpdateCenter {
   public init(
     machines: MachineController,
     appUpdate: AppUpdateModel,
-    store: (any PersistenceStore)? = nil
+    store: (any PersistenceStore)? = nil,
+    harnessSettlePollInterval: Duration = .seconds(3),
+    harnessSettleAttempts: Int = 300
   ) {
     self.machines = machines
     self.appUpdate = appUpdate
     // Defaults to the machine controller's store, so production always
     // persists without extra wiring; tests may inject their own.
     self.store = store ?? machines.persistenceStore
+    self.harnessSettlePollInterval = harnessSettlePollInterval
+    self.harnessSettleAttempts = harnessSettleAttempts
   }
 
   // MARK: - Components
@@ -107,7 +120,9 @@ public final class UpdateCenter {
         installedVersion: appUpdate.currentVersion,
         latestVersion: release?.version,
         updateAvailable: release != nil,
-        phase: phase
+        phase: phase,
+        statusMessage: phase == .updating ? appUpdate.statusMessage : nil,
+        progress: phase == .updating ? appUpdate.progress : nil
       )
     ]
   }
@@ -115,8 +130,9 @@ public final class UpdateCenter {
   private var serverComponents: [UpdateComponent] {
     machines.allMachines.compactMap { machine in
       // The local machine's server ships inside the app bundle; its
-      // update IS the app update row above.
-      if machine.isLocal, appUpdate.checkHandler != nil { return nil }
+      // update IS the app update row above. Builds without a self-updater
+      // (development) update the local server by rebuilding, never here.
+      if machine.isLocal { return nil }
       guard let connection = machines.connectionsById[machine.id],
         let info = connection.updateInfo
       else { return nil }
@@ -136,16 +152,22 @@ public final class UpdateCenter {
         installedVersion: info.currentVersion,
         latestVersion: info.latestVersion,
         updateAvailable: info.updateAvailable,
-        phase: phase
+        phase: phase,
+        statusMessage: phase == .updating ? connection.updateStatusMessage : nil
       )
     }
   }
 
+  /// Machine ids in a stable, name-ordered sequence, so update-all and the
+  /// rows it drives never depend on dictionary iteration order.
+  private var orderedMachineIds: [String] {
+    machines.allMachines.map(\.id)
+  }
+
   private var harnessComponents: [UpdateComponent] {
-    harnessesByMachine.flatMap { machineId, harnesses in
-      harnesses.compactMap { harness -> UpdateComponent? in
-        let lifecycleActive = ["installing", "updating", "pendingUpdate"]
-          .contains(harness.lifecycle?.phase ?? "")
+    orderedMachineIds.flatMap { machineId in
+      (harnessesByMachine[machineId] ?? []).compactMap { harness -> UpdateComponent? in
+        let lifecycleActive = Self.harnessLifecycleIsActive(harness)
         let available = harness.updateInfo?.updateAvailable == true
         guard available || lifecycleActive else { return nil }
         let id = "harness:\(machineId):\(harness.id)"
@@ -171,9 +193,13 @@ public final class UpdateCenter {
     }
   }
 
+  private static func harnessLifecycleIsActive(_ harness: ServerHarness) -> Bool {
+    ["installing", "updating", "pendingUpdate"].contains(harness.lifecycle?.phase ?? "")
+  }
+
   private var pluginComponents: [UpdateComponent] {
-    pluginUpdatesByMachine.flatMap { machineId, updates in
-      updates.compactMap { status -> UpdateComponent? in
+    orderedMachineIds.flatMap { machineId in
+      (pluginUpdatesByMachine[machineId] ?? []).compactMap { status -> UpdateComponent? in
         let id = "plugin:\(machineId):\(status.pluginId)"
         let phase = transientPhases[id] ?? .idle
         guard status.state == .available || phase != .idle else { return nil }
@@ -260,9 +286,6 @@ public final class UpdateCenter {
   public func update(_ component: UpdateComponent) async {
     switch component.kind {
     case .app:
-      // A modal sheet prevents Sparkle from terminating the app for
-      // relaunch. Close the Update Center before handing off to it.
-      isPresented = false
       await appUpdate.installUpdate()
     case .server:
       await machines.updateServer(machineId: component.machineId)
@@ -303,34 +326,79 @@ public final class UpdateCenter {
 
   /// Installs the given components in order, persisting the remaining ids
   /// before each step so an interrupted run can pick up where it stopped.
+  ///
+  /// Harness updates are only *triggered* by their step (the install runs
+  /// on the machine), so before a machine's server restarts — and before
+  /// the app restarts this client — the run waits for that machine's
+  /// harness updates to settle. A failed step stops the run before the app
+  /// step: restarting the client on top of a failure would hide it.
   private func run(components snapshot: [UpdateComponent]) async {
     guard !isUpdatingAll, !snapshot.isEmpty else { return }
     isUpdatingAll = true
+    updateAllNotice = nil
     defer { isUpdatingAll = false }
     var remaining = Set(snapshot.map(\.id))
     persistSession(remaining)
+    let harnessMachines = Set(snapshot.filter { $0.kind == .harness }.map(\.machineId))
     for kind in [UpdateComponent.Kind.plugin, .harness, .server, .app] {
+      if kind == .app {
+        for machineId in harnessMachines.sorted() {
+          await waitForHarnessUpdatesToSettle(onMachine: machineId)
+        }
+        if let failure = firstFailure(in: snapshot) {
+          updateAllNotice =
+            "Codevisor was not restarted because \(failure.title) on \(failure.machineName) failed to update. Fix that, then update again."
+          clearSession()
+          return
+        }
+      }
       for component in snapshot where component.kind == kind {
+        if kind == .server, harnessMachines.contains(component.machineId) {
+          await waitForHarnessUpdatesToSettle(onMachine: component.machineId)
+        }
         await update(component)
         remaining.remove(component.id)
         persistSession(remaining)
       }
     }
     // An app component means Sparkle is restarting this client: leave
-    // the (empty) session for the relaunched app to consume — reopening
-    // this surface is the visible "it worked". Otherwise the run is
+    // the (empty) session for the relaunched app to consume — finishing
+    // the run there is the visible "it worked". Otherwise the run is
     // simply over.
     if !snapshot.contains(where: { $0.kind == .app }) {
       clearSession()
     }
   }
 
+  private func firstFailure(in snapshot: [UpdateComponent]) -> UpdateComponent? {
+    let ids = Set(snapshot.map(\.id))
+    return components.first { component in
+      guard ids.contains(component.id), component.kind != .app else { return false }
+      if case .failed = component.phase { return true }
+      return false
+    }
+  }
+
+  /// Polls a machine's harness inventory until none of its harnesses is
+  /// installing, updating, or armed to update — or the wait budget runs
+  /// out, in which case the run proceeds (the server re-arms interrupted
+  /// harness updates after it restarts).
+  private func waitForHarnessUpdatesToSettle(onMachine machineId: String) async {
+    for attempt in 0..<harnessSettleAttempts {
+      if attempt > 0 {
+        try? await Task.sleep(for: harnessSettlePollInterval)
+      }
+      await refreshHarnesses(onMachine: machineId)
+      let active = (harnessesByMachine[machineId] ?? []).contains(where: Self.harnessLifecycleIsActive)
+      if !active { return }
+    }
+  }
+
   /// Continues an update-all interrupted by the app's own restart (the
-  /// normal final step) or a crash: reopens the surface, refreshes, and
-  /// installs whatever is both still pending and still updatable.
+  /// normal final step) or a crash: refreshes, and installs whatever is
+  /// both still pending and still updatable.
   public func resumePendingSessionIfNeeded() async {
     guard let remaining = loadSession() else { return }
-    isPresented = true
     await refresh(force: true)
     let pending = components.filter { remaining.contains($0.id) && $0.updateAvailable }
     if pending.isEmpty {

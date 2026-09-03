@@ -27,6 +27,9 @@ public final class MachineConnection {
   /// machine so one machine's in-flight update never shows on another,
   /// and switching away never abandons the tracking.
   public internal(set) var updatePhase: ServerUpdatePhase = .idle
+  /// What the in-flight update is doing right now ("Waiting for 2 chats to
+  /// finish…", "Restarting…"); nil when nothing worth showing.
+  public internal(set) var updateStatusMessage: String?
 
   /// This machine's live shell-event subscription. Every machine holds its
   /// own; selection changes never touch another machine's stream.

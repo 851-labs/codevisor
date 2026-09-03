@@ -77,12 +77,14 @@ export const TailnetPeersResponse = Schema.Struct({
 })
 export type TailnetPeersResponse = typeof TailnetPeersResponse.Type
 
-/// An app-hosted server's report of the host app's unattended update
-/// session (Sparkle running headless because a remote client asked this
-/// machine to update). Lets that client fail fast with the real error
-/// instead of timing out against a machine that silently gave up.
+/// Progress of an accepted update on the machine: `draining` while the
+/// server waits for in-flight chats to finish before restarting,
+/// `installing` once the restart/install is under way (on app-hosted Macs,
+/// the host app's headless Sparkle session), and `failed` with the reason.
+/// Lets a remote client show live progress and fail fast with the real
+/// error instead of timing out against a machine that silently gave up.
 export const UpdateApplyState = Schema.Struct({
-  state: Schema.Literals(["installing", "failed"]),
+  state: Schema.Literals(["draining", "installing", "failed"]),
   message: Schema.optional(Schema.String),
   targetVersion: Schema.optional(Schema.String),
   at: Schema.String
@@ -109,6 +111,26 @@ export const UpdateInfo = Schema.Struct({
   lastApply: Schema.optional(UpdateApplyState)
 })
 export type UpdateInfo = typeof UpdateInfo.Type
+
+/// The server's restart drain: whether it is holding new prompts and
+/// waiting for live turns to end so it can restart (for an update) without
+/// killing work in progress. `remaining` counts sessions still mid-turn.
+export const RestartDrainState = Schema.Struct({
+  state: Schema.Literals(["idle", "draining", "drained"]),
+  remaining: Schema.Number,
+  /// When the current state began.
+  startedAt: Schema.String,
+  deadlineAt: Schema.optional(Schema.String)
+})
+export type RestartDrainState = typeof RestartDrainState.Type
+
+export const RestartDrainRequest = Schema.Struct({
+  /// Cancel the remaining live turns now instead of waiting for them.
+  interrupt: Schema.optional(Schema.Boolean),
+  /// How long to wait for live turns before interrupting them.
+  timeoutMs: Schema.optional(Schema.Number)
+})
+export type RestartDrainRequest = typeof RestartDrainRequest.Type
 
 export const PairingTokenResponse = Schema.Struct({
   token: Schema.String,

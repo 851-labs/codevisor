@@ -35,6 +35,12 @@ import {
   runBackgroundSyncReconcile
 } from "./routes/sync-reconcilers.js"
 import { handleRequest } from "./server-router.js"
+import {
+  makeFileRestartSnapshotStore,
+  makeMemoryRestartSnapshotStore,
+  makeRestartCoordinator
+} from "./restart-drain.js"
+import { resumeSessionsAfterRestart } from "./restart-resume.js"
 
 export * from "./server-context.js"
 export { reconcileOrphanedSessionTurns, reconcileStaleStreamingTurns }
@@ -62,6 +68,8 @@ export const defaultServerConfig = (
   },
   onShutdownRequested: overrides.onShutdownRequested,
   updater: overrides.updater,
+  restartSnapshotPath: overrides.restartSnapshotPath,
+  restartDrainTimeoutMs: overrides.restartDrainTimeoutMs,
   sessionActivity: overrides.sessionActivity,
   cloudDeviceId: overrides.cloudDeviceId,
   cloud: overrides.cloud
@@ -73,15 +81,41 @@ export const makeCodevisorServerApp = (
   fanout: EventFanout,
   webSocketServer = new WebSocketServer({ noServer: true })
 ): CodevisorServerApp => {
+  // The restart drain and the route state reference each other: the drain
+  // reads the live-turn sets and prompt dispatch reads the drain's gate.
+  const turns = {
+    activePromptSessions: new Set<string>(),
+    activeTurnSessions: new Set<string>(),
+    restartHeldSessions: new Set<string>()
+  }
+  const restartSnapshot =
+    config.restartSnapshotPath === undefined
+      ? makeMemoryRestartSnapshotStore()
+      : makeFileRestartSnapshotStore(config.restartSnapshotPath)
+  const restart = makeRestartCoordinator({
+    services,
+    fanout,
+    turns,
+    snapshot: restartSnapshot,
+    defaultTimeoutMs: config.restartDrainTimeoutMs,
+    // Resolved at call time: routeState is assembled just below.
+    redrain: (sessionId) => drainPromptQueue(services, fanout, routeState, config.id, sessionId)
+  })
   const routeState: RouteState = {
-    activePromptSessions: new Set(),
-    activeTurnSessions: new Set(),
+    ...turns,
     gatedSessions: new Map(),
     pendingPromptActions: new Set(),
     pendingSessionCreates: new Map(),
     turnHeldSessions: new Set(),
-    updateSignature: {}
+    updateSignature: {},
+    restart
   }
+  // The previous process drained for a restart: bring its live sessions
+  // back and dispatch the prompts it held. Fire-and-forget so the listener
+  // is answering /health while agents reconnect.
+  void resumeSessionsAfterRestart(services, fanout, routeState, config.id, restartSnapshot).catch(
+    swallowError
+  )
   // Turn lifecycle → prompt dispatch: a harness can start a turn on its own
   // (task-notification follow-up after a background task finishes), which no
   // prompt drain owns. Track live turns from the event stream so
@@ -229,6 +263,7 @@ export const makeCodevisorServerApp = (
     },
     close: serverAttempt("closeApp", () => {
       clearInterval(staleTurnSweep)
+      restart.close()
       attentionSettle.close()
       unsubscribeTurns()
       unsubscribeSessionActivity?.()

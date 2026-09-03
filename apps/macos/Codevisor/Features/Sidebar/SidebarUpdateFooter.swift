@@ -4,11 +4,12 @@ import SwiftUI
 
 /// The one ambient signal that updates exist, pinned to the sidebar's
 /// bottom edge. Passive by design — no versions, no per-component detail,
-/// and nothing to dismiss; clicking opens the update center. Hidden
+/// and nothing to dismiss; clicking opens Settings › Updates. Hidden
 /// entirely when everything is current.
 struct SidebarUpdateFooter: View {
   var center: UpdateCenter
   @Environment(\.theme) private var theme
+  @Environment(\.openSettings) private var openSettings
   @State private var isHovered = false
 
   var body: some View {
@@ -16,7 +17,8 @@ struct SidebarUpdateFooter: View {
       VStack(spacing: 0) {
         Divider().overlay(theme.isSystem ? Color.clear : theme.separator)
         Button {
-          center.isPresented = true
+          SettingsRouter.shared.showUpdates()
+          openSettings()
         } label: {
           HStack(spacing: 6) {
             if center.isUpdatingAll {
@@ -41,7 +43,7 @@ struct SidebarUpdateFooter: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
-        .accessibilityLabel("Updates available. Opens the update center.")
+        .accessibilityLabel("Updates available. Opens Settings › Updates.")
       }
       .transition(.move(edge: .bottom).combined(with: .opacity))
     }

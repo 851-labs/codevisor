@@ -86,7 +86,13 @@ public protocol LocalServerControlling: AnyObject, Observable {
   func configureManagedService(_ service: LocalCodevisorManagedService)
   @discardableResult
   func ensureRunning() async -> LocalCodevisorServerState
-  /// Returns true when the server is stopped and ready for an app update.
-  func prepareForAppUpdate() async -> Bool
+  /// Drains the server's live chats (reporting progress such as "Waiting for
+  /// 2 chats to finish…" through `onStatus`), then stops it. Returns true
+  /// when the server is stopped and ready for the app bundle to be replaced.
+  func prepareForAppUpdate(onStatus: @escaping @MainActor (String) -> Void) async -> Bool
+  /// The app update was abandoned after `prepareForAppUpdate` began: release
+  /// the drain (so held prompts dispatch) and make sure the server is
+  /// running again.
+  func abandonAppUpdate() async
   func shutdown() async -> Bool
 }

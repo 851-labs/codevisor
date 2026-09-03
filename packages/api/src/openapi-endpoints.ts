@@ -9,6 +9,9 @@ export const endpoints = [
   "GET /v1/openapi.json",
   "GET /v1/update",
   "POST /v1/update/apply",
+  "GET /v1/restart/drain",
+  "POST /v1/restart/drain",
+  "DELETE /v1/restart/drain",
   "GET /v1/sync/:namespace",
   "PUT /v1/sync/:namespace",
   "GET /v1/sync/blobs/:id",
@@ -165,6 +168,9 @@ export const summaries: Partial<Record<Endpoint, string>> = {
   "GET /v1/info": "Get server information",
   "GET /v1/tailnet/peers": "List the machine's tailnet peers (for client-side discovery)",
   "GET /v1/openapi.json": "Get the OpenAPI document",
+  "GET /v1/restart/drain": "Get the restart drain state (live turns the server is waiting on)",
+  "POST /v1/restart/drain": "Begin draining live turns so the server can restart safely",
+  "DELETE /v1/restart/drain": "Cancel a restart drain and dispatch held prompts",
   "POST /v1/auth/pairing-token": "Issue a pairing token",
   "GET /v1/auth/connection-token": "Get the machine's stable connection token",
   "POST /v1/auth/connection-token/rotate": "Rotate the machine's connection token",
@@ -209,6 +215,7 @@ export const created = new Set<Endpoint>([
 
 export const accepted = new Set<Endpoint>([
   "POST /v1/update/apply",
+  "POST /v1/restart/drain",
   "POST /v1/shutdown",
   "POST /v1/sessions/:id/prompt",
   "POST /v1/sessions/:id/cancel",

@@ -130,10 +130,13 @@ extension AppEnvironment {
     SessionImporter(harnessService: harnessService(for: serverId))
   }
 
-  /// True while an app self-update or any server update is installing.
-  /// Drives the composer lock so no new turn starts during the restart.
+  /// True while THIS app is installing its own update — the whole client is
+  /// about to restart, so the composer stops accepting new turns. A remote
+  /// machine's server update is deliberately not included: that machine's
+  /// server drains and holds its own prompts, and locking every composer in
+  /// the app for it was a regression (chats on other machines went grey).
   public var isUpdateInProgress: Bool {
-    appUpdate.isUpdating || machines.isAnyServerUpdating
+    appUpdate.isUpdating
   }
 
   /// A machine's harness lifecycle changed (install/update progress): the

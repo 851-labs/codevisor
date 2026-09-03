@@ -457,6 +457,7 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
           allowLocalhostWithoutAuth: authMode === "token",
           requireBearerToken: authMode === "token"
         },
+        restartSnapshotPath: join(dirname(databasePath), "restart-resume.json"),
         onShutdownRequested: () => {
           console.log("Codevisor server shutting down (requested by client)")
           stopOwnerMonitor?.()

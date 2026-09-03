@@ -199,6 +199,50 @@ struct MachineControllerUpdateTests {
     controller.stopEventSync()
   }
 
+  @Test("A server draining live chats keeps the update in progress until it restarts")
+  func remoteServerUpdateDrains() async throws {
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    fake.configureUpdate(current: "0.1.0", latest: "0.2.0")
+    // The server reports "draining" for far more polls than the base
+    // attempt budget: the wait must extend instead of timing out.
+    fake.configureDrain(polls: 12)
+    let projectList = ProjectListModel(
+      projectRepository: DefaultProjectRepository(store: InMemoryStore()),
+      sessionRepository: DefaultSessionRepository(store: InMemoryStore())
+    )
+    let controller = MachineController(
+      store: InMemoryStore(),
+      projectList: projectList,
+      clientFactory: { _ in fake },
+      updatePollInterval: .milliseconds(2),
+      updatePollAttempts: 5
+    )
+    await controller.refreshStatus(for: "local")
+
+    let observer = Task { @MainActor in
+      var seen: [String] = []
+      for _ in 0..<400 {
+        if let message = controller.connectionsById["local"]?.updateStatusMessage,
+          seen.last != message
+        {
+          seen.append(message)
+        }
+        if controller.serverUpdatePhase(for: "local") != .updating, !seen.isEmpty { break }
+        try? await Task.sleep(for: .milliseconds(1))
+      }
+      return seen
+    }
+    await controller.updateServer(machineId: "local")
+    let messages = await observer.value
+
+    #expect(controller.serverUpdatePhase(for: "local") == .idle)
+    #expect(controller.serverUpdateInfo(for: "local")?.updateAvailable == false)
+    #expect(messages.contains { $0.contains("Waiting for 2 chats to finish") })
+    // The message is a progress detail of the in-flight update only.
+    #expect(controller.connectionsById["local"]?.updateStatusMessage == nil)
+    controller.stopEventSync()
+  }
+
   @Test("A busy server declines the update with a clear message")
   func remoteServerUpdateRefusedWhileBusy() async throws {
     let fake = SyncFakeServerClient(projects: [], sessions: [])

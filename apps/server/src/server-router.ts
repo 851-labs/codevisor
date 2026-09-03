@@ -1,5 +1,5 @@
-import { makeOpenApiDocument } from "@codevisor/api"
-import type { UpdateInfo } from "@codevisor/api"
+import { makeOpenApiDocument, RestartDrainRequest } from "@codevisor/api"
+import type { RestartDrainRequest as RestartDrainRequestBody, UpdateInfo } from "@codevisor/api"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { hostname } from "node:os"
 import { readTailnetPeers } from "./infra/tailnet.js"
@@ -9,6 +9,7 @@ import {
   authorize,
   HttpFailure,
   parseRequestUrl,
+  readSchema,
   run,
   swallowError,
   writeFailure,
@@ -199,7 +200,7 @@ export const handleRequest = async (
         // stable.
         const force = url.searchParams.get("refresh") === "1"
         const channel = serverUpdateChannelFrom(url.searchParams.get("channel"))
-        const info = await config.updater.check({ channel, force })
+        const info = withRestartDrain(routeState, await config.updater.check({ channel, force }))
         publishUpdateChanged(services, fanout, routeState, info)
         writeJson(response, 200, info)
         return
@@ -212,10 +213,12 @@ export const handleRequest = async (
       if (config.updater === undefined) {
         throw new HttpFailure(409, "This server does not support remote updates")
       }
-      // Refuse to restart while chats are mid-turn — applying the update would
-      // kill the in-flight work. Clients disable their update button too, but
-      // another client on this server could still ask.
-      if (routeState.activePromptSessions.size > 0) {
+      const busy =
+        routeState.activePromptSessions.size > 0 || routeState.activeTurnSessions.size > 0
+      // The default drains: live turns finish (or are interrupted at the
+      // deadline) before the restart. `whenBusy=refuse` keeps the old
+      // contract for callers that would rather not wait.
+      if (busy && url.searchParams.get("whenBusy") === "refuse") {
         writeJson(response, 200, { accepted: false, reason: "busy" })
         return
       }
@@ -238,10 +241,50 @@ export const handleRequest = async (
         targetVersion: info.latestVersion,
         ...(info.latestBuildNumber === undefined
           ? {}
-          : { targetBuildNumber: info.latestBuildNumber })
+          : { targetBuildNumber: info.latestBuildNumber }),
+        draining: busy
       })
-      config.updater.apply({ channel }).catch(() => undefined)
+      const updater = config.updater
+      void (async () => {
+        const drained = await routeState.restart.begin({
+          interrupt: url.searchParams.get("interrupt") === "1"
+        })
+        if (drained.state !== "drained") return
+        publishUpdateChanged(services, fanout, routeState, withRestartDrain(routeState, info))
+        try {
+          await updater.apply({ channel })
+        } catch {
+          // The install never happened: reopen the gate so held prompts
+          // dispatch instead of waiting for a restart that isn't coming.
+          await routeState.restart.cancel()
+        }
+      })()
       return
+    }
+
+    // The restart drain, driven directly by the host app before it swaps the
+    // bundle: begin (idempotent; `interrupt` ends the remaining turns now),
+    // poll, or cancel when the update was abandoned.
+    if (url.pathname === "/v1/restart/drain") {
+      if (request.method === "GET") {
+        writeJson(response, 200, routeState.restart.state())
+        return
+      }
+      if (request.method === "POST") {
+        // An empty body means "begin with defaults".
+        const payload = await readSchema(request, RestartDrainRequest).catch(
+          (): RestartDrainRequestBody => ({})
+        )
+        void routeState.restart
+          .begin({ interrupt: payload.interrupt, timeoutMs: payload.timeoutMs })
+          .catch(swallowError)
+        writeJson(response, 202, routeState.restart.state())
+        return
+      }
+      if (request.method === "DELETE") {
+        writeJson(response, 200, await routeState.restart.cancel())
+        return
+      }
     }
 
     if (request.method === "POST" && url.pathname === "/v1/shutdown") {
@@ -351,8 +394,31 @@ const updateInfoSignature = (info: UpdateInfo): string =>
     info.currentVersion,
     info.channel,
     info.lastApply?.state ?? null,
+    info.lastApply?.message ?? null,
     info.lastApply?.at ?? null
   ])
+
+/// Overlays the restart drain onto the update state so a client watching
+/// this machine sees "waiting for N chats" and then "installing" live. A
+/// failure reported by the host app (app-hosted Macs) is the more specific
+/// outcome and is never masked.
+const withRestartDrain = (routeState: RouteState, info: UpdateInfo): UpdateInfo => {
+  const drain = routeState.restart.state()
+  if (drain.state === "idle" || info.lastApply?.state === "failed") return info
+  const chats = `${drain.remaining} chat${drain.remaining === 1 ? "" : "s"}`
+  return {
+    ...info,
+    lastApply: {
+      state: drain.state === "draining" ? "draining" : "installing",
+      message:
+        drain.state === "draining"
+          ? `Waiting for ${chats} to finish`
+          : "Restarting to install the update",
+      targetVersion: info.latestVersion,
+      at: drain.startedAt
+    }
+  }
+}
 
 /// Emits update.changed when a check's outcome differs from the last one
 /// published. Every client already force-checks reachable machines on its

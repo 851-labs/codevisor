@@ -17,6 +17,11 @@ enum AppRelauncher {
     // starts a fresh process that would not inherit it, so the relaunched
     // app would read a different instance's state. Production has none of
     // these set, so this reduces to a plain reopen.
+    //
+    // Deliberately not `open -n`: a second instance is exactly what must
+    // never exist. Sparkle's installer tracks one running instance, and a
+    // survivor has its bundle deleted from under it mid-update (the dyld
+    // `strlen` crash). Info.plist also sets LSMultipleInstancesProhibited.
     let environmentArguments = ProcessInfo.processInfo.environment
       .filter { $0.key.hasPrefix("CODEVISOR_") }
       .sorted { $0.key < $1.key }
@@ -29,7 +34,7 @@ enum AppRelauncher {
         bundle_path="$2"
         shift 2
         while /bin/kill -0 "$owner_pid" 2>/dev/null; do /bin/sleep 0.1; done
-        exec /usr/bin/open -n "$@" "$bundle_path"
+        exec /usr/bin/open "$@" "$bundle_path"
         """,
         "codevisor-relauncher",
         String(ProcessInfo.processInfo.processIdentifier),
