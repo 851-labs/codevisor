@@ -35,13 +35,26 @@ public enum TranscriptAssistantChromeSlice: Sendable, Equatable {
   }
 }
 
+extension AssistantMessage {
+  /// The message as history presents it: the turn's outcome minus the
+  /// failure copy and its action classification.
+  func withoutStopDetail() -> AssistantMessage {
+    guard turn.stopDetail != nil || turn.stopKind != nil else { return self }
+    var copy = self
+    copy.turn.stopDetail = nil
+    copy.turn.stopKind = nil
+    return copy
+  }
+}
+
 enum TranscriptAssistantRowProjection {
   static func appendSettled(
     _ item: ConversationItem,
     waitingOnBackgroundTask: String?,
+    presentsStopDetail: Bool = true,
     to rows: inout [TranscriptPresentationRow]
   ) {
-    guard case let .assistant(message) = item else {
+    guard case let .assistant(original) = item else {
       rows.append(
         .init(
           id: .message(item.id),
@@ -55,20 +68,69 @@ enum TranscriptAssistantRowProjection {
       return
     }
 
+    // A failure is only actionable on the latest turn. Older stop details
+    // are dropped before projection, so no row — block, chrome, or shell —
+    // can render them.
+    let message = presentsStopDetail ? original : original.withoutStopDetail()
+    let presented = ConversationItem.assistant(message)
+    let projectedContent = appendAssistantBlocks(
+      message,
+      waitingOnBackgroundTask: waitingOnBackgroundTask,
+      lifecycle: .settled,
+      to: &rows
+    )
+    if projectedContent || hasStopDetailWithoutAnswer(message) {
+      // An error-only turn keeps the exact row identity it had while
+      // active, so settling reuses its host and measurement instead of
+      // remounting under the aggregate `message:` key.
+      appendStopDetailEpilogueIfNeeded(
+        message,
+        waitingOnBackgroundTask: waitingOnBackgroundTask,
+        lifecycle: .settled,
+        to: &rows
+      )
+    } else if hasStopDetailWithoutAnswer(original) {
+      // An older error-only turn has nothing left to show.
+    } else {
+      rows.append(
+        .init(
+          id: .message(item.id),
+          content: .message(presented, waitingOnBackgroundTask: waitingOnBackgroundTask),
+          estimatedHeight: estimatedHeight(for: presented),
+          measurementRevision: measurementRevision(
+            for: presented,
+            waitingOnBackgroundTask: waitingOnBackgroundTask
+          )
+        ))
+    }
+  }
+
+  /// The block rows shared by the settled and active projections: both
+  /// worked sections, the plan document, and the final response. Returns
+  /// whether anything was projected so each caller can choose its own
+  /// fallback (the assistant shell when settled, the aggregate active row
+  /// while live).
+  @discardableResult
+  static func appendAssistantBlocks(
+    _ message: AssistantMessage,
+    waitingOnBackgroundTask: String?,
+    lifecycle: TranscriptBlockLifecycle,
+    to rows: inout [TranscriptPresentationRow]
+  ) -> Bool {
     var projectedContent = appendWorkedSection(
       message,
       kind: .planning,
       items: message.turn.workedItemsBeforePlan,
       showsTimer: message.turn.planBoundary == nil,
       allowsDeferred: true,
-      lifecycle: .settled,
+      lifecycle: lifecycle,
       to: &rows
     )
     if let planDocument = message.turn.planDocument, !planDocument.isEmpty {
       TranscriptPlanRowProjection.append(
         messageID: message.id,
         markdown: planDocument,
-        lifecycle: .settled,
+        lifecycle: lifecycle,
         to: &rows
       )
       projectedContent = true
@@ -79,37 +141,42 @@ enum TranscriptAssistantRowProjection {
           items: message.turn.workedItemsAfterPlan,
           showsTimer: true,
           allowsDeferred: false,
-          lifecycle: .settled,
+          lifecycle: lifecycle,
           to: &rows
         ) || projectedContent
     }
-    projectedContent =
-      appendAssistantResponse(
-        message,
-        waitingOnBackgroundTask: waitingOnBackgroundTask,
-        lifecycle: .settled,
-        to: &rows
-      ) || projectedContent
-    if !projectedContent {
-      rows.append(
-        .init(
-          id: .message(item.id),
-          content: .message(item, waitingOnBackgroundTask: waitingOnBackgroundTask),
-          estimatedHeight: estimatedHeight(for: item),
-          measurementRevision: measurementRevision(
-            for: item,
-            waitingOnBackgroundTask: waitingOnBackgroundTask
-          )
-        ))
-    } else if message.turn.finalText == nil, message.turn.stopDetail != nil {
-      appendChrome(
-        message,
-        slice: .epilogue,
-        waitingOnBackgroundTask: waitingOnBackgroundTask,
-        lifecycle: .settled,
-        to: &rows
-      )
-    }
+    return appendAssistantResponse(
+      message,
+      waitingOnBackgroundTask: waitingOnBackgroundTask,
+      lifecycle: lifecycle,
+      to: &rows
+    ) || projectedContent
+  }
+
+  /// A turn that ended abnormally without a final answer has no response
+  /// rows — and it is the response projection that owns the epilogue slice
+  /// where `stopDetail` renders. Give the failure its own independently
+  /// measured row so it is never drawn into a neighbour's frame.
+  static func hasStopDetailWithoutAnswer(_ message: AssistantMessage) -> Bool {
+    !message.turn.isGenerating
+      && message.turn.finalText == nil
+      && message.turn.stopDetail != nil
+  }
+
+  static func appendStopDetailEpilogueIfNeeded(
+    _ message: AssistantMessage,
+    waitingOnBackgroundTask: String?,
+    lifecycle: TranscriptBlockLifecycle,
+    to rows: inout [TranscriptPresentationRow]
+  ) {
+    guard hasStopDetailWithoutAnswer(message) else { return }
+    appendChrome(
+      message,
+      slice: .epilogue,
+      waitingOnBackgroundTask: waitingOnBackgroundTask,
+      lifecycle: lifecycle,
+      to: &rows
+    )
   }
 
   /// Splits a final response into independently measurable rows. Error-only

@@ -39,52 +39,24 @@ extension TranscriptAssistantRowProjection {
     var rows: [TranscriptPresentationRow] = []
     let lifecycle: TranscriptBlockLifecycle =
       message.turn.isGenerating ? .receiving : .settled
-    var projectedContent = TranscriptAssistantRowProjection.appendWorkedSection(
+    let projectedContent = appendAssistantBlocks(
       message,
-      kind: .planning,
-      items: message.turn.workedItemsBeforePlan,
-      showsTimer: message.turn.planBoundary == nil,
-      allowsDeferred: true,
+      waitingOnBackgroundTask: waitingOnBackgroundTask,
       lifecycle: lifecycle,
       to: &rows
     )
-    if let planDocument = message.turn.planDocument, !planDocument.isEmpty {
-      TranscriptPlanRowProjection.append(
-        messageID: message.id,
-        markdown: planDocument,
-        lifecycle: lifecycle,
-        to: &rows
-      )
-      projectedContent = true
-      projectedContent =
-        appendWorkedSection(
-          message,
-          kind: .implementation,
-          items: message.turn.workedItemsAfterPlan,
-          showsTimer: true,
-          allowsDeferred: false,
-          lifecycle: lifecycle,
-          to: &rows
-        ) || projectedContent
-      projectedContent =
-        appendAssistantResponse(
-          message,
-          waitingOnBackgroundTask: waitingOnBackgroundTask,
-          lifecycle: lifecycle,
-          to: &rows
-        ) || projectedContent
-      appendActivityIfNeeded(message, lifecycle: lifecycle, to: &rows)
-      return projectedContent || !rows.isEmpty ? rows : [activeFallbackRow(for: item)]
-    }
-
-    projectedContent =
-      appendAssistantResponse(
-        message,
-        waitingOnBackgroundTask: waitingOnBackgroundTask,
-        lifecycle: lifecycle,
-        to: &rows
-      ) || projectedContent
     appendActivityIfNeeded(message, lifecycle: lifecycle, to: &rows)
+    // A failed turn stays in the active slot until the next bubble starts,
+    // and the session-level banner defers to it. Without this row the
+    // failure either never appeared (turns with worked items) or was
+    // drawn in place into the aggregate row's 32pt "Waiting on harness"
+    // frame and clipped to a sliver until a remeasure landed.
+    appendStopDetailEpilogueIfNeeded(
+      message,
+      waitingOnBackgroundTask: waitingOnBackgroundTask,
+      lifecycle: lifecycle,
+      to: &rows
+    )
     return projectedContent || !rows.isEmpty ? rows : [activeFallbackRow(for: item)]
   }
 }

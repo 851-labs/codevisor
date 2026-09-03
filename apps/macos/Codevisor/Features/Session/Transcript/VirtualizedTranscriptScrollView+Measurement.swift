@@ -14,11 +14,22 @@ extension VirtualizedTranscriptScrollView {
     newRows: [TranscriptVirtualRow]
   ) {
     for row in newRows {
-      guard row.id.isCacheableSettledRow,
-        let previous = previousRowsByKey[row.layoutKey],
-        previous.measurementRevision != row.measurementRevision
-      else { continue }
+      guard row.id.isCacheableSettledRow else { continue }
       let key = row.layoutKey
+      if let previous = previousRowsByKey[key] {
+        guard previous.measurementRevision != row.measurementRevision else { continue }
+      } else {
+        // A key that was not in the previous row set can still hold a
+        // ledger height left behind by a differently shaped row under
+        // the same layout key — the aggregate active placeholder that
+        // precedes a block projection shares `message:<id>` with the
+        // settled shell. That height is layout geometry, never an
+        // exact measurement for this row: mark it stale so mounting
+        // measures instead of trusting it as known.
+        guard measurements[key] != nil, !measurements.isStale(key) else { continue }
+        measurements.markStale(key)
+        continue
+      }
       // The last measured height stays in the ledger as stale layout
       // geometry: a settled row whose content keeps changing (a
       // background subagent streaming into an ended turn bumps this

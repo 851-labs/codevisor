@@ -336,29 +336,6 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
   }
 }
 
-/// Resolves the value rendered by one identity-bound active row. A token flush
-/// may use the live item, but a row from an older projection must keep showing
-/// its own assistant after the model starts the next turn.
-public enum TranscriptActiveItemResolver {
-  public static func resolve(
-    projected: ConversationItem,
-    live: ConversationItem?,
-    settled: [ConversationItem]
-  ) -> ConversationItem {
-    if live?.id == projected.id, let live {
-      return live
-    }
-    if let settled = settled.last(where: { $0.id == projected.id }) {
-      return settled
-    }
-    // A provider can replace the locally-created active id with its
-    // canonical transcript id before the next projection arrives. Unlike
-    // a turn boundary, the projected id is not settled in that case, so
-    // keep rendering the live bubble instead of flashing its old snapshot.
-    return live ?? projected
-  }
-}
-
 /// Serializes and caches transcript projection away from the UI actor. A
 /// cache hit makes revisiting a chat O(1); cancellation checks stop a rapid
 /// sequence of sidebar taps from finishing obsolete transcript work.
@@ -472,6 +449,14 @@ public actor TranscriptRowProjectionCache {
       }
     }
 
+    // A failure is only actionable on the latest turn (retry, sign in,
+    // switch account). Older turns' stop details are not presented at
+    // all; a live active item makes every settled turn "older".
+    let latestSettledAssistantID: UUID? =
+      input.hasActiveItem
+      ? nil
+      : settled.last(where: TranscriptAssistantRowProjection.isAssistant)?.id
+
     for (index, item) in settled.enumerated() {
       if index.isMultiple(of: 32), Task.isCancelled { throw CancellationError() }
       if index == 0, hasSetup, TranscriptAssistantRowProjection.isAssistant(item) {
@@ -487,6 +472,7 @@ public actor TranscriptRowProjectionCache {
         waitingOnBackgroundTask: item.id == waitingAssistantID
           ? waitingDescription
           : nil,
+        presentsStopDetail: item.id == latestSettledAssistantID,
         to: &rows
       )
       if index == 0, hasSetup, TranscriptAssistantRowProjection.isUser(item) {

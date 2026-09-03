@@ -14,11 +14,19 @@ extension VirtualizedTranscriptScrollView {
     newRows: [TranscriptVirtualRow],
   ) {
     for row in newRows {
-      guard row.id.isCacheableSettledRow,
-        let previous = previousRowsByKey[row.layoutKey],
-        previous.measurementRevision != row.measurementRevision
-      else { continue }
+      guard row.id.isCacheableSettledRow else { continue }
       let key = row.layoutKey
+      if let previous = previousRowsByKey[key] {
+        guard previous.measurementRevision != row.measurementRevision else { continue }
+      } else {
+        // A ledger height under a key absent from the previous row set
+        // came from a differently shaped row sharing the layout key
+        // (the aggregate active placeholder vs. the settled shell).
+        // Keep it for layout but never as this row's known height.
+        guard measurements[key] != nil, !measurements.isStale(key) else { continue }
+        measurements.markStale(key)
+        continue
+      }
       measurements.markStale(key)
       pendingMeasurements.removeValue(forKey: key)
       measurementCache.removeMeasurement(for: key)
