@@ -44,6 +44,7 @@ extension SessionContainerView {
     model.requestBackgroundFocus = { sessionFocus.focusPaneBackground() }
     model.requestToggle = { sessionFocus.requestPanelToggle?() }
     model.onPaneClosed = { descriptor in
+      rememberClosedPane(descriptor, leafId: leafId)
       if descriptor.kind == .chat {
         if let closedSessionId = descriptor.chatSessionId {
           // Closing an established chat's tab ARCHIVES its

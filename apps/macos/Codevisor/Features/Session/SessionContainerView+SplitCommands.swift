@@ -48,6 +48,8 @@ extension SessionContainerView {
       focusRelativeSplit(offset: 1)
     case .closeTab:
       closeActiveLeaf()
+    case .reopenClosedPane:
+      reopenClosedPane()
     case .togglePanel:
       return false
     }

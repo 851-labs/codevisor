@@ -3,6 +3,15 @@ import Observation
 import CodevisorCore
 import ACPKit
 
+/// A pane the user closed, with enough of where it lived to put it back:
+/// its tab (the restore lands right after it when that tab survives) and
+/// that tab's index at the time (the fallback position).
+struct ClosedPaneRecord: Equatable {
+  let descriptor: PaneDescriptorState
+  let tabId: UUID
+  let tabIndex: Int
+}
+
 /// What the sidebar asks a workspace's mounted container to do with its
 /// top tabs. The sidebar cannot act on tabs itself: a terminal or New Tab
 /// row has no chat to route through, and closing a tab runs the container's
@@ -112,6 +121,24 @@ final class SessionStore {
   /// and the route change); returns false when it cannot answer, and the
   /// container falls back to cycling its own tabs.
   @ObservationIgnored var nousStepHandler: ((Int) -> Bool)?
+  /// Panes the user closed, newest last, per workspace — what ⌘⇧T brings
+  /// back. In memory only: the archive is the durable recovery for chats;
+  /// this is the browser-style undo for the current run.
+  @ObservationIgnored var closedPanes: [UUID: [ClosedPaneRecord]] = [:]
+  static let maxClosedPanesPerWorkspace = 20
+
+  func recordClosedPane(_ record: ClosedPaneRecord, workspaceId: UUID) {
+    var stack = closedPanes[workspaceId, default: []]
+    stack.append(record)
+    if stack.count > Self.maxClosedPanesPerWorkspace {
+      stack.removeFirst(stack.count - Self.maxClosedPanesPerWorkspace)
+    }
+    closedPanes[workspaceId] = stack
+  }
+
+  func popClosedPane(workspaceId: UUID) -> ClosedPaneRecord? {
+    closedPanes[workspaceId]?.popLast()
+  }
   /// Session ids in access order, most recent last — drives controller
   /// eviction so browsing many sessions doesn't accumulate every transcript
   /// ever opened (conversations retain full tool outputs and diffs).

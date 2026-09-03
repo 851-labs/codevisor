@@ -221,7 +221,7 @@ final class PaneGroupModel: Identifiable {
       guard state.panes.indices.contains(index) else { return }
       select(id: state.panes[index].id)
       DispatchQueue.main.async { [weak self] in self?.focusSelectedPane() }
-    case .split, .focusSplit, .previousSplit, .nextSplit:
+    case .split, .focusSplit, .previousSplit, .nextSplit, .reopenClosedPane:
       return
     case .togglePanel:
       requestToggle?()

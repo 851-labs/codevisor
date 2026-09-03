@@ -76,6 +76,7 @@ struct SessionContainerView: View {
             let workspace = store.workspace(for: session, project: project)
             closeCenterTab(workspace.selectedCenterTabId)
           },
+          reopenClosedPane: reopenClosedPane,
           previousTab: { selectRelativeCenterTab(offset: -1) },
           nextTab: { selectRelativeCenterTab(offset: 1) },
           previousSplit: { focusRelativeSplit(offset: -1) },

@@ -57,6 +57,7 @@ enum PaneGroupCommand {
   case nextSplit
   case togglePanel
   case closeTab
+  case reopenClosedPane
 }
 
 /// A live pane instance. Hooks are the pane's whole world: the group tells it

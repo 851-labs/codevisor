@@ -6,6 +6,7 @@ struct WorkspaceLayoutActions: Equatable {
   let newTab: @MainActor () -> Void
   let closeSplit: @MainActor () -> Void
   let closeTab: @MainActor () -> Void
+  let reopenClosedPane: @MainActor () -> Void
   let previousTab: @MainActor () -> Void
   let nextTab: @MainActor () -> Void
   let previousSplit: @MainActor () -> Void
@@ -40,6 +41,8 @@ struct WorkspaceLayoutCommands: Commands {
       ShortcutButton(.closeSplit) { actions?.closeSplit() }
         .disabled(actions == nil)
       ShortcutButton(.closeTab) { actions?.closeTab() }
+        .disabled(actions == nil)
+      ShortcutButton(.reopenClosedPane) { actions?.reopenClosedPane() }
         .disabled(actions == nil)
 
       Divider()

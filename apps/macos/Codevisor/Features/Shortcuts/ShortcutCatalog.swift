@@ -12,6 +12,7 @@ enum ShortcutID: String, CaseIterable, Identifiable, Sendable {
   case newTab
   case closeSplit
   case closeTab
+  case reopenClosedPane
   case selectTab
   case previousTab
   case nextTab
@@ -123,6 +124,12 @@ enum ShortcutCatalog {
       )
     case .closeTab:
       ShortcutDefinition(.closeTab, "Close Tab", nil, category: .tabsAndSplits)
+    case .reopenClosedPane:
+      ShortcutDefinition(
+        .reopenClosedPane, "Reopen Closed Pane", ShortcutCombo("t", [.command, .shift]),
+        category: .tabsAndSplits,
+        context: "Brings back the most recently closed pane of this workspace"
+      )
     case .selectTab:
       ShortcutDefinition(
         .selectTab, "Select Tab 1–9", nil,

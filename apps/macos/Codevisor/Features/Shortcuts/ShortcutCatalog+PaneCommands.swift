@@ -43,6 +43,7 @@ extension ShortcutCatalog {
     (.previousSplit, .previousSplit),
     (.nextSplit, .nextSplit),
     (.newTab, .newTab),
+    (.reopenClosedPane, .reopenClosedPane),
     (.splitRight, .split(.trailing)),
     (.closeSplit, .closeTab),
     (.toggleBottomPanel, .togglePanel),
