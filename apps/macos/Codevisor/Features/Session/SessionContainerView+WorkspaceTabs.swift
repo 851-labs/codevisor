@@ -122,6 +122,10 @@ extension SessionContainerView {
     liveCenterTree = tab.root
     activateLeaf(tab.activeLeafId)
     publishPane(pane, workspaceId: workspace.id)
+    // The New Tab page mounts a tick later; the group replays this focus
+    // request into its picker once the page registers.
+    let model = configuredCenterModel(leafId: tab.activeLeafId)
+    DispatchQueue.main.async { model.focusSelectedPane() }
   }
 
   func moveCenterTab(_ sourceId: UUID, _ targetId: UUID) {

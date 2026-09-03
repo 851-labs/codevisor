@@ -48,9 +48,17 @@ final class PaneGroupModel: Identifiable {
   /// is focused (their picker's input). Without one, the pane falls back to
   /// neutral background focus.
   @ObservationIgnored private var newTabFocusHandlers: [UUID: () -> Void] = [:]
+  /// A New Tab pane that was focused before its page registered (⌘T focuses
+  /// the new pane a run-loop turn after adding it, ahead of the page's
+  /// mount). Replayed when the handler arrives.
+  @ObservationIgnored private var pendingNewTabFocus: UUID?
 
   func registerNewTabFocus(paneId: UUID, handler: @escaping () -> Void) {
     newTabFocusHandlers[paneId] = handler
+    if pendingNewTabFocus == paneId {
+      pendingNewTabFocus = nil
+      handler()
+    }
   }
 
   func unregisterNewTabFocus(paneId: UUID) {
@@ -165,6 +173,7 @@ final class PaneGroupModel: Identifiable {
       guard let self,
         let descriptor = self.state.panes.first(where: { $0.id == paneId })
       else { return }
+      self.pendingNewTabFocus = nil
       switch descriptor.kind {
       case .chat:
         self.requestComposerFocus?()
@@ -172,6 +181,7 @@ final class PaneGroupModel: Identifiable {
         if let focusPage = self.newTabFocusHandlers[paneId] {
           focusPage()
         } else {
+          self.pendingNewTabFocus = paneId
           self.requestBackgroundFocus?()
         }
       case .terminal, .plugin:
