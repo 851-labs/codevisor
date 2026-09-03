@@ -276,14 +276,13 @@ const sessionUpdateGate = async (
 /// Restart-drain gate: while the server waits for live turns to end before
 /// restarting for an update, new prompts stay durable in the queue and are
 /// simply not claimed. The next boot (or a cancelled drain) re-drains every
-/// held session. Returns true when the session was held.
+/// held session. Callers check `restart.isGated()` first.
 const holdForRestartDrain = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
   routeState: RouteState,
   sessionId: string
-): Promise<boolean> => {
-  if (!routeState.restart.isGated()) return false
+): Promise<void> => {
   const firstHold = !routeState.restartHeldSessions.has(sessionId)
   routeState.restartHeldSessions.add(sessionId)
   await publishPromptQueue(services.db, fanout, sessionId)
@@ -294,7 +293,6 @@ const holdForRestartDrain = async (
       state: "waiting"
     }).catch(swallowError)
   }
-  return true
 }
 
 export const drainPromptQueue = async (
@@ -306,8 +304,13 @@ export const drainPromptQueue = async (
 ): Promise<void> => {
   // Checked before the in-flight holds below: while the server drains for a
   // restart, a prompt queued behind a live turn must also learn it will wait
-  // for the restart, not just for that turn.
-  if (await holdForRestartDrain(services, fanout, routeState, sessionId)) return
+  // for the restart, not just for that turn. The gate test itself is
+  // synchronous on purpose — an await here would let two concurrent drains
+  // for one session both pass the in-flight check below.
+  if (routeState.restart.isGated()) {
+    await holdForRestartDrain(services, fanout, routeState, sessionId)
+    return
+  }
   if (routeState.activePromptSessions.has(sessionId)) {
     // This item really is waiting behind an in-flight prompt, so expose it to
     // clients as queued. The first prompt takes the owner path below and is
@@ -382,7 +385,10 @@ export const drainPromptQueue = async (
       // A restart drain that began mid-drain holds the *next* item the same
       // way: this session's finished turn is exactly what the drain waited
       // for, and claiming another would keep the server busy forever.
-      if (await holdForRestartDrain(services, fanout, routeState, sessionId)) return
+      if (routeState.restart.isGated()) {
+        await holdForRestartDrain(services, fanout, routeState, sessionId)
+        return
+      }
       // Same hold mid-drain: a task-notification turn can begin between one
       // claimed prompt finishing and the next claim. Dispatching the next
       // item into that live turn would recreate the interleave this hold
