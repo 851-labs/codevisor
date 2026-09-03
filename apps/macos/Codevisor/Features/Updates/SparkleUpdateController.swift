@@ -16,8 +16,13 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
   private let model: AppUpdateModel
   private weak var localServer: (any LocalServerControlling)?
   private let serverAgent: MacServerAgentController
+  private let instanceLease: AppInstanceLease
   private var updater: SPUUpdater!
   private var driver: HeadlessUserDriver!
+  /// A helper inherits the app's singleton lock immediately before Sparkle
+  /// takes over. It outlives this process and releases after the new bundle
+  /// version is visible.
+  private var updateLeaseHandoff: AppUpdateLeaseHandoff?
   /// True from an install's arming until it reports an outcome. Guards the
   /// handoff status writes a remote client polls through the server.
   private var installSessionActive = false
@@ -28,11 +33,13 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
   init(
     model: AppUpdateModel,
     localServer: (any LocalServerControlling)?,
-    serverAgent: MacServerAgentController
+    serverAgent: MacServerAgentController,
+    instanceLease: AppInstanceLease
   ) {
     self.model = model
     self.localServer = localServer
     self.serverAgent = serverAgent
+    self.instanceLease = instanceLease
     super.init()
     // A raw SPUUpdater with a headless driver instead of
     // SPUStandardUpdaterController: the app's own Updates page is the
@@ -119,6 +126,8 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     ServerLifecycleLog.default.error("update: install failed: \(message)")
     installSessionActive = false
     serverPreparedForUpdate = false
+    updateLeaseHandoff?.cancel()
+    updateLeaseHandoff = nil
     AppUpdateHandoff.writeStatus(state: "failed", message: message)
     model.reportFailure(message)
     // The server may be holding prompts behind its restart drain (a remote
@@ -242,6 +251,28 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
       guard prepared else {
         self.failInstall(
           "The Codevisor server could not be stopped safely. Restart Codevisor and try the update again."
+        )
+        return
+      }
+      // Server draining is asynchronous. Check once more at the actual
+      // handoff boundary, then transfer the instance lease across our exit so
+      // no process can enter between Sparkle's termination and relaunch.
+      let lateOthers = Self.otherRunningInstanceCount()
+      guard lateOthers == 0 else {
+        self.failInstall(
+          lateOthers == 1
+            ? "Another copy of Codevisor started while preparing the update. Quit it, then update again."
+            : "\(lateOthers) other copies of Codevisor started while preparing the update. Quit them, then update again."
+        )
+        return
+      }
+      do {
+        self.updateLeaseHandoff = try self.instanceLease.beginUpdateHandoff(
+          targetBundleVersion: item.versionString
+        )
+      } catch {
+        self.failInstall(
+          "Codevisor could not protect the app while installing the update: \(error.localizedDescription)"
         )
         return
       }

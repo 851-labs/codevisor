@@ -1,16 +1,21 @@
 import AppKit
 import CodevisorCore
+import CodevisorCoreMac
+import os
 
-/// The AppKit delegate behind the SwiftUI `App`. Its one job today is the
-/// ⌘Q confirmation: quitting tears down every terminal and agent view at
-/// once, and ⌘Q sits next to ⌘W, so a quit request is confirmed first unless
-/// the user opted out ("Do not ask me again", or Settings).
+/// AppKit lifecycle policy behind the SwiftUI `App`: establishes exclusive
+/// ownership of this bundle before launch and confirms interactive ⌘Q because
+/// quitting tears down every terminal and agent view at once.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
   /// Both are `nil` until client storage has opened; a quit before that
   /// has nothing to lose and is never questioned.
   var settings: AppSettingsModel?
   var appUpdate: AppUpdateModel?
+
+  /// Held for this process's lifetime. Sparkle temporarily shares the same
+  /// descriptor with a detached handoff helper while replacing the bundle.
+  private(set) var appInstanceLease: AppInstanceLease?
 
   /// Set by flows that quit on the user's behalf after they already agreed
   /// to it (Restart Now, relaunch after a data reset). Consumed by the next
@@ -19,6 +24,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   static var current: AppDelegate? {
     NSApp.delegate as? AppDelegate
+  }
+
+  func applicationWillFinishLaunching(_ notification: Notification) {
+    let bundleURL = Bundle.main.bundleURL
+    do {
+      if let lease = try AppInstanceLease.acquireDefault(for: bundleURL) {
+        appInstanceLease = lease
+        return
+      }
+
+      // A normal duplicate can leave immediately and focus its owner. During
+      // Sparkle's swap the old process is already gone but the handoff helper
+      // still owns the lock, so allow a short bounded wait for it to release.
+      if activateExistingInstance(from: bundleURL) {
+        Log.updates.log("launch: another instance owns this bundle; activating it")
+        NSApp.terminate(nil)
+        return
+      }
+      if let lease = try AppInstanceLease.acquireDefault(for: bundleURL, waitFor: 5) {
+        appInstanceLease = lease
+        return
+      }
+
+      Log.updates.fault("launch: instance lease remained locked without a visible owner")
+      _ = activateExistingInstance(from: bundleURL)
+      NSApp.terminate(nil)
+    } catch {
+      // Updating without the lease would recreate the crash window. Fail
+      // closed and leave an actionable record instead of launching unsafely.
+      Log.updates.fault("launch: could not acquire the app instance lease: \(error)")
+      NSApp.terminate(nil)
+    }
+  }
+
+  private func activateExistingInstance(from bundleURL: URL) -> Bool {
+    guard let bundleIdentifier = Bundle.main.bundleIdentifier else { return false }
+    let ownPID = ProcessInfo.processInfo.processIdentifier
+    let ownBundle = bundleURL.resolvingSymlinksInPath().standardizedFileURL
+    guard
+      let existing = NSRunningApplication.runningApplications(
+        withBundleIdentifier: bundleIdentifier
+      ).first(where: {
+        $0.processIdentifier != ownPID
+          && $0.bundleURL?.resolvingSymlinksInPath().standardizedFileURL == ownBundle
+      })
+    else { return false }
+    _ = existing.activate(options: [.activateAllWindows])
+    return true
   }
 
   /// Quits without the confirmation alert. For programmatic quits that

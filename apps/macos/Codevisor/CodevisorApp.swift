@@ -25,20 +25,24 @@ struct CodevisorApp: App {
   @MainActor
   private static func makeRuntime(
     serverAgent: MacServerAgentController,
-    storage: ClientStorage
+    storage: ClientStorage,
+    instanceLease: AppInstanceLease?
   ) -> (environment: AppEnvironment, updater: SparkleUpdateController?) {
     let environment = AppEnvironment.live(storage: storage)
     if !CodevisorAppVariant.isDevelopment {
       environment.localServer?.configureManagedService(serverAgent.managedService)
     }
-    let sparkleUpdater =
-      CodevisorAppVariant.enablesSparkleUpdater
-      ? SparkleUpdateController(
+    let sparkleUpdater: SparkleUpdateController?
+    if CodevisorAppVariant.enablesSparkleUpdater, let instanceLease {
+      sparkleUpdater = SparkleUpdateController(
         model: environment.appUpdate,
         localServer: environment.localServer,
-        serverAgent: serverAgent
+        serverAgent: serverAgent,
+        instanceLease: instanceLease
       )
-      : nil
+    } else {
+      sparkleUpdater = nil
+    }
     if !CodevisorAppVariant.isDevelopment && !AppPreview.isRunning {
       // Keep the bundled CLI (`codevisor` etc.) linked into
       // ~/.local/bin: DMG drag-installs run no installer script, so
@@ -169,7 +173,11 @@ struct CodevisorApp: App {
         directory: CodevisorAppVariant.applicationSupportURL(),
         credentials: KeychainMachineCredentialStore.shared
       )
-      let runtime = Self.makeRuntime(serverAgent: serverAgent, storage: storage)
+      let runtime = Self.makeRuntime(
+        serverAgent: serverAgent,
+        storage: storage,
+        instanceLease: appDelegate.appInstanceLease
+      )
       environment = runtime.environment
       sparkleUpdater = runtime.updater
       // The quit confirmation reads the user's preference and skips
