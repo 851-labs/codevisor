@@ -1,6 +1,12 @@
 import ACPKit
 
 enum ModelParameterMenu {
+  /// Different parameters can use the same value, so a menu row needs both.
+  struct Target: Hashable {
+    let optionID: String
+    let value: String
+  }
+
   static func options(from options: [SessionConfigOption]) -> [SessionConfigOption] {
     let order = [
       SessionConfigOption.Category.thoughtLevel: 0,

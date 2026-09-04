@@ -129,6 +129,9 @@ struct ResultsTests {
         itemCount: 3, groupLabelCount: 1, dividerCount: 1, groupSpacingCount: 0
       )
       #expect(metrics.listHeight(for: catalog) == content)
+      #expect(
+        Double(metrics.listHeight(for: catalog, showsSectionDividers: false)) == Double(content - metrics.dividerHeight)
+      )
       #expect(metrics.listHeight(for: results("new")) == metrics.emptyListHeight)
       #expect(metrics.listHeight(for: results("missing")) == metrics.emptyListHeight)
 

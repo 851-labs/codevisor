@@ -52,6 +52,7 @@
       let emptyMessage: String
       let filter: Filter
       let showsCheckmarks: Bool
+      let showsSectionDividers: Bool
       let favoriteIDs: Binding<[ID]>?
       let onDismiss: () -> Void
 
@@ -66,6 +67,7 @@
         emptyMessage: String = "No matches",
         filter: Filter = .contains,
         showsCheckmarks: Bool = false,
+        showsSectionDividers: Bool = true,
         favoriteIDs: Binding<[ID]>? = nil,
         onDismiss: @escaping () -> Void
       ) {
@@ -75,6 +77,7 @@
         self.emptyMessage = emptyMessage
         self.filter = filter
         self.showsCheckmarks = showsCheckmarks
+        self.showsSectionDividers = showsSectionDividers
         self.favoriteIDs = favoriteIDs
         self.onDismiss = onDismiss
         _highlight = State(initialValue: Highlight<ID>(navigation: .menu))
@@ -87,12 +90,12 @@
         let showsIcons = catalog.items.contains { $0.icon != nil }
         Root(highlight: highlight, showsCheckmarks: showsCheckmarks, showsIcons: showsIcons, onDismiss: onDismiss) {
           Input(text: $query, prompt: prompt, accessibilityLabel: searchAccessibilityLabel, focusesOnAppear: true)
-          List(height: metrics.listHeight(for: catalog)) {
+          List(height: metrics.listHeight(for: catalog, showsSectionDividers: showsSectionDividers)) {
             if results.isEmpty {
               Empty(emptyMessage)
             }
             ForEach(results.sections) { section in
-              if section.id != results.sections.first?.id {
+              if showsSectionDividers, section.id != results.sections.first?.id {
                 Divider()
               }
               if let title = section.title {

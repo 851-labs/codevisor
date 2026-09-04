@@ -124,15 +124,15 @@
         )
       }
 
-      /// Collection sections use dividers for spacing, including between
-      /// titled and untitled sections. Empty sections contribute no chrome.
-      public func listHeight<Element>(for results: Results<Element>) -> CGFloat {
+      /// Fits the collection's rows and headings, including section dividers
+      /// when shown. Empty sections contribute no chrome.
+      public func listHeight<Element>(for results: Results<Element>, showsSectionDividers: Bool = true) -> CGFloat {
         max(
           listHeight(itemCount: 0),
           listHeight(
             itemCount: results.itemCount,
             groupLabelCount: results.groupLabelCount,
-            dividerCount: results.dividerCount,
+            dividerCount: showsSectionDividers ? results.dividerCount : 0,
             groupSpacingCount: 0
           )
         )

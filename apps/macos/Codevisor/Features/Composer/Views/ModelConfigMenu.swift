@@ -5,8 +5,8 @@ import Autocomplete
 import SwiftUI
 
 /// Separate model and parameter controls shared by draft and connected
-/// composers. The model picker follows Xcode's searchable picker presentation
-/// (via Autocomplete); parameters use a native menu grouped by option.
+/// composers. Both use Autocomplete's searchable picker presentation;
+/// parameters are grouped by option, each with its own current value.
 struct ModelConfigMenu: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.openSettings) private var openSettings
@@ -15,6 +15,7 @@ struct ModelConfigMenu: View {
   @ClientPreference("composer.favoriteModels", default: [])
   private var favoriteModelIDs: [ModelPickerFavorite]
   @State private var isPresented = false
+  @State private var isParametersPresented = false
   @State private var modelSearch = ""
   @State private var isSwitchingHarness = false
   @State private var pendingModelValue: String?
@@ -79,29 +80,55 @@ private extension ModelConfigMenu {
   }
 
   private var parametersMenu: some View {
-    Menu {
-      ForEach(settingsOptions) { option in
-        Section(option.name) {
-          ForEach(option.options) { value in
-            Toggle(
-              isOn: parameterSelectionBinding(option: option, value: value.value)
-            ) {
-              Text(value.name)
-            }
-          }
-        }
-      }
+    Button {
+      isParametersPresented.toggle()
     } label: {
       parameterChipLabel
     }
-    .menuStyle(.button)
     .buttonStyle(HoverIconButtonStyle(shape: .chip))
-    .menuIndicator(.hidden)
     .fixedSize()
     .disabled(isLoadingSettings)
     .help("Model parameters")
     .accessibilityLabel("Model parameters")
     .accessibilityValue(parameterAccessibilityValue)
+    .popover(
+      isPresented: $isParametersPresented,
+      attachmentAnchor: .rect(.bounds),
+      arrowEdge: .bottom
+    ) {
+      Autocomplete.Menu(
+        sections: parameterSections,
+        searchAccessibilityLabel: "Search model parameters",
+        emptyMessage: "No matching parameters",
+        showsCheckmarks: true,
+        showsSectionDividers: false,
+        onDismiss: { isParametersPresented = false }
+      )
+    }
+    .onChange(of: isLoadingSettings) { _, isLoading in
+      if isLoading { isParametersPresented = false }
+    }
+  }
+
+  private var parameterSections: [Autocomplete.Section<Autocomplete.Option<ModelParameterMenu.Target>>] {
+    settingsOptions.map { option in
+      Autocomplete.Section(
+        id: option.id,
+        title: option.name,
+        items: option.options.map { value in
+          Autocomplete.Option(
+            id: ModelParameterMenu.Target(optionID: option.id, value: value.value),
+            title: value.name,
+            keywords: [option.name, value.value],
+            isSelected: option.currentValue == value.value,
+            isDisabled: isLoadingSettings
+          ) {
+            guard option.currentValue != value.value else { return }
+            Task { await controller.setConfigOption(option.id, value.value) }
+          }
+        }
+      )
+    }
   }
 
   private static let footerTitle = "Manage Harnesses…"
@@ -202,24 +229,6 @@ private extension ModelConfigMenu {
     isPresented = false
     SettingsRouter.shared.showHarnesses(machineId: controller.project.serverId)
     openSettings()
-  }
-
-  private func parameterSelectionBinding(
-    option: SessionConfigOption,
-    value: String
-  ) -> Binding<Bool> {
-    Binding(
-      get: {
-        let current =
-          controller.configOptions.first { $0.id == option.id }?.currentValue
-          ?? option.currentValue
-        return current == value
-      },
-      set: { isSelected in
-        guard isSelected else { return }
-        Task { await controller.setConfigOption(option.id, value) }
-      }
-    )
   }
 
   private var modelGroups: [ModelMenuGroup] {
