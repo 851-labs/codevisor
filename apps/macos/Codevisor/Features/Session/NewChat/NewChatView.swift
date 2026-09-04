@@ -102,8 +102,11 @@ struct NewChatView: View {
   @Namespace private var composerGlassNamespace
   @Environment(\.openSettings) var openSettings
 
+  /// Only an explicit target resolves to a project. No fallback to the
+  /// newest project: that is usually the scratch folder the previous
+  /// no-project chat was just sent from, and "No project" is the default.
   private var selectedProject: Project? {
-    projects.first { $0.id == selectedProjectId } ?? projects.first
+    projects.first { $0.id == selectedProjectId && !$0.isScratch }
   }
 
   var body: some View {
