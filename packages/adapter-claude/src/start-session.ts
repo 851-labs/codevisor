@@ -326,7 +326,7 @@ export const makeStartSession = (deps: StartSessionDeps) => {
         // A live turn is closed below through the normal terminal event so
         // the failure is attached durably to that assistant response. Only a
         // stream failure outside a turn remains a session-level error.
-        if (!created.turnActive) {
+        if (!created.turnActive && !created.retired) {
           created.pendingPrompt?.reject(runtimeError("prompt", cause))
           created.pendingPrompt = undefined
           failDeferredPrompts(created, runtimeError("prompt", cause))

@@ -12,6 +12,10 @@ import type { HarnessAccount, HarnessAuthMethod } from "@codevisor/api"
 import type { HarnessAccountRecord, UpdateHarnessAccountAuthRequest } from "@codevisor/db"
 import { chmod, mkdir, readFile } from "node:fs/promises"
 import { join } from "node:path"
+import {
+  defaultClaudeConfigPath,
+  ensureSharedClaudeConversations
+} from "./claude-conversation-storage.js"
 import { CLAUDE_AUTH_OVERRIDE_ENV_VARS, defaultExecFile, run } from "./harness-auth-support.js"
 import type {
   HarnessAuthEvent,
@@ -42,6 +46,7 @@ export const makeHarnessAuthCore = (config: HarnessAuthManagerConfig) => {
   const spawnClaudeAuth = config.claudeAuth ?? spawnClaudeAuthClient
   const acpLoginMethods = new Map<string, ReadonlyArray<HarnessAuthMethod>>()
   let environmentPromise: Promise<NodeJS.ProcessEnv> | undefined
+  let claudeStoragePreparation: Promise<void> | undefined
   const runExecFile: HarnessAuthExec = config.execFile ?? defaultExecFile
 
   const emit = (event: HarnessAuthEvent): void => {
@@ -93,12 +98,34 @@ export const makeHarnessAuthCore = (config: HarnessAuthManagerConfig) => {
     }
   }
 
+  const prepareClaudeStorage = (): Promise<void> => {
+    if (claudeStoragePreparation !== undefined) return claudeStoragePreparation
+    const preparation = (async () => {
+      const [baseEnvironment, accounts] = await Promise.all([
+        environment(),
+        run(config.db.listHarnessAccounts("claude-code"))
+      ])
+      await ensureSharedClaudeConversations(
+        defaultClaudeConfigPath(baseEnvironment),
+        accounts.flatMap((candidate) => {
+          const candidatePath = profilePath(candidate)
+          return candidatePath === undefined ? [] : [candidatePath]
+        })
+      )
+    })()
+    claudeStoragePreparation = preparation.finally(() => {
+      claudeStoragePreparation = undefined
+    })
+    return claudeStoragePreparation
+  }
+
   const contextFor = async (account: HarnessAccountRecord): Promise<HarnessAccountContext> => {
     const path = profilePath(account)
     if (path !== undefined) {
       await mkdir(path, { recursive: true, mode: 0o700 })
       await chmod(path, 0o700)
     }
+    if (account.harnessId === "claude-code") await prepareClaudeStorage()
     const env: Record<string, string> = {}
     if (path !== undefined && account.harnessId === "codex") env.CODEX_HOME = path
     if (path !== undefined && account.harnessId === "claude-code") env.CLAUDE_CONFIG_DIR = path

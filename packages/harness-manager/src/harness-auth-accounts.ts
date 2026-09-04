@@ -89,16 +89,23 @@ export const makeHarnessAccountOperations = (
       throw new Error("Sign in to this account before selecting it")
     }
     await run(config.db.setActiveHarnessAccount(harnessId, accountId))
-    // Activating a working account is the moment to stop chats from burning
-    // dead siblings: every session still pinned to an account of this harness
-    // whose last probe was not usable follows the account the user just
-    // chose. Freed accounts become removable again (removal refuses while
-    // sessions reference them).
-    for (const sibling of await run(config.db.listHarnessAccounts(harnessId))) {
-      if (sibling.id === accountId) continue
-      if (sibling.authState === "authenticated" || sibling.authState === "notRequired") continue
-      await run(config.db.rebindHarnessAccountSessions(sibling.id, accountId))
-    }
+    // Claude account selection applies to every chat on its next turn. A turn
+    // already running keeps its live process and finishes on the previous
+    // account; the runtime reloads the session with this binding before the
+    // next prompt. Usage limits leave an exhausted account authenticated, so
+    // Claude cannot rely on the dead-account sweep used by other harnesses.
+    const rebindAuthenticatedSiblings = harnessId === "claude-code"
+    const siblings = await run(config.db.listHarnessAccounts(harnessId))
+    await Promise.all(
+      siblings
+        .filter(
+          (sibling) =>
+            sibling.id !== accountId &&
+            (rebindAuthenticatedSiblings ||
+              (sibling.authState !== "authenticated" && sibling.authState !== "notRequired"))
+        )
+        .map((sibling) => run(config.db.rebindHarnessAccountSessions(sibling.id, accountId)))
+    )
     emit({
       kind: "harness.auth.updated",
       subjectId: harnessId,

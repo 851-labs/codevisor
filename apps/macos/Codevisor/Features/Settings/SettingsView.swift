@@ -55,6 +55,12 @@ struct SettingsLocation: Equatable {
   var panePath: [MachinePaneRoute]
 }
 
+/// A one-shot deep link to one harness's account manager on one machine.
+struct HarnessAccountSettingsRequest: Equatable {
+  let machineId: String
+  let harnessId: String
+}
+
 /// Routes programmatic Settings navigation (e.g. the sidebar's
 /// "Manage machines…" opens Settings on the Machines section) and keeps
 /// the Xcode-style back/forward history over every visited page — sidebar
@@ -78,6 +84,8 @@ final class SettingsRouter {
   /// EVERY change until the observed location equals this target —
   /// a one-shot flag here is exactly how Back used to jump two pages.
   @ObservationIgnored var pendingAppliedLocation: SettingsLocation?
+  /// Consumed by the destination machine pane after its harness catalog loads.
+  var pendingHarnessAccountRequest: HarnessAccountSettingsRequest?
 
   var currentLocation: SettingsLocation {
     SettingsLocation(tab: selectedTab, panePath: panePath)
@@ -123,12 +131,20 @@ final class SettingsRouter {
     selectedTab = .updates
   }
 
-  /// Opens the Harnesses pane. Every machine's harnesses live right there
-  /// as disclosures, so a deep link needs no machine-specific page — the
-  /// machineId is accepted for callers that have one but changes nothing.
+  /// Opens the Harnesses pane, optionally inside one machine's page.
   func showHarnesses(machineId: String? = nil) {
-    _ = machineId
-    panePath = []
+    pendingHarnessAccountRequest = nil
+    panePath = machineId.map { [MachinePaneRoute(pane: .harnesses, machineId: $0)] } ?? []
+    selectedTab = .agents
+  }
+
+  /// Opens one machine's Harnesses page and presents one harness's accounts.
+  func showHarnessAccounts(machineId: String, harnessId: String) {
+    pendingHarnessAccountRequest = HarnessAccountSettingsRequest(
+      machineId: machineId,
+      harnessId: harnessId
+    )
+    panePath = [MachinePaneRoute(pane: .harnesses, machineId: machineId)]
     selectedTab = .agents
   }
 
@@ -332,7 +348,7 @@ extension SettingsView {
       case .mcps:
         McpMachinePane(machine: machine)
       case .harnesses:
-        HarnessMachinePane(machine: machine)
+        HarnessMachinePane(machine: machine, opensPendingAccountRequest: true)
       case .plugins:
         PluginMachinePane(machine: machine)
       case .skills:

@@ -36,8 +36,8 @@ export class AgentRuntime extends Context.Service<AgentRuntime, AgentRuntimeServ
 export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeService => {
   const core = makeAgentRuntimeCore(config)
   const {
+    createSessionEmitter,
     definitionFor,
-    dispatch,
     locateHarnessBinary,
     locateReadyBinaries,
     manageSession,
@@ -153,14 +153,23 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
     createAgentSession: (harnessId, cwd, sink, account, toolGateway) =>
       Effect.gen(function* () {
         const { definition, provider } = yield* definitionFor(harnessId)
+        const events = createSessionEmitter()
         const created = yield* provider.createSession(
           definition,
           cwd,
-          dispatch,
+          events.emit,
           account,
           toolGateway
         )
-        manageSession(harnessId, created.metadata, cwd, created.handle, sink, account)
+        manageSession(
+          harnessId,
+          created.metadata,
+          cwd,
+          created.handle,
+          events.eventSource,
+          sink,
+          account
+        )
         return created.metadata.sessionId
       }),
     inspectHarness: (harnessId, cwd, account, configSelections) =>
@@ -226,12 +235,34 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
             existing.sink = sink
             return existing.metadata
           }
+
+          if (existing !== undefined) {
+            // Finish delivering everything the old handle already emitted,
+            // then unmanage it before closing. Closing a Claude query aborts
+            // its SDK stream; any late shutdown event must be unable to land
+            // in either the old sink or the replacement session.
+            await existing.chain
+            if (sessions.get(agentSessionId) === existing) {
+              sessions.delete(agentSessionId)
+            }
+            await Effect.runPromise(existing.handle.close).catch(() => undefined)
+          }
+
           const { definition, provider } = await Effect.runPromise(definitionFor(harnessId))
+          const events = createSessionEmitter()
           const loaded = await Effect.runPromise(
-            provider.loadSession(definition, agentSessionId, cwd, dispatch, account, toolGateway)
+            provider.loadSession(definition, agentSessionId, cwd, events.emit, account, toolGateway)
           )
           const metadata = loaded.metadata ?? { configOptions: [], sessionId: loaded.sessionId }
-          return manageSession(harnessId, metadata, cwd, loaded.handle, sink, account)
+          return manageSession(
+            harnessId,
+            metadata,
+            cwd,
+            loaded.handle,
+            events.eventSource,
+            sink,
+            account
+          )
         })
       ),
     ...makeAgentSessionOperations(core)

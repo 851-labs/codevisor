@@ -252,7 +252,7 @@ struct AssistantTurnBody: View {
         actionTitle: "Switch Account",
         action: { [weak transcriptController] in
           guard let controller = transcriptController,
-            let harnessId = controller.selectedHarnessId ?? controller.activeHarnessId
+            let harnessId = controller.activeHarnessId
           else { return }
           HarnessSignInRequest(
             serverId: controller.project.serverId, harnessId: harnessId
@@ -268,7 +268,7 @@ struct AssistantTurnBody: View {
         actionTitle: "Sign In",
         action: { [weak transcriptController] in
           guard let controller = transcriptController,
-            let harnessId = controller.selectedHarnessId ?? controller.activeHarnessId
+            let harnessId = controller.activeHarnessId
           else { return }
           HarnessSignInRequest(
             serverId: controller.project.serverId, harnessId: harnessId

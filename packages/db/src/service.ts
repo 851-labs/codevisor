@@ -357,10 +357,9 @@ export interface CodevisorDatabaseService {
     accountId: string
   ) => Effect.Effect<SessionSummary, DatabaseError>
   /// Moves every session pinned to `fromAccountId` onto `toAccountId`.
-  /// Activating a working account sweeps sessions off dead siblings with
-  /// this, which also frees the dead account for removal (removal refuses
-  /// while sessions still reference it). Returns the number of sessions
-  /// moved.
+  /// Claude selection applies this to every sibling so existing chats use the
+  /// selected account on their next turn. Other harnesses use it to move
+  /// sessions off unusable accounts. Returns the number of sessions moved.
   readonly rebindHarnessAccountSessions: (
     fromAccountId: string,
     toAccountId: string

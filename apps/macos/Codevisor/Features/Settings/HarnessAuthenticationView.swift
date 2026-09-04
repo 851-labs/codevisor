@@ -200,7 +200,7 @@ struct HarnessAuthenticationView: View {
       return "Configure the model providers Pi can use for new chats."
     }
     return harness.auth?.supportsMultipleAccounts == true
-      ? "Choose the account Codevisor uses for new chats."
+      ? "Choose the active account Codevisor uses."
       : "Configure the credentials Codevisor uses for new chats."
   }
 

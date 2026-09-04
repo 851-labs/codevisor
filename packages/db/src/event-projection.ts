@@ -133,10 +133,21 @@ export const projectChatEvent = (
       (payload.turnState === "ended" || typeof payload.stopReason === "string"))
   ) {
     const turnId = typeof payload.turnId === "string" ? payload.turnId : undefined
+    const currentItemId = chatState(sqlite, sessionId).current_item_id ?? undefined
+    const latestStreamingItem = (): string | undefined =>
+      (
+        sqlite
+          .prepare(
+            `select id from chat_items
+             where session_id = ? and role = 'assistant' and status = 'streaming'
+             order by position desc limit 1`
+          )
+          .get(sessionId) as { readonly id: string } | undefined
+      )?.id
     itemId =
       (turnId === undefined ? undefined : chatRoute(sqlite, sessionId, `turn:${turnId}`)) ??
-      chatState(sqlite, sessionId).current_item_id ??
-      undefined
+      currentItemId ??
+      latestStreamingItem()
     if (itemId !== undefined) {
       finishAssistantChatItem(
         sqlite,

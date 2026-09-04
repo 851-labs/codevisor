@@ -27,7 +27,13 @@ export const environment: ProviderEnvironment = {
 /// streaming-input prompt the provider writes into.
 export class FakeQuery {
   private buffer: Array<SDKMessage> = []
-  private waiting: ((result: IteratorResult<SDKMessage>) => void) | undefined
+  private failure: unknown
+  private waiting:
+    | {
+        readonly reject: (cause: unknown) => void
+        readonly resolve: (result: IteratorResult<SDKMessage>) => void
+      }
+    | undefined
   private ended = false
   readonly interrupts: Array<number> = []
   readonly permissionModes: Array<string> = []
@@ -42,7 +48,7 @@ export class FakeQuery {
     const waiting = this.waiting
     if (waiting !== undefined) {
       this.waiting = undefined
-      waiting({ done: false, value: message })
+      waiting.resolve({ done: false, value: message })
       return
     }
     this.buffer.push(message)
@@ -50,8 +56,19 @@ export class FakeQuery {
 
   finish(): void {
     this.ended = true
-    this.waiting?.({ done: true, value: undefined })
+    this.waiting?.resolve({ done: true, value: undefined })
     this.waiting = undefined
+  }
+
+  fail(cause: unknown): void {
+    this.ended = true
+    const waiting = this.waiting
+    this.waiting = undefined
+    if (waiting === undefined) {
+      this.failure = cause
+    } else {
+      waiting.reject(cause)
+    }
   }
 
   async interrupt(): Promise<void> {
@@ -97,6 +114,11 @@ export class FakeQuery {
   [Symbol.asyncIterator](): AsyncIterator<SDKMessage> {
     return {
       next: (): Promise<IteratorResult<SDKMessage>> => {
+        if (this.failure !== undefined) {
+          const failure = this.failure
+          this.failure = undefined
+          return Promise.reject(failure)
+        }
         const buffered = this.buffer.shift()
         if (buffered !== undefined) {
           return Promise.resolve({ done: false, value: buffered })
@@ -104,8 +126,8 @@ export class FakeQuery {
         if (this.ended) {
           return Promise.resolve({ done: true, value: undefined })
         }
-        return new Promise((resolvePromise) => {
-          this.waiting = resolvePromise
+        return new Promise((resolvePromise, rejectPromise) => {
+          this.waiting = { reject: rejectPromise, resolve: resolvePromise }
         })
       }
     }

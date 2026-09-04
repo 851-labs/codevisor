@@ -13,6 +13,7 @@ import {
   type HarnessDefinition,
   type ProviderEnvironment,
   type ProviderId,
+  type RuntimeEmit,
   type RuntimeEvent,
   type RuntimeEventSink
 } from "./types.js"
@@ -21,6 +22,7 @@ export interface ManagedSession {
   readonly harnessId: string
   readonly harnessAccountId?: string
   readonly cwd: string
+  readonly eventSource: object
   readonly handle: AgentSessionHandle
   metadata: AgentSessionMetadata
   sink: RuntimeEventSink
@@ -135,9 +137,12 @@ export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
   /// session's serial promise chain so the sink observes them in arrival
   /// order — including events with no prompt in flight, which is how
   /// agent-initiated turns reach the server.
-  const dispatch = (event: RuntimeEvent): Promise<void> => {
+  const dispatch = (eventSource: object, event: RuntimeEvent): Promise<void> => {
     const session = sessions.get(event.subjectId)
-    if (session === undefined) {
+    // Provider processes can finish shutting down after their replacement is
+    // already live. Events are scoped to the handle that produced them so a
+    // retired process can never mutate the replacement's durable session.
+    if (session === undefined || session.eventSource !== eventSource) {
       return Promise.resolve()
     }
     if (typeof event.payload === "object" && event.payload !== null) {
@@ -174,6 +179,14 @@ export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
     return next
   }
 
+  const createSessionEmitter = (): { readonly eventSource: object; readonly emit: RuntimeEmit } => {
+    const eventSource = {}
+    return {
+      eventSource,
+      emit: (event) => dispatch(eventSource, event)
+    }
+  }
+
   const definitionFor = (
     harnessId: string
   ): Effect.Effect<
@@ -201,6 +214,7 @@ export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
     metadata: AgentSessionMetadata,
     cwd: string,
     handle: AgentSessionHandle,
+    eventSource: object,
     sink: RuntimeEventSink,
     account?: HarnessAccountContext
   ): AgentSessionMetadata => {
@@ -212,6 +226,7 @@ export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
     sessions.set(sessionId, {
       chain: Promise.resolve(),
       cwd,
+      eventSource,
       handle,
       harnessId,
       ...(account === undefined ? {} : { harnessAccountId: account.id }),
@@ -232,8 +247,8 @@ export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
 
   return {
     config,
+    createSessionEmitter,
     definitionFor,
-    dispatch,
     locateHarnessBinary,
     locateReadyBinaries,
     manageSession,

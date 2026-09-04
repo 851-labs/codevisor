@@ -137,6 +137,26 @@ describe("ClaudeProvider", () => {
     )
   })
 
+  it("does not surface an expected SDK abort after the session is retired", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const createPromise = run(
+      provider.createSession(definition, "/tmp", async (event) => {
+        events.push(event)
+      })
+    )
+    await settle()
+    fake.push(initMessage())
+    const created = await createPromise
+
+    await run(created.handle.close)
+    fake.fail(new Error("Operation aborted"))
+    await settle()
+
+    expect(events.every((event) => event.kind !== "session.error")).toBe(true)
+  })
+
   it("resumes sessions under the requested id", async () => {
     const fake = new FakeQuery()
     const provider = makeProvider(fake)

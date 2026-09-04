@@ -331,10 +331,7 @@ struct AssistantTurnView: View {
       ChatErrorRow(
         message,
         actionTitle: "Switch Account",
-        action: {
-          SettingsRouter.shared.showHarnesses()
-          openSettings()
-        }
+        action: openHarnessAccountSettings
       )
     } else if let transcriptController,
       transcriptController.errorRequiresHarnessAuthentication,
@@ -343,10 +340,7 @@ struct AssistantTurnView: View {
       ChatErrorRow(
         message,
         actionTitle: "Open Harness Settings",
-        action: {
-          SettingsRouter.shared.showHarnesses()
-          openSettings()
-        }
+        action: openHarnessAccountSettings
       )
     } else if let transcriptController,
       transcriptController.canRetryTurn(turnID)
@@ -359,6 +353,21 @@ struct AssistantTurnView: View {
     } else {
       ChatErrorRow(message)
     }
+  }
+
+  private func openHarnessAccountSettings() {
+    guard let transcriptController,
+      let harnessId = transcriptController.activeHarnessId
+    else {
+      SettingsRouter.shared.showHarnesses()
+      openSettings()
+      return
+    }
+    SettingsRouter.shared.showHarnessAccounts(
+      machineId: transcriptController.project.serverId,
+      harnessId: harnessId
+    )
+    openSettings()
   }
 
   private func goalActivityLabel(_ activity: GoalActivity) -> String {

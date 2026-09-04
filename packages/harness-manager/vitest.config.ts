@@ -1,8 +1,9 @@
 import { defineConfig } from "vitest/config"
 
 // The auth modules orchestrate external CLIs, browser/device flows,
-// terminals, and credential files; the lifecycle modules orchestrate
-// installers, updaters, terminals, timers, and update feeds; the OpenCode
+// terminals, credential files, and filesystem migrations; the lifecycle
+// modules orchestrate installers, updaters, terminals, timers, and update
+// feeds; the OpenCode
 // server module drives a real `opencode serve` process (rationale carried
 // over from the repo root config when these lived in apps/server). Their
 // focused tests still run; custom-harnesses and credential-ferry stay at
@@ -19,6 +20,7 @@ export default defineConfig({
       exclude: [
         "**/dist/**",
         "**/*.test.ts",
+        "src/claude-conversation-storage.ts",
         "src/harness-auth.ts",
         "src/harness-auth-accounts.ts",
         "src/harness-auth-core.ts",

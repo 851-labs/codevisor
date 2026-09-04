@@ -142,7 +142,7 @@ describe("activate-time account rebinding", () => {
     await manager.activateAccount("gemini", fresh.id)
 
     // Sessions pinned to an unusable account follow the activated one; a
-    // session on a working account keeps its pin.
+    // session using a working account keeps its pin.
     expect((await run(db.getSessionSummary(pinnedToDead.id))).harnessAccountId).toBe(fresh.id)
     expect((await run(db.getSessionSummary(pinnedToHealthy.id))).harnessAccountId).toBe(healthy.id)
     // With no session referencing it anymore, the dead account can finally be
