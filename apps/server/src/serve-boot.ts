@@ -1,3 +1,5 @@
+import { makeTerminalPersistence } from "./infra/terminal-persistence.js"
+import type { StartupReporter } from "./startup-progress.js"
 import type { BackgroundTerminalIntegration } from "@codevisor/agent-runtime"
 import type { DataUpgradeProgress } from "@codevisor/api"
 import type { TerminalManagerService } from "@codevisor/terminal"
@@ -168,17 +170,7 @@ export const monitorAppOwner = (options: {
 /// swapping a standalone runtime (which the app's next launch would discard) it
 /// exits with this status and the app performs the full app update + relaunch.
 /// Must match `LocalCodevisorServer.updateHandoffExitStatus`.
-export const parseArgs = (args: ReadonlyArray<string>): Record<string, string> => {
-  const parsed: Record<string, string> = {}
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index]
-    if (arg?.startsWith("--") === true) {
-      parsed[arg.slice(2)] = args[index + 1] ?? ""
-      index += 1
-    }
-  }
-  return parsed
-}
+export { parseServeArgs as parseArgs } from "./startup-progress.js"
 
 export const bundledVersion = (): string | undefined => {
   const override = process.env.CODEVISOR_VERSION ?? process.env.HERDMAN_VERSION
@@ -265,4 +257,26 @@ export const backgroundTerminalIntegration = async (
     )
     return { registry }
   }
+}
+
+/// Restore saved scrollback and keep it available across graceful restarts.
+export const restoreTerminalPersistence = (
+  dataDir: string,
+  terminal: import("@codevisor/terminal").TerminalManagerService,
+  startup: StartupReporter
+): void => {
+  const persistence = makeTerminalPersistence({
+    dataDir,
+    terminal,
+    log: (line) => console.log(line),
+    onRestoreProgress: (completed, total) =>
+      startup.work({
+        id: "terminals",
+        name: "Restoring saved terminals",
+        completed,
+        total
+      })
+  })
+  persistence.restore()
+  persistence.installExitHooks()
 }

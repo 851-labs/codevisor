@@ -13,6 +13,7 @@ struct LocalCodevisorServerTests {
     var launches: [LocalCodevisorServerLaunchRequest] = []
     let server = LocalCodevisorServer(
       client: client,
+      allowsDevelopmentLaunch: true,
       entrypoint: URL(fileURLWithPath: "/tmp/main.js"),
       launcher: { request in
         launches.append(request)
@@ -33,6 +34,7 @@ struct LocalCodevisorServerTests {
     var launches: [LocalCodevisorServerLaunchRequest] = []
     let server = LocalCodevisorServer(
       client: client,
+      allowsDevelopmentLaunch: true,
       entrypoint: entrypoint,
       nodeExecutable: URL(fileURLWithPath: "/usr/bin/node"),
       databasePath: "/tmp/codevisor.sqlite",
@@ -98,6 +100,7 @@ struct LocalCodevisorServerTests {
     var launchedProcess: Process?
     let server = LocalCodevisorServer(
       client: client,
+      allowsDevelopmentLaunch: true,
       entrypoint: directory.appendingPathComponent("main.js"),
       dataUpgradeStatusURL: statusURL,
       serverEnvironmentProvider: { [:] },
@@ -153,6 +156,7 @@ struct LocalCodevisorServerTests {
     var launchedProcess: Process?
     let server = LocalCodevisorServer(
       client: client,
+      allowsDevelopmentLaunch: true,
       entrypoint: directory.appendingPathComponent("main.js"),
       dataUpgradeStatusURL: statusURL,
       serverEnvironmentProvider: { [:] },
@@ -184,6 +188,7 @@ struct LocalCodevisorServerTests {
     ])
     let server = LocalCodevisorServer(
       client: client,
+      allowsDevelopmentLaunch: true,
       entrypoint: URL(fileURLWithPath: "/tmp/main.js"),
       launcher: { _ in Process() }
     )
@@ -203,6 +208,7 @@ struct LocalCodevisorServerTests {
     var launches = 0
     let server = LocalCodevisorServer(
       client: client,
+      allowsDevelopmentLaunch: true,
       entrypoint: URL(fileURLWithPath: "/tmp/main.js"),
       serverEnvironmentProvider: {
         // Suspend mid-launch so the second caller arrives while the
@@ -229,7 +235,7 @@ struct LocalCodevisorServerTests {
   @Test("Reports unavailable when no server entrypoint can be found")
   func missingEntrypoint() async {
     let client = FakeLocalServerClient(healthResults: [.failure(TestError())])
-    let server = LocalCodevisorServer(client: client, entrypoint: nil)
+    let server = LocalCodevisorServer(client: client, allowsDevelopmentLaunch: true, entrypoint: nil)
 
     let state = await server.ensureRunning()
 
@@ -268,15 +274,6 @@ extension ServerHealth {
   static func running(version: String) -> ServerHealth {
     ServerHealth(ok: true, version: version, database: "ready")
   }
-}
-
-/// A UserDefaults suite private to one test, so safe-mode requests never
-/// leak between tests or into the developer's real preferences.
-func makeIsolatedDefaults() -> UserDefaults {
-  let name = "codevisor-tests-\(UUID().uuidString)"
-  let defaults = UserDefaults(suiteName: name)!
-  defaults.removePersistentDomain(forName: name)
-  return defaults
 }
 
 final class FakeLocalServerClient: CodevisorServerClienting, @unchecked Sendable {
@@ -320,6 +317,18 @@ final class FakeLocalServerClient: CodevisorServerClienting, @unchecked Sendable
       throw error
     }
   }
+
+  var drainResult = ServerRestartDrainState(state: "drained", remaining: 0)
+  var drainInterruptions = 0
+
+  func beginRestartDrain(interrupt: Bool) async throws -> ServerRestartDrainState {
+    lock.withLock {
+      if interrupt { drainInterruptions += 1 }
+      return drainResult
+    }
+  }
+
+  func restartDrainState() async throws -> ServerRestartDrainState { lock.withLock { drainResult } }
 
   func requestShutdown() async throws {
     lock.withLock { shutdownRequests += 1 }

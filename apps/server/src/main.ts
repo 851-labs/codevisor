@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { parseArgs, runServe } from "./serve.js"
+import { makeStartupReporter, parseServeArgs } from "./startup-progress.js"
 
 const USAGE = `codevisor-server — Codevisor server
 
@@ -15,6 +15,7 @@ Options:
   --direct-path <mode>     Direct LAN path: enabled or disabled (default: enabled)
   --db <path>              Database path (default: canonical data directory)
   --upgrade-status <path>  Data-upgrade status file path
+  --startup-status <path>  Startup checkpoint file path
   --boot-id <id>           Unique identity for this server startup
   --app-owned <0|1>        Tie this server to a desktop app
   --owner-pid <pid>        Owning desktop app process identifier
@@ -33,5 +34,14 @@ if (wantsHelp) {
   console.error(USAGE)
   process.exitCode = 1
 } else {
-  void runServe(parseArgs(args.slice(1)))
+  const parsed = parseServeArgs(args.slice(1))
+  const startup = makeStartupReporter(parsed)
+  startup.checkpoint("loadingRuntime")
+  try {
+    const { runServe } = await import("./serve.js")
+    await runServe(parsed, startup)
+  } catch (cause) {
+    startup.fail(cause)
+    process.exit(1)
+  }
 }

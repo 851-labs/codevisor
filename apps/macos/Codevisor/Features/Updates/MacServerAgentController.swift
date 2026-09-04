@@ -5,12 +5,18 @@ import ServiceManagement
 import os
 
 private enum MacServerAgentError: LocalizedError, Sendable {
+  case operationPending
+  case processDidNotStop
   case requiresApproval
   case registrationDidNotEnable(SMAppService.Status)
   case timedOut(operation: String, after: Duration)
 
   var errorDescription: String? {
     switch self {
+    case .operationPending:
+      "A previous macOS background-service request is still pending. Wait for it to finish, then restart Codevisor."
+    case .processDidNotStop:
+      "The previous background server has not stopped. Codevisor cannot replace it yet."
     case .requiresApproval:
       "Codevisor's background server is turned off in System Settings › General › Login Items & Extensions. Turn it on, then restart Codevisor."
     case let .registrationDidNotEnable(status):
@@ -34,6 +40,7 @@ final class MacServerAgentController {
   nonisolated static let plistName = "com.851labs.Codevisor.ServerAgent.plist"
   nonisolated static let jobLabel = "com.851labs.Codevisor.ServerAgent"
   nonisolated static let serviceCallTimeout: Duration = .seconds(15)
+  private nonisolated static let callInFlight = OSAllocatedUnfairLock(initialState: false)
   private let legacyJobs = LegacyServerJobRetirer()
   private let lifecycleLog = ServerLifecycleLog.default
 
@@ -68,6 +75,14 @@ final class MacServerAgentController {
     _ operation: String,
     _ body: @escaping @Sendable () async throws -> T
   ) async throws -> T {
+    try Task.checkCancellation()
+    guard
+      callInFlight.withLock({ busy in
+        guard !busy else { return false }
+        busy = true
+        return true
+      })
+    else { throw MacServerAgentError.operationPending }
     let outcome = FirstOutcome<T>()
     let started = ContinuousClock.now
     Task.detached {
@@ -77,6 +92,7 @@ final class MacServerAgentController {
       } catch {
         result = .failure(error)
       }
+      callInFlight.withLock { $0 = false }
       if !outcome.resume(with: result) {
         let late = Int((ContinuousClock.now - started) / .milliseconds(1))
         ServerLifecycleLog.default.fault(
@@ -84,13 +100,18 @@ final class MacServerAgentController {
         )
       }
     }
-    Task.detached {
-      try? await Task.sleep(for: serviceCallTimeout)
+    let timer = Task.detached {
+      do { try await Task.sleep(for: serviceCallTimeout) } catch { return }
       _ = outcome.resume(
         with: .failure(MacServerAgentError.timedOut(operation: operation, after: serviceCallTimeout))
       )
     }
-    return try await outcome.value
+    defer { timer.cancel() }
+    return try await withTaskCancellationHandler {
+      try await outcome.value
+    } onCancel: {
+      _ = outcome.resume(with: .failure(CancellationError()))
+    }
   }
 
   func ensureRegistered() async throws {
@@ -102,9 +123,11 @@ final class MacServerAgentController {
     // This closure is reached only when no matching service is healthy.
     // Re-register an enabled-but-dead job so launchd resolves BundleProgram
     // against the app bundle that is running now, never an updater backup.
+    if status == .requiresApproval { throw MacServerAgentError.requiresApproval }
     if status == .enabled {
       do {
         try await Self.serviceCall("unregister") { try await Self.service.unregister() }
+        try await waitForStoppedJob()
         lifecycleLog.note("launchd: unregistered the stale job (\(clock.lap()) ms)")
       } catch {
         lifecycleLog.error("launchd: unregister failed: \(error) (\(clock.lap()) ms)")
@@ -144,11 +167,22 @@ final class MacServerAgentController {
     }
     do {
       try await Self.serviceCall("unregister") { try await Self.service.unregister() }
+      try await waitForStoppedJob()
       lifecycleLog.note("launchd: unregistered (\(clock.lap()) ms)")
     } catch {
       lifecycleLog.error("launchd: unregister failed: \(error) (\(clock.lap()) ms)")
       throw error
     }
+  }
+
+  private func waitForStoppedJob() async throws {
+    let deadline = ContinuousClock.now + .seconds(10)
+    while ContinuousClock.now < deadline {
+      try Task.checkCancellation()
+      if await isJobRunning() == false { return }
+      try await Task.sleep(for: .milliseconds(200))
+    }
+    throw MacServerAgentError.processDidNotStop
   }
 
   /// Whether launchd has a live process for the job right now, via
@@ -163,11 +197,11 @@ final class MacServerAgentController {
         environment: nil,
         timeout: .seconds(5)
       )
-      guard result.exitCode == 0 else {
-        // Not loaded at all (exit 113 / "Could not find service").
-        return false
+      let running = LaunchctlPrintOutput.isRunning(result)
+      if running == nil {
+        lifecycleLog.error("launchd: job state is unknown (exit \(result.exitCode)): \(result.standardError)")
       }
-      return LaunchctlPrintOutput.pid(in: result.standardOutput) != nil
+      return running
     } catch {
       lifecycleLog.error("launchd: could not read the job state: \(error)")
       return nil

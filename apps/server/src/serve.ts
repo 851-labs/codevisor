@@ -1,3 +1,4 @@
+import type { DataUpgradeProgress } from "@codevisor/api"
 import { credentialFerrySources } from "@codevisor/harness-manager"
 import { makeAgentRuntime, resolveShellEnv } from "@codevisor/agent-runtime"
 import { makeAcpProvider, testAcpConnection } from "@codevisor/adapter-acp"
@@ -14,7 +15,6 @@ import {
 } from "@codevisor/db"
 import { makeTerminalManager } from "@codevisor/terminal"
 import { Effect } from "effect"
-import { randomUUID } from "node:crypto"
 import { hostname } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { makeActiveWorkSleepInhibitor } from "./infra/active-work-sleep-inhibitor.js"
@@ -34,7 +34,7 @@ import { makeHarnessLifecycleManager } from "@codevisor/harness-manager"
 import { defaultServerConfig, startCodevisorServer } from "./server.js"
 import { acquireServerLease } from "./infra/server-lease.js"
 import type { ServerLease } from "./infra/server-lease.js"
-import { makeTerminalPersistence } from "./infra/terminal-persistence.js"
+import { restoreTerminalPersistence } from "./serve-boot.js"
 import { makeHarnessAuthManager } from "@codevisor/harness-manager"
 import { makeMcpManager } from "@codevisor/mcp"
 import { makeNativeMcpManager } from "@codevisor/mcp"
@@ -61,6 +61,7 @@ import {
   backgroundTerminalIntegration,
   resolveServeModes
 } from "./serve-boot.js"
+import { makeStartupReporter, type StartupReporter } from "./startup-progress.js"
 import { makeSelfUpdater } from "./serve-self-updater.js"
 export {
   bundledBuildMetadata,
@@ -75,7 +76,11 @@ export type { BootScopedDataUpgradeProgress } from "./serve-boot.js"
 
 /// Boots the Codevisor server from parsed `--flag value` arguments. Shared by
 /// the `codevisor-server` daemon bin and the `codevisor serve` CLI subcommand.
-export const runServe = (args: Record<string, string>): Promise<void> => {
+export const runServe = (
+  args: Record<string, string>,
+  startup: StartupReporter = makeStartupReporter(args)
+): Promise<void> => {
+  startup.checkpoint("acquiringDatabase")
   process.title = SERVER_PROCESS_TITLE
   let startupLease: ServerLease | undefined
   let stopOwnerMonitor: (() => void) | undefined
@@ -101,7 +106,11 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
       requestedUpgradeStatusPath === undefined
         ? join(dirname(databasePath), "data-upgrade.json")
         : resolve(launchDirectory, requestedUpgradeStatusPath)
-    const bootId = args["boot-id"] ?? randomUUID()
+    const bootId = args["boot-id"]!
+    const reportUpgrade = (progress: DataUpgradeProgress): void => {
+      writeDataUpgradeStatus(upgradeStatusPath, bootId, progress)
+      if (progress.state === "running") startup.work(progress)
+    }
     const serviceManaged = args["service-managed"] === "1"
     const appOwned = args["app-owned"] === "1" || serviceManaged
     const ownerPid = parseProcessId(args["owner-pid"])
@@ -123,6 +132,7 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
     )
     startupLease = lease
     stopOwnerMonitor = ownerPid === undefined ? undefined : monitorAppOwner({ ownerPid, lease })
+    startup.checkpoint("openingDatabase")
     // Standalone installs used to default the database into the OS temp
     // directory; relocate that data the first time we start against a canonical
     // data-dir path (the systemd units pass --db explicitly, so an explicit flag
@@ -135,7 +145,7 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
       migrateLegacyLayout({
         databasePath,
         worktreesRoot: worktreesRoot(),
-        onProgress: (progress) => writeDataUpgradeStatus(upgradeStatusPath, bootId, progress)
+        onProgress: reportUpgrade
       })
     )
     // No server may identify as the default "local": every machine
@@ -150,8 +160,7 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
     const db = yield* makeDatabase({
       filename: databasePath,
       serverId,
-      onDataUpgradeProgress: (progress) =>
-        writeDataUpgradeStatus(upgradeStatusPath, bootId, progress)
+      onDataUpgradeProgress: reportUpgrade
     }).pipe(
       Effect.tapError((cause) =>
         Effect.sync(() =>
@@ -168,10 +177,7 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
     )
     const attachments = makeAttachmentStore(dirname(databasePath))
     yield* Effect.tryPromise({
-      try: () =>
-        migrateAttachmentBlobs(db, attachments, (progress) =>
-          writeDataUpgradeStatus(upgradeStatusPath, bootId, progress)
-        ),
+      try: () => migrateAttachmentBlobs(db, attachments, reportUpgrade),
       catch: (cause) =>
         cause instanceof Error ? cause : new Error(`Attachment migration failed: ${String(cause)}`)
     })
@@ -203,17 +209,10 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
               ...(args.kind === undefined ? [] : ["--kind", args.kind])
             ]
           })
+    startup.checkpoint("restoringTerminals")
     const terminal = makeTerminalManager()
-    // Terminal scrollback and seq-replay survive host restarts (self-update
-    // handoffs, service restarts): restore the previous process's buffers,
-    // then flush on every graceful exit path.
-    const terminalPersistence = makeTerminalPersistence({
-      dataDir: dirname(databasePath),
-      terminal,
-      log: (line) => console.log(line)
-    })
-    terminalPersistence.restore()
-    terminalPersistence.installExitHooks()
+    restoreTerminalPersistence(dirname(databasePath), terminal, startup)
+    startup.checkpoint("initializingServices")
     const backgroundTerminals = yield* Effect.promise(() => backgroundTerminalIntegration(terminal))
     // Cloud relay: when this machine is connected to a Codevisor Cloud
     // account (`codevisor auth login`, or dev auto-provisioning), hold a
@@ -409,6 +408,7 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
     // inherit whatever PATH the parent had, and a slow login-shell probe must
     // not delay the health endpoint the launching app is waiting on.
     void Effect.runPromise(agents.refreshEnvironment).catch(() => undefined)
+    startup.checkpoint("checkingHealth")
     const server = yield* startCodevisorServer(
       {
         agents,
@@ -471,6 +471,7 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
       })
     )
     startupCompleted = true
+    startup.checkpoint("ready")
     console.log(`Codevisor server listening at ${server.url}`)
     // Installed plugins are server companions: start them only after the
     // main listener is ready, without letting one broken plugin delay or
@@ -484,6 +485,7 @@ export const runServe = (args: Record<string, string>): Promise<void> => {
   })
 
   return Effect.runPromise(program).catch(async (cause: unknown) => {
+    startup.fail(new Error(failureMessage(cause)))
     stopOwnerMonitor?.()
     if (!startupCompleted) {
       await startupLease?.release().catch(() => undefined)

@@ -1,6 +1,5 @@
 import type { InstalledPlugin } from "./plugin-store.js"
 import { PluginsError } from "./plugins-error.js"
-import sharp from "sharp"
 
 export const MAX_PLUGIN_ICON_BYTES = 512 * 1024
 
@@ -132,6 +131,7 @@ const normalizeIcon = async (
     validateSvg(pluginId, data)
   }
   try {
+    const { default: sharp } = await import("sharp")
     const normalized = await sharp(data, {
       density: contentType === "image/svg+xml" ? 192 : 72,
       limitInputPixels: 16_777_216

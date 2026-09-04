@@ -280,6 +280,10 @@ const runCanonicalChatBackfill = (
 /// is a duplicate by definition and is dropped.
 const adoptServerIdentity = (sqlite: Database.Database, config: CodevisorDatabaseConfig): void => {
   sqlite.transaction(() => {
+    const previous = sqlite
+      .prepare("select value from instance_meta where key = 'adopted-server-id'")
+      .get() as { value: string } | undefined
+    if (previous?.value === config.serverId) return
     for (const table of ["sessions", "events", "session_events"]) {
       sqlite
         .prepare(`update ${table} set server_id = ? where server_id != ?`)
@@ -294,6 +298,12 @@ const adoptServerIdentity = (sqlite: Database.Database, config: CodevisorDatabas
         .run(config.serverId, config.serverId)
       sqlite.prepare(`delete from ${table} where server_id != ?`).run(config.serverId)
     }
+    // Commit the marker with the rewrites so interrupted adoption always retries.
+    sqlite
+      .prepare(
+        "insert into instance_meta (key, value) values ('adopted-server-id', ?) on conflict(key) do update set value = excluded.value"
+      )
+      .run(config.serverId)
   })()
 }
 

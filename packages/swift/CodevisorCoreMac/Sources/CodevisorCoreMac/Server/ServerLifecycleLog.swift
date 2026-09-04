@@ -93,6 +93,17 @@ public struct StepClock {
 /// cares about. launchctl is the only public view of a launchd job's live
 /// process; SMAppService reports registration, not liveness.
 public enum LaunchctlPrintOutput {
+  /// Unknown command failures must not be mistaken for a stopped process.
+  public static func isRunning(_ result: CommandResult) -> Bool? {
+    if result.exitCode == 3 || result.exitCode == 113 { return false }
+    guard result.exitCode == 0 else { return nil }
+    if let pid = pid(in: result.standardOutput), pid > 0 { return true }
+    let lines = result.standardOutput.split(whereSeparator: \.isNewline)
+      .map { $0.trimmingCharacters(in: .whitespaces) }
+    if lines.contains("state = not running") || lines.contains("state = waiting") { return false }
+    return nil
+  }
+
   /// The job's live process id, or nil while the job has no process.
   public static func pid(in output: String) -> Int? {
     for line in output.split(whereSeparator: \.isNewline) {

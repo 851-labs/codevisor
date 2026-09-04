@@ -46,45 +46,9 @@ extension LocalCodevisorServer {
     await shutdown()
   }
 
-  /// Sends SIGTERM to processes listening on the port. Only ever invoked
-  /// against a confirmed stale Codevisor server that ignored `POST /v1/shutdown`.
-  nonisolated public static func terminateListeners(onPort port: Int) async {
-    let ownPid = ProcessInfo.processInfo.processIdentifier
-    for pid in await listeningPids(onPort: port) where pid != ownPid {
-      kill(pid, SIGTERM)
-    }
-  }
-
-  nonisolated private static func listeningPids(onPort port: Int) async -> [pid_t] {
-    await withCheckedContinuation { continuation in
-      let process = Process()
-      process.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
-      process.arguments = ["-ti", "tcp:\(port)", "-sTCP:LISTEN"]
-      let pipe = Pipe()
-      process.standardOutput = pipe
-      process.standardError = FileHandle.nullDevice
-      process.terminationHandler = { _ in
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        let pids = String(decoding: data, as: UTF8.self)
-          .split(whereSeparator: \.isNewline)
-          .compactMap { pid_t($0.trimmingCharacters(in: .whitespaces)) }
-        continuation.resume(returning: pids)
-      }
-      do {
-        try process.run()
-      } catch {
-        Log.server.debug(
-          "lsof probe for port listeners failed: \(String(describing: error), privacy: .public)"
-        )
-        process.terminationHandler = nil
-        continuation.resume(returning: [])
-      }
-    }
-  }
-
   func currentHealth() async -> ServerHealth? {
     do {
-      let health = try await client.health()
+      let health = try await StartupDeadline.run(for: .seconds(2)) { [client] in try await client.health() }
       return health.ok ? health : nil
     } catch {
       // Expected when no server is running yet; launch follows.
@@ -113,7 +77,7 @@ extension LocalCodevisorServer {
 
   func isHealthy() async -> Bool {
     do {
-      return try await client.health().ok
+      return try await StartupDeadline.run(for: .seconds(2)) { [client] in try await client.health().ok }
     } catch {
       return false
     }
@@ -131,30 +95,41 @@ extension LocalCodevisorServer {
     expectedBootId: String?,
     requiresBundledIdentity: Bool = false,
     initialAttemptLimit: Int? = nil,
-    extendsForDataUpgrade: Bool = false,
     jobProbe: (@MainActor () async -> Bool?)? = nil
   ) async -> LocalCodevisorServerState {
-    // Breaking data upgrades are allowed to take minutes. Progress comes
-    // from the sidecar, so this wait is bounded generously without making
-    // the UI appear frozen. A managed job that launchd confirms is alive is
-    // likewise given the full budget: a slow boot (a big terminal-buffer
-    // restore, a login-shell PATH probe) is not a dead job.
+    // Elapsed-time deadlines include request and launchd probe time. Only
+    // actual forward progress extends the short startup budget.
+    let clock = ContinuousClock()
+    let deadline = clock.now + startupMaximumDuration
+    var lastProgressAt = clock.now
     var attempt = 0
     var attemptLimit = initialAttemptLimit ?? healthPollAttempts
     var lastProbeError = "none"
     var deadJobProbes = 0
     while attempt < attemptLimit {
       attempt += 1
-      refreshDataUpgradeProgress(expectedBootId: expectedBootId)
-      if extendsForDataUpgrade, dataUpgradeProgress?.state == "running" {
+      if Task.isCancelled { return fail("Server startup was cancelled.") }
+      if refreshStartupProgress(expectedBootId: expectedBootId ?? activeBootId) {
+        lastProgressAt = clock.now
         attemptLimit = max(attemptLimit, healthPollAttempts)
       }
+      refreshDataUpgradeProgress(expectedBootId: expectedBootId ?? activeBootId)
+      if startupProgress?.state == "failed" {
+        return fail(startupProgress?.error ?? "The server failed during startup.")
+      }
+      if clock.now >= deadline || clock.now - lastProgressAt >= startupStallTimeout {
+        startupCanRetry = true
+        return fail(
+          "Server startup stopped progressing while \(startupProgress?.label.lowercased() ?? "waiting for a response")."
+        )
+      }
       do {
-        let health = try await client.health()
+        let health = try await StartupDeadline.run(for: .seconds(2)) { [client] in try await client.health() }
         if health.ok {
-          guard expectedBootId == nil || health.bootId == expectedBootId else {
+          let boot = expectedBootId ?? activeBootId
+          guard boot == nil || health.bootId == boot else {
             return fail(
-              "A different Codevisor server answered while the local server was starting (boot \(health.bootId ?? "?"), expected \(expectedBootId ?? "?"))."
+              "A different Codevisor server answered while the local server was starting (boot \(health.bootId ?? "?"), expected \(boot ?? "?"))."
             )
           }
           guard
@@ -166,6 +141,8 @@ extension LocalCodevisorServer {
             )
           }
           dataUpgradeProgress = nil
+          activeBootId = health.bootId
+          completeStartup()
           state = .started
           lifecycleLog.note(
             "waitUntilHealthy: healthy after \(attempt) attempt(s) (version \(health.version), boot \(health.bootId ?? "?"))"
@@ -181,20 +158,19 @@ extension LocalCodevisorServer {
           "Codevisor server exited before becoming ready (status \(process.terminationStatus)). See \(logURL.path)"
         )
       }
-      // Also probe on the last budgeted attempt: a managed job launchd
-      // confirms alive earns the full budget instead of failing here.
+      // Liveness helps explain failures; only checkpoints extend the budget.
       if attempt % Self.healthProbeReportEvery == 0 || attempt == attemptLimit {
         var jobNote = ""
         if let jobProbe {
-          switch await jobProbe() {
+          switch try? await StartupDeadline.run(for: .seconds(5), operation: { await jobProbe() }) {
           case .some(true):
             deadJobProbes = 0
-            attemptLimit = max(attemptLimit, healthPollAttempts)
             jobNote = ", launchd job running"
           case .some(false):
             deadJobProbes += 1
             jobNote = ", launchd job has no process (\(deadJobProbes)/\(Self.deadJobProbeThreshold))"
             if deadJobProbes >= Self.deadJobProbeThreshold {
+              startupCanRetry = true
               return fail(
                 "Codevisor's background server exited before becoming ready (last probe: \(lastProbeError)). See \(logURL.path)"
               )
@@ -209,6 +185,7 @@ extension LocalCodevisorServer {
       }
       try? await Task.sleep(for: healthPollInterval)
     }
+    startupCanRetry = true
     return fail(
       "Timed out waiting for Codevisor server after \(attempt) attempt(s) (last probe: \(lastProbeError)). See \(logURL.path)"
     )
@@ -225,10 +202,13 @@ extension LocalCodevisorServer {
     // A missing status file is the normal no-upgrade-running case (and
     // this polls, so it stays unlogged); a file that exists but doesn't
     // decode hides real upgrade progress.
-    guard let data = try? Data(contentsOf: dataUpgradeStatusURL) else { return }
+    guard let expectedBootId, let data = try? Data(contentsOf: dataUpgradeStatusURL) else {
+      dataUpgradeProgress = nil
+      return
+    }
     do {
       let progress = try JSONDecoder().decode(LocalDataUpgradeProgress.self, from: data)
-      guard expectedBootId == nil || progress.bootId == expectedBootId else {
+      guard progress.bootId == expectedBootId else {
         dataUpgradeProgress = nil
         return
       }

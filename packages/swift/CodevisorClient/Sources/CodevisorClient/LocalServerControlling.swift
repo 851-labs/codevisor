@@ -85,6 +85,7 @@ public protocol LocalServerControlling: AnyObject, Observable {
   /// Sidecar progress remains available while the new server is performing
   /// its blocking migration and therefore cannot answer HTTP yet.
   var dataUpgradeProgress: LocalDataUpgradeProgress? { get }
+  var startupProgress: LocalServerStartupProgress? { get }
   /// Invoked when the bundled server exits asking the app to take over the
   /// update; see `LocalCodevisorServer.onUpdateRequested`.
   var onUpdateRequested: (@MainActor () -> Void)? { get set }
@@ -101,9 +102,4 @@ public protocol LocalServerControlling: AnyObject, Observable {
   /// running again.
   func abandonAppUpdate() async
   func shutdown() async -> Bool
-  /// The next launch runs the server as a child of the app instead of the
-  /// platform-managed background service ("safe mode"): a one-shot escape
-  /// when the managed service cannot start. The server then quits with the
-  /// app, and the launch after that tries the managed service again.
-  func requestSafeModeOnNextLaunch()
 }

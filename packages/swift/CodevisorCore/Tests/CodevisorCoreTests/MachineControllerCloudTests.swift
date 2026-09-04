@@ -632,5 +632,4 @@ final class StubLocalServer: LocalServerControlling {
   func prepareForAppUpdate(onStatus: @escaping @MainActor (String) -> Void) async -> Bool { true }
   func abandonAppUpdate() async {}
   func shutdown() async -> Bool { true }
-  func requestSafeModeOnNextLaunch() {}
 }

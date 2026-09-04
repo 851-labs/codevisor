@@ -121,6 +121,30 @@ struct ProcessCommandRunnerTests {
 
 @Suite("LaunchctlPrintOutput")
 struct LaunchctlPrintOutputTests {
+  @Test("Only confirmed missing or stopped jobs count as stopped")
+  func classifiesJobState() {
+    #expect(
+      LaunchctlPrintOutput.isRunning(CommandResult(standardOutput: "pid = 123", standardError: "", exitCode: 0)) == true
+    )
+    #expect(
+      LaunchctlPrintOutput.isRunning(
+        CommandResult(standardOutput: "state = not running", standardError: "", exitCode: 0)) == false)
+    #expect(
+      LaunchctlPrintOutput.isRunning(CommandResult(standardOutput: "state = waiting", standardError: "", exitCode: 0))
+        == false)
+    #expect(
+      LaunchctlPrintOutput.isRunning(CommandResult(standardOutput: "", standardError: "missing", exitCode: 113))
+        == false)
+    #expect(
+      LaunchctlPrintOutput.isRunning(CommandResult(standardOutput: "", standardError: "missing", exitCode: 3)) == false)
+    #expect(
+      LaunchctlPrintOutput.isRunning(CommandResult(standardOutput: "", standardError: "permission denied", exitCode: 5))
+        == nil)
+    #expect(
+      LaunchctlPrintOutput.isRunning(CommandResult(standardOutput: "unreadable", standardError: "", exitCode: 0)) == nil
+    )
+  }
+
   @Test("Finds the job's live pid")
   func findsPid() {
     let output = """

@@ -22,6 +22,7 @@ extension AppEnvironment {
     let serverClient = CodevisorServerClient(config: .localDefault)
     let localServer = LocalCodevisorServer(
       client: serverClient,
+      allowsDevelopmentLaunch: CodevisorAppVariant.isDevelopment,
       computerUseBridge: ComputerUseBridge(
         supportDirectory: CodevisorAppVariant.serverDataDirectoryURL()
       )

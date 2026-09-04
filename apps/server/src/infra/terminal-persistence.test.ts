@@ -59,6 +59,31 @@ describe("terminal persistence", () => {
     ])
   })
 
+  it("reports actual restored terminal counts across batches", () => {
+    const dataDir = makeDataDir()
+    const first = makeTerminalManager()
+    for (let index = 0; index < 65; index += 1) {
+      first
+        .registerExternalTerminal({ sessionId: `terminal:${index}` }, noopProcess)
+        .output(`output:${index}`)
+    }
+    makeTerminalPersistence({ dataDir, terminal: first }).flush()
+    const second = makeTerminalManager()
+    const progress: number[][] = []
+    makeTerminalPersistence({
+      dataDir,
+      terminal: second,
+      onRestoreProgress: (done, total) => progress.push([done, total])
+    }).restore()
+    expect(progress).toEqual([
+      [0, 65],
+      [32, 65],
+      [64, 65],
+      [65, 65]
+    ])
+    expect(second.snapshotTerminals().terminals).toHaveLength(65)
+  })
+
   it("skips empty snapshots, missing or corrupt files, and unknown versions", () => {
     const dataDir = makeDataDir()
     const manager = makeTerminalManager()
@@ -104,7 +129,7 @@ describe("terminal persistence", () => {
 
     // restore: a non-Error throw is stringified into the log line.
     const lines: Array<string> = []
-    writeFileSync(snapshotPath, JSON.stringify({ version: 1, terminals: [] }))
+    writeFileSync(snapshotPath, JSON.stringify({ version: 1, terminals: [{}] }))
     makeTerminalPersistence({
       dataDir,
       terminal: {

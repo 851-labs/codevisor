@@ -11,6 +11,7 @@ public struct ServerAvailabilityView: View {
   private let machineName: String
   private let isLocal: Bool
   private let dataUpgradeProgress: LocalDataUpgradeProgress?
+  private let startupProgress: LocalServerStartupProgress?
   private let appUpdateInProgress: Bool
   private let retry: () -> Void
   /// Re-points the caller at this Mac. Offered only for remote machines
@@ -21,10 +22,6 @@ public struct ServerAvailabilityView: View {
   /// way. Local machine only; offered when the start failed or is taking
   /// longer than `slowStartThreshold`.
   private let restart: (() -> Void)?
-  /// Relaunches the app with the server as a plain child process instead
-  /// of the background service — the escape hatch when the service cannot
-  /// start. Local machine only; offered on failure.
-  private let restartInSafeMode: (() -> Void)?
 
   /// After this long on "Starting Codevisor Server", offer a restart: a
   /// healthy start takes seconds, so waiting longer means something stuck.
@@ -38,10 +35,10 @@ public struct ServerAvailabilityView: View {
     machineName: String,
     isLocal: Bool,
     dataUpgradeProgress: LocalDataUpgradeProgress? = nil,
+    startupProgress: LocalServerStartupProgress? = nil,
     appUpdateInProgress: Bool = false,
     useLocalMachine: (() -> Void)? = nil,
     restart: (() -> Void)? = nil,
-    restartInSafeMode: (() -> Void)? = nil,
     retry: @escaping () -> Void
   ) {
     self.machineId = machineId
@@ -49,11 +46,11 @@ public struct ServerAvailabilityView: View {
     self.machineName = machineName
     self.isLocal = isLocal
     self.dataUpgradeProgress = dataUpgradeProgress
+    self.startupProgress = startupProgress
     self.appUpdateInProgress = appUpdateInProgress
     self.retry = retry
     self.useLocalMachine = useLocalMachine
     self.restart = restart
-    self.restartInSafeMode = restartInSafeMode
   }
 
   public var body: some View {
@@ -63,7 +60,7 @@ public struct ServerAvailabilityView: View {
           Image(systemName: "exclamationmark.triangle.fill")
             .font(.system(size: 38, weight: .medium))
             .foregroundStyle(.orange)
-        } else {
+        } else if !showsStartupProgress {
           ProgressView(value: progressFraction)
             .progressViewStyle(.circular)
             .controlSize(.large)
@@ -81,7 +78,25 @@ public struct ServerAvailabilityView: View {
             .frame(maxWidth: 440)
         }
 
-        if let dataUpgradeProgress,
+        if showsStartupProgress {
+          VStack(spacing: 8) {
+            ProgressView(value: startupProgress?.fractionCompleted ?? 0)
+              .progressViewStyle(.linear)
+              .accessibilityLabel("Server startup")
+            Text("\(startupProgress?.completed ?? 0) of 7 steps complete")
+              .font(.caption.monospacedDigit())
+              .foregroundStyle(.secondary)
+            if let work = startupProgress?.work, work.total > 0 {
+              ProgressView(value: Double(work.completed), total: Double(work.total))
+              Text("\(work.name) · \(work.completed) of \(work.total)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+          }
+          .frame(maxWidth: 360)
+        }
+
+        if startupProgress?.work == nil, let dataUpgradeProgress,
           dataUpgradeProgress.state == "running",
           dataUpgradeProgress.total > 0
         {
@@ -100,18 +115,8 @@ public struct ServerAvailabilityView: View {
         if isFailed || offersLocalMachine || offersSlowStartRestart {
           HStack(spacing: 10) {
             if isFailed, let restart, isLocal {
-              // A local failure names its cause above; the fixes are a
-              // fresh start, or a start that skips the background
-              // service entirely.
               Button("Restart", action: restart)
                 .buttonStyle(.borderedProminent)
-              if let restartInSafeMode {
-                Button("Restart in Safe Mode", action: restartInSafeMode)
-                  .buttonStyle(.bordered)
-                  .help(
-                    "Run the server inside Codevisor instead of as a background service. It stops when Codevisor quits."
-                  )
-              }
             } else if isFailed {
               Button("Try Again", action: retry)
                 .buttonStyle(.borderedProminent)
@@ -128,7 +133,7 @@ public struct ServerAvailabilityView: View {
         }
       }
     }
-    .task(id: isLocalStartWait) {
+    .task(id: "\(isLocalStartWait):\(startupProgress?.progressKey ?? "")") {
       startIsSlow = false
       guard isLocalStartWait else { return }
       try? await Task.sleep(for: Self.slowStartThreshold)
@@ -140,6 +145,14 @@ public struct ServerAvailabilityView: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(.background)
     .accessibilityElement(children: .contain)
+  }
+
+  private var showsStartupProgress: Bool {
+    guard isLocal, !appUpdateInProgress, !isFailed else { return false }
+    if case let .waiting(reason) = availability {
+      return reason == .starting || reason == .restarting
+    }
+    return false
   }
 
   private var activeMigration: LocalDataUpgradeProgress? {
@@ -215,6 +228,9 @@ public struct ServerAvailabilityView: View {
   private var message: String {
     if appUpdateInProgress {
       return "Codevisor is installing an update and will reopen automatically."
+    }
+    if showsStartupProgress, let startupProgress {
+      return startupProgress.label + (startIsSlow ? "\nThis step is taking longer than expected." : "")
     }
     if let migration = activeMigration {
       if migration.state == "failed" {

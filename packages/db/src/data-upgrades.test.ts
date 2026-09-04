@@ -1,6 +1,6 @@
 import Database from "better-sqlite3"
 import { Effect } from "effect"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { DatabaseError, makeDatabase } from "./index.js"
 import { buildV4Fixture, run, tempDatabase } from "./test-support.js"
 
@@ -51,6 +51,30 @@ describe("@codevisor/db", () => {
     await Effect.runPromise(after.close)
   })
 
+  it("skips integrity and identity scans on an unchanged database", async () => {
+    const filename = tempDatabase()
+    const first = await run(makeDatabase({ filename, serverId: "stable" }))
+    await run(first.close)
+    const prepare = vi.spyOn(Database.prototype, "prepare")
+    const pragma = vi.spyOn(Database.prototype, "pragma")
+    try {
+      const next = await run(makeDatabase({ filename, serverId: "stable" }))
+      expect(pragma.mock.calls.some(([sql]) => sql === "foreign_key_check")).toBe(false)
+      expect(prepare.mock.calls.some(([sql]) => sql.includes("update events set server_id"))).toBe(
+        false
+      )
+      await run(next.close)
+    } finally {
+      prepare.mockRestore()
+      pragma.mockRestore()
+    }
+    const sqlite = new Database(filename)
+    expect(
+      sqlite.prepare("select value from instance_meta where key = 'adopted-server-id'").get()
+    ).toEqual({ value: "stable" })
+    sqlite.close()
+  })
+
   it("drops former-identity rows that collide with current-identity twins", async () => {
     // If a location for the same folder was re-created under the new id, the
     // stale "local" row is a duplicate and must not survive adoption.
@@ -60,6 +84,8 @@ describe("@codevisor/db", () => {
     await Effect.runPromise(before.close)
 
     const sqlite = new Database(filename)
+    // Model a database written before identity adoption was checkpointed.
+    sqlite.prepare("delete from instance_meta where key = 'adopted-server-id'").run()
     sqlite
       .prepare(
         `insert into project_locations (id, project_id, server_id, folder_path, created_at)

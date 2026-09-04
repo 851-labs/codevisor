@@ -18,6 +18,7 @@ struct MachineControllerLocalServerTests {
     // durable server's PATH is frozen at its original launch).
     let localServer = LocalCodevisorServer(
       client: client,
+      allowsDevelopmentLaunch: true,
       entrypoint: URL(fileURLWithPath: "/tmp/main.js"),
       launcher: { _ in Process() }
     )
@@ -38,6 +39,7 @@ struct MachineControllerLocalServerTests {
     let client = RescanCountingClient(failFirstHealth: true)
     let localServer = LocalCodevisorServer(
       client: client,
+      allowsDevelopmentLaunch: true,
       entrypoint: URL(fileURLWithPath: "/tmp/main.js"),
       launcher: { request in
         client.acceptBoot(request.bootId)
@@ -59,6 +61,7 @@ struct MachineControllerLocalServerTests {
     let client = RescanCountingClient()
     let localServer = LocalCodevisorServer(
       client: client,
+      allowsDevelopmentLaunch: true,
       entrypoint: URL(fileURLWithPath: "/tmp/main.js"),
       launcher: { _ in Process() }
     )

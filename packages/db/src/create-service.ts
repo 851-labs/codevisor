@@ -58,9 +58,13 @@ export const createService = (
             on conflict(id) do nothing`
           )
           .run()
-        const violations = sqlite.pragma("foreign_key_check") as ReadonlyArray<unknown>
-        if (violations.length > 0) {
-          throw new Error(`Migration left foreign key violations: ${JSON.stringify(violations)}`)
+        if (names.length > 0) {
+          const violations = sqlite.pragma("foreign_key_check") as ReadonlyArray<unknown>
+          if (violations.length > 0) {
+            throw new Error(`Migration left foreign key violations: ${JSON.stringify(violations)}`)
+          }
+          // New schemas may introduce more identity-bearing rows.
+          sqlite.prepare("delete from instance_meta where key = 'adopted-server-id'").run()
         }
       })
       transaction()

@@ -36,14 +36,10 @@ fi
 # moved or deleted after startup. Keep the daemon and every child process
 # anchored in durable application data instead of that transient bundle.
 cd "$data_dir"
-path_probe_started="$(/bin/date +%s)"
-login_path="$(/bin/zsh -lic 'printf %s "$PATH"' 2>/dev/null || true)"
-if [[ -n "$login_path" ]]; then
-  export PATH="$login_path"
-  log "login-shell PATH resolved in $(( $(/bin/date +%s) - path_probe_started ))s"
-else
-  log "login-shell PATH probe failed after $(( $(/bin/date +%s) - path_probe_started ))s; keeping the inherited PATH"
-fi
+# The server resolves the user's shell environment asynchronously. Shell rc
+# files must never hold launchd's process open before Node can report progress.
+export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$HOME/.bun/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+log "starting with fallback PATH; shell discovery runs in the server"
 export CODEVISOR_APP_HOSTED=1
 export CODEVISOR_APP_UPDATE_REQUEST_PATH="$update_request_path"
 

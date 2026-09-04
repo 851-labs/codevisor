@@ -73,18 +73,12 @@ extension NewChatView {
         dataUpgradeProgress: composerMachine.isLocal
           ? environment.localServer?.dataUpgradeProgress
           : nil,
+        startupProgress: composerMachine.isLocal ? environment.localServer?.startupProgress : nil,
         appUpdateInProgress: environment.appUpdate.isUpdating,
         useLocalMachine: localFallbackMachine.map { local in
           { useLocalMachineForComposer(local) }
         },
-        // Relaunching the app restarts the managed server the normal way;
-        // safe mode relaunches with the server as a child process instead.
-        restart: composerMachine.isLocal ? { AppRelauncher.relaunch() } : nil,
-        restartInSafeMode: composerMachine.isLocal
-          ? { [environment] in
-            environment.localServer?.requestSafeModeOnNextLaunch()
-            AppRelauncher.relaunch()
-          } : nil
+        restart: composerMachine.isLocal ? { AppRelauncher.relaunch() } : nil
       ) {
         Task {
           await environment.machines.retryMachine(composerMachine.id)

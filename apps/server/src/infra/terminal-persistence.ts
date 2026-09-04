@@ -21,6 +21,7 @@ export interface TerminalPersistenceOptions {
   readonly dataDir: string
   readonly terminal: TerminalManagerService
   readonly log?: (line: string) => void
+  readonly onRestoreProgress?: (completed: number, total: number) => void
   /// Injectable process seam so exit hooks are testable. Production uses the
   /// real `process`.
   readonly processHandle?: {
@@ -67,7 +68,15 @@ export const makeTerminalPersistence = (
     try {
       const snapshot = JSON.parse(raw) as TerminalSnapshot
       if (snapshot.version !== 1 || !Array.isArray(snapshot.terminals)) return
-      options.terminal.restoreTerminals(snapshot)
+      const total = snapshot.terminals.length
+      options.onRestoreProgress?.(0, total)
+      for (let index = 0; index < total; index += 32) {
+        options.terminal.restoreTerminals({
+          version: 1,
+          terminals: snapshot.terminals.slice(index, index + 32)
+        })
+        options.onRestoreProgress?.(Math.min(index + 32, total), total)
+      }
       if (snapshot.terminals.length > 0) {
         log(`Restored ${snapshot.terminals.length} terminal buffer(s) from previous run`)
       }
