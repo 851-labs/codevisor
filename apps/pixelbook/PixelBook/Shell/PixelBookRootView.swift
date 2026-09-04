@@ -22,17 +22,38 @@ struct PixelBookRootView: View {
   @State private var selectedStoryID: String? = StoryCatalog.all.first?.id
   @State private var appearance: PixelBookAppearance = .system
   @State private var showsInspector = true
+  @State private var searchText = ""
+  @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
+  @FocusState private var searchFocused: Bool
+
+  private var filteredStories: [Story] {
+    let terms = searchText.split(whereSeparator: \.isWhitespace).map(String.init)
+    return StoryCatalog.all.filter { story in
+      terms.allSatisfy { term in
+        [story.title, story.group.rawValue, story.summary].contains { $0.localizedStandardContains(term) }
+      }
+    }
+  }
 
   var body: some View {
-    NavigationSplitView {
+    let stories = filteredStories
+    NavigationSplitView(columnVisibility: $columnVisibility) {
       List(selection: $selectedStoryID) {
         ForEach(StoryGroup.allCases) { group in
-          Section(group.rawValue) {
-            ForEach(StoryCatalog.all.filter { $0.group == group }) { story in
-              Text(story.title)
-                .tag(story.id)
+          let groupStories = stories.filter { $0.group == group }
+          if !groupStories.isEmpty {
+            Section(group.rawValue) {
+              ForEach(groupStories) { story in
+                Text(story.title)
+                  .tag(story.id)
+              }
             }
           }
+        }
+      }
+      .overlay {
+        if stories.isEmpty {
+          ContentUnavailableView.search(text: searchText)
         }
       }
       .navigationSplitViewColumnWidth(min: 200, ideal: 230)
@@ -48,6 +69,20 @@ struct PixelBookRootView: View {
       } else {
         ContentUnavailableView("Pick a story", systemImage: "square.grid.2x2")
       }
+    }
+    .searchable(text: $searchText, placement: .sidebar, prompt: "Search stories")
+    .searchFocused($searchFocused)
+    .onSubmit(of: .search) {
+      if let story = filteredStories.first { selectedStoryID = story.id }
+    }
+    .onKeyPress(.return) {
+      guard searchFocused, let story = filteredStories.first else { return .ignored }
+      selectedStoryID = story.id
+      return .handled
+    }
+    .focusedSceneValue(\.findStory) {
+      columnVisibility = .all
+      searchFocused = true
     }
     .toolbar {
       ToolbarItem(placement: .primaryAction) {

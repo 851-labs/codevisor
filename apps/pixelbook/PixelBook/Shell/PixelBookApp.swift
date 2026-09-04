@@ -10,5 +10,6 @@ struct PixelBookApp: App {
       PixelBookRootView()
     }
     .defaultSize(width: 1040, height: 720)
+    .commands { PixelBookCommands() }
   }
 }
