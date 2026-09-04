@@ -280,6 +280,11 @@ extension HomeView {
       )
       .frame(maxWidth: .infinity, alignment: .leading)
       .contentShape(Rectangle())
+      // The whole row toggles, like workspace rows — not just the chevron.
+      .onTapGesture {
+        guard groupReorderOrganization != .byProject else { return }
+        setProject(item.id, isExpanded: !isExpanded)
+      }
     }
     .tint(isReorderingGroups ? .clear : nil)
     .modifier(
@@ -316,6 +321,9 @@ extension HomeView {
       )
       .frame(maxWidth: .infinity, alignment: .leading)
       .contentShape(Rectangle())
+      .onTapGesture {
+        setProject(id, isExpanded: !isExpanded)
+      }
     }
     .modifier(BottomSeparatorModifier(isHidden: !isExpanded))
   }
