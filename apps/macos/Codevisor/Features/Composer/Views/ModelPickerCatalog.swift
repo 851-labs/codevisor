@@ -1,5 +1,6 @@
 import Foundation
 import ACPKit
+import Autocomplete
 
 /// A keyboard/hover target in the model picker: a model row or the footer.
 enum ModelPickerTarget: Hashable {
@@ -53,8 +54,8 @@ struct ModelPickerModelItem: Identifiable {
     ModelPickerFavorite(model: model, group: group)
   }
 
-  var favoriteAction: ModelPickerFavoriteAction {
-    isFavorite ? .remove : .add
+  var favoriteAction: Autocomplete.FavoriteAction {
+    Autocomplete.FavoriteAction(isFavorite: isFavorite)
   }
 }
 
@@ -110,25 +111,6 @@ struct ModelPickerCatalog {
   private func regularModels(in group: ModelMenuGroup) -> [SessionConfigSelectOption] {
     group.matchingModels(query: query).filter {
       !favoriteSet.contains(ModelPickerFavorite(model: $0, group: group))
-    }
-  }
-}
-
-enum ModelPickerFavoriteAction {
-  case add
-  case remove
-
-  var symbolName: String {
-    switch self {
-    case .add: "star"
-    case .remove: "star.slash"
-    }
-  }
-
-  var label: String {
-    switch self {
-    case .add: "Add to Favorites"
-    case .remove: "Remove from Favorites"
     }
   }
 }

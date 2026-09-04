@@ -95,6 +95,13 @@ struct NewChatView: View {
   /// Which run picker chip the pointer is over; its neighbouring dividers
   /// hide so the hover capsule never butts against a hairline.
   @State var hoveredRunPicker: RunPicker?
+  @ClientPreference("composer.favoriteMachines", default: [])
+  var favoriteMachineIDs: [CodevisorMachine.ID]
+  /// Linked checkouts share a group ID, so a favorite follows the repository
+  /// when the machine picker changes which checkout is available. The reserved
+  /// no-project key represents the choice available on every machine.
+  @ClientPreference("composer.favoriteProjects", default: [])
+  var favoriteProjectIDs: [ProjectGroup.ID]
   /// Set when the user escaped a blocked remote target from the
   /// availability screen. Outranks navigation's initial target and the
   /// remembered machine so the page re-points before a draft exists.

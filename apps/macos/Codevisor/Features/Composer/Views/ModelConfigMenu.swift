@@ -157,16 +157,9 @@ private extension ModelConfigMenu {
       Text(item.model.name)
         .lineLimit(1)
     } accessory: { _ in
-      Button {
+      Autocomplete.FavoriteButton(item.favoriteAction) {
         toggleFavorite(item)
-      } label: {
-        Image(systemName: item.favoriteAction.symbolName)
-          .font(.system(size: 11, weight: .regular))
-          .frame(maxWidth: .infinity, maxHeight: .infinity)
-          .contentShape(Rectangle())
       }
-      .buttonStyle(.plain)
-      .help(item.favoriteAction.label)
     }
   }
 

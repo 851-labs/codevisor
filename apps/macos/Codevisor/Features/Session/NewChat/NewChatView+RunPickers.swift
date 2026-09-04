@@ -94,7 +94,8 @@ extension NewChatView {
         id: MachinePickerTarget.machine(machine.id),
         title: machine.name,
         icon: Image(systemName: EntitySystemSymbol.machine(machine)),
-        isSelected: machine.id == selectedServerId
+        isSelected: machine.id == selectedServerId,
+        isFavoritable: true
       ) {
         selectTargetMachine(machine, controller: controller)
       }
@@ -116,7 +117,16 @@ extension NewChatView {
         .init(id: "actions", items: [manage]),
       ],
       searchAccessibilityLabel: "Search machines",
-      emptyMessage: "No matching machines"
+      emptyMessage: "No matching machines",
+      favoriteIDs: Binding(
+        get: { favoriteMachineIDs.map(MachinePickerTarget.machine) },
+        set: { targets in
+          favoriteMachineIDs = targets.compactMap {
+            guard case let .machine(id) = $0 else { return nil }
+            return id
+          }
+        }
+      )
     )
     .onHover { trackHover(.machine, $0) }
     .help("Choose which machine this chat runs on")
@@ -141,7 +151,8 @@ extension NewChatView {
       id: ProjectPickerTarget.noProject,
       title: Self.noProjectTitle,
       icon: Image(systemName: Self.noProjectSymbol),
-      isSelected: isNoProject
+      isSelected: isNoProject,
+      isFavoritable: true
     ) {
       selectNoProject(controller)
     }
@@ -150,7 +161,8 @@ extension NewChatView {
         id: ProjectPickerTarget.project(group.id),
         title: group.name,
         icon: Image(systemName: EntitySystemSymbol.project),
-        isSelected: group.contains(selected)
+        isSelected: group.contains(selected),
+        isFavoritable: true
       ) {
         selectTargetGroup(group, controller: controller)
       }
@@ -171,7 +183,23 @@ extension NewChatView {
         .init(id: "actions", items: [newProject]),
       ],
       searchAccessibilityLabel: "Search projects",
-      emptyMessage: "No matching projects"
+      emptyMessage: "No matching projects",
+      favoriteIDs: Binding(
+        get: {
+          favoriteProjectIDs.map {
+            $0 == Self.noProjectFavoriteID ? .noProject : .project($0)
+          }
+        },
+        set: { targets in
+          favoriteProjectIDs = targets.compactMap {
+            switch $0 {
+            case .noProject: Self.noProjectFavoriteID
+            case let .project(id): id
+            case .newProject: nil
+            }
+          }
+        }
+      )
     )
     .onHover { trackHover(.project, $0) }
     .help("Choose which project this chat works in")
@@ -182,6 +210,9 @@ extension NewChatView {
   /// The outline folder: a chat with no repository behind it.
   static let noProjectSymbol = EntitySystemSymbol.projectList
   private static let noProjectTitle = "No project"
+  /// Project group IDs use repo| or project| prefixes; this key cannot
+  /// collide with a repository and is shared across all machines.
+  private static let noProjectFavoriteID = "no-project"
 
   /// "Project directory" vs "New worktree" for where the chat (and its
   /// workspace) runs. Only rendered for git projects; the worktree itself

@@ -100,7 +100,7 @@ enum StoryCatalog {
       id: "favorites",
       title: "Favorites accessory",
       summary:
-        "A one-off UX from the primitives: a hover-revealed star accessory and a Favorites group that lifts starred items out of their group. The package knows nothing about favorites."
+        "Menu owns hover-revealed stars and a Favorites section, listing each item once. The caller supplies eligible options and a binding for saved favorites."
     ) {
       FavoritesStory()
     },

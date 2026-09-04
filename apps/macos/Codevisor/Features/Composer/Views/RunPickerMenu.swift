@@ -10,6 +10,7 @@ struct RunPickerMenu<Target: Hashable>: View {
   let sections: [Autocomplete.Section<Autocomplete.Option<Target>>]
   let searchAccessibilityLabel: String
   let emptyMessage: String
+  var favoriteIDs: Binding<[Target]>? = nil
 
   @State private var isPresented = false
   var body: some View {
@@ -29,6 +30,7 @@ struct RunPickerMenu<Target: Hashable>: View {
         searchAccessibilityLabel: searchAccessibilityLabel,
         emptyMessage: emptyMessage,
         showsCheckmarks: true,
+        favoriteIDs: favoriteIDs,
         onDismiss: { isPresented = false }
       )
     }
