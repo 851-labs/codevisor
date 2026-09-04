@@ -98,9 +98,11 @@ final class ChatControllerCache {
         // The saved draft may target ANOTHER machine's project (the
         // picker is fleet-wide); older drafts carry no server id and
         // mean this machine.
+        // A scratch folder is single-use: a draft pointing at one
+        // restores as "No project" (the placeholder id matches nothing).
         environment.projectList.projects.first {
           $0.serverId == (saved.projectServerId ?? serverId)
-            && $0.id == saved.projectId && !$0.isArchived
+            && $0.id == saved.projectId && !$0.isArchived && !$0.isScratch
         }
       } ?? environment.composerDefaults.lastProjectId(forServer: serverId).flatMap {
         rememberedId in

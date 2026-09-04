@@ -27,7 +27,9 @@ extension Project {
 
 extension ComposerDraftStore.Draft {
   /// Resolves a saved draft without turning the no-project sentinel into a
-  /// missing project after relaunch.
+  /// missing project after relaunch. A draft that somehow points at a
+  /// scratch folder (single-use, owned by an already-sent chat) restores
+  /// as "No project" rather than reusing that folder.
   public func restoredProject(
     in projects: [Project],
     defaultServerId: String
@@ -36,6 +38,8 @@ extension ComposerDraftStore.Draft {
     if projectId == Project.runTargetPlaceholderID {
       return .runTargetPlaceholder(serverId: serverId)
     }
-    return projects.first { $0.serverId == serverId && $0.id == projectId }
+    guard let project = projects.first(where: { $0.serverId == serverId && $0.id == projectId })
+    else { return nil }
+    return project.isScratch ? .runTargetPlaceholder(serverId: serverId) : project
   }
 }

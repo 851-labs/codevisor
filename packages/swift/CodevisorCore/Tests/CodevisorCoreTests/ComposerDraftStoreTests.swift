@@ -32,6 +32,16 @@ struct ComposerDraftStoreTests {
     )
   }
 
+  @Test("A draft pointing at a scratch folder restores as No project")
+  func scratchDraftRestoresAsNoProject() {
+    var scratch = Project.fromFolder(URL(fileURLWithPath: "/tmp/workspaces/burrito"))
+    scratch.isScratch = true
+    let saved = ComposerDraftStore.Draft(projectId: scratch.id, projectServerId: "local")
+    let restored = saved.restoredProject(in: [scratch], defaultServerId: "local")
+    #expect(restored?.isRunTargetPlaceholder == true)
+    #expect(restored?.serverId == "local")
+  }
+
   @Test("A draft targeting another machine's project persists its server id")
   func crossMachineDraftPersists() {
     let store = InMemoryStore()

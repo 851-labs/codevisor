@@ -46,6 +46,18 @@ struct SessionControllerNoProjectTests {
     #expect(!controller.wantsNewWorktree)
   }
 
+  @Test("A draft mid-send on a scratch folder snapshots as No project")
+  func scratchProjectSnapshotsAsPlaceholder() {
+    var scratch = Project.fromFolder(URL(fileURLWithPath: "/tmp/workspaces/burrito"))
+    scratch.isScratch = true
+    let controller = SessionController(
+      project: scratch,
+      configCache: ConfigOptionCache(store: InMemoryStore())
+    )
+    #expect(controller.draftSnapshot().projectId == Project.runTargetPlaceholderID)
+    #expect(controller.draftSnapshot().projectServerId == scratch.serverId)
+  }
+
   @Test("A real project keeps whatever worktree preference the picker sets")
   func selectingGitProjectKeepsPreference() async {
     let controller = SessionController(

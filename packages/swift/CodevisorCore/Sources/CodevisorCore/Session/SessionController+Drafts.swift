@@ -4,7 +4,9 @@ import ACPKit
 extension SessionController {
   public func draftSnapshot() -> ComposerDraftStore.Draft {
     ComposerDraftStore.Draft(
-      projectId: project.id,
+      // A scratch folder belongs to the chat being sent, never to the next
+      // draft: a draft mid-first-send records the CHOICE of no project.
+      projectId: project.isScratch ? Project.runTargetPlaceholderID : project.id,
       projectServerId: project.serverId,
       composerText: composerText,
       attachments: composerAttachments.compactMap {
