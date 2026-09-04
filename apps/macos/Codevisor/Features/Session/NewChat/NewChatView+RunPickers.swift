@@ -1,3 +1,4 @@
+import Autocomplete
 import CodevisorCore
 import CodevisorUI
 import SwiftUI
@@ -5,6 +6,24 @@ import SwiftUI
 extension NewChatView {
   enum RunPicker {
     case machine, project, location
+  }
+
+  /// Keyboard/hover targets of each picker's popup: a row, or the footer.
+  enum MachinePickerTarget: Hashable {
+    case machine(CodevisorMachine.ID)
+    case manageMachines
+  }
+
+  enum ProjectPickerTarget: Hashable {
+    case noProject
+    case project(ProjectGroup.ID)
+    case newProject
+  }
+
+  enum RunLocationPickerTarget: Hashable {
+    case projectDirectory
+    case newWorktree
+    case manageProject
   }
 
   /// Hairline between two chips. It hides (instantly, like the hover fill
@@ -67,52 +86,43 @@ extension NewChatView {
   /// at that machine's remembered (or most recent) project; the project
   /// picker then lists that machine's projects.
   func machinePicker(_ controller: SessionController) -> some View {
+    let machines = environment.machines.allMachines
     let selectedServerId = controller.project.serverId
     let selectedMachine = environment.machines.machine(for: selectedServerId)
-    return Menu {
-      // Toggle for the native selected checkmark; MenuSymbolIcon
-      // because AppKit menus drop plain SF Symbol images.
-      ForEach(environment.machines.allMachines) { machine in
-        Toggle(
-          isOn: Binding(
-            get: { machine.id == selectedServerId },
-            set: { isOn in
-              guard isOn else { return }
-              selectTargetMachine(machine, controller: controller)
-            }
-          )
-        ) {
-          Label {
-            Text(machine.name)
-          } icon: {
-            MenuSymbolIcon(systemName: EntitySystemSymbol.machine(machine))
-          }
-        }
-      }
-      Divider()
-      Button {
+    return RunPickerMenu(
+      chipText: selectedMachine?.name ?? "Machine",
+      chipSymbol: selectedMachine.map(EntitySystemSymbol.machine) ?? EntitySystemSymbol.machine(.local),
+      titles: machines.map(\.name),
+      searchAccessibilityLabel: "Search machines",
+      footer: RunPickerFooter(
+        id: MachinePickerTarget.manageMachines,
+        title: "Manage Machines…",
+        symbol: "gearshape",
+        help: "Open Machine Settings"
+      ) {
         SettingsRouter.shared.showMachines()
         openSettings()
-      } label: {
-        Label {
-          Text("Manage Machines…")
-        } icon: {
-          MenuSymbolIcon(systemName: "gearshape")
+      }
+    ) { context in
+      let matches = machines.filter { context.matches($0.name) }
+      if matches.isEmpty {
+        Autocomplete.Empty("No matching machines")
+      }
+      ForEach(matches) { machine in
+        Autocomplete.Item(
+          id: MachinePickerTarget.machine(machine.id),
+          icon: Image(systemName: EntitySystemSymbol.machine(machine)),
+          isSelected: machine.id == selectedServerId,
+          action: {
+            context.dismiss()
+            selectTargetMachine(machine, controller: controller)
+          }
+        ) { _ in
+          Text(machine.name)
+            .lineLimit(1)
         }
       }
-    } label: {
-      PickerChip(text: selectedMachine?.name ?? "Machine") {
-        Image(
-          systemName: selectedMachine.map(EntitySystemSymbol.machine)
-            ?? EntitySystemSymbol.machine(.local)
-        )
-        .font(.system(size: 12))
-      }
     }
-    .menuStyle(.button)
-    .buttonStyle(HoverIconButtonStyle(shape: .chip))
-    .menuIndicator(.hidden)
-    .fixedSize()
     .onHover { trackHover(.machine, $0) }
     .help("Choose which machine this chat runs on")
     .accessibilityLabel("Machine")
@@ -132,67 +142,53 @@ extension NewChatView {
     let groups = pickerGroups(on: selected.serverId)
     let selectedGroup = isNoProject ? nil : groups.first { $0.contains(selected) }
     let chipText = isNoProject ? "No project" : (selectedGroup?.name ?? selected.name)
-    return Menu {
-      // Toggle for the native selected checkmark; MenuSymbolIcon
-      // because AppKit menus drop plain SF Symbol images.
-      Toggle(
-        isOn: Binding(
-          get: { isNoProject },
-          set: { isOn in
-            guard isOn else { return }
+    return RunPickerMenu(
+      chipText: chipText,
+      chipSymbol: isNoProject ? Self.noProjectSymbol : EntitySystemSymbol.project,
+      titles: [Self.noProjectTitle] + groups.map(\.name),
+      searchAccessibilityLabel: "Search projects",
+      footer: RunPickerFooter(
+        id: ProjectPickerTarget.newProject,
+        title: "New Project…",
+        symbol: "folder.badge.plus",
+        help: "Add a project"
+      ) {
+        newProjectTarget = NewProjectTarget(serverId: selected.serverId)
+      }
+    ) { context in
+      let showsNoProject = context.matches(Self.noProjectTitle)
+      let matches = groups.filter { context.matches($0.name) }
+      if !showsNoProject, matches.isEmpty {
+        Autocomplete.Empty("No matching projects")
+      }
+      if showsNoProject {
+        Autocomplete.Item(
+          id: ProjectPickerTarget.noProject,
+          icon: Image(systemName: Self.noProjectSymbol),
+          isSelected: isNoProject,
+          action: {
+            context.dismiss()
             selectNoProject(controller)
           }
-        )
-      ) {
-        Label {
-          Text("No project")
-        } icon: {
-          MenuSymbolIcon(systemName: Self.noProjectSymbol)
+        ) { _ in
+          Text(Self.noProjectTitle)
         }
       }
-      if !groups.isEmpty {
-        Divider()
-      }
-      ForEach(groups) { group in
-        Toggle(
-          isOn: Binding(
-            get: { group.contains(selected) },
-            set: { isOn in
-              guard isOn else { return }
-              selectTargetGroup(group, controller: controller)
-            }
-          )
-        ) {
-          Label {
-            Text(group.name)
-          } icon: {
-            MenuSymbolIcon(systemName: EntitySystemSymbol.project)
+      ForEach(matches) { group in
+        Autocomplete.Item(
+          id: ProjectPickerTarget.project(group.id),
+          icon: Image(systemName: EntitySystemSymbol.project),
+          isSelected: group.contains(selected),
+          action: {
+            context.dismiss()
+            selectTargetGroup(group, controller: controller)
           }
+        ) { _ in
+          Text(group.name)
+            .lineLimit(1)
         }
-      }
-      Divider()
-      Button {
-        newProjectTarget = NewProjectTarget(serverId: selected.serverId)
-      } label: {
-        Label {
-          Text("New Project…")
-        } icon: {
-          MenuSymbolIcon(systemName: "folder.badge.plus")
-        }
-      }
-    } label: {
-      PickerChip(text: chipText) {
-        Image(
-          systemName: isNoProject
-            ? Self.noProjectSymbol : EntitySystemSymbol.project
-        )
-        .font(.system(size: 12))
       }
     }
-    .menuStyle(.button)
-    .buttonStyle(HoverIconButtonStyle(shape: .chip))
-    .menuIndicator(.hidden)
-    .fixedSize()
     .onHover { trackHover(.project, $0) }
     .help("Choose which project this chat works in")
     .accessibilityLabel("Project")
@@ -201,67 +197,50 @@ extension NewChatView {
 
   /// The outline folder: a chat with no repository behind it.
   static let noProjectSymbol = EntitySystemSymbol.projectList
+  private static let noProjectTitle = "No project"
 
   /// "Project directory" vs "New worktree" for where the chat (and its
   /// workspace) runs. Only rendered for git projects; the worktree itself
   /// is created on the first send.
   func runLocationPicker(_ controller: SessionController) -> some View {
     let newWorktree = controller.wantsNewWorktree
-    return Menu {
-      Toggle(
-        isOn: Binding(
-          get: { !newWorktree },
-          set: { isOn in
-            guard isOn else { return }
-            selectRunLocation(newWorktree: false, controller: controller)
-          }
-        )
+    let current = RunLocationOption.all.first { $0.newWorktree == newWorktree } ?? .projectDirectory
+    return RunPickerMenu(
+      chipText: current.title,
+      chipSymbol: current.symbol,
+      titles: RunLocationOption.all.map(\.title),
+      searchAccessibilityLabel: "Search run locations",
+      footer: RunPickerFooter(
+        id: RunLocationPickerTarget.manageProject,
+        title: "Manage Project…",
+        symbol: "gearshape",
+        help: "Manage this project"
       ) {
-        Label {
-          Text("Project directory")
-        } icon: {
-          MenuSymbolIcon(systemName: "folder.fill")
-        }
-      }
-      Toggle(
-        isOn: Binding(
-          get: { newWorktree },
-          set: { isOn in
-            guard isOn else { return }
-            selectRunLocation(newWorktree: true, controller: controller)
-          }
-        )
-      ) {
-        Label {
-          Text("New worktree")
-        } icon: {
-          MenuSymbolIcon(systemName: "arrow.triangle.branch")
-        }
-      }
-      Divider()
-      Button {
         managedProject = liveProject(for: controller)
-      } label: {
-        Label {
-          Text("Manage Project…")
-        } icon: {
-          MenuSymbolIcon(systemName: "gearshape")
-        }
       }
-    } label: {
-      PickerChip(text: newWorktree ? "New worktree" : "Project directory") {
-        Image(systemName: newWorktree ? "arrow.triangle.branch" : "folder.fill")
-          .font(.system(size: 12))
+    ) { context in
+      let matches = RunLocationOption.all.filter { context.matches($0.title) }
+      if matches.isEmpty {
+        Autocomplete.Empty("No matching run locations")
+      }
+      ForEach(matches) { option in
+        Autocomplete.Item(
+          id: option.id,
+          icon: Image(systemName: option.symbol),
+          isSelected: option.newWorktree == newWorktree,
+          action: {
+            context.dismiss()
+            selectRunLocation(newWorktree: option.newWorktree, controller: controller)
+          }
+        ) { _ in
+          Text(option.title)
+        }
       }
     }
-    .menuStyle(.button)
-    .buttonStyle(HoverIconButtonStyle(shape: .chip))
-    .menuIndicator(.hidden)
-    .fixedSize()
     .onHover { trackHover(.location, $0) }
     .help("Where this chat's commands run")
     .accessibilityLabel("Run location")
-    .accessibilityValue(newWorktree ? "New worktree" : "Project directory")
+    .accessibilityValue(current.title)
   }
 
   /// Re-points the draft at another machine, keeping the current run
@@ -394,4 +373,20 @@ extension NewChatView {
     )
     controller.wantsNewWorktree = newWorktree
   }
+}
+
+/// One row of the run-location picker.
+private struct RunLocationOption: Identifiable {
+  let id: NewChatView.RunLocationPickerTarget
+  let title: String
+  let symbol: String
+  let newWorktree: Bool
+
+  static let projectDirectory = RunLocationOption(
+    id: .projectDirectory, title: "Project directory", symbol: "folder.fill", newWorktree: false
+  )
+  static let newWorktree = RunLocationOption(
+    id: .newWorktree, title: "New worktree", symbol: "arrow.triangle.branch", newWorktree: true
+  )
+  static let all = [projectDirectory, newWorktree]
 }
