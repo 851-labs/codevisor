@@ -7,12 +7,12 @@ import SwiftUI
 struct ProjectDisclosureLabel: View {
   private static let statusWidth: CGFloat = 10
   private static let statusToIconSpacing: CGFloat = 5
-  private static let iconWidth: CGFloat = 38
-  /// Single-line rows: the icon slot keeps the chat rows' WIDTH (so copy
-  /// aligns) but not their 38pt tile height, which made one line of text
-  /// sit in a two-line-tall row.
-  private static let rowHeight: CGFloat = 24
-  private static let iconToCopySpacing: CGFloat = 10
+  /// Single-line rows: a compact glyph slot rather than the chat rows'
+  /// 38pt tile, so the folder sits close to its name and one line of
+  /// text gets a one-line-tall row.
+  private static let iconWidth: CGFloat = 26
+  private static let rowHeight: CGFloat = 22
+  private static let iconToCopySpacing: CGFloat = 6
   private static let copyLeadingOffset =
     statusWidth
     + statusToIconSpacing
@@ -58,7 +58,7 @@ struct ProjectDisclosureLabel: View {
         .textCase(nil)
       Spacer(minLength: 4)
     }
-    .padding(.vertical, 2)
+    .padding(.vertical, 0)
     .frame(maxWidth: .infinity, alignment: .leading)
     .alignmentGuide(.listRowSeparatorLeading) { _ in
       Self.copyLeadingOffset
