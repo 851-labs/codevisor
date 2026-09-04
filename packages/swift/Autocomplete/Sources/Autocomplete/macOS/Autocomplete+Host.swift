@@ -9,15 +9,13 @@
       enum Kind {
         case item
         case groupLabel
-        case footer
       }
 
       let id: AnyHashable
       let kind: Kind
     }
 
-    /// Items, group labels, and footers announce themselves upward in tree
-    /// order; `Root` reads the result to know what the keyboard can reach and
+    /// Items and group labels announce themselves upward in tree order; `Root` reads the result to know what the keyboard can reach and
     /// how tall the list is.
     struct TargetsKey: PreferenceKey {
       static var defaultValue: [Target] { [] }

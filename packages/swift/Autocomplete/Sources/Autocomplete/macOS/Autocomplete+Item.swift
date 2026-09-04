@@ -38,6 +38,8 @@
       let accessory: ((ItemContext) -> Accessory)?
 
       @Environment(\.autocompleteStyle) private var style
+      @Environment(\.autocompleteShowsCheckmarks) private var showsCheckmarks
+      @Environment(\.autocompleteShowsIcons) private var showsIcons
       @Environment(Host.self) private var host
       @Environment(Highlight<ID>.self) private var highlight
       @State private var isHovering = false
@@ -70,49 +72,6 @@
         self.accessory = accessory
       }
 
-      /// "⌘N", "⇧⌘[", "⌃⌥⌘←" — modifiers in the order the menu bar uses.
-      static func symbols(for shortcut: KeyboardShortcut) -> String {
-        var text = ""
-        let modifiers = shortcut.modifiers
-        if modifiers.contains(.control) { text += "⌃" }
-        if modifiers.contains(.option) { text += "⌥" }
-        if modifiers.contains(.shift) { text += "⇧" }
-        if modifiers.contains(.command) { text += "⌘" }
-        return text + keySymbol(for: shortcut.key)
-      }
-
-      static func accessibilityDescription(for shortcut: KeyboardShortcut) -> String {
-        var parts: [String] = []
-        let modifiers = shortcut.modifiers
-        if modifiers.contains(.control) { parts.append("Control") }
-        if modifiers.contains(.option) { parts.append("Option") }
-        if modifiers.contains(.shift) { parts.append("Shift") }
-        if modifiers.contains(.command) { parts.append("Command") }
-        parts.append(keySymbol(for: shortcut.key))
-        return parts.joined(separator: " ")
-      }
-
-      private static func keySymbol(for key: KeyEquivalent) -> String {
-        switch key {
-        case .return: "↩"
-        case .delete: "⌫"
-        case .deleteForward: "⌦"
-        case .escape: "⎋"
-        case .tab: "⇥"
-        case .space: "␣"
-        case .upArrow: "↑"
-        case .downArrow: "↓"
-        case .leftArrow: "←"
-        case .rightArrow: "→"
-        case .home: "↖"
-        case .end: "↘"
-        case .pageUp: "⇞"
-        case .pageDown: "⇟"
-        case .clear: "⌧"
-        default: String(key.character).uppercased()
-        }
-      }
-
       private var effectiveDisabled: Bool { isDisabled || host.isDisabled }
       private var isHighlighted: Bool { highlight.highlighted == id }
 
@@ -133,17 +92,30 @@
         ZStack(alignment: .trailing) {
           Button(action: action) {
             HStack(spacing: metrics.itemIconSpacing) {
+              if showsCheckmarks {
+                Image(systemName: "checkmark")
+                  .font(.system(size: 12, weight: .semibold))
+                  .frame(width: metrics.checkColumnWidth)
+                  .opacity(isSelected ? 1 : 0)
+                  .padding(.trailing, metrics.checkColumnSpacing - metrics.itemIconSpacing)
+                  .accessibilityHidden(true)
+              }
               if let icon {
                 icon
+                  .foregroundStyle(isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
                   .frame(width: metrics.itemIconSize, height: metrics.itemIconSize)
                   .accessibilityHidden(true)
+              } else if showsIcons {
+                // Keep the column so this title aligns with iconed siblings.
+                Color.clear
+                  .frame(width: metrics.itemIconSize, height: metrics.itemIconSize)
               }
               label(context)
               Spacer(minLength: 8)
               if let shortcut {
-                Text(Self.symbols(for: shortcut))
+                Text(Autocomplete.symbols(for: shortcut))
                   .foregroundStyle(isHighlighted ? AnyShapeStyle(.white.opacity(0.75)) : AnyShapeStyle(.secondary))
-                  .accessibilityLabel(Self.accessibilityDescription(for: shortcut))
+                  .accessibilityLabel(Autocomplete.accessibilityDescription(for: shortcut))
               }
             }
             .font(metrics.menuFont)
@@ -330,6 +302,51 @@
         view.state = .active
         view.isEmphasized = true
         view.setAccessibilityElement(false)
+      }
+    }
+  }
+
+  extension Autocomplete {
+    /// "⌘N", "⇧⌘[", "⌃⌥⌘←" — modifiers in the order the menu bar uses.
+    public static func symbols(for shortcut: KeyboardShortcut) -> String {
+      var text = ""
+      let modifiers = shortcut.modifiers
+      if modifiers.contains(.control) { text += "⌃" }
+      if modifiers.contains(.option) { text += "⌥" }
+      if modifiers.contains(.shift) { text += "⇧" }
+      if modifiers.contains(.command) { text += "⌘" }
+      return text + keySymbol(for: shortcut.key)
+    }
+
+    public static func accessibilityDescription(for shortcut: KeyboardShortcut) -> String {
+      var parts: [String] = []
+      let modifiers = shortcut.modifiers
+      if modifiers.contains(.control) { parts.append("Control") }
+      if modifiers.contains(.option) { parts.append("Option") }
+      if modifiers.contains(.shift) { parts.append("Shift") }
+      if modifiers.contains(.command) { parts.append("Command") }
+      parts.append(keySymbol(for: shortcut.key))
+      return parts.joined(separator: " ")
+    }
+
+    private static func keySymbol(for key: KeyEquivalent) -> String {
+      switch key {
+      case .return: "↩"
+      case .delete: "⌫"
+      case .deleteForward: "⌦"
+      case .escape: "⎋"
+      case .tab: "⇥"
+      case .space: "␣"
+      case .upArrow: "↑"
+      case .downArrow: "↓"
+      case .leftArrow: "←"
+      case .rightArrow: "→"
+      case .home: "↖"
+      case .end: "↘"
+      case .pageUp: "⇞"
+      case .pageDown: "⇟"
+      case .clear: "⌧"
+      default: String(key.character).uppercased()
       }
     }
   }

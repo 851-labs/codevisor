@@ -92,6 +92,8 @@
       let title: String
 
       @Environment(\.autocompleteStyle) private var style
+      @Environment(\.autocompleteShowsCheckmarks) private var showsCheckmarks
+      @Environment(\.autocompleteShowsIcons) private var showsIcons
 
       public init(_ title: String) {
         self.title = title
@@ -102,10 +104,36 @@
         Text(title)
           .font(metrics.groupLabelFont)
           .foregroundStyle(.secondary)
-          .padding(.horizontal, metrics.groupLabelInset)
+          // On the title keyline, past the check and icon columns.
+          .padding(
+            .leading,
+            metrics.textLeading(showsCheckmarks: showsCheckmarks, showsIcons: showsIcons) - metrics.listHorizontalInset
+          )
+          .padding(.trailing, metrics.groupLabelInset)
           .padding(.top, metrics.groupLabelTopInset)
           .padding(.bottom, metrics.groupLabelBottomInset)
           .preference(key: TargetsKey.self, value: [Target(id: AnyHashable("group-label:\(title)"), kind: .groupLabel)])
+      }
+    }
+
+    /// A hairline between runs of items. With a check column it starts at
+    /// the title keyline rather than the popup edge, the way menu separators
+    /// do; it is never a keyboard target.
+    struct Divider: View {
+      @Environment(\.autocompleteStyle) private var style
+      @Environment(\.autocompleteShowsCheckmarks) private var showsCheckmarks
+
+      public init() {}
+
+      public var body: some View {
+        let metrics = style.metrics
+        Rectangle()
+          .fill(.separator)
+          .frame(height: 1)
+          .padding(.leading, metrics.itemHorizontalInset + (showsCheckmarks ? metrics.checkColumnAdvance : 0))
+          .padding(.trailing, metrics.itemHorizontalInset)
+          .frame(height: metrics.dividerHeight)
+          .accessibilityHidden(true)
       }
     }
 

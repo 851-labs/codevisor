@@ -30,7 +30,7 @@ enum StoryCatalog {
       id: "filters",
       title: "Filters",
       summary:
-        "The three Filter presets, switchable in the inspector. Filtering is the caller's one-liner; the popup never filters on its own."
+        "The three Filter presets. Filtering is the caller's one-liner; the popup never filters on its own."
     ) {
       FiltersStory()
     },
@@ -38,7 +38,7 @@ enum StoryCatalog {
       id: "navigation",
       title: "Navigation",
       summary:
-        "Loop and auto-highlight, switchable in the inspector. Together they are the .inline preset; both off is .menu."
+        "Loop and auto-highlight. Together they are the .inline preset; both off is .menu."
     ) {
       NavigationStory()
     },
@@ -68,7 +68,7 @@ enum StoryCatalog {
       id: "disabled",
       title: "Disabled",
       summary:
-        "Root(isDisabled:) dims items and ignores the pointer, arrows, Return, and accessories while a choice is taking effect; Escape still dismisses. Toggle it in the inspector."
+        "Root(isDisabled:) dims items and ignores the pointer, arrows, Return, and accessories while a choice is taking effect; Escape still dismisses."
     ) {
       DisabledStory()
     },
@@ -76,9 +76,17 @@ enum StoryCatalog {
       id: "custom-style",
       title: "Custom style",
       summary:
-        "Style swaps the highlight material for a flat fill and the system scroller for the mini one — each switchable in the inspector, over a list long enough to scroll."
+        "Style swaps the highlight material for a flat fill and the system scroller for the mini one, over a list long enough to scroll."
     ) {
       CustomStyleStory()
+    },
+    Story(
+      id: "checkmarks",
+      title: "Checkmarks and dividers",
+      summary:
+        "A menu: Root(showsCheckmarks:) reserves the check column popup-wide, Item(isSelected:) draws the mark, and Divider separates the runs, inset to the title keyline because the column is present."
+    ) {
+      CheckmarksStory()
     },
     Story(
       id: "favorites",
@@ -100,7 +108,7 @@ enum StoryCatalog {
       id: "footer",
       title: "Footer",
       summary:
-        "A pinned action under the list, reachable as the last keyboard target. The escape hatch for managing what the list shows."
+        "Ordinary Items pinned under the list behind a divider — icons, shortcuts, and keyboard navigation included. The escape hatch for managing what the list shows."
     ) {
       FooterStory()
     },

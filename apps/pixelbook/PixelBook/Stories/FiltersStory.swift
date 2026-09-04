@@ -21,9 +21,9 @@ struct FiltersStory: View {
 
     var hint: String {
       switch self {
-      case .contains: "Case- and diacritic-insensitive substring. Try “ip”."
-      case .startsWith: "Anchored at the start. “ip” matches nothing; “ty” matches TypeScript."
-      case .subsequence: "Characters in order, gaps allowed. “tsp” matches TypeScript."
+      case .contains: "Case- and diacritic-insensitive substring."
+      case .startsWith: "Anchored at the start of the candidate."
+      case .subsequence: "Query characters in order, gaps allowed."
       }
     }
   }

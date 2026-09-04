@@ -19,7 +19,7 @@ struct RichItemsStory: View {
   }
 
   var body: some View {
-    Autocomplete.Root(highlight: highlight, onDismiss: { query = "" }) {
+    Autocomplete.Root(highlight: highlight, showsIcons: true, onDismiss: { query = "" }) {
       Autocomplete.Input(text: $query, prompt: "Search")
       Autocomplete.List(height: metrics.listHeight(itemCount: commands.count)) {
         if matches.isEmpty {
@@ -37,7 +37,11 @@ struct RichItemsStory: View {
         }
       }
     }
-    .frame(width: 320)
+    .frame(
+      width: metrics.popupWidth(
+        fitting: commands.map(\.title), hasIcons: true, shortcuts: commands.compactMap(\.shortcut)
+      )
+    )
     .popupSurface()
     .storyInspector {
       SelectionSection(value: selection?.title)

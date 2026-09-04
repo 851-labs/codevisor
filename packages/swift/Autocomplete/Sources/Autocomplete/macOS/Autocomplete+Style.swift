@@ -26,8 +26,14 @@
       public var itemCornerRadius: CGFloat = 6
       public var itemHorizontalInset: CGFloat = 11
       /// The leading glyph slot on items that have one.
-      public var itemIconSize: CGFloat = 18
+      public var itemIconSize: CGFloat = 16
       public var itemIconSpacing: CGFloat = 8
+      /// The checkmark column a popup reserves when `Root(showsCheckmarks:)`
+      /// is on, ahead of icons and titles — the way a menu does.
+      public var checkColumnWidth: CGFloat = 14
+      public var checkColumnSpacing: CGFloat = 6
+      /// A `Divider` row: a hairline with breathing room above and below.
+      public var dividerHeight: CGFloat = 11
       /// Space reserved at an item's trailing edge for a hover accessory.
       public var itemAccessoryWidth: CGFloat = 22
       public var itemAccessoryTrailingInset: CGFloat = 2
@@ -39,6 +45,27 @@
       public init() {}
 
       public static let xcodeMenu = Metrics()
+
+      /// How far the check column pushes everything after it.
+      public var checkColumnAdvance: CGFloat { checkColumnWidth + checkColumnSpacing }
+
+      /// Keylines shared by items and the input, measured from the popup's
+      /// leading edge: where an item's icon is centered and where its title
+      /// starts. The input places its magnifier and text on the same lines.
+      public func iconColumnCenter(showsCheckmarks: Bool = false) -> CGFloat {
+        contentLeading(showsCheckmarks: showsCheckmarks) + itemIconSize / 2
+      }
+
+      /// Where titles start. With an icon column (`Root(showsIcons:)`) that is
+      /// past the column; otherwise titles begin at the content leading.
+      public func textLeading(showsCheckmarks: Bool = false, showsIcons: Bool = false) -> CGFloat {
+        contentLeading(showsCheckmarks: showsCheckmarks) + (showsIcons ? itemIconSize + itemIconSpacing : 0)
+      }
+
+      /// Where a row's content (check column excluded) begins.
+      public func contentLeading(showsCheckmarks: Bool = false) -> CGFloat {
+        listHorizontalInset + itemHorizontalInset + (showsCheckmarks ? checkColumnAdvance : 0)
+      }
 
       public var groupLabelInset: CGFloat { itemHorizontalInset }
       public var footerHorizontalInset: CGFloat { listHorizontalInset }
@@ -65,34 +92,35 @@
       public func listHeight(
         itemCount: Int,
         groupLabelCount: Int = 0,
+        dividerCount: Int = 0,
         hasInput: Bool = true,
-        hasFooter: Bool = false
+        footerItemCount: Int = 0
       ) -> CGFloat {
         var chrome: CGFloat = 0
         if hasInput {
           chrome += inputTopInset + inputHeight + inputBottomInset
         }
-        if hasFooter {
-          chrome += 1 + itemHeight + (2 * footerVerticalInset)
+        if footerItemCount > 0 {
+          chrome += 1 + (CGFloat(footerItemCount) * itemHeight) + (2 * footerVerticalInset)
         }
         return min(
-          listContentHeight(itemCount: itemCount, groupLabelCount: groupLabelCount),
+          listContentHeight(itemCount: itemCount, groupLabelCount: groupLabelCount, dividerCount: dividerCount),
           maximumHeight - chrome
         )
       }
 
       /// `listHeight(itemCount:groupLabelCount:)` for grouped contents, one
       /// entry per group.
-      public func listHeight(groupItemCounts: [Int], hasInput: Bool = true, hasFooter: Bool = false) -> CGFloat {
+      public func listHeight(groupItemCounts: [Int], hasInput: Bool = true, footerItemCount: Int = 0) -> CGFloat {
         listHeight(
           itemCount: groupItemCounts.reduce(0, +),
           groupLabelCount: groupItemCounts.count,
           hasInput: hasInput,
-          hasFooter: hasFooter
+          footerItemCount: footerItemCount
         )
       }
 
-      public func listContentHeight(itemCount: Int, groupLabelCount: Int = 0) -> CGFloat {
+      public func listContentHeight(itemCount: Int, groupLabelCount: Int = 0, dividerCount: Int = 0) -> CGFloat {
         guard itemCount > 0 else { return emptyListHeight }
         let labelHeight =
           ceil(NSFont.systemFont(ofSize: groupLabelSize).boundingRectForFont.height)
@@ -102,6 +130,7 @@
           (2 * listVerticalInset)
           + (CGFloat(groupLabelCount) * labelHeight)
           + (CGFloat(itemCount) * itemHeight)
+          + (CGFloat(dividerCount) * dividerHeight)
           + (CGFloat(max(groupLabelCount - 1, 0)) * groupSpacing)
         return ceil(contentHeight)
       }
@@ -111,9 +140,27 @@
       }
 
       /// The narrowest width, within the configured bounds, that shows every
-      /// title on one line with room for a trailing accessory.
-      public func popupWidth(fitting titles: [String]) -> CGFloat {
-        let chrome = (2 * listHorizontalInset) + (2 * itemHorizontalInset) + itemAccessoryWidth + 8
+      /// title on one line with room for a trailing accessory, plus the icon
+      /// slot and the widest shortcut when items use them.
+      public func popupWidth(
+        fitting titles: [String],
+        hasIcons: Bool = false,
+        showsCheckmarks: Bool = false,
+        shortcuts: [KeyboardShortcut] = []
+      ) -> CGFloat {
+        var chrome = (2 * listHorizontalInset) + (2 * itemHorizontalInset) + itemAccessoryWidth + 8
+        if hasIcons {
+          chrome += itemIconSize + itemIconSpacing
+        }
+        if showsCheckmarks {
+          chrome += checkColumnAdvance
+        }
+        let widestShortcut = shortcuts.reduce(CGFloat.zero) { width, shortcut in
+          max(width, menuTextWidth(Autocomplete.symbols(for: shortcut)))
+        }
+        if widestShortcut > 0 {
+          chrome += widestShortcut + 8
+        }
         let widest = titles.reduce(CGFloat.zero) { width, title in
           max(width, menuTextWidth(title) + chrome)
         }
@@ -152,6 +199,12 @@
 
   extension EnvironmentValues {
     @Entry public var autocompleteStyle: Autocomplete.Style = .xcodeMenu
+    /// Set by `Root(showsCheckmarks:)`; rows, labels, dividers, and the
+    /// input all leave room for the check column when it is on.
+    @Entry var autocompleteShowsCheckmarks = false
+    /// Set by `Root(showsIcons:)`; rows reserve the icon column even when a
+    /// particular item has no icon, and the input keylines follow it.
+    @Entry var autocompleteShowsIcons = false
   }
 
   public extension View {

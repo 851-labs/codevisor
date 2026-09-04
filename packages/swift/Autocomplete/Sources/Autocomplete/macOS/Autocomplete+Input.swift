@@ -31,6 +31,8 @@
       let focus: InputFocus?
 
       @Environment(\.autocompleteStyle) private var style
+      @Environment(\.autocompleteShowsCheckmarks) private var showsCheckmarks
+      @Environment(\.autocompleteShowsIcons) private var showsIcons
       @Environment(Host.self) private var host
 
       /// - Parameters:
@@ -62,6 +64,8 @@
           accessibilityLabel: accessibilityLabel,
           focusesOnAppear: focusesOnAppear,
           focusTick: focus?.requestTick ?? 0,
+          showsCheckmarks: showsCheckmarks,
+          showsIcons: showsIcons,
           onCommand: host.send,
           register: { host.inputField = $0 }
         )
@@ -81,6 +85,8 @@
       let accessibilityLabel: String
       let focusesOnAppear: Bool
       let focusTick: Int
+      let showsCheckmarks: Bool
+      let showsIcons: Bool
       let onCommand: (KeyCommand) -> Void
       let register: (NSSearchField) -> Void
 
@@ -93,7 +99,9 @@
       }
 
       func makeNSView(context: Context) -> InputCapsuleView {
-        let container = InputCapsuleView(height: style.metrics.inputHeight)
+        let container = InputCapsuleView(
+          metrics: style.metrics, showsCheckmarks: showsCheckmarks, showsIcons: showsIcons
+        )
         let searchField = container.searchField
         searchField.delegate = context.coordinator
         // NSSearchField centers its own placeholder whenever it is not first
@@ -187,9 +195,6 @@
     /// capsule, so this view owns only that capsule while leaving editing to
     /// NSSearchField.
     final class InputCapsuleView: NSView {
-      /// Where the field's text begins, past the magnifier.
-      static let textLeadingInset: CGFloat = 25
-
       let searchField = NSSearchField()
       private let promptLabel = NSTextField(labelWithString: "")
       private let capsuleLayer = CAGradientLayer()
@@ -214,9 +219,31 @@
         NSSize(width: NSView.noIntrinsicMetric, height: height)
       }
 
-      init(height: CGFloat) {
-        self.height = height
+      /// NSSearchField draws its text about a point in from its leading edge;
+      /// the field is offset so the text lands on the shared keyline.
+      private static let fieldTextInset: CGFloat = 1
+
+      /// The compact layout for popups without an icon column: magnifier at
+      /// the capsule's leading edge, text right after it.
+      private static let compactIconLeading: CGFloat = 7
+      private static let compactTextLeading: CGFloat = 32
+
+      init(metrics: Autocomplete.Metrics, showsCheckmarks: Bool, showsIcons: Bool) {
+        height = metrics.inputHeight
         super.init(frame: .zero)
+        // With an icon column the magnifier and text sit on the rows'
+        // keylines. The capsule sits `inputHorizontalInset` in from the
+        // popup edge, so the popup-relative keylines shift by that much.
+        let iconCenter: CGFloat
+        let textLeading: CGFloat
+        if showsIcons {
+          iconCenter = metrics.iconColumnCenter(showsCheckmarks: showsCheckmarks) - metrics.inputHorizontalInset
+          textLeading =
+            metrics.textLeading(showsCheckmarks: showsCheckmarks, showsIcons: true) - metrics.inputHorizontalInset
+        } else {
+          iconCenter = Self.compactIconLeading + metrics.itemIconSize / 2
+          textLeading = Self.compactTextLeading
+        }
         wantsLayer = true
         layer?.addSublayer(capsuleLayer)
 
@@ -237,19 +264,25 @@
         addSubview(filterIcon)
 
         NSLayoutConstraint.activate([
-          searchField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Self.textLeadingInset),
+          searchField.leadingAnchor.constraint(
+            equalTo: leadingAnchor, constant: textLeading - Self.fieldTextInset
+          ),
           searchField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -1),
-          searchField.centerYAnchor.constraint(equalTo: centerYAnchor),
+          // Measured on a 2× display: the field draws its text and cancel
+          // button half a point low, and the magnifier glyph (its handle
+          // hangs below the lens) reads three quarters of a point high when
+          // its image bounds are centered. Nudge both onto the capsule's
+          // center line.
+          searchField.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -0.5),
           searchField.heightAnchor.constraint(equalToConstant: 16),
-          // NSSearchFieldCell insets its text by a point; match it
-          // so the prompt sits exactly where typed text will.
-          promptLabel.leadingAnchor.constraint(equalTo: searchField.leadingAnchor, constant: 1),
+          // The prompt sits exactly where typed text will.
+          promptLabel.leadingAnchor.constraint(equalTo: searchField.leadingAnchor, constant: Self.fieldTextInset),
           promptLabel.trailingAnchor.constraint(lessThanOrEqualTo: searchField.trailingAnchor),
           promptLabel.firstBaselineAnchor.constraint(equalTo: searchField.firstBaselineAnchor),
-          filterIcon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 7),
-          filterIcon.centerYAnchor.constraint(equalTo: centerYAnchor),
-          filterIcon.widthAnchor.constraint(equalToConstant: 15),
-          filterIcon.heightAnchor.constraint(equalToConstant: 15),
+          filterIcon.centerXAnchor.constraint(equalTo: leadingAnchor, constant: iconCenter),
+          filterIcon.centerYAnchor.constraint(equalTo: centerYAnchor, constant: 0.5),
+          filterIcon.widthAnchor.constraint(equalToConstant: metrics.itemIconSize),
+          filterIcon.heightAnchor.constraint(equalToConstant: metrics.itemIconSize),
         ])
       }
 

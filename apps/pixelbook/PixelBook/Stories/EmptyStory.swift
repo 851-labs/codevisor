@@ -39,12 +39,6 @@ struct EmptyStory: View {
     .storyInspector {
       Section("Contents") {
         Toggle("Provide items", isOn: $hasItems)
-        Text(
-          hasItems
-            ? "Filter for something that does not exist to see the empty state inside a pinned list."
-            : "With no items the list collapses to its empty-state height."
-        )
-        .foregroundStyle(.secondary)
       }
     }
   }

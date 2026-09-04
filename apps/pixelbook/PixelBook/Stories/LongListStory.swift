@@ -43,8 +43,6 @@ struct LongListStory: View {
     .storyInspector {
       Section("List") {
         Toggle("Pin height to the unfiltered count", isOn: $pinsHeight)
-        Text("Unpinned, the list shrinks to its matches as you type. Try “19”.")
-          .foregroundStyle(.secondary)
         LabeledContent("Items", value: "\(items.count)")
         LabeledContent("Height", value: "\(Int(listHeight)) pt (max \(Int(metrics.maximumHeight)))")
       }

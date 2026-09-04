@@ -1,9 +1,10 @@
 import Autocomplete
 import SwiftUI
 
-/// `Footer` pins one action under the list, behind a divider, as the last
-/// keyboard target. Its highlight follows the popup's bottom corners. Use it
-/// for the "manage the things in this list" escape hatch.
+/// `Footer` pins ordinary `Item`s under the list behind a divider — the
+/// "manage the things in this list" escape hatch. They are regular rows:
+/// icons, shortcuts, and keyboard navigation all work, and the popup's last
+/// row takes the concentric bottom corners.
 struct FooterStory: View {
   enum Target: Hashable {
     case model(String)
@@ -32,9 +33,10 @@ struct FooterStory: View {
   }
 
   var body: some View {
-    Autocomplete.Root(highlight: highlight, onDismiss: { query = "" }) {
+    Autocomplete.Root(highlight: highlight, showsIcons: true, onDismiss: { query = "" }) {
       Autocomplete.Input(text: $query, prompt: "Search")
-      Autocomplete.List(height: metrics.listHeight(groupItemCounts: harnesses.map(\.models.count), hasFooter: true)) {
+      Autocomplete.List(height: metrics.listHeight(groupItemCounts: harnesses.map(\.models.count), footerItemCount: 1))
+      {
         if matches.isEmpty {
           Autocomplete.Empty("No matching models")
         }
@@ -49,11 +51,25 @@ struct FooterStory: View {
           }
         }
       }
-      Autocomplete.Footer(id: Target.manage, help: "Open Harness Settings", action: manage) {
-        Text(footerTitle)
+      Autocomplete.Footer {
+        Autocomplete.Item(
+          id: Target.manage,
+          icon: Image(systemName: "gearshape"),
+          shortcut: KeyboardShortcut(","),
+          action: manage
+        ) { _ in
+          Text(footerTitle)
+        }
+        .help("Open Harness Settings")
       }
     }
-    .frame(width: metrics.popupWidth(fitting: harnesses.flatMap { [$0.name] + $0.models.map(\.name) } + [footerTitle]))
+    .frame(
+      width: metrics.popupWidth(
+        fitting: harnesses.flatMap { [$0.name] + $0.models.map(\.name) } + [footerTitle],
+        hasIcons: true,
+        shortcuts: [KeyboardShortcut(",")]
+      )
+    )
     .popupSurface()
     .storyInspector {
       SelectionSection(value: selection?.name)

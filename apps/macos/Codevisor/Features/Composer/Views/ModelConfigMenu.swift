@@ -112,6 +112,7 @@ private extension ModelConfigMenu {
     return Autocomplete.Root(
       highlight: highlight,
       isDisabled: isSwitchingHarness,
+      showsCheckmarks: true,
       onDismiss: { isPresented = false }
     ) {
       Autocomplete.Input(
@@ -131,13 +132,16 @@ private extension ModelConfigMenu {
         }
       }
 
-      Autocomplete.Footer(
-        id: ModelPickerTarget.manageHarnesses, help: "Open Harness Settings", action: showHarnessSettings
-      ) {
-        Text(Self.footerTitle)
+      Autocomplete.Footer {
+        Autocomplete.Item(id: ModelPickerTarget.manageHarnesses, action: showHarnessSettings) { _ in
+          Text(Self.footerTitle)
+        }
+        .help("Open Harness Settings")
       }
     }
-    .frame(width: Self.metrics.popupWidth(fitting: catalog.allTitles + [Self.footerTitle]))
+    .frame(
+      width: Self.metrics.popupWidth(fitting: catalog.allTitles + [Self.footerTitle], showsCheckmarks: true)
+    )
     .onDisappear {
       presentedListHeight = nil
     }
@@ -167,7 +171,7 @@ private extension ModelConfigMenu {
   }
 
   private func listHeight(for catalog: ModelPickerCatalog) -> CGFloat {
-    Self.metrics.listHeight(groupItemCounts: catalog.groupItemCounts)
+    Self.metrics.listHeight(groupItemCounts: catalog.groupItemCounts, footerItemCount: 1)
   }
 
   private func selectModelItem(_ item: ModelPickerModelItem) {

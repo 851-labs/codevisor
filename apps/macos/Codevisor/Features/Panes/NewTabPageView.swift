@@ -96,7 +96,7 @@ struct NewTabPageView: View {
   }
 
   private var popup: some View {
-    Autocomplete.Root(highlight: highlight, onDismiss: { query = "" }) {
+    Autocomplete.Root(highlight: highlight, showsIcons: true, onDismiss: { query = "" }) {
       Autocomplete.Input(
         text: $query, prompt: "Search", accessibilityLabel: "Search new tab options", focus: inputFocus
       )
@@ -135,7 +135,7 @@ struct NewTabPageView: View {
         }
       }
     }
-    .frame(width: max(Self.metrics.popupWidth(fitting: options.map(\.title)), 280))
+    .frame(width: Self.metrics.popupWidth(fitting: options.map(\.title), hasIcons: true))
     .composerGlassSurface(cornerRadius: Self.popupCornerRadius)
     .accessibilityElement(children: .contain)
     .accessibilityLabel("New tab")

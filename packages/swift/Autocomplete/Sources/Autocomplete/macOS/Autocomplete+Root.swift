@@ -6,23 +6,38 @@
     /// The container for one popup. Owns the keyboard from the moment it
     /// appears (arrows, ⌃N/⌃P, Return, Escape), tracks which items are
     /// reachable, and keeps `highlight` consistent with what the list shows.
-    /// Size it from outside like any view (`.frame(width:)`).
+    /// Size it from outside like any view (`.frame(width:)`). Content is
+    /// typically `Input`, `List`, and optionally `Footer`; items anywhere in
+    /// it — list or footer — take part in keyboard navigation in tree order.
     struct Root<ID: Hashable, Content: View>: View {
       let highlight: Highlight<ID>
       let isDisabled: Bool
+      let showsCheckmarks: Bool
+      let showsIcons: Bool
       let onDismiss: () -> Void
       let content: Content
 
       @State private var host = Host()
 
+      /// - Parameters:
+      ///   - showsCheckmarks: Reserve a leading check column on every row,
+      ///     popup-wide, and draw a checkmark on selected items — a menu with
+      ///     `state == .on` items.
+      ///   - showsIcons: Reserve the icon column on every row so titles align
+      ///     whether or not each item has an icon, and put the input's
+      ///     magnifier and text on the same keylines as the rows.
       public init(
         highlight: Highlight<ID>,
         isDisabled: Bool = false,
+        showsCheckmarks: Bool = false,
+        showsIcons: Bool = false,
         onDismiss: @escaping () -> Void,
         @ViewBuilder content: () -> Content
       ) {
         self.highlight = highlight
         self.isDisabled = isDisabled
+        self.showsCheckmarks = showsCheckmarks
+        self.showsIcons = showsIcons
         self.onDismiss = onDismiss
         self.content = content()
       }
@@ -33,6 +48,8 @@
         }
         .environment(highlight)
         .environment(host)
+        .environment(\.autocompleteShowsCheckmarks, showsCheckmarks)
+        .environment(\.autocompleteShowsIcons, showsIcons)
         .onPreferenceChange(TargetsKey.self) { targets in
           MainActor.assumeIsolated {
             host.targets = targets
