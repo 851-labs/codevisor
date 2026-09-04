@@ -9,9 +9,10 @@ struct PickerChip<Icon: View>: View {
   var body: some View {
     HStack(spacing: 5) {
       icon
+        .foregroundStyle(.secondary)
       Text(text)
+        .foregroundStyle(.primary)
     }
-    .foregroundStyle(.secondary)
     .contentShape(Rectangle())
   }
 }
