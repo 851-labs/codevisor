@@ -149,7 +149,11 @@ public final class UpdateCenter {
         machineName: machine.name,
         subjectId: "",
         title: "Codevisor Server",
-        installedVersion: info.currentVersion,
+        installedVersion: AppUpdateModel.displayedVersion(
+          info.currentVersion,
+          buildNumber: info.currentBuildNumber,
+          usesAlphaChannel: info.channel == "alpha"
+        ),
         latestVersion: info.latestVersion,
         updateAvailable: info.updateAvailable,
         phase: phase,

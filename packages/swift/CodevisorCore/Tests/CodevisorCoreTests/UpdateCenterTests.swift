@@ -160,6 +160,53 @@ struct UpdateCenterTests {
     controller.stopEventSync()
   }
 
+  @Test("A remote server row shows the installed Alpha release identity")
+  func remoteServerAlphaVersion() async throws {
+    let remote = makeRemote("remote-a")
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    fake.configureUpdate(
+      current: "1.2.3",
+      latest: "1.2.3-alpha.43",
+      currentBuildNumber: 42,
+      targetBuildNumber: 43
+    )
+    let controller = try makeController(
+      fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],
+      remotes: [remote]
+    )
+    controller.serverUpdateChannel = .alpha
+    let center = UpdateCenter(
+      machines: controller,
+      appUpdate: AppUpdateModel(currentVersion: "1.2.3")
+    )
+
+    await controller.refreshStatus(for: remote.id)
+
+    #expect(center.components.first?.installedVersion == "1.2.3-alpha.42")
+    controller.stopEventSync()
+  }
+
+  @Test("An older remote server without build metadata keeps its base version")
+  func olderRemoteServerAlphaVersion() async throws {
+    let remote = makeRemote("remote-a")
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    fake.configureUpdate(current: "1.2.3", latest: "1.2.3-alpha.43")
+    let controller = try makeController(
+      fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],
+      remotes: [remote]
+    )
+    controller.serverUpdateChannel = .alpha
+    let center = UpdateCenter(
+      machines: controller,
+      appUpdate: AppUpdateModel(currentVersion: "1.2.3")
+    )
+
+    await controller.refreshStatus(for: remote.id)
+
+    #expect(center.components.first?.installedVersion == "1.2.3")
+    controller.stopEventSync()
+  }
+
   @Test("updateAll clears its session when no app restart is pending")
   func sessionClearsWithoutAppRestart() async throws {
     let remote = makeRemote("remote-a")

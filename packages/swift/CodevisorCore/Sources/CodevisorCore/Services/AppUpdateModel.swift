@@ -70,10 +70,20 @@ public final class AppUpdateModel {
   /// the base marketing version while its build number identifies the Alpha
   /// release that produced those bytes.
   public var displayedCurrentVersion: String {
-    guard allowsAlphaUpdates, let currentBuildNumber, !currentVersion.contains("-") else {
-      return currentVersion
-    }
-    return "\(currentVersion)-alpha.\(currentBuildNumber)"
+    Self.displayedVersion(
+      currentVersion,
+      buildNumber: currentBuildNumber,
+      usesAlphaChannel: allowsAlphaUpdates
+    )
+  }
+
+  static func displayedVersion(
+    _ version: String,
+    buildNumber: Int?,
+    usesAlphaChannel: Bool
+  ) -> String {
+    guard usesAlphaChannel, let buildNumber, !version.contains("-") else { return version }
+    return "\(version)-alpha.\(buildNumber)"
   }
 
   public var availableRelease: AppUpdateRelease? {
