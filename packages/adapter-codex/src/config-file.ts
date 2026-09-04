@@ -7,7 +7,7 @@ import { isRecord } from "./internal.js"
 /// Codex's own bundled automation servers (written into the user's
 /// `config.toml` by the Codex desktop app). Codevisor turns them off inside
 /// its threads so automation routes through the Codevisor tool gateway.
-export const NATIVE_AUTOMATION_MCP_SERVERS = ["node_repl", "computer-use"] as const
+export const NATIVE_AUTOMATION_MCP_SERVERS = ["node_repl", "computer-use", "cua_repl"] as const
 
 export const defaultConfigFileReader = (path: string): string | undefined => {
   try {

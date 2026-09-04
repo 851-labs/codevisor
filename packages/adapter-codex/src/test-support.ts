@@ -183,6 +183,9 @@ command = "/Applications/ChatGPT.app/node_repl"
 
 [mcp_servers."computer-use"]
 command = "/Applications/ChatGPT.app/computer-use"
+
+[mcp_servers.cua_repl]
+command = "/Applications/ChatGPT.app/cua_repl"
 `
 
 export const setup = async (

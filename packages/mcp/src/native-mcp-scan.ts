@@ -48,7 +48,7 @@ export interface NativeMcpScanner {
 // them per thread in favor of its gateway, so offering them for import or
 // management in MCP Settings would be misleading. Keep the rule scoped to
 // Codex so an identically named user server in another harness stays visible.
-const HIDDEN_CODEX_NATIVE_MCPS = new Set(["computer-use", "node_repl"])
+const HIDDEN_CODEX_NATIVE_MCPS = new Set(["computer-use", "node_repl", "cua_repl"])
 
 const isHiddenNativeMcp = (harnessId: string, serverName: string): boolean =>
   harnessId === "codex" && HIDDEN_CODEX_NATIVE_MCPS.has(serverName)

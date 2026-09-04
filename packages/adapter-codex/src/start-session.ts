@@ -80,10 +80,13 @@ export const makeStartSession = ({
     )
     // Keep Codex's bundled and first-party plugin skills out of
     // Codevisor-owned threads without changing the user's global settings.
-    // Codevisor, repository, and user skills remain available. Plugin
-    // enablement itself is resolved before thread overrides, while bundled-
-    // skill and named-skill rules are honored here.
+    // Codevisor, repository, and user skills remain available. Disable the
+    // newer unified-computer-use plugin as a whole: it contributes its own
+    // skills and cua_repl transport, independently of system bundled skills.
     const threadConfig = {
+      plugins: {
+        "unified-computer-use@openai-bundled": { enabled: false }
+      },
       skills: {
         bundled: { enabled: false },
         config: NATIVE_CODEX_PLUGIN_SKILL_NAMES.map((name) => ({ name, enabled: false }))

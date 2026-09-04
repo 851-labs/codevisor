@@ -29,6 +29,9 @@ describe("CodexProvider", () => {
       bearerToken: "secret"
     }
     const expectedConfig = {
+      plugins: {
+        "unified-computer-use@openai-bundled": { enabled: false }
+      },
       skills: expectedNativeCodexSkills,
       features: {
         browser_use: false,
@@ -42,6 +45,9 @@ describe("CodexProvider", () => {
           enabled: false
         },
         "computer-use": {
+          enabled: false
+        },
+        cua_repl: {
           enabled: false
         },
         codevisor: {
@@ -66,17 +72,22 @@ describe("CodexProvider", () => {
     })
   })
 
-  it("disables native Codex skills without a tool gateway", async () => {
+  it("disables native Codex skills and the unified computer use plugin without a tool gateway", async () => {
     const { client } = await setup()
     const start = client.requests.find((request) => request.method === "thread/start")
     const params = start?.params as { config: Record<string, unknown> }
-    expect(params.config).toMatchObject({ skills: expectedNativeCodexSkills })
+    expect(params.config).toMatchObject({
+      plugins: {
+        "unified-computer-use@openai-bundled": { enabled: false }
+      },
+      skills: expectedNativeCodexSkills
+    })
     expect(params.config).not.toHaveProperty("mcp_servers")
   })
 
   it("omits native automation disables when the codex config does not define those servers", async () => {
     // A machine without the Codex desktop app (typical headless remote) has
-    // no node_repl/computer-use entries in config.toml. Sending bare
+    // no native automation entries in config.toml. Sending bare
     // `{ enabled: false }` stubs there creates transport-less servers that
     // the app-server rejects at config load with "invalid transport".
     const toolGateway: ToolGatewayConfig = {
@@ -96,21 +107,26 @@ describe("CodexProvider", () => {
     })
   })
 
-  it("disables only the native automation servers the codex config defines", async () => {
-    const toolGateway: ToolGatewayConfig = {
-      name: "codevisor",
-      url: "http://127.0.0.1:49361/mcp/gateway?gateway=test",
-      bearerToken: "secret"
+  it.each(["node_repl", "computer-use", "cua_repl"])(
+    "disables only %s when it is the sole configured native automation server",
+    async (serverName) => {
+      const toolGateway: ToolGatewayConfig = {
+        name: "codevisor",
+        url: "http://127.0.0.1:49361/mcp/gateway?gateway=test",
+        bearerToken: "secret"
+      }
+      const { client } = await setup({
+        toolGateway,
+        codexConfigToml: `[mcp_servers."${serverName}"]\ncommand = "native-automation"\n`
+      })
+      const start = client.requests.find((request) => request.method === "thread/start")
+      const config = start?.params as { config: { mcp_servers: Record<string, unknown> } }
+      expect(Object.keys(config.config.mcp_servers).toSorted()).toEqual(
+        ["codevisor", serverName].toSorted()
+      )
+      expect(config.config.mcp_servers[serverName]).toEqual({ enabled: false })
     }
-    const { client } = await setup({
-      toolGateway,
-      codexConfigToml: '[mcp_servers.node_repl]\ncommand = "node_repl"\n'
-    })
-    const start = client.requests.find((request) => request.method === "thread/start")
-    const config = start?.params as { config: { mcp_servers: Record<string, unknown> } }
-    expect(Object.keys(config.config.mcp_servers).sort()).toEqual(["codevisor", "node_repl"])
-    expect(config.config.mcp_servers.node_repl).toEqual({ enabled: false })
-  })
+  )
 
   it("reads mcp server names from the CODEX_HOME config.toml when set", async () => {
     const toolGateway: ToolGatewayConfig = {
