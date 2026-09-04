@@ -41,6 +41,14 @@ extension NewChatView {
     .filter { !$0.isScratch }
   }
 
+  /// The picker's entries: projects linked across machines, so one
+  /// repository is one row however many checkouts the fleet holds.
+  private var pickerGroups: [ProjectGroup] {
+    environment.projectList.fleetActiveProjectGroupsByWorkspaceRecency(
+      environment.workspaces.loadAll()
+    )
+  }
+
   /// The machine picker shows only when there is a choice to make.
   var showsMachinePicker: Bool { environment.machines.allMachines.count > 1 }
 
@@ -110,83 +118,83 @@ extension NewChatView {
   }
 
   /// Choose the project the chat (and the workspace created around it on
-  /// first send) will work in.
-  @ViewBuilder
+  /// first send) will work in. "No project" is a first-class choice — the
+  /// chat gets a single-use folder — and the default when nothing is
+  /// remembered, so a machine with no projects yet is not a dead end.
   func projectPicker(_ controller: SessionController) -> some View {
     let selected = controller.project
-    let projects = pickerProjects.filter { $0.serverId == selected.serverId }
-
-    if projects.isEmpty {
+    let groups = pickerGroups
+    let selectedGroup = selected.isRunTargetPlaceholder ? nil : groups.first { $0.contains(selected) }
+    let chipText = selected.isRunTargetPlaceholder ? "No project" : (selectedGroup?.name ?? selected.name)
+    return Menu {
+      // Toggle for the native selected checkmark; MenuSymbolIcon
+      // because AppKit menus drop plain SF Symbol images.
+      Toggle(
+        isOn: Binding(
+          get: { selected.isRunTargetPlaceholder },
+          set: { isOn in
+            guard isOn else { return }
+            selectNoProject(controller)
+          }
+        )
+      ) {
+        Label {
+          Text("No project")
+        } icon: {
+          MenuSymbolIcon(systemName: Self.noProjectSymbol)
+        }
+      }
+      if !groups.isEmpty {
+        Divider()
+      }
+      ForEach(groups) { group in
+        Toggle(
+          isOn: Binding(
+            get: { group.contains(selected) },
+            set: { isOn in
+              guard isOn else { return }
+              selectTargetGroup(group, controller: controller)
+            }
+          )
+        ) {
+          Label {
+            Text(group.name)
+          } icon: {
+            MenuSymbolIcon(systemName: EntitySystemSymbol.project)
+          }
+        }
+      }
+      Divider()
       Button {
         newProjectTarget = NewProjectTarget(serverId: selected.serverId)
       } label: {
-        PickerChip(text: "Select a project") {
-          Image(systemName: "folder.badge.questionmark")
-            .font(.system(size: 12))
+        Label {
+          Text("New Project…")
+        } icon: {
+          MenuSymbolIcon(systemName: "folder.badge.plus")
         }
       }
-      .buttonStyle(HoverIconButtonStyle(shape: .chip))
-      .fixedSize()
-      .onHover { trackHover(.project, $0) }
-      .help("Add a project")
-      .accessibilityLabel("Select a project")
-    } else {
-      Menu {
-        // Toggle for the native selected checkmark; MenuSymbolIcon
-        // because AppKit menus drop plain SF Symbol images.
-        ForEach(projects) { project in
-          Toggle(
-            isOn: Binding(
-              get: {
-                selected.serverId == project.serverId
-                  && selected.id == project.id
-              },
-              set: { isOn in
-                guard isOn else { return }
-                selectTargetProject(project, controller: controller)
-              }
-            )
-          ) {
-            Label {
-              Text(project.name)
-            } icon: {
-              MenuSymbolIcon(systemName: EntitySystemSymbol.project)
-            }
-          }
-        }
-        Divider()
-        Button {
-          newProjectTarget = NewProjectTarget(serverId: selected.serverId)
-        } label: {
-          Label {
-            Text("New Project…")
-          } icon: {
-            MenuSymbolIcon(systemName: "folder.badge.plus")
-          }
-        }
-      } label: {
-        PickerChip(
-          text: selected.isRunTargetPlaceholder ? "Select a project" : selected.name
-        ) {
-          Image(
-            systemName: selected.isRunTargetPlaceholder
-              ? "folder.badge.questionmark" : EntitySystemSymbol.project
-          )
-          .font(.system(size: 12))
-        }
+    } label: {
+      PickerChip(text: chipText) {
+        Image(
+          systemName: selected.isRunTargetPlaceholder
+            ? Self.noProjectSymbol : EntitySystemSymbol.project
+        )
+        .font(.system(size: 12))
       }
-      .menuStyle(.button)
-      .buttonStyle(HoverIconButtonStyle(shape: .chip))
-      .menuIndicator(.hidden)
-      .fixedSize()
-      .onHover { trackHover(.project, $0) }
-      .help("Choose where this chat works")
-      .accessibilityLabel("Project")
-      .accessibilityValue(
-        selected.isRunTargetPlaceholder ? "No project selected" : selected.name
-      )
     }
+    .menuStyle(.button)
+    .buttonStyle(HoverIconButtonStyle(shape: .chip))
+    .menuIndicator(.hidden)
+    .fixedSize()
+    .onHover { trackHover(.project, $0) }
+    .help("Choose which project this chat works in")
+    .accessibilityLabel("Project")
+    .accessibilityValue(chipText)
   }
+
+  /// The outline folder: a chat with no repository behind it.
+  static let noProjectSymbol = EntitySystemSymbol.projectList
 
   /// "Project directory" vs "New worktree" for where the chat (and its
   /// workspace) runs. Only rendered for git projects; the worktree itself
@@ -250,18 +258,24 @@ extension NewChatView {
     .accessibilityValue(newWorktree ? "New worktree" : "Project directory")
   }
 
-  /// Re-points the draft at another machine: its remembered project when
-  /// it still exists, else its most recently used one.
+  /// Re-points the draft at another machine: the same linked project when
+  /// that machine has a checkout of it, else the machine's remembered
+  /// project, else no project.
   func selectTargetMachine(_ machine: CodevisorMachine, controller: SessionController) {
-    guard machine.id != controller.project.serverId else { return }
+    let current = controller.project
+    guard machine.id != current.serverId else { return }
     environment.composerDefaults.rememberNewWorkspaceServer(serverId: machine.id)
+    let linked =
+      current.isRunTargetPlaceholder
+      ? nil
+      : environment.projectList.fleetProjectGroup(containing: current)?.member(on: machine.id)
     let scoped = pickerProjects.filter { $0.serverId == machine.id }
     let remembered = environment.composerDefaults.lastProjectId(forServer: machine.id)
-    guard let project = scoped.first(where: { $0.id == remembered }) ?? scoped.first
+    guard let project = linked ?? scoped.first(where: { $0.id == remembered })
     else {
-      // An empty machine is a stable run-target state. Keep the draft
-      // and composer in place, show "Select a project", and wait for an
-      // explicit click instead of surprising the user with a dialog.
+      // "No project" is a stable run-target state: keep the draft and
+      // composer in place rather than guessing a project or opening a
+      // dialog.
       selectedProjectId = nil
       Task {
         await controller.retarget(
@@ -273,6 +287,30 @@ extension NewChatView {
       return
     }
     selectTargetProject(project, controller: controller)
+  }
+
+  /// Picking a linked project keeps the draft on its current machine when
+  /// that machine has a checkout; otherwise it moves to the machine that
+  /// used the project most recently.
+  func selectTargetGroup(_ group: ProjectGroup, controller: SessionController) {
+    let project =
+      group.member(on: controller.project.serverId)
+      ?? environment.projectList.mostRecentlyUsedMember(of: group)
+    selectTargetProject(project, controller: controller)
+  }
+
+  /// Untie the draft from any project: its first send will run in a
+  /// fresh single-use folder on the current machine.
+  func selectNoProject(_ controller: SessionController) {
+    let serverId = controller.project.serverId
+    selectedProjectId = nil
+    environment.composerDefaults.rememberNewWorkspaceProject(
+      serverId: serverId,
+      projectId: Project.runTargetPlaceholderID
+    )
+    Task {
+      await controller.selectProject(.runTargetPlaceholder(serverId: serverId))
+    }
   }
 
   /// A picked project carries the machine's remembered worktree preference
@@ -316,17 +354,12 @@ extension NewChatView {
     }
   }
 
+  /// Archiving the draft's project leaves the draft with no project rather
+  /// than guessing another one.
   func archiveManagedProject(_ project: Project, controller: SessionController?) {
     environment.projectList.archive(project)
     guard let controller else { return }
-    if let replacement = pickerProjects.first(where: { $0.serverId == project.serverId }) {
-      selectTargetProject(replacement, controller: controller)
-    } else {
-      selectedProjectId = nil
-      Task {
-        await controller.selectProject(.runTargetPlaceholder(serverId: project.serverId))
-      }
-    }
+    selectNoProject(controller)
   }
 
   private func selectRunLocation(newWorktree: Bool, controller: SessionController) {

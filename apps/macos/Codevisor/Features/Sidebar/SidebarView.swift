@@ -125,13 +125,12 @@ struct SidebarView: View {
               projectFolder(group)
                 .geometryGroup()
             }
-            // Chats without a real project (scratch-backed
-            // sessions) sit at the root as plain chat rows — a
-            // single-use folder is not a project.
-            ForEach(looseProjectSessions) { item in
-              reorderableChronologicalSessionRow(item.session, project: item.project)
+            // Chats without a project (scratch-backed sessions)
+            // share one folder rather than each single-use folder
+            // masquerading as a project.
+            if !looseProjectSessions.isEmpty {
+              noProjectFolder
                 .geometryGroup()
-                .transition(.identity)
             }
           } else if organization.isWorkspaceList {
             ForEach(workspaceItems) { item in

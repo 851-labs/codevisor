@@ -7,10 +7,11 @@ extension Project {
     uuidString: "00000000-0000-0000-0000-00000000C0DE"
   )!
 
-  /// A sentinel project for a draft that exists BEFORE any project does:
-  /// the new-chat composer always renders, with send disabled and the
-  /// run-target chip prompting for a selection, instead of a bespoke
-  /// empty screen.
+  /// The "No project" run target: a draft that is not tied to any
+  /// repository. The composer renders and sends normally; the first send
+  /// allocates a single-use scratch folder on the draft's machine and the
+  /// chat runs there (see `SessionController.materializeScratchProject`).
+  /// Also the state a machine with no projects starts in.
   public static func runTargetPlaceholder(serverId: String) -> Project {
     fromFolder(
       URL(fileURLWithPath: "/"),

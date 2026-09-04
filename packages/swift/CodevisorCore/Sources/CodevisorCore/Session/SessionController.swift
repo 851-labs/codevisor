@@ -153,6 +153,10 @@ final public class SessionController {
   /// register the real session and navigate to it. The argument is the
   /// submitted prompt or goal, captured before the composer is cleared.
   public var onFirstSend: ((String) -> Void)?
+  /// Called when a no-project draft's first send allocated its scratch
+  /// backing project, before `onFirstSend`. The owner registers the record
+  /// in the project list so the new chat has a project row to hang off.
+  public var onScratchProjectCreated: ((Project) -> Void)?
   /// Called when first-send setup fails after the draft was promoted. The
   /// owner reattaches the original draft persistence without deleting the
   /// durable chat session or its workspace.

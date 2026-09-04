@@ -38,14 +38,19 @@ extension SessionStore {
         )
       } ?? environment.composerDefaults.lastProjectId(forServer: project.serverId).flatMap {
         rememberedId in
+        // A scratch folder is single-use: the next chat never starts in
+        // the previous chat's folder. (A remembered "No project" is the
+        // placeholder id, which matches nothing and falls through.)
         environment.projectList.fleetActiveProjects.first {
-          $0.serverId == project.serverId && $0.id == rememberedId
+          $0.serverId == project.serverId && $0.id == rememberedId && !$0.isScratch
         }
       } ?? project
-    environment.composerDefaults.rememberNewWorkspaceProject(
-      serverId: restoredProject.serverId,
-      projectId: restoredProject.id
-    )
+    if !restoredProject.isRunTargetPlaceholder {
+      environment.composerDefaults.rememberNewWorkspaceProject(
+        serverId: restoredProject.serverId,
+        projectId: restoredProject.id
+      )
+    }
     let controller = SessionController(
       project: restoredProject,
       configCache: environment.configCache,

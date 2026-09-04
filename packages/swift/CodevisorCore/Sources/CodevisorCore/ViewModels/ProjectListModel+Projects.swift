@@ -105,6 +105,24 @@ extension ProjectListModel {
     return project
   }
 
+  /// Registers a project the server just created on this client's behalf
+  /// (a scratch backing project), exactly as the server described it. Held
+  /// as pending until a snapshot confirms it, so a refresh already in
+  /// flight when it was created cannot drop the new chat's project.
+  public func registerServerProject(_ project: Project) {
+    if let index = projects.firstIndex(where: {
+      $0.serverId == project.serverId && $0.id == project.id
+    }) {
+      projects[index] = project
+    } else {
+      projects.append(project)
+    }
+    pendingServerProjectIds.insert(
+      ScopedSessionID(serverId: project.serverId, id: project.id)
+    )
+    persistProjects()
+  }
+
   public func archive(_ project: Project) {
     setArchived(true, for: project)
   }

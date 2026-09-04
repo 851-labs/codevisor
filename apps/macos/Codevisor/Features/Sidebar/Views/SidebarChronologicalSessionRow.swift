@@ -107,16 +107,19 @@ struct SidebarChronologicalSessionRow: View {
 
   private var subtitle: String {
     let machineName = environment.machines.fleetMachineName(for: session.serverId)
+    // A scratch folder's generated name says nothing about the chat; a
+    // no-project chat shows only its machine.
+    let projectName: String? = project.isScratch ? nil : project.name
 
     if !showsProjectName {
-      let context = session.worktreeName.flatMap { $0.isEmpty ? nil : $0 } ?? project.name
+      let context = session.worktreeName.flatMap { $0.isEmpty ? nil : $0 } ?? projectName
       return [context, machineName]
         .compactMap { $0 }
         .filter { !$0.isEmpty }
         .joined(separator: " · ")
     }
 
-    return [project.name, session.worktreeName, machineName]
+    return [projectName, session.worktreeName, machineName]
       .compactMap { $0 }
       .filter { !$0.isEmpty }
       .joined(separator: " · ")

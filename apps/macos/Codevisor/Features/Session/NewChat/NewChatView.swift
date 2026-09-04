@@ -228,14 +228,10 @@ struct NewChatView: View {
         }
       }
     }
+    // "No project" is a stable choice, so a project arriving later never
+    // hijacks the draft; only a missing controller gets set up here.
     .onChange(of: projects.map(\.id)) { _, _ in
-      if let controller, controller.project.isRunTargetPlaceholder,
-        let project = environment.projectList.fleetActiveProjects.first(where: {
-          $0.serverId == controller.project.serverId && !$0.isScratch
-        })
-      {
-        selectTargetProject(project, controller: controller)
-      } else if controller == nil, !requiresInitialProjectResolution {
+      if controller == nil, !requiresInitialProjectResolution {
         setUpController()
       }
     }
@@ -376,7 +372,10 @@ struct NewChatView: View {
   // MARK: - Setup
 
   private func setUpController() {
-    selectedProjectId = initialProjectTarget?.projectId ?? projects.first?.id
+    // Only an explicit entry point picks a project up front; otherwise the
+    // draft store restores the remembered one and a fresh draft starts
+    // with no project at all.
+    selectedProjectId = initialProjectTarget?.projectId
     let project =
       selectedProject
       ?? Project.runTargetPlaceholder(serverId: composerServerId)
@@ -419,6 +418,9 @@ struct NewChatView: View {
       {
         selectTargetProject(explicit, controller: controller)
       }
+    }
+    controller.onScratchProjectCreated = { [weak projectList = environment.projectList] scratch in
+      projectList?.registerServerProject(scratch)
     }
     controller.onFirstSend = { [weak controller] submittedText in
       guard let controller else { return }
@@ -513,9 +515,11 @@ struct NewChatView: View {
         environment.composerDefaults.performPersistenceBatch(
           flushImmediately: true
         ) {
+          // A scratch folder is single-use; remember the CHOICE of no
+          // project rather than the folder it happened to get.
           environment.composerDefaults.rememberNewWorkspaceProject(
             serverId: project.serverId,
-            projectId: project.id
+            projectId: project.isScratch ? Project.runTargetPlaceholderID : project.id
           )
           environment.composerDefaults.rememberNewWorkspaceWorktreePreference(
             serverId: project.serverId,

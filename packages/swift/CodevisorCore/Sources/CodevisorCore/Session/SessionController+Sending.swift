@@ -7,8 +7,7 @@ extension SessionController {
   /// Worktree and agent setup render after the optimistic first user message.
   public func send() async {
     let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !project.isRunTargetPlaceholder,
-      !text.isEmpty || !composerAttachments.isEmpty,
+    guard !text.isEmpty || !composerAttachments.isEmpty,
       !isConnecting,
       configurationValidationState == .ready,
       !isSubmitting
@@ -37,6 +36,15 @@ extension SessionController {
         return
       }
       attachments = collected
+    }
+    // A chat with no project runs in a fresh single-use folder the server
+    // allocates now, so the session is born there like in any project.
+    if project.isRunTargetPlaceholder {
+      if let failure = await materializeScratchProject() {
+        isSubmitting = false
+        status = .failed(failure)
+        return
+      }
     }
     let outgoingMessage = UserMessage(text: text, attachments: attachments)
     let shouldAnimateTranscriptSend = !isSending
@@ -243,6 +251,27 @@ extension SessionController {
 
   /// Failed first-send setup returns to the centered composer with its prompt
   /// restored. Existing-session failures remain in the transcript.
+  /// Asks the server for a scratch backing project (an empty folder under
+  /// ~/codevisor/workspaces on the draft's machine) and re-points the
+  /// draft at it. Returns the failure message, nil on success.
+  func materializeScratchProject() async -> String? {
+    guard let serverClient else {
+      return "Starting a chat needs the Codevisor server. Start it and try again."
+    }
+    status = .connecting("Preparing folder…")
+    do {
+      let created = try await serverClient.createScratchProject(id: UUID())
+      let scratch = try created.project(serverId: project.serverId)
+      onScratchProjectCreated?(scratch)
+      project = scratch
+      status = .idle
+      return nil
+    } catch {
+      status = .idle
+      return serverErrorMessage(error)
+    }
+  }
+
   func handleSetupFailure(_ message: String, returnsToNewChat: Bool) {
     if returnsToNewChat {
       setupPhases.removeAll()

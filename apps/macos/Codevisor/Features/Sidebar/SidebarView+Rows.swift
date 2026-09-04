@@ -107,6 +107,25 @@ extension SidebarView {
     return names.isEmpty ? nil : names.joined(separator: ", ")
   }
 
+  /// The expansion key of the "No project" folder, alongside group ids.
+  static let noProjectFolderID = "no-project"
+
+  @ViewBuilder
+  var noProjectFolder: some View {
+    SidebarNoProjectRow(
+      isReordering: isReordering,
+      isVisuallyExpanded: isProjectVisuallyExpanded(Self.noProjectFolderID),
+      titleFont: itemTitleFont,
+      onDisclosureToggle: { toggle(Self.noProjectFolderID) }
+    )
+    if isProjectVisuallyExpanded(Self.noProjectFolderID) {
+      ForEach(looseProjectSessions) { item in
+        reorderableChronologicalSessionRow(item.session, project: item.project, isNested: true)
+          .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+      }
+    }
+  }
+
   private func disclosureRow(
     id: String,
     title: String,

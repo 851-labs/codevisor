@@ -48,7 +48,7 @@ extension SidebarView {
             list.projects.first {
               $0.serverId == workspace.serverId && $0.id == workspace.projectId
             }
-            .map(ProjectGroup.groupID(for:))
+            .map { $0.isScratch ? Self.noProjectFolderID : ProjectGroup.groupID(for: $0) }
           }
         )
       } else {
