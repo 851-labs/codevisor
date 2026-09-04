@@ -264,20 +264,30 @@ extension NewChatView {
     .accessibilityValue(newWorktree ? "New worktree" : "Project directory")
   }
 
-  /// Re-points the draft at another machine: the same linked project when
-  /// that machine has a checkout of it, else the machine's remembered
-  /// project, else no project.
+  /// Re-points the draft at another machine, keeping the current run
+  /// target when that machine can honor it: the same linked project (via
+  /// its checkout there) with the same run location — a worktree only if
+  /// that checkout is a git repository — or "No project", which every
+  /// machine can do. Only when the machine lacks the project does the
+  /// draft fall back to that machine's last-used project and location.
   func selectTargetMachine(_ machine: CodevisorMachine, controller: SessionController) {
     let current = controller.project
     guard machine.id != current.serverId else { return }
     environment.composerDefaults.rememberNewWorkspaceServer(serverId: machine.id)
-    let linked =
-      current.isRunTargetPlaceholder
-      ? nil
-      : environment.projectList.fleetProjectGroup(containing: current)?.member(on: machine.id)
+    if let linked = environment.projectList.fleetProjectGroup(containing: current)?
+      .member(on: machine.id)
+    {
+      selectTargetProject(
+        linked,
+        controller: controller,
+        wantsWorktree: controller.wantsNewWorktree && linked.isGitRepository
+      )
+      return
+    }
     let scoped = pickerProjects.filter { $0.serverId == machine.id }
     let remembered = environment.composerDefaults.lastProjectId(forServer: machine.id)
-    guard let project = linked ?? scoped.first(where: { $0.id == remembered })
+    let isNoProject = current.isRunTargetPlaceholder || current.isScratch
+    guard !isNoProject, let project = scoped.first(where: { $0.id == remembered })
     else {
       // "No project" is a stable run-target state: keep the draft and
       // composer in place rather than guessing a project or opening a
@@ -323,18 +333,24 @@ extension NewChatView {
   }
 
   /// A picked project carries the machine's remembered worktree preference
-  /// (worktrees only make sense for git projects).
-  func selectTargetProject(_ project: Project, controller: SessionController) {
+  /// (worktrees only make sense for git projects) unless the caller pins
+  /// the run location — a machine switch keeping the draft's own choice.
+  func selectTargetProject(
+    _ project: Project,
+    controller: SessionController,
+    wantsWorktree: Bool? = nil
+  ) {
     selectedProjectId = project.id
     environment.composerDefaults.rememberNewWorkspaceProject(
       serverId: project.serverId,
       projectId: project.id
     )
     let prefersWorktree =
-      project.isGitRepository
-      && environment.composerDefaults.prefersWorktreeForNewWorkspaces(
-        forServer: project.serverId
-      )
+      wantsWorktree
+      ?? (project.isGitRepository
+        && environment.composerDefaults.prefersWorktreeForNewWorkspaces(
+          forServer: project.serverId
+        ))
     Task {
       if project.serverId != controller.project.serverId {
         // Another machine's project: the draft re-points there in
