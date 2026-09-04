@@ -15,7 +15,9 @@ afterEach(() => {
 describe("Browser Use direct CDP engine", () => {
   it(
     "navigates, snapshots, and clicks through the direct CDP engine",
-    { timeout: 90_000 },
+    // Headroom past the managed browser's own startup budget, so a slow
+    // Chromium reports its timeout instead of vitest's.
+    { timeout: 120_000 },
     async () => {
       const directory = mkdtempSync(join(tmpdir(), "codevisor-browser-cdp-"))
       directories.push(directory)

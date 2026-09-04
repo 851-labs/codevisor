@@ -123,6 +123,12 @@ const linuxContainerRuntime = (): boolean => {
   })
 }
 
+/// How long a freshly spawned Chromium gets to publish DevToolsActivePort.
+/// A cold first launch into an empty profile is normally a second or two,
+/// but on a loaded CI runner — every package's suite in parallel, headless
+/// Chromium competing for the same cores — 30s was occasionally not enough.
+export const managedBrowserStartupTimeoutMs = 90_000
+
 export const launchManagedBrowser = async (
   executablePath: string,
   profileDir: string
@@ -152,7 +158,7 @@ export const launchManagedBrowser = async (
   processHandle.once("error", (cause) => {
     launchError = cause
   })
-  const deadline = Date.now() + 30_000
+  const deadline = Date.now() + managedBrowserStartupTimeoutMs
   while (Date.now() < deadline) {
     if (launchError !== undefined) throw launchError
     if (processHandle.exitCode !== null) {
