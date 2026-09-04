@@ -133,10 +133,8 @@ extension VirtualizedTranscriptScrollView {
     // must not pull the viewport down with it.
     let previousLayout = virtualLayout
     let previousDistance = initialPositionApplied ? currentDistanceFromBottom() : nil
-    // ChatGPT follows the bottom only while the latest turn is live. An
-    // idle transcript is static even when its distance is zero, so opening
-    // a disclosure preserves the reader's viewport instead of pushing the
-    // clicked header offscreen.
+    // Follow intent survives settlement and width remeasurement. An explicit
+    // disclosure click can temporarily preserve its header below instead.
     let plan = TranscriptGeometryRebuildPlan(
       previousLayout: previousLayout,
       previousDistanceFromBottom: previousDistance,
@@ -185,7 +183,6 @@ extension VirtualizedTranscriptScrollView {
         virtualLayout.indexByKey[$0]
       }.min()
       positionMountedRows(startingAt: firstChangedIndex)
-      animatePendingDisclosureCollapse()
 
       if !initialPositionApplied {
         applyPendingInitialPositionIfPossible()
@@ -200,6 +197,7 @@ extension VirtualizedTranscriptScrollView {
         }
         setDistanceFromBottom(resolvedDistance)
       }
+      animatePendingDisclosureCollapse()
       // A delayed bounds notification after this transaction sees the
       // final canonical distance, not the transient pre-compensation one.
       lastDistanceFromBottom = currentDistanceFromBottom()

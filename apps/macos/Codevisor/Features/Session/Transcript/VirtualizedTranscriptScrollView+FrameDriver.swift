@@ -14,6 +14,19 @@ extension VirtualizedTranscriptScrollView {
   /// their first complete projection authoritative even if its number happens
   /// to equal the previous owner's last counter.
   func prepareForPresentationAttachment() {
+    if initialPresentationGate.isReady {
+      persistViewport()
+      // Retain the hosts, but restore the saved row/offset once this owner's
+      // projection is ready. AppKit may have clamped or reset the detached
+      // clip view, and messages may have arrived while the chat was hidden.
+      if let state = lastStableScrollState {
+        pendingInitialState = state
+        initialPositionApplied = false
+        followsLatest = state.isAtBottom
+        lockedRestoreDistance = state.isAtBottom ? nil : state.distanceFromBottom
+      }
+    }
+    hasReceivedScrollCommandForAttachment = false
     isAwaitingWarmProjection = initialPresentationGate.isReady
     projectedRowsVersion = nil
     receivedProjectionRevision = nil
@@ -23,6 +36,11 @@ extension VirtualizedTranscriptScrollView {
   func prepareForDismantle() {
     persistViewport()
     isDetaching = true
+    cancelDisclosureViewportAnchor()
+    bottomJumpGate.cancel()
+    isHandlingUserInput = false
+    isLiveScrolling = false
+    userInputDeadline = 0
     uninstallPresentationFrameDriver()
     interruptSendPresentation()
     finishAllDisclosureCollapsePresentations()

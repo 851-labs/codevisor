@@ -26,6 +26,13 @@ extension VirtualizedTranscriptScrollView {
     let newIsAwaitingFirstActiveProjection = input.isAwaitingFirstActiveProjection
     let newLayoutFingerprint = input.layoutFingerprint
     let newScrollCommand = input.scrollCommand
+    // Each SwiftUI owner starts its own command counter. Its first value is
+    // a baseline, not a new jump; later changes (including during projection
+    // loading) remain actionable when the rows are ready.
+    if !hasReceivedScrollCommandForAttachment {
+      scrollCommand = newScrollCommand
+      hasReceivedScrollCommandForAttachment = true
+    }
     let newSendAnimationRequest = input.sendAnimationRequest
     let textAnimationRegistry = input.textAnimationRegistry
     let allowsLiveTextAnimation = input.allowsLiveTextAnimation
@@ -113,7 +120,7 @@ extension VirtualizedTranscriptScrollView {
       initialBottomPin.configure(
         restoresNonBottomPosition: initialState.map { !$0.isAtBottom } ?? false
       )
-      followsLatest = initialState?.followMode.followsLatest ?? newFollowsLatest
+      followsLatest = initialState?.isAtBottom ?? newFollowsLatest
       if let initialState, !initialState.isAtBottom {
         lockedRestoreDistance = initialState.distanceFromBottom
       }

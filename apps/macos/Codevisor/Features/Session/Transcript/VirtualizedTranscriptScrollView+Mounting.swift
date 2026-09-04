@@ -361,11 +361,16 @@ extension VirtualizedTranscriptScrollView {
     let animatedKeys = Set(automaticGroups.flatMap { $0 })
 
     if !animatedKeys.isEmpty {
-      beginDisclosureViewportAnchor()
+      // Automatic settlement must keep following through the final row
+      // measurements. Only a reader parked in history needs the temporary
+      // fixed viewport used by the collapse presentation.
+      if !followsLatest {
+        beginDisclosureViewportAnchor()
+      }
       pendingDisclosureCollapseOrigins = Dictionary(
         uniqueKeysWithValues: mountedHosts.compactMap { key, host in
           guard !animatedKeys.contains(key) else { return nil }
-          return (key, presentedOriginY(for: host))
+          return (key, presentedOriginY(for: host) - contentView.bounds.minY)
         }
       )
       for keys in automaticGroups {

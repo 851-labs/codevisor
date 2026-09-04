@@ -191,6 +191,8 @@ jobs:
         run: scripts/release/build-server-archive.sh "${{ inputs.version }}" dist/release darwin-x64 dist/release/work/app-server-runtime-darwin-x64
       - name: Run Swift package tests on Intel
         run: bun run swift:test
+      - name: Run native transcript regression tests on Intel
+        run: bun run swift:test:macos-transcript
       - name: Upload Intel macOS server archive
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

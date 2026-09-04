@@ -89,11 +89,12 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   /// brief collapse, so disclosure motion never depends on cold measurements.
   var disclosureCollapsePresentations: [UUID: DisclosureCollapsePresentation] = [:]
   var disclosureExitTasks: [UUID: Task<Void, Never>] = [:]
-  /// Surviving mounted rows keep their pre-collapse presentation origin for
+  /// Surviving mounted rows keep their pre-collapse viewport origin for
   /// the same brief interval. Their model frames are already final, but this
   /// interpolation makes the content below travel with the closing body
   /// instead of snapping upward before the outgoing pixels have disappeared.
   var pendingDisclosureCollapseOrigins: [String: CGFloat]?
+  var pendingDisclosureContainerOrigins: [(view: NSView, viewportY: CGFloat)] = []
   let markdownHostCache = TranscriptMarkdownHostCache()
   var recycledMarkdownHosts: [TranscriptMarkdownRowHost] = []
   let virtualWindowPolicy = TranscriptVirtualWindowPolicy()
@@ -176,6 +177,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   var deferredActivePlaceholderKey: String?
   var isAwaitingFirstActiveProjection = false
   var scrollCommand = TranscriptScrollCommand()
+  var hasReceivedScrollCommandForAttachment = false
   var receivedSendAnimationToken: UInt64?
   var pendingSendAnimationRequest: UserSendAnimationRequest?
   var pendingSendAnimationRowKey: String?
@@ -212,7 +214,10 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   var userInputDeadline: TimeInterval = 0
   var lastDistanceFromBottom: CGFloat = 0
   var lastBottomState: Bool?
-  var lastViewportWidth: CGFloat = 0
+  var lastViewportSize: CGSize = .zero
+  /// Geometry from the last completed layout/scroll, before AppKit changes
+  /// the clip size for a split or its newly inserted pane header.
+  var lastViewportDistanceFromBottom: CGFloat = 0
   var historyPrefetchPolicy = TranscriptHistoryPrefetchPolicy()
   var isDetaching = false
   /// Last position that was intentionally established by the user, an
@@ -428,23 +433,18 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   }
 
   override func layout() {
+    let previousSize = lastViewportSize
+    let previousDistance = lastViewportDistanceFromBottom
     super.layout()
-    guard !isDetaching else { return }
-    let width = contentView.bounds.width
-    guard width > 0 else { return }
-    guard !isPreparingInitialProjection else { return }
-    if abs(width - lastViewportWidth) > 0.5 {
-      lastViewportWidth = width
-      _ = activateMeasurementCacheIfNeeded()
-      refreshMountedRootViews()
-      rebuildDocumentGeometry()
+    if hasPendingViewportResize {
+      applyPositionTransaction {
+        layoutViewport(previousSize: previousSize, previousDistance: previousDistance)
+      }
     } else {
-      applyPendingInitialPositionIfPossible()
-      updateMountedRows()
+      // Ordinary AppKit layout can precede a delayed wheel notification.
+      // It must not consume that movement as a programmatic compensation.
+      layoutViewport(previousSize: previousSize, previousDistance: previousDistance)
     }
-    startPendingSendAnimationIfPossible()
-    updateInitialPresentationReadiness()
-    resolveBottomJumpIfPossible()
   }
 
   override func scrollWheel(with event: NSEvent) {

@@ -10,7 +10,9 @@ import TranscriptKit
 
 extension VirtualizedTranscriptScrollView {
   func persistViewport() {
-    guard !isDetaching else {
+    guard !isDetaching, !isAwaitingWarmProjection,
+      initialPositionApplied, !hasPendingViewportResize
+    else {
       republishLastStableScrollState()
       return
     }
@@ -107,8 +109,70 @@ extension VirtualizedTranscriptScrollView {
 
   func applyPositionTransaction(_ body: () -> Void) {
     positionApplicationDepth += 1
-    defer { positionApplicationDepth -= 1 }
+    defer {
+      positionApplicationDepth -= 1
+      if !isApplyingPosition {
+        lastObservedViewportTop = contentView.bounds.minY
+        publishCurrentViewportGeometry()
+      }
+    }
     body()
+  }
+
+  func layoutViewport(previousSize: CGSize, previousDistance: CGFloat) {
+    guard !isDetaching, !isAwaitingWarmProjection else { return }
+    let size = contentView.bounds.size
+    guard size.width > 0, size.height > 0 else { return }
+    guard !isPreparingInitialProjection else { return }
+    let widthChanged = abs(size.width - previousSize.width) > 0.5
+    let sizeChanged = widthChanged || abs(size.height - previousSize.height) > 0.5
+    let shouldPinResize =
+      sizeChanged && initialPositionApplied
+      && previousSize.width > 0 && previousSize.height > 0
+      && lockedRestoreDistance == nil && disclosureViewportAnchor == nil
+      && TranscriptViewportResizeAdjustment.resolve(
+        previousDistanceFromBottom: followsLatest ? 0 : previousDistance,
+        atBottomThreshold: Self.atBottomThreshold,
+        isUserInteracting: isHandlingUserInput || isLiveScrolling || isDraggingScrollerKnob
+      ) == .pinToBottom
+    lastViewportSize = size
+    if shouldPinResize, !followsLatest {
+      // Preserve a geometrically bottomed static viewport until the
+      // mounted rows have finished measuring at the new width as well.
+      bottomJumpGate.begin()
+    }
+    if widthChanged {
+      _ = activateMeasurementCacheIfNeeded()
+      refreshMountedRootViews()
+      rebuildDocumentGeometry()
+    } else {
+      applyPendingInitialPositionIfPossible()
+      updateMountedRows()
+    }
+    if shouldPinResize {
+      setDistanceFromBottom(0)
+      updateMountedRows()
+    }
+    startPendingSendAnimationIfPossible()
+    updateInitialPresentationReadiness()
+    resolveBottomJumpIfPossible()
+  }
+
+  var hasPendingViewportResize: Bool {
+    abs(contentView.bounds.width - lastViewportSize.width) > 0.5
+      || abs(contentView.bounds.height - lastViewportSize.height) > 0.5
+  }
+
+  func publishCurrentViewportGeometry() {
+    guard !isDetaching, !isAwaitingWarmProjection, initialPositionApplied,
+      contentView.bounds.height > 0
+    else { return }
+    let distance = currentDistanceFromBottom()
+    lastDistanceFromBottom = distance
+    if !hasPendingViewportResize {
+      lastViewportDistanceFromBottom = distance
+    }
+    publishBottomState(distance <= Self.atBottomThreshold)
   }
 
   func scrollToBottom() {
@@ -126,7 +190,16 @@ extension VirtualizedTranscriptScrollView {
     // AppKit can resize the clip view again after `viewWillMove(nil)`.
     // That teardown geometry is not a user position and must never replace
     // the valid snapshot captured immediately before detachment.
-    guard !isDetaching else { return }
+    guard !isDetaching, !isAwaitingWarmProjection else { return }
+    // AppKit posts bounds changes both during compensation and before our
+    // layout callback for a resize. Neither is user movement, even inside
+    // the recent-input window. Their owning transaction publishes the final
+    // geometry and reconciles mounted rows after compensation.
+    if hasPendingViewportResize {
+      needsLayout = true
+      return
+    }
+    guard !isApplyingPosition else { return }
     let previousDistance = lastDistanceFromBottom
     let distance = currentDistanceFromBottom()
     lastDistanceFromBottom = distance
@@ -158,7 +231,6 @@ extension VirtualizedTranscriptScrollView {
     }
 
     let atBottom = distance <= Self.atBottomThreshold
-    publishBottomState(atBottom)
     let isRecentUserMovement =
       isHandlingUserInput || isLiveScrolling
       || ProcessInfo.processInfo.systemUptime <= userInputDeadline
@@ -166,7 +238,7 @@ extension VirtualizedTranscriptScrollView {
     // window still catches AppKit bounds notifications delivered after the
     // wheel/key callback, while remount and remeasurement geometry cannot
     // silently turn follow off.
-    if !isApplyingPosition, isRecentUserMovement,
+    if !isApplyingPosition, isRecentUserMovement, !atBottom,
       distance > previousDistance + 0.5, followsLatest
     {
       followsLatest = false
@@ -175,6 +247,7 @@ extension VirtualizedTranscriptScrollView {
       followsLatest = true
       onFollowStateChange?(true)
     }
+    publishCurrentViewportGeometry()
 
     // Persist only while AppKit is dispatching an actual user scrolling
     // event. Bounds changes also fire for document resize, restoration,
@@ -305,7 +378,8 @@ extension VirtualizedTranscriptScrollView {
   }
 
   func emitViewportSnapshot() {
-    guard !isDetaching, initialPositionConfigured,
+    guard !isDetaching, !isAwaitingWarmProjection,
+      initialPositionConfigured, initialPositionApplied,
       contentView.bounds.height > 0
     else { return }
     let distance = currentDistanceFromBottom()

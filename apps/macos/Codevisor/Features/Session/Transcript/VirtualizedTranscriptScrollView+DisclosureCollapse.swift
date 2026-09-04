@@ -94,6 +94,9 @@ extension VirtualizedTranscriptScrollView {
       container: container,
       hosts: hosts
     )
+    pendingDisclosureContainerOrigins.append(
+      (container, container.frame.minY - contentView.bounds.minY)
+    )
 
     let mask = CAShapeLayer()
     mask.frame = container.bounds
@@ -169,21 +172,33 @@ extension VirtualizedTranscriptScrollView {
   func animatePendingDisclosureCollapse() {
     guard let startingOrigins = pendingDisclosureCollapseOrigins else { return }
     pendingDisclosureCollapseOrigins = nil
+    let containerOrigins = pendingDisclosureContainerOrigins
+    pendingDisclosureContainerOrigins.removeAll()
     guard !reduceMotion else { return }
 
     for (key, startingOriginY) in startingOrigins {
-      guard let host = mountedHosts[key], let layer = host.layer else { continue }
-      let translation = startingOriginY - host.frame.minY
-      guard abs(translation) > 0.5 else { continue }
-
-      layer.removeAnimation(forKey: Self.disclosureCollapseAnimationKey)
-      let movement = CABasicAnimation(keyPath: "transform.translation.y")
-      movement.fromValue = translation
-      movement.toValue = 0
-      movement.duration = Self.disclosureExitDuration
-      movement.timingFunction = disclosureTimingFunction
-      layer.add(movement, forKey: Self.disclosureCollapseAnimationKey)
+      guard let host = mountedHosts[key] else { continue }
+      animateDisclosureMovement(host, fromViewportY: startingOriginY)
     }
+    for (container, viewportY) in containerOrigins {
+      animateDisclosureMovement(container, fromViewportY: viewportY)
+    }
+  }
+
+  func animateDisclosureMovement(_ view: NSView, fromViewportY: CGFloat) {
+    guard let layer = view.layer else { return }
+    // Bottom compensation can already have kept a surviving answer at the
+    // same screen position. Animate only the remaining visible displacement,
+    // after both the document geometry and the viewport have been committed.
+    let translation = fromViewportY - (view.frame.minY - contentView.bounds.minY)
+    layer.removeAnimation(forKey: Self.disclosureCollapseAnimationKey)
+    guard abs(translation) > 0.5 else { return }
+    let movement = CABasicAnimation(keyPath: "transform.translation.y")
+    movement.fromValue = translation
+    movement.toValue = 0
+    movement.duration = Self.disclosureExitDuration
+    movement.timingFunction = disclosureTimingFunction
+    layer.add(movement, forKey: Self.disclosureCollapseAnimationKey)
   }
 
   func performAnchoredDisclosureChange(

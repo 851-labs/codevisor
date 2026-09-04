@@ -55,17 +55,6 @@ extension PreviewFile {
   var hasVisualPreview: Bool { kind == .image || isPDF || isVideo }
 }
 
-/// Aggregates unresolved, layout-affecting attachment geometry through a
-/// hosted transcript row. The native presentation gate consumes this before
-/// accepting the row's measured height as final.
-struct AttachmentGeometryReadinessPreferenceKey: PreferenceKey {
-  static var defaultValue = 0
-
-  static func reduce(value: inout Int, nextValue: () -> Int) {
-    value += nextValue()
-  }
-}
-
 // PDFBadge and VideoPlayBadge are shared with the iOS app via CodevisorUI.
 
 /// A small rounded thumbnail for an image, PDF, or video attachment in the
