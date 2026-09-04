@@ -17,7 +17,9 @@ extension ComposerBar {
   /// folder). Tapping opens the stepped machine → project → run-location
   /// sheet.
   var runTargetChips: some View {
-    let isPlaceholder = controller.project.isRunTargetPlaceholder
+    // A retained scratch-backed draft (first send failed, retry pending)
+    // still reads as "No Project".
+    let isPlaceholder = controller.project.isRunTargetPlaceholder || controller.project.isScratch
     return Button {
       showsRunTargetPicker = true
     } label: {

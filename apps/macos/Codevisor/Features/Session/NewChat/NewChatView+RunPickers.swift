@@ -123,15 +123,19 @@ extension NewChatView {
   /// remembered, so a machine with no projects yet is not a dead end.
   func projectPicker(_ controller: SessionController) -> some View {
     let selected = controller.project
+    // A draft retained after a failed first send keeps the scratch folder
+    // it was allocated (the retry reuses it); to the user that is still
+    // "No project", never the folder's generated name.
+    let isNoProject = selected.isRunTargetPlaceholder || selected.isScratch
     let groups = pickerGroups
-    let selectedGroup = selected.isRunTargetPlaceholder ? nil : groups.first { $0.contains(selected) }
-    let chipText = selected.isRunTargetPlaceholder ? "No project" : (selectedGroup?.name ?? selected.name)
+    let selectedGroup = isNoProject ? nil : groups.first { $0.contains(selected) }
+    let chipText = isNoProject ? "No project" : (selectedGroup?.name ?? selected.name)
     return Menu {
       // Toggle for the native selected checkmark; MenuSymbolIcon
       // because AppKit menus drop plain SF Symbol images.
       Toggle(
         isOn: Binding(
-          get: { selected.isRunTargetPlaceholder },
+          get: { isNoProject },
           set: { isOn in
             guard isOn else { return }
             selectNoProject(controller)
@@ -177,7 +181,7 @@ extension NewChatView {
     } label: {
       PickerChip(text: chipText) {
         Image(
-          systemName: selected.isRunTargetPlaceholder
+          systemName: isNoProject
             ? Self.noProjectSymbol : EntitySystemSymbol.project
         )
         .font(.system(size: 12))
@@ -302,6 +306,9 @@ extension NewChatView {
   /// Untie the draft from any project: its first send will run in a
   /// fresh single-use folder on the current machine.
   func selectNoProject(_ controller: SessionController) {
+    // Already there (a retained scratch-backed draft counts): nothing to
+    // re-point.
+    guard !controller.project.isRunTargetPlaceholder, !controller.project.isScratch else { return }
     let serverId = controller.project.serverId
     selectedProjectId = nil
     environment.composerDefaults.rememberNewWorkspaceProject(
