@@ -14,11 +14,19 @@ struct UpdateCenterView: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      Form {
-        updateChannelSection
-        componentSections
+      // Do not use Form here. On macOS it takes the same AppKit outline-
+      // coordinator path as the Settings sidebar List. Updater failures can
+      // add a tall, multiline output tail in one transaction, leaving both
+      // native scroll views with corrupt state until the app relaunches.
+      ScrollView {
+        VStack(alignment: .leading, spacing: 24) {
+          updateChannelSection
+          componentSections
+        }
+        .padding(20)
       }
-      .settingsPaneFormStyle(theme)
+      .scrollContentBackground(.hidden)
+      .scrollBounceBehavior(.basedOnSize)
       Divider().overlay(theme.isSystem ? Color.clear : theme.separator)
       footer
     }
@@ -26,7 +34,7 @@ struct UpdateCenterView: View {
   }
 
   private var updateChannelSection: some View {
-    Section {
+    updateSection(title: "Update Channel") {
       Toggle(isOn: alphaUpdatesEnabled) {
         VStack(alignment: .leading, spacing: 3) {
           Text("Alpha updates")
@@ -36,8 +44,6 @@ struct UpdateCenterView: View {
         }
       }
       .toggleStyle(.switch)
-    } header: {
-      Text("Update Channel")
     }
   }
 
@@ -54,7 +60,7 @@ struct UpdateCenterView: View {
   }
 
   private var emptySection: some View {
-    Section {
+    updateSection {
       VStack(spacing: 8) {
         Image(
           systemName: center.isRefreshing
@@ -74,11 +80,33 @@ struct UpdateCenterView: View {
   private func section(titled title: String, kind: UpdateComponent.Kind) -> some View {
     let rows = center.components.filter { $0.kind == kind }
     if !rows.isEmpty {
-      Section(title) {
-        ForEach(rows) { component in
-          row(for: component)
+      updateSection(title: title) {
+        VStack(spacing: 0) {
+          ForEach(Array(rows.enumerated()), id: \.element.id) { index, component in
+            if index > 0 {
+              Divider().overlay(theme.isSystem ? Color.clear : theme.separator)
+            }
+            row(for: component)
+              .padding(.vertical, 10)
+          }
         }
       }
+    }
+  }
+
+  private func updateSection<Content: View>(
+    title: String? = nil,
+    @ViewBuilder content: () -> Content
+  ) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      if let title {
+        Text(title)
+          .font(.headline)
+      }
+      content()
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.cardBackground, in: RoundedRectangle(cornerRadius: 10))
     }
   }
 
@@ -100,10 +128,19 @@ struct UpdateCenterView: View {
         .font(.callout)
         .foregroundStyle(.secondary)
         if case let .failed(message) = component.phase {
-          Text(message)
-            .font(.callout)
-            .foregroundStyle(theme.statusError)
-            .fixedSize(horizontal: false, vertical: true)
+          DisclosureGroup {
+            Text(message)
+              .font(.callout)
+              .foregroundStyle(theme.statusError)
+              .fixedSize(horizontal: false, vertical: true)
+              .textSelection(.enabled)
+              .padding(.top, 4)
+          } label: {
+            Text("Update failed")
+              .font(.callout)
+              .foregroundStyle(theme.statusError)
+          }
+          .tint(theme.statusError)
         } else if component.phase == .updating, let status = component.statusMessage {
           // What the machine is doing right now: draining chats,
           // downloading, restarting.

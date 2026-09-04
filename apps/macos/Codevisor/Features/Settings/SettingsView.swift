@@ -239,15 +239,28 @@ struct SettingsView: View {
 
   var body: some View {
     NavigationSplitView {
-      List(selection: sidebarSelection) {
-        ForEach(SettingsTab.allCases) { tab in
-          Label(tab.title, systemImage: tab.systemImage)
-            .badge(tab == .updates ? environment.updateCenter.availableCount : 0)
-            .tag(tab)
+      // A sidebar-styled List and the grouped Forms in the detail column both
+      // use SwiftUI's AppKit outline-coordinator path. A large live row update
+      // can corrupt their presentation state: the sidebar's rows disappear,
+      // and the detail scroller stops consuming wheel events. The app's main
+      // sidebar already avoids that path for the same reason. Keep this short,
+      // fixed navigation list on a plain ScrollView as well.
+      ScrollView {
+        VStack(spacing: 2) {
+          ForEach(SettingsTab.allCases) { tab in
+            SettingsSidebarRow(
+              tab: tab,
+              isSelected: router.selectedTab == tab,
+              badgeCount: tab == .updates ? environment.updateCenter.availableCount : 0
+            ) {
+              selectSidebarTab(tab)
+            }
+          }
         }
+        .padding(8)
       }
-      .listStyle(.sidebar)
-      .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
+      .scrollContentBackground(.hidden)
+      .scrollBounceBehavior(.basedOnSize)
       .themedSurface(.sidebar)
       .navigationSplitViewColumnWidth(min: 185, ideal: 205, max: 240)
       .themedToolbarBackground(theme, role: .sidebar)
@@ -286,15 +299,9 @@ struct SettingsView: View {
     .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
   }
 
-  private var sidebarSelection: Binding<SettingsTab?> {
-    Binding(
-      get: { router.selectedTab },
-      set: { tab in
-        guard let tab else { return }
-        if tab != router.selectedTab { router.panePath = [] }
-        router.selectedTab = tab
-      }
-    )
+  private func selectSidebarTab(_ tab: SettingsTab) {
+    if tab != router.selectedTab { router.panePath = [] }
+    router.selectedTab = tab
   }
 
   @ViewBuilder
@@ -331,6 +338,41 @@ struct SettingsView: View {
       MachinesSettingsView()
         .navigationTitle("Machines")
     }
+  }
+}
+
+private struct SettingsSidebarRow: View {
+  let tab: SettingsTab
+  let isSelected: Bool
+  let badgeCount: Int
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      HStack(spacing: 8) {
+        Image(systemName: tab.systemImage)
+          .frame(width: 18)
+          .foregroundStyle(.secondary)
+        Text(tab.title)
+          .lineLimit(1)
+        Spacer(minLength: 4)
+        if badgeCount > 0 {
+          Text(badgeCount, format: .number)
+            .font(.caption)
+            .monospacedDigit()
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(.quaternary, in: Capsule())
+        }
+      }
+      .padding(.horizontal, 8)
+      .padding(.vertical, 6)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .sidebarRowHover(isSelected: isSelected)
+    .accessibilityAddTraits(isSelected ? .isSelected : [])
   }
 }
 
