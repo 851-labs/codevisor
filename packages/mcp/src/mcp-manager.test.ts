@@ -2,7 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
 import { createServer } from "node:http"
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { automationSkillPath, NodeStreamableHttpTransport } from "./mcp-manager.js"
@@ -239,6 +239,15 @@ describe("MCP manager", () => {
         )
         const binaryContent = binaryCodeResult.content as Array<{ readonly type: string }>
         expect(JSON.stringify(binaryContent)).toContain("artifact_ref")
+        const resultText = (
+          binaryCodeResult.content as Array<{ type: string; text?: string }>
+        ).find((block) => block.type === "text")?.text
+        const artifact = (
+          JSON.parse(resultText!) as { result: { artifacts: Array<{ path: string }> } }
+        ).result.artifacts[0]!
+        expect(artifact.path.endsWith(".png")).toBe(true)
+        expect(readFileSync(artifact.path).toString()).toBe("gateway-binary-image")
+        expect(resultText).not.toContain("showToUser")
         expect(
           JSON.stringify(binaryContent.filter((block) => block.type === "text"))
         ).not.toContain(Buffer.from("gateway-binary-image").toString("base64"))

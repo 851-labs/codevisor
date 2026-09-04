@@ -153,16 +153,6 @@ enum TranscriptAssistantRowProjection {
     ) || projectedContent
   }
 
-  /// A turn that ended abnormally without a final answer has no response
-  /// rows — and it is the response projection that owns the epilogue slice
-  /// where `stopDetail` renders. Give the failure its own independently
-  /// measured row so it is never drawn into a neighbour's frame.
-  static func hasStopDetailWithoutAnswer(_ message: AssistantMessage) -> Bool {
-    !message.turn.isGenerating
-      && message.turn.finalText == nil
-      && message.turn.stopDetail != nil
-  }
-
   static func appendStopDetailEpilogueIfNeeded(
     _ message: AssistantMessage,
     waitingOnBackgroundTask: String?,
@@ -188,7 +178,12 @@ enum TranscriptAssistantRowProjection {
     lifecycle: TranscriptBlockLifecycle,
     to rows: inout [TranscriptPresentationRow]
   ) -> Bool {
-    guard case let .text(entryID, markdown)? = message.turn.finalText else { return false }
+    if appendImageGenerationResponse(
+      message, waitingOnBackgroundTask: waitingOnBackgroundTask, lifecycle: lifecycle, to: &rows)
+    {
+      return true
+    }
+    guard let (entryID, markdown) = responseText(message.turn) else { return false }
 
     let segments = assistantMarkdownSegments(
       markdown,

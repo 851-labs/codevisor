@@ -73,7 +73,7 @@ struct AssistantTurnView: View {
     case .result: [.turnImplementation(turnID)]
     case .completePrelude: [.turn(turnID), .turnImplementation(turnID)]
     case .resultPrelude: [.turnImplementation(turnID)]
-    case .activity, .epilogue: []
+    case .response, .activity, .epilogue: []
     }
   }
 
@@ -172,6 +172,12 @@ struct AssistantTurnView: View {
       // provider retro-tags it (Claude preamble before a tool call) or a
       // newer text span starts — codex tags messages up front, so its
       // candidate never demotes.
+      if presentation.showsResponse {
+        ForEach(turn.generatedImageActivity) { call in
+          ImageGenerationActivityView(call: call)
+        }
+      }
+
       if presentation.showsResponse,
         let final = finalText, case let .text(entryID, markdown) = final
       {

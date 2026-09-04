@@ -10,6 +10,7 @@ public enum AssistantTurnPresentation: Equatable, Sendable {
   case complete
   case planning
   case result
+  case response
   case completePrelude
   case resultPrelude
   case activity
@@ -18,18 +19,18 @@ public enum AssistantTurnPresentation: Equatable, Sendable {
   public var showsPlanning: Bool {
     switch self {
     case .complete, .planning, .completePrelude: true
-    case .result, .resultPrelude, .activity, .epilogue: false
+    case .result, .response, .resultPrelude, .activity, .epilogue: false
     }
   }
   public var showsPlanDocument: Bool { self == .complete }
   public var showsResultWork: Bool {
     switch self {
     case .complete, .result, .completePrelude, .resultPrelude: true
-    case .planning, .activity, .epilogue: false
+    case .planning, .response, .activity, .epilogue: false
     }
   }
   public var showsActivity: Bool { showsResultWork || self == .activity }
-  public var showsResponse: Bool { self == .complete || self == .result }
+  public var showsResponse: Bool { self == .complete || self == .result || self == .response }
   public var showsEpilogue: Bool { showsResponse || self == .epilogue }
 
   /// The slice a projected assistant chrome row renders.

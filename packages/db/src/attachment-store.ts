@@ -2,7 +2,8 @@ import type { DataUpgradeProgress, FileMetadata } from "@codevisor/api"
 import { Effect } from "effect"
 import { createHash, randomUUID } from "node:crypto"
 import { createReadStream } from "node:fs"
-import { chmod, mkdir, open, readFile, rename, rm, stat } from "node:fs/promises"
+import { chmod, copyFile, mkdir, open, readFile, rename, rm, stat } from "node:fs/promises"
+import { constants } from "node:fs"
 import { dirname, join } from "node:path"
 import type { CodevisorDatabaseService } from "./index.js"
 
@@ -31,6 +32,7 @@ export interface AttachmentStore {
   readonly putStream: (source: AsyncIterable<Uint8Array>) => Promise<StoredAttachmentObject>
   readonly read: (metadata: FileMetadata) => Promise<Buffer>
   readonly verify: (metadata: Pick<FileMetadata, "sha256" | "sizeBytes">) => Promise<boolean>
+  readonly materialize: (metadata: FileMetadata) => Promise<string>
 }
 
 const hashFile = async (path: string): Promise<string> =>
@@ -195,7 +197,23 @@ export const makeAttachmentStore = (dataDir: string): AttachmentStore => {
     return data
   }
 
-  return { objectPath, put, putStream, read, root, verify }
+  // A named copy gives tools a usable extension without exposing the object
+  // store to edits made through the model-facing path.
+  const materialize = async (metadata: FileMetadata): Promise<string> => {
+    const safe = (value: string): string =>
+      value.replace(/[^a-zA-Z0-9._-]/g, "_").replace(/^\.+/, "_") || "file"
+    const directory = join(root, "files", safe(metadata.id))
+    const path = join(directory, safe(metadata.name))
+    await mkdir(directory, { recursive: true })
+    try {
+      await copyFile(objectPath(metadata.sha256), path, constants.COPYFILE_EXCL)
+    } catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code !== "EEXIST") throw cause
+    }
+    return path
+  }
+
+  return { objectPath, put, putStream, read, root, verify, materialize }
 }
 
 export const migrateAttachmentBlobs = async (

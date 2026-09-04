@@ -3,6 +3,17 @@ import Testing
 
 @Suite("Assistant Markdown attachments")
 struct AssistantMarkdownAttachmentsTests {
+  @Test("Preserved View links stay clickable without adding a duplicate preview")
+  func namedAttachmentLink() {
+    let target = "https://attachments.codevisor.invalid/file-1?name=screen%20recording.mp4"
+    let markdown = "[View recording](\(target))"
+    #expect(assistantMarkdownSegments(markdown, attachments: [recording]) == [.markdown(markdown)])
+    let file = markdownAttachmentFile(target)
+    #expect(file?.source == .attachment(fileId: "file-1"))
+    #expect(file?.name == "screen recording.mp4")
+    #expect(file?.mimeType == "video/mp4")
+    #expect(markdownAttachmentFile("https://example.com/file-1?name=recording.mp4") == nil)
+  }
   private let recording = Attachment(
     fileId: "file-1",
     name: "fixed.mov",

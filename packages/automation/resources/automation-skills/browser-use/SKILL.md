@@ -55,14 +55,14 @@ Prefer `ensure` over `create`: `create` always makes a brand-new group, so calli
 
 ## Send a screenshot or file to the user
 
-`tab.screenshot()` (and any tool that returns binary content) hands your script an `artifacts` list instead of bytes. Each persisted artifact carries a `url`; embed that URL in your reply to show it to the user. Never invent a path or write `(attachment)`.
+`tab.screenshot()` (and any tool that returns binary content) hands your script an `artifacts` list instead of bytes. Each persisted artifact carries a local `path`.
 
 ```js
 const shot = await tab.screenshot()
-return { imageUrl: shot.artifacts[0].url }
+return { path: shot.artifacts[0].path }
 ```
 
-Then reply with `![House drawn in Excalidraw](https://attachments.codevisor.invalid/<id>)` using the returned URL verbatim. Artifacts you do not embed stay private to you.
+Use the `attaching-files` skill when sending the screenshot to the user.
 
 ## Operate the selected tab
 

@@ -55,6 +55,7 @@ public enum TranscriptReducer {
       } else {
         turn.isThinking = false
         upsertTool(call, entries: &turn.entries)
+        turn.receiveGeneratedImage(call)
       }
       // An agent call gets its bucket eagerly so the UI can render the
       // nested section before any child output arrives.
@@ -314,7 +315,9 @@ public enum TranscriptReducer {
       case let .tool(existing) = turn.entries[index]
     {
       turn.isThinking = false
-      turn.entries[index] = .tool(existing.applying(update))
+      let call = existing.applying(update)
+      turn.entries[index] = .tool(call)
+      turn.receiveGeneratedImage(call)
       cascadeSettleIfParent(update, in: &turn)
       return
     }
@@ -335,6 +338,7 @@ public enum TranscriptReducer {
     } else {
       turn.isThinking = false
       turn.entries.append(.tool(update.asToolCall()))
+      turn.receiveGeneratedImage(update.asToolCall())
     }
   }
 

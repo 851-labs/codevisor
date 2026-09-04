@@ -65,14 +65,7 @@ public final class ComputerUseBridge: @unchecked Sendable {
       withIntermediateDirectories: true,
       attributes: [.posixPermissions: 0o700]
     )
-    // sockaddr_un paths are short (104 bytes on macOS), while development
-    // data directories are often nested deeply in a worktree. Derive a
-    // stable, user-scoped socket in the system temporary directory and
-    // keep the durable authentication token beside the server database.
-    let socketPath = FileManager.default.temporaryDirectory
-      .appendingPathComponent(
-        "codevisor-cu-\(getuid())-\(Self.stablePathHash(supportDirectory.path)).sock"
-      ).path
+    let socketPath = Self.socketPath(supportDirectoryPath: supportDirectory.path)
     let tokenURL = supportDirectory.appendingPathComponent("computer-use-token")
     let token: String
     if let existing = try? String(contentsOf: tokenURL, encoding: .utf8)
@@ -159,13 +152,17 @@ public final class ComputerUseBridge: @unchecked Sendable {
     }
   }
 
-  private static func stablePathHash(_ path: String) -> String {
+  // Keep this in sync with macComputerUseSocketPath in the server. Foundation
+  // and Node can resolve different temporary directories, and a worktree's
+  // TMPDIR can exceed macOS's 103-byte Unix socket path limit. The UID and data
+  // directory hash isolate instances; the socket and auth token remain 0600.
+  static func socketPath(supportDirectoryPath: String, userID: uid_t = getuid()) -> String {
     var hash: UInt32 = 2_166_136_261
-    for byte in path.utf8 {
+    for byte in supportDirectoryPath.utf8 {
       hash ^= UInt32(byte)
       hash = hash &* 16_777_619
     }
-    return String(hash, radix: 16)
+    return "/tmp/codevisor-cu-\(userID)-\(String(hash, radix: 16)).sock"
   }
 
   private func serve(_ descriptor: Int32, token: String) {

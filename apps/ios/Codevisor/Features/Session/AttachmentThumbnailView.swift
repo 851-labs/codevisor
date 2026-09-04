@@ -230,6 +230,7 @@ private struct AttachmentThumbnailLoadID: Hashable {
 /// The workspace file a Markdown link points at, or nil for web links and
 /// fragments, which the platform opens instead.
 func markdownLinkPreviewFile(_ url: URL) -> PreviewFile? {
+  if let file = markdownAttachmentFile(url.relativeString) { return file }
   guard let path = markdownLocalFilePath(url.relativeString) else { return nil }
   return PreviewFile(serverPath: path)
 }

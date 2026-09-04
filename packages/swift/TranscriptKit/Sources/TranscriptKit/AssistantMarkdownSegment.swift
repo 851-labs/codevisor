@@ -11,6 +11,21 @@ private let assistantLinkExpression = try! NSRegularExpression(
 
 private let attachmentOrigin = "https://attachments.codevisor.invalid/"
 
+/// Named attachment links retain ordinary link presentation while opening the
+/// immutable file through the same native preview as a local path.
+public func markdownAttachmentFile(_ target: String) -> PreviewFile? {
+  guard target.hasPrefix(attachmentOrigin),
+    let components = URLComponents(string: target),
+    let name = components.queryItems?.first(where: { $0.name == "name" })?.value,
+    !name.isEmpty
+  else { return nil }
+  let fileID = String(components.path.dropFirst())
+  guard !fileID.isEmpty, !fileID.contains("/") else { return nil }
+  let namedFile = PreviewFile(serverPath: name)
+  return PreviewFile(
+    source: .attachment(fileId: fileID), name: namedFile.name, mimeType: namedFile.mimeType, kind: namedFile.kind)
+}
+
 private struct MarkdownFence {
   public let character: Character
   public let length: Int
@@ -295,10 +310,11 @@ public func assistantMarkdownSegments(
     let isImage = markdown[matchRange.lowerBound] == "!"
     let file: PreviewFile
     if target.hasPrefix(attachmentOrigin),
-      let attachment = byID[String(target.dropFirst(attachmentOrigin.count))]
+      let attachment = byID[String(target.dropFirst(attachmentOrigin.count).prefix(while: { $0 != "?" }))]
     {
       file = PreviewFile(attachment: attachment)
       referenced.insert(attachment.fileId)
+      if !isImage, markdownAttachmentFile(target) != nil { continue }
     } else if includeServerPaths, isImage, let path = markdownLocalFilePath(target) {
       file = PreviewFile(serverPath: path)
     } else {

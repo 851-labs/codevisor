@@ -2,7 +2,6 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { randomUUID } from "node:crypto"
 import { existsSync, readFileSync } from "node:fs"
 import { createConnection, type Socket } from "node:net"
-import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process"
 import type { AutomationToolProvider } from "./automation-provider.js"
@@ -94,6 +93,14 @@ const stablePathHash = (value: string): string => {
   return hash.toString(16)
 }
 
+// Keep this in sync with ComputerUseBridge.socketPath in the native app.
+// Foundation and Node can resolve different temporary directories, and a
+// worktree's TMPDIR can exceed macOS's 103-byte Unix socket path limit.
+export const macComputerUseSocketPath = (
+  dataDir: string,
+  userId = process.getuid?.() ?? 0
+): string => `/tmp/codevisor-cu-${userId}-${stablePathHash(dataDir)}.sock`
+
 const macBridgeConfiguration = (
   dataDir: string
 ): { readonly socketPath: string; readonly token: string } | undefined => {
@@ -102,10 +109,7 @@ const macBridgeConfiguration = (
   if (envSocketPath !== undefined && envToken !== undefined) {
     return { socketPath: envSocketPath, token: envToken }
   }
-  const socketPath = join(
-    tmpdir(),
-    `codevisor-cu-${process.getuid?.() ?? 0}-${stablePathHash(dataDir)}.sock`
-  )
+  const socketPath = macComputerUseSocketPath(dataDir)
   const tokenPath = join(dataDir, "computer-use-token")
   if (!existsSync(socketPath) || !existsSync(tokenPath)) return undefined
   try {

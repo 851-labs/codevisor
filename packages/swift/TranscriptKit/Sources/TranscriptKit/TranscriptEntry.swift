@@ -56,7 +56,8 @@ public struct RetryStatus: Sendable, Equatable {
 /// The streaming state of one assistant response.
 public struct AssistantTurn: Sendable, Equatable {
   public var entries: [TranscriptEntry]
-  /// Immutable files delivered with the assistant's terminal response.
+  /// Immutable files delivered by the assistant, including generated images
+  /// that arrive while the turn is still running.
   public var attachments: [Attachment]
   public var isGenerating: Bool
   public var isThinking: Bool
@@ -193,9 +194,11 @@ extension AssistantTurn {
   /// Everything except the final answer — intermediate text and all tool
   /// calls — collapsed into the "Worked for…" disclosure.
   public var workedEntries: [TranscriptEntry] {
-    guard let finalTextIndex else { return entries }
+    let finalTextIndex = self.finalTextIndex
     return entries.enumerated().compactMap { offset, entry in
-      offset == finalTextIndex ? nil : entry
+      if offset == finalTextIndex { return nil }
+      if case let .tool(call) = entry, call.kind == .imageGeneration { return nil }
+      return entry
     }
   }
 

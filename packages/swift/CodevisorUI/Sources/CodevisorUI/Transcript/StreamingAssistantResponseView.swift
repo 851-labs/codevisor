@@ -116,7 +116,9 @@ private struct StreamingAssistantResponseContent<AttachmentContent: View>: View 
       // provider completion never retroactively splits one rendered
       // Markdown surface around an image preview.
       includeServerPaths: true,
-      includeUnreferencedAttachments: presentationComplete
+      // These files were explicitly delivered by the server. Generated images
+      // must be visible even if the model never sends a final text response.
+      includeUnreferencedAttachments: true
     )
     let mount = animationMount.resolve(
       streamID: responseStreamID,

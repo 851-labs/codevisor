@@ -29,6 +29,33 @@ afterEach(async () => {
 })
 
 describe("attachment object storage", () => {
+  it("materializes named files without exposing immutable objects to edits", async () => {
+    const store = makeAttachmentStore(temporaryDirectory())
+    const stored = await store.put(Buffer.from("original"))
+    const file = {
+      id: "file-1",
+      name: "recording.mp4",
+      mimeType: "video/mp4",
+      sizeBytes: stored.sizeBytes,
+      sha256: stored.sha256,
+      kind: "file" as const,
+      createdAt: new Date().toISOString()
+    }
+    const path = await store.materialize(file)
+    expect(path.endsWith("/file-1/recording.mp4")).toBe(true)
+    expect(await store.materialize(file)).toBe(path)
+    writeFileSync(path, "changed")
+    expect((await store.read(file)).toString()).toBe("original")
+
+    const unnamed = await store.materialize({ ...file, id: "", name: "" })
+    expect(unnamed).toBe(join(store.root, "files", "file", "file"))
+    const traversal = await store.materialize({ ...file, id: "../outside", name: "../image.png" })
+    expect(traversal).toBe(join(store.root, "files", "__outside", "__image.png"))
+    expect(readFileSync(traversal).toString()).toBe("original")
+    await expect(
+      store.materialize({ ...file, id: "missing", sha256: "0".repeat(64) })
+    ).rejects.toMatchObject({ code: "ENOENT" })
+  })
   it("upgrades legacy file rows without changing their bytes", async () => {
     const directory = temporaryDirectory()
     const filename = join(directory, "codevisor.sqlite")

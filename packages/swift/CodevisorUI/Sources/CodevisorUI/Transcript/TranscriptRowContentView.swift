@@ -102,7 +102,7 @@ public struct TranscriptRowContentView: View {
     case .planHeader:
       PlanDocumentHeaderView()
     case let .assistantResult(message, waitingOnBackgroundTask):
-      leaves.assistantTurn(message, isWaitingOnUser, waitingOnBackgroundTask, .result)
+      leaves.assistantTurn(message, isWaitingOnUser, waitingOnBackgroundTask, .response)
     case let .assistantWorkedHeader(header):
       TranscriptSettledWorkedHeaderRow(header: header)
     case let .activeWorkedHeader(header):

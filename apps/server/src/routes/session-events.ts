@@ -8,6 +8,7 @@ import {
   type EventFanout
 } from "../server-context.js"
 import { promoteAssistantArtifacts } from "./assistant-artifacts.js"
+import { persistGeneratedImage } from "./generated-images.js"
 
 /// The standing per-session sink: every runtime event — in-turn or
 /// agent-initiated — is persisted and fanned out here. User echoes are
@@ -39,6 +40,11 @@ export const sessionEventSink =
       })()
     }
     const payload = objectPayload(event.payload)
+    if (event.kind === "session.output" && payload.kind === "image_generation") {
+      return persistGeneratedImage(services, event).then((persisted) =>
+        materializeRuntimeEvent(services.db, fanout, serverId, persisted, sessionId)
+      )
+    }
     if (event.kind === "session.updated" && payload.turnState === "ended") {
       return (async () => {
         // Attachments the reply embeds must be durable before the turn closes,

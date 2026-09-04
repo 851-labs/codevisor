@@ -55,7 +55,7 @@ struct AssistantTurnBody: View {
     case .result: [.turnImplementation(turnId)]
     case .completePrelude: [.turn(turnId), .turnImplementation(turnId)]
     case .resultPrelude: [.turnImplementation(turnId)]
-    case .activity, .epilogue: []
+    case .response, .activity, .epilogue: []
     }
   }
 
@@ -125,6 +125,9 @@ struct AssistantTurnBody: View {
         }
       }
       if presentation.showsResponse {
+        ForEach(turn.generatedImageActivity) { call in
+          ImageGenerationActivityView(call: call)
+        }
         if case let .text(entryID, markdown) = finalText {
           assistantResponse(
             entryID: entryID,

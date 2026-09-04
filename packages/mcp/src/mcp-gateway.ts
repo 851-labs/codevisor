@@ -92,6 +92,10 @@ const ARTIFACT_EXTENSIONS: Readonly<Record<string, string>> = {
   "image/gif": "gif",
   "image/webp": "webp",
   "image/svg+xml": "svg",
+  "video/mp4": "mp4",
+  "video/quicktime": "mov",
+  "video/webm": "webm",
+  "audio/mp4": "m4a",
   "application/pdf": "pdf",
   "audio/wav": "wav",
   "audio/mpeg": "mp3",
@@ -247,6 +251,7 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
       }
       await run(config.db.createDiskFile(metadata))
       return {
+        path: await attachmentStore.materialize(metadata),
         fileId: metadata.id,
         name: metadata.name,
         mimeType: metadata.mimeType,

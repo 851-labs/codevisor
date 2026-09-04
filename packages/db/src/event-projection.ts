@@ -16,7 +16,7 @@ import {
   parseJsonRecord,
   sessionPlanFromPayload
 } from "./event-payloads.js"
-import { serializeAttachments } from "./row-mappers.js"
+import { parseAttachments, serializeAttachments } from "./row-mappers.js"
 import type { SessionEventRow } from "./rows.js"
 
 export const projectChatEvent = (
@@ -124,6 +124,21 @@ export const projectChatEvent = (
             upsertChatPart(sqlite, itemId, "plan", payload.markdown)
           }
           if (toolId !== undefined) setChatRoute(sqlite, sessionId, `tool:${toolId}`, itemId)
+          const image =
+            payload.kind === "image_generation" && payload.status === "completed"
+              ? jsonRecord(jsonRecord(payload.rawOutput)?.attachment)
+              : undefined
+          if (image !== undefined && typeof image.fileId === "string" && parent === undefined) {
+            const current = sqlite
+              .prepare("select attachments from chat_items where id = ?")
+              .get(itemId) as { attachments: string | null }
+            const attachments = [...(parseAttachments(current.attachments) ?? [])]
+            if (!attachments.some((file) => file.fileId === image.fileId))
+              attachments.push(image as unknown as AttachmentRef)
+            sqlite
+              .prepare("update chat_items set attachments = ? where id = ?")
+              .run(serializeAttachments(attachments), itemId)
+          }
         }
       }
     }

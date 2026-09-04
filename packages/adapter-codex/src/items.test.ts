@@ -2,6 +2,58 @@ import { describe, expect, it } from "vitest"
 import { run, setup, UNIFIED_DIFF } from "./test-support.js"
 
 describe("CodexProvider", () => {
+  it("maps image generation without relying on assistant Markdown", async () => {
+    const { client, events } = await setup()
+    client.emit("item/started", {
+      threadId: "thread-new",
+      item: { id: "image-1", type: "imageGeneration", status: "in_progress" }
+    })
+    client.emit("item/completed", {
+      threadId: "thread-new",
+      item: {
+        id: "image-1",
+        type: "imageGeneration",
+        status: "completed",
+        result: "aW1hZ2U=",
+        savedPath: "/tmp/generated.png"
+      }
+    })
+    client.emit("item/completed", {
+      threadId: "thread-new",
+      item: {
+        id: "image-2",
+        type: "imageGeneration",
+        status: "failed",
+        failure: { type: "usageLimitExceeded", limitId: "image" }
+      }
+    })
+    const payloads = events.map((event) => event.payload)
+    expect(payloads).toContainEqual(
+      expect.objectContaining({
+        sessionUpdate: "tool_call",
+        kind: "image_generation",
+        status: "in_progress",
+        toolCallId: "image-1"
+      })
+    )
+    expect(payloads).toContainEqual(
+      expect.objectContaining({
+        sessionUpdate: "tool_call_update",
+        kind: "image_generation",
+        status: "completed",
+        generatedImage: { result: "aW1hZ2U=", savedPath: "/tmp/generated.png" }
+      })
+    )
+    expect(payloads).toContainEqual(
+      expect.objectContaining({
+        kind: "image_generation",
+        status: "failed",
+        rawOutput: expect.objectContaining({
+          failure: { type: "usageLimitExceeded", limitId: "image" }
+        })
+      })
+    )
+  })
   it("preserves MCP arguments and results for semantic tool-call presentation", async () => {
     const { client, events } = await setup()
     client.emit("item/started", {

@@ -68,7 +68,11 @@ extension AssistantTurn {
   /// Entries in `range`, minus the final-answer span (it renders separately).
   private func workedSlice(_ range: Range<Int>) -> [TranscriptEntry] {
     let finalIndex = finalTextIndex
-    return range.compactMap { index in index == finalIndex ? nil : entries[index] }
+    return range.compactMap { index in
+      if index == finalIndex { return nil }
+      if case let .tool(call) = entries[index], call.kind == .imageGeneration { return nil }
+      return entries[index]
+    }
   }
 
   /// Every entry grouped in strict arrival order, including trailing text.

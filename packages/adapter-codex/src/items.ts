@@ -34,6 +34,39 @@ export const emitItemLifecycle = (
   })
 
   switch (type) {
+    case "imageGeneration": {
+      const failed = item.status === "failed"
+      void session.emit(
+        event({
+          sessionUpdate: started ? "tool_call" : "tool_call_update",
+          kind: "image_generation",
+          toolCallId: itemId,
+          status: started ? "in_progress" : failed ? "failed" : "completed",
+          title: started
+            ? "Generating image"
+            : failed
+              ? "Image generation failed"
+              : "Generated image",
+          ...(!started && !failed
+            ? {
+                generatedImage: {
+                  ...(typeof item.result === "string" ? { result: item.result } : {}),
+                  ...(typeof item.savedPath === "string" ? { savedPath: item.savedPath } : {})
+                }
+              }
+            : {}),
+          ...(failed
+            ? {
+                rawOutput: {
+                  message: "Image generation failed. Try again.",
+                  ...(item.failure == null ? {} : { failure: item.failure })
+                }
+              }
+            : {})
+        })
+      )
+      break
+    }
     case "commandExecution": {
       const command = typeof item.command === "string" ? item.command : ""
       if (started) {

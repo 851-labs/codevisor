@@ -15,8 +15,10 @@ enum TranscriptMarkdownLinkOpener {
     quickLook: QuickLookController?,
     attachmentImages: AttachmentImageStore?
   ) -> Bool {
-    guard let path = markdownLocalFilePath(url.relativeString) else { return false }
-    let file = PreviewFile(serverPath: path)
+    guard
+      let file = markdownAttachmentFile(url.relativeString)
+        ?? markdownLocalFilePath(url.relativeString).map({ PreviewFile(serverPath: $0) })
+    else { return false }
     quickLook?.present(
       .remote(source: file.source, name: file.name, mimeType: file.mimeType),
       attachmentStore: attachmentImages

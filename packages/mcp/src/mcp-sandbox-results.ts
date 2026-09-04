@@ -4,12 +4,6 @@ import { randomUUID } from "node:crypto"
 
 export type McpContent = CallToolResult["content"][number]
 
-/// Attachment URLs the transcript renderers resolve to server files. The
-/// origin is deliberately unroutable: it is an identifier, not a location.
-export const ATTACHMENT_URL_ORIGIN = "https://attachments.codevisor.invalid/"
-
-export const attachmentUrl = (fileId: string): string => `${ATTACHMENT_URL_ORIGIN}${fileId}`
-
 export interface SandboxArtifactInput {
   readonly data: Buffer
   readonly mimeType: string
@@ -20,7 +14,9 @@ export interface SandboxArtifactInput {
 /// Persists emitted bytes as an immutable server file so the agent can hand
 /// the user a real attachment instead of an unreachable in-memory blob.
 export interface SandboxArtifactPersistence {
-  readonly persist: (artifact: SandboxArtifactInput) => Promise<AttachmentRef | undefined>
+  readonly persist: (
+    artifact: SandboxArtifactInput
+  ) => Promise<(AttachmentRef & { readonly path: string }) | undefined>
 }
 
 export interface SandboxArtifactCollector {
@@ -29,9 +25,6 @@ export interface SandboxArtifactCollector {
   readonly maxBytes: number
   readonly persistence?: SandboxArtifactPersistence
 }
-
-export const SHOW_TO_USER_HINT =
-  "To show an artifact to the user, embed its url in your reply as ![label](url). Do not invent other paths."
 
 const base64Bytes = (value: string): number => Math.floor((value.length * 3) / 4)
 
@@ -49,7 +42,7 @@ const persistArtifact = async (
   encoded: string,
   mediaType: string,
   toolPath: string
-): Promise<AttachmentRef | undefined> => {
+): Promise<(AttachmentRef & { readonly path: string }) | undefined> => {
   if (collector.persistence === undefined) return undefined
   try {
     return await collector.persistence.persist({
@@ -102,7 +95,7 @@ const sandboxToolResult = async (
             type: "artifact_ref",
             artifactId: stored.fileId,
             fileId: stored.fileId,
-            url: attachmentUrl(stored.fileId),
+            path: stored.path,
             name: stored.name,
             mediaType,
             sizeBytes: stored.sizeBytes,
@@ -133,7 +126,6 @@ export const sandboxSuccessfulToolResult = async (
     readonly content?: ReadonlyArray<unknown>
     readonly structuredContent?: unknown
   }
-  if (transformed.structuredContent !== undefined) return transformed.structuredContent
   if (!Array.isArray(transformed.content)) return transformed
 
   const textBlocks = transformed.content.flatMap((block) =>
@@ -147,25 +139,23 @@ export const sandboxSuccessfulToolResult = async (
       block !== null &&
       (block as { type?: unknown }).type === "artifact_ref"
   )
-  const rawValue: unknown = (() => {
-    if (textBlocks.length === 0) return undefined
-    const text = textBlocks.length === 1 ? textBlocks[0]! : textBlocks
-    if (typeof text !== "string") return text
-    try {
-      return JSON.parse(text) as unknown
-    } catch {
-      return text
-    }
-  })()
+  const rawValue: unknown =
+    transformed.structuredContent ??
+    (() => {
+      if (textBlocks.length === 0) return undefined
+      const text = textBlocks.length === 1 ? textBlocks[0]! : textBlocks
+      if (typeof text !== "string") return text
+      try {
+        return JSON.parse(text) as unknown
+      } catch {
+        return text
+      }
+    })()
   if (artifacts.length === 0) return rawValue
-  const persisted = artifacts.some(
-    (artifact) => typeof (artifact as { url?: unknown }).url === "string"
-  )
-  const hint = persisted ? { showToUser: SHOW_TO_USER_HINT } : {}
   if (typeof rawValue === "object" && rawValue !== null && !Array.isArray(rawValue)) {
-    return { ...rawValue, artifacts, ...hint }
+    return { ...rawValue, artifacts }
   }
-  return { value: rawValue, artifacts, ...hint }
+  return { value: rawValue, artifacts }
 }
 
 export const sandboxOutputContent = (

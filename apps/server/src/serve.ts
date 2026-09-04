@@ -44,7 +44,7 @@ import {
   managedPluginSkill,
   resolvePluginRegistryUrl
 } from "@codevisor/plugins"
-import { makeSkillsManager } from "@codevisor/skills"
+import { makeSkillsManager, managedAttachmentSkill } from "@codevisor/skills"
 import { migrateLegacyLayout, migrateTmpDataDir } from "./infra/legacy-layout.js"
 import { makeBlobStore } from "@codevisor/sync"
 import {
@@ -334,15 +334,16 @@ export const runServe = (
     // so the read-through cache over the hosted index follows the manager's
     // availability. Env overrides (or the dev cloud) rewire the base URL.
     const pluginRegistry = plugins === undefined ? undefined : pluginRegistryClient
-    // Keep the plugin-authoring skill in every harness's skills directory in
-    // step with feature availability, so agents can author plugins without
-    // rediscovering the contract. Fire-and-forget: skill sync must never
-    // block or fail server boot.
+    // File delivery is available in every harness independently of optional
+    // tools. Plugin authoring follows feature availability. Skill sync must
+    // never block or fail server boot.
     if (skills !== undefined) {
       void Promise.resolve()
-        .then(() => skills.syncManaged([managedPluginSkill(plugins !== undefined)]))
+        .then(() =>
+          skills.syncManaged([managedAttachmentSkill(), managedPluginSkill(plugins !== undefined)])
+        )
         .catch((cause: unknown) =>
-          console.log(`Plugin authoring skill sync unavailable: ${failureMessage(cause)}`)
+          console.log(`Managed skill sync unavailable: ${failureMessage(cause)}`)
         )
     }
     const mcp = initializeOptionalServerFeature("MCP", () =>

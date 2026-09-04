@@ -51,7 +51,7 @@ const filesystemMimeTypes: Readonly<Record<string, string>> = {
   ".zip": "application/zip"
 }
 
-const filesystemMimeType = (path: string): string =>
+export const filesystemMimeType = (path: string): string =>
   filesystemMimeTypes[extname(path).toLowerCase()] ?? "application/octet-stream"
 
 /// Expands "~" / "~/…" against the server's home and requires an absolute

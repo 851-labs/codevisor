@@ -25,6 +25,7 @@ public enum ToolKind: String, Sendable, Codable, Equatable, CaseIterable {
   /// extension so clients can phrase these as searches ("Searched the
   /// web") instead of generic fetches.
   case webSearch = "web_search"
+  case imageGeneration = "image_generation"
   /// A subagent spawn (e.g. Claude's Task tool). Not part of the ACP kind
   /// vocabulary — Codevisor's own extension so clients can render a nested
   /// transcript section for the call.

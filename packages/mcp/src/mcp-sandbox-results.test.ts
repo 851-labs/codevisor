@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest"
 import {
-  SHOW_TO_USER_HINT,
-  attachmentUrl,
   sandboxSuccessfulToolResult,
   type SandboxArtifactCollector
 } from "./mcp-sandbox-results.js"
@@ -16,7 +14,7 @@ const screenshotResult = () => ({
 })
 
 describe("sandboxSuccessfulToolResult", () => {
-  it("persists emitted artifacts and hands the sandbox a url the agent can embed", async () => {
+  it("persists emitted artifacts and hands the sandbox a local file path", async () => {
     const persisted: Array<{ mimeType: string; toolPath: string; bytes: number }> = []
     const collector: SandboxArtifactCollector = {
       content: [],
@@ -27,6 +25,7 @@ describe("sandboxSuccessfulToolResult", () => {
           persisted.push({ mimeType, toolPath, bytes: data.byteLength })
           return {
             fileId: "file-1",
+            path: "/files/browser-screenshot.png",
             name: "browser-screenshot.png",
             mimeType,
             sizeBytes: data.byteLength,
@@ -50,14 +49,13 @@ describe("sandboxSuccessfulToolResult", () => {
           type: "artifact_ref",
           artifactId: "file-1",
           fileId: "file-1",
-          url: attachmentUrl("file-1"),
+          path: "/files/browser-screenshot.png",
           name: "browser-screenshot.png",
           mediaType: "image/png",
           sizeBytes: "fake-png-bytes".length,
           emitted: true
         }
-      ],
-      showToUser: SHOW_TO_USER_HINT
+      ]
     })
     // The bytes still reach the model as content.
     expect(collector.content).toEqual([{ type: "image", data: png, mimeType: "image/png" }])
@@ -84,7 +82,7 @@ describe("sandboxSuccessfulToolResult", () => {
       expect(result.artifacts).toEqual([
         expect.objectContaining({ type: "artifact_ref", mediaType: "image/png", emitted: true })
       ])
-      expect(result.artifacts[0]).not.toHaveProperty("url")
+      expect(result.artifacts[0]).not.toHaveProperty("path")
       expect(result.showToUser).toBeUndefined()
       expect(collector.content).toHaveLength(1)
     }
