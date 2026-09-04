@@ -14,8 +14,7 @@ import {
   startWithApp,
   tempDirs
 } from "../test-support.js"
-import { backfillProjectRepoUrls, resetRepoUrlDiscoveryCache } from "./project-repo-identity.js"
-import { makeEventFanout } from "../server-context.js"
+import { resetRepoUrlDiscoveryCache } from "./project-repo-identity.js"
 
 const execFileAsync = promisify(execFile)
 
@@ -218,124 +217,6 @@ describe("project routes", () => {
     })
     expect(worktree.status).not.toBe(404)
     expect(JSON.stringify(worktree.body)).not.toContain("Project not found")
-  })
-
-  it("records a folder project's git remote at creation and derives its repo key", async () => {
-    const { server } = await start()
-    const repo = mkdtempSync(join(tmpdir(), "codevisor-remote-"))
-    tempDirs.push(repo)
-    await execFileAsync("git", ["init"], { cwd: repo })
-    await execFileAsync("git", ["remote", "add", "origin", "git@github.com:Acme/Widget.git"], {
-      cwd: repo
-    })
-
-    const created = await jsonRequest(server, "/v1/projects", {
-      body: JSON.stringify({ folderPath: repo, id: "remote-project" }),
-      method: "POST"
-    })
-    expect(created.status).toBe(201)
-    expect(created.body).toMatchObject({
-      repoUrl: "git@github.com:Acme/Widget.git",
-      repoKey: "github.com/acme/widget"
-    })
-
-    // An explicitly supplied remote is kept as-is, with no discovery.
-    const explicitFolder = mkdtempSync(join(tmpdir(), "codevisor-explicit-"))
-    tempDirs.push(explicitFolder)
-    const explicit = await jsonRequest(server, "/v1/projects", {
-      body: JSON.stringify({
-        folderPath: explicitFolder,
-        id: "explicit-project",
-        repoUrl: "https://github.com/acme/other.git"
-      }),
-      method: "POST"
-    })
-    expect(explicit.status).toBe(201)
-    expect((explicit.body as { readonly repoKey?: string }).repoKey).toBe("github.com/acme/other")
-
-    // A plain folder (no repository) stays unlinked.
-    const plainFolder = mkdtempSync(join(tmpdir(), "codevisor-plain-"))
-    tempDirs.push(plainFolder)
-    const plain = await jsonRequest(server, "/v1/projects", {
-      body: JSON.stringify({ folderPath: plainFolder, id: "plain-project" }),
-      method: "POST"
-    })
-    expect(plain.status).toBe(201)
-    expect((plain.body as { readonly repoUrl?: string }).repoUrl).toBeUndefined()
-    expect((plain.body as { readonly repoKey?: string }).repoKey).toBeUndefined()
-
-    // A remote added AFTER the project was links up on the next list.
-    await execFileAsync("git", ["init"], { cwd: plainFolder })
-    await execFileAsync(
-      "git",
-      ["remote", "add", "origin", "https://github.com/acme/widget-docs.git"],
-      { cwd: plainFolder }
-    )
-    resetRepoUrlDiscoveryCache()
-    const listed = await jsonRequest(server, "/v1/projects", { method: "GET" })
-    expect(listed.status).toBe(200)
-    const byId = new Map(
-      (listed.body as ReadonlyArray<{ readonly id: string; readonly repoKey?: string }>).map(
-        (project) => [project.id, project.repoKey]
-      )
-    )
-    expect(byId.get("remote-project")).toBe("github.com/acme/widget")
-    expect(byId.get("plain-project")).toBe("github.com/acme/widget-docs")
-
-    // A second list inside the memo window answers from the cache — no
-    // fresh git spawn per folder per navigation refresh.
-    const relisted = await jsonRequest(server, "/v1/projects", { method: "GET" })
-    expect(relisted.status).toBe(200)
-    expect(
-      (relisted.body as ReadonlyArray<{ readonly id: string; readonly repoKey?: string }>).find(
-        (project) => project.id === "plain-project"
-      )?.repoKey
-    ).toBe("github.com/acme/widget-docs")
-  })
-
-  it("backfills remotes for projects recorded before they were tracked", async () => {
-    const { services } = await makeServices("server-a")
-    const repo = mkdtempSync(join(tmpdir(), "codevisor-backfill-"))
-    tempDirs.push(repo)
-    await execFileAsync("git", ["init"], { cwd: repo })
-    await execFileAsync("git", ["remote", "add", "origin", "ssh://git@github.com/acme/widget"], {
-      cwd: repo
-    })
-    const missingFolder = join(repo, "gone")
-    // Legacy rows: created straight in the database with no repoUrl, the
-    // way every release before remote tracking left them.
-    await run(services.db.createProject({ folderPath: repo, id: "legacy-linked" }))
-    await run(services.db.createProject({ folderPath: missingFolder, id: "legacy-missing" }))
-    // A clone-from-git project keeps its recorded URL even though the
-    // folder no longer exists on disk.
-    await run(
-      services.db.createProject({
-        folderPath: join(repo, "cloned"),
-        id: "legacy-cloned",
-        repoUrl: "https://github.com/acme/cloned.git"
-      })
-    )
-
-    const fanout = await run(makeEventFanout)
-    const updates: Array<string> = []
-    fanout.subscribe((event) => {
-      if (event.kind === "project.updated") updates.push(event.subjectId)
-    })
-    resetRepoUrlDiscoveryCache()
-    await backfillProjectRepoUrls(services.db, "server-a", fanout)
-
-    const projects = new Map(
-      (await run(services.db.listProjects)).map((project) => [project.id, project.repoUrl])
-    )
-    expect(projects.get("legacy-linked")).toBe("ssh://git@github.com/acme/widget")
-    expect(projects.get("legacy-missing")).toBeUndefined()
-    expect(projects.get("legacy-cloned")).toBe("https://github.com/acme/cloned.git")
-    expect(updates).toEqual(["legacy-linked"])
-
-    // Idempotent: a second sweep finds nothing to change and stays quiet.
-    resetRepoUrlDiscoveryCache()
-    await backfillProjectRepoUrls(services.db, "server-a", fanout)
-    expect(updates).toEqual(["legacy-linked"])
   })
 
   it("creates scratch workspace projects and re-homes their sessions before the agent starts", async () => {

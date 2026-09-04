@@ -172,6 +172,11 @@ extension SessionController {
     // project; the new project gets its own on the next send.
     sessionCwdOverride = nil
     worktreeName = nil
+    // "No project" has no repository to cut a worktree from; a preference
+    // carried over from the previous git project must not survive.
+    if project.isRunTargetPlaceholder {
+      wantsNewWorktree = false
+    }
     if seedFromCachedServerCapabilities() {
       preparationState = .ready
     }
@@ -212,9 +217,13 @@ extension SessionController {
     // send-time lookup with "Unknown attachment file". Re-upload from the
     // retained bytes so the refs match the client that will send them.
     reuploadAllAttachments()
-    // Any kept worktree belongs to the old machine's project.
+    // Any kept worktree belongs to the old machine's project, and "No
+    // project" on the new machine has nothing to cut one from.
     sessionCwdOverride = nil
     worktreeName = nil
+    if project.isRunTargetPlaceholder {
+      wantsNewWorktree = false
+    }
     // The old machine's catalog must never survive a machine switch: a
     // target with no cached snapshot would otherwise keep rendering the
     // previous server's harnesses, models, and sign-in rows until the

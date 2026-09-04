@@ -45,7 +45,7 @@ import {
   type EventFanout
 } from "../server-context.js"
 import { routeProjectFromGit } from "./project-clone.js"
-import { probeProject } from "./project-probe.js"
+import { isScratchProject, probeProject } from "./project-probe.js"
 import { discoverRepoUrl, reconcileProjectRepoUrls } from "./project-repo-identity.js"
 import { projectRecommendationsForRequest } from "./project-recommendations.js"
 
@@ -229,6 +229,12 @@ export const routeProjects = async (
     const project = await getProjectOrFail(services.db, worktreeProjectId)
     const location = localLocationOrFail(serverId, project)
     assertLocationFolderExists(location)
+    // A scratch folder has no repository of its own. When the scratch root
+    // is nested inside a checkout, git would happily cut a worktree of
+    // THAT repository from here — never what a no-project chat asked for.
+    if (isScratchProject(project)) {
+      throw new HttpFailure(422, "A scratch workspace folder cannot have worktrees")
+    }
     if (!(await isGitWorkTree(location.folderPath))) {
       throw new HttpFailure(422, `Project folder is not a git repository: ${location.folderPath}`)
     }

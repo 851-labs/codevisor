@@ -100,8 +100,9 @@ extension SessionController {
 
     // Materialize the worktree before the agent exists, so it is born
     // with the worktree cwd. Progress (including checkout-hook output)
-    // streams into the "Setting up worktree…" section.
-    if wantsNewWorktree, sessionCwdOverride == nil {
+    // streams into the "Setting up worktree…" section. A scratch folder
+    // never gets one: it has no repository of its own.
+    if wantsNewWorktree, sessionCwdOverride == nil, !project.isScratch {
       if let failure = await createWorktree(showsSetupPhase: showsSetupPhases) {
         restoreComposer()
         handleSetupFailure(failure, returnsToNewChat: showsSetupPhases)
