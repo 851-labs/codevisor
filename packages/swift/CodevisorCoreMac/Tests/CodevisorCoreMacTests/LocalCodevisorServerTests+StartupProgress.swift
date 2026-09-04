@@ -71,21 +71,35 @@ extension LocalCodevisorServerTests {
     #expect(client.healthCallCount == 9)
   }
 
-  @Test("A stalled startup obeys elapsed time even with a live launchd process")
-  func stalledStartupDeadline() async throws {
+  @Test("A stalled startup obeys elapsed time even with a live launchd process", arguments: [0, 25])
+  func stalledStartupDeadline(probeDelayMilliseconds: Int) async throws {
     let directory = try makeTemporaryDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
     let client = FakeLocalServerClient(healthResults: Array(repeating: .failure(TestError()), count: 100))
+    let clock = AdvancingLocalServerScheduler()
     let server = LocalCodevisorServer(
       client: client, databasePath: directory.appendingPathComponent("db.sqlite").path,
-      logURL: directory.appendingPathComponent("server.log"), startupStallTimeout: .milliseconds(10),
+      logURL: directory.appendingPathComponent("server.log"), startupStallTimeout: .milliseconds(20),
       healthPollInterval: .milliseconds(2), healthPollAttempts: 100
     )
-    let started = ContinuousClock.now
-    let state = await server.waitUntilHealthy(process: nil, expectedBootId: nil, jobProbe: { true })
+    var jobProbes = 0
+    let state = await server.waitUntilHealthy(
+      process: nil, expectedBootId: nil,
+      jobProbe: {
+        jobProbes += 1
+        clock.advance(by: .milliseconds(probeDelayMilliseconds))
+        return true
+      }, scheduler: clock.scheduler)
     guard case let .unavailable(message) = state else { Issue.record("Expected timeout"); return }
     #expect(message.contains("stopped progressing"))
-    #expect(ContinuousClock.now - started < .seconds(1))
+    #expect(jobProbes == 1)
+    #expect(server.startupCanRetry)
+    // A slow probe consumes the deadline too; a fixed attempt budget would
+    // keep polling. A live launchd process must not extend the stall budget.
+    let polls = probeDelayMilliseconds == 0 ? 10 : 8
+    #expect(client.healthCallCount == polls)
+    #expect(clock.requestedIntervals == Array(repeating: .milliseconds(2), count: polls))
+    #expect(clock.elapsed == .milliseconds(polls * 2 + probeDelayMilliseconds))
   }
 
   @Test("Shutdown verifies ownership even when HTTP no longer answers")
@@ -115,34 +129,44 @@ extension LocalCodevisorServerTests {
     defer { try? FileManager.default.removeItem(at: directory) }
     let client = FakeLocalServerClient(healthResults: [])
     client.drainResult = ServerRestartDrainState(state: "draining", remaining: 1)
+    let clock = AdvancingLocalServerScheduler()
+    var interruptedAt: [Duration] = []
+    clock.onSleep = { [weak clock] in
+      guard let clock else { return }
+      if client.drainInterruptions > interruptedAt.count { interruptedAt.append(clock.elapsed) }
+    }
     let server = LocalCodevisorServer(
       client: client,
       databasePath: directory.appendingPathComponent("db.sqlite").path,
       logURL: directory.appendingPathComponent("server.log"))
-    let started = ContinuousClock.now
     #expect(
       await !server.drainForAppUpdate(
         onStatus: { _ in }, drainTimeout: .milliseconds(5),
-        interruptionTimeout: .milliseconds(10), pollInterval: .milliseconds(1)))
+        interruptionTimeout: .milliseconds(10), pollInterval: .milliseconds(1), scheduler: clock.scheduler))
     #expect(client.drainInterruptions == 1)
-    #expect(ContinuousClock.now - started < .seconds(1))
+    #expect(interruptedAt == [.milliseconds(5)])
+    #expect(clock.elapsed == .milliseconds(15))
+    #expect(clock.requestedIntervals == Array(repeating: .milliseconds(1), count: 15))
     client.drainResult = ServerRestartDrainState(state: "drained", remaining: 0)
-    #expect(await server.drainForAppUpdate(onStatus: { _ in }))
+    #expect(await server.drainForAppUpdate(onStatus: { _ in }, scheduler: clock.scheduler))
+    #expect(clock.elapsed == .milliseconds(15))
   }
 
   @Test("A deadline returns even when its operation ignores cancellation")
   func requestDeadlineIgnoresLateResult() async throws {
+    let clock = AdvancingLocalServerScheduler()
     var continuation: CheckedContinuation<Int, Never>?
-    let task = Task {
-      try await StartupDeadline.run(for: .milliseconds(10)) {
-        await withCheckedContinuation { continuation = $0 }
-      }
-    }
     do {
-      _ = try await task.value
+      _ = try await StartupDeadline.run(for: .milliseconds(10), scheduler: clock.scheduler) {
+        await withCheckedContinuation {
+          continuation = $0
+          clock.advance(by: .milliseconds(10))
+        }
+      }
       Issue.record("Expected request timeout")
     } catch { #expect(error is StartupDeadlineError) }
+    #expect(clock.elapsed == .milliseconds(10))
     continuation?.resume(returning: 42)
-    #expect(try await StartupDeadline.run(for: .seconds(1)) { 7 } == 7)
+    #expect(try await StartupDeadline.run(for: .seconds(1), scheduler: clock.scheduler) { 7 } == 7)
   }
 }

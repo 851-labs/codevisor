@@ -95,13 +95,13 @@ extension LocalCodevisorServer {
     expectedBootId: String?,
     requiresBundledIdentity: Bool = false,
     initialAttemptLimit: Int? = nil,
-    jobProbe: (@MainActor () async -> Bool?)? = nil
+    jobProbe: (@MainActor () async -> Bool?)? = nil,
+    scheduler: LocalServerScheduler = .continuous
   ) async -> LocalCodevisorServerState {
     // Elapsed-time deadlines include request and launchd probe time. Only
     // actual forward progress extends the short startup budget.
-    let clock = ContinuousClock()
-    let deadline = clock.now + startupMaximumDuration
-    var lastProgressAt = clock.now
+    let deadline = scheduler.now() + startupMaximumDuration
+    var lastProgressAt = scheduler.now()
     var attempt = 0
     var attemptLimit = initialAttemptLimit ?? healthPollAttempts
     var lastProbeError = "none"
@@ -110,21 +110,23 @@ extension LocalCodevisorServer {
       attempt += 1
       if Task.isCancelled { return fail("Server startup was cancelled.") }
       if refreshStartupProgress(expectedBootId: expectedBootId ?? activeBootId) {
-        lastProgressAt = clock.now
+        lastProgressAt = scheduler.now()
         attemptLimit = max(attemptLimit, healthPollAttempts)
       }
       refreshDataUpgradeProgress(expectedBootId: expectedBootId ?? activeBootId)
       if startupProgress?.state == "failed" {
         return fail(startupProgress?.error ?? "The server failed during startup.")
       }
-      if clock.now >= deadline || clock.now - lastProgressAt >= startupStallTimeout {
+      if scheduler.now() >= deadline || scheduler.now() - lastProgressAt >= startupStallTimeout {
         startupCanRetry = true
         return fail(
           "Server startup stopped progressing while \(startupProgress?.label.lowercased() ?? "waiting for a response")."
         )
       }
       do {
-        let health = try await StartupDeadline.run(for: .seconds(2)) { [client] in try await client.health() }
+        let health = try await StartupDeadline.run(for: .seconds(2), scheduler: scheduler) { [client] in
+          try await client.health()
+        }
         if health.ok {
           let boot = expectedBootId ?? activeBootId
           guard boot == nil || health.bootId == boot else {
@@ -162,7 +164,9 @@ extension LocalCodevisorServer {
       if attempt % Self.healthProbeReportEvery == 0 || attempt == attemptLimit {
         var jobNote = ""
         if let jobProbe {
-          switch try? await StartupDeadline.run(for: .seconds(5), operation: { await jobProbe() }) {
+          switch try? await StartupDeadline.run(
+            for: .seconds(5), scheduler: scheduler, operation: { await jobProbe() })
+          {
           case .some(true):
             deadJobProbes = 0
             jobNote = ", launchd job running"
@@ -183,7 +187,7 @@ extension LocalCodevisorServer {
           "waitUntilHealthy: attempt \(attempt)/\(attemptLimit), last probe: \(lastProbeError)\(jobNote)"
         )
       }
-      try? await Task.sleep(for: healthPollInterval)
+      try? await scheduler.sleep(healthPollInterval)
     }
     startupCanRetry = true
     return fail(

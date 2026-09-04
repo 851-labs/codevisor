@@ -48,39 +48,42 @@ extension LocalCodevisorServer {
     onStatus: @escaping @MainActor (String) -> Void,
     drainTimeout: Duration = appUpdateDrainTimeout,
     interruptionTimeout: Duration = .seconds(15),
-    pollInterval: Duration = appUpdateDrainPollInterval
+    pollInterval: Duration = appUpdateDrainPollInterval,
+    scheduler: LocalServerScheduler = .continuous
   ) async -> Bool {
     guard
       let first = try? await StartupDeadline.run(
-        for: .seconds(5), operation: { [client] in try await client.beginRestartDrain(interrupt: false) })
+        for: .seconds(5), scheduler: scheduler,
+        operation: { [client] in try await client.beginRestartDrain(interrupt: false) })
     else {
       lifecycleLog.note("prepareForAppUpdate: server has no restart drain (or is not answering)")
       return true
     }
     lifecycleLog.note("prepareForAppUpdate: drain \(first.state), \(first.remaining) live turn(s)")
     if first.isDrained { return true }
-    let clock = ContinuousClock()
-    let deadline = clock.now + drainTimeout
+    let deadline = scheduler.now() + drainTimeout
     let finalDeadline = deadline + interruptionTimeout
     var interrupted = false
     while true {
-      guard !Task.isCancelled, clock.now < finalDeadline else { return false }
+      guard !Task.isCancelled, scheduler.now() < finalDeadline else { return false }
       guard
         let state = try? await StartupDeadline.run(
-          for: min(.seconds(3), finalDeadline - clock.now),
+          for: min(.seconds(3), finalDeadline - scheduler.now()), scheduler: scheduler,
           operation: { [client] in try await client.restartDrainState() })
       else { return false }
       if state.isDrained { return true }
       let chats = state.remaining == 1 ? "1 chat" : "\(state.remaining) chats"
       onStatus("Waiting for \(chats) to finish…")
-      if clock.now >= deadline, !interrupted {
+      if scheduler.now() >= deadline, !interrupted {
         interrupted = true
         lifecycleLog.note("prepareForAppUpdate: drain deadline reached, interrupting live turns")
-        _ = try? await StartupDeadline.run(for: min(.seconds(5), finalDeadline - clock.now)) { [client] in
+        _ = try? await StartupDeadline.run(
+          for: min(.seconds(5), finalDeadline - scheduler.now()), scheduler: scheduler
+        ) { [client] in
           try await client.beginRestartDrain(interrupt: true)
         }
       }
-      do { try await Task.sleep(for: pollInterval) } catch { return false }
+      do { try await scheduler.sleep(pollInterval) } catch { return false }
     }
   }
 

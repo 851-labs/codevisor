@@ -11,15 +11,17 @@ enum StartupDeadlineError: Error, LocalizedError {
 enum StartupDeadline {
   static func run<Value: Sendable>(
     for timeout: Duration,
+    scheduler: LocalServerScheduler = .continuous,
     operation: @escaping @MainActor @Sendable () async throws -> Value
   ) async throws -> Value {
+    let deadline = scheduler.now() + timeout
     let outcome = StartupOutcome<Value>()
     let worker = Task { @MainActor in
       do { outcome.resolve(.success(try await operation())) } catch { outcome.resolve(.failure(error)) }
     }
     let timer = Task {
       do {
-        try await Task.sleep(for: timeout)
+        try await scheduler.sleepUntil(deadline)
         outcome.resolve(.failure(StartupDeadlineError.expired))
       } catch { /* The operation finished first. */  }
     }
