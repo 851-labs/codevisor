@@ -41,12 +41,14 @@ extension NewChatView {
     .filter { !$0.isScratch }
   }
 
-  /// The picker's entries: projects linked across machines, so one
-  /// repository is one row however many checkouts the fleet holds.
-  private var pickerGroups: [ProjectGroup] {
+  /// The picker's entries for one machine: the linked projects that have
+  /// a checkout there, one row per repository. The machine chip is the
+  /// first choice, so the project list never reaches past it.
+  private func pickerGroups(on serverId: String) -> [ProjectGroup] {
     environment.projectList.fleetActiveProjectGroupsByWorkspaceRecency(
       environment.workspaces.loadAll()
     )
+    .filter { $0.member(on: serverId) != nil }
   }
 
   /// The machine picker shows only when there is a choice to make.
@@ -127,7 +129,7 @@ extension NewChatView {
     // it was allocated (the retry reuses it); to the user that is still
     // "No project", never the folder's generated name.
     let isNoProject = selected.isRunTargetPlaceholder || selected.isScratch
-    let groups = pickerGroups
+    let groups = pickerGroups(on: selected.serverId)
     let selectedGroup = isNoProject ? nil : groups.first { $0.contains(selected) }
     let chipText = isNoProject ? "No project" : (selectedGroup?.name ?? selected.name)
     return Menu {
@@ -293,9 +295,9 @@ extension NewChatView {
     selectTargetProject(project, controller: controller)
   }
 
-  /// Picking a linked project keeps the draft on its current machine when
-  /// that machine has a checkout; otherwise it moves to the machine that
-  /// used the project most recently.
+  /// Picking a linked project uses its checkout on the draft's machine
+  /// (the picker only lists such projects); the recency fallback covers a
+  /// stale menu.
   func selectTargetGroup(_ group: ProjectGroup, controller: SessionController) {
     let project =
       group.member(on: controller.project.serverId)
