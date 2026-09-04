@@ -167,6 +167,10 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   /// prevents a slow pending projection from re-hiding a row after its
   /// safety hold has deliberately expired.
   var sendAssistantHoldMounts: [String: ObjectIdentifier] = [:]
+  /// Landed positions stay fixed while deferred send rows finish measuring.
+  var sendCompletionSourceScreenYByRowKey: [String: CGFloat]?
+  var isApplyingSendCompletion = false
+  var sendCompletionNotifiesCompletion = false
   var sendPresentationLifecycle = TranscriptSendPresentationLifecycle()
   var sendPresentationWatchdog: Task<Void, Never>?
   var sendAnimationCompletion: TranscriptSendAnimationCompletion?

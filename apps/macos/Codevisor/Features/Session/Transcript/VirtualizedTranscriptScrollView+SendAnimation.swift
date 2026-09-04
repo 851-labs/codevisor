@@ -9,6 +9,19 @@ import TranscriptKit
 // MARK: - SendAnimation
 
 extension VirtualizedTranscriptScrollView {
+  func sendRowPresentationDidBecomeReady() {
+    guard !isDetaching,
+      pendingSendAnimationRequest != nil || sendCompletionSourceViewportYByRowKey != nil
+    else { return }
+    // Never start or finish a flight inside a hosting controller's layout
+    // callback: both operations can replace hosts and rebuild the document.
+    if presentationDisplayLink != nil {
+      requestDisplayFrame()
+    } else {
+      needsLayout = true
+    }
+  }
+
   /// Recreates the reference app's shared-element handoff without moving the
   /// virtual row's authoritative frame: its presentation layer starts at the
   /// bottom chrome's top edge, then eases into the row's final transcript
@@ -16,6 +29,11 @@ extension VirtualizedTranscriptScrollView {
   /// Keeping layout geometry final throughout the flight means streaming and
   /// scroll compensation cannot fight the animation.
   func startPendingSendAnimationIfPossible() {
+    guard !isApplyingSendCompletion else { return }
+    if sendCompletionSourceViewportYByRowKey != nil {
+      completePendingSendPresentationIfPossible()
+      return
+    }
     guard let request = pendingSendAnimationRequest,
       let rowKey = pendingSendAnimationRowKey,
       let claimSendAnimation
@@ -187,8 +205,7 @@ extension VirtualizedTranscriptScrollView {
 
   func synchronizePendingSendHistoryPositions() {
     guard !reduceMotion,
-      pendingSendAnimationRequest != nil,
-      let sourceViewportYByRowKey = pendingSendSourceViewportYByRowKey
+      let sourceViewportYByRowKey = sendCompletionSourceViewportYByRowKey ?? pendingSendSourceViewportYByRowKey
     else { return }
 
     CATransaction.begin()
@@ -303,11 +320,26 @@ extension VirtualizedTranscriptScrollView {
   }
 
   func finishSendPresentation(token: UInt64) {
-    guard sendPresentationLifecycle.complete(token: token) else { return }
-    clearSendPresentationVisuals()
+    guard sendPresentationLifecycle.owns(token: token) else { return }
+    if sendCompletionSourceViewportYByRowKey == nil {
+      sendCompletionSourceViewportYByRowKey = sendHistoryViewportYByRowKey()
+      sendHistoryHoldMounts.removeAll(keepingCapacity: true)
+    }
+    completePendingSendPresentationIfPossible()
   }
 
   func clearSendPresentationVisuals() {
+    let wasApplyingCompletion = isApplyingSendCompletion
+    isApplyingSendCompletion = true
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    defer {
+      CATransaction.commit()
+      isApplyingSendCompletion = wasApplyingCompletion
+    }
+    sendCompletionSourceViewportYByRowKey = nil
+    applyDeferredSendProjectionIfNeeded()
+    if !isDetaching { commitPendingMeasurements() }
     sendPresentationWatchdog?.cancel()
     sendPresentationWatchdog = nil
     for host in mountedHosts.values {
@@ -325,7 +357,6 @@ extension VirtualizedTranscriptScrollView {
     sendHistoryHoldMounts.removeAll(keepingCapacity: true)
     sendAssistantHoldMounts.removeAll(keepingCapacity: true)
     sendAnimationCompletion = nil
-    applyDeferredSendProjectionIfNeeded()
   }
 
   func applyDeferredSendProjectionIfNeeded() {
@@ -374,7 +405,7 @@ extension VirtualizedTranscriptScrollView {
           at: CACurrentMediaTime()
         )
       else { return }
-      self.finishSendPresentation(token: token)
+      self.finishSendPresentation()
     }
   }
 
@@ -419,7 +450,7 @@ extension VirtualizedTranscriptScrollView {
       return TranscriptMountedWindowReadiness.isPromotable(
         key: key,
         measurements: measurements,
-        hasPendingMeasurement: false,
+        hasPendingMeasurement: pendingMeasuredHeights[key] != nil,
         host: mountedHosts[key]
       )
     }

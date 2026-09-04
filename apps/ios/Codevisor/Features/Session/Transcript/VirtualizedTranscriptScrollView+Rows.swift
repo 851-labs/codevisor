@@ -19,6 +19,9 @@ extension VirtualizedTranscriptScrollView {
   ) -> Bool {
     let geometryChanged = rowSet.geometryChanged(comparedTo: newRows)
     if geometryChanged || layoutFingerprintChanged {
+      if !layoutFingerprintChanged {
+        TranscriptRowSet.preserveWaitingActivityHeight(from: rows, to: newRows, ledger: &measurements)
+      }
       TranscriptRowSet.transferActiveHeightIfNeeded(from: rows, to: newRows, ledger: &measurements)
       invalidateChangedMeasurements(
         previousRowsByKey: rowByKey,

@@ -190,6 +190,9 @@ extension VirtualizedTranscriptScrollView {
     if !pendingMeasuredHeights.isEmpty {
       commitPendingMeasurements()
     }
+    // Host readiness can change without a height change. Its notification
+    // requests this frame after the host's AppKit layout stack unwinds.
+    startPendingSendAnimationIfPossible()
     streamingTextFrameClock.tick(at: displayLink.timestamp)
     if !isLiveScrolling, !isHandlingUserInput {
       drainRetiringHosts(limit: 1)

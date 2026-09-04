@@ -61,8 +61,13 @@ final class TranscriptRowHost: TranscriptMountedRowHost {
         self.needsLayout = true
         return
       }
+      let becameReady = !self.presentationReady
       self.presentationReady = true
       self.canSkipContentLayout = true
+      // A carried or cached height can suppress the measurement callback.
+      // Readiness completes in a later layout pass and must wake consumers
+      // even when there is no new height to commit.
+      if becameReady { self.onPresentationReady?() }
     }
   }
 

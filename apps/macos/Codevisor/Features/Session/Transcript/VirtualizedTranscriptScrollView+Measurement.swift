@@ -271,6 +271,15 @@ extension VirtualizedTranscriptScrollView {
     updateInitialPresentationReadiness()
   }
 
+  func observeRowPresentation(_ host: TranscriptMountedRowHost, for key: String) {
+    host.onHeightChange = { [weak self] height in
+      self?.recordMeasuredHeight(height, for: key)
+    }
+    host.onPresentationReady = { [weak self] in
+      self?.sendRowPresentationDidBecomeReady()
+    }
+  }
+
   func recordMeasuredHeight(_ rawHeight: CGFloat, for key: String) {
     let height = max(1, rawHeight.rounded(.up))
     guard rowByKey[key] != nil else { return }

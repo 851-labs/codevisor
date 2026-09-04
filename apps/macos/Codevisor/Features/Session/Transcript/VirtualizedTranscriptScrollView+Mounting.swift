@@ -200,9 +200,7 @@ extension VirtualizedTranscriptScrollView {
     host.prepareForMountedRow()
     sendHistoryHoldMounts.removeValue(forKey: key)
     sendAssistantHoldMounts.removeValue(forKey: key)
-    host.onHeightChange = { [weak self] height in
-      self?.recordMeasuredHeight(height, for: key)
-    }
+    observeRowPresentation(host, for: key)
     transcriptDocumentView.addSubview(host)
     mountedHosts[key] = host
     // Position and push the content width before assigning the root view.
@@ -394,6 +392,7 @@ extension VirtualizedTranscriptScrollView {
   func storeDetachedHost(_ host: TranscriptMountedRowHost, for key: String) {
     selectionHostWillDetach(host, key: key)
     host.onHeightChange = nil
+    host.onPresentationReady = nil
     host.layer?.removeAnimation(forKey: Self.disclosureExitAnimationKey)
     host.layer?.removeAnimation(forKey: Self.disclosureCollapseAnimationKey)
     host.layer?.opacity = 1

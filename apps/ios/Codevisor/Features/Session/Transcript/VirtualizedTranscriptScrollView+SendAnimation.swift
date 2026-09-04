@@ -10,6 +10,11 @@ import UIKit
 
 extension VirtualizedTranscriptScrollView {
   func startPendingSendAnimationIfPossible() {
+    guard !isApplyingSendCompletion else { return }
+    if sendCompletionSourceScreenYByRowKey != nil {
+      completePendingSendPresentationIfPossible()
+      return
+    }
     guard let request = pendingSendAnimationRequest,
       let rowKey = pendingSendAnimationRowKey
     else { return }
@@ -181,8 +186,7 @@ extension VirtualizedTranscriptScrollView {
   func synchronizePendingSendHistoryPositions() {
     guard presentationRole == .foreground,
       !reduceMotion,
-      pendingSendAnimationRequest != nil,
-      let sourceScreenYByRowKey = pendingSendSourceScreenYByRowKey
+      let sourceScreenYByRowKey = sendCompletionSourceScreenYByRowKey ?? pendingSendSourceScreenYByRowKey
     else { return }
 
     CATransaction.begin()
@@ -300,18 +304,28 @@ extension VirtualizedTranscriptScrollView {
   }
 
   func finishSendPresentation(token: UInt64, notifyCompletion: Bool) {
-    guard sendPresentationLifecycle.complete(token: token) else { return }
-    let request =
-      activeSendAnimationRequest?.token == token
-      ? activeSendAnimationRequest
-      : nil
-    clearSendPresentationVisuals()
-    if notifyCompletion, let request {
-      onSendAnimationCompleted?(request)
+    guard sendPresentationLifecycle.owns(token: token) else { return }
+    sendCompletionNotifiesCompletion = sendCompletionNotifiesCompletion || notifyCompletion
+    if sendCompletionSourceScreenYByRowKey == nil {
+      sendCompletionSourceScreenYByRowKey = sendHistoryScreenYByRowKey()
+      sendHistoryHoldMounts.removeAll(keepingCapacity: true)
     }
+    completePendingSendPresentationIfPossible()
   }
 
   func clearSendPresentationVisuals() {
+    let wasApplyingCompletion = isApplyingSendCompletion
+    isApplyingSendCompletion = true
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    defer {
+      CATransaction.commit()
+      isApplyingSendCompletion = wasApplyingCompletion
+    }
+    sendCompletionSourceScreenYByRowKey = nil
+    sendCompletionNotifiesCompletion = false
+    applyDeferredSendProjectionIfNeeded()
+    if !isDetaching { commitPendingMeasurements() }
     sendPresentationWatchdog?.cancel()
     sendPresentationWatchdog = nil
     for host in Array(mountedHosts.values) + Array(parkedHosts.values) {
@@ -322,7 +336,6 @@ extension VirtualizedTranscriptScrollView {
     sendHistoryHoldMounts.removeAll(keepingCapacity: true)
     sendAssistantHoldMounts.removeAll(keepingCapacity: true)
     sendAnimationCompletion = nil
-    applyDeferredSendProjectionIfNeeded()
   }
 
   func applyDeferredSendProjectionIfNeeded() {
@@ -371,7 +384,7 @@ extension VirtualizedTranscriptScrollView {
           at: CACurrentMediaTime()
         )
       else { return }
-      self.finishSendPresentation(token: token, notifyCompletion: true)
+      self.finishSendPresentation(notifyCompletion: true)
     }
   }
 
@@ -419,7 +432,7 @@ extension VirtualizedTranscriptScrollView {
       return TranscriptMountedWindowReadiness.isPromotable(
         key: key,
         measurements: measurements,
-        hasPendingMeasurement: false,
+        hasPendingMeasurement: pendingMeasurements[key] != nil,
         host: mountedHosts[key]
       )
     }

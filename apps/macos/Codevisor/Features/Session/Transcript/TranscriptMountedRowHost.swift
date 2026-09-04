@@ -11,6 +11,7 @@ import TranscriptKit
 @MainActor
 class TranscriptMountedRowHost: NSView {
   var onHeightChange: ((CGFloat) -> Void)?
+  var onPresentationReady: (() -> Void)?
 
   var isPresentationReady: Bool { false }
   var isAttachmentGeometryReady: Bool { true }
