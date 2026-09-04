@@ -154,6 +154,14 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
 
   // MARK: - SPUUpdaterDelegate
 
+  private func displayedVersion(for item: SUAppcastItem) -> String {
+    AppUpdateModel.displayedVersion(
+      item.displayVersionString,
+      buildNumber: Int(item.versionString),
+      usesAlphaChannel: item.channel == "alpha"
+    )
+  }
+
   func allowedChannels(for updater: SPUUpdater) -> Set<String> {
     model.allowsAlphaUpdates ? ["alpha"] : []
   }
@@ -170,15 +178,16 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
   }
 
   func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
+    let version = displayedVersion(for: item)
     Log.updates.log(
-      "check: found \(item.displayVersionString, privacy: .public) (\(item.versionString, privacy: .public)), installing: \(self.installSessionActive)"
+      "check: found \(version, privacy: .public) (\(item.versionString, privacy: .public)), installing: \(self.installSessionActive)"
     )
     let releasePageURL = item.infoURL ?? item.fullReleaseNotesURL ?? item.releaseNotesURL
-    model.reportAvailable(version: item.displayVersionString, releasePageURL: releasePageURL)
+    model.reportAvailable(version: version, releasePageURL: releasePageURL)
     if installSessionActive {
       // Committed from here: the row shows progress, the composer stops
       // accepting turns, and a quit request is not confirmed.
-      model.reportInstalling(version: item.displayVersionString, releasePageURL: releasePageURL)
+      model.reportInstalling(version: version, releasePageURL: releasePageURL)
       model.reportProgress("Downloading…")
     }
   }
@@ -196,16 +205,17 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
   }
 
   func updater(_ updater: SPUUpdater, willInstallUpdate item: SUAppcastItem) {
-    Log.updates.log("install: Sparkle will install \(item.displayVersionString, privacy: .public)")
-    ServerLifecycleLog.default.note("update: installing \(item.displayVersionString)")
+    let version = displayedVersion(for: item)
+    Log.updates.log("install: Sparkle will install \(version, privacy: .public)")
+    ServerLifecycleLog.default.note("update: installing \(version)")
     if installSessionActive {
       AppUpdateHandoff.writeStatus(
         state: "installing",
-        targetVersion: item.displayVersionString
+        targetVersion: version
       )
     }
     model.reportInstalling(
-      version: item.displayVersionString,
+      version: version,
       releasePageURL: item.infoURL ?? item.fullReleaseNotesURL ?? item.releaseNotesURL
     )
   }

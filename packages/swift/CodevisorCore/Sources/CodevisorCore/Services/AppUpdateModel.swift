@@ -77,7 +77,7 @@ public final class AppUpdateModel {
     )
   }
 
-  static func displayedVersion(
+  public static func displayedVersion(
     _ version: String,
     buildNumber: Int?,
     usesAlphaChannel: Bool
