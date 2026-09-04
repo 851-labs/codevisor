@@ -24,6 +24,7 @@ struct ChatScreen: View {
   @Environment(\.openSettings) var openSettings
   @Environment(\.attachmentImages) var attachmentImages
   @Environment(\.quickLook) var quickLook
+  @Environment(\.openMarkdownDocument) var openMarkdownDocument
   @Environment(\.codeHighlightTheme) var codeHighlightTheme
   @Environment(AppEnvironment.self) var environment
   @Bindable var controller: SessionController

@@ -92,6 +92,7 @@ struct SessionContainerView: View {
       // scoped to each task's owning chat, so switching chats never tears
       // down a sibling's tab. Reading the fingerprint in body keeps the
       // observation live for all cached controllers.
+      .environment(\.openMarkdownDocument, openMarkdownDocument)
       .onChange(of: backgroundTaskFingerprint, initial: true) { _, _ in
         syncWorkspaceBackgroundTerminals()
       }

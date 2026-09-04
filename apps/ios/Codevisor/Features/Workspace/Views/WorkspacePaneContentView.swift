@@ -98,6 +98,14 @@ struct WorkspacePaneContentView: View {
         iconCacheNamespace: machineId,
         onOpenPlugin: onConvertToPlugin
       )
+    case .document:
+      if let path = pane.documentPath {
+        MarkdownDocumentView(
+          path: path, sessionId: activeSessionId ?? pane.id, client: machineClient
+        )
+      } else {
+        ContentUnavailableView("Document unavailable", systemImage: "doc")
+      }
     case .plugin:
       PluginPaneView(
         model: pluginPaneModel(pane),

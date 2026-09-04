@@ -22,6 +22,7 @@ struct PaneCard: View {
     case .chat: "bubble.left.and.bubble.right"
     case .newTab: "plus.square.on.square"
     case .plugin: "puzzlepiece.extension"
+    case .document: "doc.richtext"
     }
   }
 

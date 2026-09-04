@@ -108,6 +108,11 @@ extension SessionContainerView {
         terminalKey: paneId.uuidString,
         pluginId: closed.pluginId, pluginPaneType: closed.pluginPaneType
       )
+    case .document:
+      return PaneDescriptorState(
+        id: paneId, kind: .document, name: closed.name,
+        terminalKey: paneId.uuidString, documentPath: closed.documentPath
+      )
     case .newTab:
       return nil
     }

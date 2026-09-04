@@ -28,6 +28,7 @@ struct AssistantTurnView: View {
   @Environment(\.theme) private var theme
   @Environment(\.openSettings) private var openSettings
   @Environment(\.quickLook) private var quickLook
+  @Environment(\.openMarkdownDocument) private var openMarkdownDocument
   @Environment(\.attachmentImages) private var attachmentImages
   @Environment(\.streamingTextAnimationVisibility) private var textAnimationVisibility
   /// Turn-scoped semantic stream ledger. Existing entries are seeded as
@@ -327,7 +328,10 @@ struct AssistantTurnView: View {
   }
 
   private func openMarkdownLink(_ url: URL) -> Bool {
-    TranscriptMarkdownLinkOpener.open(url, quickLook: quickLook, attachmentImages: attachmentImages)
+    TranscriptMarkdownLinkOpener.open(
+      url, quickLook: quickLook, attachmentImages: attachmentImages,
+      openDocument: openMarkdownDocument
+    )
   }
 
   @ViewBuilder

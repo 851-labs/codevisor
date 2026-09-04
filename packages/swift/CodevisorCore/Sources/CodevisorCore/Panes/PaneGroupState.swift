@@ -23,6 +23,8 @@ public enum PaneKind: String, Codable, Sendable {
   /// identify the plugin server and pane type; the app layer renders it
   /// through the server's plugin proxy.
   case plugin
+  /// A read-only Markdown document on the workspace's machine.
+  case document
 }
 
 /// Which of a session's pane groups a state belongs to: the center group
@@ -61,6 +63,7 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
   public var pluginId: String?
   /// Plugin panes only: which of the plugin's pane types this renders.
   public var pluginPaneType: String?
+  public var documentPath: String?
   /// Every pane moves between groups alike — tabs are tabs (the only
   /// rule with real stakes is the CLOSE rule: a lone placeholder only
   /// closes when its group can dissolve — see `canClosePane` + the
@@ -76,7 +79,8 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
     chatSessionId: UUID? = nil,
     ownerChatSessionId: UUID? = nil,
     pluginId: String? = nil,
-    pluginPaneType: String? = nil
+    pluginPaneType: String? = nil,
+    documentPath: String? = nil
   ) {
     self.id = id
     self.kind = kind
@@ -87,6 +91,7 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
     self.ownerChatSessionId = ownerChatSessionId
     self.pluginId = pluginId
     self.pluginPaneType = pluginPaneType
+    self.documentPath = documentPath
   }
 
   public init(from decoder: Decoder) throws {
@@ -107,7 +112,8 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
       // Panes persisted before plugin panes existed carry no plugin
       // payload.
       pluginId: try container.decodeIfPresent(String.self, forKey: .pluginId),
-      pluginPaneType: try container.decodeIfPresent(String.self, forKey: .pluginPaneType)
+      pluginPaneType: try container.decodeIfPresent(String.self, forKey: .pluginPaneType),
+      documentPath: try container.decodeIfPresent(String.self, forKey: .documentPath)
     )
   }
 }
@@ -370,7 +376,7 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
         )
       else { return nil }
       pane = converted
-    case .newTab:
+    case .newTab, .document:
       return nil
     }
     panes[index] = pane

@@ -52,6 +52,10 @@ extension WorkspaceSyncModel {
       paneType = "new-tab"
       resourceKind = nil
       resourceId = nil
+    case .document:
+      paneType = "markdown"
+      resourceKind = "file"
+      resourceId = pane.documentPath
     case .plugin:
       // Plugin panes publish under a plugin-scoped provider so old
       // clients (which only accept "codevisor") drop them silently
@@ -99,6 +103,14 @@ extension WorkspaceSyncModel {
     // forward-compatible; renderer support is a client capability.
     guard record.providerId == "codevisor" else { return nil }
     switch record.paneType {
+    case "markdown":
+      guard record.resourceKind == "file", let path = record.resourceId, !path.isEmpty else {
+        return nil
+      }
+      return PaneDescriptorState(
+        id: id, kind: .document, name: record.title,
+        terminalKey: id.uuidString, documentPath: path
+      )
     case "chat":
       let sessionId =
         record.resourceKind == "session"

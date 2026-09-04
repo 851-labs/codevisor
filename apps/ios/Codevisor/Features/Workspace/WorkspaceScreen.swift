@@ -236,7 +236,7 @@ struct WorkspaceScreen: View {
       return title.isEmpty ? "New Chat" : title
     case .newTab:
       return "New Tab"
-    case .terminal, .plugin:
+    case .terminal, .plugin, .document:
       return pane.name
     }
   }

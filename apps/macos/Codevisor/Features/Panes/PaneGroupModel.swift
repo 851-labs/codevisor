@@ -133,6 +133,10 @@ final class PaneGroupModel: Identifiable {
     if let existing = live[descriptor.id] { return existing }
     let pane: any Pane
     switch descriptor.kind {
+    case .document:
+      let document = MarkdownDocumentPane(context: makeContext(descriptor), descriptor: descriptor)
+      document.onFocus = { [weak self] in self?.requestBackgroundFocus?() }
+      pane = document
     case .terminal:
       pane = TerminalPane(context: makeContext(descriptor))
     case .plugin:
@@ -184,7 +188,7 @@ final class PaneGroupModel: Identifiable {
           self.pendingNewTabFocus = paneId
           self.requestBackgroundFocus?()
         }
-      case .terminal, .plugin:
+      case .terminal, .plugin, .document:
         break
       }
     }
@@ -378,6 +382,8 @@ final class PaneGroupModel: Identifiable {
       // re-pointed at another plugin/pane type needs a fresh webview.
       return previous.pluginId != next.pluginId
         || previous.pluginPaneType != next.pluginPaneType
+    case (.document, .document):
+      return previous.documentPath != next.documentPath
     default:
       return true
     }

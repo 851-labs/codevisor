@@ -68,10 +68,12 @@ extension ChatScreen {
                     .reportsStreamingTextAnimationActivity()
                     .markdownLinkHandler { url in
                       TranscriptMarkdownLinkOpener.open(
-                        url, quickLook: quickLook, attachmentImages: attachmentImages)
+                        url, quickLook: quickLook, attachmentImages: attachmentImages,
+                        openDocument: openMarkdownDocument)
                     }
                     .environment(\.theme, theme)
                     .environment(\.attachmentImages, attachmentImages)
+                    .environment(\.openMarkdownDocument, openMarkdownDocument)
                     .environment(\.hoverTrackingSuspended, controller.isSending)
                     .environment(\.transcriptDisclosure, controller.disclosure)
                     .environment(\.transcriptController, controller)
@@ -110,7 +112,8 @@ extension ChatScreen {
               },
               openMarkdownLink: { url in
                 TranscriptMarkdownLinkOpener.open(
-                  url, quickLook: quickLook, attachmentImages: attachmentImages)
+                  url, quickLook: quickLook, attachmentImages: attachmentImages,
+                  openDocument: openMarkdownDocument)
               }
             ),
             markdownRowStyle: transcriptMarkdownRowStyle,

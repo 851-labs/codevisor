@@ -49,6 +49,7 @@ struct PaneTab: View {
     case .terminal: isAgentOwned ? "server.rack" : "terminal"
     case .newTab: "square.dashed"
     case .plugin: "puzzlepiece.extension"
+    case .document: "doc.richtext"
     }
   }
 
@@ -58,6 +59,7 @@ struct PaneTab: View {
     case .terminal: isAgentOwned ? "Agent background process" : "Terminal"
     case .newTab: "New tab"
     case .plugin: "Plugin pane"
+    case .document: "Markdown document"
     }
   }
 

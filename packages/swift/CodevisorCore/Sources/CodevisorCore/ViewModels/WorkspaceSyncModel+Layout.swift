@@ -60,13 +60,16 @@ extension WorkspaceSyncModel {
       pane.chatSessionId.map { "session:\($0.uuidString.lowercased())" }
     case .terminal:
       "terminal:\(pane.terminalKey.lowercased())"
-    case .newTab, .plugin:
+    case .newTab, .plugin, .document:
       nil
     }
   }
 
   static func resourceKey(_ pane: ServerWorkspacePane) -> String? {
     guard let kind = pane.resourceKind, let id = pane.resourceId else { return nil }
+    // Files are case-sensitive resources, and document tabs deduplicate by
+    // their canonical path in the UI rather than this legacy migration key.
+    guard kind != "file" else { return nil }
     return "\(kind.lowercased()):\(id.lowercased())"
   }
 

@@ -471,6 +471,7 @@ struct PaneTabDragGhost: View {
     case .terminal: isAgentOwned ? "server.rack" : "terminal"
     case .newTab: "square.dashed"
     case .plugin: "puzzlepiece.extension"
+    case .document: "doc.richtext"
     }
   }
 
