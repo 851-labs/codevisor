@@ -8,6 +8,10 @@ struct ProjectDisclosureLabel: View {
   private static let statusWidth: CGFloat = 10
   private static let statusToIconSpacing: CGFloat = 5
   private static let iconWidth: CGFloat = 38
+  /// Single-line rows: the icon slot keeps the chat rows' WIDTH (so copy
+  /// aligns) but not their 38pt tile height, which made one line of text
+  /// sit in a two-line-tall row.
+  private static let rowHeight: CGFloat = 24
   private static let iconToCopySpacing: CGFloat = 10
   private static let copyLeadingOffset =
     statusWidth
@@ -42,7 +46,7 @@ struct ProjectDisclosureLabel: View {
     HStack(spacing: Self.iconToCopySpacing) {
       HStack(spacing: Self.statusToIconSpacing) {
         HomeStatusIndicator(status: showsStatus ? status : .idle)
-          .frame(width: Self.statusWidth, height: Self.iconWidth)
+          .frame(width: Self.statusWidth, height: Self.rowHeight)
         entityIcon
       }
       // One line: a linked project is one thing, and each chat beneath
@@ -54,7 +58,7 @@ struct ProjectDisclosureLabel: View {
         .textCase(nil)
       Spacer(minLength: 4)
     }
-    .padding(.vertical, 4)
+    .padding(.vertical, 2)
     .frame(maxWidth: .infinity, alignment: .leading)
     .alignmentGuide(.listRowSeparatorLeading) { _ in
       Self.copyLeadingOffset
@@ -67,6 +71,6 @@ struct ProjectDisclosureLabel: View {
     Image(systemName: symbolName)
       .font(.system(size: 20))
       .foregroundStyle(.secondary)
-      .frame(width: Self.iconWidth, height: Self.iconWidth)
+      .frame(width: Self.iconWidth, height: Self.rowHeight)
   }
 }
