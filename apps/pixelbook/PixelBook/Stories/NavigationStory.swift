@@ -7,40 +7,18 @@ import SwiftUI
 struct NavigationStory: View {
   @State private var loop = true
   @State private var autoHighlight = true
-  @State private var query = ""
-  @State private var highlight = Autocomplete.Highlight<String>(navigation: .inline)
   @State private var selection: Language?
 
   private let languages = SampleData.languages
-  private let metrics = Autocomplete.Style.xcodeMenu.metrics
-
-  private var matches: [Language] {
-    let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !query.isEmpty else { return languages }
-    return languages.filter { Autocomplete.Filter.contains.matches($0.name, query: query) }
-  }
 
   var body: some View {
-    Autocomplete.Root(highlight: highlight, onDismiss: { query = "" }) {
-      Autocomplete.Input(text: $query, prompt: "Search")
-      Autocomplete.List(height: metrics.listHeight(itemCount: languages.count)) {
-        if matches.isEmpty {
-          Autocomplete.Empty("No matching languages")
-        }
-        ForEach(matches) { language in
-          Autocomplete.Item(id: language.id, isSelected: language == selection, action: { choose(language) }) { _ in
-            Text(language.name)
-          }
-        }
-      }
+    Autocomplete.Suggestions {
+      Autocomplete.Picker("Languages", selection: $selection, options: languages) { language in
+        Autocomplete.Choice(language.name, value: Optional(language))
+      }.labelsHidden()
     }
-    .frame(width: metrics.popupWidth(fitting: languages.map(\.name)))
+    .autocompleteNavigation(.init(loop: loop, autoHighlight: autoHighlight))
     .popupSurface()
-    .onChange(of: loop, initial: true) { _, loop in highlight.navigation.loop = loop }
-    .onChange(of: autoHighlight, initial: true) { _, autoHighlight in
-      highlight.navigation.autoHighlight = autoHighlight
-      highlight.reconcile(with: matches.map(\.id))
-    }
     .storyInspector {
       Section("Navigation") {
         Toggle("Loop at the ends", isOn: $loop)
@@ -59,7 +37,4 @@ struct NavigationStory: View {
     }
   }
 
-  private func choose(_ language: Language) {
-    selection = language
-  }
 }

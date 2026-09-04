@@ -6,6 +6,7 @@ import PackageDescription
 // per-module folder layout under Packages/<Module>/.
 let package = Package(
   name: "CodevisorKit",
+  defaultLocalization: "en",
   platforms: [
     .macOS("26.0"),
     .iOS("26.0"),
@@ -263,6 +264,7 @@ let package = Package(
     .target(
       name: "Autocomplete",
       path: "Autocomplete/Sources/Autocomplete",
+      resources: [.process("Resources")],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .testTarget(

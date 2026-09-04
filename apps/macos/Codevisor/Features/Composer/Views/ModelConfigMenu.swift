@@ -16,14 +16,9 @@ struct ModelConfigMenu: View {
   private var favoriteModelIDs: [ModelPickerFavorite]
   @State private var isPresented = false
   @State private var isParametersPresented = false
-  @State private var modelSearch = ""
   @State private var isSwitchingHarness = false
   @State private var pendingModelValue: String?
   @State private var pendingModelGroupId: String?
-  @State private var highlight = Autocomplete.Highlight<ModelPickerTarget>(navigation: .menu)
-  /// Measured from the unfiltered list when the popover opens so filtering
-  /// never resizes it.
-  @State private var presentedListHeight: CGFloat?
 
   var body: some View {
     // A background revalidation must not replace an already-usable model
@@ -50,179 +45,83 @@ struct ModelConfigMenu: View {
 
 private extension ModelConfigMenu {
   private var modelButton: some View {
-    Button {
-      modelSearch = ""
-      if isPresented {
-        isPresented = false
-      } else {
-        presentedListHeight = listHeight(for: modelCatalog)
-        isPresented = true
+    Autocomplete.Menu(isPresented: $isPresented) {
+      for group in modelGroups {
+        Autocomplete.Picker(group.name, id: group.id, selection: modelSelection, options: group.modelOption.options) {
+          model in
+          Autocomplete.Choice(model.name, value: ModelPickerFavorite(model: model, group: group))
+            .searchTerms([model.value, group.name])
+        }
+        .favorites($favoriteModelIDs)
+      }
+      Autocomplete.Section(id: "actions") {
+        Autocomplete.Action("Manage Harnesses…", systemImage: "gearshape", action: showHarnessSettings)
+          .help("Open Harness Settings")
       }
     } label: {
       modelChipLabel
     }
+    .autocompleteSearchLabel("Search models")
+    .autocompleteEmptyMessage("No matching models")
     .buttonStyle(HoverIconButtonStyle(shape: .chip))
-    // The model name is provider-owned and can be arbitrarily long. Let
-    // this chip accept the toolbar's width proposal so its label can
-    // truncate before it pushes the composer actions out of bounds.
     .fixedSize(horizontal: false, vertical: true)
     .disabled(isSwitchingHarness)
     .help("Choose model")
     .accessibilityLabel("Model")
     .accessibilityValue(controller.modelOption?.currentName ?? "No model selected")
-    .popover(
-      isPresented: $isPresented,
-      attachmentAnchor: .rect(.bounds),
-      arrowEdge: .bottom
-    ) {
-      modelPickerPopup
-    }
+  }
+
+  private var modelSelection: Binding<ModelPickerFavorite> {
+    Binding(
+      get: {
+        ModelPickerFavorite(
+          harnessID: pendingModelGroupId ?? controller.activeHarnessId ?? "active",
+          modelValue: pendingModelValue ?? controller.modelOption?.currentValue ?? ""
+        )
+      },
+      set: { favorite in
+        guard let group = modelGroups.first(where: { $0.id == favorite.harnessID }),
+          let model = group.modelOption.options.first(where: { $0.value == favorite.modelValue }),
+          !isCurrent(model, in: group)
+        else { return }
+        choose(model: model.value, in: group)
+      }
+    )
   }
 
   private var parametersMenu: some View {
-    Button {
-      isParametersPresented.toggle()
+    Autocomplete.Menu(isPresented: $isParametersPresented) {
+      for option in settingsOptions {
+        Autocomplete.Picker(option.name, id: option.id, selection: parameterSelection(option), options: option.options)
+        { value in
+          Autocomplete.Choice(value.name, value: value.value).searchTerms([value.value])
+        }
+      }
     } label: {
       parameterChipLabel
     }
+    .autocompleteSearchLabel("Search model parameters")
+    .autocompleteEmptyMessage("No matching parameters")
+    .autocompleteSectionDividers(.hidden)
     .buttonStyle(HoverIconButtonStyle(shape: .chip))
     .fixedSize()
     .disabled(isLoadingSettings)
     .help("Model parameters")
     .accessibilityLabel("Model parameters")
     .accessibilityValue(parameterAccessibilityValue)
-    .popover(
-      isPresented: $isParametersPresented,
-      attachmentAnchor: .rect(.bounds),
-      arrowEdge: .bottom
-    ) {
-      Autocomplete.Menu(
-        sections: parameterSections,
-        searchAccessibilityLabel: "Search model parameters",
-        emptyMessage: "No matching parameters",
-        showsCheckmarks: true,
-        showsSectionDividers: false,
-        onDismiss: { isParametersPresented = false }
-      )
-    }
     .onChange(of: isLoadingSettings) { _, isLoading in
       if isLoading { isParametersPresented = false }
     }
   }
 
-  private var parameterSections: [Autocomplete.Section<Autocomplete.Option<ModelParameterMenu.Target>>] {
-    settingsOptions.map { option in
-      Autocomplete.Section(
-        id: option.id,
-        title: option.name,
-        items: option.options.map { value in
-          Autocomplete.Option(
-            id: ModelParameterMenu.Target(optionID: option.id, value: value.value),
-            title: value.name,
-            keywords: [option.name, value.value],
-            isSelected: option.currentValue == value.value,
-            isDisabled: isLoadingSettings
-          ) {
-            guard option.currentValue != value.value else { return }
-            Task { await controller.setConfigOption(option.id, value.value) }
-          }
-        }
-      )
-    }
-  }
-
-  private static let footerTitle = "Manage Harnesses…"
-  private static let metrics = Autocomplete.Style.xcodeMenu.metrics
-
-  private var modelPickerPopup: some View {
-    let catalog = modelCatalog
-    return Autocomplete.Root(
-      highlight: highlight,
-      isDisabled: isSwitchingHarness,
-      showsCheckmarks: true,
-      onDismiss: { isPresented = false }
-    ) {
-      Autocomplete.Input(
-        text: $modelSearch, prompt: "Search", accessibilityLabel: "Search models", focusesOnAppear: true
-      )
-
-      Autocomplete.List(height: presentedListHeight ?? listHeight(for: catalog)) {
-        if catalog.sections.isEmpty {
-          Autocomplete.Empty("No matching models")
-        }
-        ForEach(catalog.sections) { section in
-          Autocomplete.Group(section.title) {
-            ForEach(section.items) { item in
-              modelItem(item)
-            }
-          }
-        }
+  private func parameterSelection(_ option: SessionConfigOption) -> Binding<String> {
+    Binding(
+      get: { option.currentValue },
+      set: { value in
+        guard option.currentValue != value else { return }
+        Task { await controller.setConfigOption(option.id, value) }
       }
-
-      Autocomplete.Footer {
-        Autocomplete.Item(id: ModelPickerTarget.manageHarnesses, action: showHarnessSettings) { _ in
-          Text(Self.footerTitle)
-        }
-        .help("Open Harness Settings")
-      }
-    }
-    .frame(
-      width: Self.metrics.popupWidth(fitting: catalog.allTitles + [Self.footerTitle], showsCheckmarks: true)
     )
-    .onDisappear {
-      presentedListHeight = nil
-    }
-  }
-
-  private func modelItem(_ item: ModelPickerModelItem) -> some View {
-    Autocomplete.Item(
-      id: item.id,
-      isSelected: isCurrent(item.model, in: item.group),
-      accessibilityAction: Autocomplete.ItemAction(name: item.favoriteAction.label) { toggleFavorite(item) },
-      action: { selectModelItem(item) }
-    ) { _ in
-      Text(item.model.name)
-        .lineLimit(1)
-    } accessory: { _ in
-      Autocomplete.FavoriteButton(item.favoriteAction) {
-        toggleFavorite(item)
-      }
-    }
-  }
-
-  private func listHeight(for catalog: ModelPickerCatalog) -> CGFloat {
-    Self.metrics.listHeight(groupItemCounts: catalog.groupItemCounts, footerItemCount: 1)
-  }
-
-  private func selectModelItem(_ item: ModelPickerModelItem) {
-    if isCurrent(item.model, in: item.group) {
-      isPresented = false
-    } else {
-      choose(model: item.model.value, in: item.group)
-    }
-  }
-
-  private var normalizedModelSearch: String {
-    modelSearch.trimmingCharacters(in: .whitespacesAndNewlines)
-  }
-
-  private var modelCatalog: ModelPickerCatalog {
-    ModelPickerCatalog(
-      groups: modelGroups,
-      favoriteIDs: favoriteModelIDs,
-      query: normalizedModelSearch
-    )
-  }
-
-  private func toggleFavorite(_ item: ModelPickerModelItem) {
-    highlight.reset()
-    switch item.favoriteAction {
-    case .add:
-      guard !favoriteModelIDs.contains(item.favorite) else { return }
-      favoriteModelIDs = favoriteModelIDs + [item.favorite]
-    case .remove:
-      favoriteModelIDs = favoriteModelIDs.filter { $0 != item.favorite }
-    }
   }
 
   private func showHarnessSettings() {

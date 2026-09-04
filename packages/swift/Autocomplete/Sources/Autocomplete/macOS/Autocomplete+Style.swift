@@ -7,7 +7,7 @@
     /// item grid even though they are presented in a popover. Keeping those
     /// system metrics in one value prevents rows from drifting apart and lets
     /// a list size itself before it is laid out.
-    struct Metrics: Sendable {
+    struct Metrics: Sendable, Equatable {
       public var minimumWidth: CGFloat = 220
       public var maximumWidth: CGFloat = 402
       public var maximumHeight: CGFloat = 430
@@ -18,18 +18,18 @@
       public var listHorizontalInset: CGFloat = 5
       public var listVerticalInset: CGFloat = 4
       public var emptyListHeight: CGFloat = 64
-      public var groupSpacing: CGFloat = 6
       public var groupLabelSize: CGFloat = 12
       public var groupLabelTopInset: CGFloat = 8
       public var groupLabelBottomInset: CGFloat = 4
       public var itemHeight: CGFloat = 24
+      public var fontSize: CGFloat = NSFont.systemFontSize
       public var itemCornerRadius: CGFloat = 6
       public var itemHorizontalInset: CGFloat = 11
       /// The leading glyph slot on items that have one.
       public var itemIconSize: CGFloat = 16
       public var itemIconSpacing: CGFloat = 8
-      /// The checkmark column a popup reserves when `Root(showsCheckmarks:)`
-      /// is on, ahead of icons and titles — the way a menu does.
+      /// The checkmark column reserved when a menu contains choices,
+      /// ahead of icons and titles.
       public var checkColumnWidth: CGFloat = 14
       public var checkColumnSpacing: CGFloat = 6
       /// A `Divider` row: a hairline with breathing room above and below.
@@ -37,9 +37,8 @@
       /// Space reserved at an item's trailing edge for a hover accessory.
       public var itemAccessoryWidth: CGFloat = 22
       public var itemAccessoryTrailingInset: CGFloat = 2
-      /// The bottom corners of the popup's last row (the footer, or the last
-      /// item when there is none), so its highlight sits concentric with the
-      /// popup's own corners instead of showing a sliver of background.
+      /// The bottom corners of a final row that visually meets the popup's
+      /// bottom edge, so its highlight follows the popup's own corners.
       public var bottomCornerRadius: CGFloat = 14
 
       public init() {}
@@ -56,7 +55,7 @@
         contentLeading(showsCheckmarks: showsCheckmarks) + itemIconSize / 2
       }
 
-      /// Where titles start. With an icon column (`Root(showsIcons:)`) that is
+      /// Where titles start. With an icon column that is
       /// past the column; otherwise titles begin at the content leading.
       public func textLeading(showsCheckmarks: Bool = false, showsIcons: Bool = false) -> CGFloat {
         contentLeading(showsCheckmarks: showsCheckmarks) + (showsIcons ? itemIconSize + itemIconSpacing : 0)
@@ -67,13 +66,8 @@
         listHorizontalInset + itemHorizontalInset + (showsCheckmarks ? checkColumnAdvance : 0)
       }
 
-      public var groupLabelInset: CGFloat { itemHorizontalInset }
-      public var footerHorizontalInset: CGFloat { listHorizontalInset }
-      public var footerVerticalInset: CGFloat { listHorizontalInset }
-      public var footerTitleInset: CGFloat { itemHorizontalInset }
-
       public var nativeMenuFont: NSFont {
-        NSFont.menuFont(ofSize: NSFont.systemFontSize)
+        NSFont.menuFont(ofSize: fontSize)
       }
 
       public var menuFont: Font {
@@ -84,66 +78,47 @@
         .system(size: groupLabelSize)
       }
 
-      /// The height of the scrolling list that fits `itemCount` rows and
-      /// `groupLabelCount` group labels inside a popup with an input and a
-      /// footer, capped at `maximumHeight` overall. Measure the unfiltered
-      /// contents and pass the result to `List(height:)` so filtering never
-      /// resizes the popover.
-      public func listHeight(
-        itemCount: Int,
-        groupLabelCount: Int = 0,
-        dividerCount: Int = 0,
-        groupSpacingCount: Int? = nil,
-        hasInput: Bool = true,
-        footerItemCount: Int = 0
-      ) -> CGFloat {
-        var chrome: CGFloat = 0
-        if hasInput {
-          chrome += inputTopInset + inputHeight + inputBottomInset
+      // Use the same line box for the rendered heading and the list's sizing.
+      // Text's intrinsic height and AppKit's font bounds can differ at larger sizes.
+      var groupLabelLineHeight: CGFloat {
+        let font = NSFont.systemFont(ofSize: groupLabelSize)
+        return ceil(font.ascender - font.descender + font.leading)
+      }
+
+      var checkmarkFontSize: CGFloat { fontSize * 12 / NSFont.systemFontSize }
+      var accessoryFontSize: CGFloat { fontSize * 11 / NSFont.systemFontSize }
+
+      /// Explicit dimensions are minimums; larger text expands its glyph slots
+      /// and hit targets together. Resolving twice does not compound the scale.
+      func resolved(for dynamicTypeSize: DynamicTypeSize = .large) -> Self {
+        var result = self
+        if dynamicTypeSize.isAccessibilitySize {
+          result.fontSize = max(fontSize, 19)
+          result.groupLabelSize = max(groupLabelSize, 17)
         }
-        if footerItemCount > 0 {
-          chrome += 1 + (CGFloat(footerItemCount) * itemHeight) + (2 * footerVerticalInset)
-        }
-        return min(
-          listContentHeight(
-            itemCount: itemCount, groupLabelCount: groupLabelCount, dividerCount: dividerCount,
-            groupSpacingCount: groupSpacingCount
-          ),
-          maximumHeight - chrome
-        )
+        let scale = result.fontSize / NSFont.systemFontSize
+        result.groupLabelSize = max(result.groupLabelSize, result.fontSize - 1)
+        result.itemIconSize = max(itemIconSize, ceil(16 * scale))
+        result.checkColumnWidth = max(checkColumnWidth, ceil(14 * scale))
+        result.itemAccessoryWidth = max(itemAccessoryWidth, ceil(22 * scale))
+        result.itemHeight = max(itemHeight, ceil(result.fontSize * 1.6), result.itemIconSize)
+        result.inputHeight = max(inputHeight, result.itemHeight + 4)
+        return result
       }
 
-      /// `listHeight(itemCount:groupLabelCount:)` for grouped contents, one
-      /// entry per group.
-      public func listHeight(groupItemCounts: [Int], hasInput: Bool = true, footerItemCount: Int = 0) -> CGFloat {
-        listHeight(
-          itemCount: groupItemCounts.reduce(0, +),
-          groupLabelCount: groupItemCounts.count,
-          hasInput: hasInput,
-          footerItemCount: footerItemCount
-        )
+      /// The engine sizes the complete catalog before filtering it.
+      func listHeight(itemCount: Int, groupLabelCount: Int = 0, dividerCount: Int = 0) -> CGFloat {
+        min(
+          listContentHeight(itemCount: itemCount, groupLabelCount: groupLabelCount, dividerCount: dividerCount),
+          max(0, maximumHeight - inputTopInset - inputHeight - inputBottomInset))
       }
 
-      /// Fits the collection's rows and headings, including section dividers
-      /// when shown. Empty sections contribute no chrome.
-      public func listHeight<Element>(for results: Results<Element>, showsSectionDividers: Bool = true) -> CGFloat {
-        max(
-          listHeight(itemCount: 0),
-          listHeight(
-            itemCount: results.itemCount,
-            groupLabelCount: results.groupLabelCount,
-            dividerCount: showsSectionDividers ? results.dividerCount : 0,
-            groupSpacingCount: 0
-          )
-        )
-      }
-
-      public func listContentHeight(
-        itemCount: Int, groupLabelCount: Int = 0, dividerCount: Int = 0, groupSpacingCount: Int? = nil
+      func listContentHeight(
+        itemCount: Int, groupLabelCount: Int = 0, dividerCount: Int = 0
       ) -> CGFloat {
         guard itemCount > 0 else { return emptyListHeight }
         let labelHeight =
-          ceil(NSFont.systemFont(ofSize: groupLabelSize).boundingRectForFont.height)
+          groupLabelLineHeight
           + groupLabelTopInset
           + groupLabelBottomInset
         let contentHeight =
@@ -151,7 +126,6 @@
           + (CGFloat(groupLabelCount) * labelHeight)
           + (CGFloat(itemCount) * itemHeight)
           + (CGFloat(dividerCount) * dividerHeight)
-          + (CGFloat(groupSpacingCount ?? max(groupLabelCount - 1, 0)) * groupSpacing)
         return ceil(contentHeight)
       }
 
@@ -166,9 +140,11 @@
         fitting titles: [String],
         hasIcons: Bool = false,
         showsCheckmarks: Bool = false,
-        shortcuts: [KeyboardShortcut] = []
+        shortcuts: [KeyboardShortcut] = [],
+        accessoryCount: Int = 0
       ) -> CGFloat {
-        var chrome = (2 * listHorizontalInset) + (2 * itemHorizontalInset) + itemAccessoryWidth + 8
+        var chrome =
+          (2 * listHorizontalInset) + (2 * itemHorizontalInset) + CGFloat(accessoryCount) * itemAccessoryWidth + 8
         if hasIcons {
           chrome += itemIconSize + itemIconSpacing
         }
@@ -193,7 +169,14 @@
       /// The system menu selection material (accent-tinted, appearance-aware).
       case menuSelection
       /// A flat fill, e.g. a theme accent on a glass surface.
-      case fill(Color)
+      case fill(Color, foreground: Color = .white)
+
+      var foreground: Color {
+        switch self {
+        case .menuSelection: Color(nsColor: .selectedMenuItemTextColor)
+        case let .fill(_, foreground): foreground
+        }
+      }
     }
 
     struct Style: Sendable {
@@ -219,12 +202,7 @@
 
   extension EnvironmentValues {
     @Entry public var autocompleteStyle: Autocomplete.Style = .xcodeMenu
-    /// Set by `Root(showsCheckmarks:)`; rows, labels, dividers, and the
-    /// input all leave room for the check column when it is on.
-    @Entry var autocompleteShowsCheckmarks = false
-    /// Set by `Root(showsIcons:)`; rows reserve the icon column even when a
-    /// particular item has no icon, and the input keylines follow it.
-    @Entry var autocompleteShowsIcons = false
+
   }
 
   public extension View {

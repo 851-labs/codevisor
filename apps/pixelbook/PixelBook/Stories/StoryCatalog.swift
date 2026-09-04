@@ -6,7 +6,7 @@ enum StoryCatalog {
       id: "basic",
       title: "Basic",
       summary:
-        "Root, Input, List, and Items over a flat array. Menus start unhighlighted; searching highlights the first match for Return. Arrows stop at the ends."
+        "A selection-bound Picker inside Suggestions. The package owns filtering, highlighting, empty states, and sizing."
     ) {
       BasicStory()
     },
@@ -14,7 +14,7 @@ enum StoryCatalog {
       id: "groups",
       title: "Groups",
       summary:
-        "Group labels runs of items. The caller decides how filtering treats a group — here, matching a group's name keeps all of its items."
+        "Named picker groups. Matching a group name includes its choices; empty groups disappear automatically."
     ) {
       GroupsStory()
     },
@@ -22,7 +22,7 @@ enum StoryCatalog {
       id: "rich-items",
       title: "Rich items",
       summary:
-        "Item's first-party icon and shortcut slots, formatted from real KeyboardShortcut values; the subsequence filter; inline navigation so Return runs the first match."
+        "Semantic commands with icons and working local keyboard shortcuts, plus subsequence matching."
     ) {
       RichItemsStory()
     },
@@ -30,7 +30,7 @@ enum StoryCatalog {
       id: "filters",
       title: "Filters",
       summary:
-        "The three Filter presets. Filtering is the caller's one-liner; the popup never filters on its own."
+        "Switch among three matching policies without taking ownership of filtering or navigation."
     ) {
       FiltersStory()
     },
@@ -46,21 +46,21 @@ enum StoryCatalog {
       id: "long-list",
       title: "Long list",
       summary:
-        "Two hundred items. The list caps at the style's maximum height, keyboard navigation scrolls the target into view, and a pinned height keeps the popover steady while filtering."
+        "Up to 10,000 lazily rendered rows. Navigation includes offscreen choices; search reuses catalog measurements."
     ) {
       LongListStory()
     },
     Story(
       id: "long-titles",
       title: "Long titles",
-      summary: "Metrics.popupWidth grows the popup to its maximum and rows truncate."
+      summary: "Width is measured and cached automatically. Long titles truncate visually while remaining accessible."
     ) {
       LongTitlesStory()
     },
     Story(
       id: "empty",
       title: "Empty",
-      summary: "Empty centers a message in the list's visible height, for both no items and no matches."
+      summary: "Distinct no-content and no-match states, owned by the shared engine."
     ) {
       EmptyStory()
     },
@@ -68,7 +68,7 @@ enum StoryCatalog {
       id: "disabled",
       title: "Disabled",
       summary:
-        "Root(isDisabled:) dims items and ignores the pointer, arrows, Return, and accessories while a choice is taking effect; Escape still dismisses."
+        "Standard disabled state prevents all activation. Disabled choices stay visible and are skipped by keyboard navigation."
     ) {
       DisabledStory()
     },
@@ -84,7 +84,7 @@ enum StoryCatalog {
       id: "checkmarks",
       title: "Checkmarks",
       summary:
-        "Menu(showsCheckmarks:) reserves the check column, and Option(isSelected:) marks the current effort level. Choosing another item moves the checkmark."
+        "A selection binding derives checkmarks and activation. No separate isSelected flags or row assignment callbacks."
     ) {
       CheckmarksStory()
     },
@@ -100,7 +100,7 @@ enum StoryCatalog {
       id: "favorites",
       title: "Favorites accessory",
       summary:
-        "Menu owns hover-revealed stars and a Favorites section, listing each item once. The caller supplies eligible options and a binding for saved favorites."
+        "Ordered favorites with caller-owned storage, keyboard-accessible stars, named accessibility actions, and live reordering."
     ) {
       FavoritesStory()
     },
@@ -108,18 +108,35 @@ enum StoryCatalog {
       id: "popover",
       title: "Popover",
       summary:
-        "The presentation the product uses: a trigger whose popover hosts the popup. The trigger resets the filter and measures the unfiltered list before presenting so the popover never resizes; choosing or Escape closes it."
+        "Menu owns the trigger and popover lifecycle. Search starts fresh and keeps stable dimensions; selection or Escape dismisses."
     ) {
       PopoverStory()
     },
     Story(
-      id: "footer",
-      title: "Footer",
+      id: "actions",
+      title: "Actions",
       summary:
-        "Ordinary Items pinned under the list behind a divider — icons, shortcuts, and keyboard navigation included. The escape hatch for managing what the list shows."
+        "Management commands share filtering and navigation with choices, separated by an ordinary section divider."
     ) {
-      FooterStory()
+      ActionsStory()
     },
+    Story(
+      id: "parameters", title: "Multiple selections",
+      summary: "Independent Effort and Speed bindings in one searchable menu."
+    ) { ParametersStory() },
+    Story(
+      id: "loading", title: "Loading and errors",
+      summary: "Explicit loading, error, and ready presentation without custom filtering logic."
+    ) { LoadingStory() },
+    Story(
+      id: "appearance", title: "Appearance and RTL",
+      summary: "Live font changes, directional layout, and paired custom highlight colors."
+    ) { AppearanceStory() },
+    Story(
+      id: "focus", title: "Focus and text input",
+      summary: "Native text commands, composition, scoped shortcuts, and unhandled submit behavior."
+    ) { FocusStory() },
+
   ]
 
   static func story(id: String?) -> Story? {

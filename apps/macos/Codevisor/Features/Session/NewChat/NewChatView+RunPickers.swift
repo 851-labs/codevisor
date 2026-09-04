@@ -8,16 +8,9 @@ extension NewChatView {
     case machine, project, location
   }
 
-  /// Keyboard/hover targets of each picker's popup: choices and actions.
-  enum MachinePickerTarget: Hashable {
-    case machine(CodevisorMachine.ID)
-    case manageMachines
-  }
-
   enum ProjectPickerTarget: Hashable {
     case noProject
     case project(ProjectGroup.ID)
-    case newProject
   }
 
   enum RunLocationPickerTarget: Hashable {
@@ -89,118 +82,88 @@ extension NewChatView {
     let machines = environment.machines.allMachines
     let selectedServerId = controller.project.serverId
     let selectedMachine = environment.machines.machine(for: selectedServerId)
-    let choices = machines.map { machine in
-      Autocomplete.Option(
-        id: MachinePickerTarget.machine(machine.id),
-        title: machine.name,
-        icon: Image(systemName: EntitySystemSymbol.machine(machine)),
-        isSelected: machine.id == selectedServerId,
-        isFavoritable: true
-      ) {
+    let selection = Binding(
+      get: { controller.project.serverId },
+      set: { id in
+        guard let machine = environment.machines.machine(for: id) else { return }
         selectTargetMachine(machine, controller: controller)
       }
-    }
-    let manage = Autocomplete.Option(
-      id: MachinePickerTarget.manageMachines,
-      title: "Manage Machines…",
-      icon: Image(systemName: "gearshape"),
-      help: "Open Machine Settings"
-    ) {
-      SettingsRouter.shared.showMachines()
-      openSettings()
-    }
+    )
     return RunPickerMenu(
       chipText: selectedMachine?.name ?? "Machine",
-      chipSymbol: selectedMachine.map(EntitySystemSymbol.machine) ?? EntitySystemSymbol.machine(.local),
-      sections: [
-        .init(id: "machines", items: choices),
-        .init(id: "actions", items: [manage]),
-      ],
-      searchAccessibilityLabel: "Search machines",
-      emptyMessage: "No matching machines",
-      favoriteIDs: Binding(
-        get: { favoriteMachineIDs.map(MachinePickerTarget.machine) },
-        set: { targets in
-          favoriteMachineIDs = targets.compactMap {
-            guard case let .machine(id) = $0 else { return nil }
-            return id
-          }
+      chipSymbol: selectedMachine.map(EntitySystemSymbol.machine) ?? EntitySystemSymbol.machine(.local)
+    ) {
+      Autocomplete.Picker("Machines", selection: selection, options: machines) { machine in
+        Autocomplete.Choice(machine.name, value: machine.id, systemImage: EntitySystemSymbol.machine(machine))
+      }
+      .favorites($favoriteMachineIDs)
+      .labelsHidden()
+      Autocomplete.Section(id: "actions") {
+        Autocomplete.Action("Manage Machines…", systemImage: "gearshape") {
+          SettingsRouter.shared.showMachines()
+          openSettings()
         }
-      )
-    )
+        .help("Open Machine Settings")
+      }
+    }
+    .autocompleteSearchLabel("Search machines")
+    .autocompleteEmptyMessage("No matching machines")
     .onHover { trackHover(.machine, $0) }
     .help("Choose which machine this chat runs on")
     .accessibilityLabel("Machine")
     .accessibilityValue(selectedMachine?.name ?? "Machine")
   }
 
-  /// Choose the project the chat (and the workspace created around it on
-  /// first send) will work in. "No project" is a first-class choice — the
-  /// chat gets a single-use folder — and the default when nothing is
-  /// remembered, so a machine with no projects yet is not a dead end.
+  /// No project is an ordinary choice, including its favorite state.
   func projectPicker(_ controller: SessionController) -> some View {
     let selected = controller.project
-    // A draft retained after a failed first send keeps the scratch folder
-    // it was allocated (the retry reuses it); to the user that is still
-    // "No project", never the folder's generated name.
     let isNoProject = selected.isRunTargetPlaceholder || selected.isScratch
     let groups = pickerGroups(on: selected.serverId)
     let selectedGroup = isNoProject ? nil : groups.first { $0.contains(selected) }
     let chipText = isNoProject ? "No project" : (selectedGroup?.name ?? selected.name)
-    let noProject = Autocomplete.Option(
-      id: ProjectPickerTarget.noProject,
-      title: Self.noProjectTitle,
-      icon: Image(systemName: Self.noProjectSymbol),
-      isSelected: isNoProject,
-      isFavoritable: true
-    ) {
-      selectNoProject(controller)
-    }
-    let projects = groups.map { group in
-      Autocomplete.Option(
-        id: ProjectPickerTarget.project(group.id),
-        title: group.name,
-        icon: Image(systemName: EntitySystemSymbol.project),
-        isSelected: group.contains(selected),
-        isFavoritable: true
-      ) {
-        selectTargetGroup(group, controller: controller)
+    let selection = Binding<ProjectPickerTarget>(
+      get: { isNoProject ? .noProject : .project(selectedGroup?.id ?? selected.id.uuidString) },
+      set: { target in
+        switch target {
+        case .noProject: selectNoProject(controller)
+        case let .project(id):
+          if let group = groups.first(where: { $0.id == id }) { selectTargetGroup(group, controller: controller) }
+        }
       }
-    }
-    let newProject = Autocomplete.Option(
-      id: ProjectPickerTarget.newProject,
-      title: "New Project…",
-      icon: Image(systemName: "folder.badge.plus"),
-      help: "Add a project"
-    ) {
-      newProjectTarget = NewProjectTarget(serverId: selected.serverId)
-    }
-    return RunPickerMenu(
-      chipText: chipText,
-      chipSymbol: isNoProject ? Self.noProjectSymbol : EntitySystemSymbol.project,
-      sections: [
-        .init(id: "projects", items: [noProject] + projects),
-        .init(id: "actions", items: [newProject]),
-      ],
-      searchAccessibilityLabel: "Search projects",
-      emptyMessage: "No matching projects",
-      favoriteIDs: Binding(
-        get: {
-          favoriteProjectIDs.map {
-            $0 == Self.noProjectFavoriteID ? .noProject : .project($0)
-          }
-        },
-        set: { targets in
-          favoriteProjectIDs = targets.compactMap {
-            switch $0 {
-            case .noProject: Self.noProjectFavoriteID
-            case let .project(id): id
-            case .newProject: nil
-            }
+    )
+    let favorites = Binding<[ProjectPickerTarget]>(
+      get: { favoriteProjectIDs.map { $0 == Self.noProjectFavoriteID ? .noProject : .project($0) } },
+      set: { targets in
+        favoriteProjectIDs = targets.map {
+          switch $0 {
+          case .noProject: Self.noProjectFavoriteID
+          case let .project(id): id
           }
         }
-      )
+      }
     )
+    return RunPickerMenu(
+      chipText: chipText, chipSymbol: isNoProject ? Self.noProjectSymbol : EntitySystemSymbol.project
+    ) {
+      Autocomplete.Picker("Projects", selection: selection) {
+        Autocomplete.Choice(
+          Self.noProjectTitle, value: ProjectPickerTarget.noProject, systemImage: Self.noProjectSymbol)
+        for group in groups {
+          Autocomplete.Choice(
+            group.name, value: ProjectPickerTarget.project(group.id), systemImage: EntitySystemSymbol.project)
+        }
+      }
+      .favorites(favorites)
+      .labelsHidden()
+      Autocomplete.Section(id: "actions") {
+        Autocomplete.Action("New Project…", systemImage: "folder.badge.plus") {
+          newProjectTarget = NewProjectTarget(serverId: selected.serverId)
+        }
+        .help("Add a project")
+      }
+    }
+    .autocompleteSearchLabel("Search projects")
+    .autocompleteEmptyMessage("No matching projects")
     .onHover { trackHover(.project, $0) }
     .help("Choose which project this chat works in")
     .accessibilityLabel("Project")
@@ -218,36 +181,25 @@ extension NewChatView {
   /// workspace) runs. Only rendered for git projects; the worktree itself
   /// is created on the first send.
   func runLocationPicker(_ controller: SessionController) -> some View {
-    let newWorktree = controller.wantsNewWorktree
-    let current = RunLocationOption.all.first { $0.newWorktree == newWorktree } ?? .projectDirectory
-    let choices = RunLocationOption.all.map { option in
-      Autocomplete.Option(
-        id: option.id,
-        title: option.title,
-        icon: Image(systemName: option.symbol),
-        isSelected: option.newWorktree == newWorktree
-      ) {
-        selectRunLocation(newWorktree: option.newWorktree, controller: controller)
+    let current = RunLocationOption.all.first { $0.newWorktree == controller.wantsNewWorktree } ?? .projectDirectory
+    let selection = Binding(
+      get: { controller.wantsNewWorktree },
+      set: { selectRunLocation(newWorktree: $0, controller: controller) }
+    )
+    return RunPickerMenu(chipText: current.title, chipSymbol: current.symbol) {
+      Autocomplete.Picker("Run location", selection: selection, options: RunLocationOption.all) { option in
+        Autocomplete.Choice(option.title, value: option.newWorktree, systemImage: option.symbol)
+      }
+      .labelsHidden()
+      Autocomplete.Section(id: "actions") {
+        Autocomplete.Action("Manage Project…", systemImage: "gearshape") {
+          managedProject = liveProject(for: controller)
+        }
+        .help("Manage this project")
       }
     }
-    let manage = Autocomplete.Option(
-      id: RunLocationPickerTarget.manageProject,
-      title: "Manage Project…",
-      icon: Image(systemName: "gearshape"),
-      help: "Manage this project"
-    ) {
-      managedProject = liveProject(for: controller)
-    }
-    return RunPickerMenu(
-      chipText: current.title,
-      chipSymbol: current.symbol,
-      sections: [
-        .init(id: "locations", items: choices),
-        .init(id: "actions", items: [manage]),
-      ],
-      searchAccessibilityLabel: "Search run locations",
-      emptyMessage: "No matching run locations"
-    )
+    .autocompleteSearchLabel("Search run locations")
+    .autocompleteEmptyMessage("No matching run locations")
     .onHover { trackHover(.location, $0) }
     .help("Where this chat's commands run")
     .accessibilityLabel("Run location")

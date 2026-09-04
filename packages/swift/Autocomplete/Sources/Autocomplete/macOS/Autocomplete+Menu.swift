@@ -2,184 +2,135 @@
   import SwiftUI
 
   public extension Autocomplete {
-    /// An ordinary menu option. Actions such as "New Project…" use the same
-    /// representation and search behavior as choices that carry a checkmark.
-    struct Option<ID: Hashable>: Identifiable {
-      public let id: ID
-      public let title: String
-      public let keywords: [String]
-      public let icon: Image?
-      public let shortcut: KeyboardShortcut?
-      public let isSelected: Bool
-      public let isDisabled: Bool
-      public let isFavoritable: Bool
-      public let help: String?
-      public let action: () -> Void
+    /// A searchable menu including its trigger, presentation, and dismissal.
+    /// Compose commands and independently selection-bound Picker groups.
+    struct Menu<Label: View>: View {
+      let entries: [Entry]
+      let label: Label
+      let presentation: Binding<Bool>?
+      @State private var isPresented = false
+      @Environment(\.isEnabled) private var isEnabled
 
       public init(
-        id: ID,
-        title: String,
-        keywords: [String] = [],
-        icon: Image? = nil,
-        shortcut: KeyboardShortcut? = nil,
-        isSelected: Bool = false,
-        isDisabled: Bool = false,
-        isFavoritable: Bool = false,
-        help: String? = nil,
-        action: @escaping () -> Void
+        isPresented: Binding<Bool>? = nil,
+        @ContentBuilder content: () -> [Entry], @ViewBuilder label: () -> Label
       ) {
-        self.id = id
-        self.title = title
-        self.keywords = keywords
-        self.icon = icon
-        self.shortcut = shortcut
-        self.isSelected = isSelected
-        self.isDisabled = isDisabled
-        self.isFavoritable = isFavoritable
-        self.help = help
-        self.action = action
+        entries = content()
+        self.label = label()
+        presentation = isPresented
+      }
+
+      private var presented: Binding<Bool> { presentation ?? $isPresented }
+      public var body: some View {
+        Button {
+          presented.wrappedValue.toggle()
+        } label: {
+          label
+        }
+        .popover(isPresented: presented, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
+          Surface(entries: entries, mode: .menu, onDismiss: { presented.wrappedValue = false })
+            .disabled(!isEnabled)
+        }
+        .onChange(of: isEnabled) { _, enabled in
+          if !enabled { presented.wrappedValue = false }
+        }
       }
     }
 
-    /// A complete searchable menu. Owns the query, filtering, empty state,
-    /// favorites, separators, keyboard navigation, and sizing. The app supplies
-    /// options, actions, and optional storage for ordered favorite IDs.
-    /// Width and height fit the unfiltered collection so typing is stable.
-    struct Menu<ID: Hashable>: View {
-      let sections: [Section<Option<ID>>]
-      let prompt: String
-      let searchAccessibilityLabel: String
-      let emptyMessage: String
-      let filter: Filter
-      let showsCheckmarks: Bool
-      let showsSectionDividers: Bool
-      let favoriteIDs: Binding<[ID]>?
-      let onDismiss: () -> Void
-
-      @Environment(\.autocompleteStyle) private var style
-      @State private var query = ""
-      @State private var highlight: Highlight<ID>
+    /// An inline search field and results. The host can bind its query, hand
+    /// over focus explicitly, and receive an otherwise unhandled Return.
+    struct Suggestions: View {
+      let entries: [Entry]
+      let query: Binding<String>?
+      let focus: InputFocus?
+      let onSubmit: (() -> Void)?
+      let onCancel: (() -> Void)?
 
       public init(
-        sections: [Section<Option<ID>>],
-        prompt: String = "Search",
-        searchAccessibilityLabel: String,
-        emptyMessage: String = "No matches",
-        filter: Filter = .contains,
-        showsCheckmarks: Bool = false,
-        showsSectionDividers: Bool = true,
-        favoriteIDs: Binding<[ID]>? = nil,
-        onDismiss: @escaping () -> Void
+        query: Binding<String>? = nil, focus: InputFocus? = nil,
+        onSubmit: (() -> Void)? = nil, onCancel: (() -> Void)? = nil,
+        @ContentBuilder content: () -> [Entry]
       ) {
-        self.sections = sections
-        self.prompt = prompt
-        self.searchAccessibilityLabel = searchAccessibilityLabel
-        self.emptyMessage = emptyMessage
-        self.filter = filter
-        self.showsCheckmarks = showsCheckmarks
-        self.showsSectionDividers = showsSectionDividers
-        self.favoriteIDs = favoriteIDs
-        self.onDismiss = onDismiss
-        _highlight = State(initialValue: Highlight<ID>(navigation: .menu))
+        self.query = query
+        self.focus = focus
+        self.onSubmit = onSubmit
+        self.onCancel = onCancel
+        entries = content()
       }
 
       public var body: some View {
-        let catalog = results(for: "")
-        let results = results(for: query)
-        let metrics = style.metrics
-        let showsIcons = catalog.items.contains { $0.icon != nil }
-        Root(highlight: highlight, showsCheckmarks: showsCheckmarks, showsIcons: showsIcons, onDismiss: onDismiss) {
-          Input(text: $query, prompt: prompt, accessibilityLabel: searchAccessibilityLabel, focusesOnAppear: true)
-          List(height: metrics.listHeight(for: catalog, showsSectionDividers: showsSectionDividers)) {
-            if results.isEmpty {
-              Empty(emptyMessage)
-            }
-            ForEach(results.sections) { section in
-              if showsSectionDividers, section.id != results.sections.first?.id {
-                Divider()
-              }
-              if let title = section.title {
-                GroupLabel(title)
-              }
-              ForEach(section.items) { option in
-                optionRow(option)
-              }
-            }
-          }
-        }
-        .frame(
-          width: metrics.popupWidth(
-            fitting: catalog.items.map(\.title) + catalog.sections.compactMap(\.title),
-            hasIcons: showsIcons,
-            showsCheckmarks: showsCheckmarks,
-            shortcuts: catalog.items.compactMap(\.shortcut)
-          )
-        )
-        .onAppear { query = "" }
+        Surface(
+          entries: entries, mode: .inline, query: query, focus: focus,
+          onSubmit: onSubmit, onDismiss: onCancel)
       }
+    }
 
-      private func results(for query: String) -> Results<Option<ID>> {
-        Results(
-          sections: sections, query: query, filter: filter,
-          favoriteIDs: favoriteIDs?.wrappedValue ?? [], isFavoritable: \.isFavoritable
-        ) { [$0.title] + $0.keywords }
+    enum Sizing: Sendable { case stable, fitResults }
+    enum DismissBehavior: Sendable { case automatic, onSelection, never }
+    enum LoadingState: Equatable, Sendable {
+      case ready
+      case loading(String)
+      case failure(String)
+    }
+  }
+
+  extension Autocomplete {
+    struct Configuration {
+      var prompt = Strings.text("Search")
+      var searchLabel: String?
+      var emptyMessage = Strings.text("No matches")
+      var noItemsMessage = Strings.text("No items available")
+      var filter: Filter = .contains
+      var sizing: Sizing = .stable
+      var showsSectionDividers = true
+      var navigation: Navigation?
+      var dismissal: DismissBehavior = .automatic
+      var loading: LoadingState = .ready
+      var searchFocused: Binding<Bool>?
+      var requestedSearchFocus: Bool?
+    }
+  }
+
+  extension EnvironmentValues {
+    @Entry var autocompleteConfiguration = Autocomplete.Configuration()
+  }
+
+  public extension View {
+    func autocompleteSearchPrompt(_ prompt: String) -> some View {
+      transformEnvironment(\.autocompleteConfiguration) { $0.prompt = prompt }
+    }
+    func autocompleteSearchLabel(_ label: String) -> some View {
+      transformEnvironment(\.autocompleteConfiguration) { $0.searchLabel = label }
+    }
+    func autocompleteEmptyMessage(_ message: String, noItems: String? = nil) -> some View {
+      transformEnvironment(\.autocompleteConfiguration) {
+        $0.emptyMessage = message
+        if let noItems { $0.noItemsMessage = noItems }
       }
-
-      @ViewBuilder
-      private func optionRow(_ option: Option<ID>) -> some View {
-        if let help = option.help {
-          itemRow(option).help(help)
-        } else {
-          itemRow(option)
-        }
-      }
-
-      @ViewBuilder
-      private func itemRow(_ option: Option<ID>) -> some View {
-        if option.isFavoritable, let favoriteIDs {
-          let favoriteAction = FavoriteAction(isFavorite: favoriteIDs.wrappedValue.contains(option.id))
-          Item(
-            id: option.id,
-            icon: option.icon,
-            shortcut: option.shortcut,
-            isSelected: option.isSelected,
-            isDisabled: option.isDisabled,
-            accessibilityAction: ItemAction(name: favoriteAction.label) { toggleFavorite(option.id) },
-            action: { choose(option) }
-          ) { _ in
-            Text(option.title).lineLimit(1)
-          } accessory: { _ in
-            FavoriteButton(favoriteAction) { toggleFavorite(option.id) }
-          }
-        } else {
-          plainItem(option)
-        }
-      }
-
-      private func plainItem(_ option: Option<ID>) -> some View {
-        Item(
-          id: option.id,
-          icon: option.icon,
-          shortcut: option.shortcut,
-          isSelected: option.isSelected,
-          isDisabled: option.isDisabled,
-          action: { choose(option) }
-        ) { _ in
-          Text(option.title)
-            .lineLimit(1)
-        }
-      }
-
-      private func choose(_ option: Option<ID>) {
-        onDismiss()
-        option.action()
-      }
-
-      private func toggleFavorite(_ id: ID) {
-        guard let favoriteIDs else { return }
-        highlight.reset()
-        let ids = favoriteIDs.wrappedValue
-        favoriteIDs.wrappedValue = ids.contains(id) ? ids.filter { $0 != id } : ids + [id]
+    }
+    func autocompleteFilter(_ filter: Autocomplete.Filter) -> some View {
+      transformEnvironment(\.autocompleteConfiguration) { $0.filter = filter }
+    }
+    func autocompleteSizing(_ sizing: Autocomplete.Sizing) -> some View {
+      transformEnvironment(\.autocompleteConfiguration) { $0.sizing = sizing }
+    }
+    func autocompleteSectionDividers(_ visibility: Visibility) -> some View {
+      transformEnvironment(\.autocompleteConfiguration) { $0.showsSectionDividers = visibility != .hidden }
+    }
+    func autocompleteNavigation(_ navigation: Autocomplete.Navigation) -> some View {
+      transformEnvironment(\.autocompleteConfiguration) { $0.navigation = navigation }
+    }
+    func autocompleteDismissBehavior(_ behavior: Autocomplete.DismissBehavior) -> some View {
+      transformEnvironment(\.autocompleteConfiguration) { $0.dismissal = behavior }
+    }
+    func autocompleteLoadingState(_ state: Autocomplete.LoadingState) -> some View {
+      transformEnvironment(\.autocompleteConfiguration) { $0.loading = state }
+    }
+    func autocompleteSearchFocused(_ focused: Binding<Bool>) -> some View {
+      let requested = focused.wrappedValue
+      return transformEnvironment(\.autocompleteConfiguration) {
+        $0.searchFocused = focused
+        $0.requestedSearchFocus = requested
       }
     }
   }

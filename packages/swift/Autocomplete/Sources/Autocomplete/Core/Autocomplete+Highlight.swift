@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-public extension Autocomplete {
+extension Autocomplete {
   /// The single highlighted item of a popup. Every input drives the same
   /// value — the pointer, the arrow keys, and a filter that removes the
   /// current item — so what the user sees is always what Return accepts and
@@ -17,41 +17,43 @@ public extension Autocomplete {
     /// Which input last moved the highlight, so a container can react
     /// differently (scroll a keyboard target into view; leave a hovered one
     /// alone).
-    public enum Source: Sendable, Hashable {
+    enum Source: Sendable, Hashable {
       case keyboard
       case pointer
     }
 
-    public var navigation: Navigation
-    public private(set) var highlighted: ID?
-    public private(set) var source: Source?
+    var navigation: Navigation
+    private(set) var highlighted: ID?
+    private(set) var source: Source?
     private var searchQuery = ""
 
     private var autoHighlights: Bool { navigation.autoHighlight || !searchQuery.isEmpty }
 
-    public init(navigation: Navigation = .menu) {
+    init(navigation: Navigation = .menu) {
       self.navigation = navigation
     }
 
     // MARK: Pointer
 
     /// The pointer entered an item: it becomes the highlight.
-    public func hover(_ id: ID) {
+    func hover(_ id: ID) {
       set(id, source: .pointer)
     }
 
     /// The pointer left an item. Menus clear the highlight the way NSMenu
     /// does. While searching or using `autoHighlight`, it stays where it is
     /// until another input moves it.
-    public func endHover(_ id: ID) {
+    func endHover(_ id: ID) {
       guard highlighted == id, !autoHighlights else { return }
       set(nil, source: .pointer)
     }
 
+    func focus(_ id: ID) { set(id, source: .keyboard) }
+
     // MARK: Keyboard
 
     /// Forget the highlight, e.g. when the popup is about to be presented.
-    public func reset() {
+    func reset() {
       highlighted = nil
       source = nil
       searchQuery = ""
@@ -60,7 +62,7 @@ public extension Autocomplete {
     /// A changed search highlights its first result, even if the previous
     /// target still matches. Clearing search restores the navigation preset.
     /// Reconcile query and results together so an old list is never selected.
-    public func reconcile(with targets: [ID], query: String? = nil) {
+    func reconcile(with targets: [ID], query: String? = nil) {
       if let query {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if normalized != searchQuery {
@@ -77,7 +79,7 @@ public extension Autocomplete {
       }
     }
 
-    public func move(by offset: Int, in targets: [ID]) {
+    func move(by offset: Int, in targets: [ID]) {
       guard !targets.isEmpty else {
         set(nil, source: .keyboard)
         return
@@ -95,11 +97,11 @@ public extension Autocomplete {
       set(targets[nextIndex], source: .keyboard)
     }
 
-    public func moveToFirst(in targets: [ID]) {
+    func moveToFirst(in targets: [ID]) {
       set(targets.first, source: .keyboard)
     }
 
-    public func moveToLast(in targets: [ID]) {
+    func moveToLast(in targets: [ID]) {
       set(targets.last, source: .keyboard)
     }
 
@@ -108,7 +110,7 @@ public extension Autocomplete {
     /// fired a callback, so an owner sharing the keyboard (a text editor)
     /// can let unhandled keys fall through.
     @discardableResult
-    public func handle(
+    func handle(
       _ command: KeyCommand,
       targets: [ID],
       accept: (ID) -> Void,

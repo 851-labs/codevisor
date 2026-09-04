@@ -15,45 +15,27 @@ struct CustomStyleStory: View {
       switch self {
       case .menuSelection: .menuSelection
       case .accent: .fill(.accentColor)
-      case .tinted: .fill(.indigo)
+      case .tinted: .fill(.yellow, foreground: .black)
       }
     }
   }
 
   @State private var highlightChoice: Highlight = .tinted
   @State private var usesMiniScroller = false
-  @State private var query = ""
-  @State private var highlight = Autocomplete.Highlight<String>(navigation: .inline)
   @State private var selection: Language?
 
   private let languages = SampleData.manyLanguages
-  private let metrics = Autocomplete.Style.xcodeMenu.metrics
 
   private var style: Autocomplete.Style {
     Autocomplete.Style(itemHighlight: highlightChoice.itemHighlight, usesMiniScroller: usesMiniScroller)
   }
 
-  private var matches: [Language] {
-    let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !query.isEmpty else { return languages }
-    return languages.filter { Autocomplete.Filter.contains.matches($0.name, query: query) }
-  }
-
   var body: some View {
-    Autocomplete.Root(highlight: highlight, onDismiss: { query = "" }) {
-      Autocomplete.Input(text: $query, prompt: "Search")
-      Autocomplete.List(height: metrics.listHeight(itemCount: languages.count)) {
-        if matches.isEmpty {
-          Autocomplete.Empty("No matching languages")
-        }
-        ForEach(matches) { language in
-          Autocomplete.Item(id: language.id, isSelected: language == selection, action: { selection = language }) { _ in
-            Text(language.name)
-          }
-        }
-      }
+    Autocomplete.Suggestions {
+      Autocomplete.Picker("Languages", selection: $selection, options: languages) { language in
+        Autocomplete.Choice(language.name, value: Optional(language))
+      }.labelsHidden()
     }
-    .frame(width: metrics.popupWidth(fitting: languages.map(\.name)))
     .autocompleteStyle(style)
     .popupSurface()
     .storyInspector {

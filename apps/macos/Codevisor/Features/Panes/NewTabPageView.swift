@@ -43,12 +43,10 @@ struct NewTabPageView: View {
 
   @State private var pluginOptions: [NewTabOption] = []
   @State private var query = ""
-  @State private var highlight = Autocomplete.Highlight<String>(navigation: .inline)
   /// Focusing this pane focuses the picker's input — never on appearance,
   /// only when the group says the pane is the one the user is working in.
   @State private var inputFocus = Autocomplete.InputFocus()
 
-  private static let metrics = Autocomplete.Style.xcodeMenu.metrics
   private static let popupCornerRadius: CGFloat = 18
 
   private var options: [NewTabOption] {
@@ -56,12 +54,6 @@ struct NewTabPageView: View {
       NewTabOption(id: "chat", title: "New Chat", kind: .chat),
       NewTabOption(id: "terminal", title: "New Terminal", kind: .terminal),
     ] + pluginOptions
-  }
-
-  private var matches: [NewTabOption] {
-    let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !query.isEmpty else { return options }
-    return options.filter { Autocomplete.Filter.contains.matches($0.title, query: query) }
   }
 
   var body: some View {
@@ -96,46 +88,30 @@ struct NewTabPageView: View {
   }
 
   private var popup: some View {
-    Autocomplete.Root(highlight: highlight, showsIcons: true, onDismiss: { query = "" }) {
-      Autocomplete.Input(
-        text: $query, prompt: "Search", accessibilityLabel: "Search new tab options", focus: inputFocus
-      )
-      // Pinned to the unfiltered count so filtering never resizes the popup.
-      Autocomplete.List(height: Self.metrics.listHeight(itemCount: options.count)) {
-        if matches.isEmpty {
-          Autocomplete.Empty("No matching options")
-        }
-        ForEach(matches) { option in
-          switch option.kind {
-          case .chat:
-            Autocomplete.Item(id: option.id, icon: Image(systemName: "text.bubble"), action: { open(option) }) { _ in
-              Text(option.title)
+    Autocomplete.Suggestions(query: $query, focus: inputFocus) {
+      for option in options {
+        switch option.kind {
+        case .chat:
+          Autocomplete.Action(option.title, id: option.id, systemImage: "text.bubble") { open(option) }
+        case .terminal:
+          Autocomplete.Action(option.title, id: option.id, systemImage: "terminal") { open(option) }
+        case let .plugin(pluginId, paneType, iconPath):
+          Autocomplete.Action(option.title, id: option.id, action: { open(option) }) {
+            if let client {
+              PluginIconView(
+                pluginId: pluginId, paneType: paneType, iconPath: iconPath,
+                client: client, cacheNamespace: iconCacheNamespace)
+            } else {
+              Image(systemName: "puzzlepiece.extension")
             }
-          case .terminal:
-            Autocomplete.Item(id: option.id, icon: Image(systemName: "terminal"), action: { open(option) }) { _ in
-              Text(option.title)
-            }
-          case let .plugin(pluginId, paneType, iconPath):
-            Autocomplete.Item(id: option.id, action: { open(option) }) {
-              if let client {
-                PluginIconView(
-                  pluginId: pluginId,
-                  paneType: paneType,
-                  iconPath: iconPath,
-                  client: client,
-                  cacheNamespace: iconCacheNamespace
-                )
-              } else {
-                Image(systemName: "puzzlepiece.extension")
-              }
-            } label: { _ in
-              Text(option.title)
-            }
+          } label: {
+            Text(option.title)
           }
         }
       }
     }
-    .frame(width: Self.metrics.popupWidth(fitting: options.map(\.title), hasIcons: true))
+    .autocompleteSearchLabel("Search new tab options")
+    .autocompleteEmptyMessage("No matching options")
     .composerGlassSurface(cornerRadius: Self.popupCornerRadius)
     .accessibilityElement(children: .contain)
     .accessibilityLabel("New tab")

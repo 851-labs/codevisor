@@ -1,48 +1,29 @@
 import Autocomplete
 import SwiftUI
 
-/// The menu owns star accessories, favorite ordering, filtering, and section
-/// layout. The caller supplies eligible options and storage for favorite IDs.
 struct FavoritesStory: View {
-  @State private var favorites: [String] = ["gpt-5-codex", "sonnet"]
-  @State private var selection: Model?
-
-  private let harnesses = SampleData.harnesses
-  private var allModels: [Model] { harnesses.flatMap(\.models) }
-
+  @State private var favorites = ["gpt-5-codex", "sonnet"]
+  @State private var selection = ""
+  @State private var reversed = false
+  private var harnesses: [Harness] { reversed ? SampleData.harnesses.reversed() : SampleData.harnesses }
+  private var models: [Model] { harnesses.flatMap(\.models) }
   var body: some View {
-    Autocomplete.Menu(
-      sections: harnesses.map { harness in
-        .init(
-          id: harness.id, title: harness.name,
-          items: harness.models.map { model in
-            Autocomplete.Option(
-              id: model.id, title: model.name, keywords: [harness.name],
-              isSelected: model == selection, isFavoritable: true
-            ) {
-              selection = model
-            }
-          }
-        )
-      },
-      searchAccessibilityLabel: "Search models",
-      emptyMessage: "No matching models",
-      showsCheckmarks: true,
-      favoriteIDs: $favorites,
-      onDismiss: {}
-    )
+    Autocomplete.Suggestions {
+      ForEach(harnesses) { harness in
+        Autocomplete.Picker(harness.name, id: harness.id, selection: $selection, options: harness.models) { model in
+          Autocomplete.Choice(model.name, value: model.id)
+        }.favorites($favorites)
+      }
+    }
+    .autocompleteSearchLabel("Search models")
     .popupSurface()
     .storyInspector {
       Section("Favorites") {
-        if favorites.isEmpty {
-          Text("None")
-            .foregroundStyle(.secondary)
-        }
-        ForEach(favorites, id: \.self) { id in
-          Text(allModels.first { $0.id == id }?.name ?? id)
-        }
+        Text("Highlight a row and press ⇧⌘F, or Tab to its star.")
+        ForEach(favorites, id: \.self) { id in Text(models.first { $0.id == id }?.name ?? id) }
+        Toggle("Reverse group order", isOn: $reversed)
       }
-      SelectionSection(value: selection?.name)
+      SelectionSection(value: models.first { $0.id == selection }?.name)
     }
   }
 }

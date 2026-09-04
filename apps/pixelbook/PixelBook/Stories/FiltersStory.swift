@@ -1,8 +1,7 @@
 import Autocomplete
 import SwiftUI
 
-/// The package ships three `Filter` presets; the popup does not filter for
-/// you, so swapping one is a one-line change in the caller.
+/// Change matching behavior without reimplementing filtering.
 struct FiltersStory: View {
   enum Preset: String, CaseIterable, Identifiable {
     case contains = "Contains"
@@ -29,34 +28,17 @@ struct FiltersStory: View {
   }
 
   @State private var preset: Preset = .contains
-  @State private var query = ""
-  @State private var highlight = Autocomplete.Highlight<String>(navigation: .menu)
   @State private var selection: Language?
 
   private let languages = SampleData.languages
-  private let metrics = Autocomplete.Style.xcodeMenu.metrics
-
-  private var matches: [Language] {
-    let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !query.isEmpty else { return languages }
-    return languages.filter { preset.filter.matches($0.name, query: query) }
-  }
 
   var body: some View {
-    Autocomplete.Root(highlight: highlight, onDismiss: { query = "" }) {
-      Autocomplete.Input(text: $query, prompt: "Search")
-      Autocomplete.List(height: metrics.listHeight(itemCount: languages.count)) {
-        if matches.isEmpty {
-          Autocomplete.Empty("No matching languages")
-        }
-        ForEach(matches) { language in
-          Autocomplete.Item(id: language.id, isSelected: language == selection, action: { selection = language }) { _ in
-            Text(language.name)
-          }
-        }
-      }
+    Autocomplete.Suggestions {
+      Autocomplete.Picker("Languages", selection: $selection, options: languages) { language in
+        Autocomplete.Choice(language.name, value: Optional(language))
+      }.labelsHidden()
     }
-    .frame(width: metrics.popupWidth(fitting: languages.map(\.name)))
+    .autocompleteFilter(preset.filter)
     .popupSurface()
     .storyInspector {
       Section("Filter") {

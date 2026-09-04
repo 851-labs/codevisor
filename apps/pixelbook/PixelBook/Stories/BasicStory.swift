@@ -1,43 +1,20 @@
 import Autocomplete
 import SwiftUI
 
-/// The smallest complete popup: `Root`, `Input`, `List`, and `Item`s.
+/// A selection binding is all the caller needs; the package owns interaction.
 struct BasicStory: View {
-  @State private var query = ""
-  @State private var highlight = Autocomplete.Highlight<String>(navigation: .menu)
   @State private var selection: Language?
-
   private let languages = SampleData.languages
-  private let metrics = Autocomplete.Style.xcodeMenu.metrics
-
-  private var matches: [Language] {
-    let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !query.isEmpty else { return languages }
-    return languages.filter { Autocomplete.Filter.contains.matches($0.name, query: query) }
-  }
-
   var body: some View {
-    Autocomplete.Root(highlight: highlight, onDismiss: { query = "" }) {
-      Autocomplete.Input(text: $query, prompt: "Search")
-      Autocomplete.List(height: metrics.listHeight(itemCount: languages.count)) {
-        if matches.isEmpty {
-          Autocomplete.Empty("No matching languages")
-        }
-        ForEach(matches) { language in
-          Autocomplete.Item(id: language.id, isSelected: language == selection, action: { choose(language) }) { _ in
-            Text(language.name)
-          }
-        }
-      }
+    Autocomplete.Suggestions {
+      Autocomplete.Picker("Languages", selection: $selection, options: languages) { language in
+        Autocomplete.Choice(language.name, value: Optional(language))
+      }.labelsHidden()
     }
-    .frame(width: metrics.popupWidth(fitting: languages.map(\.name)))
+    .autocompleteNavigation(.menu)
+    .autocompleteSearchLabel("Search languages")
+    .autocompleteEmptyMessage("No matching languages")
     .popupSurface()
-    .storyInspector {
-      SelectionSection(value: selection?.name)
-    }
-  }
-
-  private func choose(_ language: Language) {
-    selection = language
+    .storyInspector { SelectionSection(value: selection?.name) }
   }
 }
