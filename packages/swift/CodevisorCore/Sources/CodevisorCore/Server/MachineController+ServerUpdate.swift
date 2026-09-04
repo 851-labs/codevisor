@@ -114,11 +114,10 @@ extension MachineController {
       // reports it is still draining live chats, the deadline moves out —
       // the server bounds the drain itself (and interrupts at its own
       // deadline), so this never waits forever.
-      let clock = ContinuousClock()
       let pollBudget = updatePollInterval * updatePollAttempts
-      var deadline = clock.now + pollBudget
-      while clock.now < deadline {
-        try? await Task.sleep(for: updatePollInterval)
+      var deadline = updateScheduler.now() + pollBudget
+      while updateScheduler.now() < deadline {
+        try? await updateScheduler.sleep(updatePollInterval)
         // The machine's own progress report: draining, installing (on
         // app-hosted Macs, the host app's headless Sparkle session), or a
         // fresh failure — which ends the wait with the real reason
@@ -140,7 +139,7 @@ extension MachineController {
             return
           case "draining":
             connection.updateStatusMessage = lastApply.message ?? "Waiting for chats to finish…"
-            deadline = max(deadline, clock.now + pollBudget)
+            deadline = max(deadline, updateScheduler.now() + pollBudget)
             continue
           case "installing":
             connection.updateStatusMessage = lastApply.message ?? "Installing…"

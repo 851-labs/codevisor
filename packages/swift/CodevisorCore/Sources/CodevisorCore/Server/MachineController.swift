@@ -135,6 +135,7 @@ public final class MachineController {
   /// restarts into its updated version. Injectable so tests run fast.
   let updatePollInterval: Duration
   let updatePollAttempts: Int
+  let updateScheduler: ServerUpdateScheduler
   /// Backoff base for automatic retries of a failed remote preparation
   /// (base · 2^n, capped). Injectable so tests run fast.
   let preparationRetryBaseDelay: Duration
@@ -184,6 +185,7 @@ public final class MachineController {
     clientFactory: ClientFactory? = nil,
     updatePollInterval: Duration = .seconds(2),
     updatePollAttempts: Int = 90,
+    updateScheduler: ServerUpdateScheduler = .continuous,
     preparationRetryBaseDelay: Duration = .seconds(1)
   ) {
     let requestGate = ServerRequestGate()
@@ -204,6 +206,7 @@ public final class MachineController {
       }
     self.updatePollInterval = updatePollInterval
     self.updatePollAttempts = updatePollAttempts
+    self.updateScheduler = updateScheduler
     self.preparationRetryBaseDelay = preparationRetryBaseDelay
     if let data = store.loadData(forKey: "machines") {
       do {

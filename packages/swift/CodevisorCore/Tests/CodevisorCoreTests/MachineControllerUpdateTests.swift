@@ -18,12 +18,14 @@ struct MachineControllerUpdateTests {
       projectRepository: DefaultProjectRepository(store: InMemoryStore()),
       sessionRepository: DefaultSessionRepository(store: InMemoryStore())
     )
+    let clock = AdvancingServerUpdateScheduler()
     let controller = MachineController(
       store: InMemoryStore(),
       projectList: projectList,
       clientFactory: { _ in fake },
       updatePollInterval: .milliseconds(2),
-      updatePollAttempts: 50
+      updatePollAttempts: 50,
+      updateScheduler: clock.scheduler
     )
 
     await controller.refreshStatus(for: "local")
@@ -54,12 +56,14 @@ struct MachineControllerUpdateTests {
       projectRepository: DefaultProjectRepository(store: InMemoryStore()),
       sessionRepository: DefaultSessionRepository(store: InMemoryStore())
     )
+    let clock = AdvancingServerUpdateScheduler()
     let controller = MachineController(
       store: InMemoryStore(),
       projectList: projectList,
       clientFactory: { _ in fake },
       updatePollInterval: .milliseconds(2),
-      updatePollAttempts: 50
+      updatePollAttempts: 50,
+      updateScheduler: clock.scheduler
     )
 
     // Stable by default.
@@ -119,12 +123,14 @@ struct MachineControllerUpdateTests {
       projectRepository: DefaultProjectRepository(store: InMemoryStore()),
       sessionRepository: DefaultSessionRepository(store: InMemoryStore())
     )
+    let clock = AdvancingServerUpdateScheduler()
     let controller = MachineController(
       store: InMemoryStore(),
       projectList: projectList,
       clientFactory: { _ in fake },
       updatePollInterval: .milliseconds(2),
-      updatePollAttempts: 50
+      updatePollAttempts: 50,
+      updateScheduler: clock.scheduler
     )
     controller.serverUpdateChannel = .alpha
 
@@ -151,12 +157,14 @@ struct MachineControllerUpdateTests {
       projectRepository: DefaultProjectRepository(store: InMemoryStore()),
       sessionRepository: DefaultSessionRepository(store: InMemoryStore())
     )
+    let clock = AdvancingServerUpdateScheduler()
     let controller = MachineController(
       store: InMemoryStore(),
       projectList: projectList,
       clientFactory: { _ in fake },
       updatePollInterval: .milliseconds(2),
-      updatePollAttempts: 50
+      updatePollAttempts: 50,
+      updateScheduler: clock.scheduler
     )
     controller.serverUpdateChannel = .alpha
 
@@ -179,12 +187,14 @@ struct MachineControllerUpdateTests {
       projectRepository: DefaultProjectRepository(store: InMemoryStore()),
       sessionRepository: DefaultSessionRepository(store: InMemoryStore())
     )
+    let clock = AdvancingServerUpdateScheduler()
     let controller = MachineController(
       store: InMemoryStore(),
       projectList: projectList,
       clientFactory: { _ in fake },
       updatePollInterval: .milliseconds(2),
-      updatePollAttempts: 50
+      updatePollAttempts: 50,
+      updateScheduler: clock.scheduler
     )
 
     await controller.refreshStatus(for: "local")
@@ -210,31 +220,30 @@ struct MachineControllerUpdateTests {
       projectRepository: DefaultProjectRepository(store: InMemoryStore()),
       sessionRepository: DefaultSessionRepository(store: InMemoryStore())
     )
+    let clock = AdvancingServerUpdateScheduler()
     let controller = MachineController(
       store: InMemoryStore(),
       projectList: projectList,
       clientFactory: { _ in fake },
       updatePollInterval: .milliseconds(2),
-      updatePollAttempts: 5
+      updatePollAttempts: 5,
+      updateScheduler: clock.scheduler
     )
     await controller.refreshStatus(for: "local")
 
-    let observer = Task { @MainActor in
-      var seen: [String] = []
-      for _ in 0..<400 {
-        if let message = controller.connectionsById["local"]?.updateStatusMessage,
-          seen.last != message
-        {
-          seen.append(message)
-        }
-        if controller.serverUpdatePhase(for: "local") != .updating, !seen.isEmpty { break }
-        try? await Task.sleep(for: .milliseconds(1))
+    var messages: [String] = []
+    clock.onSleep = { [weak controller] in
+      if let message = controller?.connectionsById["local"]?.updateStatusMessage,
+        messages.last != message
+      {
+        messages.append(message)
       }
-      return seen
     }
     await controller.updateServer(machineId: "local")
-    let messages = await observer.value
 
+    // Draining extends the original 10 ms budget, regardless of real time
+    // spent scheduling this test alongside the rest of the suite.
+    #expect(clock.elapsed > .milliseconds(10))
     #expect(controller.serverUpdatePhase(for: "local") == .idle)
     #expect(controller.serverUpdateInfo(for: "local")?.updateAvailable == false)
     #expect(messages.contains { $0.contains("Waiting for 2 chats to finish") })
@@ -252,12 +261,14 @@ struct MachineControllerUpdateTests {
       projectRepository: DefaultProjectRepository(store: InMemoryStore()),
       sessionRepository: DefaultSessionRepository(store: InMemoryStore())
     )
+    let clock = AdvancingServerUpdateScheduler()
     let controller = MachineController(
       store: InMemoryStore(),
       projectList: projectList,
       clientFactory: { _ in fake },
       updatePollInterval: .milliseconds(2),
-      updatePollAttempts: 50
+      updatePollAttempts: 50,
+      updateScheduler: clock.scheduler
     )
 
     await controller.updateServer(machineId: "local")
@@ -270,5 +281,70 @@ struct MachineControllerUpdateTests {
       Issue.record("Expected a failed phase, got \(controller.serverUpdatePhase(for: "local"))")
     }
     controller.stopEventSync()
+  }
+
+  @Test("An unreachable restart times out once draining ends", arguments: [0, 12])
+  func remoteServerUpdateTimesOut(drainPolls: Int) async throws {
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    fake.configureUpdate(current: "0.1.0", latest: "0.2.0")
+    fake.configureDrain(polls: drainPolls)
+    let clock = AdvancingServerUpdateScheduler()
+    let controller = MachineController(
+      store: InMemoryStore(),
+      projectList: ProjectListModel(
+        projectRepository: DefaultProjectRepository(store: InMemoryStore()),
+        sessionRepository: DefaultSessionRepository(store: InMemoryStore())
+      ),
+      clientFactory: { _ in fake },
+      updatePollInterval: .milliseconds(2),
+      updatePollAttempts: 3,
+      updateScheduler: clock.scheduler
+    )
+    defer { controller.stopEventSync() }
+    await controller.refreshStatus(for: "local")
+
+    await controller.updateServer(machineId: "local")
+
+    // The fake rejects three probes after restarting. Without another drain
+    // report, those probes exhaust the deadline instead of extending it.
+    let expectedPolls = max(drainPolls - 1, 0) + 3
+    #expect(clock.requestedIntervals.count == expectedPolls)
+    #expect(clock.elapsed == .milliseconds(2) * expectedPolls)
+    #expect(
+      controller.serverUpdatePhase(for: "local")
+        == .failed("The server did not come back after updating. Check it on the machine directly."))
+    #expect(controller.serverUpdateInfo(for: "local")?.updateAvailable == true)
+    #expect(controller.connectionsById["local"]?.updateStatusMessage == nil)
+  }
+
+  @Test("Elapsed time can exhaust the deadline before all probes run")
+  func remoteServerUpdateDeadlineIncludesDelays() async throws {
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    fake.configureUpdate(current: "0.1.0", latest: "0.2.0")
+    let clock = AdvancingServerUpdateScheduler()
+    // Model a scheduler delay without sleeping in real time. A fixed attempt
+    // loop would incorrectly keep polling and eventually report success.
+    clock.onSleep = { [weak clock] in clock?.advance(by: .milliseconds(10)) }
+    let controller = MachineController(
+      store: InMemoryStore(),
+      projectList: ProjectListModel(
+        projectRepository: DefaultProjectRepository(store: InMemoryStore()),
+        sessionRepository: DefaultSessionRepository(store: InMemoryStore())
+      ),
+      clientFactory: { _ in fake },
+      updatePollInterval: .milliseconds(2),
+      updatePollAttempts: 5,
+      updateScheduler: clock.scheduler
+    )
+    defer { controller.stopEventSync() }
+    await controller.refreshStatus(for: "local")
+
+    await controller.updateServer(machineId: "local")
+
+    #expect(clock.requestedIntervals == [.milliseconds(2)])
+    #expect(clock.elapsed == .milliseconds(12))
+    #expect(
+      controller.serverUpdatePhase(for: "local")
+        == .failed("The server did not come back after updating. Check it on the machine directly."))
   }
 }

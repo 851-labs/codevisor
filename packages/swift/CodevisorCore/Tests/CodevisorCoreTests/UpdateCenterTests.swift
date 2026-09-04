@@ -39,7 +39,8 @@ struct UpdateCenterTests {
         fakes[machine.id] ?? SyncFakeServerClient(projects: [], sessions: [])
       },
       updatePollInterval: .milliseconds(2),
-      updatePollAttempts: 50
+      updatePollAttempts: 50,
+      updateScheduler: AdvancingServerUpdateScheduler().scheduler
     )
   }
 
