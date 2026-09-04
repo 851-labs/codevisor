@@ -184,8 +184,16 @@ extension HomeView {
     }
   }
 
+  /// The chat's project name for its row; nil for a no-project chat, whose
+  /// scratch folder's generated name says nothing about it.
   func projectName(for session: ChatSession) -> String? {
-    projectList.activeProjects.first { $0.id == session.projectId }?.name
+    guard
+      let project = projectList.projects.first(where: {
+        $0.serverId == session.serverId && $0.id == session.projectId
+      }),
+      !project.isScratch
+    else { return nil }
+    return project.name
   }
 
   /// Fallback SF symbol from the machine's cached capabilities, for

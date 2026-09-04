@@ -62,15 +62,19 @@ extension HomeView {
     )
   }
 
+  /// One row per repository however many current machines hold a
+  /// checkout; each row pools its members' chats in the list order.
   var projectItems: [HomeProjectListItem] {
-    let items: [HomeProjectListItem] = projectList.fleetActiveProjects
-      .filter { !$0.isScratch && currentNavigationMachineIDs.contains($0.serverId) }
-      .compactMap { project -> HomeProjectListItem? in
+    let projects = projectList.fleetActiveProjects.filter {
+      !$0.isScratch && currentNavigationMachineIDs.contains($0.serverId)
+    }
+    let items: [HomeProjectListItem] = ProjectGroup.grouping(projects)
+      .compactMap { group -> HomeProjectListItem? in
         let sessions = visibleSessions.filter {
-          $0.serverId == project.serverId && $0.projectId == project.id
+          group.contains(serverId: $0.serverId, projectId: $0.projectId)
         }
         guard showEmptyProjects || !sessions.isEmpty else { return nil }
-        return HomeProjectListItem(project: project, sessions: sessions)
+        return HomeProjectListItem(group: group, sessions: sessions)
       }
     return manuallyOrdered(
       items,
@@ -79,6 +83,8 @@ extension HomeView {
     )
   }
 
+  /// Chats with no project (scratch-backed) or whose project is gone;
+  /// by-project mode gathers them under one "No project" row.
   var looseProjectSessions: [ChatSession] {
     let projectKeys = Set(
       projectList.fleetActiveProjects.lazy.filter { !$0.isScratch }.map {
@@ -89,6 +95,10 @@ extension HomeView {
       !projectKeys.contains("\($0.serverId)|\($0.projectId)")
     }
   }
+
+  /// Expansion key of the "No project" row — the run-target placeholder id,
+  /// which no real project can carry.
+  static let noProjectItemID = Project.runTargetPlaceholderID
 
   var hasNavigationContent: Bool {
     if !visibleSessions.isEmpty { return true }

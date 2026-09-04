@@ -181,14 +181,15 @@ struct WorkspaceScreen: View {
   /// The persisted project snapshot is good enough to construct New Chat's
   /// draft immediately. The server refresh that follows may update this
   /// list, but it must not hold the sheet behind a loading surface.
-  /// Keep the initial choice on the selected machine: a newly added, empty
-  /// machine should show the project placeholder instead of silently
-  /// targeting a project on another machine.
+  /// Keep the initial choice on the selected machine, and only a project
+  /// the user has used there before: with nothing remembered the draft
+  /// starts with no project rather than guessing one.
   var draftProjectCandidate: Project? {
-    environment.projectList.firstNonScratchProject(
-      on: resolvedServerId,
-      byWorkspaceRecency: environment.workspaces.loadAll()
-    )
+    guard let remembered = environment.composerDefaults.lastProjectId(forServer: resolvedServerId)
+    else { return nil }
+    return environment.projectList.fleetActiveProjects.first {
+      $0.serverId == resolvedServerId && $0.id == remembered && !$0.isScratch
+    }
   }
 
   /// The workspace's project. `prepare()` caches it in state, but it also
@@ -351,11 +352,16 @@ struct WorkspaceScreen: View {
       setUpDraftIfNeeded()
     }
     // The chip's picker retargets the sentinel at a real project in
-    // place; swap it for the durable cache-built draft (same text).
+    // place; swap it for the durable cache-built draft (same text). A
+    // first send re-points the sentinel at its scratch folder instead —
+    // that controller is mid-send and must stay mounted.
     .onChange(of: draftController?.project.id) { _, _ in
       guard draftIsPlaceholderBorn,
         let sentinel = draftController,
-        !sentinel.project.isRunTargetPlaceholder
+        !sentinel.project.isRunTargetPlaceholder,
+        !sentinel.project.isScratch,
+        !sentinel.isSubmitting,
+        !sentinel.hasAcceptedFirstSend
       else { return }
       setUpDraftIfNeeded(preferredProject: sentinel.project)
     }

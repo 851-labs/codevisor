@@ -106,16 +106,11 @@ extension HomeView {
                 && item.id == projectItems.last?.id
             )
           }
-          // Scratch-backed and orphaned chats do not have a real
-          // project group; keep them as ordinary agent rows at root.
-          ForEach(looseProjectSessions) { session in
-            chatRow(
-              session,
-              projectName: projectName(for: session),
-              hidesBottomSeparator: session.id == looseProjectSessions.last?.id
-            )
+          // Scratch-backed and orphaned chats share one "No project"
+          // row rather than each single-use folder posing as a project.
+          if !looseProjectSessions.isEmpty {
+            noProjectDisclosure
           }
-          .onMove(perform: agentMoveAction(for: looseProjectSessions))
         }
       }
     }
@@ -155,10 +150,10 @@ extension HomeView {
         case .byProject:
           ForEach(projectItems) { item in
             ProjectDisclosureLabel(
-              project: item.project,
+              group: item.group,
               status: status(for: item),
               showsStatus: true,
-              machineName: machines.fleetMachineName(for: item.project.serverId)
+              machineName: machineNames(for: item.group)
             )
             .frame(maxWidth: .infinity, alignment: .leading)
             .modifier(
@@ -280,10 +275,10 @@ extension HomeView {
       .onMove(perform: agentMoveAction(for: item.sessions))
     } label: {
       ProjectDisclosureLabel(
-        project: item.project,
+        group: item.group,
         status: status(for: item),
         showsStatus: !isExpanded,
-        machineName: machines.fleetMachineName(for: item.project.serverId)
+        machineName: machineNames(for: item.group)
       )
       .frame(maxWidth: .infinity, alignment: .leading)
       .contentShape(Rectangle())
@@ -292,6 +287,51 @@ extension HomeView {
     .modifier(
       BottomSeparatorModifier(isHidden: isFinalRootItem && !isExpanded)
     )
+  }
+
+  /// The machines holding a linked project, for its row's second line.
+  /// Nil in single-machine fleets.
+  private func machineNames(for group: ProjectGroup) -> String? {
+    var names: [String] = []
+    for serverId in group.serverIds {
+      guard let name = machines.fleetMachineName(for: serverId), !names.contains(name)
+      else { continue }
+      names.append(name)
+    }
+    return names.isEmpty ? nil : names.joined(separator: ", ")
+  }
+
+  /// Chats started without a project, behind one disclosure at the end of
+  /// the by-project list.
+  private var noProjectDisclosure: some View {
+    let id = Self.noProjectItemID
+    let isExpanded = expandedProjects.contains(id)
+    let sessions = looseProjectSessions
+    return DisclosureGroup(
+      isExpanded: Binding(
+        get: { expandedProjects.contains(id) },
+        set: { setProject(id, isExpanded: $0) }
+      )
+    ) {
+      ForEach(sessions) { session in
+        chatRow(
+          session,
+          projectName: nil,
+          hidesBottomSeparator: session.id == sessions.last?.id
+        )
+      }
+      .onMove(perform: agentMoveAction(for: sessions))
+    } label: {
+      ProjectDisclosureLabel(
+        title: "No project",
+        symbolName: EntitySystemSymbol.projectList,
+        status: sessions.map(status(for:)).min() ?? .idle,
+        showsStatus: !isExpanded
+      )
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .contentShape(Rectangle())
+    }
+    .modifier(BottomSeparatorModifier(isHidden: !isExpanded))
   }
 
   private func chatRow(

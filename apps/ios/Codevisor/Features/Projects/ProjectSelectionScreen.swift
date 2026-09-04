@@ -2,9 +2,10 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// The native iOS project step used by the run-target sheet. Existing and
-/// recommended projects use a standard list, with project creation exposed as
-/// a consistent add action in both populated and empty states.
+/// The native iOS project step used by the run-target sheet. "No Project"
+/// heads the list (the chat runs in its own folder), then this machine's
+/// projects and recommendations, with project creation exposed as a
+/// consistent add action.
 struct ProjectSelectionScreen: View {
   @Environment(AppEnvironment.self) private var environment
 
@@ -45,11 +46,6 @@ struct ProjectSelectionScreen: View {
 
   var body: some View {
     projectList
-      .overlay {
-        if !hasChoices {
-          unavailableContent
-        }
-      }
       .toolbar {
         ToolbarItem(placement: .primaryAction) {
           addProjectMenu
@@ -74,6 +70,18 @@ struct ProjectSelectionScreen: View {
 
   private var projectList: some View {
     List {
+      Section {
+        Button {
+          onSelected(.runTargetPlaceholder(serverId: serverId))
+        } label: {
+          projectRow(
+            title: "No Project",
+            path: "Runs in its own folder on \(machineName)",
+            systemImage: EntitySystemSymbol.projectList
+          )
+        }
+      }
+
       if !projects.isEmpty {
         Section("Projects") {
           ForEach(projects) { project in
@@ -88,6 +96,12 @@ struct ProjectSelectionScreen: View {
               )
             }
           }
+        }
+      }
+
+      if !hasChoices {
+        Section {
+          unavailableContent
         }
       }
 
@@ -113,28 +127,35 @@ struct ProjectSelectionScreen: View {
     }
   }
 
+  /// The state of this machine's project list when it has nothing to show
+  /// yet: loading, failed, or genuinely empty (add one from the toolbar).
   @ViewBuilder
   private var unavailableContent: some View {
     if isLoading {
-      ProgressView()
-        .accessibilityLabel("Loading Projects")
+      HStack {
+        Spacer()
+        ProgressView()
+          .accessibilityLabel("Loading Projects")
+        Spacer()
+      }
     } else if hasLoadError {
-      ContentUnavailableView {
+      VStack(alignment: .leading, spacing: 8) {
         Label("Projects Unavailable", systemImage: "exclamationmark.triangle")
-      } description: {
         Text("Codevisor couldn’t load projects from \(machineName).")
-      } actions: {
+          .font(.footnote)
+          .foregroundStyle(.secondary)
         Button("Try Again") {
           Task { await load() }
         }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(.bordered)
       }
     } else {
-      ContentUnavailableView {
+      VStack(alignment: .leading, spacing: 4) {
         Text("No Projects")
-          .font(.title3.weight(.semibold))
-      } description: {
+          .font(.headline)
         Text("Open a folder or clone a repository to add one.")
+          .font(.footnote)
+          .foregroundStyle(.secondary)
       }
     }
   }

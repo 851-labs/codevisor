@@ -113,11 +113,11 @@ extension WorkspaceScreen {
     Task { await controller.prepare() }
   }
 
-  /// No project exists on the selected machine yet: the composer still
-  /// renders, bound to a sentinel project. Send stays disabled and the
-  /// run-target chip reads "Select a Project…". The sentinel can load the
-  /// selected machine's harness catalog but is never cached or persisted.
-  /// Picking a real project swaps it for the durable draft while preserving the chosen harness.
+  /// No remembered project on the selected machine: the composer renders
+  /// bound to the "No Project" sentinel, sendable as-is — its first send
+  /// allocates a scratch folder and adopts the session like any draft.
+  /// The sentinel is never cached or persisted; picking a real project
+  /// swaps it for the durable draft while preserving the chosen harness.
   private func setUpPlaceholderDraftIfNeeded() {
     guard draftController == nil else { return }
     let serverId = environment.defaultComposerServerId
@@ -130,6 +130,13 @@ extension WorkspaceScreen {
     )
     if paneState == nil {
       paneState = PaneGroupState.centerInitial(sessionId: draftPlaceholderId)
+    }
+    controller.onScratchProjectCreated = { [weak projectList = environment.projectList] scratch in
+      projectList?.registerServerProject(scratch)
+    }
+    controller.onFirstSend = { [weak controller] submittedText in
+      guard let controller else { return }
+      adoptSession(for: controller, submittedText: submittedText)
     }
     draftIsPlaceholderBorn = true
     draftController = controller
@@ -179,9 +186,11 @@ extension WorkspaceScreen {
       legacyGroups: environment.paneGroups
     )
     environment.composerDefaults.performPersistenceBatch(flushImmediately: true) {
+      // A scratch folder is single-use; remember the CHOICE of no
+      // project rather than the folder it happened to get.
       environment.composerDefaults.rememberNewWorkspaceProject(
         serverId: project.serverId,
-        projectId: project.id
+        projectId: project.isScratch ? Project.runTargetPlaceholderID : project.id
       )
       environment.composerDefaults.rememberNewWorkspaceWorktreePreference(
         serverId: project.serverId,

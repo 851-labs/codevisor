@@ -2,7 +2,8 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// Native disclosure label for a project and its direct agent children.
+/// Native disclosure label for a project (a repository linked across
+/// machines) and its direct agent children; also the "No project" row.
 struct ProjectDisclosureLabel: View {
   private static let statusWidth: CGFloat = 10
   private static let statusToIconSpacing: CGFloat = 5
@@ -14,12 +15,37 @@ struct ProjectDisclosureLabel: View {
     + iconWidth
     + iconToCopySpacing
 
-  let project: Project
+  let title: String
+  var symbolName = EntitySystemSymbol.project
   let status: HomeSessionStatus
   let showsStatus: Bool
-  /// Fleet context: the owning machine's name, shown as a second row.
-  /// Nil (single-machine fleets) keeps the compact single-line row.
+  /// Fleet context: the machines holding the project, shown as a second
+  /// row. Nil (single-machine fleets) keeps the compact single-line row.
   var machineName: String? = nil
+
+  init(
+    group: ProjectGroup,
+    status: HomeSessionStatus,
+    showsStatus: Bool,
+    machineName: String? = nil
+  ) {
+    self.title = group.name
+    self.status = status
+    self.showsStatus = showsStatus
+    self.machineName = machineName
+  }
+
+  init(
+    title: String,
+    symbolName: String,
+    status: HomeSessionStatus,
+    showsStatus: Bool
+  ) {
+    self.title = title
+    self.symbolName = symbolName
+    self.status = status
+    self.showsStatus = showsStatus
+  }
 
   var body: some View {
     HStack(spacing: Self.iconToCopySpacing) {
@@ -29,7 +55,7 @@ struct ProjectDisclosureLabel: View {
         entityIcon
       }
       VStack(alignment: .leading, spacing: 2) {
-        Text(project.name)
+        Text(title)
           .font(.body.weight(.semibold))
           .foregroundStyle(.primary)
           .lineLimit(1)
@@ -56,7 +82,7 @@ struct ProjectDisclosureLabel: View {
       .fill(Color(.tertiarySystemFill))
       .frame(width: Self.iconWidth, height: Self.iconWidth)
       .overlay {
-        Image(systemName: EntitySystemSymbol.project)
+        Image(systemName: symbolName)
           .font(.system(size: 20))
           .foregroundStyle(.secondary)
       }

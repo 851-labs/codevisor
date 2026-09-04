@@ -104,14 +104,17 @@ final class ChatControllerCache {
         }
       } ?? environment.composerDefaults.lastProjectId(forServer: serverId).flatMap {
         rememberedId in
-        environment.projectList.activeProjects.first {
-          $0.serverId == serverId && $0.id == rememberedId
+        // A scratch folder is single-use: never the next chat's default.
+        environment.projectList.fleetActiveProjects.first {
+          $0.serverId == serverId && $0.id == rememberedId && !$0.isScratch
         }
       } ?? preferredProject
-    environment.composerDefaults.rememberNewWorkspaceProject(
-      serverId: serverId,
-      projectId: restoredProject.id
-    )
+    if !restoredProject.isRunTargetPlaceholder {
+      environment.composerDefaults.rememberNewWorkspaceProject(
+        serverId: serverId,
+        projectId: restoredProject.id
+      )
+    }
     let controller = SessionController(
       project: restoredProject,
       configCache: environment.configCache,

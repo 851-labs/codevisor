@@ -3,15 +3,6 @@ import CodevisorUI
 import SwiftUI
 
 extension ComposerBar {
-  /// Every machine's projects, most recently used first (scratch backing
-  /// projects, when a server has any, are internal and never listed).
-  private var pickerProjects: [Project] {
-    environment.projectList.fleetActiveProjectsByWorkspaceRecency(
-      environment.workspaces.loadAll()
-    )
-    .filter { !$0.isScratch }
-  }
-
   /// The live project record. The controller holds a snapshot from when
   /// the project was picked; the server's git probe lands on the list
   /// afterwards, and the chip must follow the probed value.
@@ -22,8 +13,9 @@ extension ComposerBar {
   }
 
   /// ONE chip for the whole run target: the run-location icon and the
-  /// project name. Tapping opens the stepped machine → project →
-  /// run-location sheet.
+  /// project name ("No Project" for a chat that will run in its own
+  /// folder). Tapping opens the stepped machine → project → run-location
+  /// sheet.
   var runTargetChips: some View {
     let isPlaceholder = controller.project.isRunTargetPlaceholder
     return Button {
@@ -31,11 +23,12 @@ extension ComposerBar {
     } label: {
       HStack(spacing: 4) {
         Image(
-          systemName: controller.wantsNewWorktree && !isPlaceholder
-            ? "arrow.triangle.branch" : "folder.fill"
+          systemName: isPlaceholder
+            ? EntitySystemSymbol.projectList
+            : (controller.wantsNewWorktree ? "arrow.triangle.branch" : "folder.fill")
         )
         .font(.caption)
-        Text(isPlaceholder ? "Select a Project…" : controller.project.name)
+        Text(isPlaceholder ? "No Project" : controller.project.name)
           .lineLimit(1)
       }
       .foregroundStyle(.secondary)
@@ -52,7 +45,7 @@ extension ComposerBar {
     .accessibilityLabel("Run target")
     .accessibilityValue(
       isPlaceholder
-        ? "No project selected"
+        ? "No project"
         : "\(controller.project.name), \(controller.wantsNewWorktree ? "new worktree" : "project directory")"
     )
   }
@@ -60,6 +53,8 @@ extension ComposerBar {
   /// Applies a picker choice: re-points the draft (across machines when
   /// needed) and fixes the run location, remembering both per machine.
   func applyRunTarget(_ project: Project, wantsWorktree: Bool) {
+    // "No project" is remembered as the placeholder id, so the next draft
+    // on this machine starts the same way.
     environment.composerDefaults.rememberNewWorkspaceProject(
       serverId: project.serverId,
       projectId: project.id
@@ -110,10 +105,11 @@ extension ComposerBar {
     applyRunTarget(project, wantsWorktree: prefersWorktree)
   }
 
+  /// Archiving the draft's project leaves the draft with no project rather
+  /// than guessing another one.
   func archiveManagedProject(_ project: Project) {
     controller.project.isArchived = true
     environment.projectList.archive(project)
-    guard let replacement = pickerProjects.first else { return }
-    selectTargetProject(replacement)
+    selectTargetProject(.runTargetPlaceholder(serverId: project.serverId))
   }
 }

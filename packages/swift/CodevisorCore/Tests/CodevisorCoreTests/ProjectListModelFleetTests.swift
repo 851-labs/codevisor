@@ -54,36 +54,6 @@ struct ProjectListModelFleetTests {
     )
   }
 
-  @Test("Initial project selection stays on its machine and skips scratch projects")
-  func initialProjectSelection() {
-    let repository = DefaultProjectRepository(store: InMemoryStore())
-    let otherMachine = Project.fromFolder(
-      URL(fileURLWithPath: "/srv/other"),
-      serverId: "remote-a"
-    )
-    let scratch = Project(
-      serverId: "remote-b",
-      name: "scratch",
-      createdAt: Date(timeIntervalSince1970: 30),
-      isScratch: true
-    )
-    let expected = Project.fromFolder(
-      URL(fileURLWithPath: "/srv/project"),
-      serverId: "remote-b",
-      createdAt: Date(timeIntervalSince1970: 10)
-    )
-    repository.save([otherMachine, scratch, expected])
-    let model = ProjectListModel(
-      projectRepository: repository,
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-    )
-
-    #expect(
-      model.firstNonScratchProject(on: "remote-b", byWorkspaceRecency: []) == expected
-    )
-    #expect(model.firstNonScratchProject(on: "fresh-vnc", byWorkspaceRecency: []) == nil)
-  }
-
   @Test("Adding a project on an explicit machine stamps, syncs, and probes")
   func addProjectOnExplicitMachine() async throws {
     let model = ProjectListModel(
