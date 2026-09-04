@@ -4,6 +4,7 @@ import type {
   TerminalCreateResponse,
   TerminalServerFrame
 } from "@codevisor/api"
+import { execFileSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { setTimeout as sleep } from "node:timers/promises"
 import { WebSocket } from "ws"
@@ -104,6 +105,24 @@ const createTerminal = async (options: ProxyOptions): Promise<TerminalCreateResp
   return (await response.json()) as TerminalCreateResponse
 }
 
+/// Node's `setRawMode(true)` (libuv `UV_TTY_MODE_RAW`) only rawifies INPUT: it
+/// deliberately keeps `OPOST|ONLCR` on the local pty, so the tty driver
+/// rewrites every bare `\n` the proxy relays as `\r\n`. That is fine for a
+/// shell prompt but corrupts full-screen programs: the server-side pty is in
+/// true raw mode, so nvim/tmux/less emit `\n` as "cursor down, same column"
+/// (terminfo `cud1`/`ind`), and the injected CR drops the next cells at
+/// column 0 (gutter overwritten, duplicated line prefixes). There is no Node
+/// API for termios beyond `setRawMode`, so ask `stty` — it operates on the
+/// inherited stdin, which is the same pty Ghostty reads our stdout from.
+const disableOutputPostProcessing = (): void => {
+  try {
+    execFileSync("stty", ["raw", "-echo"], { stdio: ["inherit", "ignore", "ignore"] })
+  } catch {
+    // Without stty the proxy still works for shells; only full-screen
+    // programs relying on bare LF would misrender, as before this fix.
+  }
+}
+
 const main = async (): Promise<void> => {
   const options = parseArgs(process.argv.slice(2))
   const clientId = options.clientId
@@ -115,6 +134,7 @@ const main = async (): Promise<void> => {
 
   if (process.stdin.isTTY) {
     process.stdin.setRawMode(true)
+    disableOutputPostProcessing()
   }
   process.stdin.resume()
 
