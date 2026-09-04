@@ -19,20 +19,11 @@ struct ProjectDisclosureLabel: View {
   var symbolName = EntitySystemSymbol.project
   let status: HomeSessionStatus
   let showsStatus: Bool
-  /// Fleet context: the machines holding the project, shown as a second
-  /// row. Nil (single-machine fleets) keeps the compact single-line row.
-  var machineName: String? = nil
 
-  init(
-    group: ProjectGroup,
-    status: HomeSessionStatus,
-    showsStatus: Bool,
-    machineName: String? = nil
-  ) {
+  init(group: ProjectGroup, status: HomeSessionStatus, showsStatus: Bool) {
     self.title = group.name
     self.status = status
     self.showsStatus = showsStatus
-    self.machineName = machineName
   }
 
   init(
@@ -54,20 +45,13 @@ struct ProjectDisclosureLabel: View {
           .frame(width: Self.statusWidth, height: Self.iconWidth)
         entityIcon
       }
-      VStack(alignment: .leading, spacing: 2) {
-        Text(title)
-          .font(.body.weight(.semibold))
-          .foregroundStyle(.primary)
-          .lineLimit(1)
-        if let machineName {
-          Text(machineName)
-            .font(.footnote)
-            .fontWeight(.regular)
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-        }
-      }
-      .textCase(nil)
+      // One line: a linked project is one thing, and each chat beneath
+      // it already names its machine.
+      Text(title)
+        .font(.body.weight(.semibold))
+        .foregroundStyle(.primary)
+        .lineLimit(1)
+        .textCase(nil)
       Spacer(minLength: 4)
     }
     .padding(.vertical, 4)
@@ -77,14 +61,12 @@ struct ProjectDisclosureLabel: View {
     }
   }
 
+  /// A bare glyph in the same slot the chat rows' tiles occupy, so the
+  /// single-line row keeps its copy aligned with theirs.
   private var entityIcon: some View {
-    RoundedRectangle(cornerRadius: 9)
-      .fill(Color(.tertiarySystemFill))
+    Image(systemName: symbolName)
+      .font(.system(size: 20))
+      .foregroundStyle(.secondary)
       .frame(width: Self.iconWidth, height: Self.iconWidth)
-      .overlay {
-        Image(systemName: symbolName)
-          .font(.system(size: 20))
-          .foregroundStyle(.secondary)
-      }
   }
 }

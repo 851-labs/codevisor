@@ -152,8 +152,7 @@ extension HomeView {
             ProjectDisclosureLabel(
               group: item.group,
               status: status(for: item),
-              showsStatus: true,
-              machineName: machineNames(for: item.group)
+              showsStatus: true
             )
             .frame(maxWidth: .infinity, alignment: .leading)
             .modifier(
@@ -277,8 +276,7 @@ extension HomeView {
       ProjectDisclosureLabel(
         group: item.group,
         status: status(for: item),
-        showsStatus: !isExpanded,
-        machineName: machineNames(for: item.group)
+        showsStatus: !isExpanded
       )
       .frame(maxWidth: .infinity, alignment: .leading)
       .contentShape(Rectangle())
@@ -287,18 +285,6 @@ extension HomeView {
     .modifier(
       BottomSeparatorModifier(isHidden: isFinalRootItem && !isExpanded)
     )
-  }
-
-  /// The machines holding a linked project, for its row's second line.
-  /// Nil in single-machine fleets.
-  private func machineNames(for group: ProjectGroup) -> String? {
-    var names: [String] = []
-    for serverId in group.serverIds {
-      guard let name = machines.fleetMachineName(for: serverId), !names.contains(name)
-      else { continue }
-      names.append(name)
-    }
-    return names.isEmpty ? nil : names.joined(separator: ", ")
   }
 
   /// Chats started without a project, behind one disclosure at the end of

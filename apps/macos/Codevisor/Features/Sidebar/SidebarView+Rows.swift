@@ -81,7 +81,6 @@ extension SidebarView {
       isReordering: isReordering,
       isVisuallyExpanded: isProjectVisuallyExpanded(group.id),
       titleFont: itemTitleFont,
-      machineNames: machineNames(for: group),
       onDisclosureToggle: { toggle(group.id) },
       onRestoreRequest: {
         restoreRequest = ArchivedRestoreRequest(target: .project(group.primary))
@@ -92,19 +91,6 @@ extension SidebarView {
       // Archiving the project archives it everywhere it is checked out.
       onArchive: { group.members.forEach(list.archive) }
     )
-  }
-
-  /// The machines holding this project, for the folder's subtitle. Nil in
-  /// single-machine fleets, where the machine goes without saying.
-  private func machineNames(for group: ProjectGroup) -> String? {
-    var names: [String] = []
-    for serverId in group.serverIds {
-      guard let name = environment.machines.fleetMachineName(for: serverId),
-        !names.contains(name)
-      else { continue }
-      names.append(name)
-    }
-    return names.isEmpty ? nil : names.joined(separator: ", ")
   }
 
   /// The expansion key of the "No project" folder, alongside group ids.

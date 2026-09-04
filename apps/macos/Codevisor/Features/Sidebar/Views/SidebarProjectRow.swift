@@ -14,9 +14,6 @@ struct SidebarProjectRow: View {
   let isReordering: Bool
   let isVisuallyExpanded: Bool
   let titleFont: Font
-  /// Fleet context: the machines holding this project, shown as a second
-  /// row. Nil (single-machine fleets) keeps the compact single-line row.
-  var machineNames: String? = nil
   let onDisclosureToggle: () -> Void
   let onRestoreRequest: () -> Void
   let onNewChat: () -> Void
@@ -56,18 +53,12 @@ struct SidebarProjectRow: View {
                 .opacity(isHovered && !isArchivedEntry ? 1 : 0)
             }
             .frame(width: 18)
-            VStack(alignment: .leading, spacing: 1) {
-              Text(group.name)
-                .font(titleFont)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-              if let machineNames {
-                Text(machineNames)
-                  .font(.caption2)
-                  .foregroundStyle(.tertiary)
-                  .lineLimit(1)
-              }
-            }
+            // One line: a linked project is one thing, and each chat
+            // beneath it already names its machine.
+            Text(group.name)
+              .font(titleFont)
+              .foregroundStyle(.secondary)
+              .lineLimit(1)
             Spacer(minLength: 6)
           }
           .padding(.vertical, 5)
