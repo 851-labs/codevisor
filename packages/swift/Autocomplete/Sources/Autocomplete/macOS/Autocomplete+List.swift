@@ -43,6 +43,7 @@
             .padding(.horizontal, metrics.listHorizontalInset)
             .padding(.vertical, metrics.listVerticalInset)
             .environment(\.autocompleteIsScrolling, isScrolling)
+            .environment(\.autocompleteItemBottomInset, metrics.listVerticalInset)
             .background {
               if style.usesMiniScroller {
                 MiniScrollerConfigurator()
@@ -181,6 +182,8 @@
     /// Only rows inside the moving list suppress hover; pinned footer items
     /// keep their normal pointer behavior.
     @Entry var autocompleteIsScrolling = false
+    /// The expected gap between a final item and the popup's bottom edge.
+    @Entry var autocompleteItemBottomInset: CGFloat = 0
   }
 
   extension Autocomplete {

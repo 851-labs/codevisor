@@ -40,6 +40,18 @@
       var isDisabled = false
       var contents = Contents()
       var targets: [Target] { contents.targets }
+      let coordinateSpaceID = UUID()
+      var popupHeight: CGFloat?
+
+      /// Being last in keyboard order is not enough: a filtered or scrolled
+      /// row must also meet the popup's bottom inset to follow its corners.
+      func isBottomItem(_ id: AnyHashable, bottom: CGFloat?, inset: CGFloat) -> Bool {
+        guard let last = targets.last, last.kind == .item, last.id == id,
+          let popupHeight, popupHeight > 0, let bottom
+        else { return false }
+        // Allow a point for rounding between the SwiftUI and AppKit layouts.
+        return abs(popupHeight - bottom - inset) <= 1
+      }
 
       /// Bumped whenever the keyboard accepts an item; the matching item runs
       /// its action.

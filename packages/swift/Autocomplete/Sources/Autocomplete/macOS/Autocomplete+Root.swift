@@ -46,6 +46,12 @@
         VStack(spacing: 0) {
           content
         }
+        .coordinateSpace(name: host.coordinateSpaceID)
+        .onGeometryChange(for: CGFloat.self) { geometry in
+          geometry.size.height
+        } action: { height in
+          host.popupHeight = height
+        }
         .environment(highlight)
         .environment(host)
         .environment(\.autocompleteShowsCheckmarks, showsCheckmarks)
@@ -78,6 +84,7 @@
         }
         .onDisappear {
           highlight.reset()
+          host.popupHeight = nil
         }
         .background {
           KeyMonitor(shouldHandle: host.wantsKeyEvent, onCommand: handle)

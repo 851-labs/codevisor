@@ -41,9 +41,11 @@
       @Environment(\.autocompleteShowsCheckmarks) private var showsCheckmarks
       @Environment(\.autocompleteShowsIcons) private var showsIcons
       @Environment(\.autocompleteIsScrolling) private var isScrolling
+      @Environment(\.autocompleteItemBottomInset) private var bottomInset
       @Environment(Host.self) private var host
       @Environment(Highlight<ID>.self) private var highlight
       @State private var isPointerInside = false
+      @State private var bottomInPopup: CGFloat?
 
       /// - Parameters:
       ///   - shortcut: The key equivalent shown dimmed at the trailing edge —
@@ -79,11 +81,10 @@
         highlight.highlighted == id && (!isScrolling || highlight.source != .pointer)
       }
 
-      /// The popup's final row (no footer follows) takes the concentric bottom
-      /// corners, exactly as a footer would.
-      private var isLastInPopup: Bool {
-        guard let last = host.targets.last, last.kind == .item else { return false }
-        return last.id == AnyHashable(id)
+      /// A final row only takes concentric corners when it is visually at
+      /// the popup's bottom, with no unused list space below it.
+      private var isAtPopupBottom: Bool {
+        host.isBottomItem(AnyHashable(id), bottom: bottomInPopup, inset: bottomInset)
       }
 
       private var context: ItemContext {
@@ -92,7 +93,7 @@
 
       public var body: some View {
         let metrics = style.metrics
-        let bottomCornerRadius = isLastInPopup ? metrics.bottomCornerRadius : metrics.itemCornerRadius
+        let bottomCornerRadius = isAtPopupBottom ? metrics.bottomCornerRadius : metrics.itemCornerRadius
         ZStack(alignment: .trailing) {
           Button(action: action) {
             HStack(spacing: metrics.itemIconSpacing) {
@@ -186,6 +187,11 @@
           action()
         }
         .id(AnyHashable(id))
+        .onGeometryChange(for: CGFloat.self) { geometry in
+          geometry.frame(in: .named(host.coordinateSpaceID)).maxY
+        } action: { bottom in
+          bottomInPopup = bottom
+        }
         .preference(key: ContentsKey.self, value: Contents(targets: [Target(id: AnyHashable(id), kind: .item)]))
       }
     }

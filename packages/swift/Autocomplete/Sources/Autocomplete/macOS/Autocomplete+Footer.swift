@@ -25,6 +25,7 @@
           }
           .padding(.horizontal, metrics.footerHorizontalInset)
           .padding(.vertical, metrics.footerVerticalInset)
+          .environment(\.autocompleteItemBottomInset, metrics.footerVerticalInset)
         }
       }
     }
