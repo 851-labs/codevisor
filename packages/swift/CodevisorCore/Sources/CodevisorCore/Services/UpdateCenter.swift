@@ -318,6 +318,16 @@ public final class UpdateCenter {
     guard !isRefreshing else { return }
     isRefreshing = true
     defer { isRefreshing = false }
+    // A machine that has never been probed is unknown, not unreachable.
+    // Probe those first, so the pane's first open — often seconds after
+    // launch, ahead of the periodic status sweep — sees the whole fleet
+    // instead of reporting "up to date" over an empty list.
+    let unprobed = machines.allMachines.map(\.id).filter { machines.connectionsById[$0]?.status == nil }
+    await withTaskGroup(of: Void.self) { group in
+      for machineId in unprobed {
+        group.addTask { await self.machines.refreshStatus(for: machineId) }
+      }
+    }
     if force {
       await appUpdate.checkForUpdatesInBackground()
       await machines.refreshServerUpdates(force: true)
