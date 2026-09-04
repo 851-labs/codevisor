@@ -70,7 +70,9 @@ extension SidebarView {
   /// only swaps the row's behavior (click asks to restore, and the archive
   /// affordances are dropped), never its styling.
   private func archivedProjectRow(_ project: Project) -> some View {
-    projectRow(project, isArchivedEntry: true)
+    // Archiving is per machine, so archived entries stay one row per
+    // record rather than folding by repository.
+    projectRow(ProjectGroup(solo: project), isArchivedEntry: true)
   }
 
   @ViewBuilder

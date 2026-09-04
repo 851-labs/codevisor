@@ -54,6 +54,10 @@ extension ProjectListModel {
         $0.serverId == serverId && $0.id == local.id
       }) {
         projects[index].locations = probed.locations
+        // The remote is observed server-side; adopting it now lets the
+        // new record join its cross-machine group immediately.
+        projects[index].repoUrl = probed.repoUrl
+        projects[index].repoKey = probed.repoKey
         persistProjects()
         return projects[index]
       }

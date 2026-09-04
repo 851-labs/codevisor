@@ -5,17 +5,18 @@ import SwiftUI
 /// A project folder row: disclosure toggle behind the label, a hover
 /// new-chat affordance, and archive/restore context actions. Archived
 /// entries keep the exact same styling but swap behavior — a click offers
-/// to restore instead of disclosing.
+/// to restore instead of disclosing. The row stands for the whole linked
+/// group: one folder however many machines hold the repository.
 struct SidebarProjectRow: View {
-  let project: Project
+  let group: ProjectGroup
   var isDragPreview = false
   var isArchivedEntry = false
   let isReordering: Bool
   let isVisuallyExpanded: Bool
   let titleFont: Font
-  /// Fleet context: the owning machine's name, shown as a second row.
-  /// Nil (single-machine fleets) keeps the compact single-line row.
-  var machineName: String? = nil
+  /// Fleet context: the machines holding this project, shown as a second
+  /// row. Nil (single-machine fleets) keeps the compact single-line row.
+  var machineNames: String? = nil
   let onDisclosureToggle: () -> Void
   let onRestoreRequest: () -> Void
   let onNewChat: () -> Void
@@ -56,12 +57,12 @@ struct SidebarProjectRow: View {
             }
             .frame(width: 18)
             VStack(alignment: .leading, spacing: 1) {
-              Text(project.name)
+              Text(group.name)
                 .font(titleFont)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-              if let machineName {
-                Text(machineName)
+              if let machineNames {
+                Text(machineNames)
                   .font(.caption2)
                   .foregroundStyle(.tertiary)
                   .lineLimit(1)
@@ -86,14 +87,14 @@ struct SidebarProjectRow: View {
           }
           .buttonStyle(.plain)
           .foregroundStyle(.secondary)
-          .help("New chat in \(project.name)")
-          .accessibilityLabel("New chat in \(project.name)")
+          .help("New chat in \(group.name)")
+          .accessibilityLabel("New chat in \(group.name)")
         }
       }
       .padding(.horizontal, 8)
       .frame(maxWidth: .infinity, alignment: .leading)
     }
-    .help(project.folderURL.path)
+    .help(group.members.map(\.folderURL.path).joined(separator: "\n"))
     .contextMenu {
       if isArchivedEntry {
         Button {

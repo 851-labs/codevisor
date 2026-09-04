@@ -9,17 +9,24 @@ extension SidebarView {
   // MARK: - Project rows
 
   @ViewBuilder
-  func projectFolder(_ project: Project) -> some View {
-    reorderableProjectRow(project)
+  func projectFolder(_ group: ProjectGroup) -> some View {
+    reorderableProjectRow(group)
 
     // Keep the persisted disclosure state intact while making the list
     // compact enough to reorder. Ending the drag restores every folder
     // exactly as the user left it.
-    if isProjectVisuallyExpanded(project.id) {
-      let sessions = orderedSessions(in: project)
+    if isProjectVisuallyExpanded(group.id) {
+      let sessions = orderedSessions(in: group)
       ForEach(sessions, id: \.sidebarFleetItemID) { session in
-        reorderableChronologicalSessionRow(session, project: project, isNested: true)
-          .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+        // Each chat keeps ITS machine's record: the subtitle names
+        // that machine, and the row's actions target that server.
+        reorderableChronologicalSessionRow(
+          session,
+          project: group.member(serverId: session.serverId, projectId: session.projectId)
+            ?? group.primary,
+          isNested: true
+        )
+        .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
       }
       if sessions.isEmpty {
         Text("No chats yet")
@@ -32,52 +39,72 @@ extension SidebarView {
     }
   }
 
+  /// Drag identity is the group's primary record: a stable UUID for the
+  /// drop delegates, resolved back to the whole group when reordering.
   @ViewBuilder
-  private func reorderableProjectRow(_ project: Project) -> some View {
+  private func reorderableProjectRow(_ group: ProjectGroup) -> some View {
     if order == .none {
-      projectRow(project)
+      projectRow(group)
         .onDrag(
           {
-            draggingProjectID = project.id
-            return NSItemProvider(object: project.id.uuidString as NSString)
+            draggingProjectID = group.primary.id
+            return NSItemProvider(object: group.primary.id.uuidString as NSString)
           },
           preview: {
-            projectRow(project, isDragPreview: true)
+            projectRow(group, isDragPreview: true)
               .frame(width: 260)
           }
         )
-        .opacity(draggingProjectID == project.id ? 0 : 1)
+        .opacity(draggingProjectID == group.primary.id ? 0 : 1)
         .onDrop(
           of: [.text],
           delegate: ProjectDropDelegate(
-            projectID: project.id,
+            projectID: group.primary.id,
             draggingProjectID: $draggingProjectID,
             moveProject: moveProject
           )
         )
     } else {
-      projectRow(project)
+      projectRow(group)
     }
   }
 
   func projectRow(
-    _ project: Project,
+    _ group: ProjectGroup,
     isDragPreview: Bool = false,
     isArchivedEntry: Bool = false
   ) -> some View {
     SidebarProjectRow(
-      project: project,
+      group: group,
       isDragPreview: isDragPreview,
       isArchivedEntry: isArchivedEntry,
       isReordering: isReordering,
-      isVisuallyExpanded: isProjectVisuallyExpanded(project.id),
+      isVisuallyExpanded: isProjectVisuallyExpanded(group.id),
       titleFont: itemTitleFont,
-      machineName: environment.machines.fleetMachineName(for: project.serverId),
-      onDisclosureToggle: { toggle(project.id) },
-      onRestoreRequest: { restoreRequest = ArchivedRestoreRequest(target: .project(project)) },
-      onNewChat: { selection = .newChat(NewChatTarget(project)) },
-      onArchive: { list.archive(project) }
+      machineNames: machineNames(for: group),
+      onDisclosureToggle: { toggle(group.id) },
+      onRestoreRequest: {
+        restoreRequest = ArchivedRestoreRequest(target: .project(group.primary))
+      },
+      // A new chat in a linked project starts on the machine that used
+      // it most recently.
+      onNewChat: { selection = .newChat(NewChatTarget(list.mostRecentlyUsedMember(of: group))) },
+      // Archiving the project archives it everywhere it is checked out.
+      onArchive: { group.members.forEach(list.archive) }
     )
+  }
+
+  /// The machines holding this project, for the folder's subtitle. Nil in
+  /// single-machine fleets, where the machine goes without saying.
+  private func machineNames(for group: ProjectGroup) -> String? {
+    var names: [String] = []
+    for serverId in group.serverIds {
+      guard let name = environment.machines.fleetMachineName(for: serverId),
+        !names.contains(name)
+      else { continue }
+      names.append(name)
+    }
+    return names.isEmpty ? nil : names.joined(separator: ", ")
   }
 
   private func disclosureRow(
@@ -201,11 +228,11 @@ extension SidebarView {
     )
   }
 
-  private func isProjectVisuallyExpanded(_ id: UUID) -> Bool {
+  private func isProjectVisuallyExpanded(_ id: String) -> Bool {
     draggingProjectID == nil && expanded.contains(id)
   }
 
-  private func toggle(_ id: UUID) {
+  private func toggle(_ id: String) {
     withAnimation(.snappy(duration: 0.28)) {
       if expanded.contains(id) { expanded.remove(id) } else { expanded.insert(id) }
     }

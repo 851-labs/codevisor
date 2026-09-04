@@ -153,16 +153,19 @@ extension SidebarView {
       }.map(\.id))
   }
 
+  /// Reorders whole groups (identified by their primary record) and
+  /// persists the flattened member order, so every machine's record of a
+  /// linked project travels together and the group stays contiguous.
   func moveProject(_ sourceID: UUID, before destinationID: UUID) {
     guard sourceID != destinationID else { return }
-    var ids = visibleProjects.map(\.id)
-    guard let sourceIndex = ids.firstIndex(of: sourceID),
-      let destinationIndex = ids.firstIndex(of: destinationID)
+    var groups = visibleProjectGroups
+    guard let sourceIndex = groups.firstIndex(where: { $0.primary.id == sourceID }),
+      let destinationIndex = groups.firstIndex(where: { $0.primary.id == destinationID })
     else { return }
     withAnimation(.snappy(duration: 0.22)) {
-      let moved = ids.remove(at: sourceIndex)
-      ids.insert(moved, at: destinationIndex)
-      saveProjectOrder(ids)
+      let moved = groups.remove(at: sourceIndex)
+      groups.insert(moved, at: destinationIndex)
+      saveProjectOrder(groups.flatMap { $0.members.map(\.id) })
     }
   }
 

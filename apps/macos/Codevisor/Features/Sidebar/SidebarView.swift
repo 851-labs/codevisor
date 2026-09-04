@@ -25,8 +25,9 @@ struct SidebarView: View {
   @State private var showingRemoteMachine = false
   @State private var pendingImport: PendingSessionImport?
   // Seeded from the SQLite preference after the view mounts; written back
-  // using the established newline-separated UUID representation.
-  @State var expanded: Set<UUID> = []
+  // newline-separated. Project folders are keyed by `ProjectGroup.id` (a
+  // linked project is one folder across machines); workspaces by UUID.
+  @State var expanded: Set<String> = []
   @State var expandedWorkspaces: Set<UUID> = []
   @State var renamingSession: ChatSession?
   @State var renameTitle = ""
@@ -120,8 +121,8 @@ struct SidebarView: View {
           // its leading icon) animates each subview's position
           // independently, which reads as shearing/jitter.
           if organization == .byProject {
-            ForEach(projectSectionProjects, id: \.sidebarFleetItemID) { project in
-              projectFolder(project)
+            ForEach(projectSectionGroups) { group in
+              projectFolder(group)
                 .geometryGroup()
             }
             // Chats without a real project (scratch-backed
@@ -145,7 +146,7 @@ struct SidebarView: View {
                 .transition(.identity)
             }
           }
-          if organization == .byProject && projectSectionProjects.isEmpty
+          if organization == .byProject && projectSectionGroups.isEmpty
             && looseProjectSessions.isEmpty
           {
             Text("No projects yet")
@@ -182,7 +183,7 @@ struct SidebarView: View {
         .animation(Motion.listReflow(reduceMotion: reduceMotion), value: chronologicalSessions.map(\.id))
         .animation(
           Motion.listReflow(reduceMotion: reduceMotion),
-          value: projectSectionProjects.map(\.sidebarFleetItemID)
+          value: projectSectionGroups.map(\.id)
         )
         .animation(Motion.listReflow(reduceMotion: reduceMotion), value: expanded)
         .animation(Motion.listReflow(reduceMotion: reduceMotion), value: expandedWorkspaces)
@@ -213,7 +214,7 @@ struct SidebarView: View {
         releaseDeferredOrder(animated: false)
       }
       .addProjectFlow(addProjectFlow) { project in
-        expanded.insert(project.id)
+        expanded.insert(ProjectGroup.groupID(for: project))
         selection = .newChat(NewChatTarget(project))
         offerSessionImport(for: project)
       }
@@ -327,7 +328,7 @@ struct SidebarView: View {
         if publishesSceneActions { store?.nousStepHandler = nil }
       }
       .onChange(of: expanded) { _, newValue in
-        expandedProjectsRaw = newValue.map(\.uuidString).sorted().joined(separator: "\n")
+        expandedProjectsRaw = newValue.sorted().joined(separator: "\n")
       }
       .onChange(of: expandedWorkspaces) { _, newValue in
         expandedWorkspacesRaw = newValue.map(\.uuidString).sorted().joined(separator: "\n")
@@ -350,8 +351,26 @@ struct SidebarView: View {
   }
 
   private func restoreExpandedState() {
-    expanded = persistedIDs(from: expandedProjectsRaw)
+    expanded = restoredExpandedProjectGroupIDs(from: expandedProjectsRaw)
     expandedWorkspaces = persistedIDs(from: expandedWorkspacesRaw)
+  }
+
+  /// Expanded project folders were once keyed by bare project UUID; those
+  /// entries map onto the group the project now belongs to, so a folder
+  /// left open before linking stays open after it.
+  private func restoredExpandedProjectGroupIDs(from rawValue: String) -> Set<String> {
+    var ids: Set<String> = []
+    for line in rawValue.split(separator: "\n") {
+      let entry = String(line)
+      if let legacyProjectID = UUID(uuidString: entry) {
+        for project in list.projects where project.id == legacyProjectID {
+          ids.insert(ProjectGroup.groupID(for: project))
+        }
+      } else {
+        ids.insert(entry)
+      }
+    }
+    return ids
   }
 
   private func persistedIDs(from rawValue: String) -> Set<UUID> {

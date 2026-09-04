@@ -64,13 +64,21 @@ extension SidebarView {
     )
   }
 
-  /// Projects shown as folders in "by project": scratch backing projects
+  /// `visibleProjects` folded by repository: one folder per project
+  /// however many machines hold a checkout. A group sits where its
+  /// best-ranked member does, so the automatic sort (a group's most
+  /// urgent chat on any machine) and manual drag order both carry over.
+  var visibleProjectGroups: [ProjectGroup] {
+    ProjectGroup.grouping(visibleProjects)
+  }
+
+  /// Groups shown as folders in "by project": scratch backing projects
   /// (the single-use folder behind a no-project chat) are not projects —
   /// their chats render at the list root instead.
-  var projectSectionProjects: [Project] {
-    visibleProjects.filter { project in
-      !project.isScratch
-        && (showEmptyProjects || !list.fleetSessions(in: project).isEmpty)
+  var projectSectionGroups: [ProjectGroup] {
+    visibleProjectGroups.filter { group in
+      !group.primary.isScratch
+        && (showEmptyProjects || !list.fleetSessions(in: group).isEmpty)
     }
   }
 
@@ -189,17 +197,17 @@ extension SidebarView {
       .map(\.item)
   }
 
-  func orderedSessions(in project: Project) -> [ChatSession] {
-    let sessions = list.fleetSessions(in: project)
+  /// A group's chats from every machine, in the global sidebar order.
+  func orderedSessions(in group: ProjectGroup) -> [ChatSession] {
     guard order == .none else {
       return deferredSessionOrder.applying(
         to: automaticallySortedSessions.filter {
-          $0.serverId == project.serverId && $0.projectId == project.id
+          group.contains(serverId: $0.serverId, projectId: $0.projectId)
         },
         id: \.sidebarFleetOrderID
       )
     }
-    return manuallyOrderedSessions(sessions, session: \.self)
+    return manuallyOrderedSessions(list.fleetSessions(in: group), session: \.self)
   }
 
   /// Automatic priority/recency updates keep changing row content while the

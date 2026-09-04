@@ -43,7 +43,14 @@ extension SidebarView {
 
     withAnimation(.snappy(duration: 0.28)) {
       if organization == .byProject {
-        expanded.formUnion(workspaces.map(\.projectId))
+        expanded.formUnion(
+          workspaces.compactMap { workspace in
+            list.projects.first {
+              $0.serverId == workspace.serverId && $0.id == workspace.projectId
+            }
+            .map(ProjectGroup.groupID(for:))
+          }
+        )
       } else {
         expandedWorkspaces.formUnion(workspaces.map(\.id))
       }
