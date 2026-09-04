@@ -17,6 +17,7 @@
 
       @Environment(\.autocompleteStyle) private var style
       @Environment(Host.self) private var host
+      @State private var isScrolling = false
 
       public init(height: CGFloat? = nil, @ViewBuilder content: () -> Content) {
         self.height = height
@@ -41,6 +42,7 @@
             }
             .padding(.horizontal, metrics.listHorizontalInset)
             .padding(.vertical, metrics.listVerticalInset)
+            .environment(\.autocompleteIsScrolling, isScrolling)
             .background {
               if style.usesMiniScroller {
                 MiniScrollerConfigurator()
@@ -48,6 +50,12 @@
             }
           }
           .scrollBounceBehavior(bounceBehavior)
+          .onScrollPhaseChange { _, phase in
+            isScrolling = phase != .idle
+          }
+          .onDisappear {
+            isScrolling = false
+          }
           .onChange(of: host.scrollTick) {
             guard let target = host.scrollTarget else { return }
             proxy.scrollTo(target, anchor: .center)
@@ -164,6 +172,12 @@
   extension ContainerValues {
     /// Marks a `Group` so `List` can put inter-group spacing before it.
     @Entry var autocompleteIsGroup = false
+  }
+
+  extension EnvironmentValues {
+    /// Only rows inside the moving list suppress hover; pinned footer items
+    /// keep their normal pointer behavior.
+    @Entry var autocompleteIsScrolling = false
   }
 
   extension Autocomplete {

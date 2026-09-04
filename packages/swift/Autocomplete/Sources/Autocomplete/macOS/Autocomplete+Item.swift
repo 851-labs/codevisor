@@ -40,9 +40,10 @@
       @Environment(\.autocompleteStyle) private var style
       @Environment(\.autocompleteShowsCheckmarks) private var showsCheckmarks
       @Environment(\.autocompleteShowsIcons) private var showsIcons
+      @Environment(\.autocompleteIsScrolling) private var isScrolling
       @Environment(Host.self) private var host
       @Environment(Highlight<ID>.self) private var highlight
-      @State private var isHovering = false
+      @State private var isPointerInside = false
 
       /// - Parameters:
       ///   - shortcut: The key equivalent shown dimmed at the trailing edge —
@@ -73,7 +74,10 @@
       }
 
       private var effectiveDisabled: Bool { isDisabled || host.isDisabled }
-      private var isHighlighted: Bool { highlight.highlighted == id }
+      private var isHovering: Bool { isPointerInside && !isScrolling }
+      private var isHighlighted: Bool {
+        highlight.highlighted == id && (!isScrolling || highlight.source != .pointer)
+      }
 
       /// The popup's final row (no footer follows) takes the concentric bottom
       /// corners, exactly as a footer would.
@@ -164,10 +168,16 @@
           // A disabled popup ignores the pointer entirely, like a disabled
           // NSMenu item.
           guard !effectiveDisabled else { return }
-          self.isHovering = isHovering
+          // Keep tracking the pointer while scrolling so the row under it
+          // resumes hover as soon as the list comes to rest.
+          isPointerInside = isHovering
+        }
+        .onChange(of: isHovering) { _, isHovering in
+          guard !effectiveDisabled else { return }
           if isHovering {
             highlight.hover(id)
-          } else {
+          } else if !isScrolling || highlight.source == .pointer {
+            // Starting a scroll must not clear a keyboard highlight.
             highlight.endHover(id)
           }
         }
