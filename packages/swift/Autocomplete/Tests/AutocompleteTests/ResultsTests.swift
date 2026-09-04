@@ -100,23 +100,22 @@ struct ResultsTests {
     let highlight = Autocomplete.Highlight<String>(navigation: .menu)
     highlight.hover("codevisor")
     let actionTargets = results("new").items.map(\.id)
-    highlight.reconcile(with: actionTargets)
-    #expect(highlight.highlighted == nil)
-    highlight.move(by: 1, in: actionTargets)
+    highlight.reconcile(with: actionTargets, query: "new")
     #expect(highlight.highlighted == "new")
     var accepted: String?
     highlight.handle(.accept, targets: actionTargets, accept: { accepted = $0 }, dismiss: {})
     #expect(accepted == "new")
 
     let emptyTargets = results("missing").items.map(\.id)
-    highlight.reconcile(with: emptyTargets)
+    highlight.reconcile(with: emptyTargets, query: "missing")
     #expect(highlight.highlighted == nil)
     #expect(
       !highlight.handle(
         .accept, targets: emptyTargets, accept: { _ in Issue.record("Accepted a hidden row") }, dismiss: {}))
 
     let restoredTargets = results("").items.map(\.id)
-    highlight.reconcile(with: restoredTargets)
+    highlight.reconcile(with: restoredTargets, query: "")
+    #expect(highlight.highlighted == nil)
     highlight.move(by: 1, in: restoredTargets)
     #expect(highlight.highlighted == "none")
   }

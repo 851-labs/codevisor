@@ -1,3 +1,4 @@
+import Foundation
 import Observation
 
 public extension Autocomplete {
@@ -24,6 +25,9 @@ public extension Autocomplete {
     public var navigation: Navigation
     public private(set) var highlighted: ID?
     public private(set) var source: Source?
+    private var searchQuery = ""
+
+    private var autoHighlights: Bool { navigation.autoHighlight || !searchQuery.isEmpty }
 
     public init(navigation: Navigation = .menu) {
       self.navigation = navigation
@@ -37,10 +41,10 @@ public extension Autocomplete {
     }
 
     /// The pointer left an item. Menus clear the highlight the way NSMenu
-    /// does; with `autoHighlight` a highlight must always exist, so it stays
-    /// where it is until another input moves it.
+    /// does. While searching or using `autoHighlight`, it stays where it is
+    /// until another input moves it.
     public func endHover(_ id: ID) {
-      guard highlighted == id, !navigation.autoHighlight else { return }
+      guard highlighted == id, !autoHighlights else { return }
       set(nil, source: .pointer)
     }
 
@@ -50,15 +54,25 @@ public extension Autocomplete {
     public func reset() {
       highlighted = nil
       source = nil
+      searchQuery = ""
     }
 
-    /// Drop a highlight the list no longer shows (after filtering) and apply
-    /// `autoHighlight`.
-    public func reconcile(with targets: [ID]) {
+    /// A changed search highlights its first result, even if the previous
+    /// target still matches. Clearing search restores the navigation preset.
+    /// Reconcile query and results together so an old list is never selected.
+    public func reconcile(with targets: [ID], query: String? = nil) {
+      if let query {
+        let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalized != searchQuery {
+          searchQuery = normalized
+          set(autoHighlights ? targets.first : nil, source: .keyboard)
+          return
+        }
+      }
       if let highlighted, !targets.contains(highlighted) {
         set(nil, source: .keyboard)
       }
-      if highlighted == nil, navigation.autoHighlight {
+      if highlighted == nil, autoHighlights {
         set(targets.first, source: .keyboard)
       }
     }

@@ -120,7 +120,10 @@
           .padding(.trailing, metrics.groupLabelInset)
           .padding(.top, metrics.groupLabelTopInset)
           .padding(.bottom, metrics.groupLabelBottomInset)
-          .preference(key: TargetsKey.self, value: [Target(id: AnyHashable("group-label:\(title)"), kind: .groupLabel)])
+          .preference(
+            key: ContentsKey.self,
+            value: Contents(targets: [Target(id: AnyHashable("group-label:\(title)"), kind: .groupLabel)])
+          )
       }
     }
 

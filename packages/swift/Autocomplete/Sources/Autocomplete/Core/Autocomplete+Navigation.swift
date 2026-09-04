@@ -13,8 +13,8 @@ public extension Autocomplete {
       self.autoHighlight = autoHighlight
     }
 
-    /// Xcode-style searchable menu: nothing highlighted until a key is
-    /// pressed, arrows stop at the ends.
+    /// Xcode-style searchable menu: starts unhighlighted; entering a search
+    /// highlights the first result. Arrows stop at the ends.
     public static let menu = Navigation(loop: false, autoHighlight: false)
 
     /// Inline popup under a text field: the first match is always ready to

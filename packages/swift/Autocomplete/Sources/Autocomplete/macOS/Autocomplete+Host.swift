@@ -15,13 +15,20 @@
       let kind: Kind
     }
 
-    /// Items and group labels announce themselves upward in tree order; `Root` reads the result to know what the keyboard can reach and
-    /// how tall the list is.
-    struct TargetsKey: PreferenceKey {
-      static var defaultValue: [Target] { [] }
+    /// The input and rendered rows travel together so a search edit is
+    /// reconciled against its new results, including when the IDs are unchanged.
+    struct Contents: Equatable {
+      var query: String?
+      var targets: [Target] = []
+    }
 
-      static func reduce(value: inout [Target], nextValue: () -> [Target]) {
-        value.append(contentsOf: nextValue())
+    struct ContentsKey: PreferenceKey {
+      static var defaultValue: Contents { Contents() }
+
+      static func reduce(value: inout Contents, nextValue: () -> Contents) {
+        let next = nextValue()
+        if let query = next.query { value.query = query }
+        value.targets.append(contentsOf: next.targets)
       }
     }
 
@@ -31,7 +38,8 @@
     @Observable
     final class Host {
       var isDisabled = false
-      var targets: [Target] = []
+      var contents = Contents()
+      var targets: [Target] { contents.targets }
 
       /// Bumped whenever the keyboard accepts an item; the matching item runs
       /// its action.

@@ -50,19 +50,15 @@
         .environment(host)
         .environment(\.autocompleteShowsCheckmarks, showsCheckmarks)
         .environment(\.autocompleteShowsIcons, showsIcons)
-        .onPreferenceChange(TargetsKey.self) { targets in
+        .onPreferenceChange(ContentsKey.self) { contents in
           MainActor.assumeIsolated {
-            host.targets = targets
-            highlight.reconcile(with: navigableIDs(in: targets))
+            host.contents = contents
+            reconcileHighlight()
           }
         }
         .onChange(of: isDisabled, initial: true) { _, isDisabled in
           host.isDisabled = isDisabled
-          // Nothing should look actionable while disabled; the highlight
-          // comes back with the next pointer or key input once re-enabled.
-          if isDisabled {
-            highlight.reset()
-          }
+          reconcileHighlight()
         }
         // Only keyboard moves scroll; scrolling under a hovering pointer
         // would move the item out from under it.
@@ -78,7 +74,7 @@
           // Start clean, then let `autoHighlight` seed the first item if the
           // targets already arrived (preferences can land before onAppear).
           highlight.reset()
-          highlight.reconcile(with: navigableIDs(in: host.targets))
+          reconcileHighlight()
         }
         .onDisappear {
           highlight.reset()
@@ -87,6 +83,14 @@
           KeyMonitor(shouldHandle: host.wantsKeyEvent, onCommand: handle)
             .frame(width: 0, height: 0)
         }
+      }
+
+      private func reconcileHighlight() {
+        guard !host.isDisabled else {
+          highlight.reset()
+          return
+        }
+        highlight.reconcile(with: navigableIDs(in: host.targets), query: host.contents.query ?? "")
       }
 
       private func navigableIDs(in targets: [Target]) -> [ID] {

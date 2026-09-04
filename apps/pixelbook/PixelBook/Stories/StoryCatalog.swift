@@ -6,7 +6,7 @@ enum StoryCatalog {
       id: "basic",
       title: "Basic",
       summary:
-        "Root, Input, List, and Items over a flat array. Menu navigation: nothing highlighted until a key is pressed, arrows stop at the ends."
+        "Root, Input, List, and Items over a flat array. Menus start unhighlighted; searching highlights the first match for Return. Arrows stop at the ends."
     ) {
       BasicStory()
     },
@@ -38,7 +38,7 @@ enum StoryCatalog {
       id: "navigation",
       title: "Navigation",
       summary:
-        "Loop and auto-highlight. Together they are the .inline preset; both off is .menu."
+        "Loop and initial auto-highlight. Together they are the .inline preset; both off is .menu. Searching highlights the first match with either preset."
     ) {
       NavigationStory()
     },

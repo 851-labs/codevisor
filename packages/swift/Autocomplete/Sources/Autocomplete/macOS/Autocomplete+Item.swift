@@ -186,7 +186,7 @@
           action()
         }
         .id(AnyHashable(id))
-        .preference(key: TargetsKey.self, value: [Target(id: AnyHashable(id), kind: .item)])
+        .preference(key: ContentsKey.self, value: Contents(targets: [Target(id: AnyHashable(id), kind: .item)]))
       }
     }
   }

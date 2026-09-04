@@ -74,6 +74,7 @@
         .padding(.top, metrics.inputTopInset)
         .padding(.bottom, metrics.inputBottomInset)
         .accessibilityLabel(accessibilityLabel)
+        .preference(key: ContentsKey.self, value: Contents(query: text))
       }
     }
   }
