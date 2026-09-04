@@ -93,6 +93,7 @@
         itemCount: Int,
         groupLabelCount: Int = 0,
         dividerCount: Int = 0,
+        groupSpacingCount: Int? = nil,
         hasInput: Bool = true,
         footerItemCount: Int = 0
       ) -> CGFloat {
@@ -104,7 +105,10 @@
           chrome += 1 + (CGFloat(footerItemCount) * itemHeight) + (2 * footerVerticalInset)
         }
         return min(
-          listContentHeight(itemCount: itemCount, groupLabelCount: groupLabelCount, dividerCount: dividerCount),
+          listContentHeight(
+            itemCount: itemCount, groupLabelCount: groupLabelCount, dividerCount: dividerCount,
+            groupSpacingCount: groupSpacingCount
+          ),
           maximumHeight - chrome
         )
       }
@@ -120,7 +124,23 @@
         )
       }
 
-      public func listContentHeight(itemCount: Int, groupLabelCount: Int = 0, dividerCount: Int = 0) -> CGFloat {
+      /// Collection sections use dividers for spacing, including between
+      /// titled and untitled sections. Empty sections contribute no chrome.
+      public func listHeight<Element>(for results: Results<Element>) -> CGFloat {
+        max(
+          listHeight(itemCount: 0),
+          listHeight(
+            itemCount: results.itemCount,
+            groupLabelCount: results.groupLabelCount,
+            dividerCount: results.dividerCount,
+            groupSpacingCount: 0
+          )
+        )
+      }
+
+      public func listContentHeight(
+        itemCount: Int, groupLabelCount: Int = 0, dividerCount: Int = 0, groupSpacingCount: Int? = nil
+      ) -> CGFloat {
         guard itemCount > 0 else { return emptyListHeight }
         let labelHeight =
           ceil(NSFont.systemFont(ofSize: groupLabelSize).boundingRectForFont.height)
@@ -131,7 +151,7 @@
           + (CGFloat(groupLabelCount) * labelHeight)
           + (CGFloat(itemCount) * itemHeight)
           + (CGFloat(dividerCount) * dividerHeight)
-          + (CGFloat(max(groupLabelCount - 1, 0)) * groupSpacing)
+          + (CGFloat(groupSpacingCount ?? max(groupLabelCount - 1, 0)) * groupSpacing)
         return ceil(contentHeight)
       }
 

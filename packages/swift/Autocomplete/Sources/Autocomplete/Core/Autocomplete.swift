@@ -1,20 +1,20 @@
-/// Filterable, keyboard-navigable pickers composed the way SwiftUI composes
-/// views. The shape follows Base UI's Autocomplete:
+/// Searchable, keyboard-navigable pickers. `Menu` owns filtering, empty states,
+/// section dividers, sizing, and navigation for a collection of options:
 ///
 /// ```swift
-/// Autocomplete.Root(highlight: highlight, onDismiss: { isPresented = false }) {
-///   Autocomplete.Input(text: $query, prompt: "Filter models")
-///   Autocomplete.List(height: listHeight) {
-///     Autocomplete.Group("Favorites") {
-///       ForEach(favorites) { item in
-///         Autocomplete.Item(id: item.id, action: { choose(item) }) { Text(item.name) }
-///       }
-///     }
-///   }
-///   Autocomplete.Footer(id: .manage, action: openSettings) { Text("Manage Harnesses…") }
-/// }
+/// Autocomplete.Menu(
+///   sections: [
+///     .init(id: "projects", items: projects),
+///     .init(id: "actions", items: [
+///       Autocomplete.Option(id: .newProject, title: "New Project…", action: createProject)
+///     ])
+///   ],
+///   searchAccessibilityLabel: "Search projects",
+///   onDismiss: { isPresented = false }
+/// )
 /// ```
 ///
+/// The composable primitives remain available for custom presentations.
 /// `Root` owns the keyboard (arrows, ⌃N/⌃P, Return, Escape) and the
 /// highlight; `Item`s register themselves in tree order, so any mix of
 /// groups, conditionals, and `ForEach` works. The state types in `Core/`

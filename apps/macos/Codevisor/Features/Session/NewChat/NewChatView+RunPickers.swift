@@ -8,7 +8,7 @@ extension NewChatView {
     case machine, project, location
   }
 
-  /// Keyboard/hover targets of each picker's popup: a row, or the footer.
+  /// Keyboard/hover targets of each picker's popup: choices and actions.
   enum MachinePickerTarget: Hashable {
     case machine(CodevisorMachine.ID)
     case manageMachines
@@ -89,40 +89,35 @@ extension NewChatView {
     let machines = environment.machines.allMachines
     let selectedServerId = controller.project.serverId
     let selectedMachine = environment.machines.machine(for: selectedServerId)
+    let choices = machines.map { machine in
+      Autocomplete.Option(
+        id: MachinePickerTarget.machine(machine.id),
+        title: machine.name,
+        icon: Image(systemName: EntitySystemSymbol.machine(machine)),
+        isSelected: machine.id == selectedServerId
+      ) {
+        selectTargetMachine(machine, controller: controller)
+      }
+    }
+    let manage = Autocomplete.Option(
+      id: MachinePickerTarget.manageMachines,
+      title: "Manage Machines…",
+      icon: Image(systemName: "gearshape"),
+      help: "Open Machine Settings"
+    ) {
+      SettingsRouter.shared.showMachines()
+      openSettings()
+    }
     return RunPickerMenu(
       chipText: selectedMachine?.name ?? "Machine",
       chipSymbol: selectedMachine.map(EntitySystemSymbol.machine) ?? EntitySystemSymbol.machine(.local),
-      titles: machines.map(\.name),
+      sections: [
+        .init(id: "machines", items: choices),
+        .init(id: "actions", items: [manage]),
+      ],
       searchAccessibilityLabel: "Search machines",
-      footer: RunPickerFooter(
-        id: MachinePickerTarget.manageMachines,
-        title: "Manage Machines…",
-        symbol: "gearshape",
-        help: "Open Machine Settings"
-      ) {
-        SettingsRouter.shared.showMachines()
-        openSettings()
-      }
-    ) { context in
-      let matches = machines.filter { context.matches($0.name) }
-      if matches.isEmpty {
-        Autocomplete.Empty("No matching machines")
-      }
-      ForEach(matches) { machine in
-        Autocomplete.Item(
-          id: MachinePickerTarget.machine(machine.id),
-          icon: Image(systemName: EntitySystemSymbol.machine(machine)),
-          isSelected: machine.id == selectedServerId,
-          action: {
-            context.dismiss()
-            selectTargetMachine(machine, controller: controller)
-          }
-        ) { _ in
-          Text(machine.name)
-            .lineLimit(1)
-        }
-      }
-    }
+      emptyMessage: "No matching machines"
+    )
     .onHover { trackHover(.machine, $0) }
     .help("Choose which machine this chat runs on")
     .accessibilityLabel("Machine")
@@ -142,53 +137,42 @@ extension NewChatView {
     let groups = pickerGroups(on: selected.serverId)
     let selectedGroup = isNoProject ? nil : groups.first { $0.contains(selected) }
     let chipText = isNoProject ? "No project" : (selectedGroup?.name ?? selected.name)
+    let noProject = Autocomplete.Option(
+      id: ProjectPickerTarget.noProject,
+      title: Self.noProjectTitle,
+      icon: Image(systemName: Self.noProjectSymbol),
+      isSelected: isNoProject
+    ) {
+      selectNoProject(controller)
+    }
+    let projects = groups.map { group in
+      Autocomplete.Option(
+        id: ProjectPickerTarget.project(group.id),
+        title: group.name,
+        icon: Image(systemName: EntitySystemSymbol.project),
+        isSelected: group.contains(selected)
+      ) {
+        selectTargetGroup(group, controller: controller)
+      }
+    }
+    let newProject = Autocomplete.Option(
+      id: ProjectPickerTarget.newProject,
+      title: "New Project…",
+      icon: Image(systemName: "folder.badge.plus"),
+      help: "Add a project"
+    ) {
+      newProjectTarget = NewProjectTarget(serverId: selected.serverId)
+    }
     return RunPickerMenu(
       chipText: chipText,
       chipSymbol: isNoProject ? Self.noProjectSymbol : EntitySystemSymbol.project,
-      titles: [Self.noProjectTitle] + groups.map(\.name),
+      sections: [
+        .init(id: "projects", items: [noProject] + projects),
+        .init(id: "actions", items: [newProject]),
+      ],
       searchAccessibilityLabel: "Search projects",
-      footer: RunPickerFooter(
-        id: ProjectPickerTarget.newProject,
-        title: "New Project…",
-        symbol: "folder.badge.plus",
-        help: "Add a project"
-      ) {
-        newProjectTarget = NewProjectTarget(serverId: selected.serverId)
-      }
-    ) { context in
-      let showsNoProject = context.matches(Self.noProjectTitle)
-      let matches = groups.filter { context.matches($0.name) }
-      if !showsNoProject, matches.isEmpty {
-        Autocomplete.Empty("No matching projects")
-      }
-      if showsNoProject {
-        Autocomplete.Item(
-          id: ProjectPickerTarget.noProject,
-          icon: Image(systemName: Self.noProjectSymbol),
-          isSelected: isNoProject,
-          action: {
-            context.dismiss()
-            selectNoProject(controller)
-          }
-        ) { _ in
-          Text(Self.noProjectTitle)
-        }
-      }
-      ForEach(matches) { group in
-        Autocomplete.Item(
-          id: ProjectPickerTarget.project(group.id),
-          icon: Image(systemName: EntitySystemSymbol.project),
-          isSelected: group.contains(selected),
-          action: {
-            context.dismiss()
-            selectTargetGroup(group, controller: controller)
-          }
-        ) { _ in
-          Text(group.name)
-            .lineLimit(1)
-        }
-      }
-    }
+      emptyMessage: "No matching projects"
+    )
     .onHover { trackHover(.project, $0) }
     .help("Choose which project this chat works in")
     .accessibilityLabel("Project")
@@ -205,38 +189,34 @@ extension NewChatView {
   func runLocationPicker(_ controller: SessionController) -> some View {
     let newWorktree = controller.wantsNewWorktree
     let current = RunLocationOption.all.first { $0.newWorktree == newWorktree } ?? .projectDirectory
+    let choices = RunLocationOption.all.map { option in
+      Autocomplete.Option(
+        id: option.id,
+        title: option.title,
+        icon: Image(systemName: option.symbol),
+        isSelected: option.newWorktree == newWorktree
+      ) {
+        selectRunLocation(newWorktree: option.newWorktree, controller: controller)
+      }
+    }
+    let manage = Autocomplete.Option(
+      id: RunLocationPickerTarget.manageProject,
+      title: "Manage Project…",
+      icon: Image(systemName: "gearshape"),
+      help: "Manage this project"
+    ) {
+      managedProject = liveProject(for: controller)
+    }
     return RunPickerMenu(
       chipText: current.title,
       chipSymbol: current.symbol,
-      titles: RunLocationOption.all.map(\.title),
+      sections: [
+        .init(id: "locations", items: choices),
+        .init(id: "actions", items: [manage]),
+      ],
       searchAccessibilityLabel: "Search run locations",
-      footer: RunPickerFooter(
-        id: RunLocationPickerTarget.manageProject,
-        title: "Manage Project…",
-        symbol: "gearshape",
-        help: "Manage this project"
-      ) {
-        managedProject = liveProject(for: controller)
-      }
-    ) { context in
-      let matches = RunLocationOption.all.filter { context.matches($0.title) }
-      if matches.isEmpty {
-        Autocomplete.Empty("No matching run locations")
-      }
-      ForEach(matches) { option in
-        Autocomplete.Item(
-          id: option.id,
-          icon: Image(systemName: option.symbol),
-          isSelected: option.newWorktree == newWorktree,
-          action: {
-            context.dismiss()
-            selectRunLocation(newWorktree: option.newWorktree, controller: controller)
-          }
-        ) { _ in
-          Text(option.title)
-        }
-      }
-    }
+      emptyMessage: "No matching run locations"
+    )
     .onHover { trackHover(.location, $0) }
     .help("Where this chat's commands run")
     .accessibilityLabel("Run location")
