@@ -113,7 +113,7 @@ extension HomeView {
   }
 
   var expandedProjects: Set<UUID> {
-    persistedIDs(from: expandedProjectsRaw)
+    expandedProjectIDs
   }
 
   var expandedWorkspaces: Set<UUID> {

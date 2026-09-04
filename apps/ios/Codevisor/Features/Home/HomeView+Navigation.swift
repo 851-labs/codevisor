@@ -127,11 +127,14 @@ extension HomeView {
   }
 
   func setProject(_ id: UUID, isExpanded: Bool) {
-    var ids = expandedProjects
+    var ids = expandedProjectIDs
     if isExpanded { ids.insert(id) } else { ids.remove(id) }
+    // Animate the view-owned state; persist as a side effect, outside the
+    // animation, so the disclosure never depends on the store's timing.
     withAnimation(.snappy(duration: 0.28)) {
-      expandedProjectsRaw = ids.map(\.uuidString).sorted().joined(separator: "\n")
+      expandedProjectIDs = ids
     }
+    expandedProjectsRaw = ids.map(\.uuidString).sorted().joined(separator: "\n")
   }
 
   func setWorkspace(_ id: UUID, isExpanded: Bool) {

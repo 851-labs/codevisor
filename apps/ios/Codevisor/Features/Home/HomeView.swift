@@ -25,6 +25,12 @@ struct HomeView: View {
   var manualSessionOrder
   @ClientPreference("sidebar.expandedProjects", default: "")
   var expandedProjectsRaw
+  /// View-owned mirror of `expandedProjectsRaw`, seeded on appear. The
+  /// disclosure animates off THIS state: toggling straight through the
+  /// shared preference store landed in whatever transaction happened to
+  /// be current (a tap also flips the touch hold), so the open/close
+  /// animation came and went at random.
+  @State var expandedProjectIDs: Set<UUID> = []
   @ClientPreference("sidebar.expandedWorkspaces", default: "")
   var expandedWorkspacesRaw
   @ClientPreference("sidebar.showEmptyProjects", default: false)
@@ -169,6 +175,9 @@ struct HomeView: View {
       .onChange(of: visibleSessions.map(\.id)) { _, newIDs in
         deferredSessionOrder.incorporate(newIDs)
         backfillWorkspacesIfNeeded()
+      }
+      .onAppear {
+        expandedProjectIDs = persistedIDs(from: expandedProjectsRaw)
       }
       .onChange(of: failedSyncMachineIDs, initial: true) { _, failedIDs in
         // Recovery re-arms a future failure alert.
