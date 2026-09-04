@@ -117,7 +117,7 @@ public final class UpdateCenter {
         machineName: machineName(for: CodevisorMachine.local.id),
         subjectId: "",
         title: "Codevisor",
-        installedVersion: appUpdate.currentVersion,
+        installedVersion: appUpdate.displayedCurrentVersion,
         latestVersion: release?.version,
         updateAvailable: release != nil,
         phase: phase,

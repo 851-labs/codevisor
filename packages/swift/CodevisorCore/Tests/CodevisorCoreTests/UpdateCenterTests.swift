@@ -142,6 +142,24 @@ struct UpdateCenterTests {
     controller.stopEventSync()
   }
 
+  @Test("The app row shows the Alpha release identity on the Alpha channel")
+  func appAlphaVersion() throws {
+    let controller = try makeController(
+      fakes: ["local": SyncFakeServerClient(projects: [], sessions: [])],
+      remotes: []
+    )
+    let appUpdate = AppUpdateModel(
+      currentVersion: "1.2.3",
+      currentBuildNumber: 42,
+      allowsAlphaUpdates: true
+    )
+    appUpdate.checkHandler = { _ in }
+    let center = UpdateCenter(machines: controller, appUpdate: appUpdate)
+
+    #expect(center.components.first?.installedVersion == "1.2.3-alpha.42")
+    controller.stopEventSync()
+  }
+
   @Test("updateAll clears its session when no app restart is pending")
   func sessionClearsWithoutAppRestart() async throws {
     let remote = makeRemote("remote-a")

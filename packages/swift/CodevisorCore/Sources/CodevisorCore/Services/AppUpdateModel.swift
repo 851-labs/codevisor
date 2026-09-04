@@ -66,6 +66,16 @@ public final class AppUpdateModel {
     channelChangeHandler?(value)
   }
 
+  /// Alpha and Stable publish the same signed app bytes. The bundle keeps
+  /// the base marketing version while its build number identifies the Alpha
+  /// release that produced those bytes.
+  public var displayedCurrentVersion: String {
+    guard allowsAlphaUpdates, let currentBuildNumber, !currentVersion.contains("-") else {
+      return currentVersion
+    }
+    return "\(currentVersion)-alpha.\(currentBuildNumber)"
+  }
+
   public var availableRelease: AppUpdateRelease? {
     switch phase {
     case let .available(release), let .updating(release):

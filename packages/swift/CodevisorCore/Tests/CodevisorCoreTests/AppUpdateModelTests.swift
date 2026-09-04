@@ -78,15 +78,28 @@ struct AppUpdateModelTests {
 
   @Test("Channel changes are delegated to Sparkle")
   func channelChanges() {
-    let model = AppUpdateModel(currentVersion: "1.2.3")
+    let model = AppUpdateModel(currentVersion: "1.2.3", currentBuildNumber: 42)
     var values: [Bool] = []
     model.channelChangeHandler = { values.append($0) }
 
     model.setAllowsAlphaUpdates(true)
+    #expect(model.displayedCurrentVersion == "1.2.3-alpha.42")
     model.setAllowsAlphaUpdates(false)
 
     #expect(values == [true, false])
     #expect(!model.allowsAlphaUpdates)
+    #expect(model.displayedCurrentVersion == "1.2.3")
+  }
+
+  @Test("An explicit prerelease version is not decorated again")
+  func explicitPrereleaseVersion() {
+    let model = AppUpdateModel(
+      currentVersion: "1.2.3-alpha.42",
+      currentBuildNumber: 42,
+      allowsAlphaUpdates: true
+    )
+
+    #expect(model.displayedCurrentVersion == "1.2.3-alpha.42")
   }
 
   @Test("Terminal report states are explicit")
