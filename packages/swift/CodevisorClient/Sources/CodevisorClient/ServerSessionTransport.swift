@@ -39,7 +39,8 @@ extension ServerSessionTransport {
       pendingPlanApproval: detail.pendingPlanApproval,
       backgroundTasks: detail.backgroundTasks,
       goal: detail.goal,
-      sessionPlan: detail.sessionPlan
+      sessionPlan: detail.sessionPlan,
+      updateGateHarnessName: detail.updateGate?.harnessName
     )
   }
 
@@ -76,7 +77,8 @@ extension ServerSessionTransport {
       backgroundTasks: page.backgroundTasks,
       goal: page.goal,
       sessionPlan: page.sessionPlan,
-      usage: page.usage?.sessionUsage
+      usage: page.usage?.sessionUsage,
+      updateGateHarnessName: page.updateGate?.harnessName
     )
   }
 

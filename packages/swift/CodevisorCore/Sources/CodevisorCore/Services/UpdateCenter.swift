@@ -36,6 +36,54 @@ public struct UpdateComponent: Identifiable, Equatable, Sendable {
   public var progress: Double?
 }
 
+extension UpdateComponent {
+  /// The row's one-line detail in every state: versions when idle, what the
+  /// machine is doing while updating, a one-line reason when failed. One
+  /// line by contract — rows keep their height through a live update, and
+  /// the full failure output lives behind a details control.
+  public var detailText: String {
+    switch phase {
+    case .updating:
+      let status = statusMessage ?? "Updating…"
+      guard let progress else { return status }
+      return "\(status) \(Int((progress * 100).rounded()))%"
+    case let .failed(message):
+      let reason = message.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
+      return reason.isEmpty ? "Update failed" : "Update failed: \(reason)"
+    case .idle:
+      if updateAvailable, let latestVersion {
+        return installedVersion.map { "\($0) → \(latestVersion)" } ?? "\(latestVersion) available"
+      }
+      return installedVersion ?? "Up to date"
+    }
+  }
+
+  public var isFailed: Bool {
+    if case .failed = phase { return true }
+    return false
+  }
+}
+
+/// One machine in the Updates pane: the machine's own Codevisor (the app
+/// locally, the server remotely) as the section's identity, and the
+/// harnesses and plugins on it as the section's rows.
+public struct UpdateMachineGroup: Identifiable, Equatable, Sendable {
+  /// The machine id.
+  public let id: String
+  public let machineName: String
+  public let isLocal: Bool
+  /// The machine's Codevisor. Nil when the machine has no self-updater to
+  /// report through (development builds of the app; a server whose
+  /// release state is not known yet).
+  public let codevisor: UpdateComponent?
+  /// Harnesses first, then plugins.
+  public let components: [UpdateComponent]
+
+  public var availableCount: Int {
+    components.count(where: \.updateAvailable) + (codevisor?.updateAvailable == true ? 1 : 0)
+  }
+}
+
 /// The fleet-wide update fold: app + every machine's server, harnesses, and
 /// plugins, as one observable component list with per-row actions and a
 /// properly ordered "update all". Server rows read live per-connection
@@ -98,6 +146,24 @@ public final class UpdateCenter {
     components.count(where: \.updateAvailable)
   }
 
+  /// Components grouped per machine in the fleet's machine order: the
+  /// machine's Codevisor (app or server) split out, then its harnesses and
+  /// plugins. Machines with nothing to show (no known Codevisor, nothing
+  /// updatable) are omitted.
+  public var machineGroups: [UpdateMachineGroup] {
+    let byMachine = Dictionary(grouping: components, by: \.machineId)
+    return machines.allMachines.compactMap { machine in
+      guard let rows = byMachine[machine.id], !rows.isEmpty else { return nil }
+      return UpdateMachineGroup(
+        id: machine.id,
+        machineName: machine.name,
+        isLocal: machine.isLocal,
+        codevisor: rows.first { $0.kind == .app || $0.kind == .server },
+        components: [.harness, .plugin].flatMap { kind in rows.filter { $0.kind == kind } }
+      )
+    }
+  }
+
   private var appComponents: [UpdateComponent] {
     // No check handler means no self-updater on this platform (iOS App
     // Store builds, development runs) — the app is not a component here.
@@ -148,7 +214,10 @@ public final class UpdateCenter {
         machineId: machine.id,
         machineName: machine.name,
         subjectId: "",
-        title: "Codevisor Server",
+        // The machine's Codevisor, whatever form it takes there; the pane
+        // shows it as the machine section itself, never as a peer of the
+        // harnesses it hosts.
+        title: "Codevisor",
         installedVersion: AppUpdateModel.displayedVersion(
           info.currentVersion,
           buildNumber: info.currentBuildNumber,
@@ -175,11 +244,22 @@ public final class UpdateCenter {
         let available = harness.updateInfo?.updateAvailable == true
         guard available || lifecycleActive else { return nil }
         let id = "harness:\(machineId):\(harness.id)"
+        let lifecyclePhase = harness.lifecycle?.phase
+        // An armed update ("pendingUpdate") is in flight from the user's point
+        // of view: the machine runs it as soon as the harness's live chats
+        // end, the same drain a server update performs.
         let phase: UpdateComponent.Phase =
-          switch harness.lifecycle?.phase {
-          case "installing", "updating": .updating
+          switch lifecyclePhase {
+          case "installing", "updating", "pendingUpdate": .updating
           case "failed": .failed(harness.lifecycle?.error ?? "The update failed.")
           default: transientPhases[id] ?? .idle
+          }
+        let statusMessage: String? =
+          switch lifecyclePhase {
+          case "pendingUpdate": "Waiting for chats to finish…"
+          case "installing", "updating":
+            harness.lifecycle?.targetVersion.map { "Updating to \($0)…" } ?? "Updating…"
+          default: nil
           }
         return UpdateComponent(
           id: id,
@@ -191,7 +271,8 @@ public final class UpdateCenter {
           installedVersion: harness.updateInfo?.installedVersion,
           latestVersion: harness.updateInfo?.latestVersion,
           updateAvailable: available,
-          phase: phase
+          phase: phase,
+          statusMessage: statusMessage
         )
       }
     }

@@ -218,6 +218,14 @@ export type TranscriptItem = typeof TranscriptItem.Type
 
 /// Reverse-paginated transcript page. `items` are always oldest-to-newest for
 /// direct display; `nextBefore` is opaque to clients.
+/// The update gate a session is held behind: the harness whose update is in
+/// progress, or the server itself ("codevisor-server") during a restart drain.
+export const SessionUpdateGate = Schema.Struct({
+  harnessId: Schema.String,
+  harnessName: Schema.String
+})
+export type SessionUpdateGate = typeof SessionUpdateGate.Type
+
 export const TranscriptPage = Schema.Struct({
   items: Schema.Array(TranscriptItem),
   nextBefore: Schema.optional(Schema.String),
@@ -237,7 +245,11 @@ export const TranscriptPage = Schema.Struct({
    * pinned checklist is useful enough to show. */
   sessionPlan: Schema.optional(SessionPlan),
   /** Durable usage snapshot at the same revision as the transcript. */
-  usage: Schema.optional(SessionUsage)
+  usage: Schema.optional(SessionUsage),
+  /** The gate holding this session's prompts while its harness or the
+   * server itself updates, at the same revision as `eventCursor`. Absent when
+   * nothing is held — a reconnecting client clears its marker from this. */
+  updateGate: Schema.optional(SessionUpdateGate)
 })
 export type TranscriptPage = typeof TranscriptPage.Type
 
@@ -271,7 +283,8 @@ export const SessionDetail = Schema.Struct({
   pendingPlanApproval: Schema.optional(Schema.Boolean),
   backgroundTasks: Schema.optional(Schema.Array(BackgroundTask)),
   goal: Schema.optional(SessionGoal),
-  sessionPlan: Schema.optional(SessionPlan)
+  sessionPlan: Schema.optional(SessionPlan),
+  updateGate: Schema.optional(SessionUpdateGate)
 })
 export type SessionDetail = typeof SessionDetail.Type
 

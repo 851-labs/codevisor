@@ -1,10 +1,10 @@
 import CodevisorCore
 import SwiftUI
 
-/// Settings ▸ Updates: every updatable component across the fleet, grouped
-/// by kind, with per-row installs and one ordered "Update All". The iOS
-/// twin of macOS's UpdateCenterView — the app itself is App Store-managed
-/// here, so its row simply never exists.
+/// Settings ▸ Updates: a summary with the fleet-wide action on top, then one
+/// section per machine listing what it can update (its server, then its
+/// agents and plugins). The iOS twin of macOS's UpdateCenterView — the app
+/// itself is App Store-managed here, so its row simply never exists.
 struct UpdatesSettingsScreen: View {
   @Environment(AppEnvironment.self) private var environment
 
@@ -12,15 +12,20 @@ struct UpdatesSettingsScreen: View {
 
   var body: some View {
     List {
-      if center.components.isEmpty {
-        emptySection
-      } else {
-        if center.availableCount > 1 {
-          updateAllSection
+      summarySection
+      ForEach(center.machineGroups) { group in
+        Section {
+          if group.components.isEmpty {
+            Text("Agents and plugins are up to date.")
+              .foregroundStyle(.secondary)
+          } else {
+            ForEach(group.components) { component in
+              row(for: component)
+            }
+          }
+        } header: {
+          machineHeader(group)
         }
-        section(titled: "Servers", kind: .server)
-        section(titled: "Agents", kind: .harness)
-        section(titled: "Plugins", kind: .plugin)
       }
     }
     .navigationTitle("Updates")
@@ -28,98 +33,74 @@ struct UpdatesSettingsScreen: View {
     .task { await center.refresh(force: true) }
   }
 
-  private var emptySection: some View {
+  private var summarySection: some View {
     Section {
-      HStack {
-        Spacer()
-        VStack(spacing: 8) {
-          Image(
-            systemName: center.isRefreshing
-              ? "arrow.triangle.2.circlepath" : "checkmark.circle"
-          )
-          .font(.title2)
-          .foregroundStyle(.secondary)
-          Text(
-            center.isRefreshing
-              ? "Checking for updates…" : "Everything is up to date."
-          )
-          .foregroundStyle(.secondary)
+      HStack(spacing: 10) {
+        if center.isRefreshing || center.isUpdatingAll {
+          ProgressView()
         }
-        .padding(.vertical, 24)
-        Spacer()
-      }
-    }
-  }
-
-  private var updateAllSection: some View {
-    Section {
-      if let notice = center.updateAllNotice {
-        Text(notice)
-          .font(.footnote)
-          .foregroundStyle(.red)
-          .fixedSize(horizontal: false, vertical: true)
-      }
-      Button {
-        Task { await center.updateAll() }
-      } label: {
-        HStack {
-          Spacer()
-          if center.isUpdatingAll {
-            ProgressView()
-              .padding(.trailing, 6)
-            Text("Updating…")
-          } else {
-            Text("Update All")
+        VStack(alignment: .leading, spacing: 2) {
+          Text(summaryTitle)
+            .font(.headline)
+          if let refreshed = center.lastRefreshedAt {
+            Text("Last checked \(refreshed.formatted(date: .omitted, time: .shortened))")
+              .font(.footnote)
+              .foregroundStyle(.secondary)
           }
-          Spacer()
         }
       }
-      .disabled(center.isUpdatingAll)
+      if center.availableCount > 0 {
+        Button(center.isUpdatingAll ? "Updating…" : "Update All") {
+          Task { await center.updateAll() }
+        }
+        .disabled(center.isUpdatingAll)
+      }
+    } footer: {
+      if let notice = center.updateAllNotice {
+        Label(notice, systemImage: "exclamationmark.triangle")
+      }
     }
   }
 
-  @ViewBuilder
-  private func section(titled title: String, kind: UpdateComponent.Kind) -> some View {
-    let rows = center.components.filter { $0.kind == kind }
-    if !rows.isEmpty {
-      Section(title) {
-        ForEach(rows) { component in
-          row(for: component)
+  private var summaryTitle: String {
+    if center.isUpdatingAll { return "Updating…" }
+    switch center.availableCount {
+    case 0: return center.isRefreshing ? "Checking for updates…" : "Everything is up to date"
+    case 1: return "1 update available"
+    case let count: return "\(count) updates available"
+    }
+  }
+
+  /// The section header is the machine's Codevisor: name, version line, and
+  /// its update control. Rows beneath are the agents and plugins on it.
+  private func machineHeader(_ group: UpdateMachineGroup) -> some View {
+    HStack(alignment: .center, spacing: 12) {
+      VStack(alignment: .leading, spacing: 2) {
+        Text(group.machineName)
+        if let codevisor = group.codevisor {
+          Text(codevisor.isFailed ? codevisor.detailText : "Codevisor \(codevisor.detailText)")
+            .font(.footnote)
+            .foregroundStyle(codevisor.isFailed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+            .lineLimit(1)
         }
       }
+      Spacer(minLength: 12)
+      if let codevisor = group.codevisor {
+        trailing(for: codevisor)
+      }
     }
+    .textCase(nil)
   }
 
   private func row(for component: UpdateComponent) -> some View {
     HStack(spacing: 10) {
       VStack(alignment: .leading, spacing: 2) {
         Text(component.title)
-        HStack(spacing: 6) {
-          Text(component.machineName)
-          if component.updateAvailable,
-            let installed = component.installedVersion,
-            let latest = component.latestVersion
-          {
-            Text("\(installed) → \(latest)")
-          } else if let installed = component.installedVersion {
-            Text(installed)
-          }
-        }
-        .font(.footnote)
-        .foregroundStyle(.secondary)
-        if case let .failed(message) = component.phase {
-          Text(message)
-            .font(.footnote)
-            .foregroundStyle(.red)
-            .fixedSize(horizontal: false, vertical: true)
-        } else if component.phase == .updating, let status = component.statusMessage {
-          // What the machine is doing right now: draining chats,
-          // installing, restarting.
-          Text(status)
-            .font(.footnote)
-            .foregroundStyle(.secondary)
-            .contentTransition(.numericText())
-        }
+        Text(component.detailText)
+          .font(.footnote)
+          .foregroundStyle(component.isFailed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+          .lineLimit(1)
+          .truncationMode(.tail)
       }
       Spacer(minLength: 8)
       trailing(for: component)
@@ -143,6 +124,7 @@ struct UpdatesSettingsScreen: View {
       } else {
         Image(systemName: "checkmark.circle")
           .foregroundStyle(.secondary)
+          .accessibilityLabel("Up to date")
       }
     }
   }

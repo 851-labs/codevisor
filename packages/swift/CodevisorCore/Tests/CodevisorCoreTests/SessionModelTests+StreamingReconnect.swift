@@ -5,6 +5,37 @@ import ACPKit
 @testable import CodevisorCore
 
 extension SessionModelTests {
+  @Test("The history page is authoritative for the update gate marker")
+  func historyPageDrivesUpdateGate() async {
+    let sessionId = UUID()
+    let client = FakeSessionServerClient(sessionId: sessionId)
+    client.initialTranscriptPage = ServerTranscriptPage(
+      items: [],
+      nextBefore: nil,
+      hasMore: false,
+      eventCursor: 0,
+      updateGate: ServerSessionUpdateGate(harnessId: "codevisor-server", harnessName: "Codevisor")
+    )
+    let model = SessionModel(
+      serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+      sessionId: sessionId.uuidString
+    )
+
+    await model.loadHistory()
+    #expect(model.updateGateHarnessName == "Codevisor")
+
+    // The server restarted between the `waiting` event and now, so no
+    // `released` ever arrived; the next page says nothing is held.
+    client.initialTranscriptPage = ServerTranscriptPage(
+      items: [],
+      nextBefore: nil,
+      hasMore: false,
+      eventCursor: 1
+    )
+    await model.loadHistory()
+    #expect(model.updateGateHarnessName == nil)
+  }
+
   @Test("A new empty session negotiates the scoped stream before its first prompt")
   func newSessionFirstPromptUsesScopedStream() async {
     let sessionId = UUID()

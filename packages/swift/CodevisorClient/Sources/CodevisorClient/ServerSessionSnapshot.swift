@@ -12,6 +12,9 @@ public struct ServerSessionSnapshot: Equatable, Sendable {
   public var backgroundTasks: [BackgroundTaskInfo]?
   public var goal: SessionGoal?
   public var sessionPlan: Plan?
+  /// Name of the harness (or "Codevisor" for the server itself) whose update
+  /// is holding this session's prompts at this snapshot; nil when none is.
+  public var updateGateHarnessName: String? = nil
 }
 
 public struct TranscriptHistoryPage: Equatable, Sendable {
@@ -25,6 +28,8 @@ public struct TranscriptHistoryPage: Equatable, Sendable {
   public var goal: SessionGoal? = nil
   public var sessionPlan: Plan? = nil
   public var usage: SessionUsage? = nil
+  /// See `ServerSessionSnapshot.updateGateHarnessName`.
+  public var updateGateHarnessName: String? = nil
 }
 
 public enum SessionTurnInitiator: String, Equatable, Sendable {

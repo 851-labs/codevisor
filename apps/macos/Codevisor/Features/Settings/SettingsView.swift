@@ -69,7 +69,7 @@ struct HarnessAccountSettingsRequest: Equatable {
 @Observable
 final class SettingsRouter {
   static let shared = SettingsRouter()
-  var selectedTab: SettingsTab = .updates
+  var selectedTab: SettingsTab = .general
   /// Machine pages pushed over the current pane (list row → machine page).
   var panePath: [MachinePaneRoute] = []
   /// Pages behind and ahead of the current one. Every navigation —

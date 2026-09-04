@@ -104,6 +104,76 @@ struct UpdateCenterTests {
     controller.stopEventSync()
   }
 
+  @Test("Machine groups put each machine's Codevisor first, then harnesses, then plugins")
+  func machineGroups() async throws {
+    let remote = makeRemote("remote-a")
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    fake.configureUpdate(current: "0.1.0", latest: "0.2.0")
+    fake.configureHarnesses([makeHarness(updateAvailable: true)])
+    fake.configurePluginUpdates([makePluginUpdate()])
+    let controller = try makeController(
+      fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],
+      remotes: [remote]
+    )
+    let appUpdate = AppUpdateModel(currentVersion: "1.0.0")
+    appUpdate.checkHandler = { _ in }
+    let center = UpdateCenter(machines: controller, appUpdate: appUpdate)
+
+    await controller.refreshStatus(for: remote.id)
+    await center.refresh()
+
+    let groups = center.machineGroups
+    #expect(groups.map(\.id) == ["local", "remote-a"])
+    // Each machine's Codevisor is the section itself, never one of its rows.
+    #expect(groups.first?.isLocal == true)
+    #expect(groups.first?.codevisor?.kind == .app)
+    #expect(groups.first?.codevisor?.title == "Codevisor")
+    #expect(groups.first?.codevisor?.detailText == "1.0.0")
+    #expect(groups.first?.components.isEmpty == true)
+    #expect(groups.last?.codevisor?.kind == .server)
+    #expect(groups.last?.codevisor?.title == "Codevisor")
+    #expect(groups.last?.codevisor?.detailText == "0.1.0 → 0.2.0")
+    #expect(groups.last?.components.map(\.kind) == [.harness, .plugin])
+    // The Codevisor update counts toward the machine's total.
+    #expect(groups.last?.availableCount == 3)
+    // One line per row, whatever the state.
+    #expect(groups.last?.components.map(\.detailText) == ["1.0.0 → 1.2.0", "1.0.0 → 1.1.0"])
+    controller.stopEventSync()
+  }
+
+  @Test("A failed row summarizes its first output line; an updating row shows its status")
+  func detailTextStates() {
+    var component = UpdateComponent(
+      id: "server:m",
+      kind: .server,
+      machineId: "m",
+      machineName: "m",
+      subjectId: "",
+      title: "Codevisor Server",
+      installedVersion: "0.1.0",
+      latestVersion: "0.2.0",
+      updateAvailable: true,
+      phase: .failed("ld: symbol not found\nsecond line\nthird line")
+    )
+    #expect(component.detailText == "Update failed: ld: symbol not found")
+    #expect(component.isFailed)
+    component = UpdateComponent(
+      id: "app",
+      kind: .app,
+      machineId: "local",
+      machineName: "local",
+      subjectId: "",
+      title: "Codevisor",
+      installedVersion: "0.1.0",
+      latestVersion: "0.2.0",
+      updateAvailable: true,
+      phase: .updating,
+      statusMessage: "Downloading…",
+      progress: 0.42
+    )
+    #expect(component.detailText == "Downloading… 42%")
+  }
+
   @Test("updateAll runs plugins, then harnesses, then servers, app last")
   func updateAllOrder() async throws {
     let remote = makeRemote("remote-a")

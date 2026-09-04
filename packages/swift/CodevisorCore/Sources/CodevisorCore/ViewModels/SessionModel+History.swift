@@ -78,6 +78,10 @@ extension SessionModel {
       }
       pendingQuestion = page.pendingQuestion
       pendingPlanApproval = page.pendingPlanApproval
+      // The page is authoritative for the update gate: a `waiting` event
+      // whose `released` this client never received (the server restarted
+      // in between) must not keep the chat marked as held.
+      updateGateHarnessName = page.updateGateHarnessName
       if let tasks = page.backgroundTasks {
         backgroundTasks = tasks
         hasBackgroundTaskSnapshot = true
@@ -217,6 +221,7 @@ extension SessionModel {
         setConversation(snapshot.conversation)
         pendingQuestion = snapshot.pendingQuestion
         pendingPlanApproval = snapshot.pendingPlanApproval
+        updateGateHarnessName = snapshot.updateGateHarnessName
         goal = snapshot.goal
         sessionPlan = snapshot.sessionPlan
         if let tasks = snapshot.backgroundTasks {
@@ -241,6 +246,9 @@ extension SessionModel {
           }
         }
         isReplayingHistory = false
+        // Replayed events can end on a `waiting` gate whose release the log
+        // never recorded; the snapshot says whether it is still held.
+        updateGateHarnessName = snapshot.updateGateHarnessName
         let runtimeOptions = configOptions
         let restoredOptions = Self.mergingSupportedSelections(
           historicalConfigSelections,

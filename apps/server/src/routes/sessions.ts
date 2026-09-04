@@ -28,6 +28,7 @@ import {
   resolveSessionCwdOrFail
 } from "./session-workspace.js"
 import { routeSessionActions } from "./session-actions.js"
+import { withUpdateGate } from "./update-gate.js"
 
 export {
   drainPromptQueue,
@@ -145,7 +146,16 @@ export const routeSessions = async (
 
   const sessionId = matchRoute(url.pathname, "/v1/sessions/:id")
   if (sessionId !== undefined && request.method === "GET") {
-    writeJson(response, 200, await run(services.db.getSessionDetail(sessionId)))
+    writeJson(
+      response,
+      200,
+      withUpdateGate(
+        await run(services.db.getSessionDetail(sessionId)),
+        services,
+        routeState,
+        sessionId
+      )
+    )
     return true
   }
 

@@ -1,7 +1,12 @@
 import { drainPromptQueue } from "./routes/prompt-queue.js"
 import { ensureAgentSessionFor } from "./routes/session-workspace.js"
-import type { RestartSnapshotStore } from "./restart-drain.js"
 import {
+  RESTART_GATE_HARNESS_ID,
+  RESTART_GATE_HARNESS_NAME,
+  type RestartSnapshotStore
+} from "./restart-drain.js"
+import {
+  appendAndPublish,
   failureMessage,
   run,
   swallowError,
@@ -34,6 +39,17 @@ export const resumeSessionsAfterRestart = async (
   if (requested === undefined || requested.length === 0) return []
   const sessions = await run(services.db.listSessions)
   const known = new Map(sessions.map((session) => [session.id, session]))
+  // The previous process published `waiting` for every session it held and
+  // then exited — its `released` never happened. Publish it here, durably,
+  // so clients replaying the stream (or still showing the marker) let go
+  // before the held prompts dispatch.
+  for (const sessionId of requested.filter((id) => known.has(id))) {
+    await appendAndPublish(services.db, fanout, "session.updateGate.updated", sessionId, {
+      harnessId: RESTART_GATE_HARNESS_ID,
+      harnessName: RESTART_GATE_HARNESS_NAME,
+      state: "released"
+    }).catch(swallowError)
+  }
   const targets = requested.filter((id) => known.get(id)?.isArchived === false)
   if (targets.length === 0) return []
   log(`Resuming ${targets.length} session(s) after the restart`)

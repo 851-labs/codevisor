@@ -38,6 +38,7 @@ import {
   sessionHistoryEventsWithSetup
 } from "./session-workspace.js"
 import { MAX_PROMPT_ATTACHMENTS } from "./sessions.js"
+import { withUpdateGate } from "./update-gate.js"
 
 /// Per-session action routes: connect, prompt, cancel, mode/config, goals,
 /// questions, queue management, and read/attention state.
@@ -103,7 +104,12 @@ export const routeSessionActions = async (
         : payload.update === undefined
           ? existing
           : await applySessionUpdate(services, fanout, config, openSessionId, payload.update)
-    const transcript = await run(services.db.getTranscriptPage(openSessionId, undefined, limit))
+    const transcript = withUpdateGate(
+      await run(services.db.getTranscriptPage(openSessionId, undefined, limit)),
+      services,
+      routeState,
+      openSessionId
+    )
     writeJson(response, 200, { session, transcript })
     return true
   }
@@ -123,7 +129,12 @@ export const routeSessionActions = async (
     writeJson(
       response,
       200,
-      await run(services.db.getTranscriptPage(transcriptSessionId, before, limit))
+      withUpdateGate(
+        await run(services.db.getTranscriptPage(transcriptSessionId, before, limit)),
+        services,
+        routeState,
+        transcriptSessionId
+      )
     )
     return true
   }

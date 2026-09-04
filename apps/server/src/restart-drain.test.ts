@@ -107,6 +107,14 @@ describe("restart drain", () => {
     expect(await gateEvents(services, sessionId)).toEqual([
       { harnessId: "codevisor-server", harnessName: "Codevisor", state: "waiting" }
     ])
+    // Snapshots carry the same gate, so a client that (re)opens the chat
+    // now shows the marker without depending on having seen the event.
+    expect((await jsonRequest(server, `/v1/sessions/${sessionId}/transcript`)).body).toMatchObject({
+      updateGate: { harnessId: "codevisor-server", harnessName: "Codevisor" }
+    })
+    expect((await jsonRequest(server, `/v1/sessions/${sessionId}`)).body).toMatchObject({
+      updateGate: { harnessId: "codevisor-server", harnessName: "Codevisor" }
+    })
 
     // The turn ends → the drain completes, sessions are snapshotted and
     // their processes closed, and only then does the updater run.
@@ -159,6 +167,16 @@ describe("restart drain", () => {
     runningServers.push(restarted)
     await waitFor(() => agents.prompts.length === 2)
     expect(agents.prompts[1]?.[1]).toBe("held prompt")
+    // The gate the old process closed is released durably by the new one:
+    // clients replaying the stream see `waiting` → `released`, and a fresh
+    // snapshot no longer carries the gate.
+    expect(await gateEvents(services, sessionId)).toEqual([
+      { harnessId: "codevisor-server", harnessName: "Codevisor", state: "waiting" },
+      { harnessId: "codevisor-server", harnessName: "Codevisor", state: "released" }
+    ])
+    expect(
+      (await jsonRequest(restarted, `/v1/sessions/${sessionId}/transcript`)).body
+    ).not.toHaveProperty("updateGate")
     expect(
       agents.loads.some(([, agentSessionId]) =>
         ["agent-doomed", "agent-archived"].includes(agentSessionId)

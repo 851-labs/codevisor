@@ -278,6 +278,14 @@ describe("harness update checks", () => {
           (event.payload as { state?: string }).state === "waiting"
       )
     ).toBe(true)
+    // Snapshots carry the live gate, so a client (re)opening the chat shows
+    // the marker without having to have seen the event.
+    expect((await jsonRequest(server, `/v1/sessions/${session.id}/transcript`)).body).toMatchObject(
+      { updateGate: { harnessId: "codex" } }
+    )
+    expect((await jsonRequest(server, `/v1/sessions/${session.id}`)).body).toMatchObject({
+      updateGate: { harnessId: "codex" }
+    })
 
     // A release for a different harness leaves this session held.
     releaseListener?.("gemini")
@@ -291,5 +299,9 @@ describe("harness update checks", () => {
     expect(agents.prompts[0]?.[1]).toBe("held prompt")
     await waitFor(() => turns.includes("end codex"))
     expect(turns[0]).toBe("start codex")
+    // Released: snapshots no longer carry a gate.
+    expect(
+      (await jsonRequest(server, `/v1/sessions/${session.id}/transcript`)).body
+    ).not.toHaveProperty("updateGate")
   })
 })

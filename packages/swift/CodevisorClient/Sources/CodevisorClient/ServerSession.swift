@@ -335,6 +335,18 @@ public struct ServerConversationItem: Decodable, Equatable, Sendable {
   }
 }
 
+/// The update gate holding a session's prompts: the harness mid-update, or the
+/// server itself (`codevisor-server` / "Codevisor") during a restart drain.
+public struct ServerSessionUpdateGate: Decodable, Equatable, Sendable {
+  public var harnessId: String
+  public var harnessName: String
+
+  public init(harnessId: String, harnessName: String) {
+    self.harnessId = harnessId
+    self.harnessName = harnessName
+  }
+}
+
 public struct ServerSessionDetail: Decodable, Equatable, Sendable {
   public var session: ServerSession
   public var conversation: [ServerConversationItem]
@@ -345,6 +357,9 @@ public struct ServerSessionDetail: Decodable, Equatable, Sendable {
   public var backgroundTasks: [BackgroundTaskInfo]?
   public var goal: SessionGoal?
   public var sessionPlan: Plan?
+  /// The gate holding this session's prompts at this snapshot; nil when
+  /// nothing is held (and on servers that predate the field).
+  public var updateGate: ServerSessionUpdateGate?
 
   public init(
     session: ServerSession,
@@ -355,7 +370,8 @@ public struct ServerSessionDetail: Decodable, Equatable, Sendable {
     pendingPlanApproval: Bool = false,
     backgroundTasks: [BackgroundTaskInfo]? = nil,
     goal: SessionGoal? = nil,
-    sessionPlan: Plan? = nil
+    sessionPlan: Plan? = nil,
+    updateGate: ServerSessionUpdateGate? = nil
   ) {
     self.session = session
     self.conversation = conversation
@@ -366,6 +382,7 @@ public struct ServerSessionDetail: Decodable, Equatable, Sendable {
     self.backgroundTasks = backgroundTasks
     self.goal = goal
     self.sessionPlan = sessionPlan
+    self.updateGate = updateGate
   }
 
   enum CodingKeys: String, CodingKey {
@@ -377,6 +394,7 @@ public struct ServerSessionDetail: Decodable, Equatable, Sendable {
     case backgroundTasks
     case goal
     case sessionPlan
+    case updateGate
   }
 
   public init(from decoder: any Decoder) throws {
@@ -390,6 +408,7 @@ public struct ServerSessionDetail: Decodable, Equatable, Sendable {
     backgroundTasks = try container.decodeIfPresent([BackgroundTaskInfo].self, forKey: .backgroundTasks)
     goal = try container.decodeIfPresent(SessionGoal.self, forKey: .goal)
     sessionPlan = try container.decodeIfPresent(Plan.self, forKey: .sessionPlan)
+    updateGate = try container.decodeIfPresent(ServerSessionUpdateGate.self, forKey: .updateGate)
   }
 }
 
@@ -470,72 +489,6 @@ public struct ServerTranscriptItem: Decodable, Equatable, Sendable {
     self.messageId = messageId
     self.phase = phase
     self.revision = revision
-  }
-}
-
-public struct ServerTranscriptPage: Decodable, Equatable, Sendable {
-  public var items: [ServerTranscriptItem]
-  public var nextBefore: String?
-  public var hasMore: Bool
-  public var eventCursor: Int
-  public var pendingQuestion: QuestionRequest?
-  public var pendingPlanApproval: Bool
-  public var backgroundTasks: [BackgroundTaskInfo]?
-  public var goal: SessionGoal?
-  public var sessionPlan: Plan?
-  public var usage: ServerSessionUsage?
-
-  public init(
-    items: [ServerTranscriptItem],
-    nextBefore: String? = nil,
-    hasMore: Bool,
-    eventCursor: Int,
-    pendingQuestion: QuestionRequest? = nil,
-    pendingPlanApproval: Bool = false,
-    backgroundTasks: [BackgroundTaskInfo]? = nil,
-    goal: SessionGoal? = nil,
-    sessionPlan: Plan? = nil,
-    usage: ServerSessionUsage? = nil
-  ) {
-    self.items = items
-    self.nextBefore = nextBefore
-    self.hasMore = hasMore
-    self.eventCursor = eventCursor
-    self.pendingQuestion = pendingQuestion
-    self.pendingPlanApproval = pendingPlanApproval
-    self.backgroundTasks = backgroundTasks
-    self.goal = goal
-    self.sessionPlan = sessionPlan
-    self.usage = usage
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case items
-    case nextBefore
-    case hasMore
-    case eventCursor
-    case pendingQuestion
-    case pendingPlanApproval
-    case backgroundTasks
-    case goal
-    case sessionPlan
-    case usage
-  }
-
-  public init(from decoder: any Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    items = try container.decode([ServerTranscriptItem].self, forKey: .items)
-    nextBefore = try container.decodeIfPresent(String.self, forKey: .nextBefore)
-    hasMore = try container.decode(Bool.self, forKey: .hasMore)
-    eventCursor = try container.decode(Int.self, forKey: .eventCursor)
-    pendingQuestion = try container.decodeIfPresent(QuestionRequest.self, forKey: .pendingQuestion)
-    pendingPlanApproval =
-      try container.decodeIfPresent(Bool.self, forKey: .pendingPlanApproval) ?? false
-    backgroundTasks =
-      try container.decodeIfPresent([BackgroundTaskInfo].self, forKey: .backgroundTasks)
-    goal = try container.decodeIfPresent(SessionGoal.self, forKey: .goal)
-    sessionPlan = try container.decodeIfPresent(Plan.self, forKey: .sessionPlan)
-    usage = try container.decodeIfPresent(ServerSessionUsage.self, forKey: .usage)
   }
 }
 

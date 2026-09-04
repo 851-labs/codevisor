@@ -322,11 +322,6 @@ struct AssistantTurnView: View {
     return textAnimationPresentation.animationsEnabled
   }
 
-  private func retryLabel(_ retry: RetryStatus) -> String {
-    guard let attempt = retry.attempt, let of = retry.of else { return retry.message }
-    return "\(retry.message) \(attempt)/\(of)"
-  }
-
   private func openMarkdownLink(_ url: URL) -> Bool {
     TranscriptMarkdownLinkOpener.open(
       url, quickLook: quickLook, attachmentImages: attachmentImages,
@@ -378,13 +373,6 @@ struct AssistantTurnView: View {
       harnessId: harnessId
     )
     openSettings()
-  }
-
-  private func goalActivityLabel(_ activity: GoalActivity) -> String {
-    switch activity {
-    case .planning: "Planning…"
-    case .verifying: "Verifying…"
-    }
   }
 
   private func autoCollapse() {
@@ -525,6 +513,22 @@ struct AssistantTurnView: View {
       }
     } else {
       Text("Planned")
+    }
+  }
+}
+
+/// Presentation-only labels and durations, kept out of the view body so the
+/// struct stays within the type-body budget.
+extension AssistantTurnView {
+  private func retryLabel(_ retry: RetryStatus) -> String {
+    guard let attempt = retry.attempt, let of = retry.of else { return retry.message }
+    return "\(retry.message) \(attempt)/\(of)"
+  }
+
+  private func goalActivityLabel(_ activity: GoalActivity) -> String {
+    switch activity {
+    case .planning: "Planning…"
+    case .verifying: "Verifying…"
     }
   }
 
