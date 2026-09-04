@@ -82,11 +82,19 @@ enum StoryCatalog {
     },
     Story(
       id: "checkmarks",
-      title: "Checkmarks and dividers",
+      title: "Checkmarks",
       summary:
-        "A menu: Root(showsCheckmarks:) reserves the check column popup-wide, Item(isSelected:) draws the mark, and Divider separates the runs, inset to the title keyline because the column is present."
+        "Menu(showsCheckmarks:) reserves the check column, and Option(isSelected:) marks the current effort level. Choosing another item moves the checkmark."
     ) {
       CheckmarksStory()
+    },
+    Story(
+      id: "dividers",
+      title: "Dividers",
+      summary:
+        "Menu separates sections with inset dividers. Filtering away a section removes its divider, and keyboard navigation skips separators."
+    ) {
+      DividersStory()
     },
     Story(
       id: "favorites",
