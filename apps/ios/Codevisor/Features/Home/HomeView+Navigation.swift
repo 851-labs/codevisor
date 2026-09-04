@@ -129,19 +129,33 @@ extension HomeView {
   func setProject(_ id: UUID, isExpanded: Bool) {
     var ids = expandedProjectIDs
     if isExpanded { ids.insert(id) } else { ids.remove(id) }
-    // Animate the view-owned state; persist as a side effect, outside the
-    // animation, so the disclosure never depends on the store's timing.
-    withAnimation(.snappy(duration: 0.28)) {
+    expandedProjectsRaw = ids.map(\.uuidString).sorted().joined(separator: "\n")
+    toggleDisclosure {
       expandedProjectIDs = ids
     }
-    expandedProjectsRaw = ids.map(\.uuidString).sorted().joined(separator: "\n")
   }
 
   func setWorkspace(_ id: UUID, isExpanded: Bool) {
     var ids = expandedWorkspaces
     if isExpanded { ids.insert(id) } else { ids.remove(id) }
-    withAnimation(.snappy(duration: 0.28)) {
-      expandedWorkspacesRaw = ids.map(\.uuidString).sorted().joined(separator: "\n")
+    let raw = ids.map(\.uuidString).sorted().joined(separator: "\n")
+    toggleDisclosure {
+      expandedWorkspacesRaw = raw
+    }
+  }
+
+  /// Applies a disclosure change in an update pass of its own. The tap
+  /// that toggles a row also ends the list's touch-hold gesture
+  /// (`DragGesture(minimumDistance: 0)`), whose `@GestureState` reset lands
+  /// in the same pass under its own, unanimated transaction; merged with
+  /// the toggle, the List honored whichever transaction came first, so
+  /// the open/close animation came and went at random. One turn later the
+  /// toggle is alone in its pass and always animates.
+  private func toggleDisclosure(_ change: @escaping @MainActor () -> Void) {
+    Task { @MainActor in
+      withAnimation(.snappy(duration: 0.28)) {
+        change()
+      }
     }
   }
 
