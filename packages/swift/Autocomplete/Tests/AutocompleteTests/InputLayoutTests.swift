@@ -4,7 +4,7 @@
   import Testing
   @testable import Autocomplete
 
-  @Suite("Autocomplete search layout", .serialized)
+  @Suite("Autocomplete search layout")
   @MainActor
   struct InputLayoutTests {
     @Test("Font changes resize native symbols and preserve nonoverlapping search keylines in both directions")

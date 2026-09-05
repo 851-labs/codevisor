@@ -4,7 +4,7 @@
   import Testing
   @testable import Autocomplete
 
-  @Suite("Autocomplete interaction", .serialized)
+  @Suite("Autocomplete interaction")
   @MainActor
   struct InteractionTests {
     private func configure(

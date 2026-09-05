@@ -304,9 +304,7 @@ struct UpdateCenterTests {
     )
     let center = UpdateCenter(
       machines: controller,
-      appUpdate: AppUpdateModel(currentVersion: "1.0.0"),
-      harnessSettlePollInterval: .milliseconds(1),
-      harnessSettleAttempts: 50
+      appUpdate: AppUpdateModel(currentVersion: "1.0.0")
     )
     await controller.refreshStatus(for: remote.id)
     await center.refresh()

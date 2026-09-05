@@ -70,7 +70,12 @@ test target over another bespoke implementation.
 - For a negative assertion, first prove the relevant work has finished or is
   blocked at the intended gate. Waiting briefly proves neither.
 - Never synchronize with fixed sleeps, repeated `Task.yield()`, a fixed number
-  of microtask flushes, or an arbitrary number of polling attempts.
+  of microtask flushes, timed run-loop drains, or an arbitrary number of polling
+  attempts.
+- For hosted AppKit/SwiftUI tests, explicitly lay out the view before measuring
+  or rendering it. Await actual responder changes for asynchronous focus and
+  observable state changes for actions. Give each test its own window and set
+  the locale and appearance when expectations depend on them.
 - Real I/O integration tests may retain a runner timeout as a deadlock guard.
   That guard is not the timeout being tested and must not determine the expected
   result. Prefer completion events over polling. Always remove listeners and
@@ -108,6 +113,8 @@ test target over another bespoke implementation.
 - `packages/swift/TestSupport`: `TestClock` advances elapsed time;
   `TestSignal` acknowledges operations; `awaitObserved` waits for observable
   state; `TrackedStream` acknowledges handling the previous stream item.
+- `packages/swift/Autocomplete/Tests/AutocompleteTests/FocusTestWindow.swift`:
+  acknowledges native responder changes without sleeping or polling.
 - `apps/server/src/changes-test-support.ts`: database writes and observable
   fixtures notify condition waiters. A predicate must read state that emits
   these notifications; unrelated state needs its own completion event.
@@ -143,3 +150,4 @@ known risks candidly; do not claim that a passing run proves no flakes exist.
 - [Vitest: mocking dates](https://vitest.dev/guide/mocking/dates)
 - [Google: sources of test flakiness](https://testing.googleblog.com/2020/12/test-flakiness-one-of-main-challenges.html)
 - [Playwright: test isolation and behavior assertions](https://playwright.dev/docs/best-practices)
+- [AppKit: update layout before inspecting it](https://developer.apple.com/documentation/appkit/nsview/layoutsubtreeifneeded%28%29)

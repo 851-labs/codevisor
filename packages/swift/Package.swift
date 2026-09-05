@@ -274,7 +274,7 @@ let package = Package(
     ),
     .testTarget(
       name: "AutocompleteTests",
-      dependencies: ["Autocomplete"],
+      dependencies: ["Autocomplete", "CodevisorTestSupport"],
       path: "Autocomplete/Tests/AutocompleteTests",
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),

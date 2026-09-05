@@ -1,25 +1,25 @@
 #if canImport(AppKit)
   import AppKit
+  import CodevisorTestSupport
   import SwiftUI
   import Testing
   @testable import Autocomplete
 
-  @Suite("Autocomplete hosted controls", .serialized)
+  @Suite("Autocomplete hosted controls")
   @MainActor
   struct HostedControlTests {
-    private func drain() { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1)) }
     private func field(in view: NSView) -> NSSearchField? {
       if let field = view as? NSSearchField { return field }
       return view.subviews.lazy.compactMap { field(in: $0) }.first
     }
-    private func window(_ root: some View) -> NSWindow {
+    private func window(_ root: some View) -> FocusTestWindow {
       _ = NSApplication.shared
-      let window = NSWindow(
+      let window = FocusTestWindow(
         contentRect: NSRect(x: 0, y: 0, width: 300, height: 250),
         styleMask: [.borderless], backing: .buffered, defer: false)
-      window.contentView = NSHostingView(rootView: AnyView(root))
+      window.contentView = NSHostingView(
+        rootView: AnyView(root.environment(\.locale, Locale(identifier: "en_US_POSIX"))))
       window.contentView?.layoutSubtreeIfNeeded()
-      drain()
       return window
     }
 
@@ -30,14 +30,14 @@
         Autocomplete.Suggestions {
           Autocomplete.Action("Match") { accepted += 1 }
         }.disabled(true))
-      defer { window.contentView = nil; drain() }
+      defer { window.contentView = nil }
       guard let view = window.contentView, let field = field(in: view),
         let coordinator = field.delegate as? Autocomplete.InputField.Coordinator
       else { Issue.record("Search field did not mount"); return }
       #expect(!field.isEnabled)
       #expect(
         !coordinator.control(field, textView: NSTextView(), doCommandBy: #selector(NSResponder.insertNewline(_:))))
-      drain()
+      window.contentView?.layoutSubtreeIfNeeded()
       #expect(accepted == 0)
     }
 
@@ -45,7 +45,7 @@
     func enabledReturn() {
       var accepted = 0
       let window = window(Autocomplete.Suggestions { Autocomplete.Action("Match") { accepted += 1 } })
-      defer { window.contentView = nil; drain() }
+      defer { window.contentView = nil }
       guard let view = window.contentView, let field = field(in: view),
         let coordinator = field.delegate as? Autocomplete.InputField.Coordinator
       else { Issue.record("Search field did not mount"); return }
@@ -82,11 +82,11 @@
       container.requestFocus?()
       #expect(!focused)
       #expect(container.requestFocus != nil)
-      let window = NSWindow(
+      let window = FocusTestWindow(
         contentRect: NSRect(x: 0, y: 0, width: 280, height: 50),
         styleMask: [.borderless], backing: .buffered, defer: false)
       window.contentView = container
-      drain()
+      window.contentView?.layoutSubtreeIfNeeded()
       #expect(focused)
       #expect(container.requestFocus == nil)
       window.contentView = nil
@@ -102,7 +102,7 @@
             Autocomplete.Choice("Demo", value: "Demo")
           }.favorites(favorites.binding)
         })
-      defer { window.contentView = nil; drain() }
+      defer { window.contentView = nil }
       guard let view = window.contentView, let field = field(in: view) else {
         Issue.record("Search field did not mount"); return
       }
@@ -114,7 +114,7 @@
       #expect(field.performKeyEquivalent(with: event))
       #expect(favorites.value == ["Demo"])
       #expect(selection.value == "Other")
-      drain()
+      window.contentView?.layoutSubtreeIfNeeded()
       #expect(field.performKeyEquivalent(with: event))
       #expect(favorites.value.isEmpty)
       #expect(selection.value == "Other")
@@ -136,7 +136,7 @@
             Autocomplete.Choice("Demo", value: "Demo")
           }.favorites(favorites.binding)
         })
-      defer { window.contentView = nil; drain() }
+      defer { window.contentView = nil }
       guard let view = window.contentView, let field = field(in: view),
         let coordinator = field.delegate as? Autocomplete.InputField.Coordinator
       else { Issue.record("Search field did not mount"); return }
@@ -145,7 +145,11 @@
         coordinator.control(
           field, textView: window.firstResponder as! NSTextView,
           doCommandBy: #selector(NSResponder.insertTab(_:))))
-      try? await Task.sleep(for: .milliseconds(100))
+      window.contentView?.layoutSubtreeIfNeeded()
+      await window.waitForResponder {
+        guard let responder = $0 else { return false }
+        return (responder as? NSTextView)?.delegate !== field && responder !== window
+      }
       #expect((window.firstResponder as? NSTextView)?.delegate !== field)
       for type in [NSEvent.EventType.keyDown, .keyUp] {
         window.sendEvent(
@@ -154,7 +158,7 @@
             windowNumber: window.windowNumber, context: nil, characters: " ", charactersIgnoringModifiers: " ",
             isARepeat: false, keyCode: 49)!)
       }
-      try? await Task.sleep(for: .milliseconds(100))
+      await awaitObserved { favorites.value == ["Demo"] }
       #expect(favorites.value == ["Demo"])
       #expect(selection.value == "Other")
     }
@@ -163,7 +167,7 @@
     func focusBinding() async {
       var focused: Binding<Bool>!
       let window = window(FocusFixture { focused = $0 })
-      defer { window.contentView = nil; drain() }
+      defer { window.contentView = nil }
       guard let view = window.contentView, let field = field(in: view) else {
         Issue.record("Search field did not mount"); return
       }
@@ -173,15 +177,15 @@
       #expect(!isEditing())
       focused.wrappedValue = true
       window.contentView?.layoutSubtreeIfNeeded()
-      try? await Task.sleep(for: .milliseconds(100))
+      await window.waitForResponder { ($0 as? NSTextView)?.delegate === field }
       #expect(isEditing())
       focused.wrappedValue = false
       window.contentView?.layoutSubtreeIfNeeded()
-      try? await Task.sleep(for: .milliseconds(100))
+      await window.waitForResponder { ($0 as? NSTextView)?.delegate !== field }
       #expect(!isEditing())
       focused.wrappedValue = true
       window.contentView?.layoutSubtreeIfNeeded()
-      try? await Task.sleep(for: .milliseconds(100))
+      await window.waitForResponder { ($0 as? NSTextView)?.delegate === field }
       #expect(isEditing())
     }
 

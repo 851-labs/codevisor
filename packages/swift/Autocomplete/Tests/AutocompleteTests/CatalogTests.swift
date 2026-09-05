@@ -15,8 +15,9 @@
   @Suite("Autocomplete semantic catalog")
   @MainActor
   struct CatalogTests {
+    private var locale: Locale { Locale(identifier: "en_US_POSIX") }
     private func catalog(@Autocomplete.ContentBuilder _ content: () -> [Autocomplete.Entry]) -> Autocomplete.Catalog {
-      Autocomplete.Catalog(content())
+      Autocomplete.Catalog(content(), locale: locale)
     }
     private func titles(_ snapshot: Autocomplete.Snapshot) -> [String] { snapshot.items.map { $0.definition.title } }
 
@@ -50,17 +51,17 @@
         Autocomplete.Action("Alpha") {}; Autocomplete.Action("Beta") {}
       }
       for _ in 0..<10 {
-        _ = prepared.results(catalog: catalog, query: "a", filter: .contains, locale: .current)
+        _ = prepared.results(catalog: catalog, query: "a", filter: .contains, locale: locale)
       }
       #expect(prepared.filterCount == 1)
-      let prefixed = prepared.results(catalog: catalog, query: "a", filter: .startsWith, locale: .current)
+      let prefixed = prepared.results(catalog: catalog, query: "a", filter: .startsWith, locale: locale)
       #expect(titles(prefixed) == ["Alpha"])
       #expect(prepared.filterCount == 2)
       let changed = self.catalog { Autocomplete.Action("Another") {} }
       #expect(
-        titles(prepared.results(catalog: changed, query: "a", filter: .startsWith, locale: .current)) == ["Another"])
+        titles(prepared.results(catalog: changed, query: "a", filter: .startsWith, locale: locale)) == ["Another"])
       #expect(prepared.filterCount == 3)
-      _ = prepared.results(catalog: changed, query: "n", filter: .contains, locale: .current)
+      _ = prepared.results(catalog: changed, query: "n", filter: .contains, locale: locale)
       #expect(prepared.filterCount == 4)
     }
 
@@ -110,11 +111,11 @@
         Autocomplete.Section("Projects") { Autocomplete.Action("Codevisor") {} }
         Autocomplete.Section(id: "actions") { Autocomplete.Action("New Project…") {} }
       }
-      let result = catalog.results(query: "new", filter: .contains)
+      let result = catalog.results(query: "new", filter: .contains, locale: locale)
       #expect(titles(result) == ["New Project…"])
       #expect(result.sections.count == 1)
       #expect(result.sections[0].title == nil)
-      #expect(catalog.results(query: "missing", filter: .contains).items.isEmpty)
+      #expect(catalog.results(query: "missing", filter: .contains, locale: locale).items.isEmpty)
     }
 
     @Test("Group titles, explicit keywords, and Unicode normalization participate in search")
@@ -126,18 +127,18 @@
           Autocomplete.Choice("Sonnet", value: "b")
         }
       }
-      #expect(titles(catalog.results(query: " MODELS\n", filter: .contains)) == ["Résumé", "Sonnet"])
-      #expect(titles(catalog.results(query: "resume", filter: .contains)) == ["Résumé"])
-      #expect(titles(catalog.results(query: "rsm", filter: .subsequence)) == ["Résumé"])
-      #expect(titles(catalog.results(query: "doc", filter: .startsWith)) == ["Résumé"])
-      #expect(catalog.results(query: " \n\t", filter: .contains).items.count == 2)
+      #expect(titles(catalog.results(query: " MODELS\n", filter: .contains, locale: locale)) == ["Résumé", "Sonnet"])
+      #expect(titles(catalog.results(query: "resume", filter: .contains, locale: locale)) == ["Résumé"])
+      #expect(titles(catalog.results(query: "rsm", filter: .subsequence, locale: locale)) == ["Résumé"])
+      #expect(titles(catalog.results(query: "doc", filter: .startsWith, locale: locale)) == ["Résumé"])
+      #expect(catalog.results(query: " \n\t", filter: .contains, locale: locale).items.count == 2)
     }
 
     @Test("Custom filters receive original text")
     func customFilter() {
       let catalog = catalog { Autocomplete.Action("Résumé") {} }
       let filter = Autocomplete.Filter { candidate, query in candidate == "Résumé" && query == "custom" }
-      #expect(catalog.results(query: "custom", filter: filter).items.count == 1)
+      #expect(catalog.results(query: "custom", filter: filter, locale: locale).items.count == 1)
     }
 
     @Test("Empty sections have no heading or separator identity")
@@ -166,7 +167,7 @@
       #expect(catalog.unfiltered.sections[0].id == .favorites)
       #expect(catalog.unfiltered.sections[0].title == nil)
       #expect(favorites.value == ["missing", "b", "b", "a"])
-      #expect(titles(catalog.results(query: "manage", filter: .contains)) == ["Manage"])
+      #expect(titles(catalog.results(query: "manage", filter: .contains, locale: locale)) == ["Manage"])
     }
 
     @Test("No selection is a real favoritable value, not an identity sentinel")
@@ -219,7 +220,7 @@
       favorites.value = []
       let after = make()
       #expect(after.items.last?.id == id)
-      #expect(after.results(query: "b", filter: .contains).items.first?.id == id)
+      #expect(after.results(query: "b", filter: .contains, locale: locale).items.first?.id == id)
     }
 
     @Test("Cache reuses width across query edits and updates for metrics and new titles")
@@ -228,7 +229,7 @@
       let cache = Autocomplete.Measurements()
       var metrics = Autocomplete.Metrics()
       let width = cache.popupWidth(catalog: first, metrics: metrics)
-      _ = first.results(query: "f", filter: .contains)
+      _ = first.results(query: "f", filter: .contains, locale: locale)
       #expect(cache.popupWidth(catalog: first, metrics: metrics) == width)
       #expect(cache.measurementCount == 1)
       let sameTitles = catalog { Autocomplete.Action("First") {} }
@@ -255,7 +256,7 @@
       }
       #expect(catalog.showsIcons)
       #expect(catalog.items.first?.definition.label != nil)
-      #expect(titles(catalog.results(query: "open", filter: .contains)) == ["Open plugin"])
+      #expect(titles(catalog.results(query: "open", filter: .contains, locale: locale)) == ["Open plugin"])
     }
   }
 #endif

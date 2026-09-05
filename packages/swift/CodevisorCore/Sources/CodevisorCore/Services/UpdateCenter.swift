@@ -481,7 +481,7 @@ public final class UpdateCenter {
   private func waitForHarnessUpdatesToSettle(onMachine machineId: String) async {
     for attempt in 0..<harnessSettleAttempts {
       if attempt > 0 {
-        try? await Task.sleep(for: harnessSettlePollInterval)
+        try? await machines.updateScheduler.sleep(harnessSettlePollInterval)
       }
       await refreshHarnesses(onMachine: machineId)
       let active = (harnessesByMachine[machineId] ?? []).contains(where: Self.harnessLifecycleIsActive)

@@ -4,7 +4,7 @@
   import Testing
   @testable import Autocomplete
 
-  @Suite("Autocomplete layout", .serialized)
+  @Suite("Autocomplete layout")
   @MainActor
   struct LayoutTests {
     private struct Options {
@@ -39,6 +39,7 @@
         .autocompleteSizing(options.value.sizing)
         .environment(\.layoutDirection, options.value.rightToLeft ? .rightToLeft : .leftToRight)
         .environment(\.colorScheme, .light)
+        .environment(\.locale, Locale(identifier: "en_US_POSIX"))
         .background(.white)
         .fixedSize()
       }
@@ -53,13 +54,13 @@
       return window
     }
 
-    private func settle(_ view: NSView) async throws {
+    private func settle(_ view: NSView) {
+      // Resolve SwiftUI state before measuring, then lay out at the measured size.
+      view.needsLayout = true
+      view.layoutSubtreeIfNeeded()
       view.setFrameSize(view.fittingSize)
       view.layoutSubtreeIfNeeded()
-      try await Task.sleep(for: .milliseconds(60))
-      view.setFrameSize(view.fittingSize)
-      view.layoutSubtreeIfNeeded()
-      try await Task.sleep(for: .milliseconds(60))
+      view.displayIfNeeded()
     }
 
     private func find<T: NSView>(_ type: T.Type, in view: NSView) -> T? {
@@ -67,14 +68,14 @@
       return view.subviews.lazy.compactMap { find(type, in: $0) }.first
     }
 
-    private func highlightLast(in view: NSView) async throws {
+    private func highlightLast(in view: NSView) throws {
       let field = try #require(find(NSSearchField.self, in: view))
       let coordinator = try #require(field.delegate as? Autocomplete.InputField.Coordinator)
       // Search edits restore the first result. Move twice to the third result.
       for _ in 0..<2 {
         _ = coordinator.control(field, textView: NSTextView(), doCommandBy: #selector(NSResponder.moveDown(_:)))
       }
-      try await settle(view)
+      settle(view)
     }
 
     private struct HighlightGeometry {
@@ -103,19 +104,19 @@
     }
 
     @Test("The final highlight hugs the bottom while font size changes repeatedly in both directions")
-    func liveFontChanges() async throws {
+    func liveFontChanges() throws {
       let options = SelectionStore(Options())
       let window = mount(options)
       defer { window.contentView = nil }
       let view = try #require(window.contentView)
-      try await settle(view)
-      try await highlightLast(in: view)
+      settle(view)
+      try highlightLast(in: view)
       // Sweep every size from the report, then stress larger sizes and shrink
       // again without remounting the control or its last row.
       for size in Array(13...24) + [36, 9, 32, 18, 24, 13] {
         options.value.fontSize = CGFloat(size)
         options.value.rightToLeft.toggle()
-        try await settle(view)
+        settle(view)
         let geometry = try highlightGeometry(in: view)
         #expect(abs(geometry.bottomGap - options.value.metrics.listVerticalInset) <= 0.5, "Font size: \(size)")
         #expect(geometry.bottomCornerInset > 8, "Font size: \(size)")
@@ -123,49 +124,49 @@
     }
 
     @Test("Filtering and favorite promotion update bottom corners without remounting the surface")
-    func filteringAndReordering() async throws {
+    func filteringAndReordering() throws {
       let options = SelectionStore(Options(fontSize: 24))
       let window = mount(options)
       defer { window.contentView = nil }
       let view = try #require(window.contentView)
-      try await settle(view)
-      try await highlightLast(in: view)
+      settle(view)
+      try highlightLast(in: view)
       #expect(try highlightGeometry(in: view).bottomCornerInset > 8)
       options.value.query = "المشروع"
-      try await settle(view)
+      settle(view)
       let filtered = try highlightGeometry(in: view)
       #expect(filtered.bottomGap > 50)
       #expect(filtered.bottomCornerInset < 8)
       options.value.sizing = .fitResults
-      try await settle(view)
+      settle(view)
       #expect(try highlightGeometry(in: view).bottomGap <= 4.5)
       #expect(try highlightGeometry(in: view).bottomCornerInset > 8)
       options.value.query = ""
       options.value.sizing = .stable
-      try await settle(view)
-      try await highlightLast(in: view)
+      settle(view)
+      try highlightLast(in: view)
       options.value.favorites = ["arabic"]
-      try await settle(view)
+      settle(view)
       let promoted = try highlightGeometry(in: view)
       #expect(promoted.bottomGap > 50)
       #expect(promoted.bottomCornerInset < 8)
       options.value.favorites = []
-      try await settle(view)
+      settle(view)
       #expect(try highlightGeometry(in: view).bottomCornerInset > 8)
     }
 
     @Test("The last row gains concentric corners after scrolling to the end of a capped list")
-    func scrollingToBottom() async throws {
+    func scrollingToBottom() throws {
       let options = SelectionStore(Options(fontSize: 24, maximumHeight: 160))
       let window = mount(options)
       defer { window.contentView = nil }
       let view = try #require(window.contentView)
-      try await settle(view)
-      try await highlightLast(in: view)
+      settle(view)
+      try highlightLast(in: view)
       let scrollView = try #require(find(NSScrollView.self, in: view))
       let document = try #require(scrollView.documentView)
       document.scroll(NSPoint(x: 0, y: document.bounds.height))
-      try await settle(view)
+      settle(view)
       let geometry = try highlightGeometry(in: view)
       #expect(geometry.bottomGap <= 4.5)
       #expect(geometry.bottomCornerInset > 8)
