@@ -360,12 +360,9 @@ extension MachineController {
     }?.id
   }
 
-  /// A machine's display name as ROW METADATA for flattened lists: nil
-  /// for single-machine fleets, so machine context never appears until
-  /// it actually means something.
+  /// A machine's display name for row metadata, regardless of fleet size.
   public func fleetMachineName(for serverId: String) -> String? {
-    guard allMachines.count > 1 else { return nil }
-    return machine(for: serverId)?.name
+    machine(for: serverId)?.name
   }
 
   /// Resolves a fleet sync key (a server's config.id, how its entries are

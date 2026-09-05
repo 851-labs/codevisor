@@ -376,8 +376,7 @@ struct SessionContainerView: View {
 
   /// The context the title no longer carries: where this tab runs. Ordered
   /// widest-to-narrowest and de-duplicated, since a workspace is commonly
-  /// named after its worktree or project. The machine name omits itself on
-  /// a single-machine fleet (`fleetMachineName`).
+  /// named after its worktree or project.
   var nousSubtitle: String {
     let workspace = store.workspace(for: session, project: project)
     let candidates: [String?] = [
