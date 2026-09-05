@@ -21,6 +21,7 @@ export default defineConfig({
       exclude: [
         "**/dist/**",
         "**/*.test.ts",
+        "src/browser-cdp-test-support.ts",
         "src/browser-cdp-engine.ts",
         "src/browser-cdp.ts",
         "src/browser-chromium.ts",
